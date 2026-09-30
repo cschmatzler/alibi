@@ -25,8 +25,9 @@ row differences; /tmp/invitation-pagination-before.log proves the wrong limited
 page returned a later pending row. After /tmp/invitation-pagination-final.log
 passes 26 organization scenarios / 1,342 assertions. No normalization,
 comparison exceptions, ignored fields or TypeScript oracle changes are used.
-Coordinator-owned independent review and the integrated gate remain before
-publication. Missing-organization omission is meaningful for custom stores;
+Independent review is clear. The canonical gate passed: 268 SDK scenarios /
+7,718 assertions, 37 harness tests / 210 assertions, two Chromium tests / 22
+assertions, and 79.25% source line coverage (23,962 / 30,237). Missing-organization omission is meaningful for custom stores;
 bundled foreign keys normally prevent that state. Other organization callbacks,
 custom schema mappings and configured invitation lifecycle policies are separate
 selected work rather than claims made by this listing repair.
