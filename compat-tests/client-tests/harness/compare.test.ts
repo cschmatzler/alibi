@@ -13,6 +13,15 @@ test("identity bijection preserves cross-object relationships and token rotation
   expect(compareValues(a, { ...b, renewed: { token: "c" } }, context).length).toBeGreaterThan(0);
 });
 
+test("multi-team invitations preserve every ordered team identity", () => {
+  const left = { teams: [{ id: "left-first" }, { id: "left-second" }], invitation: { teamId: "left-first,left-second" } };
+  const right = { teams: [{ id: "right-first" }, { id: "right-second" }], invitation: { teamId: "right-first,right-second" } };
+  expect(compareValues(left, right, context)).toEqual([]);
+  for (const teamId of ["right-second,right-first", "right-first,unrelated", "right-first", "right-first,right-second,extra"]) {
+    expect(compareValues(left, { ...right, invitation: { teamId } }, context).length).toBeGreaterThan(0);
+  }
+});
+
 for (const [name, left, right] of [
   ["provider", { providerId: "github" }, { providerId: "google" }],
   ["config", { configId: "one" }, { configId: "two" }],

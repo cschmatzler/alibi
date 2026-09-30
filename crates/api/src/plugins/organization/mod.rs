@@ -1,6 +1,11 @@
+pub mod extensions;
 pub mod handlers;
 pub mod rbac;
 pub mod types;
+pub use extensions::{
+    DefaultTeamContext, DefaultTeamFactory, OrganizationLimitResolver, OrganizationTeamHooks,
+    TeamsConfig, default_organization_statements,
+};
 
 use std::collections::HashMap;
 
@@ -19,6 +24,12 @@ pub struct RolePermissions {
     /// default statements define none, so only the creator role can manage them
     /// until an application grants this explicitly.
     pub api_key: Vec<String>,
+    #[serde(default)]
+    pub team: Vec<String>,
+    #[serde(default)]
+    pub ac: Vec<String>,
+    #[serde(flatten)]
+    pub additional: better_auth_core::types::OrganizationPermissions,
 }
 
 /// Configuration for the Organization plugin
@@ -46,15 +57,25 @@ pub struct OrganizationConfig {
     /// Disable organization deletion (default: false)
     #[config(default = false)]
     pub disable_organization_deletion: bool,
-    /// Custom role definitions (extending default roles)
-    #[config(default = HashMap::new(), skip)]
-    pub roles: HashMap<String, RolePermissions>,
+    /// Static role definitions. None uses the upstream default roles; an
+    /// explicitly empty map grants no static permissions.
+    #[config(default = None, skip)]
+    pub roles: Option<HashMap<String, RolePermissions>>,
+    /// Require verified email to view, accept, or reject an invitation by ID.
+    /// None requires it when the configured database uses numeric IDs.
+    #[config(default = None)]
+    pub require_email_verification_on_invitation: Option<bool>,
+    #[config(default = TeamsConfig::default(), skip)]
+    pub teams: TeamsConfig,
 }
 
 /// Organization plugin for multi-tenancy support
 pub struct OrganizationPlugin {
     config: OrganizationConfig,
 }
+
+#[cfg(test)]
+mod extension_tests;
 
 /// Metadata key announcing that the organization plugin is installed.
 pub(crate) const METADATA_ENABLED: &str = "organization.enabled";
@@ -76,6 +97,10 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
     ) -> better_auth_core::AuthResult<()> {
         ctx.set_metadata(METADATA_ENABLED, serde_json::Value::Bool(true));
         ctx.set_metadata(
+            "organization.teams.enabled",
+            serde_json::Value::Bool(self.config.teams.enabled),
+        );
+        ctx.set_metadata(
             METADATA_ROLES,
             serde_json::to_value(&self.config.roles).unwrap_or_default(),
         );
@@ -87,7 +112,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
     }
 
     fn routes(&self) -> Vec<AuthRoute> {
-        vec![
+        let mut routes = vec![
             // Organization CRUD
             AuthRoute::post("/organization/create", "create_organization"),
             AuthRoute::post("/organization/update", "update_organization"),
@@ -122,7 +147,21 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
             AuthRoute::post("/organization/cancel-invitation", "cancel_invitation"),
             // Permission check
             AuthRoute::post("/organization/has-permission", "has_permission"),
-        ]
+        ];
+        if self.config.teams.enabled {
+            routes.extend([
+                AuthRoute::post("/organization/create-team", "create_team"),
+                AuthRoute::post("/organization/update-team", "update_team"),
+                AuthRoute::post("/organization/remove-team", "remove_team"),
+                AuthRoute::get("/organization/list-teams", "list_teams"),
+                AuthRoute::get("/organization/list-user-teams", "list_user_teams"),
+                AuthRoute::get("/organization/list-team-members", "list_team_members"),
+                AuthRoute::post("/organization/set-active-team", "set_active_team"),
+                AuthRoute::post("/organization/add-team-member", "add_team_member"),
+                AuthRoute::post("/organization/remove-team-member", "remove_team_member"),
+            ]);
+        }
+        routes
     }
 
     async fn on_request(
@@ -177,7 +216,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
                 handlers::invitation::handle_invite_member(req, ctx, &self.config).await?,
             )),
             (HttpMethod::Get, "/organization/get-invitation") => Ok(Some(
-                handlers::invitation::handle_get_invitation(req, ctx).await?,
+                handlers::invitation::handle_get_invitation(req, ctx, &self.config).await?,
             )),
             (HttpMethod::Get, "/organization/list-invitations") => Ok(Some(
                 handlers::invitation::handle_list_invitations(req, ctx).await?,
@@ -189,7 +228,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
                 handlers::invitation::handle_accept_invitation(req, ctx, &self.config).await?,
             )),
             (HttpMethod::Post, "/organization/reject-invitation") => Ok(Some(
-                handlers::invitation::handle_reject_invitation(req, ctx).await?,
+                handlers::invitation::handle_reject_invitation(req, ctx, &self.config).await?,
             )),
             (HttpMethod::Post, "/organization/cancel-invitation") => Ok(Some(
                 handlers::invitation::handle_cancel_invitation(req, ctx, &self.config).await?,
@@ -198,7 +237,14 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
             (HttpMethod::Post, "/organization/has-permission") => Ok(Some(
                 handlers::handle_has_permission(req, ctx, &self.config).await?,
             )),
-            _ => Ok(None),
+            _ => {
+                if let Some(response) =
+                    handlers::team::handle_team_request(req, ctx, &self.config).await?
+                {
+                    return Ok(Some(response));
+                }
+                Ok(None)
+            }
         }
     }
 }

@@ -98,9 +98,17 @@ bun run --cwd compat-tests/client-tests typecheck
 bun test --cwd compat-tests/client-tests harness
 cargo test --test client_compat_tests passkey_client_compat -- --ignored --nocapture
 cargo test --test client_compat_tests browser_client_compat -- --ignored --nocapture
+cargo test --test client_compat_tests organization_teams_client_compat -- --ignored --nocapture
 ./scripts/alignment-check.sh
 ```
 
 The Rust orchestrator starts and checks both servers on allocated ports and
 stops them on completion. Direct Bun scenario runs require running reference
 and Rust servers; configure `AUTH_BASE_URL_TS` and `AUTH_BASE_URL_RUST`.
+
+Organization-team checks use dedicated teams, no-default-team, request-dependent
+limit, and removable-final-team configurations under `/__test/profiles/`. Private
+fixture controls inspect persisted organization state and invoke typed server-only
+team APIs; public flows use the official client and its cookie jar. See the
+[organization-team implementation audit](audits/organization-teams.md) for the
+supported branches, lifecycle evidence, and remaining integration boundaries.

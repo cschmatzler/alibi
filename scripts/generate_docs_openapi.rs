@@ -5,6 +5,7 @@ use better_auth::plugins::{
     AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
     EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, OrganizationPlugin, PasskeyPlugin,
     PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
+    organization::{OrganizationConfig, TeamsConfig},
 };
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
 use better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
@@ -26,6 +27,38 @@ const ORGANIZATION_TAG: &str = "Organization";
 const PASSKEY_TAG: &str = "Passkey";
 const ADMIN_TAG: &str = "Admin";
 const TWO_FACTOR_TAG: &str = "Two-factor";
+
+const V1_DOCS_TAG_DESCRIPTIONS: &[(&str, &str)] = &[
+    (
+        DEFAULT_TAG,
+        "Core v1 endpoints plus the default account and OAuth surfaces.",
+    ),
+    (USERNAME_TAG, "Username-based authentication endpoints."),
+    (
+        DEVICE_AUTHORIZATION_TAG,
+        "Device authorization endpoints from the v1 compatibility surface.",
+    ),
+    (
+        API_KEY_TAG,
+        "API Key plugin endpoints for creating, managing, and verifying API keys.",
+    ),
+    (
+        ORGANIZATION_TAG,
+        "Organization endpoints for multi-tenant management, members, invitations, and RBAC.",
+    ),
+    (
+        PASSKEY_TAG,
+        "Passkey plugin endpoints for WebAuthn/FIDO2 passwordless authentication.",
+    ),
+    (
+        ADMIN_TAG,
+        "Admin plugin endpoints for user management, banning, and impersonation.",
+    ),
+    (
+        TWO_FACTOR_TAG,
+        "Two-Factor Authentication plugin endpoints for TOTP, OTP, and backup codes.",
+    ),
+];
 
 const V1_DOCS_PATHS: &[(&str, &str)] = &[
     ("/ok", DEFAULT_TAG),
@@ -90,6 +123,15 @@ const V1_DOCS_PATHS: &[(&str, &str)] = &[
     ("/organization/list-invitations", ORGANIZATION_TAG),
     ("/organization/list-user-invitations", ORGANIZATION_TAG),
     ("/organization/has-permission", ORGANIZATION_TAG),
+    ("/organization/create-team", ORGANIZATION_TAG),
+    ("/organization/update-team", ORGANIZATION_TAG),
+    ("/organization/remove-team", ORGANIZATION_TAG),
+    ("/organization/list-teams", ORGANIZATION_TAG),
+    ("/organization/list-user-teams", ORGANIZATION_TAG),
+    ("/organization/list-team-members", ORGANIZATION_TAG),
+    ("/organization/set-active-team", ORGANIZATION_TAG),
+    ("/organization/add-team-member", ORGANIZATION_TAG),
+    ("/organization/remove-team-member", ORGANIZATION_TAG),
     ("/passkey/generate-register-options", PASSKEY_TAG),
     ("/passkey/generate-authenticate-options", PASSKEY_TAG),
     ("/passkey/verify-registration", PASSKEY_TAG),
@@ -195,7 +237,13 @@ async fn build_docs_auth() -> Result<BetterAuth<BundledSchema>, DynError> {
         .plugin(DeviceAuthorizationPlugin::new())
         .plugin(ApiKeyPlugin::builder().build())
         .plugin(TwoFactorPlugin::new())
-        .plugin(OrganizationPlugin::new())
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+            teams: TeamsConfig {
+                enabled: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }))
         .plugin(
             PasskeyPlugin::new()
                 .rp_id("localhost")
@@ -231,6 +279,7 @@ fn rewrite_for_docs(spec: &mut Value) -> Result<(), DynError> {
 
     let mut filtered_paths = serde_json::Map::new();
     let mut missing_paths = Vec::new();
+    let mut tags = Vec::new();
 
     for (path, tag) in V1_DOCS_PATHS {
         let Some(path_item) = paths.get(*path) else {
@@ -241,6 +290,13 @@ fn rewrite_for_docs(spec: &mut Value) -> Result<(), DynError> {
         let mut path_item = path_item.clone();
         retag_path_item(&mut path_item, tag)?;
         _ = filtered_paths.insert((*path).to_string(), path_item);
+        if !tags.iter().any(|entry: &Value| entry["name"] == *tag) {
+            let description = V1_DOCS_TAG_DESCRIPTIONS
+                .iter()
+                .find_map(|(name, description)| (name == tag).then_some(*description))
+                .ok_or_else(|| format!("Missing docs tag description: {tag}"))?;
+            tags.push(serde_json::json!({ "name": tag, "description": description }));
+        }
     }
 
     if !missing_paths.is_empty() {
@@ -252,6 +308,7 @@ fn rewrite_for_docs(spec: &mut Value) -> Result<(), DynError> {
     }
 
     _ = root.insert("paths".to_string(), Value::Object(filtered_paths));
+    _ = root.insert("tags".to_string(), Value::Array(tags));
     Ok(())
 }
 

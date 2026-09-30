@@ -48,37 +48,82 @@ let auth = BetterAuth::<AppAuthSchema>::new(config)
 | `invitation_expires_in` | `u64` | `172800` (48h) | Invitation expiration in seconds |
 | `invitation_limit` | `Option<usize>` | `Some(100)` | Max pending invitations per org |
 | `disable_organization_deletion` | `bool` | `false` | Prevent organization deletion |
+| `roles` | `Option<HashMap<String, RolePermissions>>` | `None` | Replace the default roles when a map is supplied |
+| `teams` | `TeamsConfig` | Disabled | Enable teams, default-team creation, limits, and callbacks |
+| `require_email_verification_on_invitation` | `Option<bool>` | `None` | Require a verified recipient; defaults to true with numeric database IDs |
+
+### Teams
+
+```rust
+use better_auth::plugins::organization::{OrganizationConfig, TeamsConfig};
+
+let organization = OrganizationPlugin::with_config(OrganizationConfig {
+    teams: TeamsConfig {
+        enabled: true,
+        maximum_teams: Some(10),
+        maximum_members_per_team: Some(25),
+        ..Default::default()
+    },
+    ..Default::default()
+});
+```
+
+Enabling teams creates a default team and creator membership when an organization
+is created. Set `create_default_team: false` to start with no teams, or
+`allow_removing_all_teams: true` to permit removing the final team. A custom
+`DefaultTeamFactory` can persist and return a different default team. Its context
+contains the actual request, authenticated user and session, and auth configuration.
+
+`OrganizationLimitResolver` supports asynchronous limits. Its maximum-teams
+callback receives the current request and principal, while its member-limit callback
+receives the team and principal. `OrganizationTeamHooks` can mutate or veto team and
+membership changes before they are written, and observe successful writes afterward.
+
+Invitations accept one team ID or a list of team IDs. Acceptance writes the
+organization and team memberships together, with recipient, session, tenant, and
+capacity checks. A single-team invitation selects that team; a multi-team invitation
+preserves the current selection. Creating an organization with
+`keepCurrentActiveOrganization: true` preserves both active organization and team.
+
+The Rust `OrganizationPlugin::create_team` and `remove_team` methods are server-only
+interfaces that take an explicit organization scope and auth context. HTTP team
+operations require an authenticated user and the relevant organization permission.
 
 ## RBAC (Role-Based Access Control)
 
 ### Default Roles
 
-| Role | Organization | Member | Invitation | API key |
-|------|-------------|--------|------------|---------|
-| **owner** | update, delete | create, update, delete | create, cancel | — |
-| **admin** | update | create, update, delete | create, cancel | — |
-| **member** | — | — | — | — |
+| Role | Organization | Member | Invitation | Team | API key |
+|------|-------------|--------|------------|------|---------|
+| **owner** | update, delete | create, update, delete | create, cancel | create, update, delete | — |
+| **admin** | update | create, update, delete | create, cancel | create, update, delete | — |
+| **member** | — | — | — | — | — |
 
 The `apikey` resource governs organization-owned keys from the [API Key plugin](/docs/plugins/api-key#named-configurations-and-organization-owned-keys). Matching upstream, no default role is granted any action on it; the creator role (`creator_role`, `"owner"` by default) is allowed everything implicitly, and other roles need an explicit grant through a custom role.
 
 ### Custom Roles
 
-Extend the default roles with custom permissions:
+`roles: None` uses the default roles. `Some(map)` replaces them, and
+`Some(HashMap::new())` supplies an explicitly empty role policy. A permission request
+must be satisfied by one of a member's assigned roles; separate roles do not combine
+their grants to satisfy the same request.
 
 ```rust
-use better_auth::plugins::organization::config::{OrganizationConfig, RolePermissions};
+use better_auth::plugins::organization::{OrganizationConfig, RolePermissions};
 use std::collections::HashMap;
 
 let mut roles = HashMap::new();
 roles.insert("editor".to_string(), RolePermissions {
-    organization: vec!["read".to_string()],
-    member: vec!["read".to_string()],
+    organization: vec!["update".to_string()],
+    member: vec!["update".to_string()],
     invitation: vec![],
     api_key: vec!["read".to_string(), "create".to_string()],
+    team: vec!["update".to_string()],
+    ..Default::default()
 });
 
 let config = OrganizationConfig {
-    roles,
+    roles: Some(roles),
     ..Default::default()
 };
 
@@ -91,13 +136,15 @@ let auth = BetterAuth::<AppAuthSchema>::new(auth_config)
 
 ### Resources and Actions
 
-**Resources**: `organization`, `member`, `invitation`, `apikey`
+**Resources**: `organization`, `member`, `invitation`, `team`, `apikey`
 
 **Actions**: `create`, `read`, `update`, `delete`, `cancel`
 
 ## API Endpoints
 
-The Organization plugin exposes 21 endpoints. For full request/response details, see the [OpenAPI Reference](/docs/reference/openapi/organization).
+The Organization plugin exposes 21 organization endpoints and nine additional team
+endpoints when teams are enabled. For request/response details, see the
+[OpenAPI Reference](/docs/reference/openapi/organization).
 
 ### Organization CRUD
 
@@ -139,6 +186,20 @@ The Organization plugin exposes 21 endpoints. For full request/response details,
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/organization/has-permission` | POST | Check if user has specific permissions |
+
+### Team Management
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/organization/create-team` | POST | Create a team |
+| `/organization/update-team` | POST | Update a team |
+| `/organization/remove-team` | POST | Remove a team |
+| `/organization/list-teams` | GET | List organization teams |
+| `/organization/list-user-teams` | GET | List the current user's teams |
+| `/organization/list-team-members` | GET | List team members |
+| `/organization/set-active-team` | POST | Select a team or clear the selection |
+| `/organization/add-team-member` | POST | Add an organization member to a team |
+| `/organization/remove-team-member` | POST | Remove a team member |
 
 ## Errors
 

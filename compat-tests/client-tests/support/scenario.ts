@@ -1,4 +1,5 @@
 import { test } from "bun:test";
+import { authProfilePath, type FixtureProfile } from "./profiles";
 import { recordCoverage } from "./coverage";
 import { compareValues, type Difference } from "./compare";
 import { createAuthClient } from "better-auth/client";
@@ -30,7 +31,7 @@ import { createTracingFetch, type TraceEntry } from "./trace";
 
 type ScenarioServerContext = {
   baseURL: string;
-  actor(name?: string): {
+  actor(name?: string, profile?: FixtureProfile): {
     client: ReturnType<typeof configuredClient>;
     fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
   };
@@ -136,20 +137,22 @@ async function runScenario(
 
   const context: ScenarioServerContext = {
     baseURL,
-    actor(name = "primary") {
-      const existing = actors.get(name);
+    actor(name = "primary", profile) {
+      const actorKey = `${profile ?? "default"}:${name}`;
+      const existing = actors.get(actorKey);
       if (existing) {
         return existing;
       }
 
-      const fetchImpl = createTracingFetch(baseURL, name, traces);
+      const authPath = profile ? authProfilePath(profile) : "/api/auth";
+      const fetchImpl = createTracingFetch(baseURL, name, traces, authPath);
       const actor = {
-        client: configuredClient(baseURL, fetchImpl),
+        client: configuredClient(`${baseURL}${authPath}`, fetchImpl),
         fetch(input: string | URL | Request, init?: RequestInit) {
           return fetchImpl(input, init);
         },
       };
-      actors.set(name, actor);
+      actors.set(actorKey, actor);
       return actor;
     },
     uniqueEmail(prefix) {
