@@ -18,7 +18,7 @@ pub struct Model {
     pub banned: Option<bool>,
     pub ban_reason: Option<String>,
     pub ban_expires: Option<DateTimeUtc>,
-    pub metadata: Json,
+    pub metadata: crate::JsonMetadata,
     pub is_anonymous: Option<bool>,
     pub phone_number: Option<String>,
     pub phone_number_verified: Option<bool>,

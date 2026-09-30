@@ -49,7 +49,8 @@ where
             .as_deref()
             .map(S::User::parse_id)
             .transpose()?;
-        let model = S::User::new_active(user_id, create_user, now);
+        let mut model = S::User::new_active(user_id, create_user, now);
+        S::User::prepare_json_metadata(&mut model, db.get_database_backend())?;
 
         let user = model.insert(db).await.map_err(map_db_err)?;
         if tx.is_none() {
@@ -203,6 +204,7 @@ where
 
         let mut active = model.into_active_model();
         S::User::apply_update(&mut active, update, Utc::now());
+        S::User::prepare_json_metadata(&mut active, self.connection().get_database_backend())?;
 
         let user = active.update(self.connection()).await.map_err(map_db_err)?;
         for hook in self.hooks() {

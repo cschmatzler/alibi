@@ -7,6 +7,7 @@ mod conversions;
 mod entity;
 mod error;
 pub mod hooks;
+pub mod json_metadata;
 pub mod schema;
 pub mod store;
 mod types;
@@ -15,6 +16,7 @@ mod utils;
 
 pub use better_auth_seaorm_macros::AuthEntity;
 pub use hooks::{HookControl, SeaOrmHookContext, SeaOrmHooks, current_request_hook_context};
+pub use json_metadata::JsonMetadata;
 pub use schema::{
     SeaOrmAccountModel, SeaOrmSessionModel, SeaOrmUserModel, SeaOrmVerificationModel,
 };
