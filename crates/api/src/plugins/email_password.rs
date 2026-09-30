@@ -623,6 +623,7 @@ pub(crate) async fn sign_up_core(
                 callback_url.as_deref(),
                 require_email_verification,
                 &signup_context,
+                tx,
             )
             .await?;
 

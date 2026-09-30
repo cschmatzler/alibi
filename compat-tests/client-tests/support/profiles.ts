@@ -1,5 +1,12 @@
 /** Explicit equivalent configurations of the pinned runtime. */
 export type FixtureProfile =
+  | "passwordless-hashed"
+  | "passwordless-encrypted-reuse"
+  | "passwordless-proof"
+  | "passwordless-proof-explicit"
+  | "passwordless-disabled"
+  | "verification-cleanup"
+  | "verification-no-cleanup"
   | "email-verification-required"
   | "email-verification-no-signup-mail"
   | "email-verification-failing-notifications"

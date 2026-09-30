@@ -7,7 +7,7 @@ import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { APIError } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { apiKey } from "@better-auth/api-key";
-import { admin, deviceAuthorization, twoFactor, username } from "better-auth/plugins";
+import { admin, deviceAuthorization, emailOTP, twoFactor, username } from "better-auth/plugins";
 import { organization } from "better-auth/plugins/organization";
 import { createAccessControl } from "better-auth/plugins/access";
 import { defaultStatements } from "better-auth/plugins/organization/access";
@@ -213,6 +213,9 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   return originalFetch(request);
 };
 
+const emailOtpOutbox=new Map<string,{otp:string}>();
+const emailOtp=()=>emailOTP({changeEmail:{enabled:true},async sendVerificationOTP({email,otp,type}) {emailOtpOutbox.set(`${type}:${email}`,{otp});}});
+
 const authOptions = {
   baseURL: `http://localhost:${PORT}`,
   basePath: "/api/auth",
@@ -343,6 +346,7 @@ const authOptions = {
         },
       },
     }),
+    emailOtp(),
     username(),
     genericOAuth({
       config: [
@@ -395,6 +399,27 @@ for (const name of ["email-verification-required", "email-verification-no-signup
     plugins: [],
   });
   verificationProfiles.set(path, instance);
+}
+
+function createOtpProfile(name:string) {
+  const proof=name.startsWith("passwordless-proof");
+  return betterAuth({
+    ...authOptions,
+    basePath:`/__test/profiles/${name}/api/auth`,
+    verification:{disableCleanup:name==="verification-no-cleanup"},
+    emailVerification: name==="passwordless-proof" ? {sendOnSignUp:false,autoSignInAfterVerification:true} : {...authOptions.emailVerification,sendOnSignUp:false,autoSignInAfterVerification:proof},
+    plugins:[emailOTP({
+      storeOTP:name==="passwordless-hashed" ? "hashed" : name==="passwordless-encrypted-reuse" ? "encrypted" : "plain",
+      resendStrategy:name==="passwordless-encrypted-reuse" ? "reuse" : "rotate",
+      disableSignUp:name==="passwordless-disabled",overrideDefaultEmailVerification:proof,
+      changeEmail:{enabled:true,verifyCurrentEmail:proof},
+      async sendVerificationOTP({email,otp,type}) {emailOtpOutbox.set(`${type}:${email}`,{otp});}
+    })]
+  });
+}
+const otpProfiles=new Map<string,ReturnType<typeof createOtpProfile>>();
+for (const name of ["passwordless-hashed","passwordless-encrypted-reuse","passwordless-proof","passwordless-proof-explicit","passwordless-disabled","verification-cleanup","verification-no-cleanup"]) {
+  otpProfiles.set(name,createOtpProfile(name));
 }
 
 const auth = betterAuth(authOptions);
@@ -635,8 +660,49 @@ const server = Bun.serve({
         return jsonResponse(await auth.api.verifyApiKey({ body: await readJson(request) }));
       }
 
+      if (url.pathname==="/__test/email-otp" && request.method==="GET") {
+        return jsonResponse(emailOtpOutbox.get(`${url.searchParams.get("type")}:${url.searchParams.get("email")}`) ?? null);
+      }
+      if (url.pathname==="/__test/verification-state" && request.method==="GET") {
+        const identifier=url.searchParams.get("identifier");
+        return jsonResponse(await authContext.adapter.findMany({model:"verification",where:[{field:"identifier",value:identifier}]}));
+      }
+      if (url.pathname==="/__test/verification-state" && request.method==="POST") {
+        const body:unknown=await readJson(request);
+        if (!body || typeof body!=="object" || Array.isArray(body)) return jsonResponse({message:"invalid verification action"},{status:400});
+        const record=body as Record<string,unknown>;
+        if (typeof record.identifier!=="string" || typeof record.expiresAt!=="string") return jsonResponse({message:"invalid verification action"},{status:400});
+        const expiresAt=new Date(record.expiresAt);
+        if (record.action==="seed" && typeof record.value==="string") await authContext.internalAdapter.createVerificationValue({identifier:record.identifier,value:record.value,expiresAt});
+        else if (record.action==="expire") await authContext.adapter.updateMany({model:"verification",where:[{field:"identifier",value:record.identifier}],update:{expiresAt}});
+        else return jsonResponse({message:"invalid verification action"},{status:400});
+        return jsonResponse({status:true});
+      }
+      if (url.pathname==="/__test/server-api" && request.method==="POST") {
+        const body:unknown=await readJson(request);
+        if (!body || typeof body!=="object" || Array.isArray(body)) return jsonResponse({message:"invalid server operation"},{status:400});
+        const record=body as Record<string,unknown>;
+        if (typeof record.email!=="string" || !["sign-in","email-verification","forget-password","change-email"].includes(String(record.type))) return jsonResponse({message:"invalid server operation"},{status:400});
+        const type=record.type==="email-verification" ? "email-verification" : record.type==="forget-password" ? "forget-password" : record.type==="change-email" ? "change-email" : "sign-in";
+        const selected=typeof record.profile==="string" ? otpProfiles.get(record.profile) : auth;
+        if (!selected) return jsonResponse({message:"unknown fixture profile"},{status:400});
+        try {
+          if (record.operation==="create-email-otp") return jsonResponse(await selected.api.createVerificationOTP({body:{email:record.email,type}}));
+          if (record.operation==="get-email-otp") return jsonResponse(await selected.api.getVerificationOTP({query:{email:record.email,type}}));
+          if (record.operation==="race-email-otp" && typeof record.otp==="string") {
+            const email=record.email,otp=record.otp;
+            const results=await Promise.all([0,1].map(async()=>{const response=await selected.api.signInEmailOTP({body:{email,otp},asResponse:true});return {status:response.status,body:await response.json()};}));
+            return jsonResponse({results:results.sort((left,right)=>left.status-right.status)});
+          }
+        } catch(error) {
+          if (error instanceof APIError) return jsonResponse(error.body,{status:typeof error.status==="number" ? error.status : error.status==="BAD_REQUEST" ? 400 : 500});
+          throw error;
+        }
+        return jsonResponse({message:"unknown server operation"},{status:400});
+      }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         await resetDatabaseState();
+        emailOtpOutbox.clear();
         resetPasswordOutbox.clear();
         verificationEmailOutbox.clear();
         changeEmailOutbox.clear();
@@ -945,6 +1011,9 @@ const server = Bun.serve({
         return jsonResponse({ status: true, accountId: localAccountId });
       }
 
+      for (const [name,instance] of otpProfiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
+      }
       for (const [path, instance] of verificationProfiles) {
         if (url.pathname.startsWith(`${path}/`)) return instance.handler(request);
       }

@@ -3,10 +3,10 @@ import { authProfilePath, type FixtureProfile } from "./profiles";
 import { recordCoverage } from "./coverage";
 import { compareValues, type Difference } from "./compare";
 import { createAuthClient } from "better-auth/client";
-import { usernameClient, adminClient } from "better-auth/client/plugins";
+import { usernameClient, adminClient, emailOTPClient } from "better-auth/client/plugins";
 
 function configuredClient(baseURL: string, fetchImpl: (input: string | URL | Request, init?: RequestInit) => Promise<Response>) {
-  return createAuthClient({ baseURL, plugins: [usernameClient(), adminClient()], fetchOptions: { customFetchImpl: fetchImpl } });
+  return createAuthClient({ baseURL, plugins: [usernameClient(), adminClient(), emailOTPClient()], fetchOptions: { customFetchImpl: fetchImpl } });
 }
 import { RAW_DIFF_ALLOWLIST } from "./allowlist";
 import { RUST_BASE_URL, TS_BASE_URL, requireHealthy } from "./config";
