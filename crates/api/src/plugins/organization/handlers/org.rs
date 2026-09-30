@@ -136,7 +136,7 @@ pub(crate) async fn update_organization_core(
     session: &impl AuthSession,
     config: &OrganizationConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<OrganizationResponse> {
+) -> AuthResult<CreatedOrganizationResponse> {
     let org_id =
         resolve_organization_id(body.organization_id.as_deref(), None, session, ctx).await?;
 
@@ -180,7 +180,7 @@ pub(crate) async fn update_organization_core(
         .update_organization(&org_id, update_data)
         .await?;
 
-    Ok(OrganizationResponse::from_organization(&updated))
+    Ok(CreatedOrganizationResponse::from_organization(&updated))
 }
 
 pub(crate) async fn delete_organization_core(
