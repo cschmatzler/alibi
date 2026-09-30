@@ -2,11 +2,143 @@ use super::*;
 use crate::plugins::test_helpers;
 use better_auth_core::AuthPlugin;
 use better_auth_core::wire::{SessionView, UserView};
-use better_auth_core::{CreateAccount, CreateUser};
+use better_auth_core::{CreateAccount, CreateUser, HttpMethod};
 use chrono::Duration;
 use cookie::Cookie;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+
+#[tokio::test]
+async fn signed_empty_factor_challenge_cannot_read_a_seeded_empty_identifier() {
+    let (ctx, user, _) =
+        create_test_context_with_credential_user("empty-challenge@fixture.test", true).await;
+    let seeded = ctx
+        .database
+        .create_verification(CreateVerification {
+            identifier: String::new(),
+            value: user.id.clone(),
+            expires_at: Utc::now() + Duration::minutes(5),
+        })
+        .await
+        .unwrap();
+    let signed = better_auth_core::utils::cookie_utils::sign_cookie_value("", &ctx.config.secret);
+    assert_eq!(
+        better_auth_core::utils::cookie_utils::verify_cookie_value(&signed, &ctx.config.secret),
+        Some(String::new())
+    );
+    let mut req = AuthRequest::new(HttpMethod::Post, "/two-factor/verify-otp");
+    _ = req.headers.insert(
+        "cookie".into(),
+        format!(
+            "{}={signed}",
+            related_cookie_name(&ctx.config, TWO_FACTOR_COOKIE_SUFFIX)
+        ),
+    );
+    let error = resolve_two_factor_state(&req, &ctx)
+        .await
+        .err()
+        .expect("An empty signed challenge must be rejected");
+    assert_eq!(error.status_code(), 401);
+    let untouched = ctx
+        .database
+        .get_verification_by_identifier("")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(untouched.id(), seeded.id());
+    assert_eq!(untouched.value(), seeded.value());
+    assert_eq!(untouched.expires_at(), seeded.expires_at());
+    assert_eq!(
+        ctx.database
+            .get_user_sessions(&user.id)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn pending_factor_preferences_authenticate_the_first_cookie_and_preserve_issued_expiry() {
+    let (ctx, user, _) =
+        create_test_context_with_credential_user("preferences@fixture.test", true).await;
+    let preference_name = related_cookie_name(&ctx.config, DONT_REMEMBER_COOKIE_SUFFIX);
+    let empty = better_auth_core::utils::cookie_utils::sign_cookie_value("", &ctx.config.secret);
+    let signed =
+        better_auth_core::utils::cookie_utils::sign_cookie_value("true", &ctx.config.secret);
+    let foreign =
+        better_auth_core::utils::cookie_utils::sign_cookie_value("true", "foreign-secret");
+    for (preference, temporary) in [
+        (empty.clone(), false),
+        (signed.clone(), true),
+        (foreign, false),
+        ("true".to_owned(), false),
+        (format!("{empty}; {preference_name}={signed}"), false),
+        (format!("{signed}; {preference_name}={empty}"), true),
+    ] {
+        let challenge = begin_sign_in_challenge(&user, None, &ctx).await.unwrap();
+        let challenge_cookie = challenge
+            .set_cookie_headers
+            .iter()
+            .find(|header| {
+                header.starts_with(&format!(
+                    "{}=",
+                    related_cookie_name(&ctx.config, TWO_FACTOR_COOKIE_SUFFIX)
+                ))
+            })
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap();
+        let mut req = AuthRequest::new(HttpMethod::Post, "/two-factor/verify-otp");
+        _ = req.headers.insert(
+            "cookie".into(),
+            format!("{challenge_cookie}; {preference_name}={preference}"),
+        );
+        let ResolvedTwoFactorState::Pending(pending) =
+            resolve_two_factor_state(&req, &ctx).await.unwrap()
+        else {
+            panic!("A signed pending challenge must resolve without a session cookie");
+        };
+        assert_eq!(pending.dont_remember, temporary);
+        let (completed, headers) = finalize_pending_two_factor(pending, &req, false, true, &ctx)
+            .await
+            .unwrap();
+        let before = ctx
+            .database
+            .get_session(&completed.token)
+            .await
+            .unwrap()
+            .unwrap();
+        let lifetime = before.expires_at() - before.created_at();
+        assert!(
+            (lifetime - Duration::days(if temporary { 1 } else { 7 }))
+                .num_milliseconds()
+                .abs()
+                < 1000
+        );
+        let mut read = AuthRequest::new(HttpMethod::Get, "/get-session");
+        let cookies = headers
+            .iter()
+            .filter(|header| !header.contains("Max-Age=0"))
+            .map(|header| header.split(';').next().unwrap())
+            .collect::<Vec<_>>()
+            .join("; ");
+        _ = read.headers.insert("cookie".into(), cookies);
+        let (authenticated_user, authenticated_session) = ctx.require_session(&read).await.unwrap();
+        assert_eq!(authenticated_user.id(), user.id);
+        assert_eq!(authenticated_session.token, completed.token);
+        assert_eq!(authenticated_session.expires_at, before.expires_at());
+        let after = ctx
+            .database
+            .get_session(&completed.token)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(after.expires_at(), before.expires_at());
+        assert_eq!(after.updated_at(), before.updated_at());
+    }
+}
 
 async fn create_test_context_with_credential_user(
     email: &str,

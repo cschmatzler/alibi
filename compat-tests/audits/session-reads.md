@@ -18,7 +18,7 @@ target. List-sessions applies the default one-day freshness check; zero and
 account and OAuth state cookies in the source order. Direct explicit application
 errors keep their status and body; nested middleware still rejects authentication.
 
-Evidence: 13 focused SDK scenarios / 294 assertions; six public-builder SQLite
+Evidence: 13 focused SDK scenarios / 314 assertions; six public-builder SQLite
 integration tests for refresh, deferred cleanup, nested middleware, foreign
 revocation, deletion during update and failed writes; two public-builder policy
 and signed-empty-cookie regressions; session-manager unit tests. The latter
@@ -27,8 +27,18 @@ the parser. Removing the empty-token guard renews the actual empty-token row
 and wrongly returns its owner; removing policy-error preservation changes 403
 to 500. Both negative controls fail for the intended reason.
 
+The first full gate exposed unsigned admin preference cookies and incompatible
+two-factor outer cookie signatures. Both producers now use the shared pinned
+signing format; trust-device inner HMAC retains its source base64url encoding.
+Admin restoration honors signed preferences and the normal session reader.
+Six admin and eight two-factor SDK scenarios pass with full response/session
+state retained. Two additional native regressions prove first-cookie truthiness
+and refusal of an empty signed challenge with a real seeded empty-identifier row.
+Sign-in schema validation precedes the route's email validity check.
+
 Independent review resolved refresh error handling, freshness defaults,
-configured signout cleanup and the signed-empty-cookie test input. Canonical
+configured signout cleanup, cross-plugin cookie producers and empty signed
+challenge rejection. Canonical
 validation is recorded on the PR after the frozen tree passes the full gate.
 
 Remaining boundaries: cookie-cache/stateless and secondary-only session modes,

@@ -267,7 +267,18 @@ compatScenario("temporary credential signup and signin preserve one-day sessions
       }
     }
     expect((await persisted(ctx, credentials.user.id)).sessions).toEqual(before.sessions);
-    observations.push({ rememberMe, issued, before, read, invalid });
+    const invalidOrder = [];
+    for (const json of [
+      { email: "invalid", password: "password123", rememberMe: null },
+      { email: "invalid", password: null },
+    ]) {
+      const result = await ctx.rawRequest({ actor: "bad-remember", path: "/api/auth/sign-in/email", method: "POST", json });
+      expect(result.status).toBe(400);
+      expect(z.object({ code: z.literal("VALIDATION_ERROR") }).parse(result.body).code).toBe("VALIDATION_ERROR");
+      invalidOrder.push(result);
+    }
+    expect((await persisted(ctx, credentials.user.id)).sessions).toEqual(before.sessions);
+    observations.push({ rememberMe, issued, before, read, invalid, invalidOrder });
   }
   return { observations };
 }, ["POST /sign-up/email", "POST /sign-in/email", "GET /get-session"]);
