@@ -69,3 +69,12 @@ Factor verification flags, existing-record enrollment reuse, account/challenge
 lockout, passwordless enrollment, OTP/backup storage modes and trust-cookie
 policy remain separate capability work. This slice does not claim those
 branches or arbitrary JavaScript configuration numbers are complete.
+
+Independent SIWE-owner review traced the pinned HMAC/URI/config source and
+security boundaries and found the bounded contract clear. The reviewed integrated
+`devenv shell -- ./scripts/check.sh` passed: 274 SDK scenarios / 8,168 assertions,
+37 harness tests / 210 assertions, two Chromium tests / 22 assertions, and
+78.97% source lines (24,009 / 30,402). Log:
+`/tmp/totp-configuration-reviewed-canonical.log`. Existing requirements remain
+with explicit configured/disabled lifecycle evidence; no comparator or policy
+was weakened.
