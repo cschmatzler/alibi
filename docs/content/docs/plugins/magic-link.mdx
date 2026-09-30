@@ -1,0 +1,59 @@
+---
+title: Magic links
+description: Prove mailbox ownership and issue sessions with single-use authentication links.
+---
+
+`MagicLinkPlugin` delivers an authentication URL bound to a mailbox. Its token
+expires after five minutes by default and can succeed once.
+
+```rust
+use better_auth::plugins::magic_link::{MagicLinkConfig, MagicLinkPlugin, MagicLinkTokenStorage};
+use std::sync::Arc;
+
+let plugin = MagicLinkPlugin::new(MagicLinkConfig {
+    send_magic_link: Some(Arc::new(mail_sender)),
+    storage: MagicLinkTokenStorage::Hashed,
+    ..Default::default()
+});
+
+let auth = BetterAuth::<AppAuthSchema>::new(config)
+    .store(store)
+    .plugin(plugin)
+    .build()
+    .await?;
+```
+
+`SendMagicLink` receives the mailbox, actual URL, token, and optional caller
+metadata. Delivery errors propagate after issuance, leaving the stored token
+available.
+
+## Client behavior
+
+| Endpoint | Behavior |
+|----------|----------|
+| `POST /sign-in/magic-link` | Issue a link for `email`, optional `name`, metadata and callback URLs |
+| `GET /magic-link/verify` | Consume `token`, persist verification/session state, and redirect or return JSON |
+
+The delivered URL retains `callbackURL`, `newUserCallbackURL`, and
+`errorCallbackURL`. Each supplied callback must match trusted origins before
+the proof is consumed. New users use the configured new-user callback; invalid,
+expired or reused tokens use the error callback. Existing error query values
+and fragments remain intact.
+
+Successful verification creates or loads the mailbox owner, marks the mailbox
+verified, and issues a real session cookie. Proving an existing unverified
+mailbox removes its unproven external accounts and sessions. Concurrent requests
+cannot reuse a consumed token. With `disable_sign_up`, unknown users remain
+absent and verification reports `new_user_signup_disabled`.
+
+## Configuration and storage
+
+`expires_in` controls the verification lifetime. `MagicLinkTokenStorage` supports
+plain identifiers, SHA-256/base64url hashed identifiers, or a custom
+`MagicLinkTokenHasher`. A `MagicLinkTokenGenerator` can replace random token
+generation. The stored verification value retains mailbox and optional name;
+the actual delivery metadata is passed to the sender without being added to
+the authentication response.
+
+The store requires atomic verification consumption so replay and concurrent
+requests cannot both create sessions from the same proof.

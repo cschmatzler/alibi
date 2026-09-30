@@ -7,7 +7,7 @@ import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { getMigrations } from "better-auth/db/migration";
 import { APIError } from "better-auth/api";
 import { apiKey } from "@better-auth/api-key";
-import { admin, deviceAuthorization, emailOTP, twoFactor, username } from "better-auth/plugins";
+import { admin, deviceAuthorization, emailOTP, magicLink, twoFactor, username } from "better-auth/plugins";
 import { organization } from "better-auth/plugins/organization";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 
@@ -211,6 +211,8 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   return originalFetch(request);
 };
 
+const magicLinkOutbox=new Map<string,{url:string;token:string;metadata:unknown}>();
+const magicPlugin=()=>magicLink({async sendMagicLink({email,url,token,metadata}) {magicLinkOutbox.set(email,{url,token,metadata:metadata ?? null});}});
 const emailOtpOutbox=new Map<string,{otp:string}>();
 const emailOtp=()=>emailOTP({changeEmail:{enabled:true},async sendVerificationOTP({email,otp,type}) {emailOtpOutbox.set(`${type}:${email}`,{otp});}});
 
@@ -345,6 +347,7 @@ const authOptions = {
       },
     }),
     emailOtp(),
+    magicPlugin(),
     username(),
     genericOAuth({
       config: [
@@ -418,6 +421,20 @@ function createOtpProfile(name:string) {
 const otpProfiles=new Map<string,ReturnType<typeof createOtpProfile>>();
 for (const name of ["passwordless-hashed","passwordless-encrypted-reuse","passwordless-proof","passwordless-proof-explicit","passwordless-disabled","verification-cleanup","verification-no-cleanup"]) {
   otpProfiles.set(name,createOtpProfile(name));
+}
+
+const magicProfiles = new Map<string, ReturnType<typeof betterAuth>>();
+for (const name of ["magic-link-hashed", "magic-link-disabled"]) {
+  magicProfiles.set(name, betterAuth({
+    ...authOptions,
+    basePath: `/__test/profiles/${name}/api/auth`,
+    emailVerification: {...authOptions.emailVerification, sendOnSignUp:false},
+    plugins: [magicLink({
+      storeToken: name === "magic-link-hashed" ? "hashed" : "plain",
+      disableSignUp: name === "magic-link-disabled",
+      async sendMagicLink({email,url,token,metadata}) {magicLinkOutbox.set(email,{url,token,metadata:metadata ?? null});}
+    })],
+  }));
 }
 
 const auth = betterAuth(authOptions);
@@ -514,6 +531,9 @@ const server = Bun.serve({
         return jsonResponse(await auth.api.verifyApiKey({ body: await readJson(request) }));
       }
 
+      if (url.pathname==="/__test/magic-link" && request.method==="GET") {
+        return jsonResponse(magicLinkOutbox.get(url.searchParams.get("email") ?? "") ?? null);
+      }
       if (url.pathname==="/__test/email-otp" && request.method==="GET") {
         return jsonResponse(emailOtpOutbox.get(`${url.searchParams.get("type")}:${url.searchParams.get("email")}`) ?? null);
       }
@@ -557,6 +577,7 @@ const server = Bun.serve({
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         await resetDatabaseState();
         emailOtpOutbox.clear();
+        magicLinkOutbox.clear();
         resetPasswordOutbox.clear();
         verificationEmailOutbox.clear();
         changeEmailOutbox.clear();
@@ -850,6 +871,9 @@ const server = Bun.serve({
         return jsonResponse({ status: true, accountId: localAccountId });
       }
 
+      for (const [name,instance] of magicProfiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
+      }
       for (const [name,instance] of otpProfiles) {
         if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
       }

@@ -7,6 +7,7 @@ pub mod email_otp;
 pub mod email_password;
 pub mod email_verification;
 pub mod helpers;
+pub mod magic_link;
 pub mod oauth;
 pub mod organization;
 pub mod passkey;
@@ -189,6 +190,7 @@ pub use email_password::{EmailPasswordConfig, EmailPasswordPlugin};
 pub use email_verification::{
     EmailVerificationConfig, EmailVerificationHook, EmailVerificationPlugin, SendVerificationEmail,
 };
+pub use magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
 pub use organization::{OrganizationConfig, OrganizationPlugin};
 pub use passkey::{PasskeyConfig, PasskeyPlugin};
 pub use password_management::{

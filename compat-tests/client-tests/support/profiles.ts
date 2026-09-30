@@ -1,5 +1,7 @@
 /** Explicit configurations of the pinned authentication runtime. */
 export type FixtureProfile =
+  | "magic-link-hashed"
+  | "magic-link-disabled"
   | "passwordless-hashed"
   | "passwordless-encrypted-reuse"
   | "passwordless-proof"
