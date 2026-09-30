@@ -69,3 +69,17 @@ the canonical integrated gate must validate the final tree.
 
 Custom adapter internal query ordering and physical SQL NULL versus JSON null
 storage are not established by these SQLite response and lifecycle tests.
+
+Independent creation-policy review also exposed absent-metadata update responses:
+upstream omits metadata while Rust emitted null. The mutation handler now shares
+the parsed response projection with create, preserving every base field while
+omitting only missing metadata. Getter/full/list policies remain separate.
+The existing official-client selector scenarios now update absent, empty and
+populated metadata organizations and verify actual stored names/metadata through
+getters. Both profiles fail on the prior owner solely at the missing-field
+assertion (`/tmp/organization-update-metadata-absence-before.log`); the repair
+passed 28 organization scenarios / 1,582 assertions
+(`/tmp/organization-update-metadata-absence-after.log`). Independent review is
+clear; the final gate includes additional persisted-name assertions. Default
+create/update metadata input-type validation is a separate confirmed branch
+under investigation by the organization owner.

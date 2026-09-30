@@ -50,7 +50,10 @@ now have successful evidence on master.
 These families already exist. Remaining work includes confirmed differences
 and configuration branches that have not been fully implemented or proved.
 
-- **Core account behavior:** additional user-field policies and transforms,
+- **Core account behavior:** duplicate provider/account rows are accepted by
+  the pinned SQLite adapter but rejected by the Rust unique index, as observed
+  in a controlled social-account fixture; public linking implications still
+  need investigation. Also additional user-field policies and transforms,
   custom signup/duplicate-user behavior, server-only set-password, email change
   and deletion variants, and lifecycle callback/error ordering.
 - **Sessions and cookies:** compact/JWT/JWE caches, stateless sessions, cache

@@ -1280,12 +1280,16 @@
       "evidence": {
         "success": [
           "organization core lifecycle matches TS",
-          "organization metadata stores rounded JavaScript numbers before readback"
+          "organization metadata stores rounded JavaScript numbers before readback",
+          "organization metadata lookup default scopes selectors and clears only the denied session",
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
         ],
         "rejection": null,
         "authorization": null,
         "state": [
-          "organization metadata stores rounded JavaScript numbers before readback"
+          "organization metadata stores rounded JavaScript numbers before readback",
+          "organization metadata lookup default scopes selectors and clears only the denied session",
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
         ]
       }
     },
