@@ -65,6 +65,12 @@ struct MemoryTransaction<'a> {
 
 #[async_trait]
 impl AuthTransaction<BundledSchema> for MemoryTransaction<'_> {
+    async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<UserView>> {
+        self.store.get_user_by_id(id).await
+    }
+    async fn create_passkey(&self, data: CreatePasskey) -> AuthResult<Passkey> {
+        self.store.create_passkey(data).await
+    }
     async fn create_user(&self, create_user: CreateUser) -> AuthResult<UserView> {
         self.store.create_user(create_user).await
     }

@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
+    QueryOrder, Set,
 };
 use uuid::Uuid;
 
@@ -14,12 +15,15 @@ use crate::types::{CreatePasskey, Passkey, UpdatePasskeyAuthentication};
 use super::entities::passkey::{ActiveModel, Column, Entity};
 use super::{SeaOrmStore, map_db_err};
 
-#[async_trait]
-impl<S> PasskeyStore for SeaOrmStore<S>
+impl<S> SeaOrmStore<S>
 where
     S: AuthSchema + Send + Sync,
 {
-    async fn create_passkey(&self, input: CreatePasskey) -> AuthResult<Passkey> {
+    pub(super) async fn create_passkey_with_connection<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        input: CreatePasskey,
+    ) -> AuthResult<Passkey> {
         let counter = i64::try_from(input.counter)
             .map_err(|_| AuthError::bad_request("Passkey counter exceeds i64 range"))?;
 
@@ -38,10 +42,18 @@ where
             created_at: Set(Utc::now()),
             updated_at: Set(Utc::now()),
         }
-        .insert(self.connection())
+        .insert(db)
         .await
         .map(|model| Passkey::from(&model))
         .map_err(map_db_err)
+    }
+}
+
+#[async_trait]
+impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
+    async fn create_passkey(&self, input: CreatePasskey) -> AuthResult<Passkey> {
+        self.create_passkey_with_connection(self.connection(), input)
+            .await
     }
 
     async fn get_passkey_by_id(&self, id: &str) -> AuthResult<Option<Passkey>> {
