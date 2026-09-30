@@ -27,7 +27,7 @@ use better_auth_seaorm::store::entities::jwk;
 use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
 use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use crate::TestSchema;
 
