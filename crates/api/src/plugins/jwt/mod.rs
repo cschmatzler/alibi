@@ -154,6 +154,10 @@ pub struct JwtClaimsConfig {
 pub struct JwtSession {
     pub user: UserView,
     pub session: SessionView,
+    /// The nested deferred-session response field. Direct completed-response
+    /// hooks observe the original stored snapshot and omit this field.
+    #[serde(rename = "needsRefresh", skip_serializing_if = "Option::is_none")]
+    pub needs_refresh: Option<bool>,
 }
 
 #[async_trait]
@@ -584,16 +588,26 @@ impl JwtPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<String> {
-        let (user, session) = ctx
-            .session_without_refresh(req)
-            .await?
-            .ok_or_else(unauthorized)?;
+        let (user, session, needs_refresh) = ctx
+            .require_session_with_refresh_state(req)
+            .await
+            .map_err(|_| unauthorized())?;
         let session = JwtSession {
             user: ctx.user_view(&user),
-            session: ctx.session_view(&session),
+            session,
+            needs_refresh,
         };
+        self.sign_session_token(req, ctx, &session).await
+    }
+
+    async fn sign_session_token(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+        session: &JwtSession,
+    ) -> AuthResult<String> {
         let mut payload = match &self.config.define_payload {
-            Some(define) => define.define_payload(&session).await?,
+            Some(define) => define.define_payload(session).await?,
             None => serde_json::to_value(&session.user)?
                 .as_object()
                 .cloned()
@@ -604,10 +618,10 @@ impl JwtPlugin {
             .or_insert_with(|| json!(Utc::now().timestamp()));
         let subject = match &self.config.define_subject {
             Some(define) => define
-                .subject(&session)
+                .subject(session)
                 .await?
                 .unwrap_or_else(|| session.user.id.clone()),
-            None => session.user.id,
+            None => session.user.id.clone(),
         };
         let _ = payload.insert("sub".to_owned(), json!(subject));
         self.sign_jwt(payload, &JwtSignOptions::default(), Some(req), ctx)
@@ -937,10 +951,20 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
         if req.path() != "/get-session" || self.config.disable_setting_jwt_header {
             return Ok(response);
         }
-        if ctx.session_without_refresh(req).await?.is_none() {
+        let Some((user, session)) = req.session_hook_snapshot() else {
             return Ok(response);
-        }
-        let token = self.session_token(req, ctx).await?;
+        };
+        let token = self
+            .sign_session_token(
+                req,
+                ctx,
+                &JwtSession {
+                    user,
+                    session,
+                    needs_refresh: None,
+                },
+            )
+            .await?;
         let mut expose = response
             .headers
             .get("access-control-expose-headers")
@@ -948,8 +972,12 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
             .flat_map(|value| value.split(','))
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
+            .fold(Vec::new(), |mut headers, header| {
+                if !headers.iter().any(|existing| existing == header) {
+                    headers.push(header.to_owned());
+                }
+                headers
+            });
         if !expose.iter().any(|header| header == "set-auth-jwt") {
             expose.push("set-auth-jwt".to_owned());
         }

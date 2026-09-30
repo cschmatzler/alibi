@@ -44,6 +44,8 @@ pub struct AuthRequest {
     pub(crate) virtual_session: Option<crate::wire::SessionView>,
     /// Headers emitted by trusted nested handlers during this dispatch.
     response_headers: Arc<Mutex<Headers>>,
+    /// The original store snapshot retained for completed-handler hooks.
+    session_hook_snapshot: Arc<Mutex<Option<(crate::wire::UserView, crate::wire::SessionView)>>>,
 }
 
 /// Metadata extracted from an incoming request for session creation.
@@ -352,6 +354,7 @@ impl AuthRequest {
             query: HashMap::new(),
             virtual_session: None,
             response_headers: Arc::new(Mutex::new(Headers::new())),
+            session_hook_snapshot: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -373,6 +376,7 @@ impl AuthRequest {
             query,
             virtual_session: None,
             response_headers: Arc::new(Mutex::new(Headers::new())),
+            session_hook_snapshot: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -408,6 +412,34 @@ impl AuthRequest {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
         )
+    }
+
+    /// Record the original store snapshot observed by a trusted session handler.
+    ///
+    /// Completed-response hooks can observe this snapshot after refresh or
+    /// expiry cleanup. It may contain an expired or deleted session and must
+    /// never authorize work; use `AuthContext::require_session` for that.
+    /// Dispatch resets caller-supplied snapshots before running trusted handlers.
+    pub fn set_session_hook_snapshot(
+        &self,
+        user: crate::wire::UserView,
+        session: crate::wire::SessionView,
+    ) {
+        *self
+            .session_hook_snapshot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((user, session));
+    }
+
+    /// Return the handler's original session context for completed-response hooks.
+    /// This is an observation of a read, not an authorization result.
+    pub fn session_hook_snapshot(
+        &self,
+    ) -> Option<(crate::wire::UserView, crate::wire::SessionView)> {
+        self.session_hook_snapshot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// Return the user ID authenticated by a trusted plugin hook.

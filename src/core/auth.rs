@@ -196,8 +196,8 @@ impl<S: AuthSchema> BetterAuth<S> {
     /// into standardized JSON responses via [`AuthError::to_auth_response`],
     /// producing `{ "message": "..." }` with the appropriate HTTP status code.
     pub async fn handle_request(&self, req: AuthRequest) -> AuthResult<AuthResponse> {
-        // Ignore any caller-supplied virtual session value; only internal
-        // before_request hooks may inject this during dispatch.
+        // Reset caller-supplied session context and queued response headers.
+        // Only trusted handlers and hooks may establish them during dispatch.
         let mut req =
             AuthRequest::from_parts(req.method, req.path, req.headers, req.body, req.query);
 

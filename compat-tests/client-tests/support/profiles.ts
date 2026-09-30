@@ -24,6 +24,7 @@ export type FixtureProfile =
   | "ott-refresh-disabled"
   | "ott-refresh-deferred"
   | "jwt-default" | "jwt-es256" | "jwt-es512" | "jwt-rs256" | "jwt-ps256"
+  | "jwt-session-normal" | "jwt-session-disabled" | "jwt-session-deferred"
   | "jwt-claims" | "jwt-path-header" | "jwt-plain-rotation"
   | "org-teams-dynamic"
   | "org-roles-limited"

@@ -97,6 +97,19 @@ impl<S: AuthSchema> SessionManager<S> {
                 refreshed: false,
             });
         };
+        self.read_loaded_session(session, options).await
+    }
+
+    /// Apply the session lifecycle to a snapshot already read from this store.
+    /// Session handlers use this to retain their original hook context without
+    /// looking up the session a second time. Validation and refresh still run.
+    /// The supplied snapshot must come from this manager's store, never client input.
+    pub async fn read_loaded_session(
+        &self,
+        session: S::Session,
+        options: SessionReadOptions,
+    ) -> AuthResult<SessionRead<S::Session>> {
+        let token = session.token();
         let now = Utc::now();
         if session.expires_at() < now || !session.active() {
             if options.cleanup_expired {
