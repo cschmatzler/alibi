@@ -43,6 +43,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
 mod lifecycle_fixture;
+mod organization_timestamp_fixture;
 mod parity_controls;
 mod sqlite_fixture;
 mod verification_profiles;
@@ -726,6 +727,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         .merge(lifecycle_controls)
+        .merge(organization_timestamp_fixture::router(
+            reset_database.clone(),
+        ))
         .merge(parity_controls::router())
         .route("/__health", get(health_check))
         .route(

@@ -503,6 +503,21 @@ const server = Bun.serve({
         return jsonResponse({ status: true });
       }
 
+      if (url.pathname === "/__test/organization-timestamps" && request.method === "POST") {
+        const body = await readJson(request) as { organizationId: string; memberId: string; createdAt: string };
+        const orgWhere = [{ field: "id", value: body.organizationId }];
+        const memberWhere = [{ field: "id", value: body.memberId }];
+        const org = await authContext.adapter.findOne<Record<string, unknown>>({ model: "organization", where: orgWhere });
+        const member = await authContext.adapter.findOne<Record<string, unknown>>({ model: "member", where: memberWhere });
+        if (!org || !member || member.organizationId !== org.id) return jsonResponse({ message: "Not found" }, { status: 404 });
+        const createdAt = new Date(body.createdAt);
+        await authContext.adapter.update({ model: "organization", where: orgWhere, update: { createdAt } });
+        await authContext.adapter.update({ model: "member", where: memberWhere, update: { createdAt } });
+        const persistedOrg = await authContext.adapter.findOne<Record<string, unknown>>({ model: "organization", where: orgWhere });
+        const persistedMember = await authContext.adapter.findOne<Record<string, unknown>>({ model: "member", where: memberWhere });
+        return jsonResponse({ organizationId: persistedOrg!.id, memberId: persistedMember!.id, userId: persistedMember!.userId, organizationCreatedAtMillis: new Date(persistedOrg!.createdAt as Date).getTime(), memberCreatedAtMillis: new Date(persistedMember!.createdAt as Date).getTime() });
+      }
+
       if (url.pathname === "/__test/user-state" && request.method === "GET") {
         const userId = url.searchParams.get("userId");
         if (!userId) return jsonResponse({ message: "userId is required" }, { status: 400 });

@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Serialize organization, member, and invitation timestamps at JavaScript's
+  millisecond precision, preserving their dates in the official client.
 - Use the TypeScript Better Auth 1.7.6 scrypt password format and NFKC
   normalization, so credentials can be imported between the two runtimes.
   Password length limits now count UTF-16 code units.
