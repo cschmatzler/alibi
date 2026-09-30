@@ -87,6 +87,7 @@ pub(crate) fn is_valid_email(email: &str) -> bool {
 pub(crate) enum JsonFieldKind {
     String,
     Email,
+    Record,
     OneOf(&'static [&'static str]),
 }
 
@@ -154,6 +155,10 @@ pub(crate) fn parse_body<T: RequestBody>(req: &AuthRequest) -> Result<T, AuthRes
                         .join("|")
                 ))
             }
+            JsonFieldKind::Record if !value.is_some_and(Value::is_object) => Some(format!(
+                "Invalid input: expected record, received {}",
+                json_type(value)
+            )),
             _ => None,
         };
         if let Some(issue) = issue {
@@ -352,4 +357,10 @@ pub(crate) async fn revoke_unproven_access<S: AuthSchema>(
         .delete_verifications_by_identifier(&identifier)
         .await;
     result
+}
+
+pub(crate) fn redirect(url: &str) -> AuthResponse {
+    AuthResponse::text(302, "")
+        .with_header("Location", url)
+        .with_header("content-type", "application/json")
 }

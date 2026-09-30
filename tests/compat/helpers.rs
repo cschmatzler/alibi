@@ -11,9 +11,9 @@ use better_auth::{
     AuthBuilder, AuthConfig, BetterAuth,
     plugins::{
         AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
-        EmailOtpConfig, EmailOtpPlugin, EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin,
-        OrganizationPlugin, PasskeyPlugin, PasswordManagementPlugin, SessionManagementPlugin,
-        TwoFactorPlugin, UserManagementPlugin,
+        EmailOtpConfig, EmailOtpPlugin, EmailPasswordPlugin, EmailVerificationPlugin,
+        MagicLinkPlugin, OAuthPlugin, OrganizationPlugin, PasskeyPlugin, PasswordManagementPlugin,
+        SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
         oauth::{
             OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
             OAuthUserInfoResponse,
@@ -345,6 +345,7 @@ pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth
             change_email_enabled: true,
             ..Default::default()
         }))
+        .plugin(MagicLinkPlugin::new(Default::default()))
         .plugin(
             UserManagementPlugin::new()
                 .change_email_enabled(true)

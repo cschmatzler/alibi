@@ -45,6 +45,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
 mod lifecycle_fixture;
+mod magic_profiles;
 mod otp_profiles;
 mod organization_timestamp_fixture;
 mod parity_controls;
@@ -597,6 +598,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let team_profiles = team_fixture::profiles(&config, &database).await?;
     let team_router = team_fixture::router(database.clone(), team_profiles);
 
+    let magic_outbox = Arc::new(Mutex::new(HashMap::new()));
+    let magic_link = magic_profiles::plugin(magic_outbox.clone());
+    let magic_router =
+        magic_profiles::router(&config, database.clone(), magic_outbox.clone()).await?;
+    let magic_outbox_for_reset = magic_outbox;
     let otp_outbox = Arc::new(Mutex::new(HashMap::new()));
     let email_otp = otp_profiles::plugin(otp_outbox.clone());
     let otp_database = database.clone();
@@ -689,6 +695,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .require_delete_verification(false),
             )
             .plugin(email_otp.clone())
+            .plugin(magic_link)
             .plugin(two_factor_plugin.clone())
             .plugin(mock_oauth_plugin(
                 port,
@@ -962,6 +969,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/__test/reset-state",
             post(move || {
                 let otp_outbox = otp_outbox_for_reset.clone();
+                let magic_outbox = magic_outbox_for_reset.clone();
                 let reset_outbox = reset_outbox_for_reset.clone();
                 let verification_outbox = verification_outbox_for_reset.clone();
                 let change_email_outbox = change_email_outbox_for_reset.clone();
@@ -980,6 +988,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
                     }
                     otp_outbox.lock().await.clear();
+                    magic_outbox.lock().await.clear();
                     reset_outbox.lock().await.clear();
                     verification_outbox.lock().await.clear();
                     change_email_outbox.lock().await.clear();
@@ -1531,7 +1540,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nest("/api/auth", auth_router)
         .with_state(auth)
         .merge(verification_profile_router)
-        .merge(otp_router);
+        .merge(otp_router)
+        .merge(magic_router);
 
     let addr = format!("0.0.0.0:{port}");
     println!("[rust-server] Listening on http://localhost:{port}");
