@@ -24,8 +24,10 @@ pub struct UserView {
     pub email_verified: bool,
     pub image: Option<String>,
     #[serde(rename = "createdAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
     #[serde(rename = "updatedAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub updated_at: DateTime<Utc>,
     pub username: Option<String>,
     #[serde(rename = "displayUsername")]
@@ -38,6 +40,7 @@ pub struct UserView {
     #[serde(rename = "banReason")]
     pub ban_reason: Option<String>,
     #[serde(rename = "banExpires")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize_optional")]
     pub ban_expires: Option<DateTime<Utc>>,
     #[serde(
         rename = "isAnonymous",
@@ -75,11 +78,14 @@ pub struct UserView {
 pub struct SessionView {
     pub id: String,
     #[serde(rename = "expiresAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub expires_at: DateTime<Utc>,
     pub token: String,
     #[serde(rename = "createdAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
     #[serde(rename = "updatedAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub updated_at: DateTime<Utc>,
     #[serde(rename = "ipAddress")]
     pub ip_address: Option<String>,
@@ -120,15 +126,19 @@ pub struct AccountView {
     #[serde(rename = "idToken")]
     pub id_token: Option<String>,
     #[serde(rename = "accessTokenExpiresAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize_optional")]
     pub access_token_expires_at: Option<DateTime<Utc>>,
     #[serde(rename = "refreshTokenExpiresAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize_optional")]
     pub refresh_token_expires_at: Option<DateTime<Utc>>,
     pub scope: Option<String>,
     #[serde(skip_serializing)]
     pub password: Option<String>,
     #[serde(rename = "createdAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
     #[serde(rename = "updatedAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub updated_at: DateTime<Utc>,
 }
 
@@ -139,10 +149,13 @@ pub struct VerificationView {
     pub identifier: String,
     pub value: String,
     #[serde(rename = "expiresAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub expires_at: DateTime<Utc>,
     #[serde(rename = "createdAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
     #[serde(rename = "updatedAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub updated_at: DateTime<Utc>,
 }
 
@@ -419,8 +432,10 @@ pub struct OrganizationView {
     )]
     pub metadata: Option<serde_json::Value>,
     #[serde(rename = "createdAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
     #[serde(rename = "updatedAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub updated_at: DateTime<Utc>,
 }
 
@@ -450,8 +465,10 @@ pub struct InvitationView {
     #[serde(rename = "inviterId")]
     pub inviter_id: String,
     #[serde(rename = "expiresAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub expires_at: DateTime<Utc>,
     #[serde(rename = "createdAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
     #[serde(rename = "teamId", default, skip_serializing_if = "Option::is_none")]
     pub team_id: Option<String>,

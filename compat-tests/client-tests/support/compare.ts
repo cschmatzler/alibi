@@ -63,6 +63,16 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
 
   function visit(a: unknown, b: unknown, path: string, key: string) {
     if (typeof a === "string" && typeof b === "string" && !path.includes("BodyShape")) {
+      if (key === "teamId" && (a.includes(",") || b.includes(","))) {
+        const leftTeams = a.split(","), rightTeams = b.split(",");
+        if (leftTeams.length !== rightTeams.length) fail(path, "team selection length differs");
+        leftTeams.forEach((team, index) => {
+          const other = rightTeams[index];
+          if (other === undefined) return;
+          identity(team, other, `${path}.${index}`, "entity");
+        });
+        return;
+      }
       if (entityKeys.has(key) && !path.endsWith(".rp.id")) { identity(a, b, path, "entity"); return; }
       if (opaqueKeys.has(key)) { identity(a, b, path, key); return; }
       if (key.endsWith("At") || key === "lastRequest" || key === "banExpires") {

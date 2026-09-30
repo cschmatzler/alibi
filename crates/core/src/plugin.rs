@@ -276,6 +276,48 @@ impl<S: AuthSchema> AuthContext<S> {
         self.metadata.get(key)
     }
 
+    pub fn user_view(&self, user: &impl crate::entity::AuthUser) -> crate::wire::UserView {
+        crate::wire::UserView::from(user)
+    }
+
+    pub fn session_view(&self, session: &impl AuthSession) -> crate::wire::SessionView {
+        let mut view = crate::wire::SessionView::from(session);
+        if self.feature_enabled("organization.teams.enabled") {
+            if view.active_team_id.is_none() {
+                _ = view
+                    .extension_fields
+                    .insert("activeTeamId".into(), serde_json::Value::Null);
+            }
+        } else {
+            view.active_team_id = None;
+        }
+        view
+    }
+
+    pub fn invitation_view(
+        &self,
+        invitation: &impl crate::entity::AuthInvitation,
+    ) -> crate::wire::InvitationView {
+        let mut view = crate::wire::InvitationView::from(invitation);
+        if self.feature_enabled("organization.teams.enabled") {
+            if view.team_id.is_none() {
+                _ = view
+                    .extension_fields
+                    .insert("teamId".into(), serde_json::Value::Null);
+            }
+        } else {
+            view.team_id = None;
+        }
+        view
+    }
+
+    fn feature_enabled(&self, key: &str) -> bool {
+        self.metadata
+            .get(key)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    }
+
     /// Get the email provider, returning an error if none is configured.
     pub fn email_provider(&self) -> AuthResult<&dyn EmailProvider> {
         self.email_provider
