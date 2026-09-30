@@ -361,7 +361,9 @@ compatScenario("device endpoint schemas preserve OAuth validation and media type
       expect(media).toMatchObject({status:415,body:{code:"UNSUPPORTED_MEDIA_TYPE"}});
       decisions.push(media);
     }
-    decisions.push(malformed,missing,wrongType);
+    const missingMedia=await ctx.rawRequest({path,method:"POST",headers:{"content-type":""},body:'{"userCode":"unused"}',actor:"validation-guest"});
+    expect(missingMedia).toMatchObject({status:415,body:{code:"UNSUPPORTED_MEDIA_TYPE",message:"Content-Type is required. Allowed types: application/json"}});
+    decisions.push(malformed,missing,wrongType,missingMedia);
   }
   return { missingClient, invalidTypes, wrongGrant, tokenForm, codeText, signup:ctx.snapshot(signup), decisions };
 });

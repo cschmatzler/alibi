@@ -671,32 +671,44 @@ fn deserialize_device_body<T: serde::de::DeserializeOwned>(
 }
 
 fn validate_device_media(req: &AuthRequest, issuance: bool) -> Result<bool, AuthResponse> {
-    let content_type = req
+    let raw_content_type = req
         .headers
         .iter()
         .find(|(key, _)| key.eq_ignore_ascii_case("content-type"))
-        .map(|(_, value)| {
-            value
-                .split(';')
-                .next()
-                .unwrap_or_default()
-                .trim()
-                .to_ascii_lowercase()
-        });
+        .map(|(_, value)| value.as_str());
+    let content_type = raw_content_type.map(|value| {
+        value
+            .split(';')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+    });
     let is_form = content_type.as_deref() == Some("application/x-www-form-urlencoded");
-    if content_type
-        .as_deref()
-        .is_some_and(|value| value != "application/json" && !(issuance && is_form))
+    let allowed = if issuance {
+        "application/json, application/x-www-form-urlencoded"
+    } else {
+        "application/json"
+    };
+    let missing = req.body.is_some() && raw_content_type.is_none_or(|value| value.is_empty());
+    if missing
+        || content_type
+            .as_deref()
+            .is_some_and(|value| value != "application/json" && !(issuance && is_form))
     {
-        let allowed = if issuance {
-            "application/json, application/x-www-form-urlencoded"
+        let message = if missing {
+            format!("Content-Type is required. Allowed types: {allowed}")
         } else {
-            "application/json"
+            format!(
+                "Content-Type \"{}\" is not allowed. Allowed types: {allowed}",
+                raw_content_type.unwrap_or_default()
+            )
         };
-        return Err(AuthResponse::json(415, &serde_json::json!({
-            "message": format!("Content-Type \"{}\" is not allowed. Allowed types: {allowed}", content_type.as_deref().unwrap_or_default()),
-            "code": "UNSUPPORTED_MEDIA_TYPE",
-        })).unwrap_or_else(|_| AuthResponse::text(415, "Unsupported media type")));
+        return Err(AuthResponse::json(
+            415,
+            &serde_json::json!({"message":message,"code":"UNSUPPORTED_MEDIA_TYPE"}),
+        )
+        .unwrap_or_else(|_| AuthResponse::text(415, "Unsupported media type")));
     }
     Ok(is_form)
 }

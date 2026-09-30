@@ -182,7 +182,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   }
 
   function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false) {
-    if (typeof a === "string" && typeof b === "string" && !applicationData && !jwtPayload && !traceShape(path)
+    if (typeof a === "string" && typeof b === "string" && !traceShape(path)
       && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path)) {
       if (key === "teamId" && (a.includes(",") || b.includes(","))) {
         const leftTeams = a.split(","), rightTeams = b.split(",");
@@ -212,7 +212,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           return;
         }
       }
-      const opaqueKey = opaqueAliases[key] ?? key;
+      const opaqueKey = (key === "deviceCode" || key === "userCode") && (applicationData || jwtPayload) ? key : opaqueAliases[key] ?? key;
       if (opaqueKeys.has(opaqueKey)) { identity(a, b, path, opaqueKey); return; }
       if (key.endsWith("At") || key === "lastRequest" || key === "banExpires") {
         const at = Date.parse(a), bt = Date.parse(b);
