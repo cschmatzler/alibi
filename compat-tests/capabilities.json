@@ -187,12 +187,19 @@
     {
       "route": "GET /multi-session/list-device-sessions",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
+        "success": [
+          "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+          "multiple sessions rotate same-user login and honor configured browser account limit",
+          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner"
+        ],
         "rejection": null,
         "authorization": null,
-        "state": null
+        "state": [
+          "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner"
+        ]
       }
     },
     {
@@ -944,23 +951,41 @@
     {
       "route": "POST /multi-session/revoke",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": [
+          "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner"
+        ],
+        "rejection": [
+          "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner"
+        ],
+        "authorization": "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+        "state": [
+          "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner"
+        ]
       }
     },
     {
       "route": "POST /multi-session/set-active",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": [
+          "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner"
+        ],
+        "rejection": [
+          "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner"
+        ],
+        "authorization": "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+        "state": [
+          "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner"
+        ]
       }
     },
     {

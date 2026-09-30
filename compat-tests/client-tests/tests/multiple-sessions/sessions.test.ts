@@ -153,4 +153,4 @@ compatScenario("multiple sessions reject invalid selection bodies and expire bro
   expect((await client.multiSession.listDeviceSessions()).data).toEqual([]);
   expect(stateSchema.parse(await ctx.readUserState({userId:second.data.user.id})).sessions).toHaveLength(0);
   return {first,secondSignup,second,selected,original,unauthenticated:{status:unauthenticated.status,body:unauthenticatedBody},invalid,expired,list,missing,live,fallback,revoke};
-});
+}, ["GET /multi-session/list-device-sessions", "POST /multi-session/set-active", "POST /multi-session/revoke"]);
