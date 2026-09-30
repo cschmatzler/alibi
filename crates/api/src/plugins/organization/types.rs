@@ -4,6 +4,42 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use validator::Validate;
 
+pub(super) fn undefined_string() -> String {
+    "undefined".to_owned()
+}
+
+/// The pinned membership endpoints use JavaScript's `String` coercion for IDs.
+pub(super) fn deserialize_coercible_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    fn string(value: &serde_json::Value) -> Result<String, &'static str> {
+        match value {
+            serde_json::Value::Null => Ok("null".to_owned()),
+            serde_json::Value::Bool(value) => Ok(value.to_string()),
+            serde_json::Value::String(value) => Ok(value.clone()),
+            serde_json::Value::Number(value) => value
+                .as_f64()
+                .map(|value| ryu_js::Buffer::new().format(value).to_owned())
+                .ok_or("Cannot convert number to string"),
+            serde_json::Value::Array(values) => values
+                .iter()
+                .map(|value| match value {
+                    serde_json::Value::Null => Ok(String::new()),
+                    value => string(value),
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(|values| values.join(",")),
+            serde_json::Value::Object(value) if value.contains_key("toString") => {
+                Err("Cannot convert object to primitive value")
+            }
+            serde_json::Value::Object(_) => Ok("[object Object]".to_owned()),
+        }
+    }
+    let value = serde_json::Value::deserialize(deserializer)?;
+    string(&value).map_err(serde::de::Error::custom)
+}
+
 fn deserialize_optional_usize_from_string<'de, D>(
     deserializer: D,
 ) -> Result<Option<usize>, D::Error>
@@ -36,7 +72,7 @@ pub enum NullableStringField {
     Value(String),
 }
 
-fn deserialize_nullable_string_field<'de, D>(
+pub(super) fn deserialize_nullable_string_field<'de, D>(
     deserializer: D,
 ) -> Result<NullableStringField, D::Error>
 where
@@ -156,8 +192,25 @@ pub struct InviteMemberRequest {
     #[validate(email(message = "Invalid email address"))]
     pub email: String,
     pub role: RoleInput,
+    #[serde(rename = "teamId")]
+    pub team_id: Option<TeamInput>,
     #[serde(rename = "organizationId")]
     pub organization_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum TeamInput {
+    One(String),
+    Many(Vec<String>),
+}
+impl TeamInput {
+    pub fn ids(&self) -> Vec<&str> {
+        match self {
+            Self::One(id) => vec![id],
+            Self::Many(ids) => ids.iter().map(String::as_str).collect(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -266,6 +319,8 @@ pub struct CreateOrganizationResponse<O: Serialize, M: Serialize> {
     #[serde(flatten)]
     pub organization: O,
     pub members: Vec<M>,
+    #[serde(skip)]
+    pub default_team_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -274,6 +329,27 @@ pub struct FullOrganizationResponse<O: Serialize, I: Serialize> {
     pub organization: O,
     pub members: Vec<MemberResponse>,
     pub invitations: Vec<I>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub teams: Option<Vec<FullOrganizationTeamResponse>>,
+}
+
+/// Upstream's full-organization join exposes the stored counter even though
+/// standalone team endpoints filter it from their response.
+#[derive(Debug, Serialize)]
+pub struct FullOrganizationTeamResponse {
+    #[serde(flatten)]
+    pub team: better_auth_core::types::Team,
+    #[serde(rename = "memberCount")]
+    pub member_count: i64,
+}
+
+impl From<better_auth_core::types::Team> for FullOrganizationTeamResponse {
+    fn from(team: better_auth_core::types::Team) -> Self {
+        Self {
+            member_count: team.member_count,
+            team,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -295,6 +371,7 @@ pub struct BasicMemberResponse {
     pub organization_id: String,
     pub role: String,
     #[serde(rename = "createdAt")]
+    #[serde(serialize_with = "better_auth_core::utils::datetime::serialize")]
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -342,6 +419,7 @@ pub struct CreatedOrganizationResponse {
     pub slug: String,
     pub logo: Option<String>,
     #[serde(rename = "createdAt")]
+    #[serde(serialize_with = "better_auth_core::utils::datetime::serialize")]
     pub created_at: chrono::DateTime<chrono::Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
@@ -354,6 +432,7 @@ pub struct OrganizationResponse {
     pub slug: String,
     pub logo: Option<String>,
     #[serde(rename = "createdAt")]
+    #[serde(serialize_with = "better_auth_core::utils::datetime::serialize")]
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub metadata: Option<serde_json::Value>,
 }
@@ -406,6 +485,7 @@ pub struct MemberResponse {
     pub user_id: String,
     pub role: String,
     #[serde(rename = "createdAt")]
+    #[serde(serialize_with = "better_auth_core::utils::datetime::serialize")]
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub user: MemberUserView,
 }

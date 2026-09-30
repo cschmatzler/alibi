@@ -5,7 +5,9 @@
 
   languages.rust = {
     enable = true;
-    toolchainFile = ./rust-toolchain.toml;
+    channel = "stable";
+    version = "1.98.1";
+    components = [ "rustc" "cargo" "clippy" "rustfmt" "llvm-tools-preview" ];
   };
 
   env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "${pkgs.chromium}/bin/chromium";

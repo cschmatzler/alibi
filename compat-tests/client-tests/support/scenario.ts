@@ -1,4 +1,5 @@
 import { test } from "bun:test";
+import { authProfilePath, type FixtureProfile } from "./profiles";
 import { recordCoverage } from "./coverage";
 import { compareValues, type Difference } from "./compare";
 import { createAuthClient } from "better-auth/client";
@@ -271,9 +272,12 @@ export function compatScenario(
       leftStartedAt: ts.startedAt, rightStartedAt: rust.startedAt,
       leftOAuthURL: ts.oauthURL, rightOAuthURL: rust.oauthURL,
     };
-    const clientDiffs = compareValues(ts.observation, rust.observation, comparison);
+    // Retain one identity graph across values and transport, and give the
+    // trace shape markers their explicit scope when comparing type labels.
+    const differences = compareValues({ observation: ts.observation, traces: ts.traces }, { observation: rust.observation, traces: rust.traces }, comparison);
+    const clientDiffs = differences.filter(entry => entry.path.startsWith("observation"));
     if (clientDiffs.length) throw new Error(formatDiffs(`Client-visible drift: ${scenarioName}`, clientDiffs));
-    const rawDiffs = compareValues(ts.traces, rust.traces, comparison).filter(entry =>
+    const rawDiffs = differences.filter(entry => entry.path.startsWith("traces")).filter(entry =>
       !RAW_DIFF_ALLOWLIST.some(allowance => allowance.scenario.test(scenarioName) && allowance.path.test(entry.path)));
     if (rawDiffs.length) throw new Error(formatDiffs(`Raw trace drift: ${scenarioName}`, rawDiffs));
     await recordCoverage(scenarioName, ts.traces, stateTransitions);
