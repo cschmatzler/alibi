@@ -185,6 +185,36 @@ test("JWTs and JWKS retain full claims key relationships rotation and key sizes"
   expect(compareValues({kid:"literal"},{kid:"changed"},clocks).length).toBeGreaterThan(0);
 });
 
+test("external JWT empty key selectors remain literal without allowing empty identities", () => {
+  const leftPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const rightPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const claims = { sub: "external-owner", iat: 100, exp: 4102444800, iss: "https://accounts.google.com", aud: "local-client" };
+  const encode = (pair: typeof leftPair, header: unknown, payload = claims) => {
+    const input = [Buffer.from(JSON.stringify(header)).toString("base64url"), Buffer.from(JSON.stringify(payload)).toString("base64url")].join(".");
+    return `${input}.${sign("RSA-SHA256", Buffer.from(input), pair.privateKey).toString("base64url")}`;
+  };
+  const header = { alg: "RS256", kid: "" };
+  const leftToken = encode(leftPair, header), rightToken = encode(rightPair, header);
+  const left = { accounts: [{ idToken: leftToken }], repeated: leftToken };
+  const right = { accounts: [{ idToken: rightToken }], repeated: rightToken };
+  expect(compareValues(left, right, context)).toEqual([]);
+  for (const token of [
+    encode(rightPair, { ...header, kid: "nonempty" }),
+    encode(rightPair, { alg: "RS256" }),
+    encode(rightPair, { ...header, alg: "PS256" }),
+    encode(rightPair, header, { ...claims, sub: "wrong-owner" }),
+    encode(rightPair, header, { ...claims, exp: claims.exp + 1 }),
+  ]) expect(compareValues(left, { accounts: [{ idToken: token }], repeated: token }, context).length).toBeGreaterThan(0);
+  const rotated = encode(rightPair, header, { ...claims, iat: claims.iat + 1 });
+  expect(compareValues(left, { ...right, repeated: rotated }, context).length).toBeGreaterThan(0);
+  for (const empty of [{ user: { id: "" } }, { session: { token: "" } }, { token: "" }]) {
+    expect(compareValues(empty, empty, context).length).toBeGreaterThan(0);
+  }
+  const leftKey = { ...leftPair.publicKey.export({ format: "jwk" }), alg: "RS256", kid: "" };
+  const rightKey = { ...rightPair.publicKey.export({ format: "jwk" }), alg: "RS256", kid: "" };
+  expect(compareValues({ jwks: { keys: [leftKey] } }, { jwks: { keys: [rightKey] } }, context).length).toBeGreaterThan(0);
+});
+
 test("accepted compact JWT encodings retain decoded claims key sizes and token relationships", () => {
   const encode = (header: unknown, payload: unknown, signature: Buffer) => [Buffer.from(JSON.stringify(header)).toString("base64url"), Buffer.from(JSON.stringify(payload)).toString("base64url"), signature.toString("base64url")].join(".");
   const claims = { sub: "service", iat: 100, exp: 4102444800, iss: "literal", aud: "literal", permission: "read" };
