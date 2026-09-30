@@ -174,6 +174,22 @@ async fn real_custom_session_columns_preserve_affinity_json_defaults_owner_and_m
         ))
         .await
         .unwrap();
+    let manual_context = better_auth_core::AuthContext::<ApplicationSchema>::new(
+        Arc::new(auth.config().clone()),
+        auth.store().clone(),
+    );
+    let stored = auth.store().get_session(token).await.unwrap().unwrap();
+    let projection = serde_json::to_value(manual_context.session_view(&stored)).unwrap();
+    assert!(
+        projection.get("validated").is_none(),
+        "undeclared physical sentinel must stay private in manually constructed contexts"
+    );
+    assert!(projection.get("hidden").is_none());
+    assert_eq!(projection["label"], "configured-default");
+    assert_eq!(
+        projection["activeOrganizationId"],
+        "stored:native-organization"
+    );
     for (raw, expected) in [
         ("1e20", "1.0e+20"),
         ("1e-20", "1.0e-20"),

@@ -503,20 +503,19 @@ impl<S: AuthSchema> AuthContext<S> {
 
     pub fn session_view(&self, session: &impl AuthSession) -> crate::wire::SessionView {
         let mut view = crate::wire::SessionView::from(session);
-        if let Some(fields) = self.extensions.get::<crate::field_policy::SessionFields>() {
-            view.extension_fields
-                .retain(|name, _| fields.0.contains_key(name));
-            for (name, field) in &fields.0 {
-                if !field.returned {
-                    let _ = view.omitted_fields.insert(name.clone());
-                }
+        let registered = self.extensions.get::<crate::field_policy::SessionFields>();
+        let fields = registered
+            .as_ref()
+            .map(|fields| &fields.0)
+            .unwrap_or(&self.config.session.additional_fields);
+        view.extension_fields
+            .retain(|name, _| fields.contains_key(name));
+        for (name, field) in fields {
+            if !field.returned {
+                let _ = view.omitted_fields.insert(name.clone());
             }
         }
-        let declared = |name: &str| {
-            self.extensions
-                .get::<crate::field_policy::SessionFields>()
-                .is_some_and(|fields| fields.0.contains_key(name))
-        };
+        let declared = |name: &str| fields.contains_key(name);
         if self.feature_enabled("admin.enabled") || declared("impersonatedBy") {
             if view.impersonated_by.is_none() {
                 _ = view

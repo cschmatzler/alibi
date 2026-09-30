@@ -106,3 +106,10 @@ profile declares activeOrganizationId without organization, proves its configure
 creation default and current-token update through the SDK and real SQLite state.
 The regression failed before the projection repair (Rust omitted the persisted
 value while pinned output returned it).
+
+The public AuthContext::new/manual-context projection uses configured field
+policies when no immutable runtime registry is installed. Its native real-model
+regression failed before the repair by exposing the undeclared physical sentinel;
+afterward the sentinel and returned:false fields stay hidden while declared
+fields, including a builtin-shaped field without its plugin, remain visible.
+Trusted AuthSession.additional_fields continues to return the raw storage data.
