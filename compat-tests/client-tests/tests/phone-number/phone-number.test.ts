@@ -67,9 +67,7 @@ compatScenario("phone signup accepts registered ownership fields and rejects ver
   return {results,existingWithInvalidPhone,existingWithSpoof,spoof,replay,legitimate,stored};
 });
 
-compatScenario("phone signup preserves raw JSON numeric bindings and rounded uniqueness", async (ctx) => {
-  const profile="phone-signup";
-  const values=[
+const numericPhoneValues=[
     ["1.0","1"], ["1e3","1000"], ["1e-5","1.0e-05"], ["1e20","1.0e+20"],
     ["2147483648","2147483648"], ["2251799813685247","2251799813685247"],
     ["2251799813685248","2251799813685248.0"], ["-2251799813685248","-2251799813685248"],
@@ -78,8 +76,18 @@ compatScenario("phone signup preserves raw JSON numeric bindings and rounded uni
     ["1.234567890123456e-5","1.2345678901234559e-05"], ["5e-324","4.9406564584124654e-324"],
     ["1e400","Inf"], ["-1e400","-Inf"],
   ] as const;
+// Each group owns independent users; collisions stay with their original owner.
+// Keeping password hashing bounded lets the default test deadline remain strict.
+for (const group of [
+  { name:"phone signup preserves raw JSON numeric bindings and rounded uniqueness", start:6, end:12, collisions:[["9007199254740992",9]], extras:false },
+  { name:"phone signup binds integral and exponential JSON numbers to exact SQLite text", start:0, end:6, collisions:[], extras:false },
+  { name:"phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners", start:12, end:17, collisions:[["1e309",15],["-1e309",16]], extras:true },
+] as const) {
+compatScenario(group.name, async (ctx) => {
+  const profile="phone-signup";
   const created=[];
-  for(const [index,[literal,expected]] of values.entries()) {
+  for(const [index,[literal,expected]] of numericPhoneValues.entries()) {
+    if (index < group.start || index >= group.end) continue;
     const actor=`numeric-${index}`;
     const email=ctx.uniqueEmail(actor);
     // Preserve the original number spelling: the official client uses
@@ -106,7 +114,7 @@ compatScenario("phone signup preserves raw JSON numeric bindings and rounded uni
     created.push({response,state,current});
   }
   const collisions=[];
-  for (const [index,[literal,ownerIndex]] of [["9007199254740992",9],["1e309",15],["-1e309",16]].entries()) {
+  for (const [index,[literal,ownerIndex]] of group.collisions.entries()) {
     const actor=`rounded-collision-${index}`;
     const email=ctx.uniqueEmail(actor);
     const raw=await ctx.actor(actor,profile).fetch(new URL(`/__test/profiles/${profile}/api/auth/sign-up/email`,ctx.baseURL),{
@@ -120,12 +128,13 @@ compatScenario("phone signup preserves raw JSON numeric bindings and rounded uni
     expect((await applicant.getSession()).data).toBeNull();
     const rejectedLogin=await applicant.signIn.email({email,password:"password123"});
     expect(rejectedLogin.error?.code).toBe("INVALID_EMAIL_OR_PASSWORD");
-    const owner=created[Number(ownerIndex)];
+    const owner=created[Number(ownerIndex)-group.start];
     if(!owner)throw new Error("The rounded phone owner must exist");
     const after=await readPhoneState(ctx,profile,owner.state.user!.id);
     expect(after).toEqual(owner.state);
     collisions.push({collision,rejectedLogin,after});
   }
+  if (!group.extras) return {created,collisions};
   // Without the phone plugin these numeric additional inputs stay ignored.
   const disabledActor=ctx.actor("numeric-phone-disabled");
   const disabledRaw=await disabledActor.fetch(new URL("/api/auth/sign-up/email",ctx.baseURL),{
@@ -168,7 +177,8 @@ compatScenario("phone signup preserves raw JSON numeric bindings and rounded uni
   expect(valid.data?.user.phoneNumber).toBe(pendingPhone);
   expect(await verificationCount(ctx,pendingPhone)).toBe(0);
   return {created,collisions,disabled,disabledState,invalid,valid};
-});
+}, ["POST /sign-up/email", "GET /get-session"]);
+}
 
 compatScenario("phone verification signs up a phone owner and preserves identity across new sessions", async (ctx) => {
   const profile = "phone-signup";
