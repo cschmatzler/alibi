@@ -39,9 +39,10 @@ they do not establish all configuration or integration behavior.
 | Username availability | Phone owner; coordinator independent review/integration | Existing normalized username store | Real availability/taken lookup and unchanged persisted state, with exact empty-name rejection repaired. Canonical gate passed: 257 SDK / 7,272 assertions, 37 harness / 210, two Chromium / 22 and 79.00% source lines (23,533 / 29,790). Merged PR #29. |
 | Two-factor disable | Phone owner; coordinator independent review/integration | Authoritative stored cookie sessions and atomic session issuance | Repaired API-key authority bypass and lost trusted session extensions; actual enrollment/trust/organization state and token retirement are proved. Canonical gate passed: 259 SDK / 7,374 assertions, 37 harness / 210, two Chromium / 22 and 79.21% source lines (23,646 / 29,853). Merged PR #30. |
 | Multiple browser sessions | Phone owner; coordinator independent review/integration | Signed browser cookies and atomic session storage | List/select/revoke, same-owner retirement, configured limits, fallback, sign-out, preference and expiry have real state evidence. Duplicate-cookie and signed-empty proof review findings repaired. Canonical gate passed: 262 SDK / 7,568 assertions, 37 harness / 210, two Chromium / 22 and 79.30% source lines (23,849 / 30,076). Merged PR #31. |
-| Phone numeric scenario scheduling | Coordinator; independent phone-owner review | Existing exact numeric bindings and fresh scenario resets | All 17 numeric samples, collision owner checks and 1,058 family assertions retained across three bounded cases. Default deadline and strict comparisons unchanged. Canonical gate passes: 264 SDK / 7,568 assertions, 37 harness / 210, two Chromium / 22 and 79.30% source lines (23,849 / 30,076). Publication pending. |
+| Phone numeric scenario scheduling | Coordinator; independent phone-owner review | Existing exact numeric bindings and fresh scenario resets | All 17 numeric samples, collision owner checks and 1,058 family assertions retained across three bounded cases. Default deadline and strict comparisons unchanged. Canonical gate passes: 264 SDK / 7,568 assertions, 37 harness / 210, two Chromium / 22 and 79.30% source lines (23,849 / 30,076). Merged PR #33. |
 | Intermittent admin creation timestamp | Coordinator; independent JWT-owner investigation | Existing impersonation/list-users scenario | One full run reported a list-user createdAt mismatch; focused admin and a subsequent complete gate passed without comparator/source changes. Exact observation remains under investigation in `/tmp/phone-numeric-evidence-canonical.log`; no unexplained timestamp difference is treated as parity evidence. |
-| Reference/OpenAPI | SIWE owner | Typed route/model metadata and application schema override | Pinned generator/runtime/configuration investigation complete; generator and reference implementation underway. Default document remains incomplete until update-session lands; equivalent disabled-path profiles only prove that explicit configuration. |
+| Admin user deletion | Coordinator; independent phone-owner review | Shared closed-enum SQLite user-reference upgrade | Real factor enrollment, two credentials/sessions, guest/non-admin/self rejection, deletion/reuse and retained orphan factor have state evidence. Installed schema and existing device rollback tests pass. Canonical gate passed: 265 SDK / 7,604 assertions, 37 harness / 210, two Chromium / 22, 79.34% source lines (23,962 / 30,202). Merged PR #35. |
+| Reference/OpenAPI | SIWE owner | Typed route/model metadata and application schema override | Frozen source metadata, reference page and complete default/custom-session documents are ready for coordinator integration after update-session. Eleven document scenarios / 494 assertions and sixteen session scenarios / 696 assertions pass; integrated canonical gate remains pending. |
 
 Full local compatibility/coverage gates and inventory mutations are serialized.
 Workers use separate worktrees, ports, databases and logs. Old unpublished dirty
@@ -49,10 +50,9 @@ prototypes are preserved; only reviewed family-scoped changes are extracted.
 
 ## Remaining success gaps and route families
 
-The integrated tree has two remaining successful-flow gaps: organization user
-invitations and admin removal. Each
-has a prepared reviewed implementation/evidence slice awaiting its integrated
-gate. Device approval/denial/token and GET /ok have real successful evidence.
+The integrated tree has one remaining successful-flow gap: organization user
+invitations. Its reviewed implementation/evidence slice awaits the integrated
+gate. Admin removal has passed that gate with real cleanup evidence. Device approval/denial/token and GET /ok have real successful evidence.
 
 Remaining inventoried families include anonymous authentication/deletion,
 update-session,

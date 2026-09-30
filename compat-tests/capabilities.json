@@ -560,10 +560,13 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": "admin create-user, set-role, set-user-password, and remove-user match TS",
-        "authorization": null,
-        "state": null
+        "success": "admin deletion revokes target credentials and sessions while rejecting other principals",
+        "rejection": [
+          "admin create-user, set-role, set-user-password, and remove-user match TS",
+          "admin deletion revokes target credentials and sessions while rejecting other principals"
+        ],
+        "authorization": "admin deletion revokes target credentials and sessions while rejecting other principals",
+        "state": "admin deletion revokes target credentials and sessions while rejecting other principals"
       }
     },
     {

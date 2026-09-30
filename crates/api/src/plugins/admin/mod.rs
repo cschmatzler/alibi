@@ -513,7 +513,13 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = self.require_session(req, ctx).await?;
+        let (user, _session) = match self.require_session(req, ctx).await {
+            Ok(session) => session,
+            Err(AuthError::Unauthenticated) | Err(AuthError::SessionNotFound) => {
+                return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
+            }
+            Err(error) => return Err(error),
+        };
         self.authorize(&user, "user", "delete", MESSAGE_DELETE_USERS)?;
         let body: UserIdRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,

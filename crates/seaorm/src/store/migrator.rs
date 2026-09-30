@@ -24,6 +24,7 @@ impl MigratorTrait for AuthMigrator {
             Box::new(super::nullable_user_flags::NullableUserPluginFlags),
             Box::new(super::device_code_user_reference::DeviceCodeUserReference),
             Box::new(super::siwe_wallets::SiweWallets),
+            Box::new(super::two_factor_user_reference::TwoFactorUserReference),
         ]
     }
 
@@ -701,13 +702,6 @@ async fn create_two_factor(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
                     ColumnDef::new(two_factor::Column::UpdatedAt)
                         .timestamp_with_time_zone()
                         .not_null(),
-                )
-                .foreign_key(
-                    ForeignKey::create()
-                        .name("fk_two_factor_user_id")
-                        .from(two_factor::Entity, two_factor::Column::UserId)
-                        .to(user::Entity, user::Column::Id)
-                        .on_delete(ForeignKeyAction::Cascade),
                 )
                 .to_owned(),
         )
