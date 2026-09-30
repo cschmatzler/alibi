@@ -1,10 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
 use axum::{
-    extract::Query,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{get, post},
+    routing::post,
     Json, Router,
 };
 use better_auth::integrations::axum::AxumIntegration;
@@ -20,12 +19,7 @@ use better_auth::plugins::{
 use better_auth::prelude::{AuthRequest, HttpMethod};
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_core::{AuthContext, AuthPlugin, AuthResponse, AuthRoute};
-use better_auth_seaorm::sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set,
-};
-use better_auth_seaorm::store::entities::verification;
 use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
-use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -79,18 +73,6 @@ impl AuthPlugin<TestSchema> for ExposedHeaderFixture {
 struct ServerOperation {
     operation: String,
     profile: Option<String>,
-}
-#[derive(Deserialize)]
-struct VerificationSelector {
-    identifier: String,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct VerificationOperation {
-    action: String,
-    identifier: String,
-    value: Option<String>,
-    expires_at: DateTime<Utc>,
 }
 fn failure(error: impl std::fmt::Display) -> axum::response::Response {
     tracing::error!(%error,"one-time-token fixture operation failed");
@@ -197,66 +179,6 @@ pub(super) async fn router(
                 }
             },
         ),
-    );
-    let verification_db = database.clone();
-    router=router.route("/__test/verification-state",get(move |Query(selector):Query<VerificationSelector>| {
-        let database=verification_db.clone();
-        async move {
-            match verification::Entity::find().filter(verification::Column::Identifier.eq(selector.identifier)).order_by_desc(verification::Column::CreatedAt).all(&database).await {
-                Ok(rows)=>Json(json!(rows.into_iter().map(|row|json!({"id":row.id,"identifier":row.identifier,"value":row.value,"expiresAt":row.expires_at,"createdAt":row.created_at,"updatedAt":row.updated_at})).collect::<Vec<_>>())).into_response(),
-                Err(error)=>failure(error),
-            }
-        }
-    }));
-    let mutation_db = database.clone();
-    router = router.route(
-        "/__test/verification-state",
-        post(move |Json(body): Json<VerificationOperation>| {
-            let database = mutation_db.clone();
-            async move {
-                let operation = async {
-                    if body.action == "seed" {
-                        let _ = verification::ActiveModel {
-                            id: Set(format!(
-                                "fixture-{}-{}",
-                                Utc::now().timestamp_nanos_opt().unwrap_or_default(),
-                                body.identifier
-                            )),
-                            identifier: Set(body.identifier),
-                            value: Set(body
-                                .value
-                                .ok_or_else(|| AuthError::bad_request("value is required"))?),
-                            expires_at: Set(body.expires_at),
-                            created_at: Set(Utc::now()),
-                            updated_at: Set(Utc::now()),
-                        }
-                        .insert(&database)
-                        .await
-                        .map_err(|error| AuthError::internal(error.to_string()))?;
-                    } else if body.action == "expire" {
-                        let _ = verification::Entity::update_many()
-                            .filter(verification::Column::Identifier.eq(body.identifier))
-                            .col_expr(
-                                verification::Column::ExpiresAt,
-                                better_auth_seaorm::sea_orm::sea_query::Expr::value(
-                                    body.expires_at,
-                                ),
-                            )
-                            .exec(&database)
-                            .await
-                            .map_err(|error| AuthError::internal(error.to_string()))?;
-                    } else {
-                        return Err(AuthError::bad_request("unknown action"));
-                    }
-                    Ok(json!({"status":true}))
-                }
-                .await;
-                match operation {
-                    Ok(value) => Json(value).into_response(),
-                    Err(error) => failure(error),
-                }
-            }
-        }),
     );
     Ok(router)
 }

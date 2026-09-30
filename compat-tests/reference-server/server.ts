@@ -661,27 +661,12 @@ function controlRecord(value: unknown): value is Record<string,unknown> {
   return value!==null && typeof value==="object" && !Array.isArray(value);
 }
 async function oneTimeTokenControl(request:Request,url:URL):Promise<Response|undefined> {
-  if (url.pathname==="/__test/verification-state" && request.method==="GET") {
-    const identifier=url.searchParams.get("identifier");
-    if (!identifier) return jsonResponse({message:"identifier is required"},{status:400});
-    return jsonResponse(await authContext.adapter.findMany({model:"verification",where:[{field:"identifier",value:identifier}],sortBy:{field:"createdAt",direction:"desc"}}));
-  }
-  if (request.method!=="POST" || !["/__test/verification-state","/__test/one-time-token"].includes(url.pathname)) return;
+  if (url.pathname!=="/__test/one-time-token" || request.method!=="POST") return;
   const body:unknown=await readJson(request);
   if (!controlRecord(body)) return jsonResponse({message:"invalid server operation"},{status:400});
-  if (url.pathname==="/__test/one-time-token") {
-    const selected=ottProfiles.get(typeof body.profile==="string" ? body.profile as typeof OTT_PROFILE_NAMES[number] : "ott-default")?.auth;
-    if (!selected || body.operation!=="generate") return jsonResponse({message:"invalid server operation"},{status:400});
-    return jsonResponse(await selected.api.generateOneTimeToken({headers:request.headers}));
-  }
-  if (typeof body.expiresAt!=="string" || !Number.isFinite(Date.parse(body.expiresAt))) return jsonResponse({message:"valid expiresAt is required"},{status:400});
-  const expiresAt=new Date(body.expiresAt);
-  if (url.pathname==="/__test/verification-state" && typeof body.identifier==="string") {
-    if (body.action==="seed" && typeof body.value==="string") await authContext.internalAdapter.createVerificationValue({identifier:body.identifier,value:body.value,expiresAt});
-    else if (body.action==="expire") await authContext.adapter.updateMany({model:"verification",where:[{field:"identifier",value:body.identifier}],update:{expiresAt}});
-    else return jsonResponse({message:"unknown action"},{status:400});
-  } else return jsonResponse({message:"selector is required"},{status:400});
-  return jsonResponse({status:true});
+  const selected=ottProfiles.get(typeof body.profile==="string" ? body.profile as typeof OTT_PROFILE_NAMES[number] : "ott-default")?.auth;
+  if (!selected || body.operation!=="generate") return jsonResponse({message:"invalid server operation"},{status:400});
+  return jsonResponse(await selected.api.generateOneTimeToken({headers:request.headers}));
 }
 
 const server = Bun.serve({
@@ -796,7 +781,7 @@ const server = Bun.serve({
       }
       if (url.pathname==="/__test/verification-state" && request.method==="GET") {
         const identifier=url.searchParams.get("identifier");
-        return jsonResponse(await authContext.adapter.findMany({model:"verification",where:[{field:"identifier",value:identifier}]}));
+        return jsonResponse(await authContext.adapter.findMany({model:"verification",where:[{field:"identifier",value:identifier}],sortBy:{field:"createdAt",direction:"desc"}}));
       }
       if (url.pathname==="/__test/verification-state" && request.method==="POST") {
         const body:unknown=await readJson(request);

@@ -21,7 +21,7 @@ use better_auth_core::{
     wire::VerificationView, AuthRequest, CreateVerification, DatabaseError, HttpMethod,
 };
 use better_auth_seaorm::{
-    sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter},
+    sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder},
     store::entities::verification,
     SeaOrmStore,
 };
@@ -196,14 +196,14 @@ pub(super) async fn router(
         let outbox=outbox_for_get.clone();async move {Json(outbox.lock().await.get(&format!("{}:{}",query.kind,query.email)).cloned().unwrap_or(Value::Null))}
     })).route("/__test/verification-state",get(move |Query(query):Query<VerificationQuery>| {
         let database=read_database.clone();async move {response(async {
-            let rows=verification::Entity::find().filter(verification::Column::Identifier.eq(query.identifier)).all(&database).await.map_err(|error|DatabaseError::Query(error.to_string()))?;
+            let rows=verification::Entity::find().filter(verification::Column::Identifier.eq(query.identifier)).order_by_desc(verification::Column::CreatedAt).all(&database).await.map_err(|error|DatabaseError::Query(error.to_string()))?;
             Ok(json!(rows.iter().map(VerificationView::from).collect::<Vec<_>>()))
         }.await)}
     }).post(move |Json(body):Json<VerificationAction>| {
         let database=write_database.clone();let auth=default_auth.clone();async move {response(async {
             let expires_at:DateTime<Utc>=body.expires_at.parse().map_err(|_|AuthError::bad_request("invalid expiresAt"))?;
             if body.action=="seed" {
-                let _=auth.store().create_verification(CreateVerification {identifier:body.identifier,value:body.value.unwrap_or_default(),expires_at}).await?;
+                let _=auth.store().create_verification(CreateVerification {identifier:body.identifier,value:body.value.ok_or_else(||AuthError::bad_request("value is required"))?,expires_at}).await?;
             } else if body.action=="expire" {
                 use better_auth_seaorm::sea_orm::sea_query::Expr;
                 let _=verification::Entity::update_many().col_expr(verification::Column::ExpiresAt,Expr::value(expires_at)).filter(verification::Column::Identifier.eq(body.identifier)).exec(&database).await.map_err(|error|DatabaseError::Query(error.to_string()))?;
