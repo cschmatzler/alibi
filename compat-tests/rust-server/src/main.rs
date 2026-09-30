@@ -58,6 +58,7 @@ mod phone_profiles;
 mod session_profiles;
 mod siwe_fixture;
 mod sqlite_fixture;
+mod two_factor_totp_fixture;
 mod verification_profiles;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
@@ -797,6 +798,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_key_for_create = api_key_plugin.clone();
     let api_key_for_update = api_key_plugin.clone();
 
+    let totp_router = two_factor_totp_fixture::router(&config, reset_database.clone()).await?;
     let ott_router = one_time_token_fixture::router(&config, reset_database.clone()).await?;
 
     let app = Router::new()
@@ -1586,6 +1588,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }))
             }),
         )
+        .merge(totp_router)
         .merge(ott_router)
         .merge(jwt_router)
         .merge(device_profiles)
