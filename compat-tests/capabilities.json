@@ -1795,11 +1795,13 @@
           "two-factor disable deletes factor and trust state and rotates the authoritative session",
           "two-factor disable requires a persistent cookie session and rejects API key emulation",
           "two-factor passwordless option retains password ownership for mixed social and credential accounts",
-          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations"
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password"
         ],
         "authorization": [
           "two-factor disable deletes factor and trust state and rotates the authoritative session",
-          "two-factor disable requires a persistent cookie session and rejects API key emulation"
+          "two-factor disable requires a persistent cookie session and rejects API key emulation",
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password"
         ],
         "state": [
           "two-factor disable deletes factor and trust state and rotates the authoritative session",
