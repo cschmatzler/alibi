@@ -564,6 +564,10 @@ impl EmailPasswordPlugin {
             Err(resp) => return Ok(resp),
         };
 
+        if body.username.is_empty() {
+            return username_error_response(422, "INVALID_USERNAME", MESSAGE_INVALID_USERNAME);
+        }
+
         match validate_username(&body.username) {
             Ok(()) => {}
             Err(UsernameValidationError::TooShort) => {
