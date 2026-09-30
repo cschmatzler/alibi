@@ -25,8 +25,11 @@ one SDK scenario passed and the empty-name assertion failed with
 `/tmp/username-availability-sdk-final.log` has two scenarios and 24 assertions
 passing against both real runtimes. Five existing focused native tests pass
 (`/tmp/username-availability-native-final.log`). TypeScript, workspace library
-Clippy with `seaorm2`, formatting and diff checks pass. The coordinator owns
-full gates, capability inventory requirements and publication.
+Clippy with `seaorm2`, formatting and diff checks pass. Independent coordinator review is clear. The integrated canonical gate passes:
+257 SDK scenarios / 7,272 assertions, 37 harness tests / 210 assertions,
+two Chromium tests / 22 assertions and 79.00% source lines
+(23,533 / 29,790). Log: /tmp/username-selected-canonical.log.
+The inventory requires success, rejection and unchanged persisted-state evidence.
 
 This selected evidence does not claim configurable username normalization,
 validators, renamed schema fields or additional username server APIs. Those
