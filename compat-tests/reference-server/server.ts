@@ -2,10 +2,10 @@
 
 import { Database } from "bun:sqlite";
 import { passkey } from "@better-auth/passkey";
-import { betterAuth } from "better-auth";
+import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { getMigrations } from "better-auth/db/migration";
-import { APIError } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { apiKey } from "@better-auth/api-key";
 import { admin, deviceAuthorization, twoFactor, username, oneTimeToken } from "better-auth/plugins";
 import { organization } from "better-auth/plugins/organization";
@@ -409,8 +409,14 @@ const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
 
 const OTT_PROFILE_NAMES=["ott-default","ott-hashed","ott-no-cookie","ott-server-header","ott-refresh-disabled","ott-refresh-deferred"] as const;
+const ottExposedHeaderFixture: BetterAuthPlugin = {
+  id: "ott-exposed-header-fixture",
+  hooks: { after: [{ matcher: () => true, handler: createAuthMiddleware(async ctx => {
+    ctx.setHeader("access-control-expose-headers", " existing, ,existing, set-ott, set-ott, Existing ");
+  }) }] },
+};
 const ottProfiles=new Map(OTT_PROFILE_NAMES.map(name=>{
-  const options={...authOptions,basePath:`/__test/profiles/${name}/api/auth`,session:{disableSessionRefresh:name==="ott-refresh-disabled",deferSessionRefresh:name==="ott-refresh-deferred"},plugins:[...authOptions.plugins,oneTimeToken({
+  const options={...authOptions,basePath:`/__test/profiles/${name}/api/auth`,session:{disableSessionRefresh:name==="ott-refresh-disabled",deferSessionRefresh:name==="ott-refresh-deferred"},plugins:[...authOptions.plugins,...(name==="ott-server-header" ? [ottExposedHeaderFixture] : []),oneTimeToken({
     storeToken:name==="ott-hashed" ? "hashed" : "plain",
     disableSetSessionCookie:name==="ott-no-cookie",
     disableClientRequest:name==="ott-server-header",

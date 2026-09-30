@@ -301,20 +301,21 @@ async fn http_transfer_cookie_headers_and_server_only_configuration_are_observab
         );
     }
     let mut response = response;
-    response
-        .headers
-        .insert("access-control-expose-headers", "existing, set-ott");
+    response.headers.insert(
+        "access-control-expose-headers",
+        " existing, ,existing, set-ott, set-ott, Existing ",
+    );
     let hooked = plugin.after_request(&verify, &ctx, response).await.unwrap();
     assert_eq!(
         hooked.headers.get("access-control-expose-headers").unwrap(),
-        "existing, set-ott"
+        "existing, set-ott, Existing"
     );
-    assert!(
-        plugin
-            .verify_token(hooked.headers.get("set-ott").unwrap(), &ctx)
-            .await
-            .is_ok()
-    );
+    let delivered = plugin
+        .verify_token(hooked.headers.get("set-ott").unwrap(), &ctx)
+        .await
+        .unwrap();
+    assert_eq!(delivered.session.token, session.session.token);
+    assert_eq!(delivered.user.id, session.user.id);
     let no_cookie = OneTimeTokenPlugin::with_config(OneTimeTokenConfig {
         disable_set_session_cookie: true,
         ..Default::default()

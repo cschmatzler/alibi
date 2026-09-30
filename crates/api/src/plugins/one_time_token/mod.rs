@@ -318,8 +318,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTimeTokenPlugin {
                 .flat_map(|value| value.split(','))
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-                .collect::<Vec<_>>();
+                .fold(Vec::<String>::new(), |mut headers, value| {
+                    if !headers.iter().any(|header| header == value) {
+                        headers.push(value.to_owned());
+                    }
+                    headers
+                });
             if !expose.iter().any(|header| header == "set-ott") {
                 expose.push("set-ott".to_owned());
             }

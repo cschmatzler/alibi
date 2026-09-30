@@ -196,7 +196,7 @@ compatScenario("disabled client OTT generation still supports server generation 
   const { token: headerToken, exposed: exposedHeaders } = responseHeaders;
   if (!headerToken || !signup.data?.token) throw new Error("new-session hook must set a one-time token");
   const signupToken = signup.data.token;
-  expect(exposedHeaders?.split(",").map(header => header.trim())).toContain("set-ott");
+  expect(exposedHeaders).toBe("existing, set-ott, Existing");
   const persistedHeader = rows.parse(await ctx.readVerificationState({ identifier: `one-time-token:${headerToken}` }));
   expect(persistedHeader[0]?.value).toBe(signupToken);
   const disabled = await client.oneTimeToken.generate();

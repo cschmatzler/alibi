@@ -19,6 +19,7 @@ use better_auth::plugins::{
 };
 use better_auth::prelude::{AuthRequest, HttpMethod};
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use better_auth_core::{AuthContext, AuthPlugin, AuthResponse, AuthRoute};
 use better_auth_seaorm::sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set,
 };
@@ -39,6 +40,40 @@ const PROFILES: &[&str] = &[
     "ott-refresh-disabled",
     "ott-refresh-deferred",
 ];
+
+struct ExposedHeaderFixture(bool);
+
+#[async_trait::async_trait]
+impl AuthPlugin<TestSchema> for ExposedHeaderFixture {
+    fn name(&self) -> &'static str {
+        "ott-exposed-header-fixture"
+    }
+    fn routes(&self) -> Vec<AuthRoute> {
+        Vec::new()
+    }
+    async fn on_request(
+        &self,
+        _: &AuthRequest,
+        _: &AuthContext<TestSchema>,
+    ) -> AuthResult<Option<AuthResponse>> {
+        Ok(None)
+    }
+    async fn after_request(
+        &self,
+        _: &AuthRequest,
+        _: &AuthContext<TestSchema>,
+        response: AuthResponse,
+    ) -> AuthResult<AuthResponse> {
+        Ok(if self.0 {
+            response.with_header(
+                "access-control-expose-headers",
+                " existing, ,existing, set-ott, set-ott, Existing ",
+            )
+        } else {
+            response
+        })
+    }
+}
 
 #[derive(Deserialize)]
 struct ServerOperation {
@@ -116,6 +151,7 @@ pub(super) async fn router(
                         .require_delete_verification(false),
                 )
                 .plugin(TwoFactorPlugin::new())
+                .plugin(ExposedHeaderFixture(*name == "ott-server-header"))
                 .plugin(ott.clone())
                 .build()
                 .await?,
