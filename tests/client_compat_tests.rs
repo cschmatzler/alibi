@@ -362,3 +362,9 @@ async fn two_factor_skip_order_client_compat() {
 async fn two_factor_pending_cancel_client_compat() {
     run_client_compat(&["tests/two-factor/pending-cancel.test.ts"]).await;
 }
+
+#[tokio::test]
+#[ignore = "requires the pinned Bun and Rust compatibility servers"]
+async fn two_factor_passwordless_client_compat() {
+    run_client_compat(&["tests/two-factor/passwordless.test.ts"]).await;
+}

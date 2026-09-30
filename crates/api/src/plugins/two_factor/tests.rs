@@ -253,6 +253,122 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
 }
 
 #[tokio::test]
+async fn two_factor_password_checks_use_configured_native_hasher_and_utf16_maximum() {
+    use better_auth_core::{PasswordHasher, ScryptHasher, UpdateAccount};
+    struct PrefixedHasher {
+        received: std::sync::Mutex<Vec<(String, String)>>,
+    }
+    #[async_trait]
+    impl PasswordHasher for PrefixedHasher {
+        async fn hash(&self, password: &str) -> AuthResult<String> {
+            ScryptHasher
+                .hash(&format!("provider-prefix:{password}"))
+                .await
+        }
+        async fn verify(&self, hash: &str, password: &str) -> AuthResult<bool> {
+            self.received
+                .lock()
+                .unwrap()
+                .push((hash.into(), password.into()));
+            ScryptHasher
+                .verify(hash, &format!("provider-prefix:{password}"))
+                .await
+        }
+    }
+    let (mut ctx, user, session) =
+        create_test_context_with_credential_user("native-provider@fixture.test", false).await;
+    let provider = Arc::new(PrefixedHasher {
+        received: std::sync::Mutex::new(Vec::new()),
+    });
+    let hash = provider.hash("password123").await.unwrap();
+    let account = ctx
+        .database
+        .get_user_accounts(&user.id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|account| account.provider_id == "credential")
+        .unwrap();
+    _ = ctx
+        .database
+        .update_account(
+            &account.id,
+            UpdateAccount {
+                password: Some(hash.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let plugin = TwoFactorPlugin::new();
+    let mut init = better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    crate::plugins::EmailPasswordPlugin::new()
+        .password_max_length(13)
+        .password_hasher(provider.clone())
+        .on_init(&mut init)
+        .await
+        .unwrap();
+    plugin.on_init(&mut init).await.unwrap();
+    let parts = init.into_parts();
+    ctx.extensions = parts.extensions;
+    ctx.metadata = parts.metadata;
+    let cookie = create_session_cookie(&session.token, &ctx.config);
+    let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
+    _ = request
+        .headers
+        .insert("cookie".into(), cookie.split(';').next().unwrap().into());
+    request.body = Some(br#"{"password":"password123"}"#.to_vec());
+    let response = plugin.on_request(&request, &ctx).await.unwrap().unwrap();
+    assert_eq!(response.status, 200);
+    let factor = ctx
+        .database
+        .get_two_factor_by_user_id(&user.id)
+        .await
+        .unwrap()
+        .unwrap();
+    request.path = "/two-factor/get-totp-uri".into();
+    request.body = Some(br#"{"password":"wrong-password"}"#.to_vec());
+    let wrong = plugin.on_request(&request, &ctx).await.unwrap_err();
+    assert_eq!(
+        wrong.error_payload().1.as_deref(),
+        Some("PASSWORD_TOO_LONG")
+    );
+    // A different valid-length password must reach the configured real verifier.
+    request.body = Some(br#"{"password":"wrong-pass"}"#.to_vec());
+    let wrong = plugin.on_request(&request, &ctx).await.unwrap_err();
+    assert_eq!(wrong.error_payload().1.as_deref(), Some("INVALID_PASSWORD"));
+    request.body =
+        Some(serde_json::to_vec(&serde_json::json!({"password":"🍵".repeat(7)})).unwrap());
+    let long = plugin.on_request(&request, &ctx).await.unwrap_err();
+    assert_eq!(long.error_payload().1.as_deref(), Some("PASSWORD_TOO_LONG"));
+    assert_eq!(
+        *provider.received.lock().unwrap(),
+        vec![
+            (hash.clone(), "password123".into()),
+            (hash, "wrong-pass".into())
+        ]
+    );
+    assert_eq!(
+        serde_json::to_value(
+            ctx.database
+                .get_two_factor_by_user_id(&user.id)
+                .await
+                .unwrap()
+                .unwrap()
+        )
+        .unwrap(),
+        serde_json::to_value(factor).unwrap()
+    );
+    assert!(
+        ctx.database
+            .get_session(&session.token)
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test]
 async fn signed_empty_factor_challenge_cannot_read_a_seeded_empty_identifier() {
     let (ctx, user, _) =
         create_test_context_with_credential_user("empty-challenge@fixture.test", true).await;

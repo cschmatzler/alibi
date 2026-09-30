@@ -101,6 +101,9 @@ pub(super) async fn router(
         "two-factor-skip-session-forbidden",
         "two-factor-pending-session-cancel",
         "two-factor-pending-session-forbidden",
+        "two-factor-passwordless",
+        "two-factor-passwordless-child-required",
+        "two-factor-passwordless-child-optional",
     ] {
         let lockout = match name {
             "two-factor-lockout-fractional" => AccountLockoutConfig {
@@ -144,6 +147,20 @@ pub(super) async fn router(
                 )
                 .plugin(SessionManagementPlugin::new())
                 .plugin(TwoFactorPlugin::with_config(TwoFactorConfig {
+                    allow_passwordless: matches!(
+                        name,
+                        "two-factor-passwordless" | "two-factor-passwordless-child-required"
+                    ),
+                    totp_allow_passwordless: match name {
+                        "two-factor-passwordless-child-required" => Some(false),
+                        "two-factor-passwordless-child-optional" => Some(true),
+                        _ => None,
+                    },
+                    backup_allow_passwordless: match name {
+                        "two-factor-passwordless-child-required" => Some(false),
+                        "two-factor-passwordless-child-optional" => Some(true),
+                        _ => None,
+                    },
                     account_lockout: lockout,
                     skip_verification_on_enable: name.starts_with("two-factor-skip-")
                         || name.starts_with("two-factor-pending-"),
@@ -232,6 +249,33 @@ async fn control(
         return match read {
             Ok(value) => Json(value).into_response(),
             Err(()) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
+    }
+    if value
+        .get("emptyCredentialPassword")
+        .and_then(JsValue::as_bool)
+        == Some(true)
+    {
+        if database
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                "UPDATE accounts SET password='' WHERE user_id=? AND provider_id='credential'",
+                [user_id.into()],
+            ))
+            .await
+            .is_err()
+        {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    }
+    if value.get("credentialState").and_then(JsValue::as_bool) == Some(true) {
+        use better_auth_core::store::AccountStore;
+        return match store.get_user_accounts(user_id).await {
+            Ok(mut accounts) => {
+                accounts.sort_by(|left, right| left.provider_id.cmp(&right.provider_id));
+                Json(accounts.into_iter().map(|account|json!({"userId":account.user_id,"providerId":account.provider_id,"hasPassword":account.password.as_ref().is_some_and(|password|!password.is_empty())})).collect::<Vec<_>>()).into_response()
+            }
+            Err(error) => error.into_response(),
         };
     }
     let mutation = async {
