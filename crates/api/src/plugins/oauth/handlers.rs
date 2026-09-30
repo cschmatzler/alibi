@@ -555,7 +555,6 @@ async fn process_oauth_sign_in(
                         id_token: token_bundle.id_token.clone(),
                         access_token_expires_at: tokens.access_token_expires_at,
                         refresh_token_expires_at: tokens.refresh_token_expires_at,
-                        scope: (!tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
                         ..Default::default()
                     },
                 )
@@ -642,9 +641,7 @@ async fn process_oauth_sign_in(
                     refresh_token_expires_at: tokens
                         .refresh_token_expires_at
                         .or_else(|| existing_account.refresh_token_expires_at()),
-                    scope: (!tokens.scopes.is_empty())
-                        .then(|| tokens.scopes.join(","))
-                        .or_else(|| existing_account.scope().map(str::to_string)),
+                    scope: existing_account.scope().map(str::to_string),
                 });
 
         return Ok(ProcessOAuthUserResult {
