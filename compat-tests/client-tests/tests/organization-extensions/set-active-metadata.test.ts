@@ -70,7 +70,7 @@ compatScenario("organization set-active returns exact stored metadata text and c
   expect(afterChanged.receipts).toEqual(before.receipts);
   expect(afterChanged.orphanOrganizations).toEqual(before.orphanOrganizations);
   return {created:ctx.snapshot(created),emptyCreated:ctx.snapshot(emptyCreated),before,selectedEmpty:ctx.snapshot(selectedEmpty),afterEmpty,selectedRecord:ctx.snapshot(selectedRecord),afterRecord,updated:ctx.snapshot(updated),selectedChanged:ctx.snapshot(selectedChanged),afterChanged};
-});
+}, ["POST /organization/set-active", "POST /organization/update"]);
 
 compatScenario("organization set-active emits null for absent metadata and retains real membership and session scope", async ctx => {
   const owner=await signup(ctx);
@@ -89,4 +89,4 @@ compatScenario("organization set-active emits null for absent metadata and retai
   expect(after.organizations[0]).toMatchObject({id,userId:owner.userId,role:"owner"});
   expect(after.sessions.find(row=>row.token===owner.token)?.activeOrganizationId).toBe(id);
   return {created:ctx.snapshot(created),before,selected:ctx.snapshot(selected),after};
-});
+}, ["POST /organization/set-active", "POST /organization/update"]);
