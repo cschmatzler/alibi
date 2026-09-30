@@ -8,8 +8,7 @@ The most comprehensive authentication framework for Rust. Inspired by [Better Au
 > notice between alpha releases, and production use is not recommended yet.
 > Please report issues and feedback on [GitHub](https://github.com/better-auth-rs/better-auth-rs/issues).
 
-The pinned compatibility target is `better-auth@1.7.6`. The v1 release
-scope covers phases 0-12 in [ROADMAP.md](ROADMAP.md), and the TypeScript
+The pinned compatibility target is `better-auth@1.7.6`. The TypeScript
 runtime plus `better-auth/client` harness remain the source of truth for
 wire behavior.
 
@@ -146,7 +145,7 @@ Better Auth RS ships with a rich set of plugins. Enable only what you need:
 Detailed guides and API reference are available in the [`docs/`](docs/) directory:
 
 - [Contributing](CONTRIBUTING.md)
-- [Alignment Roadmap](ROADMAP.md)
+- [Compatibility testing](compat-tests/README.md)
 - [Installation](docs/content/docs/installation.mdx)
 - [Quick Start](docs/content/docs/quick-start.mdx)
 - **Authentication** — [Email/Password](docs/content/docs/authentication/email-password.mdx) · [Sessions](docs/content/docs/authentication/sessions.mdx) · [Email Verification](docs/content/docs/authentication/email-verification.mdx)

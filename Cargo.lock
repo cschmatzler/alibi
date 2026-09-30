@@ -538,7 +538,6 @@ dependencies = [
  "oas3",
  "proptest",
  "rand 0.8.5",
- "redis",
  "reqwest",
  "serde",
  "serde_json",

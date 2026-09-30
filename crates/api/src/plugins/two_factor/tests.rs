@@ -213,7 +213,10 @@ async fn test_verify_existing_session_factor_enables_two_factor_and_reissues_ses
             .unwrap();
 
     assert!(!response.user.two_factor_enabled);
-    assert_ne!(response.token, session.token);
+    // Upstream returns the old snapshot while rotating the browser cookie.
+    assert_eq!(response.token, session.token);
+    let rotated = cookie_value(&set_cookie_headers[0]);
+    assert_ne!(rotated, session.token);
     assert_eq!(set_cookie_headers.len(), 1);
     assert!(
         ctx.database
@@ -224,11 +227,7 @@ async fn test_verify_existing_session_factor_enables_two_factor_and_reissues_ses
         "the original session should be deleted after re-issuing",
     );
     assert!(
-        ctx.database
-            .get_session(&response.token)
-            .await
-            .unwrap()
-            .is_some(),
+        ctx.database.get_session(&rotated).await.unwrap().is_some(),
         "the new session token should be persisted",
     );
 }

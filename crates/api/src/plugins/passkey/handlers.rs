@@ -1,7 +1,7 @@
 use base64::Engine;
 use better_auth_core::entity::{AuthPasskey, AuthSession, AuthUser, AuthVerification};
 use better_auth_core::types::UpdatePasskeyAuthentication;
-use better_auth_core::wire::{PasskeyView, SessionView};
+use better_auth_core::wire::{PasskeyView, SessionView, UserView};
 use better_auth_core::{AuthContext, AuthError, AuthResult, CreatePasskey, CreateVerification};
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
@@ -31,6 +31,15 @@ fn response_message<T>(status: u16, message: &str) -> PasskeyHandlerResult<T> {
     Ok(PasskeyHandlerOutcome::Response(
         better_auth_core::AuthResponse::json(status, &json!({ "message": message }))
             .map_err(AuthError::from)?,
+    ))
+}
+
+fn challenge_not_found<T>() -> PasskeyHandlerResult<T> {
+    Ok(PasskeyHandlerOutcome::Response(
+        better_auth_core::AuthResponse::json(
+            400,
+            &json!({ "code": "CHALLENGE_NOT_FOUND", "message": "Challenge not found" }),
+        )?,
     ))
 }
 
@@ -234,11 +243,11 @@ pub(super) async fn verify_registration_core(
     };
 
     let Some(cookie_value) = get_cookie_value(req, &challenge_cookie_name(&ctx.config)) else {
-        return response_message(400, "Challenge not found");
+        return challenge_not_found();
     };
     let token = match decode_challenge_cookie(&ctx.config, &cookie_value) {
         Ok(token) => token,
-        Err(_) => return response_message(400, "Challenge not found"),
+        Err(_) => return challenge_not_found(),
     };
 
     let Some(verification) = ctx.database.get_verification_by_identifier(&token).await? else {
@@ -332,15 +341,15 @@ pub(super) async fn verify_authentication_core(
     };
 
     let Some(cookie_value) = get_cookie_value(req, &challenge_cookie_name(&ctx.config)) else {
-        return response_message(400, "Challenge not found");
+        return challenge_not_found();
     };
     let token = match decode_challenge_cookie(&ctx.config, &cookie_value) {
         Ok(token) => token,
-        Err(_) => return response_message(400, "Challenge not found"),
+        Err(_) => return challenge_not_found(),
     };
 
     let Some(verification) = ctx.database.get_verification_by_identifier(&token).await? else {
-        return response_message(400, "Challenge not found");
+        return challenge_not_found();
     };
 
     let stored_state: StoredAuthenticationState = match serde_json::from_str(verification.value()) {
@@ -444,6 +453,7 @@ pub(super) async fn verify_authentication_core(
     Ok(PasskeyHandlerOutcome::Success((
         serde_json::to_value(SessionResponse {
             session: SessionView::from(&session),
+            user: UserView::from(&user),
         })?,
         session.token().to_string(),
     )))
@@ -461,7 +471,7 @@ pub(super) async fn delete_passkey_core(
     body: &DeletePasskeyRequest,
     user: &impl AuthUser,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<StatusResponse> {
+) -> PasskeyHandlerResult<StatusResponse> {
     let passkey = ctx
         .database
         .get_passkey_by_id(&body.id)
@@ -469,18 +479,23 @@ pub(super) async fn delete_passkey_core(
         .ok_or_else(|| AuthError::not_found("Passkey not found"))?;
 
     if passkey.user_id() != user.id() {
-        return Err(AuthError::forbidden("Unauthorized"));
+        return Ok(PasskeyHandlerOutcome::Response(
+            better_auth_core::AuthResponse::new(401)
+                .with_header("content-type", "application/json"),
+        ));
     }
 
     ctx.database.delete_passkey(&body.id).await?;
-    Ok(StatusResponse { status: true })
+    Ok(PasskeyHandlerOutcome::Success(StatusResponse {
+        status: true,
+    }))
 }
 
 pub(super) async fn update_passkey_core(
     body: &UpdatePasskeyRequest,
     user: &impl AuthUser,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<PasskeyResponse> {
+) -> PasskeyHandlerResult<PasskeyResponse> {
     let passkey = ctx
         .database
         .get_passkey_by_id(&body.id)
@@ -488,8 +503,11 @@ pub(super) async fn update_passkey_core(
         .ok_or_else(|| AuthError::not_found("Passkey not found"))?;
 
     if passkey.user_id() != user.id() {
-        return Err(AuthError::forbidden(
-            "You are not allowed to register this passkey",
+        return Ok(PasskeyHandlerOutcome::Response(
+            better_auth_core::AuthResponse::json(
+                401,
+                &json!({ "code": "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY", "message": "You are not allowed to register this passkey" }),
+            )?,
         ));
     }
 
@@ -498,7 +516,7 @@ pub(super) async fn update_passkey_core(
         .update_passkey_name(&body.id, &body.name)
         .await?;
 
-    Ok(PasskeyResponse {
+    Ok(PasskeyHandlerOutcome::Success(PasskeyResponse {
         passkey: PasskeyView::from(&updated),
-    })
+    }))
 }

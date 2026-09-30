@@ -1004,7 +1004,7 @@ async fn verify_existing_session_factor(
         ctx.database.delete_session(session.token()).await?;
         return Ok((
             SessionTokenResponse {
-                token: issued.session.token().to_string(),
+                token: session.token().to_string(),
                 // TS keeps the verify response on the pre-update snapshot even
                 // though the re-issued session already observes 2FA as enabled.
                 user: UserView::from(&user),
@@ -1038,6 +1038,12 @@ async fn finalize_pending_two_factor<S: better_auth_core::AuthSchema>(
     )
     .await
     .map_err(SessionIssueError::into_auth_error)?;
+    // Upstream createSession(user, dontRememberMe) uses a one-day lifetime.
+    if pending.dont_remember {
+        ctx.database
+            .update_session_expiry(issued.session.token(), Utc::now() + Duration::days(1))
+            .await?;
+    }
     ctx.database
         .delete_verification(pending.verification.id().as_ref())
         .await?;

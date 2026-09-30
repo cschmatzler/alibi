@@ -121,6 +121,7 @@ pub struct CookieAttrs {
     secure: bool,
     same_site: Option<String>,
     max_age: Option<String>,
+    domain: Option<String>,
 }
 
 fn parse_set_cookie(header_value: &str) -> (String, CookieAttrs) {
@@ -144,6 +145,8 @@ fn parse_set_cookie(header_value: &str) -> (String, CookieAttrs) {
             attrs.path = Some(v.to_string());
         } else if let Some(v) = lower.strip_prefix("samesite=") {
             attrs.same_site = Some(v.to_string());
+        } else if let Some(v) = lower.strip_prefix("domain=") {
+            attrs.domain = Some(v.to_string());
         } else if let Some(v) = lower.strip_prefix("max-age=") {
             attrs.max_age = Some(v.to_string());
         }
@@ -609,13 +612,7 @@ fn json_shape(value: &Value) -> Value {
         Value::Bool(_) => Value::String("boolean".into()),
         Value::Number(_) => Value::String("number".into()),
         Value::String(_) => Value::String("string".into()),
-        Value::Array(arr) => {
-            if let Some(first) = arr.first() {
-                Value::Array(vec![json_shape(first)])
-            } else {
-                Value::Array(vec![])
-            }
-        }
+        Value::Array(arr) => Value::Array(arr.iter().map(json_shape).collect()),
         Value::Object(map) => {
             let shaped: serde_json::Map<String, Value> = map
                 .iter()
@@ -659,13 +656,21 @@ fn compare_shapes(rust_shape: &Value, ref_shape: &Value, path: &str) -> Vec<Stri
             }
         }
         (Value::Array(rust_arr), Value::Array(ref_arr)) => {
-            if let (Some(rust_first), Some(ref_first)) = (rust_arr.first(), ref_arr.first()) {
-                diffs.extend(compare_shapes(rust_first, ref_first, &format!("{path}[]")));
+            if rust_arr.len() != ref_arr.len() {
+                diffs.push(format!("{path}: array length differs"));
+            }
+            for (index, (rust_item, ref_item)) in rust_arr.iter().zip(ref_arr).enumerate() {
+                diffs.extend(compare_shapes(
+                    rust_item,
+                    ref_item,
+                    &format!("{path}[{index}]"),
+                ));
             }
         }
         (Value::String(rust_value), Value::String(ref_value)) if rust_value != ref_value => {
             diffs.push(format!("{path}: Rust={rust_value}, reference={ref_value}"));
         }
+        _ if rust_shape != ref_shape => diffs.push(format!("{path}: shape type differs")),
         _ => {}
     }
 
@@ -743,6 +748,12 @@ fn compare_cookies(
         match rust_cookies.get(name) {
             None => diffs.push(format!("cookie '{name}': missing in Rust")),
             Some(rust_attrs) => {
+                if rust_attrs.max_age != ref_attrs.max_age {
+                    diffs.push(format!("cookie '{name}' Max-Age differs"));
+                }
+                if rust_attrs.domain != ref_attrs.domain {
+                    diffs.push(format!("cookie '{name}' Domain differs"));
+                }
                 if rust_attrs.path != ref_attrs.path {
                     diffs.push(format!(
                         "cookie '{name}' Path: Rust={:?}, Ref={:?}",
@@ -952,4 +963,23 @@ pub fn expired_at(minutes_ago: i64) -> DateTime<Utc> {
 
 pub fn future_at(hours_from_now: i64) -> DateTime<Utc> {
     Utc::now() + ChronoDuration::hours(hours_from_now)
+}
+
+#[cfg(test)]
+mod harness_tests {
+    use super::*;
+
+    #[test]
+    fn shape_comparison_rejects_structural_mutations() {
+        for (left, right) in [
+            (serde_json::json!(null), serde_json::json!({})),
+            (serde_json::json!([]), serde_json::json!([1])),
+            (
+                serde_json::json!([1, {"ok": true}]),
+                serde_json::json!([1, {"ok": null}]),
+            ),
+        ] {
+            assert!(!compare_shapes(&json_shape(&left), &json_shape(&right), "").is_empty());
+        }
+    }
 }

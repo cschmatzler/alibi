@@ -197,7 +197,7 @@ compatScenario("admin impersonation restores the original admin session and hide
   return {
     impersonate: {
       data: {
-        hasImpersonatedBy: Boolean(impersonate.data?.session?.impersonatedBy),
+        hasImpersonatedBy: Boolean(impersonate.data?.session && "impersonatedBy" in impersonate.data.session && impersonate.data.session.impersonatedBy),
         user: ctx.snapshot(impersonate.data?.user),
       },
       error: ctx.snapshot(impersonate.error),

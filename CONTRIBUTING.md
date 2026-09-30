@@ -42,7 +42,7 @@ The pinned reference version is `better-auth@1.7.6`.
 ## Before You Change Code
 
 Install [devenv](https://devenv.sh/getting-started/). The committed
-`devenv.lock` pins Rust, Bun, and native build dependencies.
+`rust-toolchain.toml` pins Rust; `devenv.lock` pins Bun and native build dependencies.
 
 Run tools through the development shell:
 
@@ -57,7 +57,7 @@ Inspect upstream behavior in the installed `better-auth@1.7.6` and
 
 ## Workflow
 
-1. Read the relevant phase in [ROADMAP.md](ROADMAP.md)
+1. Inspect the capability inventory in `compat-tests/capabilities.json`
 2. Compare Rust behavior against the TS reference server
 3. Implement the smallest self-contained fix that removes the diff
 4. Add or update tests in the same change
@@ -81,37 +81,28 @@ devenv shell -- bun run --cwd docs scripts/generate-openapi.mts
 
 ## Testing Strategy
 
-There are three layers:
-
-1. Rust unit/integration tests: `cargo test --workspace`
-2. Raw wire smoke tests:
-   `cargo test --test wire_compat_smoke_tests -- --nocapture`
-3. Dual-server client compatibility tests using the real
-   `better-auth/client` SDK:
-   `cargo test --test client_compat_tests phase0_client_compat -- --ignored --nocapture`
-
-The client-compat layer is the hard gate and the primary compatibility
-contract. For more detail, see
-[compat-tests/README.md](compat-tests/README.md).
-
-## Required Checks
-
-Before committing, run the full check:
+Run the canonical gate before committing:
 
 ```bash
 devenv test
 ```
 
-This command installs the locked compatibility dependencies, checks formatting
-and Clippy, runs workspace tests, and runs the dual-server alignment suite.
-The suite compares all supported phases against the pinned TypeScript runtime.
+CI and devenv both run `scripts/check.sh`: all workspace unit, integration and
+rustdoc tests under default and optional features, strict Clippy, Rustls and
+Redis builds, TypeScript checking, harness negative controls, every SDK
+scenario, real Chromium session tests, documentation and LLVM line coverage.
+
+The capability inventory in `compat-tests/capabilities.json` records missing
+upstream routes and required scenario evidence. Route or evidence regressions
+fail the gate. See [compat-tests/README.md](compat-tests/README.md) for the
+comparison rules, reports, coverage floor and deliberate inventory updates.
 
 For a focused check, run the applicable command through `devenv shell --`:
 
 ```bash
 devenv shell -- cargo fmt --all -- --check
 devenv shell -- cargo clippy --workspace --locked -- -D warnings
-devenv shell -- cargo clippy --workspace --locked --features axum -- -D warnings
+devenv shell -- cargo clippy --workspace --locked --features axum,seaorm2,redis-cache -- -D warnings
 devenv shell -- cargo test --workspace --locked
 devenv shell -- cargo test --test client_compat_tests phase5_client_compat -- --ignored --nocapture
 ```

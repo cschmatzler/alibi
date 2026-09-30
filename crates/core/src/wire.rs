@@ -434,8 +434,6 @@ pub struct PasskeyView {
     pub transports: Option<String>,
     #[serde(rename = "createdAt")]
     pub created_at: String,
-    #[serde(rename = "updatedAt")]
-    pub updated_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aaguid: Option<String>,
 }
@@ -453,7 +451,6 @@ impl<T: AuthPasskey> From<&T> for PasskeyView {
             backed_up: pk.backed_up(),
             transports: pk.transports().map(str::to_owned),
             created_at: pk.created_at().to_rfc3339(),
-            updated_at: pk.updated_at().to_rfc3339(),
             aaguid: pk.aaguid().map(str::to_owned),
         }
     }

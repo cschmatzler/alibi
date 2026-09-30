@@ -1,23 +1,14 @@
 { pkgs, ... }:
 
 {
-  packages = [ pkgs.bun pkgs.pkg-config pkgs.openssl ];
+  packages = [ pkgs.bun pkgs.pkg-config pkgs.openssl pkgs.cargo-llvm-cov pkgs.chromium ];
 
   languages.rust = {
     enable = true;
-    channel = "stable";
+    toolchainFile = ./rust-toolchain.toml;
   };
 
-  scripts.check.exec = ''
-    set -euo pipefail
-    bun install --cwd compat-tests/reference-server --frozen-lockfile
-    bun install --cwd compat-tests/client-tests --frozen-lockfile
-    cargo fmt --all -- --check
-    cargo clippy --workspace --locked -- -D warnings
-    cargo clippy --workspace --locked --features axum -- -D warnings
-    cargo test --workspace --locked
-    ./scripts/alignment-check.sh
-  '';
-
+  env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "${pkgs.chromium}/bin/chromium";
+  scripts.check.exec = "exec ./scripts/check.sh";
   enterTest = "check";
 }

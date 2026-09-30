@@ -1,117 +1,102 @@
-# Compatibility Testing Framework
+# Compatibility testing
 
-This directory contains the portable compatibility infrastructure for
-validating `better-auth-rs` against the canonical TypeScript Better Auth
-runtime.
+The published TypeScript `better-auth@1.7.6` runtime is the behavioral reference.
+The client, reference server, passkey plugin and API-key plugin are pinned to
+that version with committed Bun lockfiles.
 
-Run the commands below inside `devenv shell`, or prefix each command with
-`devenv shell --`. Run `devenv test` from the repository root for the full gate.
-
-## Model
-
-The compatibility system now has two layers:
-
-1. **Client-first Bun scenarios** — the primary gate. These use the real
-   `better-auth/client` SDK and run each scenario against both the TS
-   reference server and the Rust compat server.
-2. **Thin raw wire smoke tests** — a small retained Rust suite for
-   cookie/header/null-session transport behavior and other cases the
-   client layer cannot prove well on its own.
-
-Client drift is a hard failure. Raw response-shape drift is best-effort
-unless it is client-visible or otherwise clearly consumer-relevant.
-
-## Components
-
-### `compat-tests/reference-server/`
-
-Portable Bun-native TypeScript reference server.
-
-- Runtime: Bun
-- Database: `bun:sqlite`
-- Better Auth version: published `better-auth@1.7.6`
-- Test controls: reset state, reset-password token seeding, sender mode,
-  OAuth account seeding, OAuth refresh mode, server-only API key creation,
-+  update, and verification
-
-Start directly for debugging:
+## Full gate
 
 ```bash
-cd compat-tests/reference-server
-bun install
-bun run server.ts
+devenv test
+# Equivalent inside the development shell, and in CI:
+./scripts/check.sh
 ```
 
-### `compat-tests/client-tests/`
+This runs formatting, strict Clippy, all workspace unit/integration/doc tests,
+feature builds, TypeScript type checking, harness negative controls, raw wire
+checks, the complete SDK scenario directory, Chromium tests, docs, and LLVM
+line coverage. Default and `axum,seaorm2,redis-cache` configurations are tested;
+`rustls,axum,seaorm2,redis-cache` is also compiled without default features.
+The excluded Rust compatibility server is built and its formatting checked.
+Missing reference dependencies or an unavailable server fail this gate.
 
-Bun test project containing phase-scoped client scenarios and the shared
-TS-vs-Rust diff harness.
+Rust is pinned in `rust-toolchain.toml`. `devenv.lock` pins Bun and native
+packages. CI uses the same Rust and Bun versions and the same gate script.
+Chromium is supplied by devenv; CI installs Playwright's browser and system
+libraries. Outside devenv, run `bunx playwright install --with-deps chromium`
+in `client-tests/` before browser checks.
 
-Direct phase runs:
+## What the tests establish
+
+- Rust tests cover storage, plugin logic, integration routes and feature builds.
+- SDK scenarios run sequentially against fresh TS and Rust fixture state.
+  Their values, response shapes, status codes, redirects and cookie attributes
+  are compared. The full runner discovers `tests/`, so new directories join
+  the gate automatically.
+- The comparator retains all fields and array elements. Generated identifiers
+  and opaque tokens use a bijection: repeated references and token rotation
+  must agree. Provider/configuration IDs remain literal. Dates must be valid
+  and lifetimes must agree within a 1.5-second execution tolerance. Only the
+  configured local server origins and known URL entropy are normalized.
+- `tough-cookie` handles expiry, deletion, domains and paths. Cookie security
+  attributes are compared; the raw exception list is empty. Chromium separately
+  checks real browser session persistence, HttpOnly behavior and logout.
+- A software ES256 authenticator produces valid registration and authentication
+  signatures. The passkey scenario checks persisted credentials, ownership
+  rejection, counter updates, replay rejection, rename and deletion.
+- Harness negative controls deliberately corrupt identity relationships,
+  lifetimes, redirects, array structure and cookies. A live HTTP/SDK canary
+  confirms wrong session ownership and removed cookie protection are detected.
+
+The browser fixture uses local HTTP. Production HTTPS/Secure-cookie deployment
+behavior is not claimed by that test. Structural route evidence is also not a
+claim that every behavior of an endpoint has been tested.
+
+## Capability inventory and coverage
+
+`capabilities.json` records the union of Rust routes and the pinned upstream
+`all-in` plugin profile together with core/aligned profiles (plugin overrides
+cannot hide core methods). HTTP method is part of identity; parameter names are
+normalized to `{}`. Device authorization is included in the Rust fixture.
+Server-only functions and plugins outside that profile are not HTTP inventory
+entries. The file explicitly marks routes absent from Rust and missing evidence.
+
+Evidence is recorded only after a dual-server scenario passes. Each route can
+require named scenarios for successful responses, rejection, authorization and
+state transitions. A state entry requires an explicit scenario declaration and
+assertions of the resulting state. CI fails if a declared route or existing
+required evidence disappears. A successful HTTP response alone proves neither
+all edge cases nor complete parity.
+
+To update the inventory deliberately after adding routes or tests:
 
 ```bash
-cd compat-tests/client-tests
-bun test tests/phase0
-bun test tests/phase1
-bun test tests/phase2
-bun test tests/phase3
-bun test tests/phase4
-bun test tests/phase5
-bun test tests/phase6
-bun test tests/phase7
-bun test tests/phase8
-bun test tests/phase9
-bun test tests/phase10
-bun test tests/phase11
-bun test tests/phase12
+mkdir -p coverage
+bun compat-tests/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json
+BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo test --test compat_coverage_tests
+BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo test --test client_compat_tests full_client_compat -- --ignored --nocapture
 ```
 
-### `compat-tests/rust-server/`
+Review the resulting `capabilities.json` diff, especially removed requirements.
+The full gate clears the update flag and always enforces the committed inventory.
+Reports are written to `client-tests/artifacts/` and `coverage/lcov.info` and
+uploaded by CI. LLVM coverage measures workspace source executed by Rust tests,
+with a 75% line floor. External Bun/browser traffic is tracked by capability
+evidence, not counted in that source coverage percentage.
 
-Minimal Axum server matching the reference server config exactly.
+## Focused checks
 
-## Primary commands
-
-Cargo-native orchestration:
+Run these in `devenv shell` after installing both projects with
+`bun install --frozen-lockfile`:
 
 ```bash
-cargo test --test client_compat_tests phase0_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests phase1_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests phase2_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests phase3_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests phase4_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests phase5_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests phase6_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests phase7_client_compat -- --ignored --nocapture
+bun run --cwd compat-tests/client-tests typecheck
+bun test --cwd compat-tests/client-tests harness
 cargo test --test client_compat_tests phase8_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests phase9_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests phase10_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests phase11_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests phase12_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests full_client_compat -- --ignored --nocapture
+cargo test --test client_compat_tests browser_client_compat -- --ignored --nocapture
+./scripts/alignment-check.sh
 ```
 
-Thin raw wire smoke:
-
-```bash
-cargo test --test wire_compat_smoke_tests -- --nocapture
-```
-
-Convenience wrapper:
-
-```bash
-bash compat-tests/client-tests/run-against-both.sh phase0
-bash compat-tests/client-tests/run-against-both.sh phase1
-bash compat-tests/client-tests/run-against-both.sh phase2
-bash compat-tests/client-tests/run-against-both.sh phase3
-bash compat-tests/client-tests/run-against-both.sh phase4
-bash compat-tests/client-tests/run-against-both.sh phase5
-bash compat-tests/client-tests/run-against-both.sh phase6
-bash compat-tests/client-tests/run-against-both.sh phase7
-bash compat-tests/client-tests/run-against-both.sh phase8
-bash compat-tests/client-tests/run-against-both.sh phase9
-bash compat-tests/client-tests/run-against-both.sh phase10
-bash compat-tests/client-tests/run-against-both.sh phase11
-bash compat-tests/client-tests/run-against-both.sh phase12
-bash compat-tests/client-tests/run-against-both.sh all
-```
+The Rust orchestrator starts and checks both servers on allocated ports and
+stops them on completion. Direct Bun scenario runs require running reference
+and Rust servers; configure `AUTH_BASE_URL_TS` and `AUTH_BASE_URL_RUST`.

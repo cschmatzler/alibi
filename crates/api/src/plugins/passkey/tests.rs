@@ -303,13 +303,13 @@ async fn test_list_user_passkeys_includes_updated_at_and_optional_fields() {
     assert_eq!(response.status, 200);
 
     let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert!(body[0]["updatedAt"].is_string());
+    assert!(body[0].get("updatedAt").is_none());
     assert_eq!(body[0]["aaguid"], "00000000-0000-0000-0000-000000000000");
     assert!(body[0].get("name").is_none());
 }
 
 #[tokio::test]
-async fn test_delete_passkey_non_owner_is_forbidden() {
+async fn test_delete_passkey_non_owner_is_unauthorized() {
     let plugin = passkey_plugin();
     let (ctx, _user, session) = test_helpers::create_test_context_with_user(
         CreateUser::new()
@@ -350,13 +350,20 @@ async fn test_delete_passkey_non_owner_is_forbidden() {
         Some(serde_json::json!({ "id": passkey.id })),
     );
 
-    let err = plugin.handle_delete_passkey(&req, &ctx).await.unwrap_err();
-    assert_eq!(err.status_code(), 403);
-    assert_eq!(err.to_string(), "Unauthorized");
+    let response = plugin.handle_delete_passkey(&req, &ctx).await.unwrap();
+    assert_eq!(response.status, 401);
+    assert!(response.body.is_empty());
+    let preserved = ctx
+        .database
+        .get_passkey_by_id(&passkey.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(preserved.name.as_deref(), Some("Other Key"));
 }
 
 #[tokio::test]
-async fn test_update_passkey_non_owner_uses_ts_error_message() {
+async fn test_update_passkey_non_owner_is_unauthorized() {
     let plugin = passkey_plugin();
     let (ctx, _user, session) = test_helpers::create_test_context_with_user(
         CreateUser::new()
@@ -400,10 +407,15 @@ async fn test_update_passkey_non_owner_uses_ts_error_message() {
         })),
     );
 
-    let err = plugin.handle_update_passkey(&req, &ctx).await.unwrap_err();
-    assert_eq!(err.status_code(), 403);
-    assert_eq!(
-        err.to_string(),
-        "You are not allowed to register this passkey"
-    );
+    let response = plugin.handle_update_passkey(&req, &ctx).await.unwrap();
+    assert_eq!(response.status, 401);
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(body["code"], "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY");
+    let preserved = ctx
+        .database
+        .get_passkey_by_id(&passkey.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(preserved.name.as_deref(), Some("Other Key"));
 }

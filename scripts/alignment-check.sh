@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export BETTER_AUTH_REQUIRE_REFERENCE_SERVER=1
+mkdir -p coverage
+bun compat-tests/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json
+
 skip_build=false
 
 for arg in "$@"; do
@@ -34,6 +38,5 @@ cargo test --features axum --test axum_integration_tests
 cargo test --test compat_endpoint_tests -- --nocapture
 cargo test --test compat_coverage_tests -- --nocapture
 cargo test --test wire_compat_smoke_tests -- --nocapture
-cargo test --test client_compat_tests phase3_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests phase5_client_compat -- --ignored --nocapture
 cargo test --test client_compat_tests full_client_compat -- --ignored --nocapture
+cargo test --test client_compat_tests browser_client_compat -- --ignored --nocapture

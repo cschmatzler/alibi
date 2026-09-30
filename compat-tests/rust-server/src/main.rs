@@ -1377,7 +1377,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Json(serde_json::json!({
                             "access_token": "new-access-token",
                             "refresh_token": "new-refresh-token",
-                            "id_token": "new-id-token",
+                            "id_token": "google-id-token",
                             "expires_in": 3600,
                             "refresh_token_expires_in": 7200,
                             "scope": "openid,email,profile",

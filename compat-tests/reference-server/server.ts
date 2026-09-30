@@ -399,7 +399,7 @@ const server = Bun.serve({
       const url = new URL(request.url);
 
       if (url.pathname === "/__health") {
-        return jsonResponse({ ok: true });
+        return jsonResponse({ ok: true, oauthBaseURL });
       }
 
       if (url.pathname === "/__test/api-key/create" && request.method === "POST") {

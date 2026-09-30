@@ -1,0 +1,1578 @@
+{
+  "upstreamVersion": "1.7.6",
+  "capabilities": [
+    {
+      "route": "GET /account-info",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "account info returns provider user info for a linked account",
+        "rejection": "account info requires an explicit account selector",
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /admin/get-user",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin get-user and update-user match TS",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /admin/list-users",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin impersonation restores the original admin session and hides impersonated sessions",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /api-key/get",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "api-key concurrent verification cannot overdraw quota",
+        "rejection": "api-key CRUD isolates configurations and preserves all-config listing",
+        "authorization": "api-key organization ownership rejects unrelated users",
+        "state": null
+      }
+    },
+    {
+      "route": "GET /api-key/list",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "api-key CRUD isolates configurations and preserves all-config listing",
+        "rejection": "api-key list validates pagination and sort direction",
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /callback/{}",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "banned users are denied email and social session creation",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /callback/{}/oauth-proxy",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /delete-user/callback",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "delete user callback deletes the current account with a seeded token",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /device",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "device verify accepts a hyphenated user code",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /error",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "error page renders valid error code",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /get-session",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin impersonation restores the original admin session and hides impersonated sessions",
+        "rejection": "api-key shared headers select the first configured session",
+        "authorization": "api-key shared headers select the first configured session",
+        "state": null
+      }
+    },
+    {
+      "route": "GET /jwks",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /list-accounts",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "github link social creates an account that listAccounts returns",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /list-sessions",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin impersonation restores the original admin session and hides impersonated sessions",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /magic-link/verify",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /multi-session/list-device-sessions",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /oauth-proxy-callback",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /ok",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /one-time-token/generate",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /open-api/generate-schema",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /organization/get-active-member",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization member queries reflect non-public add-member and active member endpoints",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /organization/get-active-member-role",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization member queries reflect non-public add-member and active member endpoints",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /organization/get-full-organization",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization core lifecycle matches TS",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /organization/get-invitation",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization invitation happy path covers list and accept flows",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /organization/get-organization",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /organization/get-role",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /organization/list",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization core lifecycle matches TS",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /organization/list-invitations",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization invitation happy path covers list and accept flows",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /organization/list-members",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization list members supports sort and filter queries",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /organization/list-roles",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /organization/list-team-members",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /organization/list-teams",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /organization/list-user-invitations",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": null,
+        "rejection": "organization invitation happy path covers list and accept flows",
+        "authorization": "organization invitation happy path covers list and accept flows",
+        "state": null
+      }
+    },
+    {
+      "route": "GET /organization/list-user-teams",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /passkey/generate-authenticate-options",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "passkey client surface matches TS for options and management errors",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /passkey/generate-register-options",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "passkey client surface matches TS for options and management errors",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /passkey/list-user-passkeys",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "passkey client surface matches TS for options and management errors",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /reference",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /reset-password/{}",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "reset password callback redirects invalid token to error callback",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /token",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "GET /verify-email",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "change email for a verified user requires old-email confirmation first",
+        "rejection": "verify email rejects untrusted callbackURL",
+        "authorization": "verify email rejects untrusted callbackURL",
+        "state": null
+      }
+    },
+    {
+      "route": "POST /admin/ban-user",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin ban, unban, and user-session routes match TS",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /admin/create-user",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin create-user, set-role, set-user-password, and remove-user match TS",
+        "rejection": "admin create-user, set-role, set-user-password, and remove-user match TS",
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /admin/has-permission",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin list-users and has-permission match TS",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /admin/impersonate-user",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin impersonation restores the original admin session and hides impersonated sessions",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /admin/list-user-sessions",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin ban, unban, and user-session routes match TS",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /admin/remove-user",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": null,
+        "rejection": "admin create-user, set-role, set-user-password, and remove-user match TS",
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /admin/revoke-user-session",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin ban, unban, and user-session routes match TS",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /admin/revoke-user-sessions",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin ban, unban, and user-session routes match TS",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /admin/set-role",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin create-user, set-role, set-user-password, and remove-user match TS",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /admin/set-user-password",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin create-user, set-role, set-user-password, and remove-user match TS",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /admin/stop-impersonating",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin impersonation restores the original admin session and hides impersonated sessions",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /admin/unban-user",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin ban, unban, and user-session routes match TS",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /admin/update-user",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin get-user and update-user match TS",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /api-key/create",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "api-key CRUD isolates configurations and preserves all-config listing",
+        "rejection": "api-key HTTP requests cannot select a different owner",
+        "authorization": "api-key HTTP requests cannot select a different owner",
+        "state": null
+      }
+    },
+    {
+      "route": "POST /api-key/delete",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "api-key SDK uses the standalone 1.7 client plugin",
+        "rejection": "api-key CRUD isolates configurations and preserves all-config listing",
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /api-key/update",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "api-key update accepts keyId field and updates name",
+        "rejection": "api-key CRUD isolates configurations and preserves all-config listing",
+        "authorization": "api-key HTTP requests cannot select a different owner",
+        "state": null
+      }
+    },
+    {
+      "route": "POST /callback/{}",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "social callback POST redirects to GET and preserves TS param precedence",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /change-email",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "change email for a verified user requires old-email confirmation first",
+        "rejection": "change email rejects setting the same email",
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /change-password",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "change password with revokeOtherSessions invalidates the other client",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /delete-anonymous-user",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /delete-user",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "delete user with a fresh session deletes the current account",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /device/approve",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": null,
+        "rejection": "device approve blocks already-processed codes",
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /device/code",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "device approve blocks already-processed codes",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /device/deny",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": null,
+        "rejection": "device deny flow returns access_denied",
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /device/token",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": null,
+        "rejection": "device approve flow returns a bearer token",
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /email-otp/change-email",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /email-otp/check-verification-otp",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /email-otp/request-email-change",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /email-otp/request-password-reset",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /email-otp/reset-password",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /email-otp/send-verification-otp",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /email-otp/verify-email",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /forget-password/email-otp",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /get-access-token",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "get access token refreshes expired token",
+        "rejection": "account token routes reject conflicting and foreign account selectors",
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /get-session",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "api-key session accepts configured headers for GET and POST",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /is-username-available",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /link-social",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "github link social creates an account that listAccounts returns",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /multi-session/revoke",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /multi-session/set-active",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /one-tap/callback",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /one-time-token/verify",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/accept-invitation",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "api-key organization ownership rejects unrelated users",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/add-team-member",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/cancel-invitation",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization invitation validation, reject, and cancel flows match TS",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/check-slug",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization core lifecycle matches TS",
+        "rejection": "organization core lifecycle matches TS",
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/create",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "api-key organization ownership rejects unrelated users",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/create-role",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/create-team",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/delete",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization delete returns the deleted org and clears active state",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/delete-role",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/has-permission",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization membership mutations cover permissions, role updates, removal, and leave",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/invite-member",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "api-key organization ownership rejects unrelated users",
+        "rejection": "organization invitation validation, reject, and cancel flows match TS",
+        "authorization": "organization invitation validation, reject, and cancel flows match TS",
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/leave",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization membership mutations cover permissions, role updates, removal, and leave",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/reject-invitation",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization invitation validation, reject, and cancel flows match TS",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/remove-member",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization membership mutations cover permissions, role updates, removal, and leave",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/remove-team",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/remove-team-member",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/set-active",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization core lifecycle matches TS",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/set-active-team",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/update",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization core lifecycle matches TS",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/update-member-role",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "organization membership mutations cover permissions, role updates, removal, and leave",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/update-role",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /organization/update-team",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /passkey/delete-passkey",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "passkey registration authentication ownership and deletion round trip",
+        "rejection": "passkey client surface matches TS for options and management errors",
+        "authorization": "passkey registration authentication ownership and deletion round trip",
+        "state": "passkey registration authentication ownership and deletion round trip"
+      }
+    },
+    {
+      "route": "POST /passkey/update-passkey",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "passkey registration authentication ownership and deletion round trip",
+        "rejection": "passkey client surface matches TS for options and management errors",
+        "authorization": "passkey registration authentication ownership and deletion round trip",
+        "state": "passkey registration authentication ownership and deletion round trip"
+      }
+    },
+    {
+      "route": "POST /passkey/verify-authentication",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "passkey registration authentication ownership and deletion round trip",
+        "rejection": "passkey registration authentication ownership and deletion round trip",
+        "authorization": null,
+        "state": "passkey registration authentication ownership and deletion round trip"
+      }
+    },
+    {
+      "route": "POST /passkey/verify-registration",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "passkey registration authentication ownership and deletion round trip",
+        "rejection": null,
+        "authorization": null,
+        "state": "passkey registration authentication ownership and deletion round trip"
+      }
+    },
+    {
+      "route": "POST /phone-number/request-password-reset",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /phone-number/reset-password",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /phone-number/send-otp",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /phone-number/verify",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /refresh-token",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "refresh token returns a fresh token set",
+        "rejection": "account token routes reject conflicting and foreign account selectors",
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /request-password-reset",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "request password reset masks nonexistent email",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /reset-password",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "request password reset then reset password updates credentials",
+        "rejection": "reset password rejects invalid token",
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /revoke-other-sessions",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "revoke other sessions keeps the caller alive",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /revoke-session",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "list sessions and revoke a session through the SDK",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /revoke-sessions",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "revoke sessions logs out all active clients",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /send-verification-email",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "change email for a verified user requires old-email confirmation first",
+        "rejection": "send verification email rejects already verified user",
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /sign-in/anonymous",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /sign-in/email",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin ban, unban, and user-session routes match TS",
+        "rejection": "admin create-user, set-role, set-user-password, and remove-user match TS",
+        "authorization": "admin create-user, set-role, set-user-password, and remove-user match TS",
+        "state": null
+      }
+    },
+    {
+      "route": "POST /sign-in/email-otp",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /sign-in/magic-link",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /sign-in/phone-number",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "banned users are denied email and social session creation",
+        "rejection": "social sign-in rejects invalid callbackURL",
+        "authorization": "social sign-in rejects invalid callbackURL",
+        "state": null
+      }
+    },
+    {
+      "route": "POST /sign-in/username",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "sign in with differently cased username returns user and token",
+        "rejection": "sign in with nonexistent username returns error",
+        "authorization": "sign in with nonexistent username returns error",
+        "state": null
+      }
+    },
+    {
+      "route": "POST /sign-out",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "github social sign-in redirects existing users to callbackURL",
+        "rejection": null,
+        "authorization": null,
+        "state": "passkey registration authentication ownership and deletion round trip"
+      }
+    },
+    {
+      "route": "POST /sign-up/email",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "account info requires an explicit account selector",
+        "rejection": "sign up with duplicate email returns error",
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /siwe/get-nonce",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /siwe/nonce",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /siwe/verify",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /two-factor/disable",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /two-factor/enable",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "two-factor enrollment returns URIs and keeps the user disabled until verification",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /two-factor/generate-backup-codes",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "two-factor generate-backup-codes replaces the backup code set for enabled users",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /two-factor/get-totp-uri",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "two-factor enrollment returns URIs and keeps the user disabled until verification",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /two-factor/send-otp",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /two-factor/verify-backup-code",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "two-factor verify-backup-code signs the user in and consumes the used code",
+        "rejection": "two-factor verify-backup-code signs the user in and consumes the used code",
+        "authorization": "two-factor verify-backup-code signs the user in and consumes the used code",
+        "state": null
+      }
+    },
+    {
+      "route": "POST /two-factor/verify-otp",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
+        "rejection": "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
+        "authorization": "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
+        "state": null
+      }
+    },
+    {
+      "route": "POST /two-factor/verify-totp",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "two-factor generate-backup-codes replaces the backup code set for enabled users",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /unlink-account",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "github unlink account removes the linked github account",
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /update-session",
+      "upstream": true,
+      "implemented": false,
+      "evidence": {
+        "success": null,
+        "rejection": null,
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /update-user",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "update user changes session-visible profile fields",
+        "rejection": "update user rejects direct email mutation",
+        "authorization": null,
+        "state": null
+      }
+    },
+    {
+      "route": "POST /verify-password",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "verify password succeeds with the current credential password",
+        "rejection": "verify password requires a session",
+        "authorization": "verify password requires a session",
+        "state": null
+      }
+    }
+  ]
+}
