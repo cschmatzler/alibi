@@ -22,11 +22,11 @@ use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_seaorm::sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set,
 };
-use better_auth_seaorm::store::entities::{account, session, two_factor, user, verification};
+use better_auth_seaorm::store::entities::{session, verification};
 use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::json;
 
 use crate::TestSchema;
 
@@ -36,17 +36,14 @@ const PROFILES: &[&str] = &[
     "ott-hashed",
     "ott-no-cookie",
     "ott-server-header",
+    "ott-refresh-disabled",
+    "ott-refresh-deferred",
 ];
 
 #[derive(Deserialize)]
 struct ServerOperation {
     operation: String,
     profile: Option<String>,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct UserSelector {
-    user_id: String,
 }
 #[derive(Deserialize)]
 struct VerificationSelector {
@@ -95,7 +92,9 @@ pub(super) async fn router(
             ..Default::default()
         });
         let path = format!("/__test/profiles/{name}/api/auth");
-        let config = base.clone().base_path(&path);
+        let mut config = base.clone().base_path(&path);
+        config.session.disable_session_refresh = *name == "ott-refresh-disabled";
+        config.session.defer_session_refresh = *name == "ott-refresh-deferred";
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
                 .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
@@ -148,11 +147,7 @@ pub(super) async fn router(
                                     .insert(name.as_str().to_owned(), value.to_owned());
                             }
                         }
-                        let (user, session) = auth
-                            .context()
-                            .session_without_refresh(&request)
-                            .await?
-                            .ok_or(AuthError::Unauthenticated)?;
+                        let (user, session) = auth.context().require_session(&request).await?;
                         let token = ott
                             .generate_for_session(
                                 &OneTimeTokenSession {
@@ -174,23 +169,6 @@ pub(super) async fn router(
             },
         ),
     );
-    let state_db = database.clone();
-    router=router.route("/__test/user-state",get(move |Query(selector):Query<UserSelector>| {
-        let database=state_db.clone();
-        async move {
-            let operation=async {
-                let user=user::Entity::find_by_id(selector.user_id.clone()).one(&database).await?;
-                let Some(user)=user else { return Ok::<_,better_auth_seaorm::sea_orm::DbErr>(Value::Null); };
-                let accounts=account::Entity::find().filter(account::Column::UserId.eq(&selector.user_id)).order_by_asc(account::Column::ProviderId).order_by_asc(account::Column::AccountId).all(&database).await?;
-                let sessions=session::Entity::find().filter(session::Column::UserId.eq(&selector.user_id)).order_by_asc(session::Column::CreatedAt).all(&database).await?;
-                let two_factor_exists=two_factor::Entity::find().filter(two_factor::Column::UserId.eq(&selector.user_id)).one(&database).await?.is_some();
-                Ok(json!({"user":{"id":user.id,"email":user.email,"emailVerified":user.email_verified,"twoFactorEnabled":user.two_factor_enabled},
-                    "accounts":accounts.into_iter().map(|row|json!({"id":row.id,"userId":row.user_id,"accountId":row.account_id,"providerId":row.provider_id})).collect::<Vec<_>>(),
-                    "sessions":sessions.into_iter().map(|row|json!({"id":row.id,"userId":row.user_id,"token":row.token,"expiresAt":row.expires_at})).collect::<Vec<_>>(),"twoFactorExists":two_factor_exists}))
-            }.await;
-            match operation { Ok(value)=>Json(value).into_response(),Err(error)=>failure(error) }
-        }
-    }));
     let verification_db = database.clone();
     router=router.route("/__test/verification-state",get(move |Query(selector):Query<VerificationSelector>| {
         let database=verification_db.clone();

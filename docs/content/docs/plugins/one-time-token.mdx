@@ -39,6 +39,12 @@ minutes. It is stored as a verification record whose value is the existing
 session token. In hashed mode, the identifier contains the SHA-256 base64url
 digest of the credential.
 
+HTTP generation applies the normal session refresh policy. An aged session may
+have its persisted expiry extended and its cookie reissued before the transfer
+credential is created. A nonpersistent browser preference, disabled/deferred
+refresh configuration, or a nonempty `disableRefresh` query value suppresses
+that update; the query string `false` is nonempty and also suppresses it.
+
 Successful verification consumes the record and sets the existing session
 cookie. Replay and expired credentials fail. A revoked or expired underlying
 session also fails after the credential is consumed. When several records

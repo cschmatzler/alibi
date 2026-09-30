@@ -241,3 +241,67 @@ compatScenario("one-time token schema errors preserve an issued credential until
   expect(replay.error).toMatchObject({ status: 400, message: "Invalid token" });
   return { issued, rejected, empty, consumed: ctx.snapshot(consumed), replay };
 }, ["POST /one-time-token/verify"]);
+
+compatScenario("one-time token generation refreshes aged sessions and honors query browser and configuration preferences", async ctx => {
+  const observations = [];
+  for (const [name, profile, query, dontRemember, refresh] of [
+    ["default", "ott-default", "", false, true],
+    ["query-false", "ott-default", "?disableRefresh=false", false, false],
+    ["query-empty", "ott-default", "?disableRefresh=", false, true],
+    ["browser", "ott-default", "", true, false],
+    ["disabled", "ott-refresh-disabled", "", false, false],
+    ["deferred", "ott-refresh-deferred", "", false, false],
+  ] as const) {
+    const owner = await signUp(ctx, `refresh-${name}`, profile);
+    const login = dontRemember ? await owner.client.signIn.email({ email: owner.signup.data!.user.email, password: "password123", rememberMe: false }) : owner.signup;
+    expect(login.error).toBeNull();
+    if (!login.data?.token) throw new Error("refresh control requires a real authenticated session");
+    const token = login.data.token;
+    const agedExpiry = new Date(Date.now() + 3600000).toISOString();
+    const aged = await ctx.rawRequest({ path: "/__test/expire-session", method: "POST", json: { token, expiresAt: agedExpiry } });
+    expect(aged.status).toBe(200);
+    const state = z.object({ sessions: z.array(z.object({ token: z.string(), expiresAt: z.string() })) });
+    const before = state.parse(await ctx.readUserState({ userId: owner.userId })).sessions.find(session => session.token === token);
+    expect(before?.expiresAt).toBe(agedExpiry);
+    const startedAt = Date.now();
+    const cookies: string[] = [];
+    let generated: { token: string };
+    if (query) {
+      const response = await ctx.actor(`refresh-${name}`, profile).fetch(`${ctx.baseURL}/__test/profiles/${profile}/api/auth/one-time-token/generate${query}`);
+      expect(response.status).toBe(200);
+      cookies.push(...response.headers.getSetCookie());
+      generated = z.object({ token: z.string() }).parse(await response.json());
+    } else {
+      const result = await owner.client.oneTimeToken.generate({ fetchOptions: { onSuccess({ response }) { cookies.push(...response.headers.getSetCookie()); } } });
+      expect(result.error).toBeNull();
+      if (!result.data) throw new Error("aged session must still issue a one-time token");
+      generated = result.data;
+    }
+    const completedAt = Date.now();
+    const after = state.parse(await ctx.readUserState({ userId: owner.userId })).sessions.find(session => session.token === token);
+    expect(after).toBeDefined();
+    if (!after) throw new Error("generation must retain the underlying session row");
+    if (refresh) {
+      expect(Date.parse(after!.expiresAt)).toBeGreaterThanOrEqual(startedAt + 604800000);
+      expect(Date.parse(after!.expiresAt)).toBeLessThanOrEqual(completedAt + 604800000);
+      const refreshedCookie = cookies.find(cookie => cookie.startsWith("better-auth.session_token="));
+      expect(refreshedCookie).toBeDefined();
+      expect(refreshedCookie).toMatch(/Max-Age=604800/i);
+      expect(refreshedCookie).toMatch(/HttpOnly/i);
+    } else {
+      expect(after?.expiresAt).toBe(agedExpiry);
+      expect(cookies).toEqual([]);
+    }
+    const pending = rows.parse(await ctx.readVerificationState({ identifier: `one-time-token:${generated.token}` }));
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.value).toBe(token);
+    const consumed = await ottActor(ctx, `refresh-consumer-${name}`, profile).oneTimeToken.verify({ token: generated.token });
+    expect(consumed.error).toBeNull();
+    expect(consumed.data?.session.token).toBe(token);
+    if (!consumed.data?.session.expiresAt) throw new Error("consumption must retain the stored session expiry");
+    expect(new Date(consumed.data.session.expiresAt).toISOString()).toBe(after.expiresAt);
+    expect(await ctx.readVerificationState({ identifier: `one-time-token:${generated.token}` })).toEqual([]);
+    observations.push({ name, signup: ctx.snapshot(owner.signup), login: ctx.snapshot(login), before, after, generated, pending, consumed: ctx.snapshot(consumed) });
+  }
+  return observations;
+}, ["GET /one-time-token/generate", "POST /one-time-token/verify"]);

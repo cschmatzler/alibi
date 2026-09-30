@@ -11,7 +11,9 @@ export type FixtureProfile =
   | "ott-default"
   | "ott-hashed"
   | "ott-no-cookie"
-  | "ott-server-header";
+  | "ott-server-header"
+  | "ott-refresh-disabled"
+  | "ott-refresh-deferred";
 
 export function authProfilePath(profile: FixtureProfile): string {
   return `/__test/profiles/${profile}/api/auth`;
