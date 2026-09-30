@@ -207,3 +207,8 @@ export async function seedOAuthAccount(
 
   return result.accountId;
 }
+
+/** Inspect raw verification generations, including expired records. */
+export async function readVerificationState(baseURL: string, args: { identifier: string }): Promise<unknown> {
+  return getControl(baseURL, "/__test/verification-state", args);
+}

@@ -108,6 +108,12 @@ The Rust orchestrator starts and checks both servers on allocated ports and
 stops them on completion. Direct Bun scenario runs require running reference
 and Rust servers; configure `AUTH_BASE_URL_TS` and `AUTH_BASE_URL_RUST`.
 
+## One-time tokens
+
+`devenv shell -- cargo test --test client_compat_tests one_time_token_client_compat -- --ignored --nocapture` runs the official client against the pinned TypeScript and Rust fixtures. Four explicit profiles exercise plain and hashed storage, no-cookie consumption, server-only issuance and response headers. The scenarios assert stored session ownership, expiry, revocation, replay and newest-generation invalidation.
+
+This database-backed integration uses persisted sessions and verification records. Secondary-storage-only sessions remain a separate integration boundary.
+
 ## Managed JWT capability
 
 `tests/jwt` uses the official `jwtClient` and pinned JOSE 6.2.12 to check public

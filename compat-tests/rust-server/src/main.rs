@@ -47,6 +47,7 @@ use tokio::sync::Mutex;
 mod jwt_fixture;
 mod lifecycle_fixture;
 mod magic_profiles;
+mod one_time_token_fixture;
 mod organization_timestamp_fixture;
 mod otp_profiles;
 mod parity_controls;
@@ -763,6 +764,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let auth_for_api_key_verify = auth.clone();
     let api_key_for_create = api_key_plugin.clone();
     let api_key_for_update = api_key_plugin.clone();
+
+    let ott_router = one_time_token_fixture::router(&config, reset_database.clone()).await?;
 
     let app = Router::new()
         .merge(lifecycle_controls)
@@ -1543,6 +1546,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }))
             }),
         )
+        .merge(ott_router)
         .merge(jwt_router)
         .merge(team_router)
         .nest("/api/auth", auth_router)

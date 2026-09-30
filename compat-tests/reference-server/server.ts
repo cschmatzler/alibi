@@ -2,11 +2,12 @@
 
 import { Database } from "bun:sqlite";
 import { passkey } from "@better-auth/passkey";
-import { betterAuth } from "better-auth";
+import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { getMigrations } from "better-auth/db/migration";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { apiKey } from "@better-auth/api-key";
-import { admin, deviceAuthorization, emailOTP, magicLink, twoFactor, username, jwt } from "better-auth/plugins";
+import { admin, deviceAuthorization, emailOTP, magicLink, twoFactor, username, jwt, oneTimeToken } from "better-auth/plugins";
 import { organization } from "better-auth/plugins/organization";
 import { createAccessControl } from "better-auth/plugins/access";
 import { defaultStatements } from "better-auth/plugins/organization/access";
@@ -451,6 +452,22 @@ for (const name of ["magic-link-hashed", "magic-link-disabled"]) {
 const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
 
+const OTT_PROFILE_NAMES=["ott-default","ott-hashed","ott-no-cookie","ott-server-header","ott-refresh-disabled","ott-refresh-deferred"] as const;
+const ottExposedHeaderFixture: BetterAuthPlugin = {
+  id: "ott-exposed-header-fixture",
+  hooks: { after: [{ matcher: () => true, handler: createAuthMiddleware(async ctx => {
+    ctx.setHeader("access-control-expose-headers", " existing, ,existing, set-ott, set-ott, Existing ");
+  }) }] },
+};
+const ottProfiles=new Map(OTT_PROFILE_NAMES.map(name=>{
+  const options={...authOptions,basePath:`/__test/profiles/${name}/api/auth`,session:{disableSessionRefresh:name==="ott-refresh-disabled",deferSessionRefresh:name==="ott-refresh-deferred"},plugins:[...authOptions.plugins,...(name==="ott-server-header" ? [ottExposedHeaderFixture] : []),oneTimeToken({
+    storeToken:name==="ott-hashed" ? "hashed" : "plain",
+    disableSetSessionCookie:name==="ott-no-cookie",
+    disableClientRequest:name==="ott-server-header",
+    setOttHeaderOnNewSession:name==="ott-server-header",
+  })]};
+  return [name,{auth:betterAuth(options),options}] as const;
+}));
 const JWT_PROFILE_NAMES = ["jwt-default", "jwt-es256", "jwt-es512", "jwt-rs256", "jwt-ps256", "jwt-claims", "jwt-path-header", "jwt-plain-rotation"] as const;
 const jwtProfiles = new Map(JWT_PROFILE_NAMES.map(name => {
   const options = {
@@ -530,7 +547,7 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
   const profileName = url.pathname.match(/^\/__test\/profiles\/([^/]+)\/api\/auth(?:\/|$)/)?.[1];
   if (profileName) {
     const profile = [...teamProfiles.entries()].find(([name]) => name === profileName)?.[1];
-    return profile ? profile.auth.handler(request) : jsonResponse({message:"unknown fixture profile"},{status:404});
+    return profile?.auth.handler(request);
   }
   if (url.pathname === "/__test/organization-state" && request.method === "GET") {
     const organizationId = url.searchParams.get("organizationId");
@@ -639,11 +656,30 @@ async function resetDatabaseState() {
   await context.adapter.deleteMany({model:"jwks",where:[]});
 }
 
+
+function controlRecord(value: unknown): value is Record<string,unknown> {
+  return value!==null && typeof value==="object" && !Array.isArray(value);
+}
+async function oneTimeTokenControl(request:Request,url:URL):Promise<Response|undefined> {
+  if (url.pathname!=="/__test/one-time-token" || request.method!=="POST") return;
+  const body:unknown=await readJson(request);
+  if (!controlRecord(body)) return jsonResponse({message:"invalid server operation"},{status:400});
+  const selected=ottProfiles.get(typeof body.profile==="string" ? body.profile as typeof OTT_PROFILE_NAMES[number] : "ott-default")?.auth;
+  if (!selected || body.operation!=="generate") return jsonResponse({message:"invalid server operation"},{status:400});
+  return jsonResponse(await selected.api.generateOneTimeToken({headers:request.headers}));
+}
+
 const server = Bun.serve({
   port: PORT,
   async fetch(request) {
     try {
       const url = new URL(request.url);
+      for(const [name,profile] of ottProfiles) {
+        if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return profile.auth.handler(request);
+      }
+      const ottControl=await oneTimeTokenControl(request,url);
+      if(ottControl) return ottControl;
+
       const teamResponse = await teamFixture(request, url);
       if (teamResponse) return teamResponse;
 
@@ -745,7 +781,7 @@ const server = Bun.serve({
       }
       if (url.pathname==="/__test/verification-state" && request.method==="GET") {
         const identifier=url.searchParams.get("identifier");
-        return jsonResponse(await authContext.adapter.findMany({model:"verification",where:[{field:"identifier",value:identifier}]}));
+        return jsonResponse(await authContext.adapter.findMany({model:"verification",where:[{field:"identifier",value:identifier}],sortBy:{field:"createdAt",direction:"desc"}}));
       }
       if (url.pathname==="/__test/verification-state" && request.method==="POST") {
         const body:unknown=await readJson(request);

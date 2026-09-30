@@ -10,6 +10,7 @@ pub mod helpers;
 pub mod jwt;
 pub mod magic_link;
 pub mod oauth;
+pub mod one_time_token;
 pub mod organization;
 pub mod passkey;
 pub mod password_management;

@@ -71,7 +71,7 @@ export function createTracingFetch(baseURL: string, actor: string, traces: Trace
         }
       }
       const selectedHeaders: Record<string, string> = {};
-      for (const header of ["content-type", "location", "set-auth-jwt", "access-control-expose-headers"]) {
+      for (const header of ["content-type", "location", "set-auth-jwt", "set-ott", "access-control-expose-headers"]) {
         const value = response.headers.get(header);
         if (value) selectedHeaders[header] = header === "content-type" ? value.split(";").at(0)?.trim() ?? value : value;
       }

@@ -191,6 +191,46 @@ pub fn apply_default_role(
     }
 }
 
+/// Resolve the session selected by a completed response's signed session cookie.
+///
+/// Cookie clearing is not a new session. The record is read from storage so
+/// hooks never trust user or session fields from a response body.
+pub async fn response_session<S: better_auth_core::AuthSchema>(
+    ctx: &AuthContext<S>,
+    response: &better_auth_core::AuthResponse,
+) -> AuthResult<Option<IssuedSession<S>>> {
+    use better_auth_core::entity::AuthSession;
+    let token = response
+        .headers
+        .get_all("set-cookie")
+        .filter_map(|header| {
+            let cookie = cookie::Cookie::parse(header.clone()).ok()?;
+            (cookie.name() == ctx.config.session.cookie_name && !cookie.value().is_empty())
+                .then(|| {
+                    better_auth_core::utils::cookie_utils::verify_cookie_value(
+                        cookie.value(),
+                        &ctx.config.secret,
+                    )
+                })
+                .flatten()
+        })
+        .last();
+    let Some(token) = token else {
+        return Ok(None);
+    };
+    let Some(session) = ctx.database.get_session(&token).await? else {
+        return Ok(None);
+    };
+    let Some(user) = ctx
+        .database
+        .get_user_by_id(session.user_id().as_ref())
+        .await?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(IssuedSession { user, session }))
+}
+
 /// Result of issuing a real session for a user.
 pub struct IssuedSession<S: better_auth_core::AuthSchema> {
     pub user: S::User,

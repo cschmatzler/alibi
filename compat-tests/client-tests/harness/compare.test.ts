@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { expect, test } from "bun:test";
 import { generateKeyPairSync, sign } from "node:crypto";
 import { compareValues } from "../support/compare";
@@ -121,6 +122,35 @@ test("reset-password URL entropy retains token relationships", () => {
   const left = { first: { url: "/reset-password/one" }, second: { url: "/reset-password/one" } };
   expect(compareValues(left, { first: { url: "/reset-password/two" }, second: { url: "/reset-password/two" } }, context)).toEqual([]);
   expect(compareValues(left, { first: { url: "/reset-password/two" }, second: { url: "/reset-password/three" } }, context).length).toBeGreaterThan(0);
+});
+
+test("one-time-token storage preserves exact derivation session ownership and response header relationships", () => {
+  const timestamp = "2026-09-30T00:00:00.000Z";
+  const stored = (token: string, hashed: boolean) => `one-time-token:${hashed ? createHash("sha256").update(token).digest("base64url") : token}`;
+  for (const hashed of [false, true]) {
+    const run = (side: string) => ({
+      issued: { token: `${side}-ott` },
+      owner: { id: `${side}-owner`, token: `${side}-session`, expiresAt: timestamp },
+      other: { id: `${side}-other`, token: `${side}-other-session`, expiresAt: timestamp },
+      persisted: { id: `${side}-proof`, identifier: stored(`${side}-ott`, hashed), value: `${side}-session`, expiresAt: timestamp, createdAt: timestamp, updatedAt: timestamp },
+      traces: [{ responseHeaders: { "set-ott": `${side}-ott` } }],
+      url: `/__test/verification-state?identifier=${encodeURIComponent(stored(`${side}-ott`, hashed))}`,
+    });
+    const left = run("left"), right = run("right");
+    expect(compareValues(left, right, context)).toEqual([]);
+    for (const incorrect of [
+      { ...right, persisted: { ...right.persisted, identifier: stored("unrelated", hashed) } },
+      { ...right, persisted: { ...right.persisted, identifier: stored("right-ott", !hashed) } },
+      { ...right, persisted: { ...right.persisted, identifier: "wrong-prefix:right-ott" } },
+      { ...right, persisted: { ...right.persisted, value: "right-other-session" } },
+      { ...right, persisted: { ...right.persisted, value: "unobserved-session" } },
+      { ...right, persisted: { ...right.persisted, value: null } },
+      { ...right, traces: [{ responseHeaders: { "set-ott": "rotated-ott" } }] },
+      { ...right, url: `/__test/verification-state?identifier=${encodeURIComponent(stored("unrelated", hashed))}` },
+      { ...right, persisted: { ...right.persisted, expiresAt: "2026-09-30T00:03:00.000Z" } },
+    ]) expect(compareValues(left, incorrect, context).length).toBeGreaterThan(0);
+  }
+  expect(compareValues({ identifier: "literal", value: "literal" }, { identifier: "literal", value: "changed" }, context).length).toBeGreaterThan(0);
 });
 
 test("JWTs and JWKS retain full claims key relationships rotation and key sizes",()=>{

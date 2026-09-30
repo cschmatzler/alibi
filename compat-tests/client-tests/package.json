@@ -22,6 +22,7 @@
     "test:sessions": "bun test tests/sessions",
     "test:two-factor": "bun test tests/two-factor",
     "test:user-management": "bun test tests/user-management",
+    "test:one-time-token": "bun test tests/one-time-token",
     "test:jwt": "bun test tests/jwt"
   },
   "dependencies": {

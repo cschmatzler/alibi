@@ -76,6 +76,7 @@ const profiles = {
     requiredPlugin("twoFactor"),
     requiredPlugin("organization"),
     requiredPlugin("username"),
+    requiredPlugin("oneTimeToken"),
     requiredPlugin("jwt"),
     passkey(),
   ],

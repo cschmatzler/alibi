@@ -13,12 +13,13 @@ import { RUST_BASE_URL, TS_BASE_URL, requireHealthy } from "./config";
 import {
   type GitHubEmailRecord,
   readChangeEmailConfirmation,
-  readUserState,
   promoteAdmin,
   readTwoFactorOtp,
   readVerificationEmail,
   removeCredentialAccount,
   resetServerState,
+  readUserState,
+  readVerificationState,
   seedDeleteUserToken,
   seedOAuthAccount,
   setGitHubProfile,
@@ -52,6 +53,8 @@ type ScenarioServerContext = {
     location: string | null;
     body: unknown;
   }>;
+  readUserState(args: { userId: string }): Promise<unknown>;
+  readVerificationState(args: { identifier: string }): Promise<unknown>;
   resetServerState(): Promise<unknown>;
   setResetPasswordMode(mode: "capture" | "throw"): Promise<unknown>;
   seedResetPasswordToken(args: {
@@ -206,6 +209,7 @@ async function runScenario(
         body: parsed,
       };
     },
+    readVerificationState(args) { return readVerificationState(baseURL, args); },
     resetServerState() {
       return resetServerState(baseURL);
     },
