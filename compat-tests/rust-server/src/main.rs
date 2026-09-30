@@ -45,6 +45,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
 mod device_fixture;
+mod invitation_fixture;
 mod jwt_fixture;
 mod lifecycle_fixture;
 mod magic_profiles;
@@ -606,7 +607,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let database = sqlite_fixture::connect().await?;
     better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
     let reset_database = database.clone();
-    let team_profiles = team_fixture::profiles(&config, &database).await?;
+    let verification_outbox = Arc::new(Mutex::new(HashMap::new()));
+    let team_profiles = team_fixture::profiles(
+        &config,
+        &database,
+        Arc::new(CompatVerificationSender {
+            outbox: verification_outbox.clone(),
+        }),
+    )
+    .await?;
     let team_router = team_fixture::router(database.clone(), team_profiles);
 
     let magic_outbox = Arc::new(Mutex::new(HashMap::new()));
@@ -618,7 +627,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let email_otp = otp_profiles::plugin(otp_outbox.clone());
     let otp_database = database.clone();
     let reset_outbox = Arc::new(Mutex::new(HashMap::new()));
-    let verification_outbox = Arc::new(Mutex::new(HashMap::new()));
     let change_email_outbox = Arc::new(Mutex::new(HashMap::new()));
     let two_factor_otp_outbox = Arc::new(Mutex::new(HashMap::new()));
     let reset_password_mode = Arc::new(Mutex::new(ResetPasswordMode::Capture));
@@ -798,6 +806,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ))
         .merge(parity_controls::router(phone_runtimes))
         .merge(device_fixture::router(reset_database.clone()))
+        .merge(invitation_fixture::router(reset_database.clone()))
         .route("/__health", get(health_check))
         .route(
             "/__test/password",

@@ -14,8 +14,8 @@ use better_auth::plugins::organization::{
     OrganizationLimitResolver, RolePermissions, TeamsConfig,
 };
 use better_auth::plugins::{
-    AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, EmailPasswordPlugin, OrganizationPlugin,
-    SessionManagementPlugin, TwoFactorPlugin,
+    AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, EmailPasswordPlugin,
+    EmailVerificationPlugin, OrganizationPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_core::types::{
@@ -211,6 +211,7 @@ impl OrganizationLimitResolver for RequestTeamLimits {
 pub(super) async fn profiles(
     base: &AuthConfig,
     database: &DatabaseConnection,
+    verification_sender: Arc<dyn better_auth::plugins::email_verification::SendVerificationEmail>,
 ) -> AuthResult<Vec<TeamProfile>> {
     let mut profiles = Vec::new();
     for name in [
@@ -272,6 +273,10 @@ pub(super) async fn profiles(
             .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
             .rate_limit(RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new().enable_signup(true))
+            .plugin(
+                EmailVerificationPlugin::new()
+                    .custom_send_verification_email(verification_sender.clone()),
+            )
             .plugin(SessionManagementPlugin::new())
             .plugin(AccountManagementPlugin::new())
             .plugin(AdminPlugin::new())
@@ -299,6 +304,9 @@ struct OrganizationQuery {
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case")]
 enum TeamOperation {
+    ListUserInvitations {
+        email: String,
+    },
     RolePolicy {
         #[serde(rename = "organizationId")]
         organization_id: String,
@@ -444,6 +452,10 @@ pub(super) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                 };
                 let plugin = OrganizationPlugin::with_config(profile.config.clone());
                 let result = match body.operation {
+                    TeamOperation::ListUserInvitations { email } => {
+                        plugin.list_user_invitations(profile.auth.context(), &email).await
+                            .and_then(|invitations| serde_json::to_value(invitations).map_err(AuthError::from))
+                    },
                     TeamOperation::RolePolicy { organization_id, stage } => {
                         control_role_policy(profile, organization_id, stage).await
                     },

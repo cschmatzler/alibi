@@ -8,7 +8,7 @@ Wider pinned parity work follows these priorities. Excluded external integration
 packages will receive no implementation work. Prepared unmerged work remains
 separate from delivered capabilities.
 
-This snapshot describes merged `origin/master` at `f056c1a` (through PR #34),
+This snapshot describes merged `origin/master` at `04c6bce` (through PR #35),
 not the older, dirty coordinator worktree. The reference remains Better Auth
 1.7.6. The [upstream audit](audits/upstream-target.md) records source locations
 and wider boundaries. An audit gap means equivalence has not been established;
@@ -21,7 +21,7 @@ it is not automatically a confirmed defect or wholly missing implementation.
 | JSON numbers and persistence | Numbers merged PR #26; user JSON persistence and stale-binding repair merged PR #27. | Custom remote JWT signing inputs remain a separate gap. |
 | Phone authentication | Reviewed local implementation: password sign-in, OTP send/verify, password reset, server-only consumption, optional signup and custom verification. Thirteen SDK scenarios / 1,058 assertions plus native/storage tests pass. The integrated gate passed: 255 SDK scenarios and 79.00% source coverage. | Merged PR #28; external SMS/verifier policy remains application-owned. |
 | OAuth correctness fixes | Local fixes preserve previously granted scopes and atomically create a new user with its OAuth account. Actual failing-before and passing-after evidence exists. | Finish independent/integrated review, canonical validation and publication. |
-| Organization invitation listing | Local successful-flow, ownership and expired-invitation tests pass. | Server-only and configured pagination flows pass; independent review is clear. Complete the integrated gate and publish. |
+| Organization invitation listing | Verified HTTP ownership, expired/processed invitations, trusted server-only scope and configured page-limit behavior are proved. | Independent review clear; canonical gate passed with 268 SDK scenarios and 79.25% source coverage. Merged PR #36. |
 | Admin user deletion | Real enrolled-factor flow proves credential/session revocation and rejects unauthorized principals; installed-schema repair preserves two-factor rows. | Independent review clear; canonical gate passed with 265 SDK scenarios and 79.34% source coverage. Merged PR #35. |
 | Organization metadata lookup | Local route and ownership/session-state checks implemented. | Absent/empty/raw JSON behavior is repaired and frozen. Review and integrate. |
 | OpenAPI and reference page | Frozen generator, source metadata, reference page and complete default/custom-session documents; eleven scenarios / 494 assertions pass. | Complete dependencies, notably update-session, independent review, integration and publication. |
@@ -38,9 +38,9 @@ it is not automatically a confirmed defect or wholly missing implementation.
 | OAuth popup | Popup login and secure browser completion messaging. | Missing from the original route profiles; audit only. |
 | One Tap, organization metadata, OpenAPI | See the local work table above. | Unmerged capabilities still count as missing on master. |
 
-The merged inventory has nine missing method/path identities after multiple sessions landed. Separately, organization user invitations still lack integrated successful-flow
-evidence. Admin removal now has real authorized cleanup evidence and passed
-its canonical gate.
+The merged inventory has nine missing method/path identities after multiple sessions landed. All eight originally reported implemented routes now have successful-flow
+evidence, with actual ownership and persisted state checks. Wider configuration
+branches remain separate gaps.
 Multiple sessions are merged PR #31 with 262 SDK scenarios and 79.30% source coverage.
 Username availability is merged PR #29 and two-factor disable PR #30. Device approval/denial/token and GET /ok
 now have successful evidence on master.
