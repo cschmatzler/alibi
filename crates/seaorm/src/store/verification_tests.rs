@@ -68,6 +68,7 @@ async fn transactional_verification_creation_rolls_back_with_signup_work() -> Te
                         .await?;
                     let _ = tx
                         .create_session(CreateSession {
+                            additional_fields: Default::default(),
                             token: Some(identifier.to_owned()),
                             user_id: user.id,
                             expires_at: expires,

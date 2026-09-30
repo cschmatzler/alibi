@@ -241,6 +241,7 @@ pub struct UpdateUser {
 /// Session creation data
 #[derive(Debug, Clone)]
 pub struct CreateSession {
+    pub additional_fields: crate::field_policy::FieldValues,
     /// Optional token override for trusted database hooks and server-side creation.
     /// Stores generate a secure 32-character alphanumeric token when omitted.
     pub token: Option<String>,
@@ -731,6 +732,7 @@ mod tests {
         assert!(req.virtual_user_id().is_none());
         let now = Utc::now();
         req.set_virtual_session(crate::wire::SessionView {
+            omitted_fields: Default::default(),
             id: "key-123".into(),
             token: "key-token".into(),
             user_id: "user-123".into(),

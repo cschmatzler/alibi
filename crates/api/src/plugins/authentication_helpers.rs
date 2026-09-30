@@ -215,7 +215,7 @@ pub(crate) fn parse_body_with_ignored_fields<T: RequestBody>(
         .map_err(|_| validation_response("[body] Invalid input"))
 }
 
-fn json_type(value: Option<&better_auth_core::utils::json::JsValue>) -> &'static str {
+pub(crate) fn json_type(value: Option<&better_auth_core::utils::json::JsValue>) -> &'static str {
     use better_auth_core::utils::json::JsValue;
     match value {
         None => "undefined",

@@ -65,6 +65,10 @@ pub struct VerificationEmailOverrideHandle<S: AuthSchema>(
 
 /// Action returned by [`AuthPlugin::before_request`].
 #[derive(Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "Preserve public InjectSession construction as session views gain configured output policies"
+)]
 pub enum BeforeRequestAction {
     /// Short-circuit with this response (e.g. return session JSON).
     Respond(AuthResponse),
@@ -81,6 +85,11 @@ pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
 
     /// Routes that this plugin handles
     fn routes(&self) -> Vec<AuthRoute>;
+
+    /// Session field policies contributed by this registered plugin.
+    fn session_fields(&self) -> indexmap::IndexMap<String, crate::field_policy::FieldConfig> {
+        indexmap::IndexMap::new()
+    }
 
     /// Called when the plugin is initialized
     async fn on_init(&self, ctx: &mut AuthInitContext<S>) -> AuthResult<()> {
@@ -331,16 +340,24 @@ impl<S: AuthSchema> AuthInitContext<S> {
 
     /// Finalize the instance's store without mutating a shared underlying adapter.
     pub fn database_with_registered_transforms(&self) -> Arc<dyn AuthStore<S>> {
-        match self
+        let transforms = self
             .extensions
             .get::<crate::store::plugin_hooks::UserTransforms>()
-        {
-            Some(transforms) => Arc::new(crate::store::plugin_hooks::PluginStore::new(
-                self.database.clone(),
-                (*transforms).clone(),
-            )),
-            None => self.database.clone(),
+            .map(|value| (*value).clone())
+            .unwrap_or_default();
+        let fields = self.extensions.get::<crate::field_policy::SessionFields>();
+        if transforms.creates.is_empty() && transforms.updates.is_empty() && fields.is_none() {
+            return self.database.clone();
         }
+        Arc::new(crate::store::plugin_hooks::PluginStore::new(
+            self.database.clone(),
+            transforms,
+            fields.map(|fields| (*fields).clone()).unwrap_or_default(),
+            self.extensions
+                .get::<crate::field_policy::SessionAdapterFields>()
+                .map(|fields| (*fields).clone())
+                .unwrap_or_default(),
+        ))
     }
 
     pub fn set_email_verification_override(
@@ -486,7 +503,20 @@ impl<S: AuthSchema> AuthContext<S> {
 
     pub fn session_view(&self, session: &impl AuthSession) -> crate::wire::SessionView {
         let mut view = crate::wire::SessionView::from(session);
-        if self.feature_enabled("admin.enabled") {
+        let registered = self.extensions.get::<crate::field_policy::SessionFields>();
+        let fields = registered
+            .as_ref()
+            .map(|fields| &fields.0)
+            .unwrap_or(&self.config.session.additional_fields);
+        view.extension_fields
+            .retain(|name, _| fields.contains_key(name));
+        for (name, field) in fields {
+            if !field.returned {
+                let _ = view.omitted_fields.insert(name.clone());
+            }
+        }
+        let declared = |name: &str| fields.contains_key(name);
+        if self.feature_enabled("admin.enabled") || declared("impersonatedBy") {
             if view.impersonated_by.is_none() {
                 _ = view
                     .extension_fields
@@ -495,7 +525,7 @@ impl<S: AuthSchema> AuthContext<S> {
         } else {
             view.impersonated_by = None;
         }
-        if self.feature_enabled("organization.enabled") {
+        if self.feature_enabled("organization.enabled") || declared("activeOrganizationId") {
             if view.active_organization_id.is_none() {
                 _ = view
                     .extension_fields
@@ -505,7 +535,7 @@ impl<S: AuthSchema> AuthContext<S> {
             view.active_organization_id = None;
         }
 
-        if self.feature_enabled("organization.teams.enabled") {
+        if self.feature_enabled("organization.teams.enabled") || declared("activeTeamId") {
             if view.active_team_id.is_none() {
                 _ = view
                     .extension_fields

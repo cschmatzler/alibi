@@ -114,6 +114,25 @@ pub trait SeaOrmHooks<S: AuthSchema>: Send + Sync {
         Ok(())
     }
 
+    async fn before_update_session(
+        &self,
+        token: &str,
+        fields: &mut better_auth_core::field_policy::FieldValues,
+        ctx: &SeaOrmHookContext<'_>,
+    ) -> AuthResult<HookControl> {
+        let _ = (token, fields, ctx);
+        Ok(HookControl::Continue)
+    }
+
+    async fn after_update_session(
+        &self,
+        session: &S::Session,
+        ctx: &SeaOrmHookContext<'_>,
+    ) -> AuthResult<()> {
+        let _ = (session, ctx);
+        Ok(())
+    }
+
     async fn before_delete_session(
         &self,
         session: &S::Session,

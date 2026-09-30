@@ -109,6 +109,7 @@ async fn auth(probe: Probe) -> better_auth::BetterAuth<Schema> {
 fn virtual_session() -> SessionView {
     let now = chrono::Utc::now();
     SessionView {
+        omitted_fields: Default::default(),
         id: "internal-session".into(),
         user_id: "internal-user".into(),
         token: "internal-token".into(),

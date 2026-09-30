@@ -148,6 +148,7 @@ async fn upgrades_populated_users_preserving_custom_schema_and_foreign_keys()
         .await?;
     let session = store
         .create_session(CreateSession {
+            additional_fields: Default::default(),
             token: None,
             user_id: existing.id.clone(),
             expires_at: Utc::now() + Duration::hours(1),

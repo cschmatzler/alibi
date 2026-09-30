@@ -28,6 +28,7 @@ async fn create_test_context_with_user() -> (AuthContext<TestSchema>, UserView, 
 
     let session = database
         .create_session(CreateSession {
+            additional_fields: Default::default(),
             token: None,
             active_team_id: None,
             user_id: user.id().to_string(),
@@ -62,6 +63,7 @@ async fn create_user_with_session(
     let session = ctx
         .database
         .create_session(CreateSession {
+            additional_fields: Default::default(),
             token: None,
             active_team_id: None,
             user_id: user.id().to_string(),

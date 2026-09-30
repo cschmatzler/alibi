@@ -46,7 +46,8 @@ they do not establish all configuration or integration behavior.
 | Organization metadata and selector lifecycle | Coordinator; independent phone/SIWE-owner review | Existing organization store and exact JSON writer | Parsed create/update projections omit only absent metadata; metadata/full getters retain exact raw JSON text. Default and teams profiles prove ownership, missing/blank selectors, denial token retirement, and persisted mutation readback. Canonical gate passed: 270 SDK / 7,974 assertions, 37 harness / 210, two Chromium / 22, 79.20% source lines (24,009 / 30,313). Merged PR #37. |
 | Hosted canonical gate | Coordinator; independent JWT-owner review | Source-only Cargo cache and runner disk reservation | PR #34 hosted run 36785187757 completed successfully with the complete gate, unchanged coverage floor and optional configurations. |
 | TOTP configuration and trusted generation | Phone owner; independent SIWE-owner review; coordinator integration | Existing factor/token crypto and equivalent private server API | Exact enrollment/provider issuers, reserved URI bytes, integer digits/period, zero defaults, disabled methods, short/Unicode UTF-8 secrets and real enrollment/login transitions are proved. Canonical gate passed: 274 SDK / 8,168 assertions, 37 harness / 210, two Chromium / 22, 78.97% source lines (24,009 / 30,402). Merged PR #38. |
-| Atomic two-factor policy storage | Phone owner; coordinator independent review/integration | Nullable factor fields, migration registry and exact-row operations | Installed/fresh SQLite upgrades preserve enrollments and application schema. Eight independent connections prove failure snapshots, lock clearing/reset protection and one backup-code CAS winner; nullable arithmetic matches the actual pinned adapter. Canonical gate passed: 274 SDK / 8,168 assertions, 37 harness / 210, two Chromium / 22, 78.96% source lines (24,148 / 30,582). PR #39 ready for publication; API enforcement is the next dependent capability. |
+| Atomic two-factor policy storage | Phone owner; coordinator independent review/integration | Nullable factor fields, migration registry and exact-row operations | Installed/fresh SQLite upgrades preserve enrollments and application schema. Eight independent connections prove failure snapshots, lock clearing/reset protection and one backup-code CAS winner; nullable arithmetic matches the actual pinned adapter. Canonical gate passed: 274 SDK / 8,168 assertions, 37 harness / 210, two Chromium / 22, 78.96% source lines (24,148 / 30,582). Merged PR #39; API enforcement is the next dependent capability. |
+| Configured session updates | SIWE owner; independent JWT-owner review; coordinator integration | Immutable field policies, actual application columns and hook-aware storage bindings | Validation before authentication, two-stage transforms/defaults, plugin/adapter precedence, current-token-only updates, hidden-column privacy and replacement-field preservation have real SDK/native proof. Canonical gate passed: 277 SDK / 8,550 assertions, 37 harness / 210, two Chromium / 22, 78.97% source lines (24,668 / 31,238). Reviewed PR #40; broader storage modes remain explicit gaps. |
 | Reference/OpenAPI | SIWE owner | Typed route/model metadata and application schema override | Frozen source metadata, reference page and complete default/custom-session documents are ready for coordinator integration after update-session. Eleven document scenarios / 494 assertions and sixteen session scenarios / 696 assertions pass; integrated canonical gate remains pending. |
 
 Full local compatibility/coverage gates and inventory mutations are serialized.
@@ -61,7 +62,6 @@ including authorization and persisted state checks. This closes those evidence
 gaps without claiming all configurations of the feature families.
 
 Remaining inventoried families include anonymous authentication/deletion,
-update-session,
 OAuth proxy, One Tap, and reference/OpenAPI. Organization get-organization is now implemented with real evidence.
 Prepared old prototypes do not count as integrated capability completion.
 
@@ -76,8 +76,8 @@ accounted for there. None is silently excluded by the route inventory.
 
 The organization raw-metadata getter difference is repaired. Specific known gaps
 include create/update input validation, further callbacks and fields; anonymous OAuth linking without the
-state cookie; default OpenAPI completeness and additional session-field update
-policy; secondary/custom storage branches; and unproven optional configurations
+state cookie; default OpenAPI completeness and wider session-field storage
+modes; secondary/custom storage branches; and unproven optional configurations
 listed in each family audit. These need implementation or explicit equivalence
 evidence before full parity can be claimed.
 

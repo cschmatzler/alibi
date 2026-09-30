@@ -548,6 +548,8 @@ pub enum OAuthStateStrategy {
 /// Session-specific configuration
 #[derive(Debug, Clone)]
 pub struct SessionConfig {
+    /// Additional fields accepted by session input and output policies.
+    pub additional_fields: indexmap::IndexMap<String, crate::field_policy::FieldConfig>,
     /// Session expiration duration
     pub expires_in: Duration,
 
@@ -831,6 +833,7 @@ impl Default for AuthConfig {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
+            additional_fields: Default::default(),
             expires_in: Duration::hours(24 * 7),   // 7 days
             update_age: Some(Duration::hours(24)), // refresh once per day
             disable_session_refresh: false,

@@ -992,3 +992,52 @@ async fn legacy_numeric_schema_store_verifications_use_public_string_ids() {
             .is_none()
     );
 }
+
+#[tokio::test]
+async fn manual_numeric_session_schema_fails_closed_for_unbound_configured_fields() {
+    let mut config = test_config();
+    let _ = config.session.additional_fields.insert(
+        "label".into(),
+        better_auth::field_policy::FieldConfig::new(json!({"type":"string"})),
+    );
+    let auth = BetterAuth::<LegacySchema>::new(config.clone())
+        .store(SeaOrmStore::<LegacySchema>::new(
+            config,
+            test_database().await,
+        ))
+        .plugin(EmailPasswordPlugin::new())
+        .plugin(SessionManagementPlugin::new())
+        .build()
+        .await
+        .expect("manual schema still builds with default methods");
+    let signup = auth.handle_request(request(HttpMethod::Post,"/sign-up/email",Some(json!({"email":"unbound-session@example.com","password":"Password123!","name":"Manual"})))).await.expect("signup succeeds without field bindings");
+    assert_eq!(signup.status, 200);
+    let body: serde_json::Value = serde_json::from_slice(&signup.body).expect("signup JSON");
+    let token = body["token"].as_str().expect("token");
+    let before = auth
+        .store()
+        .get_session(token)
+        .await
+        .expect("lookup")
+        .expect("stored session");
+    let mut update = auth_request(HttpMethod::Post, "/update-session", token);
+    update.body = Some(br#"{"label":"must-not-save","userId":"foreign"}"#.to_vec());
+    let _ = update
+        .headers
+        .insert("content-type".into(), "application/json".into());
+    let rejected = auth
+        .handle_request(update)
+        .await
+        .expect("fail-closed response");
+    assert_eq!(rejected.status, 500);
+    assert!(rejected.body.is_empty());
+    let after = auth
+        .store()
+        .get_session(token)
+        .await
+        .expect("lookup")
+        .expect("session preserved");
+    assert_eq!(after.updated_at, before.updated_at);
+    assert_eq!(after.user_id, before.user_id);
+    assert_eq!(after.token, before.token);
+}

@@ -60,6 +60,9 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
 
 /// Trait representing a session entity.
 pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
+    fn additional_fields(&self) -> serde_json::Map<String, serde_json::Value> {
+        serde_json::Map::new()
+    }
     fn id(&self) -> Cow<'_, str>;
     fn expires_at(&self) -> DateTime<Utc>;
     fn token(&self) -> &str;

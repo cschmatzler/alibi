@@ -1869,12 +1869,27 @@
     {
       "route": "POST /update-session",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": [
+          "update-session session-fields persists configured fields only for the current token with defaults policies callbacks and deletion failure",
+          "update-session session-fields-plugins persists configured fields only for the current token with defaults policies callbacks and deletion failure"
+        ],
+        "rejection": [
+          "update-session validates records before authentication and rejects immutable empty or unsupported media patches without state changes",
+          "update-session session-fields persists configured fields only for the current token with defaults policies callbacks and deletion failure",
+          "update-session session-fields-plugins persists configured fields only for the current token with defaults policies callbacks and deletion failure"
+        ],
+        "authorization": [
+          "update-session validates records before authentication and rejects immutable empty or unsupported media patches without state changes",
+          "update-session session-fields persists configured fields only for the current token with defaults policies callbacks and deletion failure",
+          "update-session session-fields-plugins persists configured fields only for the current token with defaults policies callbacks and deletion failure"
+        ],
+        "state": [
+          "update-session validates records before authentication and rejects immutable empty or unsupported media patches without state changes",
+          "update-session session-fields persists configured fields only for the current token with defaults policies callbacks and deletion failure",
+          "update-session session-fields-plugins persists configured fields only for the current token with defaults policies callbacks and deletion failure"
+        ]
       }
     },
     {

@@ -8,6 +8,7 @@ import { createTwoFactorTotpFixture } from "./two-factor-totp-fixture";
 import { createSiweFixture } from "./siwe-fixture";
 import { createPhoneFixture } from "./phone-fixture";
 import { createMultipleSessionFixture } from "./multiple-session-fixture";
+import { createSessionFieldsFixture } from "./session-fields-fixture";
 import { getMigrations } from "better-auth/db/migration";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { apiKey } from "@better-auth/api-key";
@@ -383,6 +384,7 @@ const authOptions = {
 
 const { runMigrations } = await getMigrations(authOptions);
 await runMigrations();
+const sessionFieldsFixture=await createSessionFieldsFixture(database,authOptions,`http://localhost:${PORT}`);
 const siweFixture = await createSiweFixture(database, authOptions, `http://localhost:${PORT}`);
 const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 
@@ -705,6 +707,8 @@ const server = Bun.serve({
   async fetch(request) {
     try {
       const url = new URL(request.url);
+      if(url.pathname==="/__test/session-field-state")return jsonResponse(sessionFieldsFixture.state(url.searchParams.get("email")??""));
+      for(const [name,profile] of sessionFieldsFixture.profiles)if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return profile.handler(request);
       for (const [name,profile] of deviceProfiles) if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return profile.handler(request);
 
       if (url.pathname === "/__test/device-state" && request.method === "GET") {

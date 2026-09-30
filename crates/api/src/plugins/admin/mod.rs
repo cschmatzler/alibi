@@ -110,6 +110,10 @@ better_auth_core::impl_auth_plugin! {
         post "/admin/has-permission" => handle_has_permission, "admin_has_permission";
     }
     extra {
+        fn session_fields(&self) -> better_auth_core::field_policy::FieldConfigs {
+            [("impersonatedBy".into(), better_auth_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"})).read_only())].into_iter().collect()
+        }
+
         async fn on_init(
             &self,
             ctx: &mut better_auth_core::AuthInitContext<S>,
