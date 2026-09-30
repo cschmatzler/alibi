@@ -1668,3 +1668,130 @@ async fn imported_jwk_material_accepts_padded_coordinates_and_rejects_other_alph
         }
     }
 }
+
+// Raw JSON input has JavaScript Number semantics before cryptographic emission.
+// Ordinary object keys and string-valued IDs must not enter number decoding.
+#[tokio::test]
+async fn raw_json_signing_normalizes_application_numbers_and_preserves_literal_keys() {
+    let ctx = test_helpers::create_test_context().await;
+    let plugin = JwtPlugin::new();
+    let payload = better_auth_core::utils::json::parse_value(
+        r#"{"sub":"9007199254740993","exp":4102444800,"rounded":9007199254740993,"overflow":1e400,"nested":[-0.0,-1e400],"literal":{"$serde_json::private::Number":"1e400","$serde_json::private::RawValue":"hello"}}"#,
+    ).unwrap();
+    let token = plugin
+        .sign_jwt_json(&payload, &JwtSignOptions::default(), None, &ctx)
+        .await
+        .unwrap();
+    let (_, signed) = decoded(&token);
+    assert_eq!(signed["rounded"], 9_007_199_254_740_992_u64);
+    assert_eq!(signed["overflow"], Value::Null);
+    assert_eq!(signed["nested"], json!([0, null]));
+    assert_eq!(signed["sub"], "9007199254740993");
+    assert_eq!(
+        signed["literal"],
+        json!({"$serde_json::private::Number":"1e400","$serde_json::private::RawValue":"hello"})
+    );
+    assert_eq!(
+        plugin
+            .verify_jwt(&token, None, None, &ctx)
+            .await
+            .unwrap()
+            .unwrap(),
+        signed.as_object().unwrap().clone()
+    );
+
+    // A literal private serde marker as the first and only key must survive
+    // managed verification even when SQLx enables serde_json raw_value.
+    let literal = better_auth_core::utils::json::parse_value(
+        r#"{"sub":"literal-key-owner","exp":4102444800,"singleton":{"$serde_json::private::RawValue":"hello"}}"#,
+    )
+    .unwrap();
+    let token = plugin
+        .sign_jwt_json(&literal, &JwtSignOptions::default(), None, &ctx)
+        .await
+        .unwrap();
+    let verified = plugin
+        .verify_jwt(&token, None, None, &ctx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        verified["singleton"]["$serde_json::private::RawValue"],
+        "hello"
+    );
+
+    // Native Map<Value> callers use the same JSON signing boundary, including headers.
+    let options = JwtSignOptions {
+        header: json!({"proof":u64::MAX,"literal":"1e400"})
+            .as_object()
+            .unwrap()
+            .clone(),
+        ..Default::default()
+    };
+    let native = plugin
+        .sign_jwt(
+            json!({"sub":"native-numbers","exp":4102444800_u64,"rounded":9_007_199_254_740_993_u64})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &options,
+            None,
+            &ctx,
+        )
+        .await
+        .unwrap();
+    let (header, signed) = decoded(&native);
+    assert_eq!(signed["rounded"], 9_007_199_254_740_992_u64);
+    assert_eq!(header["literal"], "1e400");
+    let header_text = String::from_utf8(
+        URL_SAFE_NO_PAD
+            .decode(native.split('.').next().unwrap())
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(header_text.contains("\"proof\":18446744073709552000"));
+}
+
+// Signing must reject nonfinite registered claims before nullable JSON emission.
+// Lazy key creation precedes the rejection in pinned JOSE and remains observable.
+#[tokio::test]
+async fn raw_json_signing_rejects_nonfinite_dates_and_truthy_scalar_subjects() {
+    let ctx = test_helpers::create_test_context().await;
+    let plugin = JwtPlugin::new();
+    assert!(ctx.database.list_jwks().await.unwrap().is_empty());
+    for (field, literal) in [
+        ("exp", "1e400"),
+        ("exp", "-1e400"),
+        ("iat", "1e400"),
+        ("iat", "-1e400"),
+        ("nbf", "1e400"),
+        ("nbf", "-1e400"),
+        ("sub", "1e400"),
+        ("jti", "-1e400"),
+        ("iss", "1e400"),
+    ] {
+        let input = format!("{{\"exp\":4102444800,\"{field}\":{literal}}}");
+        let payload = better_auth_core::utils::json::parse_value(&input).unwrap();
+        assert!(
+            plugin
+                .sign_jwt_json(&payload, &JwtSignOptions::default(), None, &ctx)
+                .await
+                .is_err(),
+            "{field}: {literal}"
+        );
+        assert_eq!(ctx.database.list_jwks().await.unwrap().len(), 1);
+    }
+    let payload = better_auth_core::utils::json::parse_value(
+        r#"{"exp":4102444800,"sub":0,"jti":false,"iat":null,"nbf":false}"#,
+    )
+    .unwrap();
+    let token = plugin
+        .sign_jwt_json(&payload, &JwtSignOptions::default(), None, &ctx)
+        .await
+        .unwrap();
+    let (_, signed) = decoded(&token);
+    assert_eq!(signed["sub"], 0);
+    assert_eq!(signed["jti"], false);
+    assert_eq!(signed["iat"], Value::Null);
+    assert_eq!(signed["nbf"], false);
+}

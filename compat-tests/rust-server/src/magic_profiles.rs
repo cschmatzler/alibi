@@ -22,10 +22,11 @@ struct Sender(Outbox);
 #[async_trait]
 impl SendMagicLink for Sender {
     async fn send(&self, delivery: &MagicLinkDelivery) -> AuthResult<()> {
+        let serialized = serde_json::to_value(delivery)?;
         _ = self.0.lock().await.insert(
             delivery.email.clone(),
             json!({
-                "url": delivery.url, "token": delivery.token, "metadata": delivery.metadata,
+                "url": serialized["url"], "token": serialized["token"], "metadata": serialized["metadata"],
             }),
         );
         Ok(())

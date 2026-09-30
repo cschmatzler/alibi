@@ -40,6 +40,9 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
         let create_user = create_data(create_user, &self.transforms.creates)?;
         self.inner.create_user(create_user).await
     }
+    async fn coerce_user_text_number(&self, input: NumericTextInput) -> AuthResult<String> {
+        self.inner.coerce_user_text_number(input).await
+    }
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {
         self.inner.get_user_by_id(id).await
     }

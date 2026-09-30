@@ -81,7 +81,11 @@ pub struct UserView {
     )]
     pub last_login_method: Option<String>,
     /// Nullable fields contributed by an enabled plugin's output schema.
-    #[serde(flatten, default)]
+    #[serde(
+        flatten,
+        default,
+        deserialize_with = "crate::utils::json::deserialize_btree_map"
+    )]
     pub extension_fields: std::collections::BTreeMap<String, serde_json::Value>,
     #[serde(skip)]
     pub metadata: serde_json::Value,
@@ -125,7 +129,11 @@ pub struct SessionView {
         skip_serializing_if = "Option::is_none"
     )]
     pub active_team_id: Option<String>,
-    #[serde(flatten, default)]
+    #[serde(
+        flatten,
+        default,
+        deserialize_with = "crate::utils::json::deserialize_btree_map"
+    )]
     pub extension_fields: std::collections::BTreeMap<String, serde_json::Value>,
     #[serde(skip)]
     pub active: bool,
@@ -460,6 +468,10 @@ pub struct OrganizationView {
         serialize_with = "serialize_json_option_as_string",
         skip_serializing_if = "Option::is_none"
     )]
+    #[serde(
+        default,
+        deserialize_with = "crate::utils::json::deserialize_optional_value"
+    )]
     pub metadata: Option<serde_json::Value>,
     #[serde(rename = "createdAt")]
     #[serde(serialize_with = "crate::utils::datetime::serialize")]
@@ -502,7 +514,11 @@ pub struct InvitationView {
     pub created_at: DateTime<Utc>,
     #[serde(rename = "teamId", default, skip_serializing_if = "Option::is_none")]
     pub team_id: Option<String>,
-    #[serde(flatten, default)]
+    #[serde(
+        flatten,
+        default,
+        deserialize_with = "crate::utils::json::deserialize_btree_map"
+    )]
     pub extension_fields: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
@@ -612,7 +628,15 @@ pub struct ApiKeyView {
     pub created_at: String,
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
+    #[serde(
+        default,
+        deserialize_with = "crate::utils::json::deserialize_optional_value"
+    )]
     pub permissions: Option<serde_json::Value>,
+    #[serde(
+        default,
+        deserialize_with = "crate::utils::json::deserialize_optional_value"
+    )]
     pub metadata: Option<serde_json::Value>,
 }
 
@@ -652,7 +676,12 @@ impl<T: AuthApiKey> From<&T> for ApiKeyView {
             created_at: ak.created_at().to_owned(),
             updated_at: ak.updated_at().to_owned(),
             permissions: ak.permissions().and_then(|s| serde_json::from_str(s).ok()),
-            metadata: ak.metadata().and_then(|s| serde_json::from_str(s).ok()),
+            metadata: ak.metadata().and_then(|s| {
+                crate::utils::json::parse_value(s)
+                    .ok()?
+                    .to_json_value()
+                    .ok()
+            }),
         }
     }
 }

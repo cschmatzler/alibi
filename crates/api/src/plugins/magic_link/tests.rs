@@ -8,6 +8,7 @@ use crate::plugins::test_helpers;
 use better_auth_core::{
     AuthPlugin, AuthSession, AuthUser, AuthVerification, CreateUser, HttpMethod,
 };
+use serde_json::Value;
 use std::sync::Mutex;
 
 #[derive(Default)]
@@ -63,7 +64,10 @@ async fn delivered_link_authenticates_its_mailbox_once_and_persists_session() {
             .map(|(_, value)| value.into_owned()),
         Some("/".into())
     );
-    assert_eq!(delivery.metadata, Some(json!({"campaign":"welcome"})));
+    assert_eq!(
+        delivery.metadata,
+        Some(json!({"campaign":"welcome"}).into())
+    );
     let stored = ctx
         .database
         .get_latest_verification_by_identifier(&delivery.token)

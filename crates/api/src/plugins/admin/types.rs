@@ -67,6 +67,10 @@ pub(crate) struct CreateUserRequest {
     #[validate(length(min = 1, message = "Name is required"))]
     pub name: String,
     pub role: Option<RoleInput>,
+    #[serde(
+        default,
+        deserialize_with = "better_auth_core::utils::json::deserialize_optional_map"
+    )]
     pub data: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
@@ -75,6 +79,7 @@ pub(crate) struct AdminUpdateUserRequest {
     #[serde(rename = "userId")]
     #[validate(length(min = 1, message = "userId is required"))]
     pub user_id: String,
+    #[serde(deserialize_with = "better_auth_core::utils::json::deserialize_map")]
     pub data: serde_json::Map<String, serde_json::Value>,
 }
 

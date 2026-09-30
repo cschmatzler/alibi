@@ -36,7 +36,7 @@ where
             serde_json::Value::Object(_) => Ok("[object Object]".to_owned()),
         }
     }
-    let value = serde_json::Value::deserialize(deserializer)?;
+    let value = better_auth_core::utils::json::deserialize_value(deserializer)?;
     string(&value).map_err(serde::de::Error::custom)
 }
 
@@ -124,6 +124,10 @@ pub struct CreateOrganizationRequest {
     #[validate(length(min = 1, max = 100, message = "Slug must be 1-100 characters"))]
     pub slug: String,
     pub logo: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "better_auth_core::utils::json::deserialize_optional_value"
+    )]
     pub metadata: Option<serde_json::Value>,
     #[serde(rename = "keepCurrentActiveOrganization")]
     pub keep_current_active_organization: Option<bool>,
@@ -134,6 +138,10 @@ pub struct UpdateOrganizationData {
     pub name: Option<String>,
     pub slug: Option<String>,
     pub logo: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "better_auth_core::utils::json::deserialize_optional_value"
+    )]
     pub metadata: Option<serde_json::Value>,
 }
 

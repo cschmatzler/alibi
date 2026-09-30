@@ -109,16 +109,20 @@ impl JsonField {
     }
 }
 
-pub(crate) trait RequestBody: DeserializeOwned {
+pub(crate) trait RequestBody: DeserializeOwned + 'static {
     const FIELDS: &'static [JsonField];
 }
 
 /// Parse the upstream schema at the HTTP boundary. The error includes all
 /// failed fields in declaration order, including explicitly null optionals.
 pub(crate) fn parse_body<T: RequestBody>(req: &AuthRequest) -> Result<T, AuthResponse> {
-    let value: Value = req
-        .body_as_json()
-        .map_err(|_| validation_response("[body] Invalid JSON"))?;
+    let value: better_auth_core::utils::json::JsValue = req.body_as_json().map_err(|_| {
+        AuthResponse::json(
+            400,
+            &serde_json::json!({"code":"BAD_REQUEST","message":"Invalid JSON in request body"}),
+        )
+        .unwrap_or_else(|_| AuthResponse::text(400, "Invalid JSON in request body"))
+    })?;
     let Some(object) = value.as_object() else {
         return Err(validation_response(&format!(
             "[body] Invalid input: expected object, received {}",
@@ -133,7 +137,7 @@ pub(crate) fn parse_body<T: RequestBody>(req: &AuthRequest) -> Result<T, AuthRes
         }
         let issue = match field.kind {
             JsonFieldKind::String | JsonFieldKind::NonEmptyString | JsonFieldKind::Email
-                if !value.is_some_and(Value::is_string) =>
+                if !value.is_some_and(better_auth_core::utils::json::JsValue::is_string) =>
             {
                 Some(format!(
                     "Invalid input: expected string, received {}",
@@ -141,20 +145,30 @@ pub(crate) fn parse_body<T: RequestBody>(req: &AuthRequest) -> Result<T, AuthRes
                 ))
             }
             JsonFieldKind::NonEmptyString
-                if value.and_then(Value::as_str).is_some_and(str::is_empty) =>
+                if value
+                    .and_then(better_auth_core::utils::json::JsValue::as_str)
+                    .is_some_and(str::is_empty) =>
             {
                 Some("Too small: expected string to have >=1 characters".to_owned())
             }
-            JsonFieldKind::Boolean if !value.is_some_and(Value::is_boolean) => Some(format!(
-                "Invalid input: expected boolean, received {}",
-                json_type(value)
-            )),
-            JsonFieldKind::Email if !value.and_then(Value::as_str).is_some_and(is_valid_email) => {
+            JsonFieldKind::Boolean
+                if !value.is_some_and(better_auth_core::utils::json::JsValue::is_boolean) =>
+            {
+                Some(format!(
+                    "Invalid input: expected boolean, received {}",
+                    json_type(value)
+                ))
+            }
+            JsonFieldKind::Email
+                if !value
+                    .and_then(better_auth_core::utils::json::JsValue::as_str)
+                    .is_some_and(is_valid_email) =>
+            {
                 Some("Invalid email address".to_string())
             }
             JsonFieldKind::OneOf(choices)
                 if !value
-                    .and_then(Value::as_str)
+                    .and_then(better_auth_core::utils::json::JsValue::as_str)
                     .is_some_and(|value| choices.contains(&value)) =>
             {
                 Some(format!(
@@ -166,10 +180,14 @@ pub(crate) fn parse_body<T: RequestBody>(req: &AuthRequest) -> Result<T, AuthRes
                         .join("|")
                 ))
             }
-            JsonFieldKind::Record if !value.is_some_and(Value::is_object) => Some(format!(
-                "Invalid input: expected record, received {}",
-                json_type(value)
-            )),
+            JsonFieldKind::Record
+                if !value.is_some_and(better_auth_core::utils::json::JsValue::is_object) =>
+            {
+                Some(format!(
+                    "Invalid input: expected record, received {}",
+                    json_type(value)
+                ))
+            }
             _ => None,
         };
         if let Some(issue) = issue {
@@ -179,18 +197,24 @@ pub(crate) fn parse_body<T: RequestBody>(req: &AuthRequest) -> Result<T, AuthRes
     if !issues.is_empty() {
         return Err(validation_response(&issues.join("; ")));
     }
-    serde_json::from_value(value).map_err(|_| validation_response("[body] Invalid input"))
+    better_auth_core::utils::json::from_value(value)
+        .map_err(|_| validation_response("[body] Invalid input"))
 }
 
-fn json_type(value: Option<&Value>) -> &'static str {
+fn json_type(value: Option<&better_auth_core::utils::json::JsValue>) -> &'static str {
+    use better_auth_core::utils::json::JsValue;
     match value {
         None => "undefined",
-        Some(Value::Null) => "null",
-        Some(Value::Bool(_)) => "boolean",
-        Some(Value::Number(_)) => "number",
-        Some(Value::String(_)) => "string",
-        Some(Value::Array(_)) => "array",
-        Some(Value::Object(_)) => "object",
+        Some(JsValue::Null) => "null",
+        Some(JsValue::Bool(_)) => "boolean",
+        Some(JsValue::Number(number)) if number.is_infinite() && number.is_sign_negative() => {
+            "-Infinity"
+        }
+        Some(JsValue::Number(number)) if number.is_infinite() => "Infinity",
+        Some(JsValue::Number(_)) => "number",
+        Some(JsValue::String(_)) => "string",
+        Some(JsValue::Array(_)) => "array",
+        Some(JsValue::Object(_)) => "object",
     }
 }
 

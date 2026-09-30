@@ -1,3 +1,4 @@
+use better_auth_core::utils::json::JsValue;
 pub(crate) use better_auth_core::wire::ApiKeyView;
 use better_auth_core::{AuthRequest, AuthResponse};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -48,7 +49,7 @@ pub struct CreateKeyRequest {
     pub permissions: Option<HashMap<String, Vec<String>>>,
     /// Optional metadata; preservation of null matches the upstream wire contract.
     #[serde(default, deserialize_with = "present")]
-    pub metadata: Option<serde_json::Value>,
+    pub metadata: Option<JsValue>,
 }
 
 /// API key updates for HTTP and trusted server callers.
@@ -93,7 +94,7 @@ pub struct UpdateKeyRequest {
     pub permissions: Option<Option<HashMap<String, Vec<String>>>>,
     /// Replacement metadata; null clears metadata when metadata is enabled.
     #[serde(default, deserialize_with = "present")]
-    pub metadata: Option<serde_json::Value>,
+    pub metadata: Option<JsValue>,
     /// Absent leaves expiration unchanged, null clears expiration, and a value sets seconds from now.
     #[serde(default, with = "::serde_with::rust::double_option")]
     pub expires_in: Option<Option<f64>>,
@@ -104,14 +105,28 @@ pub(crate) fn parse_api_key_body<T>(request: &AuthRequest) -> Result<T, AuthResp
 where
     T: serde::de::DeserializeOwned + Validate,
 {
-    let mut deserializer =
-        serde_json::Deserializer::from_slice(request.body.as_deref().unwrap_or(b"null"));
-    let body: T = serde_path_to_error::deserialize(&mut deserializer).map_err(|error| {
+    let input: JsValue = request
+        .body_as_json()
+        .map_err(|_| validation_response("body", "Invalid JSON"))?;
+    let body: T = serde_path_to_error::deserialize(input.clone()).map_err(|error| {
         let mut path = error.path().to_string().replace('[', ".").replace(']', "");
         if path == "." {
             path.clear();
         }
         let detail = error.inner().to_string();
+        let input_number = {
+            let mut value = Some(&input);
+            for segment in error.path() {
+                value = value.and_then(|current| match segment {
+                    serde_path_to_error::Segment::Seq { index } => current.as_array()?.get(*index),
+                    serde_path_to_error::Segment::Map { key } => current.get(key),
+                    serde_path_to_error::Segment::Enum { variant } => current.get(variant),
+                    serde_path_to_error::Segment::Unknown => None,
+                });
+            }
+            value.and_then(JsValue::as_f64)
+        };
+        let nonfinite_input = input_number.filter(|number| !number.is_finite());
         let message = if let Some(field) = detail
             .strip_prefix("missing field `")
             .and_then(|rest| rest.split('`').next())
@@ -131,7 +146,13 @@ where
                 "a map" => "record",
                 _ => "object",
             };
-            let received = if received.starts_with("string") {
+            let received = if let Some(number) = nonfinite_input {
+                if number.is_sign_negative() {
+                    "-Infinity"
+                } else {
+                    "Infinity"
+                }
+            } else if received.starts_with("string") {
                 "string"
             } else if received.starts_with("integer") || received.starts_with("floating point") {
                 "number"
@@ -145,6 +166,15 @@ where
                 }
             };
             format!("Invalid input: expected {expected}, received {received}")
+        } else if detail.starts_with("number out of range") && nonfinite_input.is_some() {
+            format!(
+                "Invalid input: expected number, received {}",
+                if nonfinite_input.is_some_and(f64::is_sign_negative) {
+                    "-Infinity"
+                } else {
+                    "Infinity"
+                }
+            )
         } else {
             detail
         };
@@ -155,9 +185,6 @@ where
         };
         validation_response(&location, &message)
     })?;
-    deserializer
-        .end()
-        .map_err(|error| validation_response("body", &error.to_string()))?;
     body.validate()
         .map_err(|error| better_auth_core::validation_error_response(&error))?;
     Ok(body)
@@ -213,7 +240,16 @@ fn numeric_errors(
             continue;
         };
         let message = if !value.is_finite() {
-            Some("Invalid input: expected number, received number".to_string())
+            Some(format!(
+                "Invalid input: expected number, received {}",
+                if value.is_nan() {
+                    "NaN"
+                } else if value.is_sign_negative() {
+                    "-Infinity"
+                } else {
+                    "Infinity"
+                }
+            ))
         } else {
             minimum
                 .filter(|minimum| value < *minimum)
@@ -249,10 +285,10 @@ fn coerced_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    fn js_string(value: &serde_json::Value) -> String {
+    fn js_string(value: &JsValue) -> String {
         match value {
-            serde_json::Value::String(value) => value.clone(),
-            serde_json::Value::Array(values) => values
+            JsValue::String(value) => value.clone(),
+            JsValue::Array(values) => values
                 .iter()
                 .map(|value| {
                     if value.is_null() {
@@ -263,11 +299,13 @@ where
                 })
                 .collect::<Vec<_>>()
                 .join(","),
-            serde_json::Value::Object(_) => "[object Object]".to_string(),
-            value => value.to_string(),
+            JsValue::Object(_) => "[object Object]".into(),
+            JsValue::Number(number) => ryu_js::Buffer::new().format(*number).to_owned(),
+            JsValue::Null => "null".into(),
+            JsValue::Bool(value) => value.to_string(),
         }
     }
-    serde_json::Value::deserialize(deserializer).map(|value| Some(js_string(&value)))
+    JsValue::deserialize(deserializer).map(|value| Some(js_string(&value)))
 }
 
 fn validate_prefix(prefix: &str) -> Result<(), validator::ValidationError> {

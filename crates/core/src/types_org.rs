@@ -28,7 +28,9 @@ where
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum MetadataValue {
-        Json(serde_json::Value),
+        Json(
+            #[serde(deserialize_with = "crate::utils::json::deserialize_value")] serde_json::Value,
+        ),
         String(String),
     }
 
@@ -36,10 +38,12 @@ where
     value
         .map(|inner| match inner {
             MetadataValue::Json(value) => Ok(value),
-            MetadataValue::String(value) => match serde_json::from_str(&value) {
-                Ok(parsed) => Ok(parsed),
-                Err(_) => Ok(serde_json::Value::String(value)),
-            },
+            MetadataValue::String(value) => {
+                match crate::utils::json::from_slice(value.as_bytes()) {
+                    Ok(parsed) => Ok(parsed),
+                    Err(_) => Ok(serde_json::Value::String(value)),
+                }
+            }
         })
         .transpose()
 }

@@ -219,26 +219,32 @@ async fn create_key_for_user(
             .metadata
             .as_ref()
             .filter(|value| json_truthy(value))
-            .map(ToString::to_string),
+            .map(better_auth_core::utils::json::to_string)
+            .transpose()?,
         enabled: true,
     };
     let api_key = ctx.database.create_api_key(input).await?;
     plugin.maybe_delete_expired(ctx).await;
     let mut api_key = ApiKeyView::from(&api_key);
     // Upstream returns supplied falsy metadata at creation, but stores null.
-    api_key.metadata = body.metadata.clone();
+    api_key.metadata = body
+        .metadata
+        .as_ref()
+        .map(better_auth_core::utils::json::JsValue::to_json_value)
+        .transpose()?;
     Ok(CreateKeyResponse {
         key: full_key,
         api_key,
     })
 }
 
-fn json_truthy(value: &serde_json::Value) -> bool {
+fn json_truthy(value: &better_auth_core::utils::json::JsValue) -> bool {
+    use better_auth_core::utils::json::JsValue;
     match value {
-        serde_json::Value::Null => false,
-        serde_json::Value::Bool(value) => *value,
-        serde_json::Value::Number(value) => value.as_f64().is_some_and(|value| value != 0.0),
-        serde_json::Value::String(value) => !value.is_empty(),
+        JsValue::Null => false,
+        JsValue::Bool(value) => *value,
+        JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
+        JsValue::String(value) => !value.is_empty(),
         _ => true,
     }
 }
@@ -470,7 +476,9 @@ async fn update_key_for_user(
             .as_ref()
             .map(serde_json::to_string)
             .transpose()?,
-        metadata: metadata.map(ToString::to_string),
+        metadata: metadata
+            .map(better_auth_core::utils::json::to_string)
+            .transpose()?,
         expires_at,
         ..Default::default()
     };

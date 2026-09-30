@@ -89,7 +89,7 @@ pub(super) fn body_object(req: &AuthRequest) -> Result<Map<String, Value>, AuthR
         });
         return Err(expected("body", "object", (chunked && json).then_some(&Value::Null)).into());
     };
-    let value = serde_json::from_slice::<Value>(bytes)
+    let value = better_auth_core::utils::json::from_slice::<Value>(bytes)
         .map_err(|_| response("BAD_REQUEST", "Invalid JSON in request body"))?;
     object(Some(&value), "body").cloned().map_err(Into::into)
 }

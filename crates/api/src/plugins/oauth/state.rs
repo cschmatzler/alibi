@@ -30,6 +30,7 @@ pub(crate) struct OAuthStatePayload {
     #[serde(rename = "requestSignUp", skip_serializing_if = "Option::is_none")]
     pub request_sign_up: Option<bool>,
     #[serde(flatten)]
+    #[serde(deserialize_with = "better_auth_core::utils::json::deserialize_map")]
     pub additional_data: Map<String, Value>,
 }
 
