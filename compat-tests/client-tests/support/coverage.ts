@@ -11,13 +11,14 @@ export const inventorySchema = z.object({ upstreamVersion: z.literal("1.7.6"), c
 export type EvidenceKind = "success" | "rejection" | "authorization" | "state";
 const inventory = inventorySchema.parse(await Bun.file(new URL("../../capabilities.json", import.meta.url)).json());
 
-/** Persist evidence only after both runtime comparisons pass. */
-export async function recordCoverage(scenario: string, traces: readonly TraceEntry[], stateTransitions: readonly string[]) {
-  if (process.env.COMPAT_COVERAGE !== "1") return;
+/** Collect route evidence without conflating it with complete parity. */
+export function collectCoverage(scenario: string, traces: readonly TraceEntry[], stateTransitions: readonly string[]) {
   const observations = new Map<string, Map<EvidenceKind, Set<string>>>();
   for (const trace of traces) {
-    const path = new URL(trace.path, "http://compat.local").pathname.replace(/^\/api\/auth/, "");
-    if (!trace.path.startsWith("/api/auth/")) continue;
+    const pathname = new URL(trace.path, "http://compat.local").pathname;
+    const prefix = pathname.match(/^(?:\/__test\/profiles\/[a-z0-9-]+)?\/api\/auth(?=\/)/)?.[0];
+    if (!prefix) continue;
+    const path = pathname.slice(prefix.length);
     const route = inventory.capabilities.find(entry => entry.route === `${trace.method} ${path}`)?.route ?? inventory.capabilities.find(entry => {
       const [method, pattern] = entry.route.split(" ");
       return method === trace.method && pattern !== undefined && pattern.split("/").length === path.split("/").length && pattern.split("/").every((part, i) => part === "{}" || part === path.split("/")[i]);
@@ -31,7 +32,13 @@ export async function recordCoverage(scenario: string, traces: readonly TraceEnt
     for (const kind of kinds) { const scenarios = record.get(kind) ?? new Set<string>(); scenarios.add(scenario); record.set(kind, scenarios); }
     observations.set(route, record);
   }
-  const output = Object.fromEntries([...observations].sort().map(([route, kinds]) => [route, Object.fromEntries([...kinds].map(([kind, names]) => [kind, [...names].sort()]))]));
+  return Object.fromEntries([...observations].sort().map(([route, kinds]) => [route, Object.fromEntries([...kinds].map(([kind, names]) => [kind, [...names].sort()]))]));
+}
+
+/** Persist evidence only after both runtime comparisons pass. */
+export async function recordCoverage(scenario: string, traces: readonly TraceEntry[], stateTransitions: readonly string[]) {
+  if (process.env.COMPAT_COVERAGE !== "1") return;
+  const output = collectCoverage(scenario, traces, stateTransitions);
   const directory = new URL("../artifacts/evidence/", import.meta.url);
   await mkdir(directory, { recursive: true });
   await Bun.write(new URL(`${Bun.hash(scenario)}.json`, directory), JSON.stringify(output, null, 2));
