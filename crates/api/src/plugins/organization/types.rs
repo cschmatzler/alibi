@@ -119,7 +119,7 @@ impl RoleInput {
 pub struct CreateOrganizationRequest {
     #[validate(length(min = 1, message = "Name is required"))]
     pub name: String,
-    #[validate(length(min = 1, max = 100, message = "Slug must be 1-100 characters"))]
+    #[validate(length(min = 1, message = "Slug is required"))]
     pub slug: String,
     pub logo: Option<String>,
     #[serde(

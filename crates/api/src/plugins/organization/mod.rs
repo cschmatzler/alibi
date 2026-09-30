@@ -112,6 +112,7 @@ impl OrganizationPlugin {
             types::BasicMemberResponse,
         >,
     > {
+        handlers::org_input::validate_trusted_create(body)?;
         let user = ctx
             .database
             .get_user_by_id(user_id)
