@@ -12,6 +12,7 @@ pub mod magic_link;
 pub mod multi_session;
 pub mod oauth;
 pub mod one_time_token;
+pub mod open_api;
 pub mod organization;
 pub mod passkey;
 pub mod password_management;

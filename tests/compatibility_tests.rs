@@ -461,7 +461,7 @@ async fn test_generated_openapi_metadata() {
     let auth = create_full_auth().await;
     let spec = auth.openapi_spec();
 
-    assert_eq!(spec.openapi, "3.1.0");
+    assert_eq!(spec.openapi, "3.1.1");
     assert_eq!(spec.info.title, "Better Auth");
     assert!(spec.info.description.is_some());
 }

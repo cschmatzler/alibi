@@ -54,6 +54,7 @@ mod multiple_session_fixture;
 mod one_time_token_fixture;
 mod organization_timestamp_fixture;
 mod otp_profiles;
+mod open_api_fixture;
 mod parity_controls;
 mod phone_profiles;
 mod session_field_model;
@@ -810,6 +811,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let two_factor_otp_router =
         two_factor_otp_fixture::router(&config, reset_database.clone()).await?;
     let ott_router = one_time_token_fixture::router(&config, reset_database.clone()).await?;
+    let open_api_router = open_api_fixture::router(&config, reset_database.clone()).await?;
 
     let app = Router::new()
         .merge(lifecycle_controls)
@@ -1612,6 +1614,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(session_profile_router)
         .merge(multiple_session_router)
         .merge(session_fields_router)
+
+        .merge(open_api_router)
         .merge(otp_router)
         .merge(magic_router)
         .merge(siwe_profile_router)

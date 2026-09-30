@@ -91,6 +91,12 @@ pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
         indexmap::IndexMap::new()
     }
 
+    /// Documentation annotations collected after all plugins initialize.
+    /// Override this hook for custom endpoints and model field policies.
+    fn openapi_metadata(&self, ctx: &AuthInitContext<S>) -> crate::openapi::PluginOpenApiMetadata {
+        crate::openapi::annotations::instance_plugin_metadata(self.name(), &self.routes(), ctx)
+    }
+
     /// Called when the plugin is initialized
     async fn on_init(&self, ctx: &mut AuthInitContext<S>) -> AuthResult<()> {
         let _ = ctx;

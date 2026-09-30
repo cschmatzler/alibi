@@ -1,0 +1,83 @@
+# OpenAPI/reference parity investigation (Better Auth 1.7.6)
+
+This family is **in progress**, not full parity. The first generator/configuration
+slice is implemented and proved with strict whole-document differential profiles.
+The ordinary default document still differs: `/update-session` is not implemented,
+and endpoint annotations outside the proved session family are being ported from
+source. No default-complete scenario is claimed or silently filtered.
+
+## Runtime contract and implementation
+
+Pinned sources: `better-auth/dist/plugins/open-api/{index,generator}.mjs`,
+`@better-auth/core/dist/db/get-tables.mjs`, and each owning endpoint/plugin schema.
+The runtime serves `/open-api/generate-schema` and `/reference` by default;
+`path`, `theme`, `nonce`, and `disableDefaultReference` are application options.
+The generated document is OpenAPI 3.1.1 with upstream info, security schemes,
+security, server base URL, model schemas, tags and operations. The OpenAPI plugin
+excludes its own endpoints from the document. Disabled paths and server-only
+annotations are omitted. The reference page embeds the complete generated
+schema and the pinned MIT-licensed upstream brand asset, with the nonce on its
+two executable scripts. Disabling the reference produces an empty 404 response
+that retains the application/json header; schema generation remains public.
+
+The production builder obtains actual routes from registered plugins and collects
+rich endpoint/model annotations after all plugin initialization. It stores an
+immutable registry in context extensions and on the auth instance. `AuthRoute`
+fields and dispatch ABI are preserved. Custom plugins provide the typed
+`openapi_metadata` hook, including parameters, request body, responses, explicit
+operation IDs, tags, descriptions, and server-only policy. Operation ID collision
+resolution uses method suffixes and numeric suffixes. Path parameters are added
+only when a corresponding path parameter was not already supplied.
+
+The chosen `AuthSchema::openapi_models` supplies its core accessor-backed wire
+projection and may declare additional field policies. Registered plugin models
+are merged by logical field name; optional SQL columns do not activate plugins.
+Model fields preserve type/format/array/nullable/default constraints, input and
+returned policies. `returned:false` fields remain documented but are excluded
+from required lists; `input:false` adds readOnly. Dynamic defaults are omitted.
+Documentation metadata does not install input parsing, output projection, or
+custom-field persistence. Applications must declare the policies they implement.
+
+## Focused proof and test ownership
+
+Four official SDK/raw HTTP scenarios compare the complete configured document,
+including all implemented session operations, every model field/required list,
+security and endpoint metadata. They compare embedded reference JSON with that
+same complete document and compare the entire remaining HTML frame verbatim.
+Fixture origins use the existing narrowly scoped URL comparison. There are no
+new comparator exceptions, field exclusions, or oracle document captures.
+
+The profiles explicitly disable unrelated core endpoints in both real runtimes:
+this is the supported application configuration under test. They exercise default
+OpenAPI options, configured path/theme/nonce plus disabled `/error`, disabled
+reference, and an actual registered JWT plugin's Jwks model without optional
+bundled user/session columns. The default-document gap remains independently
+listed above. The strict default-complete scenario must be added when its core
+prerequisite and remaining annotations land.
+
+The native application extension test owns the Rust-specific metadata contract:
+chosen application schema metadata and custom plugin definitions reach the HTTP
+schema and embedded builder, actual route dispatch keeps working, equivalent
+path/query parameter names remain independent, duplicate operation IDs receive
+a method suffix, rich nullable/union/array body schemas survive, and hidden/read
+only policies do not accidentally become required fields. The SDK scenarios own
+built-in schema and HTML behavior; native tests do not duplicate those flows.
+
+Focused result for this first slice: 4 SDK scenarios / 126 assertions, one native
+application extension test, API/core/root production strict Clippy and client TS
+check pass. Existing core embedded builder checks are retained. Full gates,
+shared inventory/lock finalization, and publication belong to the coordinator.
+
+## Remaining work
+
+- Source-backed rich metadata for all registered core and plugin operations and
+  exact configuration-sensitive model schemas; this work is active.
+- `/update-session` core prerequisite, followed by strict ordinary default whole
+  document evidence; it cannot be replaced by disabling that route silently.
+- OAuth's existing Rust route template uses `{provider}` while pinned source uses
+  `:id`; documentation needs an explicit canonical path annotation without
+  changing the route ABI. Parameterized disabledPaths runtime behavior also needs
+  an independent source/runtime probe before any dispatch correction.
+- Additional application schemas must explicitly supply documentation fields;
+  derive convenience is not yet installed, and arbitrary stored extra columns
+  are not inferred.

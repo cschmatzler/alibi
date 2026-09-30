@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { Database } from "bun:sqlite";
+import { openApiProfiles } from "./open-api-fixture";
 import { passkey } from "@better-auth/passkey";
 import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
@@ -708,6 +709,8 @@ async function oneTimeTokenControl(request:Request,url:URL):Promise<Response|und
   return jsonResponse(await selected.api.generateOneTimeToken({headers:request.headers}));
 }
 
+const openApiInstances=openApiProfiles(PORT,database);
+
 const server = Bun.serve({
   port: PORT,
   async fetch(request) {
@@ -744,6 +747,10 @@ const server = Bun.serve({
         return jsonResponse({ updated: result.changes });
       }
 
+
+      for (const [name,instance] of openApiInstances) {
+        if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
+      }
       for(const [name,profile] of ottProfiles) {
         if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return profile.auth.handler(request);
       }

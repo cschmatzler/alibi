@@ -602,6 +602,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "better-auth-macros",
+ "better-auth-schema-registry",
  "chrono",
  "cookie",
  "glob-match",
