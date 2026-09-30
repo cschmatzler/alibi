@@ -352,7 +352,7 @@ async fn context(plugin: &OrganizationPlugin) -> AuthResult<AuthContext<BundledS
     configured_context(plugin, create_test_config()).await
 }
 
-async fn configured_context(
+pub(super) async fn configured_context(
     plugin: &OrganizationPlugin,
     config: better_auth_core::AuthConfig,
 ) -> AuthResult<AuthContext<BundledSchema>> {
@@ -387,7 +387,7 @@ async fn configured_context_with_connection(
     Ok((ctx, database))
 }
 
-async fn actor(ctx: &AuthContext<BundledSchema>, name: &str) -> (UserView, SessionView) {
+pub(super) async fn actor(ctx: &AuthContext<BundledSchema>, name: &str) -> (UserView, SessionView) {
     create_user_and_session(
         ctx,
         CreateUser {
@@ -401,7 +401,7 @@ async fn actor(ctx: &AuthContext<BundledSchema>, name: &str) -> (UserView, Sessi
     .await
 }
 
-async fn call(
+pub(super) async fn call(
     plugin: &OrganizationPlugin,
     ctx: &AuthContext<BundledSchema>,
     token: Option<&str>,
@@ -436,16 +436,16 @@ async fn call(
     }
 }
 
-fn body<T: DeserializeOwned>(response: &AuthResponse) -> Result<T, serde_json::Error> {
+pub(super) fn body<T: DeserializeOwned>(response: &AuthResponse) -> Result<T, serde_json::Error> {
     serde_json::from_slice(&response.body)
 }
-fn id(value: &Value) -> Result<&str, std::io::Error> {
+pub(super) fn id(value: &Value) -> Result<&str, std::io::Error> {
     value
         .get("id")
         .and_then(Value::as_str)
         .ok_or_else(|| std::io::Error::other("Response is missing ID"))
 }
-fn assert_error(response: &AuthResponse, status: u16, code: &str) -> TestResult {
+pub(super) fn assert_error(response: &AuthResponse, status: u16, code: &str) -> TestResult {
     assert_eq!(response.status, status);
     assert_eq!(
         body::<Value>(response)?.get("code").and_then(Value::as_str),

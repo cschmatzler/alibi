@@ -102,7 +102,9 @@ pub async fn create_team_core<S: AuthSchema>(
             config,
             ctx,
             &data.organization_id,
-        )? {
+        )
+        .await?
+        {
             return Err(org_error(
                 403,
                 "YOU_ARE_NOT_ALLOWED_TO_CREATE_TEAMS_IN_THIS_ORGANIZATION",
@@ -160,7 +162,7 @@ pub async fn remove_team_core<S: AuthSchema>(
         if session.active_team_id.as_deref() == Some(team_id) {
             return Err(org_error(403, "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_TEAM"));
         }
-        if !has_action(&member.role, "team", "delete", config, ctx, organization_id)? {
+        if !has_action(&member.role, "team", "delete", config, ctx, organization_id).await? {
             return Err(org_error(
                 403,
                 "YOU_ARE_NOT_ALLOWED_TO_DELETE_TEAMS_IN_THIS_ORGANIZATION",
@@ -300,7 +302,7 @@ pub async fn handle_team_request<S: AuthSchema>(
                 .get_member(&org, user.id().as_ref())
                 .await?
                 .ok_or_else(|| org_error(403, "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_TEAM"))?;
-            if !has_action(&member.role, "team", "update", config, ctx, &org)? {
+            if !has_action(&member.role, "team", "update", config, ctx, &org).await? {
                 return Err(org_error(403, "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_TEAM"));
             }
             let team = ctx
@@ -366,7 +368,7 @@ pub async fn handle_team_request<S: AuthSchema>(
                     .await?
                     .ok_or_else(|| org_error(403, "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION"))?;
                 if target != user_view.id {
-                    if !has_action(&requester.role, "member", "update", config, ctx, org)? {
+                    if !has_action(&requester.role, "member", "update", config, ctx, org).await? {
                         return Err(org_error(403, "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_MEMBER"));
                     }
                     if ctx.database.get_member(org, target).await?.is_none() {
@@ -495,7 +497,7 @@ pub async fn handle_team_request<S: AuthSchema>(
                 .ok_or_else(|| org_error(400, "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION"))?;
             let add = req.path().ends_with("/add-team-member");
             let action = if add { "update" } else { "delete" };
-            if !has_action(&requester.role, "member", action, config, ctx, &org)? {
+            if !has_action(&requester.role, "member", action, config, ctx, &org).await? {
                 return Err(org_error(
                     403,
                     if add {

@@ -1,4 +1,4 @@
-//! Configurable teams, lifecycle callbacks, and server integration contexts.
+//! Configurable teams and persisted organization access control.
 use async_trait::async_trait;
 use better_auth_core::store::TeamStore;
 use better_auth_core::types::{
@@ -24,6 +24,9 @@ pub trait OrganizationLimitResolver: std::fmt::Debug + Send + Sync {
         Ok(None)
     }
     async fn maximum_team_members(&self, _context: &TeamLimitContext) -> AuthResult<Option<usize>> {
+        Ok(None)
+    }
+    async fn maximum_roles(&self, _organization_id: &str) -> AuthResult<Option<usize>> {
         Ok(None)
     }
 }
@@ -142,6 +145,13 @@ impl Default for TeamsConfig {
             default_team_factory: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DynamicAccessControlConfig {
+    pub enabled: bool,
+    pub maximum_roles_per_organization: Option<usize>,
+    pub limit_resolver: Option<Arc<dyn OrganizationLimitResolver>>,
 }
 
 pub fn default_organization_statements() -> OrganizationPermissions {

@@ -3,6 +3,17 @@ use better_auth_core::types::OrganizationPermissions;
 use better_auth_core::wire::SessionView;
 use better_auth_core::{AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema};
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
+type OrganizationRoles = HashMap<String, OrganizationPermissions>;
+
+// The pinned runtime's cacheAllRoles map is shared by organization plugin
+// instances. Fresh permission checks replace only the selected organization's
+// snapshot; delegated role grants subsequently use that snapshot.
+fn role_cache() -> &'static Mutex<HashMap<String, OrganizationRoles>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, OrganizationRoles>>> = OnceLock::new();
+    CACHE.get_or_init(Mutex::default)
+}
 
 pub fn org_error(status: u16, code: &'static str) -> AuthError {
     let message = match code {
@@ -41,6 +52,25 @@ pub fn org_error(status: u16, code: &'static str) -> AuthError {
         }
         "UNABLE_TO_REMOVE_LAST_TEAM" => "Unable to remove last team",
         "INVALID_TEAM_ID" => "Team id contains a reserved character",
+        "MISSING_AC_INSTANCE" => {
+            "Dynamic Access Control requires a pre-defined ac instance on the server auth plugin. Read server logs for more information"
+        }
+        "YOU_MUST_BE_IN_AN_ORGANIZATION_TO_CREATE_A_ROLE" => {
+            "You must be in an organization to create a role"
+        }
+        "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_ROLE" => "You are not allowed to create a role",
+        "YOU_ARE_NOT_ALLOWED_TO_UPDATE_A_ROLE" => "You are not allowed to update a role",
+        "YOU_ARE_NOT_ALLOWED_TO_DELETE_A_ROLE" => "You are not allowed to delete a role",
+        "YOU_ARE_NOT_ALLOWED_TO_READ_A_ROLE" => "You are not allowed to read a role",
+        "YOU_ARE_NOT_ALLOWED_TO_LIST_A_ROLE" => "You are not allowed to list a role",
+        "TOO_MANY_ROLES" => "This organization has too many roles",
+        "INVALID_RESOURCE" => "The provided permission includes an invalid resource",
+        "ROLE_NAME_IS_ALREADY_TAKEN" => "That role name is already taken",
+        "CANNOT_DELETE_A_PRE_DEFINED_ROLE" => "Cannot delete a pre-defined role",
+        "ROLE_IS_ASSIGNED_TO_MEMBERS" => {
+            "Cannot delete a role that is assigned to members. Please reassign the members to a different role first"
+        }
+        "ROLE_NOT_FOUND" => "Role not found",
         _ => "Organization operation failed",
     };
     AuthError::Upstream {
@@ -60,12 +90,7 @@ pub async fn session<S: AuthSchema>(
     })
 }
 
-pub fn organization_roles<S: AuthSchema>(
-    config: &OrganizationConfig,
-    ctx: &AuthContext<S>,
-    org_id: &str,
-) -> AuthResult<HashMap<String, OrganizationPermissions>> {
-    let _ = (ctx, org_id);
+fn configured_roles(config: &OrganizationConfig) -> OrganizationRoles {
     let defaults = super::super::extensions::default_organization_statements();
     let mut roles = if config.roles.is_none() {
         HashMap::from([
@@ -97,7 +122,7 @@ pub fn organization_roles<S: AuthSchema>(
             ("organization", &permission.organization),
             ("member", &permission.member),
             ("invitation", &permission.invitation),
-            ("apikey", &permission.api_key),
+            ("apiKey", &permission.api_key),
             ("team", &permission.team),
             ("ac", &permission.ac),
         ] {
@@ -105,31 +130,82 @@ pub fn organization_roles<S: AuthSchema>(
         }
         let _ = roles.insert(role.clone(), permissions);
     }
+    roles
+}
+
+pub async fn organization_roles<S: AuthSchema>(
+    config: &OrganizationConfig,
+    ctx: &AuthContext<S>,
+    org_id: &str,
+) -> AuthResult<OrganizationRoles> {
+    let mut roles = configured_roles(config);
+    if config.dynamic_access_control.enabled && config.access_control.is_some() {
+        for role in ctx.database.list_organization_roles(org_id).await? {
+            let permissions = roles.entry(role.role).or_default();
+            for (resource, actions) in role.permission {
+                let merged = permissions.entry(resource).or_default();
+                for action in actions {
+                    if !merged.contains(&action) {
+                        merged.push(action);
+                    }
+                }
+            }
+        }
+    }
+    let _ = role_cache()
+        .lock()
+        .map_err(|_| AuthError::internal("Organization role cache unavailable"))?
+        .insert(org_id.to_owned(), roles.clone());
     Ok(roles)
 }
 
-pub fn has_permissions<S: AuthSchema>(
+pub(super) fn cached_has_permissions(
+    role: &str,
+    required: &OrganizationPermissions,
+    config: &OrganizationConfig,
+    org_id: &str,
+) -> AuthResult<bool> {
+    let mut cache = role_cache()
+        .lock()
+        .map_err(|_| AuthError::internal("Organization role cache unavailable"))?;
+    let roles = cache
+        .entry(org_id.to_owned())
+        .or_insert_with(|| configured_roles(config));
+    Ok(role_has_permissions(role, required, roles))
+}
+
+pub async fn has_permissions<S: AuthSchema>(
     role: &str,
     required: &OrganizationPermissions,
     config: &OrganizationConfig,
     ctx: &AuthContext<S>,
     org_id: &str,
 ) -> AuthResult<bool> {
-    let roles = organization_roles(config, ctx, org_id)?;
-    Ok(role.split(',').any(|name| {
-        roles.get(name).is_some_and(|permissions| {
-            required.iter().all(|(resource, actions)| {
-                actions.iter().all(|action| {
-                    permissions
-                        .get(resource)
-                        .is_some_and(|granted| granted.contains(action))
+    let roles = organization_roles(config, ctx, org_id).await?;
+    Ok(role_has_permissions(role, required, &roles))
+}
+
+pub fn role_has_permissions(
+    role: &str,
+    required: &OrganizationPermissions,
+    roles: &HashMap<String, OrganizationPermissions>,
+) -> bool {
+    !required.is_empty()
+        && role.split(',').any(|name| {
+            roles.get(name).is_some_and(|permissions| {
+                required.iter().all(|(resource, actions)| {
+                    !actions.is_empty()
+                        && actions.iter().all(|action| {
+                            permissions
+                                .get(resource)
+                                .is_some_and(|granted| granted.contains(action))
+                        })
                 })
             })
         })
-    }))
 }
 
-pub fn has_action<S: AuthSchema>(
+pub async fn has_action<S: AuthSchema>(
     role: &str,
     resource: &str,
     action: &str,
@@ -144,4 +220,5 @@ pub fn has_action<S: AuthSchema>(
         ctx,
         org_id,
     )
+    .await
 }
