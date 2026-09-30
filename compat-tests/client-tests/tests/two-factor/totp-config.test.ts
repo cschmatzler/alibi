@@ -89,7 +89,7 @@ compatScenario("configured TOTP URI fields and real codes preserve enrollment an
   results.push({ signup: ctx.snapshot(signup), absent: ctx.snapshot(absent), enable: ctx.snapshot(redactTwoFactorPayload(enable)), enrollment, wrong: ctx.snapshot(wrong), saved: ctx.snapshot(redactTwoFactorPayload(saved)), authenticator, verified: ctx.snapshot(verified), session: ctx.snapshot(session), redirect: ctx.snapshot(redirect), login: ctx.snapshot(login), final: ctx.snapshot(final) });
   }
   return results;
-});
+}, ["POST /two-factor/enable", "POST /two-factor/get-totp-uri", "POST /two-factor/verify-totp"]);
 
 compatScenario("disabled TOTP rejects generator and verification before touching owner factor state", async ctx => {
   const profile = "two-factor-totp-disabled";
@@ -110,7 +110,7 @@ compatScenario("disabled TOTP rejects generator and verification before touching
   expect(await ctx.readUserState({ userId: signup.data.user.id })).toEqual(before);
   return { signup: ctx.snapshot(signup), enable: ctx.snapshot(redactTwoFactorPayload(enable)), get: ctx.snapshot(get), verify: ctx.snapshot(verify), guest: ctx.snapshot(guest), generated };
 
-});
+}, ["POST /two-factor/enable", "POST /two-factor/get-totp-uri", "POST /two-factor/verify-totp"]);
 
 compatScenario("default TOTP URI preserves reserved issuer bytes and explicit default parameters", async ctx => {
   const client = clientFor(ctx, undefined);

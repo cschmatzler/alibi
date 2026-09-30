@@ -1757,10 +1757,19 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "two-factor enrollment returns URIs and keeps the user disabled until verification",
-        "rejection": null,
+        "success": [
+          "two-factor enrollment returns URIs and keeps the user disabled until verification",
+          "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership",
+          "default TOTP URI preserves reserved issuer bytes and explicit default parameters"
+        ],
+        "rejection": [
+          "disabled TOTP rejects generator and verification before touching owner factor state"
+        ],
         "authorization": null,
-        "state": null
+        "state": [
+          "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership",
+          "disabled TOTP rejects generator and verification before touching owner factor state"
+        ]
       }
     },
     {
@@ -1779,10 +1788,19 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "two-factor enrollment returns URIs and keeps the user disabled until verification",
-        "rejection": null,
+        "success": [
+          "two-factor enrollment returns URIs and keeps the user disabled until verification",
+          "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership",
+          "default TOTP URI preserves reserved issuer bytes and explicit default parameters"
+        ],
+        "rejection": [
+          "disabled TOTP rejects generator and verification before touching owner factor state"
+        ],
         "authorization": null,
-        "state": null
+        "state": [
+          "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership",
+          "disabled TOTP rejects generator and verification before touching owner factor state"
+        ]
       }
     },
     {
@@ -1823,10 +1841,18 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "two-factor generate-backup-codes replaces the backup code set for enabled users",
-        "rejection": null,
+        "success": [
+          "two-factor generate-backup-codes replaces the backup code set for enabled users",
+          "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership"
+        ],
+        "rejection": [
+          "disabled TOTP rejects generator and verification before touching owner factor state"
+        ],
         "authorization": null,
-        "state": null
+        "state": [
+          "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership",
+          "disabled TOTP rejects generator and verification before touching owner factor state"
+        ]
       }
     },
     {
