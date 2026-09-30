@@ -5,6 +5,7 @@ use sea_orm::{
     IntoActiveModel, QueryFilter, QuerySelect, TransactionTrait,
 };
 
+use better_auth_core::AuthUser;
 use better_auth_core::store::UserStore;
 
 use crate::error::{AuthError, AuthResult};
@@ -203,9 +204,9 @@ where
             .one(&transaction)
             .await
             .map_err(map_db_err)?;
-        super::teams::remove_owned_team_members(&transaction, id, None).await?;
+        super::teams::remove_owned_team_members(&transaction, &user.id(), None).await?;
         let _ = super::entities::api_key::Entity::delete_many()
-            .filter(super::entities::api_key::Column::ReferenceId.eq(id))
+            .filter(super::entities::api_key::Column::ReferenceId.eq(user.id().into_owned()))
             .exec(&transaction)
             .await
             .map_err(map_db_err)?;
