@@ -17,9 +17,14 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "admin get-user and update-user match TS",
-        "rejection": null,
-        "authorization": null,
+        "success": [
+          "admin get-user and update-user match TS",
+          "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
+          "admin empty persisted and configured role fall back to the actual configured user grant",
+          "admin configured grant rejects empty per-resource action requests without losing valid owned reads"
+        ],
+        "rejection": "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
+        "authorization": "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
         "state": null
       }
     },
@@ -568,9 +573,21 @@
       "implemented": true,
       "evidence": {
         "success": "admin ban, unban, and user-session routes match TS",
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "rejection": [
+          "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
+          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
+          "admin empty persisted and configured role fall back to the actual configured user grant"
+        ],
+        "authorization": [
+          "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
+          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
+          "admin empty persisted and configured role fall back to the actual configured user grant"
+        ],
+        "state": [
+          "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
+          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
+          "admin empty persisted and configured role fall back to the actual configured user grant"
+        ]
       }
     },
     {
@@ -589,7 +606,13 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "admin list-users and has-permission match TS",
+        "success": [
+          "admin list-users and has-permission match TS",
+          "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
+          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
+          "admin empty persisted and configured role fall back to the actual configured user grant",
+          "admin configured grant rejects empty per-resource action requests without losing valid owned reads"
+        ],
         "rejection": null,
         "authorization": null,
         "state": null
@@ -600,10 +623,13 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "admin impersonation restores the original admin session and hides impersonated sessions",
+        "success": [
+          "admin impersonation restores the original admin session and hides impersonated sessions",
+          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization"
+        ],
         "rejection": null,
         "authorization": null,
-        "state": null
+        "state": "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization"
       }
     },
     {
@@ -680,10 +706,13 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "admin impersonation restores the original admin session and hides impersonated sessions",
+        "success": [
+          "admin impersonation restores the original admin session and hides impersonated sessions",
+          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization"
+        ],
         "rejection": null,
         "authorization": null,
-        "state": null
+        "state": "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization"
       }
     },
     {

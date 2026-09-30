@@ -78,6 +78,7 @@ compatScenario(
       allowed,
     });
   },
+  { stateTransitions: ["POST /admin/ban-user"] },
 );
 
 compatScenario(
@@ -142,6 +143,7 @@ compatScenario(
       restored,
     });
   },
+  { stateTransitions: ["POST /admin/ban-user", "POST /admin/impersonate-user", "POST /admin/stop-impersonating"] },
 );
 
 compatScenario(
@@ -177,6 +179,7 @@ compatScenario(
       current,
     });
   },
+  { stateTransitions: ["POST /admin/ban-user"] },
 );
 
 compatScenario(
