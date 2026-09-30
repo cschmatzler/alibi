@@ -311,7 +311,8 @@
         "success": [
           "organization core lifecycle matches TS",
           "organization metadata lookup default scopes selectors and clears only the denied session",
-          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session",
+          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
         ],
         "rejection": [
           "organization metadata lookup default scopes selectors and clears only the denied session",
@@ -345,19 +346,23 @@
       "evidence": {
         "success": [
           "organization metadata lookup default scopes selectors and clears only the denied session",
-          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session",
+          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
         ],
         "rejection": [
           "organization metadata lookup default scopes selectors and clears only the denied session",
-          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session",
+          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
         ],
         "authorization": [
           "organization metadata lookup default scopes selectors and clears only the denied session",
-          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session",
+          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
         ],
         "state": [
           "organization metadata lookup default scopes selectors and clears only the denied session",
-          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session",
+          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
         ]
       }
     },
@@ -377,7 +382,10 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "organization core lifecycle matches TS",
+        "success": [
+          "organization core lifecycle matches TS",
+          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
+        ],
         "rejection": null,
         "authorization": null,
         "state": null
@@ -1442,7 +1450,8 @@
           "organization set-active emits null for absent metadata and retains real membership and session scope",
           "organization set-active respects blank selector precedence and writes cookies only for actual selection updates",
           "organization set-active clears only the denied current token and validates guest bodies before authentication",
-          "organization selection and clearing honor only the first verified dont-remember preference"
+          "organization selection and clearing honor only the first verified dont-remember preference",
+          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
         ],
         "rejection": [
           "organization set-active respects blank selector precedence and writes cookies only for actual selection updates",
@@ -1454,7 +1463,8 @@
           "organization set-active emits null for absent metadata and retains real membership and session scope",
           "organization set-active respects blank selector precedence and writes cookies only for actual selection updates",
           "organization set-active clears only the denied current token and validates guest bodies before authentication",
-          "organization selection and clearing honor only the first verified dont-remember preference"
+          "organization selection and clearing honor only the first verified dont-remember preference",
+          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
         ]
       }
     },
@@ -1485,7 +1495,8 @@
           "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs",
           "organization logo patches preserve omitted fields, clear SQL null, and enforce authenticated ownership",
           "organization blank update selectors use only the current token selection and preserve other organizations",
-          "organization set-active returns exact stored metadata text and changes only the current token selection"
+          "organization set-active returns exact stored metadata text and changes only the current token selection",
+          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
         ],
         "rejection": [
           "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
@@ -1510,7 +1521,8 @@
           "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs",
           "organization logo patches preserve omitted fields, clear SQL null, and enforce authenticated ownership",
           "organization blank update selectors use only the current token selection and preserve other organizations",
-          "organization set-active returns exact stored metadata text and changes only the current token selection"
+          "organization set-active returns exact stored metadata text and changes only the current token selection",
+          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
         ]
       }
     },

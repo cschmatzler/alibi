@@ -160,4 +160,4 @@ compatScenario("organization legacy literal JSON null stays distinct from SQL nu
   expect(foreignAfter.sessions).toEqual(foreignBefore.sessions.map(row=>({...row,activeOrganizationId:null})));
   expect(await state(ctx,owner.email)).toEqual(final);
   return {created:ctx.snapshot(created),otherCreated:ctx.snapshot(otherCreated),before,seeded,stored,fetched,listed:ctx.snapshot(listed),renamed:ctx.snapshot(renamed),selected:ctx.snapshot(selected),final,foreignBefore,denied:ctx.snapshot(denied),foreignAfter};
-}, ["POST /organization/set-active", "POST /organization/update"]);
+}, ["POST /organization/set-active", "POST /organization/update", "GET /organization/get-organization"]);
