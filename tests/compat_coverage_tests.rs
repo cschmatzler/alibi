@@ -28,6 +28,7 @@ async fn runtime_routes_match_capability_inventory() {
         teams_enabled: true,
         dynamic_roles_enabled: true,
         phone_enabled: true,
+        multi_session_enabled: true,
         ..Default::default()
     })
     .await;

@@ -332,3 +332,9 @@ async fn phone_number_client_compat() {
 async fn username_availability_client_compat() {
     run_client_compat(&["tests/username"]).await;
 }
+
+#[tokio::test]
+#[ignore = "starts external TS and Rust servers"]
+async fn multiple_sessions_client_compat() {
+    run_client_compat(&["tests/multiple-sessions"]).await;
+}

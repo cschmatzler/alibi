@@ -9,6 +9,7 @@ pub mod email_verification;
 pub mod helpers;
 pub mod jwt;
 pub mod magic_link;
+pub mod multi_session;
 pub mod oauth;
 pub mod one_time_token;
 pub mod organization;

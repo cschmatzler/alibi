@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, Once, OnceLock};
 
+use better_auth::plugins::multi_session::MultiSessionPlugin;
 use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
 use better_auth::plugins::phone_number::PhoneNumberPlugin;
 use better_auth::plugins::siwe::{Eip191Verifier, RandomSiweNonce, SiweConfig, SiwePlugin};
@@ -156,6 +157,7 @@ pub struct TestAuthOptions {
     pub teams_enabled: bool,
     pub dynamic_roles_enabled: bool,
     pub phone_enabled: bool,
+    pub multi_session_enabled: bool,
 }
 
 struct TestResetSender {
@@ -379,6 +381,11 @@ pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth
         )));
     let builder = if options.phone_enabled {
         builder.plugin(PhoneNumberPlugin::new(Default::default()))
+    } else {
+        builder
+    };
+    let builder = if options.multi_session_enabled {
+        builder.plugin(MultiSessionPlugin::new())
     } else {
         builder
     };
