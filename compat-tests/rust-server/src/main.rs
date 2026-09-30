@@ -1614,7 +1614,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(session_profile_router)
         .merge(multiple_session_router)
         .merge(session_fields_router)
-
         .merge(open_api_router)
         .merge(otp_router)
         .merge(magic_router)
