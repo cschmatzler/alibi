@@ -211,6 +211,7 @@ async fn legacy_email_change_reuses_or_issues_session_and_default_lifetime_follo
             Some(
                 ctx.database
                     .create_session(better_auth_core::CreateSession {
+                        additional_fields: Default::default(),
                         token: None,
                         user_id: user.id().to_string(),
                         expires_at: Utc::now() + ctx.config.session.expires_in,

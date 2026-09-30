@@ -1,0 +1,255 @@
+#![cfg(feature = "seaorm2")]
+#![expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "Assert successful public-handler SQLite setup and independently specified JSON/model events"
+)]
+//! Application storage and native hook contracts; the SDK owns built-in wire parity.
+use async_trait::async_trait;
+use better_auth::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
+use better_auth::{
+    AuthBuilder, AuthConfig,
+    field_policy::{FieldConfig, FieldValues},
+};
+use better_auth_core::{AuthRequest, AuthResult, CreateSession, HttpMethod, utils::json::JsValue};
+use better_auth_seaorm::sea_orm::{ConnectionTrait, Statement};
+use better_auth_seaorm::store::__private_test_support::migrator::run_migrations;
+use better_auth_seaorm::{Database, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore};
+use serde_json::{Value, json};
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+
+#[path = "../compat-tests/rust-server/src/session_field_model.rs"]
+mod application_model;
+use application_model::ApplicationSchema;
+struct ApplicationHook;
+#[async_trait]
+impl SeaOrmHooks<ApplicationSchema> for ApplicationHook {
+    async fn before_create_session(
+        &self,
+        data: &mut CreateSession,
+        _ctx: &SeaOrmHookContext<'_>,
+    ) -> AuthResult<HookControl> {
+        assert_eq!(
+            data.additional_fields
+                .get("hidden")
+                .and_then(JsValue::as_str),
+            Some("server-secret")
+        );
+        Ok(HookControl::Continue)
+    }
+    async fn before_update_session(
+        &self,
+        token: &str,
+        fields: &mut FieldValues,
+        ctx: &SeaOrmHookContext<'_>,
+    ) -> AuthResult<HookControl> {
+        if fields.get("label").and_then(JsValue::as_str) == Some("delete-before") {
+            let _ = ctx
+                .db
+                .execute_raw(Statement::from_sql_and_values(
+                    ctx.db.get_database_backend(),
+                    "DELETE FROM sessions WHERE token=?",
+                    [token.into()],
+                ))
+                .await
+                .map_err(|error| better_auth_core::AuthError::internal(error.to_string()))?;
+        }
+        Ok(HookControl::Continue)
+    }
+}
+fn request(path: &str, body: Value, cookie: Option<&str>) -> AuthRequest {
+    let mut req = AuthRequest::new(HttpMethod::Post, path);
+    req.body = Some(serde_json::to_vec(&body).unwrap());
+    _ = req
+        .headers
+        .insert("content-type".into(), "application/json".into());
+    _ = req
+        .headers
+        .insert("origin".into(), "http://localhost:37821".into());
+    if let Some(cookie) = cookie {
+        _ = req.headers.insert("cookie".into(), cookie.into());
+    }
+    req
+}
+#[tokio::test]
+async fn real_custom_session_columns_preserve_affinity_json_defaults_owner_and_model_hook_overrides()
+ {
+    let db = Database::connect("sqlite::memory:").await.unwrap();
+    run_migrations(&db).await.unwrap();
+    for sql in [
+        "ALTER TABLE sessions ADD COLUMN label TEXT",
+        "ALTER TABLE sessions ADD COLUMN hidden TEXT",
+        "ALTER TABLE sessions ADD COLUMN number REAL",
+        "ALTER TABLE sessions ADD COLUMN server_only TEXT",
+        "ALTER TABLE sessions ADD COLUMN transformed TEXT",
+        "ALTER TABLE sessions ADD COLUMN validated TEXT",
+        "ALTER TABLE sessions ADD COLUMN callback TEXT",
+        "ALTER TABLE sessions ADD COLUMN payload JSON NOT NULL DEFAULT '{}'",
+        "CREATE TABLE session_model_events (phase TEXT, label TEXT, is_insert BOOLEAN)",
+    ] {
+        _ = db
+            .execute_raw(Statement::from_string(db.get_database_backend(), sql))
+            .await
+            .unwrap();
+    }
+    let calls = Arc::new(AtomicUsize::new(0));
+    let captured = calls.clone();
+    let mut config = AuthConfig::new("session-fields-native-secret-at-least-32")
+        .base_url("http://localhost:37821");
+    _ = config.session.additional_fields.insert(
+        "label".into(),
+        FieldConfig::new(json!({"type":"string"})).default_callback(move || {
+            let _ = captured.fetch_add(1, Ordering::SeqCst);
+            JsValue::String("configured-default".into())
+        }),
+    );
+    _ = config.session.additional_fields.insert(
+        "hidden".into(),
+        FieldConfig::new(json!({"type":"string"}))
+            .default_value(json!("server-secret"))
+            .hidden()
+            .read_only(),
+    );
+    _ = config
+        .session
+        .additional_fields
+        .insert("number".into(), FieldConfig::new(json!({"type":"number"})));
+    _ = config.session.additional_fields.insert(
+        "payload".into(),
+        FieldConfig::new(json!({"type":"json"})).default_value(json!({"initial":true})),
+    );
+    let auth = AuthBuilder::<ApplicationSchema>::new(config.clone())
+        .store(SeaOrmStore::<ApplicationSchema>::new(config, db.clone()).hook(ApplicationHook))
+        .plugin(EmailPasswordPlugin::new().enable_signup(true))
+        .plugin(SessionManagementPlugin::new())
+        .build()
+        .await
+        .unwrap();
+    let signup = auth
+        .handle_request(request(
+            "/api/auth/sign-up/email",
+            json!({"name":"App","email":"app-session@example.com","password":"password123"}),
+            None,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(signup.status, 200);
+    let body: Value = serde_json::from_slice(&signup.body).unwrap();
+    let token = body["token"].as_str().unwrap();
+    let cookie = format!(
+        "better-auth.session_token={}",
+        better_auth_core::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let initial = auth.store().get_session(token).await.unwrap().unwrap();
+    assert_eq!(initial.label.as_deref(), Some("configured-default"));
+    assert_eq!(initial.hidden.as_deref(), Some("server-secret"));
+    assert_eq!(&*initial.payload, &json!({"initial":true}));
+    let owner = initial.user_id.clone();
+    _ = db
+        .execute_raw(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            "UPDATE sessions SET validated=? WHERE token=?",
+            ["unregistered-storage-secret".into(), token.into()],
+        ))
+        .await
+        .unwrap();
+    for (raw, expected) in [
+        ("1e20", "1.0e+20"),
+        ("1e-20", "1.0e-20"),
+        ("1e999", "Inf"),
+        ("-0", "0.0"),
+    ] {
+        let mut req = request("/api/auth/update-session", json!({}), Some(&cookie));
+        req.body = Some(
+            format!("{{\"label\":{raw},\"token\":\"wrong-token\",\"userId\":\"other-user\"}}")
+                .into_bytes(),
+        );
+        let response = auth.handle_request(req).await.unwrap();
+        assert_eq!(response.status, 200);
+        let updated: Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(updated["session"]["label"], expected);
+        assert_eq!(updated["session"]["token"], token);
+        assert_eq!(updated["session"]["userId"], owner);
+        assert!(updated["session"].get("hidden").is_none());
+        assert!(
+            updated["session"].get("validated").is_none(),
+            "unregistered SQL columns are not output fields"
+        );
+        let stored = auth.store().get_session(token).await.unwrap().unwrap();
+        assert_eq!(stored.label.as_deref(), Some(expected));
+        assert_eq!(stored.hidden, initial.hidden);
+        assert_eq!(
+            better_auth_core::AuthSession::additional_fields(&stored).get("validated"),
+            Some(&json!("unregistered-storage-secret"))
+        );
+    }
+    let payload =
+        json!({"$serde_json::private::Number":"literal","nested":{"empty":{}},"list":[1,2]});
+    let response = auth
+        .handle_request(request(
+            "/api/auth/update-session",
+            json!({"label":"native-hook","payload":payload}),
+            Some(&cookie),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status, 200);
+    let value: Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(value["session"]["label"], "model-override");
+    assert_eq!(value["session"]["payload"], payload);
+    assert_eq!(
+        &*auth
+            .store()
+            .get_session(token)
+            .await
+            .unwrap()
+            .unwrap()
+            .payload,
+        &payload
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "update must not evaluate creation defaults"
+    );
+    let rows = db
+        .query_all_raw(Statement::from_string(
+            db.get_database_backend(),
+            "SELECT phase,label,is_insert FROM session_model_events ORDER BY rowid",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 12);
+    assert_eq!(
+        rows[10].try_get::<String>("", "label").unwrap(),
+        "native-hook"
+    );
+    assert_eq!(
+        rows[11].try_get::<String>("", "label").unwrap(),
+        "model-override"
+    );
+    let failed = auth
+        .handle_request(request(
+            "/api/auth/update-session",
+            json!({"label":"delete-before"}),
+            Some(&cookie),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(failed.status, 401);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&failed.body).unwrap()["code"],
+        "FAILED_TO_GET_SESSION"
+    );
+    assert!(
+        failed
+            .headers
+            .get_all("set-cookie")
+            .any(|cookie| cookie.contains("session_token=") && cookie.contains("Max-Age=0"))
+    );
+    assert!(auth.store().get_session(token).await.unwrap().is_none());
+}

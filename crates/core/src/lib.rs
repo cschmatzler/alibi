@@ -19,6 +19,7 @@ pub mod email;
 pub mod entity;
 pub mod error;
 mod error_codes;
+pub mod field_policy;
 pub mod hooks;
 pub mod middleware;
 pub mod openapi;

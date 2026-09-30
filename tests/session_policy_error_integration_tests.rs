@@ -133,6 +133,7 @@ async fn signed_empty_session_cookie_leaves_a_real_empty_token_row_untouched() {
     let empty = auth
         .store()
         .create_session(CreateSession {
+            additional_fields: Default::default(),
             token: Some(String::new()),
             user_id: user.id().into_owned(),
             expires_at: Utc::now() + Duration::hours(1),

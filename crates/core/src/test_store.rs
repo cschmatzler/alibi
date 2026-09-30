@@ -232,12 +232,34 @@ impl UserStore<BundledSchema> for MemoryStore {
 
 #[async_trait]
 impl SessionStore<BundledSchema> for MemoryStore {
-    async fn create_session(&self, create_session: CreateSession) -> AuthResult<SessionView> {
+    async fn update_session_fields(
+        &self,
+        token: &str,
+        mut fields: crate::field_policy::FieldValues,
+    ) -> AuthResult<Option<SessionView>> {
+        let mut data = self.lock();
+        let Some(session) = data.sessions.get_mut(token) else {
+            return Ok(None);
+        };
+        fields.apply_adapter_transforms()?;
+        for (name, value) in fields {
+            let _ = session
+                .extension_fields
+                .insert(name, value.to_json_value()?);
+        }
+        session.updated_at = Utc::now();
+        Ok(Some(session.clone()))
+    }
+    async fn create_session(&self, mut create_session: CreateSession) -> AuthResult<SessionView> {
+        create_session
+            .additional_fields
+            .apply_adapter_transforms()?;
         let now = Utc::now();
         let token = create_session
             .token
             .unwrap_or_else(crate::utils::sessions::generate_session_token);
         let session = SessionView {
+            omitted_fields: Default::default(),
             id: uuid::Uuid::new_v4().to_string(),
             expires_at: create_session.expires_at,
             token: token.clone(),
@@ -249,7 +271,11 @@ impl SessionStore<BundledSchema> for MemoryStore {
             impersonated_by: create_session.impersonated_by,
             active_organization_id: create_session.active_organization_id,
             active_team_id: create_session.active_team_id,
-            extension_fields: Default::default(),
+            extension_fields: create_session
+                .additional_fields
+                .into_iter()
+                .map(|(name, value)| value.to_json_value().map(|value| (name, value)))
+                .collect::<Result<_, _>>()?,
             active: true,
         };
         let mut state = self.lock();
@@ -1014,6 +1040,7 @@ mod session_contract_tests {
         ] {
             let row = store
                 .create_session(CreateSession {
+                    additional_fields: Default::default(),
                     token: token.map(str::to_owned),
                     user_id: user.id.clone(),
                     expires_at: expiry,
@@ -1047,6 +1074,7 @@ mod session_contract_tests {
         assert!(result.first().is_some_and(|row| row.expires_at < now));
         let duplicate = store
             .create_session(CreateSession {
+                additional_fields: Default::default(),
                 token: Some("a-token".to_owned()),
                 user_id: user.id,
                 expires_at: now + chrono::Duration::hours(1),

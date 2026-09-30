@@ -1,0 +1,90 @@
+# Configured session updates
+
+Target: installed Better Auth 1.7.6 `api/routes/update-session.mjs`,
+`db/schema.mjs`, `db/with-hooks.mjs`, `db/internal-adapter.mjs`,
+`cookies/index.mjs`, and `@better-auth/core` adapter factory.
+
+POST `/update-session` validates a JSON record before session middleware. It
+updates the authenticated current token, ignores undeclared keys, and rejects an
+empty allowed patch. Plugin field policies override application policies;
+active organization/team and impersonation fields remain input:false. The input
+policy uses JavaScript truthiness for read-only values, runs an explicitly
+configured synchronous validator before a parsing transform, and does not
+implicitly validate values against schema/type metadata.
+
+FieldConfig and FieldValues are public through `better_auth::field_policy`.
+FieldValues preserves raw JsValue numbers through callbacks and database binding.
+Its collection operations and serialization describe real mapped values. A
+separate `has_input_fields` method retains supplied keys whose parsing transform
+returned undefined: upstream Object.keys is nonempty even though binding omits
+that value. Callback input/output None represents JavaScript undefined, without
+adding undefined to JSON values. Creation invokes a configured adapter transform
+for omitted fields; update skips omitted/undefined fields unless a before hook
+inserts a current value. Configured creation defaults are evaluated before hooks
+and are not reevaluated on update.
+
+Input parsing and adapter binding are separate transform stages. A validator
+wins at parsing, but an adapter transform still runs after database before hooks.
+Pending callbacks use the current mutated value exactly once at binding; cached
+transformed values would incorrectly discard hook mutations. Adapter None output
+omits the binding. A thrown callback maps to the pinned empty HTTP500 response;
+structured application errors remain explicit. Before-hook cancellation or a
+missing persisted row yields FAILED_TO_GET_SESSION and clears session cookies.
+Successful writes renew the signed token cookie and honor the signed
+rememberMe:false browser preference.
+
+The SeaORM implementation stages configured values on actual application entity
+columns and then uses the normal insert/update lifecycle. Existing
+ActiveModelBehavior before_save/after_save and explicit overrides remain active.
+AuthEntity session derives generate actual column bindings and typed staging;
+manual model/store defaults fail closed for nonempty unsupported fields.
+TEXT numeric affinity uses the existing SQLite 3.53 formatting compatibility
+implementation while preserving raw Infinity and negative zero. JSON columns use
+prepared JsonMetadata, including ordinary application keys that resemble serde
+private keys. No generic metadata column substitutes for application columns.
+
+Only immutable registered policies expose custom session output fields; hidden
+fields and undeclared physical columns stay off the auth wire. The trusted
+AuthSession.additional_fields accessor retains all application storage fields
+for hooks and session replacement. Manual application routes choosing their own
+serialization are unchanged. The output projection must never replace the
+persisted token used for authorization.
+
+Evidence:
+
+- Three real SDK scenarios / 370 assertions cover the ordinary no-fields route and two concrete
+  custom-schema profiles, one with admin and organization/team policy overrides.
+  They compare wire responses/cookies and persisted owner/current-token,
+  same-owner second-token and foreign-user state. Controls cover invalid input,
+  unsupported media, default/callback values, hidden fields, non-idempotent double
+  transforms, validator precedence, raw numeric callbacks/SQLite text affinity,
+  JSON, hook mutation, undefined output, callback errors, browser preferences,
+  cancellation and deletion. The initial route control fails on the prior Rust
+  implementation with HTTP404 versus the pinned HTTP401.
+- The public-builder SQLite test uses a real application AuthEntity model,
+  prepared JSON columns, dynamic default count, and persisted native model hooks.
+  A nonnull undeclared physical-column sentinel demonstrated a pre-fix output
+  leak, then passes with the registered-field projection.
+- The manual numeric-ID application schema compiles with default methods and
+  rejects an unbound configured field without changing owner, token or updatedAt.
+  Existing manual schema ID/migration cases remain passing.
+- Existing session SDK and native refresh/policy/lifecycle scenarios remain the
+  owners of shared expiry, revocation and middleware behavior. The focused session
+  SDK directory passes 16 scenarios / 684 assertions; 15 native sibling cases and
+  13 API session unit cases pass. Production crates and the new custom-model
+  native test pass strict Clippy; core tests compile, TS typecheck and formatting
+  pass. The manual-schema file retains two pre-existing strict test-Clippy
+  findings outside the production gate (an assertion-returning-Result test and an
+  unused header insertion); its five runtime tests pass.
+
+This evidence covers stateful SQLite TEXT, REAL and JSON application fields.
+Secondary-storage/stateless fallback, output transforms, onUpdate adapter
+callbacks, asynchronous validators, other backend affinities and every arbitrary
+application column type are not proved here. New update hooks apply to configured
+field updates; older expiry-update hook branches are not claimed equivalent.
+Cookie-cache support is an existing wider session dependency and is not claimed
+by these profiles. Default OpenAPI completeness remains open until this endpoint
+and configured-field metadata are integrated with the generated document proof.
+The 2FA disable replacement helper must preserve trusted additional_fields by
+collecting current stored fields into FieldValues; the coordinator owns that
+integration.

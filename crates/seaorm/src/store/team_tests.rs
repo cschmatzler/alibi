@@ -57,6 +57,7 @@ async fn room(
 async fn session(store: &SeaOrmStore<BundledSchema>, user_id: &str) -> AuthResult<String> {
     Ok(store
         .create_session(CreateSession {
+            additional_fields: Default::default(),
             token: None,
             user_id: user_id.to_owned(),
             expires_at: Utc::now() + Duration::hours(1),

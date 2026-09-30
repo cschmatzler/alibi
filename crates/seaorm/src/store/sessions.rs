@@ -55,10 +55,23 @@ where
             .token
             .take()
             .unwrap_or_else(better_auth_core::utils::sessions::generate_session_token);
-        let session = S::Session::new_active(None, token, create_session, now)
-            .insert(db)
-            .await
-            .map_err(map_db_err)?;
+        let mut fields = std::mem::take(&mut create_session.additional_fields);
+        fields.apply_adapter_transforms()?;
+        let mut active = S::Session::new_active(None, token, create_session, now);
+        if !fields.is_empty() {
+            for (column, value) in
+                S::Session::additional_field_bindings(&fields, db.get_database_backend())?
+            {
+                let value = crate::session_fields::prepare_value(db, &column, value).await?;
+                S::Session::set_additional_field(
+                    &mut active,
+                    column,
+                    value,
+                    db.get_database_backend(),
+                )?;
+            }
+        }
+        let session = active.insert(db).await.map_err(map_db_err)?;
         if tx.is_none() {
             for hook in self.hooks() {
                 hook.after_create_session(&session, &hook_context).await?;
@@ -111,6 +124,7 @@ mod tests {
 
     fn input(user_id: &str, token: Option<&str>, expiry: DateTime<Utc>) -> CreateSession {
         CreateSession {
+            additional_fields: Default::default(),
             token: token.map(str::to_owned),
             user_id: user_id.to_owned(),
             expires_at: expiry,
@@ -287,6 +301,51 @@ where
             .all(self.connection())
             .await
             .map_err(map_db_err)
+    }
+
+    async fn update_session_fields(
+        &self,
+        token: &str,
+        mut fields: better_auth_core::field_policy::FieldValues,
+    ) -> AuthResult<Option<S::Session>> {
+        let hook_context = self.hook_context(None);
+        for hook in self.hooks() {
+            if hook
+                .before_update_session(token, &mut fields, &hook_context)
+                .await?
+                .is_cancelled()
+            {
+                return Ok(None);
+            }
+        }
+        let Some(model) = <S::Session as SeaOrmSessionModel>::Entity::find()
+            .filter(S::Session::token_column().eq(token))
+            .one(self.connection())
+            .await
+            .map_err(map_db_err)?
+        else {
+            return Ok(None);
+        };
+        fields.apply_adapter_transforms()?;
+        let mut active = model.into_active_model();
+        let backend = self.connection().get_database_backend();
+        if !fields.is_empty() {
+            for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
+                let value =
+                    crate::session_fields::prepare_value(self.connection(), &column, value).await?;
+                S::Session::set_additional_field(&mut active, column, value, backend)?;
+            }
+        }
+        S::Session::set_updated_at(&mut active, Utc::now());
+        let session = match active.update(self.connection()).await {
+            Ok(session) => session,
+            Err(sea_orm::DbErr::RecordNotUpdated) => return Ok(None),
+            Err(error) => return Err(map_db_err(error)),
+        };
+        for hook in self.hooks() {
+            hook.after_update_session(&session, &hook_context).await?;
+        }
+        Ok(Some(session))
     }
 
     async fn update_session_expiry(

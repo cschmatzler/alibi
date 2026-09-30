@@ -2,6 +2,7 @@
 export type FixtureProfile =
   | "multi-session" | "multi-session-limited"
   | "two-factor-totp-default" | "two-factor-totp-config" | "two-factor-totp-disabled" | "two-factor-totp-zero"
+  | "session-fields" | "session-fields-plugins"
   | "device-custom" | "device-configured" | "device-unicode" | "device-too-long"
   | "siwe" | "siwe-email" | "siwe-contract"
   | "phone-default" | "phone-signup" | "phone-proof" | "phone-custom"

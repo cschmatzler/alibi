@@ -97,6 +97,24 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
     fn name(&self) -> &'static str {
         "organization"
     }
+    fn session_fields(&self) -> better_auth_core::field_policy::FieldConfigs {
+        let mut fields = better_auth_core::field_policy::FieldConfigs::new();
+        let _ = fields.insert(
+            "activeOrganizationId".into(),
+            better_auth_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"}))
+                .read_only(),
+        );
+        if self.config.teams.enabled {
+            let _ = fields.insert(
+                "activeTeamId".into(),
+                better_auth_core::field_policy::FieldConfig::new(
+                    serde_json::json!({"type":"string"}),
+                )
+                .read_only(),
+            );
+        }
+        fields
+    }
 
     async fn on_init(
         &self,

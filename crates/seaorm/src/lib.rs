@@ -17,6 +17,7 @@ mod utils;
 pub use better_auth_seaorm_macros::AuthEntity;
 pub use hooks::{HookControl, SeaOrmHookContext, SeaOrmHooks, current_request_hook_context};
 pub use json_metadata::JsonMetadata;
+pub mod session_fields;
 pub use schema::{
     SeaOrmAccountModel, SeaOrmSessionModel, SeaOrmUserModel, SeaOrmVerificationModel,
 };

@@ -191,6 +191,7 @@ mod tests {
         assert_eq!(reused.phone_number(), Some("+15550000001"));
         let session = store
             .create_session(CreateSession {
+                additional_fields: Default::default(),
                 token: None,
                 user_id: "existing".to_owned(),
                 expires_at: now + chrono::Duration::hours(1),

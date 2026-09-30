@@ -171,7 +171,7 @@ fn decimal_to_binary(d: u64, p: i32) -> f64 {
     }
     f64::from_bits(m)
 }
-pub(super) fn real_text(input: f64) -> String {
+pub(crate) fn real_text(input: f64) -> String {
     debug_assert!(input.is_finite());
     if input == 0.0 {
         return "0.0".to_owned();

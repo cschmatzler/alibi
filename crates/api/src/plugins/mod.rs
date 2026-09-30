@@ -92,6 +92,7 @@ pub(crate) mod test_helpers {
         expires_in: Duration,
     ) -> SessionView {
         let create_session = CreateSession {
+            additional_fields: Default::default(),
             token: None,
             active_team_id: None,
             user_id,

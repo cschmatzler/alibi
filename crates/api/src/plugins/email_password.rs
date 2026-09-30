@@ -724,6 +724,7 @@ pub(crate) async fn sign_up_core(
             if auto_sign_in {
                 let session = tx
                     .create_session(CreateSession {
+                        additional_fields: Default::default(),
                         token: None,
                         active_team_id: None,
                         user_id: user.id().to_string(),

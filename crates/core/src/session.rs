@@ -61,6 +61,7 @@ impl<S: AuthSchema> SessionManager<S> {
         let expires_at = Utc::now() + self.config.session.expires_in;
 
         let create_session = CreateSession {
+            additional_fields: Default::default(),
             token: None,
             active_team_id: None,
             user_id: user.id().to_string(),
@@ -411,6 +412,7 @@ mod tests {
 
         // A session created "now" is fresh within a 10-minute window.
         let session = SessionView {
+            omitted_fields: Default::default(),
             active_team_id: None,
             extension_fields: Default::default(),
             id: "s1".into(),
@@ -437,6 +439,7 @@ mod tests {
         let mgr = SessionManager::new(Arc::new(config), runtime.block_on(test_database()));
 
         let session = SessionView {
+            omitted_fields: Default::default(),
             active_team_id: None,
             extension_fields: Default::default(),
             id: "s1".into(),
@@ -461,6 +464,7 @@ mod tests {
         config.session.fresh_age = None;
         let mgr = SessionManager::new(Arc::new(config), test_manager().database);
         let session = SessionView {
+            omitted_fields: Default::default(),
             active_team_id: None,
             extension_fields: Default::default(),
             id: "s1".into(),

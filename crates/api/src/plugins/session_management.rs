@@ -60,6 +60,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin 
             // the POST form requires `session.defer_session_refresh`.
             AuthRoute::post("/get-session", "get_session"),
             AuthRoute::post("/sign-out", "sign_out"),
+            AuthRoute::post("/update-session", "updateSession"),
             AuthRoute::get("/list-sessions", "list_sessions"),
             AuthRoute::post("/revoke-session", "revoke_session"),
             AuthRoute::post("/revoke-sessions", "revoke_sessions"),
@@ -77,6 +78,9 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin 
                 Ok(Some(self.handle_get_session(req, ctx).await?))
             }
             (HttpMethod::Post, "/sign-out") => Ok(Some(self.handle_sign_out(req, ctx).await?)),
+            (HttpMethod::Post, "/update-session") => {
+                Ok(Some(self.handle_update_session(req, ctx).await?))
+            }
             (HttpMethod::Get, "/list-sessions") if self.config.enable_session_listing => {
                 Ok(Some(self.handle_list_sessions(req, ctx).await?))
             }
@@ -159,6 +163,153 @@ pub(crate) async fn revoke_other_sessions_core(
 // ---------------------------------------------------------------------------
 
 impl SessionManagementPlugin {
+    async fn handle_update_session(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
+        use super::authentication_helpers::{json_type, validation_response};
+        use better_auth_core::field_policy::{FieldInputError, SessionFields};
+        use better_auth_core::utils::json::JsValue;
+        if req.body.is_some() {
+            let content_type = req
+                .header("content-type")
+                .map(String::as_str)
+                .unwrap_or_default();
+            if !content_type
+                .split(';')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_lowercase()
+                .contains("application/json")
+            {
+                let message = if content_type.is_empty() {
+                    "Content-Type is required. Allowed types: application/json".to_owned()
+                } else {
+                    format!(
+                        "Content-Type \"{content_type}\" is not allowed. Allowed types: application/json"
+                    )
+                };
+                return Ok(AuthResponse::json(
+                    415,
+                    &serde_json::json!({"code":"UNSUPPORTED_MEDIA_TYPE","message":message}),
+                )?);
+            }
+        }
+        let value: Option<JsValue> = match req.body.as_ref() {
+            Some(body) => match better_auth_core::utils::json::from_slice(body) {
+                Ok(value) => Some(value),
+                Err(_) => {
+                    return Ok(AuthResponse::json(
+                        400,
+                        &serde_json::json!({"code":"BAD_REQUEST","message":"Invalid JSON in request body"}),
+                    )?);
+                }
+            },
+            None => None,
+        };
+        let Some(input) = value.as_ref().and_then(JsValue::as_object) else {
+            return Ok(validation_response(&format!(
+                "[body] Invalid input: expected record, received {}",
+                json_type(value.as_ref())
+            )));
+        };
+        let (_user, session) = match ctx.require_session(req).await {
+            Ok(session) => session,
+            Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
+                return Ok(AuthResponse::json(
+                    401,
+                    &serde_json::json!({"code":"UNAUTHORIZED","message":"Unauthorized"}),
+                )?);
+            }
+            Err(error) => return Err(error),
+        };
+        let fields = ctx
+            .extensions
+            .get::<SessionFields>()
+            .map(|fields| (*fields).clone())
+            .unwrap_or_else(|| SessionFields(ctx.config.session.additional_fields.clone()));
+        let allowed = match fields.parse_update(input) {
+            Ok(allowed) => allowed,
+            Err(FieldInputError::Validation { code, message }) => {
+                return Ok(AuthResponse::json(
+                    400,
+                    &serde_json::json!({"code":code,"message":message}),
+                )?);
+            }
+            Err(FieldInputError::Transform(AuthError::Internal(_))) => {
+                return Ok(AuthResponse::new(500));
+            }
+            Err(FieldInputError::Transform(error)) => return Err(error),
+        };
+        if !allowed.has_input_fields() {
+            return Ok(AuthResponse::json(
+                400,
+                &serde_json::json!({"message":"No fields to update"}),
+            )?);
+        }
+        let updated = match ctx
+            .database
+            .update_session_fields(session.token(), allowed)
+            .await
+        {
+            Ok(updated) => updated,
+            Err(AuthError::Internal(_)) => return Ok(AuthResponse::new(500)),
+            Err(error) => return Err(error),
+        };
+        let Some(updated) = updated else {
+            let mut response = AuthResponse::json(
+                401,
+                &serde_json::json!({"code":"FAILED_TO_GET_SESSION","message":"Failed to get session"}),
+            )?;
+            for cookie in delete_session_cookie_headers(&ctx.config) {
+                response.headers.append("Set-Cookie", cookie);
+            }
+            return Ok(response);
+        };
+        use better_auth_core::utils::cookie_utils::{
+            create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
+            sign_cookie_value, verify_cookie_value,
+        };
+        let preference = related_cookie_name(&ctx.config, "dont_remember");
+        let dont_remember = req.header("cookie").is_some_and(|header| {
+            cookie::Cookie::split_parse(header)
+                .flatten()
+                .find(|cookie| cookie.name() == preference)
+                .and_then(|cookie| verify_cookie_value(cookie.value(), &ctx.config.secret))
+                .is_some_and(|value| !value.is_empty())
+        });
+        let mut response = AuthResponse::json(
+            200,
+            &serde_json::json!({"session":ctx.session_view(&updated)}),
+        )?
+        .with_appended_header(
+            "Set-Cookie",
+            create_session_cookie_with_max_age(
+                Some(updated.token()),
+                if dont_remember {
+                    None
+                } else {
+                    Some(ctx.config.session.expires_in.num_seconds())
+                },
+                &ctx.config,
+            ),
+        );
+        if dont_remember {
+            response = response.with_appended_header(
+                "Set-Cookie",
+                create_session_like_cookie(
+                    &preference,
+                    &sign_cookie_value("true", &ctx.config.secret),
+                    None,
+                    &ctx.config,
+                ),
+            );
+        }
+        Ok(response)
+    }
+
     async fn handle_get_session(
         &self,
         req: &AuthRequest,
@@ -555,6 +706,7 @@ mod tests {
         .await;
 
         let create_session2 = CreateSession {
+            additional_fields: Default::default(),
             token: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
@@ -594,6 +746,7 @@ mod tests {
         ctx.set_metadata("admin.enabled", serde_json::Value::Bool(true));
 
         let direct_session = CreateSession {
+            additional_fields: Default::default(),
             token: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
@@ -606,6 +759,7 @@ mod tests {
         ctx.database.create_session(direct_session).await.unwrap();
 
         let impersonated_session = CreateSession {
+            additional_fields: Default::default(),
             token: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
@@ -655,6 +809,7 @@ mod tests {
         .await;
 
         let create_session2 = CreateSession {
+            additional_fields: Default::default(),
             token: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
@@ -702,6 +857,7 @@ mod tests {
         let user2 = ctx.database.create_user(create_user2).await.unwrap();
 
         let create_session2 = CreateSession {
+            additional_fields: Default::default(),
             token: None,
             user_id: user2.id,
             expires_at: Utc::now() + Duration::hours(24),
@@ -747,6 +903,7 @@ mod tests {
         .await;
 
         let create_session2 = CreateSession {
+            additional_fields: Default::default(),
             token: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
@@ -780,7 +937,7 @@ mod tests {
             better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema,
         >::routes(&plugin);
 
-        assert_eq!(routes.len(), 7);
+        assert_eq!(routes.len(), 8);
         assert!(
             routes
                 .iter()

@@ -88,6 +88,16 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
 
 #[async_trait]
 pub trait SessionStore<S: AuthSchema>: Send + Sync {
+    /// Persist already authorized fields for the currently authenticated token.
+    async fn update_session_fields(
+        &self,
+        _token: &str,
+        _fields: crate::field_policy::FieldValues,
+    ) -> AuthResult<Option<S::Session>> {
+        Err(crate::AuthError::internal(
+            "the store does not support session field updates",
+        ))
+    }
     async fn create_session(&self, create_session: CreateSession) -> AuthResult<S::Session>;
     async fn get_session(&self, token: &str) -> AuthResult<Option<S::Session>>;
     /// Fetch matching sessions once each, including expired rows. The bundled

@@ -53,6 +53,28 @@ pub trait SeaOrmUserModel:
 pub trait SeaOrmSessionModel:
     AuthSession + IntoActiveModel<Self::ActiveModel> + Clone + Send + Sync + 'static + FromQueryResult
 {
+    /// Bind configured fields to actual model columns while retaining raw numbers.
+    fn additional_field_bindings(
+        fields: &better_auth_core::field_policy::FieldValues,
+        _backend: sea_orm::DbBackend,
+    ) -> AuthResult<Vec<(Self::Column, Value)>> {
+        if fields.is_empty() {
+            return Ok(Vec::new());
+        }
+        Err(better_auth_core::AuthError::internal(
+            "the session schema has no additional field bindings",
+        ))
+    }
+    fn set_additional_field(
+        _active: &mut Self::ActiveModel,
+        _column: Self::Column,
+        _value: Value,
+        _backend: sea_orm::DbBackend,
+    ) -> AuthResult<()> {
+        Err(better_auth_core::AuthError::internal(
+            "the session schema cannot stage additional fields",
+        ))
+    }
     type Id: Clone + Into<Value> + Send + Sync + 'static;
     type UserId: Clone + Into<Value> + Send + Sync + 'static;
     type Entity: EntityTrait<Model = Self>;

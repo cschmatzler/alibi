@@ -21,7 +21,7 @@ mod organizations;
 mod passkeys;
 mod sessions;
 mod siwe_wallets;
-mod sqlite_number;
+pub(crate) mod sqlite_number;
 mod teams;
 mod two_factor;
 #[cfg(test)]
@@ -253,7 +253,7 @@ where
     }
 }
 
-fn map_db_err(err: DbErr) -> AuthError {
+pub(crate) fn map_db_err(err: DbErr) -> AuthError {
     match err.sql_err() {
         Some(SqlErr::UniqueConstraintViolation(message)) => {
             AuthError::Database(DatabaseError::Constraint(message))

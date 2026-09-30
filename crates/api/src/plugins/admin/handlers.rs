@@ -444,6 +444,7 @@ pub(crate) async fn impersonate_user_core(
         + Duration::try_seconds(config.impersonation_session_duration.unwrap_or(60 * 60))
             .unwrap_or(Duration::hours(1));
     let create_session = CreateSession {
+        additional_fields: Default::default(),
         token: None,
         active_team_id: None,
         user_id: target.id().to_string(),

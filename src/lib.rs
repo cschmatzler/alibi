@@ -55,6 +55,7 @@ pub mod seaorm;
 pub mod store;
 pub mod wire;
 
+pub use better_auth_core::field_policy;
 pub use better_auth_core::{
     AuthConfig, AuthError, AuthResult, AuthSchema, PasswordHasher, ScryptHasher, hash_password,
     verify_password,

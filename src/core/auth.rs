@@ -137,6 +137,13 @@ impl<S: AuthSchema> AuthBuilder<S> {
             plugin.on_init(&mut init_context).await?;
         }
 
+        let mut session_fields =
+            better_auth_core::field_policy::SessionFields(config.session.additional_fields.clone());
+        for plugin in &self.plugins {
+            session_fields.0.extend(plugin.session_fields());
+        }
+        init_context.extensions.insert(session_fields);
+
         let store = init_context.database_with_registered_transforms();
         let init_parts = init_context.into_parts();
 

@@ -92,18 +92,15 @@ pub struct UserView {
 }
 
 /// Public session response shape.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct SessionView {
     pub id: String,
     #[serde(rename = "expiresAt")]
-    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub expires_at: DateTime<Utc>,
     pub token: String,
     #[serde(rename = "createdAt")]
-    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
     #[serde(rename = "updatedAt")]
-    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub updated_at: DateTime<Utc>,
     #[serde(rename = "ipAddress")]
     pub ip_address: Option<String>,
@@ -137,6 +134,60 @@ pub struct SessionView {
     pub extension_fields: std::collections::BTreeMap<String, serde_json::Value>,
     #[serde(skip)]
     pub active: bool,
+    #[serde(skip)]
+    pub omitted_fields: std::collections::BTreeSet<String>,
+}
+
+impl Serialize for SessionView {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        macro_rules! entry {
+            ($name:literal, $value:expr) => {
+                if !self.omitted_fields.contains($name) {
+                    map.serialize_entry($name, $value)?;
+                }
+            };
+        }
+        entry!("id", &self.id);
+        entry!(
+            "expiresAt",
+            &self
+                .expires_at
+                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+        );
+        entry!("token", &self.token);
+        entry!(
+            "createdAt",
+            &self
+                .created_at
+                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+        );
+        entry!(
+            "updatedAt",
+            &self
+                .updated_at
+                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+        );
+        entry!("ipAddress", &self.ip_address);
+        entry!("userAgent", &self.user_agent);
+        entry!("userId", &self.user_id);
+        if let Some(value) = &self.impersonated_by {
+            entry!("impersonatedBy", value);
+        }
+        if let Some(value) = &self.active_organization_id {
+            entry!("activeOrganizationId", value);
+        }
+        if let Some(value) = &self.active_team_id {
+            entry!("activeTeamId", value);
+        }
+        for (name, value) in &self.extension_fields {
+            if !self.omitted_fields.contains(name) {
+                map.serialize_entry(name, value)?;
+            }
+        }
+        map.end()
+    }
 }
 
 /// Public account response shape.
@@ -230,7 +281,8 @@ impl<T: AuthSession> From<&T> for SessionView {
             impersonated_by: session.impersonated_by().map(str::to_owned),
             active_organization_id: session.active_organization_id().map(str::to_owned),
             active_team_id: session.active_team_id().map(str::to_owned),
-            extension_fields: Default::default(),
+            extension_fields: session.additional_fields().into_iter().collect(),
+            omitted_fields: Default::default(),
             active: session.active(),
         }
     }
@@ -338,6 +390,9 @@ impl AuthUser for UserView {
 }
 
 impl AuthSession for SessionView {
+    fn additional_fields(&self) -> serde_json::Map<String, serde_json::Value> {
+        self.extension_fields.clone().into_iter().collect()
+    }
     fn id(&self) -> Cow<'_, str> {
         Cow::Borrowed(&self.id)
     }
@@ -724,6 +779,7 @@ mod tests {
     #[test]
     fn session_view_serializes_camel_case() {
         let session = SessionView {
+            omitted_fields: Default::default(),
             id: "session-1".to_string(),
             expires_at: Utc::now(),
             token: "token".to_string(),
