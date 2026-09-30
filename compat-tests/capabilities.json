@@ -1763,17 +1763,28 @@
       "evidence": {
         "success": [
           "two-factor disable deletes factor and trust state and rotates the authoritative session",
-          "two-factor disable requires a persistent cookie session and rejects API key emulation"
+          "two-factor disable requires a persistent cookie session and rejects API key emulation",
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
+          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation"
         ],
         "rejection": [
           "two-factor disable deletes factor and trust state and rotates the authoritative session",
-          "two-factor disable requires a persistent cookie session and rejects API key emulation"
+          "two-factor disable requires a persistent cookie session and rejects API key emulation",
+          "two-factor passwordless option retains password ownership for mixed social and credential accounts",
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations"
         ],
         "authorization": [
           "two-factor disable deletes factor and trust state and rotates the authoritative session",
           "two-factor disable requires a persistent cookie session and rejects API key emulation"
         ],
-        "state": "two-factor disable deletes factor and trust state and rotates the authoritative session"
+        "state": [
+          "two-factor disable deletes factor and trust state and rotates the authoritative session",
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
+          "two-factor passwordless option retains password ownership for mixed social and credential accounts",
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
+          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation"
+        ]
       }
     },
     {
@@ -1786,7 +1797,11 @@
           "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership",
           "default TOTP URI preserves reserved issuer bytes and explicit default parameters",
           "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
-          "two-factor skip-verification enrollment persists verified state and rotates only the owner's session"
+          "two-factor skip-verification enrollment persists verified state and rotates only the owner's session",
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
+          "two-factor passwordless option retains password ownership for mixed social and credential accounts",
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
+          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation"
         ],
         "rejection": [
           "disabled TOTP rejects generator and verification before touching owner factor state",
@@ -1794,7 +1809,9 @@
           "two-factor skip-verification enrollment persists verified state and rotates only the owner's session",
           "two-factor skip enrollment rejects a configured user update before factor persistence or session rotation",
           "two-factor skip enrollment cancellation returns an empty 500 without factor or token mutation",
-          "two-factor skip enrollment preserves a genuine identical-message 403 without factor or token mutation"
+          "two-factor skip enrollment preserves a genuine identical-message 403 without factor or token mutation",
+          "two-factor passwordless option retains password ownership for mixed social and credential accounts",
+          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation"
         ],
         "authorization": "two-factor skip enrollment preserves a genuine identical-message 403 without factor or token mutation",
         "state": [
@@ -1810,7 +1827,11 @@
           "two-factor pending otp session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
           "two-factor pending otp preserves an identical-message application Forbidden after consumption",
           "two-factor pending backup session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
-          "two-factor pending backup preserves an identical-message application Forbidden after consumption"
+          "two-factor pending backup preserves an identical-message application Forbidden after consumption",
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
+          "two-factor passwordless option retains password ownership for mixed social and credential accounts",
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
+          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation"
         ]
       }
     },
@@ -1819,10 +1840,21 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "two-factor generate-backup-codes replaces the backup code set for enabled users",
-        "rejection": null,
+        "success": [
+          "two-factor generate-backup-codes replaces the backup code set for enabled users",
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations"
+        ],
+        "rejection": [
+          "two-factor passwordless option retains password ownership for mixed social and credential accounts",
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations"
+        ],
         "authorization": null,
-        "state": null
+        "state": [
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
+          "two-factor passwordless option retains password ownership for mixed social and credential accounts",
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations"
+        ]
       }
     },
     {
@@ -1833,15 +1865,24 @@
         "success": [
           "two-factor enrollment returns URIs and keeps the user disabled until verification",
           "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership",
-          "default TOTP URI preserves reserved issuer bytes and explicit default parameters"
+          "default TOTP URI preserves reserved issuer bytes and explicit default parameters",
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
+          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation"
         ],
         "rejection": [
-          "disabled TOTP rejects generator and verification before touching owner factor state"
+          "disabled TOTP rejects generator and verification before touching owner factor state",
+          "two-factor passwordless option retains password ownership for mixed social and credential accounts",
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations"
         ],
         "authorization": null,
         "state": [
           "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership",
-          "disabled TOTP rejects generator and verification before touching owner factor state"
+          "disabled TOTP rejects generator and verification before touching owner factor state",
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
+          "two-factor passwordless option retains password ownership for mixed social and credential accounts",
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
+          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation"
         ]
       }
     },
@@ -1869,7 +1910,9 @@
           "two-factor challenge budget spans factors and invalidates the exhausted challenge before a valid code",
           "two-factor lockout settings preserve fractional thresholds, zero defaults, disabled budgets and successful resets in persisted state",
           "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
-          "two-factor skip-verification enrollment persists verified state and rotates only the owner's session"
+          "two-factor skip-verification enrollment persists verified state and rotates only the owner's session",
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations"
         ],
         "rejection": [
           "two-factor verify-backup-code signs the user in and consumes the used code",
@@ -1878,7 +1921,8 @@
           "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
           "two-factor skip-verification enrollment persists verified state and rotates only the owner's session",
           "two-factor pending backup session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
-          "two-factor pending backup preserves an identical-message application Forbidden after consumption"
+          "two-factor pending backup preserves an identical-message application Forbidden after consumption",
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password"
         ],
         "authorization": [
           "two-factor verify-backup-code signs the user in and consumes the used code",
@@ -1891,7 +1935,9 @@
           "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
           "two-factor skip-verification enrollment persists verified state and rotates only the owner's session",
           "two-factor pending backup session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
-          "two-factor pending backup preserves an identical-message application Forbidden after consumption"
+          "two-factor pending backup preserves an identical-message application Forbidden after consumption",
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations"
         ]
       }
     },
@@ -1934,7 +1980,10 @@
           "two-factor default account lock spans renewed challenges while authenticated and foreign owners retain their sessions",
           "two-factor lockout settings preserve fractional thresholds, zero defaults, disabled budgets and successful resets in persisted state",
           "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
-          "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code"
+          "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code",
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
+          "two-factor passwordless option retains password ownership for mixed social and credential accounts",
+          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation"
         ],
         "rejection": [
           "disabled TOTP rejects generator and verification before touching owner factor state",
@@ -1959,7 +2008,10 @@
           "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
           "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code",
           "two-factor pending totp session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
-          "two-factor pending totp preserves an identical-message application Forbidden after consumption"
+          "two-factor pending totp preserves an identical-message application Forbidden after consumption",
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
+          "two-factor passwordless option retains password ownership for mixed social and credential accounts",
+          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation"
         ]
       }
     },

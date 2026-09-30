@@ -63,7 +63,7 @@ compatScenario("two-factor passwordless social owner completes real enrollment, 
   const persisted=z.object({twoFactorExists:z.boolean(),sessions:z.array(z.object({token:z.string(),userId:z.string()}))}).parse(await ctx.readUserState({userId:owner.userId}));
   expect(persisted.twoFactorExists).toBe(false); expect(persisted.sessions).toHaveLength(1); expect(persisted.sessions[0]).toMatchObject({token:final.data?.session.token,userId:owner.userId});
   return ctx.snapshot({signup:owner.result,mixed,social,enrollment:redactFactor(enabled),verified,current,uri:redactFactor(uri),regenerated:redactFactor(regenerated),oldCode,foreignCode,backup,disabled,final,persisted});
-});
+}, ["POST /two-factor/enable", "POST /two-factor/disable", "POST /two-factor/get-totp-uri", "POST /two-factor/generate-backup-codes", "POST /two-factor/verify-totp", "POST /two-factor/verify-backup-code"]);
 
 compatScenario("two-factor passwordless option retains password ownership for mixed social and credential accounts",async ctx=>{
   const owner=await signup(ctx,"two-factor-passwordless");
@@ -81,7 +81,7 @@ compatScenario("two-factor passwordless option retains password ownership for mi
   expect(await ctx.readUserState({userId:owner.userId})).toEqual(established);
   expect((await owner.client.getSession()).data?.user.id).toBe(owner.userId);
   return ctx.snapshot({signup:owner.result,before,missing,wrong,long,enrollment:redactFactor(enabled),established,uri,backup,disable});
-});
+}, ["POST /two-factor/enable", "POST /two-factor/disable", "POST /two-factor/get-totp-uri", "POST /two-factor/generate-backup-codes", "POST /two-factor/verify-totp", "POST /two-factor/verify-backup-code"]);
 
 compatScenario("two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",async ctx=>{
   const observations=[];
@@ -112,7 +112,7 @@ compatScenario("two-factor passwordless child overrides preserve required schema
     }
   }
   return ctx.snapshot(observations);
-});
+}, ["POST /two-factor/enable", "POST /two-factor/disable", "POST /two-factor/get-totp-uri", "POST /two-factor/generate-backup-codes", "POST /two-factor/verify-totp", "POST /two-factor/verify-backup-code"]);
 
 compatScenario("two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation",async ctx=>{
   const profile="two-factor-passwordless",owner=await signup(ctx,profile);
@@ -126,4 +126,4 @@ compatScenario("two-factor passwordless treats a retained empty credential hash 
   const current=await owner.client.getSession(); expect(current.data?.user.id).toBe(owner.userId); expect(current.data?.user.twoFactorEnabled).toBe(false);
   expect(await credentials(ctx,owner.userId)).toEqual(empty);
   return ctx.snapshot({empty,nullPassword,enrollment:redactFactor(enabled),verified,saved:redactFactor(saved),disabled,current});
-});
+}, ["POST /two-factor/enable", "POST /two-factor/disable", "POST /two-factor/get-totp-uri", "POST /two-factor/generate-backup-codes", "POST /two-factor/verify-totp", "POST /two-factor/verify-backup-code"]);
