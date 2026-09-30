@@ -6,6 +6,7 @@ import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { createSiweFixture } from "./siwe-fixture";
 import { createPhoneFixture } from "./phone-fixture";
+import { createMultipleSessionFixture } from "./multiple-session-fixture";
 import { getMigrations } from "better-auth/db/migration";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { apiKey } from "@better-auth/api-key";
@@ -382,10 +383,12 @@ const authOptions = {
 const { runMigrations } = await getMigrations(authOptions);
 await runMigrations();
 const siweFixture = await createSiweFixture(database, authOptions, `http://localhost:${PORT}`);
+const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
 for (const [path, instance] of siweFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of multipleSessionFixture.profiles) verificationProfiles.set(path, instance);
 for (const name of ["email-verification-required", "email-verification-no-signup-mail", "email-verification-failing-notifications"]) {
   const path = `/__test/profiles/${name}/api/auth`;
   const instance = betterAuth({
@@ -867,6 +870,7 @@ const server = Bun.serve({
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         siweFixture.reset();
+        multipleSessionFixture.reset();
         await resetDatabaseState();
         emailOtpOutbox.clear();
         magicLinkOutbox.clear();

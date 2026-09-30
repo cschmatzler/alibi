@@ -1,5 +1,6 @@
 /** Explicit equivalent configurations of the pinned runtime. */
 export type FixtureProfile =
+  | "multi-session" | "multi-session-limited"
   | "device-custom" | "device-configured" | "device-unicode" | "device-too-long"
   | "siwe" | "siwe-email" | "siwe-contract"
   | "phone-default" | "phone-signup" | "phone-proof" | "phone-custom"

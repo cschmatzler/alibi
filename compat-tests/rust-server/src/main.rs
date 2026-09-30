@@ -48,6 +48,7 @@ mod device_fixture;
 mod jwt_fixture;
 mod lifecycle_fixture;
 mod magic_profiles;
+mod multiple_session_fixture;
 mod one_time_token_fixture;
 mod organization_timestamp_fixture;
 mod otp_profiles;
@@ -630,6 +631,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         verification_profiles::router(&config, database.clone(), verification_outbox.clone())
             .await?;
     let session_profile_router = session_profiles::router(&config, database.clone()).await?;
+    let multiple_session_counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let multiple_session_router = multiple_session_fixture::router(
+        &config,
+        database.clone(),
+        multiple_session_counter.clone(),
+    )
+    .await?;
     let siwe_state = siwe_fixture::state();
     let siwe_profile_router =
         siwe_fixture::router(&config, database.clone(), siwe_state.clone()).await?;
@@ -999,6 +1007,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let otp_outbox = otp_outbox_for_reset.clone();
                 let magic_outbox = magic_outbox_for_reset.clone();
                 let siwe_state = siwe_state.clone();
+                let multiple_session_counter = multiple_session_counter.clone();
                 let reset_outbox = reset_outbox_for_reset.clone();
                 let verification_outbox = verification_outbox_for_reset.clone();
                 let change_email_outbox = change_email_outbox_for_reset.clone();
@@ -1011,6 +1020,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let database = database_for_reset.clone();
                 async move {
                     siwe_fixture::reset(&siwe_state).await;
+                    multiple_session_counter.store(0, std::sync::atomic::Ordering::SeqCst);
                     if let Err(error) = reset_database_state(&database).await {
                         return (
                             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -1575,6 +1585,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_state(auth)
         .merge(verification_profile_router)
         .merge(session_profile_router)
+        .merge(multiple_session_router)
         .merge(otp_router)
         .merge(magic_router)
         .merge(siwe_profile_router)
