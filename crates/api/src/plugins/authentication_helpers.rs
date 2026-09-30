@@ -116,13 +116,27 @@ pub(crate) trait RequestBody: DeserializeOwned + 'static {
 /// Parse the upstream schema at the HTTP boundary. The error includes all
 /// failed fields in declaration order, including explicitly null optionals.
 pub(crate) fn parse_body<T: RequestBody>(req: &AuthRequest) -> Result<T, AuthResponse> {
-    let value: better_auth_core::utils::json::JsValue = req.body_as_json().map_err(|_| {
+    parse_body_with_ignored_fields(req, &[])
+}
+
+/// Remove configured unknown fields before schema validation without serializing
+/// the remaining JavaScript numbers (which may include infinity or signed zero).
+pub(crate) fn parse_body_with_ignored_fields<T: RequestBody>(
+    req: &AuthRequest,
+    ignored: &[&str],
+) -> Result<T, AuthResponse> {
+    let mut value: better_auth_core::utils::json::JsValue = req.body_as_json().map_err(|_| {
         AuthResponse::json(
             400,
             &serde_json::json!({"code":"BAD_REQUEST","message":"Invalid JSON in request body"}),
         )
         .unwrap_or_else(|_| AuthResponse::text(400, "Invalid JSON in request body"))
     })?;
+    if let better_auth_core::utils::json::JsValue::Object(object) = &mut value {
+        for field in ignored {
+            let _ = object.shift_remove(*field);
+        }
+    }
     let Some(object) = value.as_object() else {
         return Err(validation_response(&format!(
             "[body] Invalid input: expected object, received {}",
@@ -288,6 +302,15 @@ pub(crate) async fn session_response<S: AuthSchema>(
     req: &AuthRequest,
     user_id: &str,
 ) -> AuthResult<(serde_json::Value, AuthResponse)> {
+    session_response_with_remember(ctx, req, user_id, None).await
+}
+
+pub(crate) async fn session_response_with_remember<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    req: &AuthRequest,
+    user_id: &str,
+    remember_me: Option<bool>,
+) -> AuthResult<(serde_json::Value, AuthResponse)> {
     use better_auth_core::utils::cookie_utils::{
         create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
         sign_cookie_value, verify_cookie_value,
@@ -298,12 +321,27 @@ pub(crate) async fn session_response<S: AuthSchema>(
     )
     .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
     .is_some_and(|value| !value.is_empty());
-    let dont_remember = inherited;
+    let dont_remember = remember_me.map_or(inherited, |value| !value);
+    let mut config = (*ctx.config).clone();
+    if remember_me == Some(false) {
+        config.session.expires_in = Duration::days(1);
+    }
+    let issuing_context = AuthContext {
+        config: std::sync::Arc::new(config),
+        database: ctx.database.clone(),
+        email_provider: ctx.email_provider.clone(),
+        metadata: ctx.metadata.clone(),
+        extensions: ctx.extensions.clone(),
+    };
     let meta = better_auth_core::RequestMeta::from_request(req);
-    let issued =
-        crate::plugins::helpers::issue_user_session(ctx, user_id, meta.ip_address, meta.user_agent)
-            .await
-            .map_err(crate::plugins::helpers::SessionIssueError::into_auth_error)?;
+    let issued = crate::plugins::helpers::issue_user_session(
+        &issuing_context,
+        user_id,
+        meta.ip_address,
+        meta.user_agent,
+    )
+    .await
+    .map_err(crate::plugins::helpers::SessionIssueError::into_auth_error)?;
     let token = issued.session.token();
     let user = serde_json::to_value(ctx.user_view(&issued.user))?;
     let session = serde_json::to_value(ctx.session_view(&issued.session))?;

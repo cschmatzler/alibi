@@ -530,7 +530,14 @@ impl<S: AuthSchema> BetterAuth<S> {
             }
         }
 
-        let has_changes = update_req.name.is_some()
+        let clear_phone = self
+            .context
+            .get_metadata("phone-number.enabled")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+            && body.get("phoneNumber") == Some(&serde_json::Value::Null);
+        let has_changes = clear_phone
+            || update_req.name.is_some()
             || update_req.image.is_some()
             || username.is_some()
             || display_username.is_some()
@@ -542,7 +549,7 @@ impl<S: AuthSchema> BetterAuth<S> {
 
         let update_user = UpdateUser {
             is_anonymous: None,
-            phone_number: None,
+            phone_number: clear_phone.then_some(None),
             phone_number_verified: None,
             last_login_method: None,
             email: None,

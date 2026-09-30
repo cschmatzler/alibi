@@ -27,6 +27,7 @@ async fn runtime_routes_match_capability_inventory() {
     let auth = create_test_auth_with_options(TestAuthOptions {
         teams_enabled: true,
         dynamic_roles_enabled: true,
+        phone_enabled: true,
         ..Default::default()
     })
     .await;

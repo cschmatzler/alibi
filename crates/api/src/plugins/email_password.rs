@@ -135,6 +135,10 @@ pub(crate) struct SignUpRequest {
     image: Option<String>,
     #[serde(rename = "rememberMe")]
     remember_me: Option<bool>,
+    #[serde(rename = "phoneNumber")]
+    phone_number: Option<better_auth_core::utils::json::JsValue>,
+    #[serde(rename = "phoneNumberVerified")]
+    phone_number_verified: Option<better_auth_core::utils::json::JsValue>,
 }
 
 impl RequestBody for SignUpRequest {
@@ -309,21 +313,16 @@ impl EmailPasswordPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let filtered_req = if self.config.enable_username {
-            None
+        let ignored = if self.config.enable_username {
+            &[][..]
         } else {
-            let mut filtered = req.clone();
-            if let Ok(serde_json::Value::Object(mut body)) = req.body_as_json() {
-                _ = body.remove("username");
-                _ = body.remove("displayUsername");
-                filtered.body = Some(serde_json::to_vec(&body)?);
-            }
-            Some(filtered)
+            &["username", "displayUsername"][..]
         };
-        let mut signup_req: SignUpRequest = match parse_body(filtered_req.as_ref().unwrap_or(req)) {
-            Ok(v) => v,
-            Err(resp) => return Ok(resp),
-        };
+        let mut signup_req: SignUpRequest =
+            match super::authentication_helpers::parse_body_with_ignored_fields(req, ignored) {
+                Ok(value) => value,
+                Err(response) => return Ok(response),
+            };
 
         signup_req.email = signup_req.email.to_lowercase();
 
@@ -622,6 +621,14 @@ pub(crate) async fn sign_up_core(
         ctx,
     )?;
 
+    let phone_enabled = ctx
+        .get_metadata("phone-number.enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    if phone_enabled {
+        super::phone_number::reject_verified_input(body.phone_number_verified.as_ref())?;
+    }
+
     // Check if user already exists
     if ctx.database.get_user_by_email(&body.email).await?.is_some() {
         // TS returns 422 UNPROCESSABLE_ENTITY for duplicate email
@@ -638,6 +645,10 @@ pub(crate) async fn sign_up_core(
         .with_email(&body.email)
         .with_name(&body.name);
     create_user.image = body.image.clone();
+    if phone_enabled {
+        create_user.phone_number =
+            super::phone_number::parse_signup_phone(ctx, body.phone_number.as_ref()).await?;
+    }
     apply_default_role(ctx, &mut create_user);
     if config.enable_username {
         if let Some(ref username) = body.username {

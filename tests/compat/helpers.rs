@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, Once, OnceLock};
 
 use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
+use better_auth::plugins::phone_number::PhoneNumberPlugin;
 use better_auth::plugins::siwe::{Eip191Verifier, RandomSiweNonce, SiweConfig, SiwePlugin};
 
 use better_auth::{
@@ -154,6 +155,7 @@ pub struct TestAuthOptions {
     pub creator_role: Option<String>,
     pub teams_enabled: bool,
     pub dynamic_roles_enabled: bool,
+    pub phone_enabled: bool,
 }
 
 struct TestResetSender {
@@ -332,7 +334,7 @@ pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth
         ..Default::default()
     });
 
-    AuthBuilder::<TestSchema>::new(config)
+    let builder = AuthBuilder::<TestSchema>::new(config)
         .store(store)
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .plugin(SessionManagementPlugin::new())
@@ -374,7 +376,13 @@ pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth
             "localhost",
             Arc::new(RandomSiweNonce),
             Arc::new(Eip191Verifier),
-        )))
+        )));
+    let builder = if options.phone_enabled {
+        builder.plugin(PhoneNumberPlugin::new(Default::default()))
+    } else {
+        builder
+    };
+    builder
         .build()
         .await
         .unwrap_or_else(|e| panic!("Failed to create test auth instance: {e}"))

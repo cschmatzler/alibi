@@ -5,6 +5,7 @@ import { passkey } from "@better-auth/passkey";
 import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { createSiweFixture } from "./siwe-fixture";
+import { createPhoneFixture } from "./phone-fixture";
 import { getMigrations } from "better-auth/db/migration";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { apiKey } from "@better-auth/api-key";
@@ -452,6 +453,7 @@ for (const name of ["magic-link-hashed", "magic-link-disabled"]) {
   }));
 }
 
+const phoneFixture = await createPhoneFixture(authOptions, twoFactorOtpOutbox);
 const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
 
@@ -818,6 +820,11 @@ const server = Bun.serve({
       if (url.pathname==="/__test/magic-link" && request.method==="GET") {
         return jsonResponse(magicLinkOutbox.get(url.searchParams.get("email") ?? "") ?? null);
       }
+      if (url.pathname === "/__test/phone-otp" && request.method === "GET") {
+        return jsonResponse(phoneFixture.outbox.get(`${url.searchParams.get("type") ?? "verification"}:${url.searchParams.get("phoneNumber")}`) ?? null);
+      }
+      if (url.pathname === "/__test/phone-callbacks" && request.method === "GET") return jsonResponse(phoneFixture.callbacks);
+      if (url.pathname === "/__test/phone-consume-otp" && request.method === "POST") return phoneFixture.consume(await readJson(request));
       if (url.pathname==="/__test/email-otp" && request.method==="GET") {
         return jsonResponse(emailOtpOutbox.get(`${url.searchParams.get("type")}:${url.searchParams.get("email")}`) ?? null);
       }
@@ -867,6 +874,7 @@ const server = Bun.serve({
         verificationEmailOutbox.clear();
         changeEmailOutbox.clear();
         twoFactorOtpOutbox.clear();
+        phoneFixture.reset();
         resetPasswordMode = "capture";
         oauthRefreshMode = "success";
         socialProfile = defaultSocialProfile();
@@ -901,15 +909,19 @@ const server = Bun.serve({
       if (url.pathname === "/__test/user-state" && request.method === "GET") {
         const userId = url.searchParams.get("userId");
         if (!userId) return jsonResponse({ message: "userId is required" }, { status: 400 });
+        const profileName = url.searchParams.get("profile");
+        const selected = profileName ? phoneFixture.profiles.get(profileName) : auth;
+        if (!selected) return jsonResponse({ message: "unknown fixture profile" }, { status: 400 });
+        const selectedContext = await selected.$context;
         const where = [{ field: "userId", value: userId }];
         const [user, accounts, sessions, twoFactor] = await Promise.all([
-          authContext.adapter.findOne<Record<string, unknown>>({ model: "user", where: [{ field: "id", value: userId }] }),
-          authContext.adapter.findMany<Record<string, unknown>>({ model: "account", where }),
-          authContext.adapter.findMany<Record<string, unknown>>({ model: "session", where, sortBy: { field: "createdAt", direction: "asc" } }),
-          authContext.adapter.findOne({ model: "twoFactor", where }),
+          selectedContext.adapter.findOne<Record<string, unknown>>({ model: "user", where: [{ field: "id", value: userId }] }),
+          selectedContext.adapter.findMany<Record<string, unknown>>({ model: "account", where }),
+          selectedContext.adapter.findMany<Record<string, unknown>>({ model: "session", where, sortBy: { field: "createdAt", direction: "asc" } }),
+          selectedContext.adapter.findOne({ model: "twoFactor", where }),
         ]);
         return jsonResponse({
-          user: user ? { id: user.id, email: user.email, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled } : null,
+          user: user ? { id: user.id, email: user.email, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, ...(profileName ? { phoneNumber: user.phoneNumber, phoneNumberVerified: user.phoneNumberVerified } : {}) } : null,
           accounts: accounts.sort((left, right) => String(left.providerId).localeCompare(String(right.providerId)) || String(left.accountId).localeCompare(String(right.accountId))).map(account => ({ id: account.id, userId: account.userId, accountId: account.accountId, providerId: account.providerId })),
           sessions: sessions.map(session => ({ id: session.id, token: session.token, userId: session.userId, expiresAt: session.expiresAt })),
           twoFactorExists: twoFactor !== null,
@@ -1179,6 +1191,9 @@ const server = Bun.serve({
         return jsonResponse({ status: true, accountId: localAccountId });
       }
 
+      for (const [name, instance] of phoneFixture.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
+      }
       for (const [name,instance] of magicProfiles) {
         if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
       }

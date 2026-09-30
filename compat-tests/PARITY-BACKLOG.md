@@ -8,7 +8,7 @@ Wider pinned parity work follows these priorities. Excluded external integration
 packages will receive no implementation work. Prepared unmerged work remains
 separate from delivered capabilities.
 
-This snapshot describes merged `origin/master` at `1539894` (through PR #26),
+This snapshot describes merged `origin/master` at `88ad6e0` (through PR #27),
 not the older, dirty coordinator worktree. The reference remains Better Auth
 1.7.6. The [upstream audit](audits/upstream-target.md) records source locations
 and wider boundaries. An audit gap means equivalence has not been established;
@@ -18,14 +18,14 @@ it is not automatically a confirmed defect or wholly missing implementation.
 
 | Capability | Current state | Work still needed |
 | --- | --- | --- |
-| JSON numbers and persistence | Numbers merged PR #26. User JSON persistence and stale-binding repair passed the integrated gate and await publication. | Publish user persistence. Custom remote JWT signing inputs remain a separate gap. |
-| Phone authentication | Reviewed local implementation: password sign-in, OTP send/verify, password reset, server-only consumption, optional signup and custom verification. Eleven SDK scenarios / 1,058 assertions plus native/storage tests pass. | Integrate after numeric and user-JSON prerequisites, complete integrated checks and publish. |
+| JSON numbers and persistence | Numbers merged PR #26; user JSON persistence and stale-binding repair merged PR #27. | Custom remote JWT signing inputs remain a separate gap. |
+| Phone authentication | Reviewed local implementation: password sign-in, OTP send/verify, password reset, server-only consumption, optional signup and custom verification. Eleven SDK scenarios / 1,058 assertions plus native/storage tests pass. The integrated gate passed: 255 SDK scenarios and 79.00% source coverage. | Publish the reviewed capability; five fewer missing routes once merged. |
 | OAuth correctness fixes | Local fixes preserve previously granted scopes and atomically create a new user with its OAuth account. Actual failing-before and passing-after evidence exists. | Finish independent/integrated review, canonical validation and publication. |
-| Organization invitation listing | Local successful-flow, ownership and expired-invitation tests pass. | Finish server-only and configured pagination behavior, review and integrated checks. |
-| Admin user deletion | Local flow proves credential/session revocation and rejects unauthorized principals. Installed-schema repair preserves two-factor rows as the pinned runtime does. | Finish migration review, documentation/inventory and integrated checks. |
-| Organization metadata lookup | Local route and ownership/session-state checks implemented. | Resolve absent/empty/raw JSON metadata behavior, then freeze, review and integrate. |
+| Organization invitation listing | Local successful-flow, ownership and expired-invitation tests pass. | Server-only and configured pagination flows pass; independent review is clear. Complete the integrated gate and publish. |
+| Admin user deletion | Local flow proves credential/session revocation and rejects unauthorized principals. Installed-schema repair preserves two-factor rows as the pinned runtime does. | Independent migration review is clear; additive inventory evidence is prepared. Complete the integrated gate and publish. |
+| Organization metadata lookup | Local route and ownership/session-state checks implemented. | Absent/empty/raw JSON behavior is repaired and frozen. Review and integrate. |
 | OpenAPI and reference page | Local generator, route/schema metadata and reference page; eight configured document/reference scenarios pass. | Complete dependencies, notably update-session, independent review, integration and publication. |
-| One Tap | Implementation in progress; cryptographic verifier and shared OAuth prerequisites prepared. | Finish real local JWKS and official-client flows, authorization/replay/configuration evidence, review and integration. |
+| One Tap | Frozen implementation with local RSA Google JWKS, configuration and lifecycle evidence. All 14 complete-token official-client scenarios / 664 assertions pass. | Integrate the reviewed narrow comparator repair and shared OAuth prerequisites, complete review/gate and publish. |
 | SIWE | Merged PR #25; full canonical gate passed with 238 SDK scenarios and 78.65% source coverage. | Nonstandard media/legacy-date/custom-storage boundaries are documented, not new selected tasks. |
 
 ## Missing capability families on merged master
@@ -33,8 +33,8 @@ it is not automatically a confirmed defect or wholly missing implementation.
 | Capability | What it provides | Preparation |
 | --- | --- | --- |
 | Anonymous authentication | Guest accounts, deletion and safe conversion/linking to real accounts. | Earlier prototype exists; extraction, review and integrated evidence remain. |
-| Multiple sessions | List accounts/sessions remembered on a device, switch active session, revoke one and maintain the cookie set. | Earlier prototype exists; extraction, review and integrated evidence remain. |
-| Session updates | Validated/configured extra session fields with persisted updates and hooks. | Upstream behavior investigated and shared contracts proposed; implementation remains. |
+| Multiple sessions | List accounts/sessions remembered on a device, switch active session, revoke one and maintain the cookie set. | Frozen extraction has three SDK scenarios / 194 assertions and three native cookie contracts. Independent review found a signed-empty-proof edge case; repair is underway. |
+| Session updates | Validated/configured extra session fields with persisted updates and hooks. | Shared raw-field/storage contracts established; production implementation compiles. Real custom model and SDK evidence is underway. |
 | OAuth proxy | Production OAuth credentials serving preview/development hosts with encrypted, origin-bound profile transfer. | Actual pinned multi-server flow investigated; implementation remains. |
 | OAuth popup | Popup login and secure browser completion messaging. | Missing from the original route profiles; audit only. |
 | Phone, One Tap, organization metadata, OpenAPI | See the local work table above. | Unmerged capabilities still count as missing on master. |
@@ -42,8 +42,8 @@ it is not automatically a confirmed defect or wholly missing implementation.
 The merged inventory has 17 missing method/path identities after SIWE landed. Separately, four
 implemented routes lack successful-flow evidence: organization user invitations,
 admin removal, username availability and two-factor disable. The first two have
-local repairs above; the latter two have draft scenarios that still need
-extraction and integrated validation. Device approval/denial/token and GET /ok
+local repairs above; the latter two have frozen implementations and meaningful SDK/native
+evidence awaiting integration. Device approval/denial/token and GET /ok
 now have successful evidence on master.
 
 ## Gaps within existing features
