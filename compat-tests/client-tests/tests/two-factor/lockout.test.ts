@@ -67,7 +67,7 @@ compatScenario("two-factor challenge budget spans factors and invalidates the ex
   expect(persisted.sessions).toHaveLength(1);
   expect(persisted.sessions[0]).toMatchObject({ token: session.data?.session.token, userId: owner.userId });
   return { signIn: ctx.snapshot(signIn), failures, exhausted: ctx.snapshot(exhausted), replay: ctx.snapshot(replay), deniedState, renewed: ctx.snapshot(renewed), completed: ctx.snapshot(completed), session: ctx.snapshot(session), persisted: ctx.snapshot(persisted) };
-});
+}, ["POST /two-factor/enable", "POST /two-factor/verify-totp", "POST /two-factor/verify-backup-code", "POST /two-factor/verify-otp", "POST /two-factor/send-otp"]);
 
 compatScenario("two-factor default account lock spans renewed challenges while authenticated and foreign owners retain their sessions", async ctx => {
   const owner = await enroll(ctx, "account-budget");
@@ -105,7 +105,7 @@ compatScenario("two-factor default account lock spans renewed challenges while a
   const ownerSession = await owner.client.getSession();
   expect(ownerSession.data?.user.id).toBe(owner.userId);
   return { failures, locked: ctx.snapshot(locked), lockedBackup: ctx.snapshot(lockedBackup), existing: ctx.snapshot(existing), remainsLocked: ctx.snapshot(remainsLocked), before: ctx.snapshot(before), foreignCompletion: ctx.snapshot(foreignCompletion), foreignSession: ctx.snapshot(foreignSession), ownerSession: ctx.snapshot(ownerSession) };
-});
+}, ["POST /two-factor/enable", "POST /two-factor/verify-totp", "POST /two-factor/verify-backup-code", "POST /two-factor/verify-otp", "POST /two-factor/send-otp"]);
 
 compatScenario("two-factor lockout settings preserve fractional thresholds, zero defaults, disabled budgets and successful resets in persisted state", async ctx => {
   const results = [];
@@ -171,7 +171,7 @@ compatScenario("two-factor lockout settings preserve fractional thresholds, zero
     expect((await owner.client.getSession()).data?.user.id).toBe(owner.userId);
   }
   return ctx.snapshot(results);
-});
+}, ["POST /two-factor/enable", "POST /two-factor/verify-totp", "POST /two-factor/verify-backup-code", "POST /two-factor/verify-otp", "POST /two-factor/send-otp"]);
 
 compatScenario("two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment", async ctx => {
   const client = clientFor(ctx);
@@ -209,7 +209,7 @@ compatScenario("two-factor enrollment reuses only an unverified factor generatio
   expect((await client.getSession()).data?.user.id).toBe(signup.data.user.id);
   const final = await factorState(ctx,signup.data.user.id); expect(final.failedVerificationCount).toBe(0); expect(final.verified).toBe(false);
   return ctx.snapshot({signup,firstState:publicFactorState(firstState),secondState:publicFactorState(secondState),wrongPassword,verified,established:publicFactorState(established),denied,foreignWrong,pending,unverified:publicFactorState(unverified),deniedTotp,completion,final:publicFactorState(final)});
-});
+}, ["POST /two-factor/enable", "POST /two-factor/verify-totp", "POST /two-factor/verify-backup-code", "POST /two-factor/verify-otp", "POST /two-factor/send-otp"]);
 
 compatScenario("two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code", async ctx => {
   const profile = "two-factor-lockout-fractional";
@@ -238,7 +238,7 @@ compatScenario("two-factor OTP failures share the pending account budget and suc
   expect(reset.id).toBe(authenticatedBefore.id); expect(reset.secret).toBe(authenticatedBefore.secret); expect(reset.backupCodes).toBe(authenticatedBefore.backupCodes);
   const replay = await clientFor(ctx,"otp-replay",profile).twoFactor.verifyOtp({code:otp}); expect(replay.error?.code).toBe("INVALID_TWO_FACTOR_COOKIE");
   return ctx.snapshot({authenticatedWrong,wrong,lockedState:publicFactorState(lockedState),locked,lockedTotp,completed,current,reset:publicFactorState(reset),replay});
-});
+}, ["POST /two-factor/enable", "POST /two-factor/verify-totp", "POST /two-factor/verify-backup-code", "POST /two-factor/verify-otp", "POST /two-factor/send-otp"]);
 
 compatScenario("two-factor skip-verification enrollment persists verified state and rotates only the owner's session", async ctx => {
   const profile = "two-factor-skip-verification";
@@ -262,4 +262,4 @@ compatScenario("two-factor skip-verification enrollment persists verified state 
   const backup = z.object({backupCodes:z.array(z.string())}).parse(enabled.data).backupCodes[0]!;
   const completion = await client.twoFactor.verifyBackupCode({code:backup}); expect(completion.error).toBeNull(); expect((await client.getSession()).data?.user.id).toBe(signup.data.user.id);
   return ctx.snapshot({signup,original,wrong,before,enrollment:{error:enabled.error,backupCount:z.object({backupCodes:z.array(z.string())}).parse(enabled.data).backupCodes.length},state:publicFactorState(state),current,persisted,reenroll,completion});
-});
+}, ["POST /two-factor/enable", "POST /two-factor/verify-totp", "POST /two-factor/verify-backup-code", "POST /two-factor/verify-otp", "POST /two-factor/send-otp"]);

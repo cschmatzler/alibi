@@ -42,7 +42,9 @@ for(const profile of ["two-factor-pending-session-cancel","two-factor-pending-se
       const fresh=await verify(owner,secondBackup);expect(fresh.error?.status).toBe(profile.endsWith("cancel")?500:403);backupReplay={old,fresh};
       expect(z.object({sessions:z.array(z.unknown())}).parse(await ctx.readUserState({userId})).sessions).toHaveLength(0);
     }
-    const {key:_beforeKey,...beforeState}=before;const{key:_afterKey,...afterState}=after;
+    expect(after.key).toBe(before.key);
+    const beforeState={...before,key:before.key===null?null:{token:before.key}};
+    const afterState={...after,key:after.key===null?null:{token:after.key}};
     return ctx.snapshot({signup,other,foreignBefore,enable:redactTwoFactorPayload(enable),badPassword,signIn,deniedGuest,before:beforeState,rejected,after:afterState,state,replay,backupReplay});
-  });
+  }, ["POST /two-factor/enable", `POST /two-factor/verify-${factor==="backup"?"backup-code":factor}`]);
 }

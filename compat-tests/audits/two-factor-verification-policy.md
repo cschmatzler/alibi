@@ -107,3 +107,13 @@ response/token behavior and malformed OTP counters; pending backup
 disableSession semantics; trust-cookie configuration; extreme Date values;
 custom session fields from the separately coordinated session contract. This
 slice does not claim those remaining 1.7.6 branches complete.
+
+Independent JWT-owner review traced the exact source counter, lock, attempt
+consume/re-arm, verified-generation and backup-CAS owners. The skip-enrollment
+ordering and pending-session cancellation findings are resolved by separately
+proved repairs. Genuine same-message 403 errors remain explicit. The coordinator
+preserves the merged disable-cookie authority and trusted replacement-session
+fields, retains pending identifiers losslessly in the existing token comparison
+graph, and appends required configuration/state evidence without removing
+earlier requirements. Integrated canonical validation is pending. Factor secret
+and backup encryption format interoperability remains a confirmed separate gap.

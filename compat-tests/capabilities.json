@@ -1760,15 +1760,33 @@
         "success": [
           "two-factor enrollment returns URIs and keeps the user disabled until verification",
           "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership",
-          "default TOTP URI preserves reserved issuer bytes and explicit default parameters"
+          "default TOTP URI preserves reserved issuer bytes and explicit default parameters",
+          "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
+          "two-factor skip-verification enrollment persists verified state and rotates only the owner's session"
         ],
         "rejection": [
-          "disabled TOTP rejects generator and verification before touching owner factor state"
+          "disabled TOTP rejects generator and verification before touching owner factor state",
+          "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
+          "two-factor skip-verification enrollment persists verified state and rotates only the owner's session",
+          "two-factor skip enrollment rejects a configured user update before factor persistence or session rotation",
+          "two-factor skip enrollment cancellation returns an empty 500 without factor or token mutation",
+          "two-factor skip enrollment preserves a genuine identical-message 403 without factor or token mutation"
         ],
-        "authorization": null,
+        "authorization": "two-factor skip enrollment preserves a genuine identical-message 403 without factor or token mutation",
         "state": [
           "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership",
-          "disabled TOTP rejects generator and verification before touching owner factor state"
+          "disabled TOTP rejects generator and verification before touching owner factor state",
+          "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
+          "two-factor skip-verification enrollment persists verified state and rotates only the owner's session",
+          "two-factor skip enrollment rejects a configured user update before factor persistence or session rotation",
+          "two-factor skip enrollment cancellation returns an empty 500 without factor or token mutation",
+          "two-factor skip enrollment preserves a genuine identical-message 403 without factor or token mutation",
+          "two-factor pending totp session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
+          "two-factor pending totp preserves an identical-message application Forbidden after consumption",
+          "two-factor pending otp session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
+          "two-factor pending otp preserves an identical-message application Forbidden after consumption",
+          "two-factor pending backup session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
+          "two-factor pending backup preserves an identical-message application Forbidden after consumption"
         ]
       }
     },
@@ -1808,10 +1826,13 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
+        "success": [
+          "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
+          "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code"
+        ],
         "rejection": null,
         "authorization": null,
-        "state": null
+        "state": "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code"
       }
     },
     {
@@ -1819,10 +1840,35 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "two-factor verify-backup-code signs the user in and consumes the used code",
-        "rejection": "two-factor verify-backup-code signs the user in and consumes the used code",
-        "authorization": "two-factor verify-backup-code signs the user in and consumes the used code",
-        "state": null
+        "success": [
+          "two-factor verify-backup-code signs the user in and consumes the used code",
+          "two-factor challenge budget spans factors and invalidates the exhausted challenge before a valid code",
+          "two-factor lockout settings preserve fractional thresholds, zero defaults, disabled budgets and successful resets in persisted state",
+          "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
+          "two-factor skip-verification enrollment persists verified state and rotates only the owner's session"
+        ],
+        "rejection": [
+          "two-factor verify-backup-code signs the user in and consumes the used code",
+          "two-factor challenge budget spans factors and invalidates the exhausted challenge before a valid code",
+          "two-factor lockout settings preserve fractional thresholds, zero defaults, disabled budgets and successful resets in persisted state",
+          "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
+          "two-factor skip-verification enrollment persists verified state and rotates only the owner's session",
+          "two-factor pending backup session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
+          "two-factor pending backup preserves an identical-message application Forbidden after consumption"
+        ],
+        "authorization": [
+          "two-factor verify-backup-code signs the user in and consumes the used code",
+          "two-factor pending backup session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
+          "two-factor pending backup preserves an identical-message application Forbidden after consumption"
+        ],
+        "state": [
+          "two-factor challenge budget spans factors and invalidates the exhausted challenge before a valid code",
+          "two-factor lockout settings preserve fractional thresholds, zero defaults, disabled budgets and successful resets in persisted state",
+          "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
+          "two-factor skip-verification enrollment persists verified state and rotates only the owner's session",
+          "two-factor pending backup session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
+          "two-factor pending backup preserves an identical-message application Forbidden after consumption"
+        ]
       }
     },
     {
@@ -1830,10 +1876,26 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
-        "rejection": "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
-        "authorization": "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
-        "state": null
+        "success": [
+          "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
+          "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code"
+        ],
+        "rejection": [
+          "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
+          "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code",
+          "two-factor pending otp session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
+          "two-factor pending otp preserves an identical-message application Forbidden after consumption"
+        ],
+        "authorization": [
+          "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
+          "two-factor pending otp session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
+          "two-factor pending otp preserves an identical-message application Forbidden after consumption"
+        ],
+        "state": [
+          "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code",
+          "two-factor pending otp session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
+          "two-factor pending otp preserves an identical-message application Forbidden after consumption"
+        ]
       }
     },
     {
@@ -1843,15 +1905,37 @@
       "evidence": {
         "success": [
           "two-factor generate-backup-codes replaces the backup code set for enabled users",
-          "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership"
+          "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership",
+          "two-factor challenge budget spans factors and invalidates the exhausted challenge before a valid code",
+          "two-factor default account lock spans renewed challenges while authenticated and foreign owners retain their sessions",
+          "two-factor lockout settings preserve fractional thresholds, zero defaults, disabled budgets and successful resets in persisted state",
+          "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
+          "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code"
         ],
         "rejection": [
-          "disabled TOTP rejects generator and verification before touching owner factor state"
+          "disabled TOTP rejects generator and verification before touching owner factor state",
+          "two-factor challenge budget spans factors and invalidates the exhausted challenge before a valid code",
+          "two-factor default account lock spans renewed challenges while authenticated and foreign owners retain their sessions",
+          "two-factor lockout settings preserve fractional thresholds, zero defaults, disabled budgets and successful resets in persisted state",
+          "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
+          "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code",
+          "two-factor pending totp session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
+          "two-factor pending totp preserves an identical-message application Forbidden after consumption"
         ],
-        "authorization": null,
+        "authorization": [
+          "two-factor pending totp session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
+          "two-factor pending totp preserves an identical-message application Forbidden after consumption"
+        ],
         "state": [
           "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership",
-          "disabled TOTP rejects generator and verification before touching owner factor state"
+          "disabled TOTP rejects generator and verification before touching owner factor state",
+          "two-factor challenge budget spans factors and invalidates the exhausted challenge before a valid code",
+          "two-factor default account lock spans renewed challenges while authenticated and foreign owners retain their sessions",
+          "two-factor lockout settings preserve fractional thresholds, zero defaults, disabled budgets and successful resets in persisted state",
+          "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
+          "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code",
+          "two-factor pending totp session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
+          "two-factor pending totp preserves an identical-message application Forbidden after consumption"
         ]
       }
     },

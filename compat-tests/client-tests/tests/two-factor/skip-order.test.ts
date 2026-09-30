@@ -21,7 +21,7 @@ compatScenario("two-factor skip enrollment rejects a configured user update befo
   const current=await client.getSession(); expect(current.data?.user.twoFactorEnabled).toBe(false);expect(current.data?.session.token).toBe(original.data?.session.token);
   const factor=await ctx.rawRequest({path:"/__test/two-factor-policy",method:"POST",json:{userId:signup.data.user.id}});expect(factor).toMatchObject({status:200,body:null});
   return ctx.snapshot({signup,original,before,wrong,rejected,after,current,factor});
-});
+}, ["POST /two-factor/enable"]);
 
 for (const profile of ["two-factor-skip-session-cancel", "two-factor-skip-session-forbidden"] as const) {
   compatScenario(`two-factor skip enrollment ${profile.endsWith("cancel") ? "cancellation returns an empty 500" : "preserves a genuine identical-message 403"} without factor or token mutation`,async ctx=>{
@@ -47,5 +47,5 @@ for (const profile of ["two-factor-skip-session-cancel", "two-factor-skip-sessio
     const current=await client.getSession();expect(current.data?.user.id).toBe(signup.data.user.id);expect(current.data?.user.twoFactorEnabled).toBe(true);expect(current.data?.session.token).toBe(original.data?.session.token);
     const factor=await ctx.rawRequest({path:"/__test/two-factor-policy",method:"POST",json:{userId:signup.data.user.id}});expect(factor).toMatchObject({status:200,body:null});
     return ctx.snapshot({signup,original,before,wrong,rejected,receipt:receipts[1],after,current,factor});
-  });
+  }, ["POST /two-factor/enable"]);
 }
