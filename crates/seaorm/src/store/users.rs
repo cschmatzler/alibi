@@ -205,6 +205,7 @@ where
             .await
             .map_err(map_db_err)?;
         super::teams::remove_owned_team_members(&transaction, &user.id(), None).await?;
+        super::wallets::remove_owned_wallets(&transaction, &user.id()).await?;
         let _ = super::entities::api_key::Entity::delete_many()
             .filter(super::entities::api_key::Column::ReferenceId.eq(user.id().into_owned()))
             .exec(&transaction)

@@ -262,6 +262,12 @@ async fn sessions_client_compat() {
 }
 
 #[tokio::test]
+#[ignore = "requires the pinned Bun and Rust compatibility servers"]
+async fn siwe_client_compat() {
+    run_client_compat(&["tests/siwe"]).await;
+}
+
+#[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
 async fn two_factor_client_compat() {
     run_client_compat(&["tests/two-factor"]).await;

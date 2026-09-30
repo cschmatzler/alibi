@@ -1475,34 +1475,85 @@
     {
       "route": "POST /siwe/get-nonce",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": [
+          "SIWE official client binds real Unicode signatures to nonce wallet account and rotated session state",
+          "SIWE nonce aliases reject wallet body fields and strict verification prevents user ownership injection",
+          "SIWE media validation preserves signed nonce and verifier state before successful JSON retry"
+        ],
+        "rejection": [
+          "SIWE nonce aliases reject wallet body fields and strict verification prevents user ownership injection",
+          "SIWE media validation preserves signed nonce and verifier state before successful JSON retry"
+        ],
         "authorization": null,
-        "state": null
+        "state": [
+          "SIWE official client binds real Unicode signatures to nonce wallet account and rotated session state",
+          "SIWE nonce aliases reject wallet body fields and strict verification prevents user ownership injection",
+          "SIWE media validation preserves signed nonce and verifier state before successful JSON retry"
+        ]
       }
     },
     {
       "route": "POST /siwe/nonce",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": [
+          "SIWE official client binds real Unicode signatures to nonce wallet account and rotated session state",
+          "SIWE nonce aliases reject wallet body fields and strict verification prevents user ownership injection",
+          "SIWE media validation preserves signed nonce and verifier state before successful JSON retry"
+        ],
+        "rejection": [
+          "SIWE nonce aliases reject wallet body fields and strict verification prevents user ownership injection",
+          "SIWE media validation preserves signed nonce and verifier state before successful JSON retry"
+        ],
         "authorization": null,
-        "state": null
+        "state": [
+          "SIWE official client binds real Unicode signatures to nonce wallet account and rotated session state",
+          "SIWE nonce aliases reject wallet body fields and strict verification prevents user ownership injection",
+          "SIWE media validation preserves signed nonce and verifier state before successful JSON retry"
+        ]
       }
     },
     {
       "route": "POST /siwe/verify",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": [
+          "SIWE official client binds real Unicode signatures to nonce wallet account and rotated session state",
+          "SIWE required email and ENS preserve claims without linking a taken email identity",
+          "SIWE local ERC1271 RPC verifies the contract owner chain and signed bytes",
+          "SIWE overlapping consumers issue one wallet session before the verifier completes",
+          "SIWE reserves unused email and preserves existing wallet ownership through bans and two factor",
+          "SIWE hour 24 validates every fraction digit before applying date bounds",
+          "SIWE media validation preserves signed nonce and verifier state before successful JSON retry"
+        ],
+        "rejection": [
+          "SIWE wrong wallet domain chain and signature burn proofs while invalid nonce syntax preserves the issued generation",
+          "SIWE expired stored nonce is removed and replay cannot create an identity",
+          "SIWE nonce aliases reject wallet body fields and strict verification prevents user ownership injection",
+          "SIWE media validation preserves signed nonce and verifier state before successful JSON retry",
+          "SIWE hour 24 validates every fraction digit before applying date bounds"
+        ],
+        "authorization": [
+          "SIWE wrong wallet domain chain and signature burn proofs while invalid nonce syntax preserves the issued generation",
+          "SIWE expired stored nonce is removed and replay cannot create an identity",
+          "SIWE reserves unused email and preserves existing wallet ownership through bans and two factor",
+          "SIWE overlapping consumers issue one wallet session before the verifier completes"
+        ],
+        "state": [
+          "SIWE official client binds real Unicode signatures to nonce wallet account and rotated session state",
+          "SIWE required email and ENS preserve claims without linking a taken email identity",
+          "SIWE local ERC1271 RPC verifies the contract owner chain and signed bytes",
+          "SIWE overlapping consumers issue one wallet session before the verifier completes",
+          "SIWE reserves unused email and preserves existing wallet ownership through bans and two factor",
+          "SIWE expired stored nonce is removed and replay cannot create an identity",
+          "SIWE hour 24 validates every fraction digit before applying date bounds",
+          "SIWE media validation preserves signed nonce and verifier state before successful JSON retry",
+          "SIWE nonce aliases reject wallet body fields and strict verification prevents user ownership injection"
+        ]
       }
     },
     {

@@ -1,0 +1,8 @@
+{
+  "source": "@noble/curves 2.0.1, EIP-191 personal_sign, private scalar 1 (public test key)",
+  "nonce": "GoldenNonce0001",
+  "address": "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf",
+  "message": "fixture.example wants you to sign in with your Ethereum account:\n0x7e5f4552091a69125d5dfcb7b8c2659029395bdf\n\nSign in to the deterministic fixture — Ελληνικά\n\nURI: https://fixture.example/siwe\nVersion: 1\nChain ID: 1\nNonce: GoldenNonce0001\nIssued At: 2026-01-01T00:00:00Z",
+  "signature": "0xfa1e507846b7dae117ec8858b140ccf84292932d68afdc5fad548776114a72d56a84867ad384bcbbd9795900a8e9643d130a28b8e23500ed18c6905a209df11e1b",
+  "digest": "32b879e5bcd98479df932b6d7595932d3f0ff07cae88f2f3daa6772bc573320e"
+}

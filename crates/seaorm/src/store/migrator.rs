@@ -23,6 +23,7 @@ impl MigratorTrait for AuthMigrator {
             Box::new(super::jwks::JwkKeys),
             Box::new(super::nullable_user_flags::NullableUserPluginFlags),
             Box::new(super::device_code_user_reference::DeviceCodeUserReference),
+            Box::new(super::siwe_wallets::SiweWallets),
         ]
     }
 

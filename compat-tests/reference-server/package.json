@@ -10,6 +10,8 @@
   "dependencies": {
     "@better-auth/api-key": "1.7.6",
     "@better-auth/passkey": "1.7.6",
+    "@noble/curves": "2.0.1",
+    "@noble/hashes": "2.0.1",
     "better-auth": "1.7.6"
   }
 }
