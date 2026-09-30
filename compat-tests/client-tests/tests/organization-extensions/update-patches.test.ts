@@ -81,7 +81,7 @@ compatScenario("organization logo patches preserve omitted fields, clear SQL nul
   expect(final.organizations.find(row=>row.id===second.id)).toEqual(before.organizations.find(row=>row.id===second.id));
   expect(final.sessions).toEqual(before.sessions);
   return {before,foreignBefore,omitted:ctx.snapshot(omitted),afterOmitted,cleared:ctx.snapshot(cleared),afterClear,blank:ctx.snapshot(blank),replaced:ctx.snapshot(replaced),protectedState,denied:ctx.snapshot(denied),guest,retry:ctx.snapshot(retry),final};
-});
+}, ["POST /organization/update"]);
 
 compatScenario("organization blank update selectors use only the current token selection and preserve other organizations", async ctx => {
   const {owner,first,second,otherToken,foreign,foreignOrganization,before,foreignBefore}=await setup(ctx);
@@ -113,4 +113,4 @@ compatScenario("organization blank update selectors use only the current token s
   expect(foreignAfter.organizations[0]).toMatchObject({name:"Foreign Selected",logo:null,metadata:JSON.stringify(foreignOrganization.metadata)});
   expect(foreignAfter.sessions).toEqual(foreignWithOtherToken.sessions);
   return {before,foreignBefore,selected:ctx.snapshot(selected),afterCurrent,other:ctx.snapshot(other),afterOther,foreignWithOtherToken,absent:ctx.snapshot(absent),foreignSelected:ctx.snapshot(foreignSelected),foreignAfter};
-});
+}, ["POST /organization/update"]);
