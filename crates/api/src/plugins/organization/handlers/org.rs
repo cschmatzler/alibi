@@ -38,18 +38,41 @@ pub(crate) async fn create_organization_core(
     config: &OrganizationConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<CreateOrganizationResponse<CreatedOrganizationResponse, BasicMemberResponse>> {
-    if !config.allow_user_to_create_organization {
-        return Err(AuthError::forbidden("Organization creation is not allowed"));
+    let callback_user = ctx.user_view(user);
+    let allowed = match &config.creation_policy {
+        Some(policy) => policy.allow_creation(&callback_user).await?,
+        None => None,
+    }
+    .unwrap_or(config.allow_user_to_create_organization);
+    let system_action = request.is_none() && session.is_none();
+    if !allowed && !system_action {
+        return Err(super::extension_common::org_error(
+            403,
+            "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION",
+        ));
     }
 
-    if let Some(limit) = config.organization_limit {
-        let user_orgs = ctx.database.list_user_organizations(&user.id()).await?;
-        if user_orgs.len() >= limit {
-            return Err(AuthError::bad_request(format!(
-                "Organization limit of {} reached",
-                limit
-            )));
-        }
+    // Upstream lists all memberships before evaluating either limit branch.
+    let user_orgs = ctx.database.list_user_organizations(&user.id()).await?;
+    let reached = match &config.creation_policy {
+        Some(policy) => policy.limit_reached(&callback_user).await?,
+        None => None,
+    }
+    .unwrap_or_else(|| {
+        config.organization_limit.is_some_and(|limit| {
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "JavaScript compares adapter array length as a Number"
+            )]
+            let count = user_orgs.len() as f64;
+            count >= limit
+        })
+    });
+    if reached {
+        return Err(super::extension_common::org_error(
+            403,
+            "YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS",
+        ));
     }
 
     if ctx
@@ -74,7 +97,7 @@ pub(crate) async fn create_organization_core(
     let member_data = CreateMember {
         organization_id: organization.id().to_string(),
         user_id: user.id().to_string(),
-        role: config.creator_role.clone(),
+        role: config.effective_creator_role().to_owned(),
     };
 
     let member = ctx.database.create_member(member_data).await?;
@@ -156,8 +179,9 @@ pub(crate) async fn update_organization_core(
     )
     .await?
     {
-        return Err(AuthError::forbidden(
-            "You don't have permission to update this organization",
+        return Err(super::extension_common::org_error(
+            403,
+            "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_ORGANIZATION",
         ));
     }
 
@@ -420,14 +444,14 @@ pub(crate) async fn leave_organization_core(
         .await?
         .ok_or_else(|| AuthError::bad_request("Member not found"))?;
 
-    if has_role(&member, &config.creator_role) {
+    if has_role(&member, config.effective_creator_role()) {
         let all_members = ctx
             .database
             .list_organization_members(&body.organization_id)
             .await?;
         let owner_count = all_members
             .iter()
-            .filter(|candidate| has_role(*candidate, &config.creator_role))
+            .filter(|candidate| has_role(*candidate, config.effective_creator_role()))
             .count();
 
         if owner_count <= 1 {
@@ -460,10 +484,16 @@ pub async fn handle_create_organization(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
-    let (user, session) = require_session(req, ctx).await?;
     let body: CreateOrganizationRequest = match better_auth_core::validate_request_body(req) {
         Ok(v) => v,
         Err(resp) => return Ok(resp),
+    };
+    let (user, session) = match require_session(req, ctx).await {
+        Ok(session) => session,
+        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
+            return Ok(AuthResponse::new(401).with_header("content-type", "application/json"));
+        }
+        Err(error) => return Err(error),
     };
     let response =
         create_organization_core(&body, &user, Some(req), Some(&session), config, ctx).await?;
@@ -670,6 +700,7 @@ mod tests {
         OrganizationConfig {
             allow_user_to_create_organization: true,
             organization_limit: None,
+            creation_policy: None,
             membership_limit: Some(100),
             creator_role: "owner".to_string(),
             invitation_expires_in: 60 * 60 * 48,

@@ -112,8 +112,10 @@ pub(crate) async fn invite_member_core(
         .role()
         .split(',')
         .map(str::trim)
-        .any(|role| role == config.creator_role);
-    let invites_creator_role = roles.iter().any(|role| *role == config.creator_role);
+        .any(|role| role == config.effective_creator_role());
+    let invites_creator_role = roles
+        .iter()
+        .any(|role| *role == config.effective_creator_role());
 
     if invites_creator_role && !member_is_creator {
         return Err(AuthError::forbidden(

@@ -202,11 +202,11 @@ pub(crate) async fn remove_member_core(
         ));
     }
 
-    if has_role(&target_member, &config.creator_role) {
+    if has_role(&target_member, config.effective_creator_role()) {
         let all_members = ctx.database.list_organization_members(&org_id).await?;
         let owner_count = all_members
             .iter()
-            .filter(|candidate| has_role(*candidate, &config.creator_role))
+            .filter(|candidate| has_role(*candidate, config.effective_creator_role()))
             .count();
 
         if owner_count <= 1 {
@@ -248,7 +248,7 @@ pub(crate) async fn update_member_role_core(
         .await?
         .ok_or_else(|| AuthError::bad_request("Member not found"))?;
 
-    if !has_role(&requester_member, &config.creator_role)
+    if !has_role(&requester_member, config.effective_creator_role())
         && !super::extension_common::has_action(
             requester_member.role(),
             "member",
@@ -276,13 +276,13 @@ pub(crate) async fn update_member_role_core(
         ));
     }
 
-    let requester_is_owner = has_role(&requester_member, &config.creator_role);
-    let target_is_owner = has_role(&target_member, &config.creator_role);
+    let requester_is_owner = has_role(&requester_member, config.effective_creator_role());
+    let target_is_owner = has_role(&target_member, config.effective_creator_role());
     let new_role = body.role.joined();
     let new_role_contains_owner = new_role
         .split(',')
         .map(str::trim)
-        .any(|role| role == config.creator_role);
+        .any(|role| role == config.effective_creator_role());
 
     if (new_role_contains_owner || target_is_owner) && !requester_is_owner {
         return Err(AuthError::forbidden(
@@ -294,7 +294,7 @@ pub(crate) async fn update_member_role_core(
         let all_members = ctx.database.list_organization_members(&org_id).await?;
         let owner_count = all_members
             .iter()
-            .filter(|candidate| has_role(*candidate, &config.creator_role))
+            .filter(|candidate| has_role(*candidate, config.effective_creator_role()))
             .count();
 
         if owner_count <= 1 {
