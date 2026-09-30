@@ -49,8 +49,16 @@ sessions and verification rows. TypeScript checking and the excluded Rust
 fixture build, focused production Clippy and formatting pass. The two magic-link
 inventory entries require the actual successful flow, malformed-input rejection,
 applicable callback authorization and persisted state evidence. All other
-committed requirements remain unchanged. Full canonical validation and measured coverage remain
-serialized with the coordinator after dependency integration.
+committed requirements remain unchanged.
+
+The complete canonical gate passes on
+`25544d9341d60e22fd3fdc8a03158c9fba05fd93`: 171 strict official-client scenarios
+(1,720 assertions), 23 harness tests, two Chromium tests, default/optional native
+configurations, strict Clippy, Rustls/Redis builds, TypeScript, browser and
+documentation checks. Source line coverage is 77.59% (18,043/23,254). This final
+descendant run also validates the inherited signed-empty preference repair from
+OTP PR #10. Subsequent audit-only commits leave production and test inputs
+identical to that canonical-gated tree.
 
 ## Explicit audit boundaries
 
