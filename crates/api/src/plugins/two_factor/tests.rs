@@ -341,20 +341,93 @@ async fn test_inspect_trusted_device_rotates_server_state() {
 }
 
 #[tokio::test]
-async fn test_verify_existing_session_factor_enables_two_factor_and_reissues_session() {
-    let (ctx, user, session) =
+async fn totp_enrollment_and_real_verification_apply_user_hooks_and_preserve_rotation_owner() {
+    let (mut ctx, user, session) =
         create_test_context_with_credential_user("reissue@example.com", false).await;
+    ctx.database.delete_session(&session.token).await.unwrap();
+    let session = ctx
+        .database
+        .create_session(better_auth_core::CreateSession {
+            token: None,
+            user_id: user.id.clone(),
+            expires_at: session.expires_at,
+            ip_address: Some("127.0.0.7".into()),
+            user_agent: Some("configured-agent".into()),
+            active_organization_id: Some("configured-organization".into()),
+            active_team_id: Some("configured-team".into()),
+            impersonated_by: Some("configured-admin".into()),
+        })
+        .await
+        .unwrap();
+    let plugin = TwoFactorPlugin::new();
+    let mut configured =
+        better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    plugin.on_init(&mut configured).await.unwrap();
+    crate::plugins::OrganizationPlugin::with_config(
+        crate::plugins::organization::OrganizationConfig {
+            teams: crate::plugins::organization::TeamsConfig {
+                enabled: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    )
+    .on_init(&mut configured)
+    .await
+    .unwrap();
+    crate::plugins::AdminPlugin::new()
+        .on_init(&mut configured)
+        .await
+        .unwrap();
+    ctx.metadata = configured.into_parts().metadata;
+    let cookie = create_session_cookie(&session.token, &ctx.config);
+    let mut enrollment = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
+    _ = enrollment
+        .headers
+        .insert("cookie".into(), cookie.split(';').next().unwrap().into());
+    enrollment.body = Some(br#"{"password":"password123"}"#.to_vec());
+    let enabled = plugin.on_request(&enrollment, &ctx).await.unwrap().unwrap();
+    assert_eq!(enabled.status, 200);
+    let factor = ctx
+        .database
+        .get_two_factor_by_user_id(&user.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(factor.verified, Some(false));
 
-    let (response, set_cookie_headers) =
-        verify_existing_session_factor(user.clone(), session.clone(), true, &ctx)
-            .await
-            .unwrap();
-
-    assert_eq!(response.user.two_factor_enabled, Some(false));
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let observed = captured.clone();
+    let mut init = better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    init.register_user_update_transform(move |id, mut update| {
+        observed
+            .lock()
+            .unwrap()
+            .push((id.to_owned(), update.two_factor_enabled));
+        if update.two_factor_enabled == Some(true) {
+            update.name = Some("Hook Updated Owner".into());
+        }
+        Ok(update)
+    });
+    ctx.database = init.database_with_registered_transforms();
+    let plaintext = decrypt_value(&ctx.config.secret, &factor.secret).unwrap();
+    let code = plugin.generate_totp(&plaintext).unwrap();
+    let mut verification = AuthRequest::new(HttpMethod::Post, "/two-factor/verify-totp");
+    verification.headers = enrollment.headers;
+    verification.body = Some(serde_json::to_vec(&serde_json::json!({"code":code})).unwrap());
+    let response = plugin
+        .on_request(&verification, &ctx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(response.status, 200);
+    let payload: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(payload["user"]["twoFactorEnabled"], false);
     // Upstream returns the old snapshot while rotating the browser cookie.
-    assert_eq!(response.token, session.token);
+    assert_eq!(payload["token"], session.token);
+    let set_cookie_headers = response.headers.get_all("Set-Cookie").collect::<Vec<_>>();
     let rotated = better_auth_core::utils::cookie_utils::verify_cookie_value(
-        &cookie_value(&set_cookie_headers[0]),
+        &cookie_value(set_cookie_headers[0]),
         &ctx.config.secret,
     )
     .expect("the session cookie must authenticate its token");
@@ -372,6 +445,45 @@ async fn test_verify_existing_session_factor_enables_two_factor_and_reissues_ses
         ctx.database.get_session(&rotated).await.unwrap().is_some(),
         "the new session token should be persisted",
     );
+    assert_eq!(
+        *captured.lock().unwrap(),
+        vec![(user.id.clone(), Some(true))]
+    );
+    let stored_user = ctx
+        .database
+        .get_user_by_id(&user.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored_user.two_factor_enabled, Some(true));
+    assert_eq!(stored_user.name.as_deref(), Some("Hook Updated Owner"));
+    let verified_factor = ctx
+        .database
+        .get_two_factor_by_user_id(&user.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(verified_factor.id, factor.id);
+    assert_eq!(verified_factor.secret, factor.secret);
+    assert_eq!(verified_factor.backup_codes, factor.backup_codes);
+    assert_eq!(verified_factor.verified, Some(true));
+    let mut browser = AuthRequest::new(HttpMethod::Get, "/get-session");
+    _ = browser.headers.insert(
+        "cookie".into(),
+        set_cookie_headers[0].split(';').next().unwrap().into(),
+    );
+    let (current_user, current_session) = ctx.require_session(&browser).await.unwrap();
+    assert_eq!(current_user.id, user.id);
+    assert_eq!(current_user.name.as_deref(), Some("Hook Updated Owner"));
+    assert_eq!(current_session.token, rotated);
+    assert_eq!(current_session.ip_address, session.ip_address);
+    assert_eq!(current_session.user_agent, session.user_agent);
+    assert_eq!(
+        current_session.active_organization_id,
+        session.active_organization_id
+    );
+    assert_eq!(current_session.active_team_id, session.active_team_id);
+    assert_eq!(current_session.impersonated_by, session.impersonated_by);
 }
 
 #[tokio::test]

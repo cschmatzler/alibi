@@ -21,7 +21,7 @@ use better_auth_core::utils::cookie_utils::{
 use better_auth_core::wire::UserView;
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateTwoFactor,
-    CreateVerification, RequestMeta, TwoFactor, UpdateUser,
+    CreateVerification, RequestMeta, TwoFactor, UpdateTwoFactor, UpdateUser,
 };
 
 use crate::plugins::helpers::{
@@ -42,6 +42,7 @@ const METADATA_ENABLED: &str = "two_factor.enabled";
 const METADATA_OTP_ENABLED: &str = "two_factor.otp_enabled";
 const METADATA_TWO_FACTOR_COOKIE_MAX_AGE: &str = "two_factor.two_factor_cookie_max_age";
 const METADATA_TRUST_DEVICE_MAX_AGE: &str = "two_factor.trust_device_max_age";
+const METADATA_TOTP_DISABLED: &str = "two_factor.totp_disabled";
 
 const DEFAULT_TWO_FACTOR_COOKIE_MAX_AGE_SECS: i64 = 10 * 60;
 const DEFAULT_TRUST_DEVICE_MAX_AGE_SECS: i64 = 30 * 24 * 60 * 60;
@@ -70,10 +71,30 @@ pub struct TwoFactorPlugin {
     config: TwoFactorConfig,
 }
 
+/// Consecutive failed sign-in verifications across factors and challenges.
+#[derive(Debug, Clone)]
+pub struct AccountLockoutConfig {
+    pub enabled: bool,
+    pub max_failed_attempts: f64,
+    pub duration_seconds: f64,
+}
+
+impl Default for AccountLockoutConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_failed_attempts: 10.0,
+            duration_seconds: 900.0,
+        }
+    }
+}
+
 /// Public configuration for the two-factor plugin.
 #[derive(Clone, better_auth_core::PluginConfig)]
 #[plugin(name = "TwoFactorPlugin")]
 pub struct TwoFactorConfig {
+    #[config(default = AccountLockoutConfig::default())]
+    pub account_lockout: AccountLockoutConfig,
     /// Override the issuer embedded in enrollment TOTP URIs.
     #[config(default = None)]
     pub issuer: Option<String>,
@@ -106,6 +127,7 @@ pub struct TwoFactorConfig {
 impl std::fmt::Debug for TwoFactorConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TwoFactorConfig")
+            .field("account_lockout", &self.account_lockout)
             .field("issuer", &self.issuer)
             .field(
                 "skip_verification_on_enable",
@@ -310,12 +332,21 @@ pub(crate) async fn begin_sign_in_challenge(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<SignInTwoFactorRedirect> {
     let identifier = format!("2fa-{}", uuid::Uuid::new_v4());
+    let expires_at = Utc::now() + Duration::seconds(two_factor_cookie_max_age(ctx));
     _ = ctx
         .database
         .create_verification(CreateVerification {
             identifier: identifier.clone(),
             value: user.id().to_string(),
-            expires_at: Utc::now() + Duration::seconds(two_factor_cookie_max_age(ctx)),
+            expires_at,
+        })
+        .await?;
+    _ = ctx
+        .database
+        .create_verification(CreateVerification {
+            identifier: format!("2fa-attempts-{identifier}"),
+            value: "0".to_owned(),
+            expires_at,
         })
         .await?;
 
@@ -347,11 +378,15 @@ pub(crate) async fn begin_sign_in_challenge(
     // TOTP is per-user: only offered once the user has a stored secret. OTP is
     // server-level: offered whenever a sender is configured.
     let mut two_factor_methods = Vec::new();
-    if ctx
-        .database
-        .get_two_factor_by_user_id(user.id().as_ref())
-        .await?
-        .is_some()
+    if !ctx
+        .get_metadata(METADATA_TOTP_DISABLED)
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+        && ctx
+            .database
+            .get_two_factor_by_user_id(user.id().as_ref())
+            .await?
+            .is_some_and(|factor| factor.verified() != Some(false))
     {
         two_factor_methods.push("totp");
     }
@@ -425,6 +460,7 @@ better_auth_core::impl_auth_plugin! {
                 Ok(input)
             });
             ctx.set_metadata(METADATA_ENABLED, serde_json::Value::Bool(true));
+            ctx.set_metadata(METADATA_TOTP_DISABLED, serde_json::Value::Bool(self.config.totp_disabled));
             ctx.set_metadata(
                 METADATA_OTP_ENABLED,
                 serde_json::Value::Bool(self.config.send_otp.is_some()),
@@ -518,7 +554,10 @@ impl TwoFactorPlugin {
         };
 
         let (response, set_cookie_headers) =
-            verify_totp_core(req, &body, &self.config, ctx).await?;
+            match verify_totp_core(req, &body, &self.config, ctx).await {
+                Ok(result) => result,
+                Err(error) => return verification_error_response(error, ctx),
+            };
         let mut auth_response = AuthResponse::json(200, &response)?;
         for cookie in set_cookie_headers {
             auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
@@ -545,7 +584,11 @@ impl TwoFactorPlugin {
             Err(resp) => return Ok(resp),
         };
 
-        let (response, set_cookie_headers) = verify_otp_core(req, &body, ctx).await?;
+        let (response, set_cookie_headers) =
+            match verify_otp_core(req, &body, &self.config, ctx).await {
+                Ok(result) => result,
+                Err(error) => return verification_error_response(error, ctx),
+            };
         let mut auth_response = AuthResponse::json(200, &response)?;
         for cookie in set_cookie_headers {
             auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
@@ -578,7 +621,11 @@ impl TwoFactorPlugin {
             Err(resp) => return Ok(resp),
         };
 
-        let (response, set_cookie_headers) = verify_backup_code_core(req, &body, ctx).await?;
+        let (response, set_cookie_headers) =
+            match verify_backup_code_core(req, &body, &self.config, ctx).await {
+                Ok(result) => result,
+                Err(error) => return verification_error_response(error, ctx),
+            };
         let mut auth_response = AuthResponse::json(200, &response)?;
         for cookie in set_cookie_headers {
             auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
@@ -603,7 +650,20 @@ async fn enable_core(
         });
     }
 
-    let _ = ctx.database.delete_two_factor(user.id().as_ref()).await;
+    let existing = ctx
+        .database
+        .get_two_factor_by_user_id(user.id().as_ref())
+        .await?;
+    if existing
+        .as_ref()
+        .is_some_and(|factor| factor.verified() != Some(false))
+    {
+        return Err(AuthError::Upstream {
+            status: 400,
+            code: "TOTP_ALREADY_ENABLED",
+            message: "TOTP is already enabled",
+        });
+    }
 
     let secret = generate_secret();
     let encrypted_secret = encrypt_value(&ctx.config.secret, &secret)?;
@@ -611,15 +671,30 @@ async fn enable_core(
     let encrypted_backup_codes =
         encrypt_value(&ctx.config.secret, &serde_json::to_string(&backup_codes)?)?;
 
-    _ = ctx
-        .database
-        .create_two_factor(CreateTwoFactor {
-            user_id: user.id().to_string(),
-            secret: encrypted_secret,
-            backup_codes: encrypted_backup_codes,
-            ..Default::default()
-        })
-        .await?;
+    if let Some(existing) = existing {
+        let _ = ctx
+            .database
+            .update_two_factor(
+                existing.id().as_ref(),
+                UpdateTwoFactor {
+                    secret: Some(encrypted_secret),
+                    backup_codes: Some(encrypted_backup_codes),
+                    verified: Some(config.skip_verification_on_enable),
+                },
+            )
+            .await?;
+    } else {
+        _ = ctx
+            .database
+            .create_two_factor(CreateTwoFactor {
+                user_id: user.id().to_string(),
+                secret: encrypted_secret,
+                backup_codes: encrypted_backup_codes,
+                verified: Some(config.skip_verification_on_enable),
+                ..Default::default()
+            })
+            .await?;
+    }
 
     let mut set_cookie_headers = Vec::new();
     if config.skip_verification_on_enable {
@@ -633,11 +708,12 @@ async fn enable_core(
                 },
             )
             .await?;
-        let issued = issue_user_session(
+        let issued = issue_user_session_with_overrides(
             ctx,
             updated_user.id().as_ref(),
             current_session.ip_address().map(str::to_owned),
             current_session.user_agent().map(str::to_owned),
+            current_session,
         )
         .await
         .map_err(SessionIssueError::into_auth_error)?;
@@ -769,25 +845,76 @@ async fn verify_totp_core(
     require_totp_enabled(config)?;
     let state = resolve_two_factor_state(req, ctx).await?;
     let two_factor = load_two_factor_record(state.user(), ctx).await?;
-    let secret = decrypt_value(&ctx.config.secret, two_factor.secret())?;
-    let totp = build_totp(config, &secret)?;
+    let pending = matches!(state, ResolvedTwoFactorState::Pending(_));
+    if pending && two_factor.verified() == Some(false) {
+        return Err(AuthError::bad_request("TOTP not enabled"));
+    }
+    if pending {
+        assert_account_not_locked(config, &two_factor, ctx).await?;
+    }
+    let attempt = begin_factor_attempt(&state, ctx).await?;
+    let checked = (|| {
+        let secret = decrypt_value(&ctx.config.secret, two_factor.secret())?;
+        build_totp(config, &secret)?
+            .check_current(&body.code)
+            .map_err(|error| AuthError::internal(format!("Failed to verify TOTP: {error}")))
+    })();
+    let valid = match checked {
+        Ok(valid) => valid,
+        Err(error) => {
+            rearm_factor_attempt(attempt.as_ref(), false, ctx).await;
+            return Err(error);
+        }
+    };
 
-    if !totp
-        .check_current(&body.code)
-        .map_err(|error| AuthError::internal(format!("Failed to verify TOTP: {}", error)))?
-    {
+    if !valid {
+        rearm_factor_attempt(attempt.as_ref(), true, ctx).await;
+        if pending {
+            record_account_failure(config, &two_factor, ctx).await?;
+        }
         return Err(AuthError::authentication_failed("Invalid code"));
+    }
+    if pending {
+        reset_account_failures(config, &two_factor, ctx).await?;
     }
 
     match state {
         ResolvedTwoFactorState::Session { user, session, .. } => {
-            verify_existing_session_factor(user, *session, true, ctx).await
+            let result = verify_existing_session_factor(
+                user,
+                *session,
+                two_factor.verified() != Some(true),
+                ctx,
+            )
+            .await?;
+            mark_factor_verified(&two_factor, ctx).await?;
+            Ok(result)
         }
         ResolvedTwoFactorState::Pending(pending) => {
+            mark_factor_verified(&two_factor, ctx).await?;
             finalize_pending_two_factor(pending, req, body.trust_device.unwrap_or(false), true, ctx)
                 .await
         }
     }
+}
+
+async fn mark_factor_verified(
+    two_factor: &TwoFactor,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<()> {
+    if two_factor.verified() != Some(true) {
+        let _ = ctx
+            .database
+            .update_two_factor(
+                two_factor.id().as_ref(),
+                UpdateTwoFactor {
+                    verified: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await?;
+    }
+    Ok(())
 }
 
 async fn send_otp_core(
@@ -838,24 +965,30 @@ async fn send_otp_core(
 async fn verify_otp_core(
     req: &AuthRequest,
     body: &VerifyOtpRequest,
+    config: &TwoFactorConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<(SessionTokenResponse<UserView>, Vec<String>)> {
     let state = resolve_two_factor_state(req, ctx).await?;
+    let factor = if matches!(state, ResolvedTwoFactorState::Pending(_)) {
+        let factor = ctx
+            .database
+            .get_two_factor_by_user_id(state.user().id().as_ref())
+            .await?;
+        if let Some(factor) = &factor {
+            assert_account_not_locked(config, factor, ctx).await?;
+        }
+        factor
+    } else {
+        None
+    };
     let identifier = otp_verification_identifier(state.key());
     let Some(verification) = ctx
         .database
-        .get_verification_by_identifier(&identifier)
+        .consume_verification_by_identifier(&identifier)
         .await?
     else {
         return Err(AuthError::bad_request("OTP has expired"));
     };
-
-    if verification.expires_at() <= Utc::now() {
-        ctx.database
-            .delete_verification(verification.id().as_ref())
-            .await?;
-        return Err(AuthError::bad_request("OTP has expired"));
-    }
 
     let Some((stored_hash, counter)) = verification.value().rsplit_once(':') else {
         return Err(AuthError::internal("Malformed OTP verification payload"));
@@ -865,9 +998,6 @@ async fn verify_otp_core(
         AuthError::internal(format!("Malformed OTP attempt counter: {}", error))
     })?;
     if attempts >= DEFAULT_OTP_ATTEMPT_LIMIT {
-        ctx.database
-            .delete_verification(verification.id().as_ref())
-            .await?;
         return Err(AuthError::bad_request(
             "Too many attempts. Please request a new code.",
         ));
@@ -883,9 +1013,6 @@ async fn verify_otp_core(
         let next_value = format!("{}:{}", stored_hash, attempts + 1);
         let expires_at = verification.expires_at();
         let verification_identifier = verification.identifier().to_string();
-        ctx.database
-            .delete_verification(verification.id().as_ref())
-            .await?;
         _ = ctx
             .database
             .create_verification(CreateVerification {
@@ -894,12 +1021,15 @@ async fn verify_otp_core(
                 expires_at,
             })
             .await?;
+        if let Some(factor) = &factor {
+            record_account_failure(config, factor, ctx).await?;
+        }
         return Err(AuthError::authentication_failed("Invalid code"));
     }
 
-    ctx.database
-        .delete_verification(verification.id().as_ref())
-        .await?;
+    if let Some(factor) = &factor {
+        reset_account_failures(config, factor, ctx).await?;
+    }
 
     match state {
         ResolvedTwoFactorState::Session { user, session, .. } => {
@@ -940,6 +1070,7 @@ async fn generate_backup_codes_core(
 async fn verify_backup_code_core(
     req: &AuthRequest,
     body: &VerifyBackupCodeRequest,
+    config: &TwoFactorConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<(SessionTokenResponse<UserView>, Vec<String>)> {
     let state = resolve_two_factor_state(req, ctx).await?;
@@ -948,25 +1079,45 @@ async fn verify_backup_code_core(
         .get_two_factor_by_user_id(state.user().id().as_ref())
         .await?
         .ok_or_else(|| AuthError::bad_request("Backup codes aren't enabled"))?;
+    let pending = matches!(state, ResolvedTwoFactorState::Pending(_));
+    if pending {
+        assert_account_not_locked(config, &two_factor, ctx).await?;
+    }
+    let attempt = begin_factor_attempt(&state, ctx).await?;
 
-    let Some(mut backup_codes) =
-        decrypt_backup_codes(two_factor.backup_codes(), &ctx.config.secret)?
-    else {
+    let codes = match decrypt_backup_codes(two_factor.backup_codes(), &ctx.config.secret) {
+        Ok(codes) => codes,
+        Err(error) => {
+            rearm_factor_attempt(attempt.as_ref(), false, ctx).await;
+            return Err(error);
+        }
+    };
+    let Some(mut backup_codes) = codes.filter(|codes| codes.contains(&body.code)) else {
+        rearm_factor_attempt(attempt.as_ref(), true, ctx).await;
+        if pending {
+            record_account_failure(config, &two_factor, ctx).await?;
+        }
         return Err(AuthError::authentication_failed("Invalid backup code"));
     };
-    let Some(index) = backup_codes
-        .iter()
-        .position(|candidate| candidate == &body.code)
-    else {
-        return Err(AuthError::authentication_failed("Invalid backup code"));
-    };
-    let _ = backup_codes.remove(index);
+    backup_codes.retain(|candidate| candidate != &body.code);
 
     let encrypted = encrypt_value(&ctx.config.secret, &serde_json::to_string(&backup_codes)?)?;
-    _ = ctx
+    if !ctx
         .database
-        .update_two_factor_backup_codes(state.user().id().as_ref(), &encrypted)
-        .await?;
+        .compare_and_swap_two_factor_backup_codes(
+            two_factor.id().as_ref(),
+            two_factor.backup_codes(),
+            &encrypted,
+        )
+        .await?
+    {
+        return Err(AuthError::conflict(
+            "Failed to verify backup code. Please try again.",
+        ));
+    }
+    if pending {
+        reset_account_failures(config, &two_factor, ctx).await?;
+    }
 
     match state {
         ResolvedTwoFactorState::Session { user, session, .. } => {
@@ -1057,6 +1208,207 @@ async fn resolve_two_factor_state<S: better_auth_core::AuthSchema>(
     }))
 }
 
+struct FactorAttempt {
+    identifier: String,
+    count: f64,
+    expires_at: chrono::DateTime<Utc>,
+}
+
+async fn begin_factor_attempt<S: better_auth_core::AuthSchema>(
+    state: &ResolvedTwoFactorState<S>,
+    ctx: &AuthContext<S>,
+) -> AuthResult<Option<FactorAttempt>> {
+    let ResolvedTwoFactorState::Pending(pending) = state else {
+        return Ok(None);
+    };
+    let identifier = format!("2fa-attempts-{}", pending.key);
+    let consumed = ctx
+        .database
+        .consume_verification_by_identifier(&identifier)
+        .await
+        .ok()
+        .flatten()
+        .ok_or_else(|| AuthError::authentication_failed("Invalid two factor cookie"))?;
+    let parsed = attempt_number(consumed.value());
+    let count = if parsed.is_finite() && parsed.fract() == 0.0 && parsed >= 0.0 {
+        parsed
+    } else {
+        5.0
+    };
+    if count >= 5.0 {
+        if ctx
+            .database
+            .consume_verification_by_identifier(&pending.key)
+            .await
+            .is_err()
+        {
+            return Err(AuthError::Upstream {
+                status: 500,
+                code: "FAILED_TO_INVALIDATE_TWO_FACTOR_CHALLENGE",
+                message: "Failed to invalidate two-factor challenge",
+            });
+        }
+        return Err(AuthError::Upstream {
+            status: 400,
+            code: "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE",
+            message: "Too many attempts. Please request a new code.",
+        });
+    }
+    Ok(Some(FactorAttempt {
+        identifier,
+        count,
+        expires_at: pending.verification.expires_at(),
+    }))
+}
+
+fn attempt_number(value: &str) -> f64 {
+    let value = value.trim_matches(|character| {
+        matches!(
+            character,
+            '\t' | '\n' | '\r' | '\u{b}' | '\u{c}' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'
+                ..='\u{200a}'
+                    | '\u{2028}'
+                    | '\u{2029}'
+                    | '\u{202f}'
+                    | '\u{205f}'
+                    | '\u{3000}'
+                    | '\u{feff}'
+        )
+    });
+    if value.is_empty() {
+        return 0.0;
+    }
+    for (prefix, radix) in [
+        ("0x", 16),
+        ("0X", 16),
+        ("0b", 2),
+        ("0B", 2),
+        ("0o", 8),
+        ("0O", 8),
+    ] {
+        if let Some(value) = value.strip_prefix(prefix) {
+            return u64::from_str_radix(value, radix)
+                .map(|count| count as f64)
+                .unwrap_or(f64::NAN);
+        }
+    }
+    value.parse().unwrap_or(f64::NAN)
+}
+
+async fn rearm_factor_attempt(
+    attempt: Option<&FactorAttempt>,
+    failed: bool,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) {
+    if let Some(attempt) = attempt {
+        let _ = ctx
+            .database
+            .create_verification(CreateVerification {
+                identifier: attempt.identifier.clone(),
+                value: (attempt.count + if failed { 1.0 } else { 0.0 }).to_string(),
+                expires_at: attempt.expires_at,
+            })
+            .await;
+    }
+}
+
+async fn assert_account_not_locked(
+    config: &TwoFactorConfig,
+    factor: &TwoFactor,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<()> {
+    if !config.account_lockout.enabled {
+        return Ok(());
+    }
+    if let Some(until) = factor.locked_until() {
+        let now = Utc::now();
+        if until.timestamp_millis() > now.timestamp_millis() {
+            return Err(AuthError::Upstream {
+                status: 429,
+                code: "ACCOUNT_TEMPORARILY_LOCKED",
+                message: "Too many failed verification attempts. Your account is temporarily locked. Please try again later.",
+            });
+        }
+        let _ = ctx
+            .database
+            .clear_expired_two_factor_lock(factor.id().as_ref(), now)
+            .await?;
+    }
+    Ok(())
+}
+
+async fn record_account_failure(
+    config: &TwoFactorConfig,
+    factor: &TwoFactor,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<()> {
+    if !config.account_lockout.enabled {
+        return Ok(());
+    }
+    let incremented = ctx
+        .database
+        .increment_two_factor_failure(factor.id().as_ref())
+        .await?;
+    let count = incremented
+        .and_then(|factor| factor.failed_verification_count())
+        .unwrap_or(0.0);
+    if count >= config.account_lockout.max_failed_attempts {
+        let milliseconds =
+            Utc::now().timestamp_millis() as f64 + config.account_lockout.duration_seconds * 1000.0;
+        // JavaScript Date TimeClip rejects nonfinite/out-of-range values and
+        // truncates toward zero; nullable/zero settings remain supported.
+        if !milliseconds.is_finite() || milliseconds.abs() > 8_640_000_000_000_000.0 {
+            return Err(AuthError::internal("Invalid two-factor lock date"));
+        }
+        let until = chrono::DateTime::from_timestamp_millis(milliseconds.trunc() as i64)
+            .ok_or_else(|| AuthError::internal("Invalid two-factor lock date"))?;
+        let _ = ctx
+            .database
+            .set_two_factor_lock_if_count_at_least(
+                factor.id().as_ref(),
+                config.account_lockout.max_failed_attempts,
+                until,
+            )
+            .await?;
+    }
+    Ok(())
+}
+
+async fn reset_account_failures(
+    config: &TwoFactorConfig,
+    factor: &TwoFactor,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<()> {
+    if config.account_lockout.enabled {
+        ctx.database
+            .reset_two_factor_failures(factor.id().as_ref())
+            .await?;
+    }
+    Ok(())
+}
+
+fn verification_error_response(
+    error: AuthError,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<AuthResponse> {
+    if matches!(
+        &error,
+        AuthError::Upstream {
+            code: "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE"
+                | "FAILED_TO_INVALIDATE_TWO_FACTOR_CHALLENGE"
+                | "INVALID_TWO_FACTOR_COOKIE",
+            ..
+        }
+    ) {
+        Ok(error.to_auth_response().with_appended_header(
+            "Set-Cookie",
+            clear_cookie_header(&ctx.config, TWO_FACTOR_COOKIE_SUFFIX),
+        ))
+    } else {
+        Err(error)
+    }
+}
+
 async fn verify_existing_session_factor(
     user: impl AuthUser,
     session: impl AuthSession,
@@ -1074,11 +1426,12 @@ async fn verify_existing_session_factor(
                 },
             )
             .await?;
-        let issued = issue_user_session(
+        let issued = issue_user_session_with_overrides(
             ctx,
             updated_user.id().as_ref(),
             session.ip_address().map(str::to_owned),
             session.user_agent().map(str::to_owned),
+            &session,
         )
         .await
         .map_err(SessionIssueError::into_auth_error)?;
@@ -1110,6 +1463,17 @@ async fn finalize_pending_two_factor<S: better_auth_core::AuthSchema>(
     set_session_cookie: bool,
     ctx: &AuthContext<S>,
 ) -> AuthResult<(SessionTokenResponse<UserView>, Vec<String>)> {
+    let consumed = ctx
+        .database
+        .consume_verification_by_identifier(&pending.key)
+        .await?;
+    if !consumed.is_some_and(|verification| verification.value() == pending.user.id().as_ref()) {
+        return Err(AuthError::Upstream {
+            status: 401,
+            code: "INVALID_TWO_FACTOR_COOKIE",
+            message: "Invalid two factor cookie",
+        });
+    }
     let meta = RequestMeta::from_request(req);
     let issued = issue_user_session(
         ctx,
@@ -1125,9 +1489,6 @@ async fn finalize_pending_two_factor<S: better_auth_core::AuthSchema>(
             .update_session_expiry(issued.session.token(), Utc::now() + Duration::days(1))
             .await?;
     }
-    ctx.database
-        .delete_verification(pending.verification.id().as_ref())
-        .await?;
 
     let mut set_cookie_headers = vec![clear_cookie_header(&ctx.config, TWO_FACTOR_COOKIE_SUFFIX)];
     if set_session_cookie {

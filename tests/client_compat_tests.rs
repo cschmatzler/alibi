@@ -344,3 +344,9 @@ async fn multiple_sessions_client_compat() {
 async fn two_factor_totp_client_compat() {
     run_client_compat(&["tests/two-factor/totp-config.test.ts"]).await;
 }
+
+#[tokio::test]
+#[ignore = "requires Bun and the compatibility fixtures"]
+async fn two_factor_lockout_client_compat() {
+    run_client_compat(&["tests/two-factor/lockout.test.ts"]).await;
+}
