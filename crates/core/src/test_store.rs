@@ -46,6 +46,8 @@ pub(crate) struct MemoryStore {
 impl crate::store::TeamStore for MemoryStore {}
 impl crate::store::OrganizationRoleStore for MemoryStore {}
 
+impl crate::store::JwkStore for MemoryStore {}
+
 impl MemoryStore {
     pub(crate) fn new(_config: Arc<AuthConfig>) -> Self {
         Self::default()
@@ -99,9 +101,9 @@ impl UserStore<BundledSchema> for MemoryStore {
             updated_at: now,
             username,
             display_username: create_user.display_username,
-            two_factor_enabled: Some(false),
+            two_factor_enabled: create_user.two_factor_enabled,
             role: create_user.role,
-            banned: Some(false),
+            banned: create_user.banned,
             ban_reason: None,
             ban_expires: None,
             metadata: create_user

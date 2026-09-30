@@ -38,8 +38,11 @@ Sign-in schema validation precedes the route's email validity check.
 
 Independent review resolved refresh error handling, freshness defaults,
 configured signout cleanup, cross-plugin cookie producers and empty signed
-challenge rejection. Canonical
-validation is recorded on the PR after the frozen tree passes the full gate.
+challenge rejection. The canonical gate passes on frozen `5affa36`: 156 SDK
+scenarios / 1,242 assertions, 23 harness tests / 41 assertions, two Chromium
+tests / 22 assertions, and 78.85% source coverage (15,979 / 20,264 lines).
+Default and optional native tests, strict Clippy, Rustls/Redis builds,
+TypeScript, inventory and documentation checks all pass.
 
 Remaining boundaries: cookie-cache/stateless and secondary-only session modes,
 chunked cache/account-cookie cleanup, plugin-specific consumers of session

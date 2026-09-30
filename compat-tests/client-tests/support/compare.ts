@@ -11,11 +11,13 @@ export type ComparisonContext = {
   readonly rightOAuthURL?: string | undefined;
   readonly leftStartedAt: number;
   readonly rightStartedAt: number;
+  readonly leftFinishedAt?: number;
+  readonly rightFinishedAt?: number;
 };
 
 const entityKeys = new Set([
   "id", "accountId", "userId", "sessionId", "organizationId", "memberId", "invitationId",
-  "inviterId", "activeOrganizationId", "activeTeamId", "teamId", "impersonatedBy", "referenceId",
+  "roleId", "inviterId", "activeOrganizationId", "activeTeamId", "teamId", "impersonatedBy", "referenceId",
 ]);
 const opaqueKeys = new Set(["token", "sessionToken", "state", "challenge", "code_challenge", "device_code", "user_code", "access_token", "refresh_token"]);
 const opaqueAliases: Readonly<Record<string, string>> = { "set-ott": "token" };
@@ -25,14 +27,18 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function traceShape(path: string): boolean {
+  return /^\.?traces\.\d+\.(?:request|response)BodyShape(?:\.|$)/.test(path);
+}
+
 /** A bijection preserves identity, repeated references, and token rotation across a run. */
 export function compareValues(left: unknown, right: unknown, context: ComparisonContext): Difference[] {
   const differences: Difference[] = [];
   const identities = new Map<string, string>();
   const reverseIdentities = new Map<string, string>();
   const fail = (path: string, reason: string) => { differences.push({ path, reason }); };
-
   const normalizedLeft=normalizeClientValue(left),normalizedRight=normalizeClientValue(right);
+
 
   function sessions(value:unknown,result=new Map<string,number>()):Map<string,number> {
     if (Array.isArray(value)) for (const child of value) sessions(child,result);
@@ -64,6 +70,57 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     }
   }
 
+  function apiKeyRow(value: Record<string, unknown>): boolean {
+    return typeof value.configId === "string" && typeof value.enabled === "boolean"
+      && (value.remaining === null || typeof value.remaining === "number");
+  }
+
+  function issuedApiKeys(value: unknown, path = "", result = new Map<string, string>()): Map<string, string> {
+    if (Array.isArray(value)) value.forEach((child, index) => issuedApiKeys(child, `${path}.${index}`, result));
+    else if (record(value) && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path) && !traceShape(path)) {
+      if (apiKeyRow(value) && typeof value.id === "string" && typeof value.key === "string") {
+        const previous = result.get(value.id);
+        if (previous !== undefined && previous !== value.key) fail(path, "API key changed for a persisted row");
+        result.set(value.id, value.key);
+      }
+      for (const [key, child] of Object.entries(value)) issuedApiKeys(child, `${path}.${key}`, result);
+    }
+    return result;
+  }
+  const leftApiKeys = issuedApiKeys(normalizedLeft), rightApiKeys = issuedApiKeys(normalizedRight);
+
+  function entityValues(value:unknown,result=new Set<string>()):Set<string> {
+    if (Array.isArray(value)) for (const child of value) entityValues(child,result);
+    else if (record(value)) for (const [key,child] of Object.entries(value)) {
+      if (entityKeys.has(key) && typeof child==="string") result.add(child);
+      entityValues(child,result);
+    }
+    return result;
+  }
+  const leftEntities=entityValues(normalizedLeft),rightEntities=entityValues(normalizedRight);
+
+  function compactPart(value: string, whitespace: boolean): Buffer | undefined {
+    const encoded = whitespace ? value.replace(/[ \t\n\r\f]/g, "") : value;
+    if (!/^[A-Za-z0-9_-]+={0,2}$/.test(encoded)) return;
+    const unpadded = encoded.replace(/=+$/, "");
+    const padding = encoded.length - unpadded.length;
+    if (unpadded.length % 4 === 1 || (padding > 0 && (encoded.length % 4 !== 0 || unpadded.length % 4 === 0))) return;
+    return Buffer.from(unpadded, "base64url");
+  }
+  function jwt(value: string): { header: Record<string, unknown>; payload: Record<string, unknown>; signature: Buffer } | undefined {
+    const parts = value.split(".");
+    if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return;
+    const headerBytes = compactPart(parts[0], false), payloadBytes = compactPart(parts[1], true), signature = compactPart(parts[2], true);
+    if (!headerBytes || !payloadBytes || !signature) return;
+    try {
+      const header: unknown = JSON.parse(headerBytes.toString());
+      const payload: unknown = JSON.parse(payloadBytes.toString());
+      if (record(header) && typeof header.alg === "string" && record(payload)) return { header, payload, signature };
+    } catch { return; }
+  }
+  function clock(a:number,b:number,path:string) {
+    if (a!==b && Math.abs((a-context.leftStartedAt/1000)-(b-context.rightStartedAt/1000))>1.5) fail(path,"JWT timestamp differs");
+  }
   function identity(a: string, b: string, path: string, namespace: string) {
     if (!a.trim() || !b.trim()) { fail(path, "empty identity or token"); return; }
     const source = `${namespace}:${a}`;
@@ -95,8 +152,28 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     } catch { return undefined; }
   }
 
-  function visit(a: unknown, b: unknown, path: string, key: string) {
-    if (typeof a === "string" && typeof b === "string" && !path.includes("BodyShape")) {
+  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false) {
+    if (typeof a === "string" && typeof b === "string" && !traceShape(path)
+      && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path)) {
+      if (key === "teamId" && (a.includes(",") || b.includes(","))) {
+        const leftTeams = a.split(","), rightTeams = b.split(",");
+        if (leftTeams.length !== rightTeams.length) fail(path, "team selection length differs");
+        leftTeams.forEach((team, index) => {
+          const other = rightTeams[index];
+          if (other === undefined) return;
+          identity(team, other, `${path}.${index}`, "entity");
+        });
+        return;
+      }
+      const leftJwt=jwt(a),rightJwt=jwt(b);
+      if (leftJwt || rightJwt) {
+        if (!leftJwt || !rightJwt) {fail(path,"JWT structure differs");return;}
+        identity(a,b,path,"jwt");
+        visit(leftJwt.header,rightJwt.header,`${path}.header`,"");
+        visit(leftJwt.payload,rightJwt.payload,`${path}.payload`,"",true);
+        if (leftJwt.signature.length!==rightJwt.signature.length) fail(path,"JWT signature length differs");
+        return;
+      }
       if (entityKeys.has(key) && !path.endsWith(".rp.id")) { identity(a, b, path, "entity"); return; }
       if (key === "identifier" && (a.startsWith("one-time-token:") || b.startsWith("one-time-token:"))) {
         const leftIdentifier = oneTimeIdentifier(a, leftTokens), rightIdentifier = oneTimeIdentifier(b, rightTokens);
@@ -125,13 +202,27 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     }
     if (Array.isArray(a) && Array.isArray(b)) {
       if (a.length !== b.length) fail(path, "array length differs");
-      a.forEach((child, index) => visit(child, b[index], `${path ? `${path}.` : ""}${index}`, key));
+      a.forEach((child, index) => visit(child, b[index], `${path ? `${path}.` : ""}${index}`, key, false, applicationData || jwtPayload));
       return;
     }
     if (record(a) && record(b)) {
       const oneTimeRow = typeof a.identifier === "string" && typeof b.identifier === "string"
         && a.identifier.startsWith("one-time-token:") && b.identifier.startsWith("one-time-token:")
         && ["id", "expiresAt", "createdAt", "updatedAt"].every(field => Object.hasOwn(a, field) && Object.hasOwn(b, field));
+      const jwtClaims=!applicationData && typeof a.exp==="number" && typeof b.exp==="number" && (jwtPayload || ("iss" in a && "iss" in b && "aud" in a && "aud" in b));
+      const inApplicationData=applicationData || jwtPayload || jwtClaims || key === "metadata" || key === "additionalFields";
+      const apiKey = !inApplicationData && !traceShape(path) && apiKeyRow(a) && apiKeyRow(b);
+      const issuedLeft = typeof a.key === "string" ? a.key : typeof a.id === "string" ? leftApiKeys.get(a.id) : undefined;
+      const issuedRight = typeof b.key === "string" ? b.key : typeof b.id === "string" ? rightApiKeys.get(b.id) : undefined;
+      // User claims retain literal key-shaped content; only public key material carries key entropy.
+      const jwk=!inApplicationData && typeof a.kty==="string" && typeof b.kty==="string" && ["EC","OKP","RSA"].includes(a.kty) && ["EC","OKP","RSA"].includes(b.kty);
+      const inClock=(date:unknown,start:number,end:number|undefined)=>typeof date==="number" && Number.isInteger(date) && date>=Math.floor(start/1000)-1 && date<=Math.ceil((end ?? start)/1000)+1;
+      const runtimeDates=jwtClaims && (
+        (inClock(a.iat,context.leftStartedAt,context.leftFinishedAt) && inClock(b.iat,context.rightStartedAt,context.rightFinishedAt))
+        // The trusted server API omits iat when signing default expiry claims.
+        || (!("iat" in a) && !("iat" in b) && [60,900].some(lifetime=>typeof a.exp==="number" && typeof b.exp==="number" && inClock(a.exp-lifetime,context.leftStartedAt,context.leftFinishedAt) && inClock(b.exp-lifetime,context.rightStartedAt,context.rightFinishedAt)))
+      );
+      if (jwtClaims && typeof a.exp==="number" && typeof b.exp==="number" && typeof a.iat==="number" && typeof b.iat==="number" && a.exp-a.iat!==b.exp-b.iat) fail(path,"JWT lifetime differs");
       for (const childKey of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
         const childPath = path ? `${path}.${childKey}` : childKey;
         if (!Object.hasOwn(a, childKey) || !Object.hasOwn(b, childKey)) fail(childPath, "field presence differs");
@@ -139,7 +230,31 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           if (!leftSessions.has(a.value) || !rightSessions.has(b.value)) fail(childPath, "one-time-token value is not an observed persisted session token");
           else identity(a.value, b.value, childPath, "token");
         }
-        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey);
+        else if (childKey==="kid" && !inApplicationData && (jwk || (typeof a.alg==="string" && typeof b.alg==="string")) && typeof a.kid==="string" && typeof b.kid==="string") identity(a.kid,b.kid,childPath,"entity");
+        else if (childKey==="sub" && jwtClaims && typeof a.sub==="string" && typeof b.sub==="string" && (leftEntities.has(a.sub)||rightEntities.has(b.sub))) identity(a.sub,b.sub,childPath,"entity");
+        else if (runtimeDates && ["iat","exp"].includes(childKey) && typeof a[childKey]==="number" && typeof b[childKey]==="number") clock(a[childKey],b[childKey],childPath);
+        else if (jwtClaims && ["iss","aud"].includes(childKey)) visit(a[childKey],b[childKey],childPath,childKey==="iss" ? "issuerURL" : "audienceURL");
+        else if (jwk && ["x","y","n"].includes(childKey) && typeof a[childKey]==="string" && typeof b[childKey]==="string") {
+          const leftMaterial=a[childKey],rightMaterial=b[childKey];
+          if (!/^[A-Za-z0-9_-]+$/.test(leftMaterial) || !/^[A-Za-z0-9_-]+$/.test(rightMaterial) || Buffer.from(leftMaterial,"base64url").length!==Buffer.from(rightMaterial,"base64url").length) fail(childPath,"JWK key encoding or size differs");
+          identity(leftMaterial,rightMaterial,childPath,`jwk:${childKey}`);
+        }
+        else if (apiKey && childKey === "key" && typeof a.key === "string" && typeof b.key === "string") {
+          if (a.key.length !== b.key.length) fail(childPath, "API key length differs");
+          for (const row of [a,b]) {
+            if (typeof row.prefix === "string" && typeof row.key === "string" && !row.key.startsWith(row.prefix)) fail(childPath, "API key prefix relationship differs");
+          }
+          identity(a.key,b.key,childPath,"api-key");
+        }
+        else if (apiKey && childKey === "start" && typeof a.start === "string" && typeof b.start === "string" && (issuedLeft !== undefined || issuedRight !== undefined)) {
+          if (a.start.length !== b.start.length) fail(childPath, "API key stored-prefix length differs");
+          if (issuedLeft === undefined || issuedRight === undefined) fail(childPath, "API key stored-prefix lacks observed issuance");
+          else {
+            if (!issuedLeft.startsWith(a.start) || !issuedRight.startsWith(b.start)) fail(childPath, "API key stored-prefix relationship differs");
+            identity(issuedLeft, issuedRight, childPath, "api-key");
+          }
+        }
+        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData);
       }
       return;
     }

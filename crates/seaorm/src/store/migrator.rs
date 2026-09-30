@@ -20,6 +20,8 @@ impl MigratorTrait for AuthMigrator {
             Box::new(super::api_key_numbers::ApiKeyNumbers),
             Box::new(super::identity_fields::PluginIdentityFields),
             Box::new(super::organization_extensions::OrganizationExtensions),
+            Box::new(super::jwks::JwkKeys),
+            Box::new(super::nullable_user_flags::NullableUserPluginFlags),
         ]
     }
 
@@ -197,19 +199,9 @@ async fn create_users(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
                 .col(ColumnDef::new(user::Column::Image).string())
                 .col(ColumnDef::new(user::Column::Username).string().unique_key())
                 .col(ColumnDef::new(user::Column::DisplayUsername).string())
-                .col(
-                    ColumnDef::new(user::Column::TwoFactorEnabled)
-                        .boolean()
-                        .not_null()
-                        .default(false),
-                )
+                .col(ColumnDef::new(user::Column::TwoFactorEnabled).boolean())
                 .col(ColumnDef::new(user::Column::Role).string())
-                .col(
-                    ColumnDef::new(user::Column::Banned)
-                        .boolean()
-                        .not_null()
-                        .default(false),
-                )
+                .col(ColumnDef::new(user::Column::Banned).boolean())
                 .col(ColumnDef::new(user::Column::BanReason).string())
                 .col(ColumnDef::new(user::Column::BanExpires).timestamp_with_time_zone())
                 .col(

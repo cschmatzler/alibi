@@ -402,6 +402,10 @@ better_auth_core::impl_auth_plugin! {
             &self,
             ctx: &mut better_auth_core::AuthInitContext<S>,
         ) -> better_auth_core::AuthResult<()> {
+            ctx.register_user_create_transform(|mut input| {
+                _ = input.two_factor_enabled.get_or_insert(false);
+                Ok(input)
+            });
             ctx.set_metadata(METADATA_ENABLED, serde_json::Value::Bool(true));
             ctx.set_metadata(
                 METADATA_OTP_ENABLED,

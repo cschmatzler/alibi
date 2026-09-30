@@ -7,8 +7,10 @@ import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { getMigrations } from "better-auth/db/migration";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { apiKey } from "@better-auth/api-key";
-import { admin, deviceAuthorization, twoFactor, username, oneTimeToken } from "better-auth/plugins";
+import { admin, deviceAuthorization, emailOTP, magicLink, twoFactor, username, jwt, oneTimeToken } from "better-auth/plugins";
 import { organization } from "better-auth/plugins/organization";
+import { createAccessControl } from "better-auth/plugins/access";
+import { defaultStatements } from "better-auth/plugins/organization/access";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 
 function getPort() {
@@ -211,6 +213,11 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   return originalFetch(request);
 };
 
+const magicLinkOutbox=new Map<string,{url:string;token:string;metadata:unknown}>();
+const magicPlugin=()=>magicLink({async sendMagicLink({email,url,token,metadata}) {magicLinkOutbox.set(email,{url,token,metadata:metadata ?? null});}});
+const emailOtpOutbox=new Map<string,{otp:string}>();
+const emailOtp=()=>emailOTP({changeEmail:{enabled:true},async sendVerificationOTP({email,otp,type}) {emailOtpOutbox.set(`${type}:${email}`,{otp});}});
+
 const authOptions = {
   baseURL: `http://localhost:${PORT}`,
   basePath: "/api/auth",
@@ -341,6 +348,8 @@ const authOptions = {
         },
       },
     }),
+    emailOtp(),
+    magicPlugin(),
     username(),
     genericOAuth({
       config: [
@@ -405,6 +414,41 @@ for (const name of ["session-deferred", "session-no-refresh", "session-deferred-
   }));
 }
 
+function createOtpProfile(name:string) {
+  const proof=name.startsWith("passwordless-proof");
+  return betterAuth({
+    ...authOptions,
+    basePath:`/__test/profiles/${name}/api/auth`,
+    verification:{disableCleanup:name==="verification-no-cleanup"},
+    emailVerification: name==="passwordless-proof" ? {sendOnSignUp:false,autoSignInAfterVerification:true} : {...authOptions.emailVerification,sendOnSignUp:false,autoSignInAfterVerification:proof},
+    plugins:[emailOTP({
+      storeOTP:name==="passwordless-hashed" ? "hashed" : name==="passwordless-encrypted-reuse" ? "encrypted" : "plain",
+      resendStrategy:name==="passwordless-encrypted-reuse" ? "reuse" : "rotate",
+      disableSignUp:name==="passwordless-disabled",overrideDefaultEmailVerification:proof,
+      changeEmail:{enabled:true,verifyCurrentEmail:proof},
+      async sendVerificationOTP({email,otp,type}) {emailOtpOutbox.set(`${type}:${email}`,{otp});}
+    })]
+  });
+}
+const otpProfiles=new Map<string,ReturnType<typeof createOtpProfile>>();
+for (const name of ["passwordless-hashed","passwordless-encrypted-reuse","passwordless-proof","passwordless-proof-explicit","passwordless-disabled","verification-cleanup","verification-no-cleanup"]) {
+  otpProfiles.set(name,createOtpProfile(name));
+}
+
+const magicProfiles = new Map<string, ReturnType<typeof betterAuth>>();
+for (const name of ["magic-link-hashed", "magic-link-disabled"]) {
+  magicProfiles.set(name, betterAuth({
+    ...authOptions,
+    basePath: `/__test/profiles/${name}/api/auth`,
+    emailVerification: {...authOptions.emailVerification, sendOnSignUp:false},
+    plugins: [magicLink({
+      storeToken: name === "magic-link-hashed" ? "hashed" : "plain",
+      disableSignUp: name === "magic-link-disabled",
+      async sendMagicLink({email,url,token,metadata}) {magicLinkOutbox.set(email,{url,token,metadata:metadata ?? null});}
+    })],
+  }));
+}
+
 const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
 
@@ -424,6 +468,165 @@ const ottProfiles=new Map(OTT_PROFILE_NAMES.map(name=>{
   })]};
   return [name,{auth:betterAuth(options),options}] as const;
 }));
+const JWT_PROFILE_NAMES = ["jwt-default", "jwt-es256", "jwt-es512", "jwt-rs256", "jwt-ps256", "jwt-claims", "jwt-path-header", "jwt-plain-rotation"] as const;
+const jwtProfiles = new Map(JWT_PROFILE_NAMES.map(name => {
+  const options = {
+    ...authOptions,
+    basePath: `/__test/profiles/${name}/api/auth`,
+    plugins: [...authOptions.plugins, jwt({
+      jwks: {
+        keyPairConfig: name === "jwt-es256" ? {alg:"ES256",crv:"P-256"} : name === "jwt-es512" ? {alg:"ES512",crv:"P-521"} : name === "jwt-rs256" ? {alg:"RS256"} : name === "jwt-ps256" ? {alg:"PS256"} : {alg:"EdDSA",crv:"Ed25519"},
+        ...(name === "jwt-path-header" ? {jwksPath:"/.well-known/jwks.json"} : {}),
+        ...(name === "jwt-plain-rotation" ? {disablePrivateKeyEncryption:true,rotationInterval:3600,gracePeriod:3600} : {}),
+      },
+      ...(name === "jwt-claims" ? {jwt:{issuer:"fixture-issuer",audience:"fixture-audience",expirationTime:"60s"}} : {}),
+      disableSettingJwtHeader:name === "jwt-path-header",
+    })],
+  };
+  return [name,{auth:betterAuth(options),options}] as const;
+}));
+await (await getMigrations(jwtProfiles.get("jwt-default")!.options)).runMigrations();
+
+function jwtRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+type RolePolicyBarrier = {entered:Promise<void>; enter:()=>void; released:Promise<void>; release:()=>void};
+const rolePolicyBarriers = new Map<string,RolePolicyBarrier>();
+async function waitForRolePolicy(promise:Promise<void>, message:string) {
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  try { await Promise.race([promise,new Promise<void>((_,reject)=>{timer=setTimeout(()=>reject(new Error(message)),10000);})]); }
+  finally { if (timer !== undefined) clearTimeout(timer); }
+}
+
+const TEAM_PROFILES = ["org-teams", "org-teams-no-default", "org-teams-limited", "org-teams-removable", "org-teams-dynamic", "org-roles-limited", "org-roles-no-ac", "org-roles-delegated", "org-roles-callback"] as const;
+const teamProfiles = new Map(TEAM_PROFILES.map(name => {
+  const dynamic = name === "org-teams-dynamic" || name.startsWith("org-roles-");
+  const statements = name === "org-roles-delegated" ? {...defaultStatements,apiKey:["create","read","update","delete"]} as const : defaultStatements;
+  const ac = createAccessControl(statements);
+  const options = {
+    ...authOptions,
+    basePath: `/__test/profiles/${name}/api/auth`,
+    ...(name === "org-roles-callback" ? {advanced:{...authOptions.advanced,database:{defaultFindManyLimit:1}}} : {}),
+    plugins: [
+      ...authOptions.plugins.filter(plugin => plugin.id !== "organization"),
+      organization({
+        ...(dynamic ? {dynamicAccessControl:{enabled:true,
+          ...(name === "org-roles-limited" ? {maximumRolesPerOrganization:1} : {}),
+          ...(name === "org-roles-callback" ? {maximumRolesPerOrganization:async (organizationId:string) => {
+            const barrier = rolePolicyBarriers.get(organizationId);
+            if (barrier) { barrier.enter(); await waitForRolePolicy(barrier.released,"Role policy release timed out"); }
+            const row = database.query("SELECT name FROM organization WHERE id=?").get(organizationId) as {name:string}|null;
+            if (!row) throw new Error("Organization not found");
+            return row.name === "Two role budget" ? 2 : 1;
+          }} : {}),
+        }} : {}),
+        ...(dynamic && name !== "org-roles-no-ac" ? {ac} : {}),
+        ...(name === "org-roles-delegated" ? {roles:{
+          owner:ac.newRole(statements),
+          delegator:ac.newRole({team:["create"],ac:["create","read","update"]}),
+          auditor:ac.newRole({member:["update"]}),
+          member:ac.newRole({}),
+        }} : {}),
+        teams:{
+        enabled:true,defaultTeam:{enabled:name!=="org-teams-no-default"},allowRemovingAllTeams:name==="org-teams-removable",
+        ...(name === "org-teams-limited" ? {
+          maximumTeams: async ({session}, ctx) => session?.user.name === "limit-owner" && ctx?.headers?.get("x-team-policy") === "expanded" ? 3 : 1,
+          maximumMembersPerTeam: async ({session}) => session.user.name === "limit-owner" ? 1 : 0,
+        } : {}),
+      }}),
+    ],
+  };
+  return [name, {auth:betterAuth(options),options}] as const;
+}));
+for (const {options} of teamProfiles.values()) {
+  await (await getMigrations(options)).runMigrations();
+}
+
+async function teamFixture(request: Request, url: URL): Promise<Response | undefined> {
+  const profileName = url.pathname.match(/^\/__test\/profiles\/([^/]+)\/api\/auth(?:\/|$)/)?.[1];
+  if (profileName) {
+    const profile = [...teamProfiles.entries()].find(([name]) => name === profileName)?.[1];
+    return profile?.auth.handler(request);
+  }
+  if (url.pathname === "/__test/organization-state" && request.method === "GET") {
+    const organizationId = url.searchParams.get("organizationId");
+    if (!organizationId) return jsonResponse({message:"organizationId is required"},{status:400});
+    const profileName = url.searchParams.get("profile") ?? "org-teams";
+    const selected = [...teamProfiles.entries()].find(([name]) => name === profileName)?.[1].auth;
+    if (!selected) return jsonResponse({message:"Unknown fixture profile"},{status:400});
+    const {adapter} = await selected.$context;
+    const where = [{field:"organizationId",value:organizationId}];
+    const sortBy = {field:"createdAt",direction:"asc"} as const;
+    const [teams,members,invitations] = await Promise.all(["team","member","invitation"].map(model=>adapter.findMany<Record<string,unknown>>({model,where,sortBy,limit:10000})));
+    if (!teams || !members || !invitations) throw new Error("Organization state query failed");
+    const roles = profileName === "org-teams-dynamic" || profileName.startsWith("org-roles-") ? await adapter.findMany<Record<string,unknown>>({model:"organizationRole",where,sortBy,limit:10000}) : [];
+    const teamMembers = (await Promise.all(teams.map(team=>adapter.findMany<Record<string,unknown>>({model:"teamMember",where:[{field:"teamId",value:String(team.id)}],sortBy,limit:10000})))).flat();
+    return jsonResponse({
+      teams:teams.map(team=>({id:team.id,name:team.name,organizationId:team.organizationId,createdAt:team.createdAt,updatedAt:team.updatedAt,memberCount:team.memberCount})),
+      teamMembers:teamMembers.map(member=>({id:member.id,teamId:member.teamId,userId:member.userId,createdAt:member.createdAt})),
+      roles,members,invitations,
+    });
+  }
+  if (url.pathname === "/__test/organization-api" && request.method === "POST") {
+    const body = await readJson(request);
+    const profileName = typeof body?.profile === "string" ? body.profile : "org-teams";
+    const selected = [...teamProfiles.entries()].find(([name]) => name === profileName)?.[1].auth;
+    if (!selected) return jsonResponse({message:"Unknown fixture profile"},{status:400});
+    try {
+      if (body?.operation === "role-policy" && typeof body.organizationId === "string") {
+        if (profileName !== "org-roles-callback" || !database.query("SELECT id FROM organization WHERE id=?").get(body.organizationId)) {
+          return jsonResponse({message:"Role policy organization not found"},{status:400});
+        }
+        if (body.stage === "arm") {
+          if (rolePolicyBarriers.has(body.organizationId)) return jsonResponse({message:"Role policy already armed"},{status:400});
+          const entered = Promise.withResolvers<void>(), released = Promise.withResolvers<void>();
+          rolePolicyBarriers.set(body.organizationId,{entered:entered.promise,enter:entered.resolve,released:released.promise,release:released.resolve});
+        } else if (body.stage === "wait") {
+          const barrier = rolePolicyBarriers.get(body.organizationId);
+          if (!barrier) return jsonResponse({message:"Role policy is not armed"},{status:400});
+          await waitForRolePolicy(barrier.entered,"Role policy entry timed out");
+        } else if (body.stage === "release") {
+          const barrier = rolePolicyBarriers.get(body.organizationId);
+          if (!barrier) return jsonResponse({message:"Role policy is not armed"},{status:400});
+          rolePolicyBarriers.delete(body.organizationId);
+          barrier.release();
+        } else return jsonResponse({message:"Invalid role policy stage"},{status:400});
+        return jsonResponse({organizationId:body.organizationId,stage:body.stage});
+      }
+      if (body?.operation === "seed-role" && typeof body.organizationId === "string" && typeof body.role === "string" && body.permission && typeof body.permission === "object") {
+        const {adapter} = await selected.$context;
+        const role = await adapter.create<Record<string,unknown>>({model:"organizationRole",data:{organizationId:body.organizationId,role:body.role,permission:JSON.stringify(body.permission),createdAt:new Date()}});
+        return jsonResponse({roleId:role.id,organizationId:role.organizationId,role:role.role});
+      }
+      if (body?.operation === "set-member-role" && typeof body.organizationId === "string" && typeof body.memberId === "string" && typeof body.role === "string") {
+        const {adapter} = await selected.$context;
+        const where = [{field:"organizationId",value:body.organizationId},{field:"id",value:body.memberId}];
+        const member = await adapter.findOne<Record<string,unknown>>({model:"member",where});
+        if (!member) return jsonResponse({message:"Member not found"},{status:400});
+        const updated = await adapter.update<Record<string,unknown>>({model:"member",where,update:{role:body.role}});
+        if (!updated) throw new Error("Member role update failed");
+        return jsonResponse({memberId:updated.id,organizationId:updated.organizationId,role:updated.role});
+      }
+      if (body?.operation === "create-team" && typeof body.organizationId === "string" && typeof body.name === "string") {
+        return jsonResponse(await selected.api.createTeam({body:{organizationId:body.organizationId,name:body.name}}));
+      }
+      if (body?.operation === "seed-member" && typeof body.organizationId === "string" && typeof body.id === "string" && typeof body.email === "string" && typeof body.name === "string") {
+        const {adapter} = await selected.$context;
+        const user = await adapter.create<Record<string,unknown>>({model:"user",forceAllowId:true,data:{id:body.id,email:body.email,name:body.name,emailVerified:true,createdAt:new Date(),updatedAt:new Date()}});
+        const member = await selected.api.addMember({body:{organizationId:body.organizationId,userId:String(user.id),role:"member"}});
+        return jsonResponse({userId:user.id,memberId:member.id});
+      }
+      if (body?.operation === "remove-team" && typeof body.organizationId === "string" && typeof body.teamId === "string") {
+        return jsonResponse(await selected.api.removeTeam({body:{organizationId:body.organizationId,teamId:body.teamId}}));
+      }
+      return jsonResponse({message:"Invalid organization operation"},{status:400});
+    } catch (error) {
+      if (error instanceof APIError) return jsonResponse(error.body,{status:error.statusCode});
+      throw error;
+    }
+  }
+}
 
 const RESET_MODELS = [
   "deviceCode",
@@ -439,12 +642,18 @@ const RESET_MODELS = [
 ] as const;
 
 async function resetDatabaseState() {
+  const {adapter} = await teamProfiles.get("org-teams")!.auth.$context;
+  for (const model of ["teamMember","team"]) await adapter.deleteMany({model,where:[]});
+  const roleAdapter = (await teamProfiles.get("org-teams-dynamic")!.auth.$context).adapter;
+  await roleAdapter.deleteMany({model:"organizationRole",where:[]});
   for (const model of RESET_MODELS) {
     await authContext.adapter.deleteMany({
       model,
       where: [],
     });
   }
+  const context = await jwtProfiles.get("jwt-default")!.auth.$context;
+  await context.adapter.deleteMany({model:"jwks",where:[]});
 }
 
 
@@ -486,6 +695,8 @@ const server = Bun.serve({
       const ottControl=await oneTimeTokenControl(request,url);
       if(ottControl) return ottControl;
 
+      const teamResponse = await teamFixture(request, url);
+      if (teamResponse) return teamResponse;
 
       if (url.pathname === "/__test/lifecycle" && request.method === "GET") {
         const email = url.searchParams.get("email");
@@ -501,6 +712,32 @@ const server = Bun.serve({
 
       if (url.pathname === "/__health") {
         return jsonResponse({ ok: true, oauthBaseURL });
+      }
+
+      for (const [name,profile] of jwtProfiles) {
+        const path = `/__test/profiles/${name}/api/auth`;
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return profile.auth.handler(request);
+      }
+      if (url.pathname === "/__test/jwks-state" && request.method === "GET") {
+        const context = await jwtProfiles.get("jwt-default")!.auth.$context;
+        const keys = await context.adapter.findMany<{id:string;publicKey:string;privateKey:string;createdAt:Date;expiresAt:Date|null;alg:string|null;crv:string|null}>({model:"jwks",sortBy:{field:"createdAt",direction:"asc"}});
+        return jsonResponse(keys.map(key => ({id:key.id,publicKey:JSON.parse(key.publicKey),privateKeyEncrypted:typeof JSON.parse(key.privateKey) === "string",createdAt:key.createdAt,expiresAt:key.expiresAt,alg:key.alg,crv:key.crv})));
+      }
+      if (url.pathname === "/__test/expire-jwk" && request.method === "POST") {
+        const body: unknown = await readJson(request);
+        if (!jwtRecord(body) || typeof body.id !== "string" || typeof body.expiresAt !== "string" || !Number.isFinite(Date.parse(body.expiresAt))) return jsonResponse({message:"id and valid expiresAt are required"},{status:400});
+        const context = await jwtProfiles.get("jwt-default")!.auth.$context;
+        await context.adapter.updateMany({model:"jwks",where:[{field:"id",value:body.id}],update:{expiresAt:new Date(body.expiresAt)}});
+        return jsonResponse({status:true});
+      }
+      if (url.pathname === "/__test/jwt" && request.method === "POST") {
+        const body: unknown = await readJson(request);
+        if (!jwtRecord(body)) return jsonResponse({message:"invalid server operation"},{status:400});
+        const selected = jwtProfiles.get(typeof body.profile === "string" ? body.profile as typeof JWT_PROFILE_NAMES[number] : "jwt-default")?.auth;
+        if (!selected) return jsonResponse({message:"unknown fixture profile"},{status:400});
+        if (body.operation === "sign" && jwtRecord(body.payload)) return jsonResponse(await selected.api.signJWT({body:{payload:body.payload}}));
+        if (body.operation === "verify" && typeof body.token === "string") return jsonResponse(await selected.api.verifyJWT({body:{token:body.token,...(typeof body.issuer === "string" ? {issuer:body.issuer} : {})}}));
+        return jsonResponse({message:"invalid server operation"},{status:400});
       }
 
       if (url.pathname === "/__test/password" && request.method === "POST") {
@@ -551,8 +788,53 @@ const server = Bun.serve({
         return jsonResponse(await auth.api.verifyApiKey({ body: await readJson(request) }));
       }
 
+      if (url.pathname==="/__test/magic-link" && request.method==="GET") {
+        return jsonResponse(magicLinkOutbox.get(url.searchParams.get("email") ?? "") ?? null);
+      }
+      if (url.pathname==="/__test/email-otp" && request.method==="GET") {
+        return jsonResponse(emailOtpOutbox.get(`${url.searchParams.get("type")}:${url.searchParams.get("email")}`) ?? null);
+      }
+      if (url.pathname==="/__test/verification-state" && request.method==="GET") {
+        const identifier=url.searchParams.get("identifier");
+        return jsonResponse(await authContext.adapter.findMany({model:"verification",where:[{field:"identifier",value:identifier}]}));
+      }
+      if (url.pathname==="/__test/verification-state" && request.method==="POST") {
+        const body:unknown=await readJson(request);
+        if (!body || typeof body!=="object" || Array.isArray(body)) return jsonResponse({message:"invalid verification action"},{status:400});
+        const record=body as Record<string,unknown>;
+        if (typeof record.identifier!=="string" || typeof record.expiresAt!=="string") return jsonResponse({message:"invalid verification action"},{status:400});
+        const expiresAt=new Date(record.expiresAt);
+        if (record.action==="seed" && typeof record.value==="string") await authContext.internalAdapter.createVerificationValue({identifier:record.identifier,value:record.value,expiresAt});
+        else if (record.action==="expire") await authContext.adapter.updateMany({model:"verification",where:[{field:"identifier",value:record.identifier}],update:{expiresAt}});
+        else return jsonResponse({message:"invalid verification action"},{status:400});
+        return jsonResponse({status:true});
+      }
+      if (url.pathname==="/__test/server-api" && request.method==="POST") {
+        const body:unknown=await readJson(request);
+        if (!body || typeof body!=="object" || Array.isArray(body)) return jsonResponse({message:"invalid server operation"},{status:400});
+        const record=body as Record<string,unknown>;
+        if (typeof record.email!=="string" || !["sign-in","email-verification","forget-password","change-email"].includes(String(record.type))) return jsonResponse({message:"invalid server operation"},{status:400});
+        const type=record.type==="email-verification" ? "email-verification" : record.type==="forget-password" ? "forget-password" : record.type==="change-email" ? "change-email" : "sign-in";
+        const selected=typeof record.profile==="string" ? otpProfiles.get(record.profile) : auth;
+        if (!selected) return jsonResponse({message:"unknown fixture profile"},{status:400});
+        try {
+          if (record.operation==="create-email-otp") return jsonResponse(await selected.api.createVerificationOTP({body:{email:record.email,type}}));
+          if (record.operation==="get-email-otp") return jsonResponse(await selected.api.getVerificationOTP({query:{email:record.email,type}}));
+          if (record.operation==="race-email-otp" && typeof record.otp==="string") {
+            const email=record.email,otp=record.otp;
+            const results=await Promise.all([0,1].map(async()=>{const response=await selected.api.signInEmailOTP({body:{email,otp},asResponse:true});return {status:response.status,body:await response.json()};}));
+            return jsonResponse({results:results.sort((left,right)=>left.status-right.status)});
+          }
+        } catch(error) {
+          if (error instanceof APIError) return jsonResponse(error.body,{status:typeof error.status==="number" ? error.status : error.status==="BAD_REQUEST" ? 400 : 500});
+          throw error;
+        }
+        return jsonResponse({message:"unknown server operation"},{status:400});
+      }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         await resetDatabaseState();
+        emailOtpOutbox.clear();
+        magicLinkOutbox.clear();
         resetPasswordOutbox.clear();
         verificationEmailOutbox.clear();
         changeEmailOutbox.clear();
@@ -869,6 +1151,12 @@ const server = Bun.serve({
         return jsonResponse({ status: true, accountId: localAccountId });
       }
 
+      for (const [name,instance] of magicProfiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
+      }
+      for (const [name,instance] of otpProfiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
+      }
       for (const [path, instance] of verificationProfiles) {
         if (url.pathname.startsWith(`${path}/`)) return instance.handler(request);
       }

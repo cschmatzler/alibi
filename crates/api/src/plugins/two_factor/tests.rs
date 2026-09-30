@@ -144,7 +144,13 @@ async fn create_test_context_with_credential_user(
     email: &str,
     two_factor_enabled: bool,
 ) -> (AuthContext<TestSchema>, UserView, SessionView) {
-    let ctx = test_helpers::create_test_context().await;
+    let mut ctx = test_helpers::create_test_context().await;
+    let mut init = better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    TwoFactorPlugin::new().on_init(&mut init).await.unwrap();
+    ctx.database = init.database_with_registered_transforms();
+    let parts = init.into_parts();
+    ctx.metadata = parts.metadata;
+    ctx.extensions = parts.extensions;
     let user = test_helpers::create_user(
         &ctx,
         CreateUser::new()
@@ -336,13 +342,8 @@ async fn test_inspect_trusted_device_rotates_server_state() {
 
 #[tokio::test]
 async fn test_verify_existing_session_factor_enables_two_factor_and_reissues_session() {
-    let (mut ctx, user, session) =
+    let (ctx, user, session) =
         create_test_context_with_credential_user("reissue@example.com", false).await;
-    let mut init = better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
-    better_auth_core::AuthPlugin::on_init(&TwoFactorPlugin::new(), &mut init)
-        .await
-        .unwrap();
-    ctx.metadata = init.into_parts().metadata;
 
     let (response, set_cookie_headers) =
         verify_existing_session_factor(user.clone(), session.clone(), true, &ctx)

@@ -3,15 +3,19 @@ pub mod admin;
 pub mod api_key;
 pub(crate) mod authentication_helpers;
 pub mod device_authorization;
+pub mod email_otp;
 pub mod email_password;
 pub mod email_verification;
 pub mod helpers;
+pub mod jwt;
+pub mod magic_link;
 pub mod oauth;
 pub mod one_time_token;
 pub mod organization;
 pub mod passkey;
 pub mod password_management;
 pub mod session_management;
+pub(crate) mod token_crypto;
 pub mod two_factor;
 pub mod user_management;
 
@@ -183,10 +187,12 @@ pub use admin::{AdminConfig, AdminPlugin, RolePermissions};
 pub use api_key::{ApiKeyConfig, ApiKeyPlugin};
 pub use better_auth_core::PasswordHasher;
 pub use device_authorization::DeviceAuthorizationPlugin;
+pub use email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
 pub use email_password::{EmailPasswordConfig, EmailPasswordPlugin};
 pub use email_verification::{
     EmailVerificationConfig, EmailVerificationHook, EmailVerificationPlugin, SendVerificationEmail,
 };
+pub use magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
 pub use organization::{OrganizationConfig, OrganizationPlugin};
 pub use passkey::{PasskeyConfig, PasskeyPlugin};
 pub use password_management::{

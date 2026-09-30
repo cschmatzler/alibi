@@ -4,6 +4,7 @@ pub mod account;
 pub mod api_key;
 pub mod device_code;
 pub mod invitation;
+pub mod jwk;
 pub mod member;
 pub mod organization;
 pub mod organization_role;

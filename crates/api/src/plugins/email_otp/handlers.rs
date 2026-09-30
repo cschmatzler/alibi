@@ -1,0 +1,605 @@
+use better_auth_core::{
+    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthUser,
+    AuthVerification, CreateAccount, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
+};
+use chrono::Utc;
+use rand::{Rng, rngs::OsRng};
+use serde_json::{Value, json};
+
+use crate::plugins::authentication_helpers::{
+    find_verification, parse_body, parse_email, prepare_additional_user_fields,
+    revoke_unproven_access, session_response,
+};
+
+use super::{
+    EmailOtpDelivery, EmailOtpPlugin, EmailOtpType, OtpResendStrategy, helpers::*, types::*,
+};
+
+impl EmailOtpPlugin {
+    pub(super) async fn prepare_code(
+        &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        email: &str,
+        otp_type: EmailOtpType,
+        identifier_override: Option<String>,
+    ) -> AuthResult<(String, CreateVerification)> {
+        let generated = match &self.config.generate_otp {
+            Some(generator) => generator.generate(email, otp_type).await?,
+            None => None,
+        };
+        let otp = generated
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| {
+                let mut rng = OsRng;
+                (0..self.config.otp_length)
+                    .map(|_| char::from(b'0' + rng.gen_range(0..10)))
+                    .collect()
+            });
+        let stored = self.config.storage.store(&otp, &ctx.config.secret).await?;
+        let verification = CreateVerification {
+            identifier: identifier_override.unwrap_or_else(|| identifier(otp_type, email)),
+            value: format!("{stored}:0"),
+            expires_at: Utc::now() + self.config.expires_in,
+        };
+        Ok((otp, verification))
+    }
+
+    pub(super) async fn issue_code(
+        &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        email: &str,
+        otp_type: EmailOtpType,
+        identifier_override: Option<String>,
+    ) -> AuthResult<String> {
+        let (otp, value) = self
+            .prepare_code(ctx, email, otp_type, identifier_override)
+            .await?;
+        let _ = ctx.database.create_verification(value).await?;
+        Ok(otp)
+    }
+
+    async fn resolve_code(
+        &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        email: &str,
+        otp_type: EmailOtpType,
+    ) -> AuthResult<String> {
+        let key = identifier(otp_type, email);
+        if self.config.resend_strategy == OtpResendStrategy::Reuse
+            && let Some(value) = find_verification(ctx, &key).await?
+            && value.expires_at() >= Utc::now()
+        {
+            let (stored, attempts) = split_value(value.value());
+            if attempts < self.allowed_attempts()
+                && let Some(otp) = self
+                    .config
+                    .storage
+                    .reusable(stored, &ctx.config.secret)
+                    .await?
+                && !otp.is_empty()
+                && ctx
+                    .database
+                    .compare_and_swap_verification(
+                        &value.id(),
+                        value.value(),
+                        value.value(),
+                        Utc::now() + self.config.expires_in,
+                    )
+                    .await?
+            {
+                return Ok(otp);
+            }
+        }
+        self.issue_code(ctx, email, otp_type, None).await
+    }
+
+    pub(super) async fn deliver(
+        &self,
+        email: &str,
+        otp: String,
+        otp_type: EmailOtpType,
+    ) -> AuthResult<()> {
+        let sender =
+            self.config.send_verification_otp.as_ref().ok_or_else(|| {
+                AuthError::bad_request("send email verification is not implemented")
+            })?;
+        crate::plugins::authentication_helpers::run_notification(sender.send(&EmailOtpDelivery {
+            email: email.to_string(),
+            otp,
+            otp_type,
+        }))
+        .await;
+        Ok(())
+    }
+
+    fn allowed_attempts(&self) -> usize {
+        if self.config.allowed_attempts == 0 {
+            3
+        } else {
+            self.config.allowed_attempts
+        }
+    }
+
+    /// Consume is the authorization gate. A wrong code recreates the record
+    /// with its original deadline and incremented budget, matching 1.7.6.
+    async fn consume_code(
+        &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        key: &str,
+        otp: &str,
+    ) -> AuthResult<()> {
+        if let Some(existing) = find_verification(ctx, key).await?
+            && existing.expires_at() < Utc::now()
+        {
+            ctx.database.delete_verifications_by_identifier(key).await?;
+            return Err(expired_otp());
+        }
+        let value = ctx
+            .database
+            .consume_verification_by_identifier(key)
+            .await?
+            .ok_or_else(invalid_otp)?;
+        let (stored, attempts) = split_value(value.value());
+        if attempts >= self.allowed_attempts() {
+            return Err(too_many_attempts());
+        }
+        if !self
+            .config
+            .storage
+            .verify(stored, otp, &ctx.config.secret)
+            .await?
+        {
+            let _ = ctx
+                .database
+                .create_verification(CreateVerification {
+                    identifier: key.to_string(),
+                    value: format!("{stored}:{}", attempts + 1),
+                    expires_at: value.expires_at(),
+                })
+                .await?;
+            return Err(invalid_otp());
+        }
+        Ok(())
+    }
+
+    pub(super) async fn send_verification(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
+        let body: SendRequest = match parse_body(req) {
+            Ok(value) => value,
+            Err(response) => return Ok(response),
+        };
+        if self.config.send_verification_otp.is_none() {
+            return Err(AuthError::bad_request(
+                "send email verification is not implemented",
+            ));
+        }
+        let email = parse_email(&body.email)?;
+        if body.otp_type == EmailOtpType::ChangeEmail {
+            return Err(AuthError::bad_request("Invalid OTP type"));
+        }
+        let otp = self.resolve_code(ctx, &email, body.otp_type).await?;
+        let should_send = body.otp_type == EmailOtpType::SignIn && !self.config.disable_sign_up;
+        if ctx.database.get_user_by_email(&email).await?.is_none() && !should_send {
+            ctx.database
+                .delete_verifications_by_identifier(&identifier(body.otp_type, &email))
+                .await?;
+            return AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from);
+        }
+        self.deliver(&email, otp, body.otp_type).await?;
+        AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
+    }
+
+    pub(super) async fn check_verification(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
+        let body: CheckRequest = match parse_body(req) {
+            Ok(value) => value,
+            Err(response) => return Ok(response),
+        };
+        let email = parse_email(&body.email)?;
+        let key = identifier(body.otp_type, &email);
+        // Compare-and-swap prevents racing invalid checks from losing attempts.
+        // A successful check deliberately does not consume the OTP.
+        loop {
+            let value = find_verification(ctx, &key)
+                .await?
+                .ok_or_else(invalid_otp)?;
+            if value.expires_at() < Utc::now() {
+                ctx.database
+                    .delete_verifications_by_identifier(&key)
+                    .await?;
+                return Err(expired_otp());
+            }
+            let (stored, attempts) = split_value(value.value());
+            if attempts >= self.allowed_attempts() {
+                ctx.database
+                    .delete_verifications_by_identifier(&key)
+                    .await?;
+                return Err(too_many_attempts());
+            }
+            if self
+                .config
+                .storage
+                .verify(stored, &body.otp, &ctx.config.secret)
+                .await?
+            {
+                if ctx.database.get_user_by_email(&email).await?.is_none() {
+                    return Err(user_not_found());
+                }
+                return AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from);
+            }
+            if ctx
+                .database
+                .compare_and_swap_verification(
+                    &value.id(),
+                    value.value(),
+                    &format!("{stored}:{}", attempts + 1),
+                    value.expires_at(),
+                )
+                .await?
+            {
+                return Err(invalid_otp());
+            }
+            // A hook may veto the update without changing the row. Retry only
+            // real contention; repeating that veto would run application hooks
+            // forever and leave the request pending.
+            let current = ctx
+                .database
+                .get_latest_verification_by_identifier(&key)
+                .await?;
+            if current.is_none_or(|current| {
+                current.id() == value.id()
+                    && current.value() == value.value()
+                    && current.expires_at() == value.expires_at()
+            }) {
+                return Err(invalid_otp());
+            }
+        }
+    }
+
+    pub(super) async fn verify_email(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
+        let body: VerifyRequest = match parse_body(req) {
+            Ok(value) => value,
+            Err(response) => return Ok(response),
+        };
+        let email = parse_email(&body.email)?;
+        self.consume_code(
+            ctx,
+            &identifier(EmailOtpType::EmailVerification, &email),
+            &body.otp,
+        )
+        .await?;
+        let user = ctx
+            .database
+            .get_user_by_email(&email)
+            .await?
+            .ok_or_else(user_not_found)?;
+        let settings = self.verification_settings(ctx);
+        if let Some(hook) = &settings.before {
+            hook(&ctx.user_view(&user)).await?;
+        }
+        let updated = ctx
+            .database
+            .update_user(
+                &user.id(),
+                UpdateUser {
+                    email: Some(email),
+                    email_verified: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        if let Some(hook) = &settings.after {
+            hook(&ctx.user_view(&updated)).await?;
+        }
+        if settings.auto_sign_in {
+            let (payload, mut response) = session_response(ctx, req, &updated.id()).await?;
+            response.body = serde_json::to_vec(
+                &json!({"status":true,"token":payload.get("token"),"user":payload.get("user")}),
+            )?;
+            return Ok(response);
+        }
+        AuthResponse::json(
+            200,
+            &json!({"status":true,"token":null,"user":ctx.user_view(&updated)}),
+        )
+        .map_err(AuthError::from)
+    }
+
+    pub(super) async fn sign_in(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
+        // Extra user inputs come from the configured schema. An absent username
+        // plugin must not deserialize, validate or persist its additional fields.
+        let mut configured_request = req.clone();
+        if !ctx
+            .get_metadata("username.enabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+            && let Some(body) = &req.body
+            && let Ok(mut value) = serde_json::from_slice::<Value>(body)
+            && let Some(object) = value.as_object_mut()
+        {
+            _ = object.remove("username");
+            _ = object.remove("displayUsername");
+            configured_request.body = Some(serde_json::to_vec(&value)?);
+        }
+        let body: SignInRequest = match parse_body(&configured_request) {
+            Ok(value) => value,
+            Err(response) => return Ok(response),
+        };
+        let email = body.email.to_lowercase();
+        self.consume_code(ctx, &identifier(EmailOtpType::SignIn, &email), &body.otp)
+            .await?;
+        let user = match ctx.database.get_user_by_email(&email).await? {
+            Some(user) if !user.email_verified() => revoke_unproven_access(ctx, &user.id())
+                .await?
+                .ok_or_else(invalid_otp)?,
+            Some(user) => user,
+            None if self.config.disable_sign_up => return Err(invalid_otp()),
+            None => {
+                let mut data = CreateUser::new()
+                    .with_email(email)
+                    .with_name(body.name.unwrap_or_default())
+                    .with_email_verified(true);
+                data.image = body.image;
+                data.username = body.username;
+                data.display_username = body.display_username;
+                super::super::helpers::apply_default_role(ctx, &mut data);
+                prepare_additional_user_fields(ctx, &mut data).await?;
+                ctx.database.create_user(data).await?
+            }
+        };
+        session_response(ctx, req, &user.id())
+            .await
+            .map(|(_, response)| response)
+    }
+
+    pub(super) async fn request_password_reset(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
+        let body: EmailRequest = match parse_body(req) {
+            Ok(value) => value,
+            Err(response) => return Ok(response),
+        };
+        let email = body.email.to_lowercase();
+        let otp = self
+            .resolve_code(ctx, &email, EmailOtpType::ForgetPassword)
+            .await?;
+        if ctx.database.get_user_by_email(&email).await?.is_none() {
+            ctx.database
+                .delete_verifications_by_identifier(&identifier(
+                    EmailOtpType::ForgetPassword,
+                    &email,
+                ))
+                .await?;
+        } else {
+            self.deliver(&email, otp, EmailOtpType::ForgetPassword)
+                .await?;
+        }
+        AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
+    }
+
+    pub(super) async fn reset_password(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
+        use better_auth_core::AuthAccount;
+        let body: PasswordRequest = match parse_body(req) {
+            Ok(value) => value,
+            Err(response) => return Ok(response),
+        };
+        let email = body.email.to_lowercase();
+        let settings = self.password_settings(ctx);
+        better_auth_core::utils::password::validate_password(
+            &body.password,
+            settings.minimum,
+            settings.maximum,
+            ctx,
+        )?;
+        self.consume_code(
+            ctx,
+            &identifier(EmailOtpType::ForgetPassword, &email),
+            &body.otp,
+        )
+        .await?;
+        let user = ctx
+            .database
+            .get_user_by_email(&email)
+            .await?
+            .ok_or_else(user_not_found)?;
+        let password = better_auth_core::utils::password::hash_password(
+            settings.hasher.as_ref(),
+            &body.password,
+        )
+        .await?;
+        if let Some(account) = super::super::helpers::get_credential_account(ctx, user.id()).await?
+        {
+            let _ = ctx
+                .database
+                .update_account(
+                    &account.id(),
+                    UpdateAccount {
+                        password: Some(password),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+        } else {
+            let _ = ctx
+                .database
+                .create_account(CreateAccount {
+                    user_id: user.id().to_string(),
+                    account_id: user.id().to_string(),
+                    provider_id: "credential".to_string(),
+                    access_token: None,
+                    refresh_token: None,
+                    id_token: None,
+                    access_token_expires_at: None,
+                    refresh_token_expires_at: None,
+                    scope: None,
+                    password: Some(password),
+                })
+                .await?;
+        }
+        if let Some(hook) = &settings.on_reset {
+            hook(serde_json::to_value(&user)?).await?;
+        }
+        if !user.email_verified() {
+            let _ = ctx
+                .database
+                .update_user(
+                    &user.id(),
+                    UpdateUser {
+                        email_verified: Some(true),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+        }
+        if settings.revoke_sessions {
+            ctx.database.delete_user_sessions(&user.id()).await?;
+        }
+        AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
+    }
+
+    pub(super) async fn request_email_change(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
+        let body: ChangeEmailRequest = match parse_body(req) {
+            Ok(value) => value,
+            Err(response) => return Ok(response),
+        };
+        let (user, _) = require_authoritative_session(ctx, req).await?;
+        if !self.config.change_email_enabled {
+            return Err(AuthError::bad_request("Change email with OTP is disabled"));
+        }
+        let email = user.email().unwrap_or_default().to_lowercase();
+        let new_email = parse_email(&body.new_email)?;
+        if new_email == email {
+            return Err(AuthError::bad_request("Email is the same"));
+        }
+        if self.config.verify_current_email {
+            let otp = body
+                .otp
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| AuthError::bad_request("OTP is required to verify current email"))?;
+            self.consume_code(
+                ctx,
+                &identifier(EmailOtpType::EmailVerification, &email),
+                &otp,
+            )
+            .await?;
+        }
+        let key = identifier(EmailOtpType::ChangeEmail, &format!("{email}-{new_email}"));
+        let otp = self
+            .issue_code(
+                ctx,
+                &new_email,
+                EmailOtpType::ChangeEmail,
+                Some(key.clone()),
+            )
+            .await?;
+        if ctx.database.get_user_by_email(&new_email).await?.is_some() {
+            ctx.database
+                .delete_verifications_by_identifier(&key)
+                .await?;
+        } else {
+            self.deliver(&new_email, otp, EmailOtpType::ChangeEmail)
+                .await?;
+        }
+        AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
+    }
+
+    pub(super) async fn change_email(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
+        let body: ConfirmChangeRequest = match parse_body(req) {
+            Ok(value) => value,
+            Err(response) => return Ok(response),
+        };
+        let otp = body.otp;
+        let (user, session) = require_authoritative_session(ctx, req).await?;
+        if !self.config.change_email_enabled {
+            return Err(AuthError::bad_request("Change email with OTP is disabled"));
+        }
+        let email = user.email().unwrap_or_default().to_lowercase();
+        let new_email = parse_email(&body.new_email)?;
+        if new_email == email {
+            return Err(AuthError::bad_request("Email is the same"));
+        }
+        self.consume_code(
+            ctx,
+            &identifier(EmailOtpType::ChangeEmail, &format!("{email}-{new_email}")),
+            &otp,
+        )
+        .await?;
+        let current = ctx
+            .database
+            .get_user_by_email(&email)
+            .await?
+            .ok_or_else(user_not_found)?;
+        if ctx.database.get_user_by_email(&new_email).await?.is_some() {
+            return Err(AuthError::bad_request("Email already in use"));
+        }
+        let settings = self.verification_settings(ctx);
+        if let Some(hook) = &settings.before {
+            hook(&ctx.user_view(&current)).await?;
+        }
+        let updated = ctx
+            .database
+            .update_user(
+                &current.id(),
+                UpdateUser {
+                    email: Some(new_email),
+                    email_verified: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        if let Some(hook) = &settings.after {
+            hook(&ctx.user_view(&updated)).await?;
+        }
+        Ok(AuthResponse::json(200, &json!({"success":true}))
+            .map_err(AuthError::from)?
+            .with_header(
+                "Set-Cookie",
+                better_auth_core::utils::cookie_utils::create_session_cookie(
+                    &session.token,
+                    &ctx.config,
+                ),
+            ))
+    }
+}
+
+async fn require_authoritative_session<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    req: &AuthRequest,
+) -> AuthResult<(S::User, better_auth_core::wire::SessionView)> {
+    ctx.require_session(req).await.map_err(|error| match error {
+        AuthError::Unauthenticated | AuthError::SessionNotFound => AuthError::Upstream {
+            status: 401,
+            code: "UNAUTHORIZED",
+            message: "Unauthorized",
+        },
+        error => error,
+    })
+}

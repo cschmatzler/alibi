@@ -77,6 +77,7 @@ const profiles = {
     requiredPlugin("organization"),
     requiredPlugin("username"),
     requiredPlugin("oneTimeToken"),
+    requiredPlugin("jwt"),
     passkey(),
   ],
   "all-in": () => {

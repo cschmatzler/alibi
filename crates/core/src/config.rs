@@ -477,6 +477,9 @@ pub struct AuthConfig {
     /// Session configuration
     pub session: SessionConfig,
 
+    /// Verification storage lifecycle settings.
+    pub verification: VerificationConfig,
+
     /// JWT configuration
     pub jwt: JwtConfig,
 
@@ -597,6 +600,14 @@ pub struct JwtConfig {
 
     /// Audience claim
     pub audience: Option<String>,
+}
+
+/// Controls cleanup performed when a verification record is read.
+#[derive(Debug, Clone, Default)]
+pub struct VerificationConfig {
+    /// Keep globally expired verification rows during lookup. Default: false.
+    /// An atomic consume still invalidates an expired proof it selects.
+    pub disable_cleanup: bool,
 }
 
 /// Password validation configuration. Built-in hashing uses pinned scrypt parameters.
@@ -807,6 +818,7 @@ impl Default for AuthConfig {
             trusted_origins: Vec::new(),
             disabled_paths: Vec::new(),
             session: SessionConfig::default(),
+            verification: VerificationConfig::default(),
             jwt: JwtConfig::default(),
             password: PasswordConfig::default(),
             account: AccountConfig::default(),

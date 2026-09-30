@@ -193,9 +193,9 @@ impl<T: AuthUser> From<&T> for UserView {
             updated_at: user.updated_at(),
             username: user.username().map(str::to_owned),
             display_username: user.display_username().map(str::to_owned),
-            two_factor_enabled: Some(user.two_factor_enabled()),
+            two_factor_enabled: user.two_factor_enabled_value(),
             role: user.role().map(str::to_owned),
-            banned: Some(user.banned()),
+            banned: user.banned_value(),
             ban_reason: user.ban_reason().map(str::to_owned),
             ban_expires: user.ban_expires(),
             is_anonymous: user.is_anonymous(),
@@ -292,11 +292,19 @@ impl AuthUser for UserView {
     fn two_factor_enabled(&self) -> bool {
         self.two_factor_enabled.unwrap_or(false)
     }
+
+    fn two_factor_enabled_value(&self) -> Option<bool> {
+        self.two_factor_enabled
+    }
     fn role(&self) -> Option<&str> {
         self.role.as_deref()
     }
     fn banned(&self) -> bool {
         self.banned.unwrap_or(false)
+    }
+
+    fn banned_value(&self) -> Option<bool> {
+        self.banned
     }
     fn ban_reason(&self) -> Option<&str> {
         self.ban_reason.as_deref()

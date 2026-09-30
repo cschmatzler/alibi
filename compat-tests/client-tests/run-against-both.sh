@@ -3,7 +3,7 @@ set -euo pipefail
 capability="all"
 for arg in "$@"; do
   case "$arg" in
-    account-management|admin|api-key|core|device-authorization|email-verification|generic-oauth|oauth|organization|passkey|password-management|sessions|two-factor|user-management|one-time-token|all|browser) capability="$arg" ;;
+    account-management|admin|api-key|core|device-authorization|email-verification|generic-oauth|jwt|oauth|organization|passkey|password-management|sessions|two-factor|user-management|one-time-token|all|browser) capability="$arg" ;;
     --skip-build) ;;
     *) echo "Unknown compatibility capability: $arg" >&2; exit 1 ;;
   esac
