@@ -106,7 +106,7 @@ pub(crate) async fn send_signup_verification<S: better_auth_core::AuthSchema>(
     if !config.send_on_sign_up.unwrap_or(required) {
         return Ok(());
     }
-    let user = UserView::from(user);
+    let user = ctx.user_view(user);
     let Some(sender) = &config.send_verification_email else {
         return Ok(());
     };
@@ -275,7 +275,7 @@ impl EmailVerificationPlugin {
 
         // Use custom sender if configured, otherwise fall back to EmailProvider
         if let Some(ref custom_sender) = self.config.send_verification_email {
-            let user = UserView::from(user);
+            let user = ctx.user_view(user);
             super::authentication_helpers::run_notification(custom_sender.send(
                 &user,
                 &verification_url,

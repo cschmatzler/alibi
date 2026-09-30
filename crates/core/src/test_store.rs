@@ -99,9 +99,9 @@ impl UserStore<BundledSchema> for MemoryStore {
             updated_at: now,
             username,
             display_username: create_user.display_username,
-            two_factor_enabled: false,
+            two_factor_enabled: Some(false),
             role: create_user.role,
-            banned: false,
+            banned: Some(false),
             ban_reason: None,
             ban_expires: None,
             metadata: create_user
@@ -182,7 +182,7 @@ impl UserStore<BundledSchema> for MemoryStore {
             user.role = Some(role);
         }
         if let Some(banned) = update.banned {
-            user.banned = banned;
+            user.banned = Some(banned);
             if !banned {
                 user.ban_reason = None;
                 user.ban_expires = None;
@@ -195,7 +195,7 @@ impl UserStore<BundledSchema> for MemoryStore {
             user.ban_expires = Some(ban_expires);
         }
         if let Some(two_factor_enabled) = update.two_factor_enabled {
-            user.two_factor_enabled = two_factor_enabled;
+            user.two_factor_enabled = Some(two_factor_enabled);
         }
         if let Some(metadata) = update.metadata {
             user.metadata = metadata;

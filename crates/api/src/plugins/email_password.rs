@@ -644,7 +644,7 @@ pub(crate) async fn sign_up_core(
                 Ok((
                     SignUpResponse {
                         token: Some(token.clone()),
-                        user: UserView::from(&user),
+                        user: signup_context.user_view(&user),
                     },
                     Some(token),
                 ))
@@ -652,7 +652,7 @@ pub(crate) async fn sign_up_core(
                 Ok((
                     SignUpResponse {
                         token: None,
-                        user: UserView::from(&user),
+                        user: signup_context.user_view(&user),
                     },
                     None,
                 ))
@@ -728,7 +728,7 @@ async fn finalize_sign_in_with_user_core(
         redirect: false,
         token: token.clone(),
         url: None,
-        user: UserView::from(&issued.user),
+        user: ctx.user_view(&issued.user),
     };
     Ok(SignInCoreResult::Success {
         response,

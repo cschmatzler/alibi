@@ -19,14 +19,16 @@ let verification = EmailVerificationPlugin::with_config(EmailVerificationConfig 
 
 let auth = BetterAuth::<AppAuthSchema>::new(config)
     .store(store)
-    .plugin(EmailPasswordPlugin::new().require_email_verification(true))
+    .plugin(EmailPasswordPlugin::new().enable_username(false).require_email_verification(true))
     .plugin(verification)
     .build()
     .await?;
 ```
 
 The sender implements `SendVerificationEmail::send(user, url, token)`. The
-plugins share initialized configuration when registered independently.
+plugins share initialized configuration when registered independently. Use
+`enable_username(false)` for core email authentication without username
+registration, additional-input hooks, or endpoints.
 
 ## Client behavior
 
@@ -59,7 +61,9 @@ proofs return the updated user and preserve the flow's session behavior.
 Signup, required-signin and change-email notifications await the sender and log
 delivery failures while retaining the issued authentication state. Direct
 `send-verification-email` calls propagate the sender's error. This distinction
-matches the pinned runtime's notification policy.
+matches the pinned runtime's notification policy. Unauthenticated requests keep
+a 500 ms timing floor for missing, verified, unverified, and delivery-error
+mailboxes. Authenticated requests require the same mailbox after normalization.
 
 `before_email_verification` runs before the user update;
 `after_email_verification` receives the persisted updated user. Hook errors

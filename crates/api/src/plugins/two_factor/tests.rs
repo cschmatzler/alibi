@@ -212,7 +212,7 @@ async fn test_verify_existing_session_factor_enables_two_factor_and_reissues_ses
             .await
             .unwrap();
 
-    assert!(!response.user.two_factor_enabled);
+    assert_eq!(response.user.two_factor_enabled, Some(false));
     // Upstream returns the old snapshot while rotating the browser cookie.
     assert_eq!(response.token, session.token);
     let rotated = better_auth_core::utils::cookie_utils::verify_cookie_value(

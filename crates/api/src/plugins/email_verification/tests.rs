@@ -151,9 +151,9 @@ fn make_test_user(email: &str, verified: bool) -> UserView {
         updated_at: Utc::now(),
         username: None,
         display_username: None,
-        two_factor_enabled: false,
+        two_factor_enabled: Some(false),
         role: None,
-        banned: false,
+        banned: Some(false),
         ban_reason: None,
         ban_expires: None,
         metadata: serde_json::Value::Null,
@@ -490,9 +490,9 @@ fn test_to_user_preserves_fields() {
         updated_at: Utc::now(),
         username: Some("testuser".into()),
         display_username: Some("TestUser".into()),
-        two_factor_enabled: true,
+        two_factor_enabled: Some(true),
         role: Some("admin".into()),
-        banned: true,
+        banned: Some(true),
         ban_reason: Some("spam".into()),
         ban_expires: None,
         metadata: serde_json::Value::Null,
@@ -513,9 +513,9 @@ fn test_to_user_preserves_fields() {
     );
     assert_eq!(converted.username.as_deref(), Some("testuser"));
     assert_eq!(converted.display_username.as_deref(), Some("TestUser"));
-    assert!(converted.two_factor_enabled);
+    assert_eq!(converted.two_factor_enabled, Some(true));
     assert_eq!(converted.role.as_deref(), Some("admin"));
-    assert!(converted.banned);
+    assert_eq!(converted.banned, Some(true));
     assert_eq!(converted.ban_reason.as_deref(), Some("spam"));
 }
 

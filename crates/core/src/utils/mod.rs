@@ -5,3 +5,5 @@ pub(crate) mod email;
 pub mod password;
 pub mod sessions;
 pub mod username;
+
+pub mod datetime;
