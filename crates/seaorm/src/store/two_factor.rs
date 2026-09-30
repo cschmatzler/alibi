@@ -85,7 +85,7 @@ where
     async fn increment_two_factor_failure(&self, id: &str) -> AuthResult<Option<TwoFactor>> {
         self.apply_factor_update(Entity::update_many().filter(Column::Id.eq(id)).col_expr(
             Column::FailedVerificationCount,
-            Expr::cust("COALESCE(\"failed_verification_count\", 0) + 1"),
+            Expr::cust("\"failed_verification_count\" + 1"),
         ))
         .await
     }

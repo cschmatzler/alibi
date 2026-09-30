@@ -14,7 +14,7 @@ on an exact row ID. No associated factor model or broad derive contract changes
 are introduced. The schema registry now emits the corresponding extra entity.
 
 Store operations follow the source adapter's exact-row predicates: atomic
-COALESCE(counter,0)+1 returning its snapshot; threshold-guarded lock; conditional
+counter+1 returning its snapshot; threshold-guarded lock; conditional
 expired-lock clearing; unconditional success reset; and backup-code compare and
 swap against the stored generation. Unsupported custom stores return explicit
 NotImplemented errors. PluginStore forwards every operation. MemoryStore uses
@@ -41,13 +41,24 @@ behavior and store readback of integral, fractional and null counters. It fails
 on the true frozen a1bd1c9 baseline with `no such column: verified`
 (`/tmp/two-factor-storage-upgrade-before.log`). The concurrent test uses eight
 separately opened, single-connection databases against one file. It proves all
-eight nullable-counter increments survive with unique returned snapshots, a
+eight zero-based counter increments survive with unique returned snapshots, a
 future lock resists clearing, expired clearing has one winner, a stale threshold
 write cannot recreate a reset lock, and backup CAS has one winner. A second
 generation for the same owner remains byte-for-byte unchanged. The fixture
 removes the preexisting unique owner index to represent an installed/custom
 schema that permits multiple generations; this prerequisite does not silently
 change that unrelated existing constraint.
+
+The published plugin comment says nullable historical counters are supported,
+but the actual 1.7.6 Kysely adapter assigns `field + delta` without COALESCE.
+Actual Bun SQLite failed-verification requests therefore retain NULL, and the
+threshold comparison cannot lock that row even with threshold zero. The API
+owner SDK configuration case preserves this behavior; the installed-store test
+also asserts NULL increment/readback and no threshold-zero lock. That assertion
+fails against a1f2d431's original COALESCE implementation (Some(1) versus None),
+recorded in `/tmp/two-factor-storage-null-before.log`. Success still explicitly
+resets the counter to zero. Other upstream adapters can handle NULL differently;
+this SQLite prerequisite does not claim their nullable arithmetic semantics.
 
 One core extension-contract test proves all unsupported security operations
 return 501 instead of succeeding. The real SQLite tests cannot exercise that

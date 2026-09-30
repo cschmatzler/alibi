@@ -363,7 +363,8 @@ pub trait TwoFactorStore: Send + Sync {
             "Exact factor updates are not supported by this store",
         ))
     }
-    /// Atomically increment COALESCE(counter, 0), returning the winning row.
+    /// Atomically increment the stored counter, returning the winning row.
+    /// SQL-backed adapters preserve NULL, matching the pinned Kysely adapter.
     async fn increment_two_factor_failure(&self, id: &str) -> AuthResult<Option<TwoFactor>> {
         let _ = id;
         Err(AuthError::not_implemented(

@@ -67,6 +67,17 @@ async fn installed_factor_policy_upgrade_retains_rows_custom_schema_and_is_idemp
         .unwrap();
     assert_eq!(nullable.verified, None);
     assert_eq!(nullable.failed_verification_count, None);
+    let incremented_null = store
+        .increment_two_factor_failure(&nullable.id)
+        .await?
+        .unwrap();
+    assert_eq!(incremented_null.failed_verification_count, None);
+    assert!(
+        store
+            .set_two_factor_lock_if_count_at_least(&nullable.id, 0.0, Utc::now())
+            .await?
+            .is_none()
+    );
     let _ = db
         .execute_unprepared(
             "UPDATE two_factor SET failed_verification_count=0.25 WHERE id='defaults'",
@@ -99,8 +110,8 @@ async fn independent_factor_connections_increment_nullable_numbers_and_condition
         let _ = db.execute_unprepared("INSERT INTO users(id,name,email,email_verified,metadata,created_at,updated_at) VALUES('owner','Owner','owner@fixture.test',0,'{}','2025-01-02T03:04:05Z','2025-01-02T03:04:05Z')").await?;
         let config = AuthConfig::new("factor-policy-secret-at-least-32-characters");
         let store = SeaOrmStore::<BundledSchema>::new(config.clone(), db.clone());
-        let factor = store.create_two_factor(CreateTwoFactor { user_id:"owner".into(),secret:"secret".into(),backup_codes:"old-backup".into(),failed_verification_count:None,..Default::default() }).await?;
-        assert_eq!(factor.failed_verification_count, None);
+        let factor = store.create_two_factor(CreateTwoFactor { user_id:"owner".into(),secret:"secret".into(),backup_codes:"old-backup".into(),..Default::default() }).await?;
+        assert_eq!(factor.failed_verification_count, Some(0.0));
         let _ = db.execute_unprepared("DROP INDEX idx_two_factor_user_id").await?;
         // Installed/custom schemas can contain multiple generations for one owner.
         let sibling = store.create_two_factor(CreateTwoFactor { user_id:"owner".into(),secret:"other-secret".into(),backup_codes:"other-backup".into(),..Default::default() }).await?;
