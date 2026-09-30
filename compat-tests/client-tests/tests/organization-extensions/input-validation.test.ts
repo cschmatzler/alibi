@@ -7,7 +7,7 @@ const storedSchema = z.object({
   sessions:z.array(z.object({id:z.string(),token:z.string(),userId:z.string(),activeOrganizationId:z.string().nullable()})),
   orphanOrganizations:z.array(z.object({id:z.string(),name:z.string(),slug:z.string()})),
   receipts:z.array(z.object({operation:z.string(),userId:z.string(),email:z.string(),name:z.string()})),
-});
+}, ["POST /organization/create", "POST /organization/update"]);
 async function state(ctx:ScenarioContext,email:string) {
   const response=await ctx.rawRequest({path:`/__test/organization-creation-state?email=${encodeURIComponent(email)}&includeMetadata=true`});
   expect(response.status).toBe(200);
@@ -71,7 +71,7 @@ compatScenario("organization metadata record validation precedes policy callback
   expect(z.object({metadata:z.unknown()}).parse(empty.data).metadata).toEqual({});
   expect((await state(ctx,actor.email)).organizations[0]?.metadata).toBe("{}");
   return {signup:ctx.snapshot(actor.signup),created:ctx.snapshot(actor.created),before,observations,valid:ctx.snapshot(valid),after,empty:ctx.snapshot(empty),final:await state(ctx,actor.email)};
-});
+}, ["POST /organization/create", "POST /organization/update"]);
 
 compatScenario("organization input schemas reject ordered invalid fields before guest authentication and persist no mutations", async ctx => {
   const actor=await owner(ctx);
@@ -113,7 +113,7 @@ compatScenario("organization input schemas reject ordered invalid fields before 
   expect(after.organizations[0]?.metadata).toBe(before.organizations[0]?.metadata);
   expect(after.sessions).toEqual(before.sessions);
   return {before,observations,validGuest,corrected:ctx.snapshot(corrected),after};
-});
+}, ["POST /organization/create", "POST /organization/update"]);
 
 compatScenario("organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs", async ctx => {
   const actor=await owner(ctx);
