@@ -8,7 +8,7 @@ use std::{fmt, sync::Arc};
 #[derive(Clone, Default)]
 pub struct FieldValues {
     values: IndexMap<String, JsValue>,
-    adapter_transforms: IndexMap<String, FieldTransform>,
+    adapter_fields: Option<Arc<FieldConfigs>>,
     undefined_input_keys: IndexSet<String>,
     transform_omitted: bool,
 }
@@ -24,22 +24,43 @@ impl FieldValues {
     /// Consume pending adapter callbacks once using current values after database hooks.
     /// Custom stores must call this immediately before binding configured session fields.
     pub fn apply_adapter_transforms(&mut self) -> crate::AuthResult<()> {
-        for (name, transform) in std::mem::take(&mut self.adapter_transforms) {
-            if !self.transform_omitted && !self.values.contains_key(&name) {
-                continue;
-            }
-            match transform(self.values.get(&name))? {
-                Some(value) => {
-                    let _ = self.values.insert(name, value);
+        if let Some(fields) = self.adapter_fields.take() {
+            for (name, field) in &*fields {
+                if !self.transform_omitted && !self.values.contains_key(name) {
+                    continue;
                 }
-                None => {
-                    let _ = self.values.shift_remove(&name);
+                if self.transform_omitted
+                    && !self.values.contains_key(name)
+                    && let Some(default) = &field.default
+                {
+                    let _ = self.values.insert(name.clone(), default.value());
+                }
+                if let Some(transform) = &field.transform {
+                    match transform(self.values.get(name))? {
+                        Some(value) => {
+                            let _ = self.values.insert(name.clone(), value);
+                        }
+                        None => {
+                            let _ = self.values.shift_remove(name);
+                        }
+                    }
                 }
             }
         }
         self.undefined_input_keys.clear();
         self.transform_omitted = false;
         Ok(())
+    }
+    /// Preserve an existing trusted creation value before adapter defaults are applied.
+    /// Database hooks may already have supplied a mapped replacement, which wins.
+    pub fn preserve_creation_value(&mut self, name: &str, value: JsValue) {
+        if self
+            .adapter_fields
+            .as_ref()
+            .is_some_and(|fields| fields.contains_key(name))
+        {
+            let _ = self.values.entry(name.to_owned()).or_insert(value);
+        }
     }
 }
 impl fmt::Debug for FieldValues {
@@ -215,19 +236,6 @@ pub enum FieldInputError {
 #[derive(Debug, Clone, Default)]
 pub struct SessionFields(pub IndexMap<String, FieldConfig>);
 impl SessionFields {
-    pub(crate) fn attach_adapter_transforms(&self, values: &mut FieldValues, creation: bool) {
-        values.transform_omitted = creation;
-        values.adapter_transforms = self
-            .0
-            .iter()
-            .filter_map(|(name, field)| {
-                field
-                    .transform
-                    .as_ref()
-                    .map(|transform| (name.clone(), transform.clone()))
-            })
-            .collect();
-    }
     pub fn defaults(&self, values: &mut FieldValues) {
         for (name, field) in &self.0 {
             if let Some(default) = &field.default {
@@ -290,5 +298,16 @@ fn truthy(value: &JsValue) -> bool {
         JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
         JsValue::String(value) => !value.is_empty(),
         JsValue::Array(_) | JsValue::Object(_) => true,
+    }
+}
+
+/// Immutable adapter schema policies: plugins first, application configuration last.
+/// This differs from input/output SessionFields, matching getAuthTables precedence.
+#[derive(Debug, Clone, Default)]
+pub struct SessionAdapterFields(pub Arc<FieldConfigs>);
+impl SessionAdapterFields {
+    pub(crate) fn attach(&self, values: &mut FieldValues, creation: bool) {
+        values.transform_omitted = creation;
+        values.adapter_fields = Some(self.0.clone());
     }
 }

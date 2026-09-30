@@ -139,9 +139,18 @@ impl<S: AuthSchema> AuthBuilder<S> {
 
         let mut session_fields =
             better_auth_core::field_policy::SessionFields(config.session.additional_fields.clone());
+        let mut adapter_fields = better_auth_core::field_policy::FieldConfigs::new();
         for plugin in &self.plugins {
-            session_fields.0.extend(plugin.session_fields());
+            let fields = plugin.session_fields();
+            adapter_fields.extend(fields.clone());
+            session_fields.0.extend(fields);
         }
+        adapter_fields.extend(config.session.additional_fields.clone());
+        init_context
+            .extensions
+            .insert(better_auth_core::field_policy::SessionAdapterFields(
+                Arc::new(adapter_fields),
+            ));
         init_context.extensions.insert(session_fields);
 
         let store = init_context.database_with_registered_transforms();

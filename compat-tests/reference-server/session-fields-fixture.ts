@@ -17,7 +17,7 @@ export async function createSessionFieldsFixture(database:Database, shared:Param
       if(typeof value==="number"&&!Number.isFinite(value))return {value:String(value)};
       if(Object.is(value,-0))return {value:"-0"};
       return {issues:[{message:"configured validation rejected the value"}]};
-    }}}},transform:{input:(value:unknown)=>`stored:${typeof value==="string"?value:""}`}},...(name.endsWith("plugins")?{activeOrganizationId:{type:"string",required:false},activeTeamId:{type:"string",required:false},impersonatedBy:{type:"string",required:false}}:{})} as const;
+    }}}},transform:{input:(value:unknown)=>`stored:${typeof value==="string"?value:""}`}},...(name.endsWith("plugins")?{activeOrganizationId:{type:"string",required:true,input:true,returned:false,defaultValue:"configured-default-org",transform:{input:(value:unknown)=>`adapter:${value}`}},activeTeamId:{type:"string",required:false},impersonatedBy:{type:"string",required:false}}:{activeOrganizationId:{type:"string",required:false,defaultValue:"declared-without-plugin"}})} as const;
     const instance=betterAuth({...shared,database,baseURL:origin,basePath:`/__test/profiles/${name}/api/auth`,plugins:name.endsWith("plugins")?[admin(),organization({teams:{enabled:true}})]:[],session:{additionalFields:extra},databaseHooks:{session:{update:{async before(data,ctx){
       if(data.label==="delete-before")database.query('DELETE FROM session WHERE token=?').run(ctx?.context.session?.session.token ?? "");
       if(data.label==="cancel-before")return false;

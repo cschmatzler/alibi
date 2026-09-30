@@ -6,7 +6,7 @@
 )]
 //! Application storage and native hook contracts; the SDK owns built-in wire parity.
 use async_trait::async_trait;
-use better_auth::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
+use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
 use better_auth::{
     AuthBuilder, AuthConfig,
     field_policy::{FieldConfig, FieldValues},
@@ -38,6 +38,7 @@ impl SeaOrmHooks<ApplicationSchema> for ApplicationHook {
                 .and_then(JsValue::as_str),
             Some("server-secret")
         );
+        data.active_organization_id = Some("native-organization".into());
         Ok(HookControl::Continue)
     }
     async fn before_update_session(
@@ -121,10 +122,22 @@ async fn real_custom_session_columns_preserve_affinity_json_defaults_owner_and_m
         "payload".into(),
         FieldConfig::new(json!({"type":"json"})).default_value(json!({"initial":true})),
     );
+    _ = config.session.additional_fields.insert(
+        "activeOrganizationId".into(),
+        FieldConfig::new(json!({"type":"string"}))
+            .default_value(json!("must-not-overwrite-native-hook"))
+            .transform(|value| {
+                Ok(Some(JsValue::String(format!(
+                    "stored:{}",
+                    value.and_then(JsValue::as_str).unwrap_or("undefined")
+                ))))
+            }),
+    );
     let auth = AuthBuilder::<ApplicationSchema>::new(config.clone())
         .store(SeaOrmStore::<ApplicationSchema>::new(config, db.clone()).hook(ApplicationHook))
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .plugin(SessionManagementPlugin::new())
+        .plugin(OrganizationPlugin::new())
         .build()
         .await
         .unwrap();
@@ -147,6 +160,10 @@ async fn real_custom_session_columns_preserve_affinity_json_defaults_owner_and_m
     let initial = auth.store().get_session(token).await.unwrap().unwrap();
     assert_eq!(initial.label.as_deref(), Some("configured-default"));
     assert_eq!(initial.hidden.as_deref(), Some("server-secret"));
+    assert_eq!(
+        initial.active_organization_id.as_deref(),
+        Some("stored:native-organization")
+    );
     assert_eq!(&*initial.payload, &json!({"initial":true}));
     let owner = initial.user_id.clone();
     _ = db

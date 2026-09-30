@@ -251,9 +251,36 @@ impl SessionStore<BundledSchema> for MemoryStore {
         Ok(Some(session.clone()))
     }
     async fn create_session(&self, mut create_session: CreateSession) -> AuthResult<SessionView> {
+        for (name, value) in [
+            (
+                "activeOrganizationId",
+                create_session.active_organization_id.as_ref(),
+            ),
+            ("activeTeamId", create_session.active_team_id.as_ref()),
+            ("impersonatedBy", create_session.impersonated_by.as_ref()),
+        ] {
+            if let Some(value) = value {
+                create_session.additional_fields.preserve_creation_value(
+                    name,
+                    crate::utils::json::JsValue::String(value.clone()),
+                );
+            }
+        }
         create_session
             .additional_fields
             .apply_adapter_transforms()?;
+        for (name, destination) in [
+            (
+                "activeOrganizationId",
+                &mut create_session.active_organization_id,
+            ),
+            ("activeTeamId", &mut create_session.active_team_id),
+            ("impersonatedBy", &mut create_session.impersonated_by),
+        ] {
+            if let Some(value) = create_session.additional_fields.shift_remove(name) {
+                *destination = value.as_str().map(str::to_owned);
+            }
+        }
         let now = Utc::now();
         let token = create_session
             .token

@@ -149,6 +149,20 @@ pub(super) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
             for field in ["activeOrganizationId", "activeTeamId", "impersonatedBy"] {
                 _ = fields.insert(field.into(), FieldConfig::new(json!({"type":"string"})));
             }
+            let mut conflict = FieldConfig::new(json!({"type":"string"}))
+                .hidden()
+                .default_value(json!("configured-default-org"))
+                .transform(|value| {
+                    Ok(Some(JsValue::String(format!(
+                        "adapter:{}",
+                        value.and_then(JsValue::as_str).unwrap_or("undefined")
+                    ))))
+                });
+            conflict.required = true;
+            _ = fields.insert("activeOrganizationId".into(), conflict);
+        }
+        if !name.ends_with("plugins") {
+            _ = fields.insert("activeOrganizationId".into(), FieldConfig::new(json!({"type":"string"})).default_value(json!("declared-without-plugin")));
         }
         let mut builder = AuthBuilder::<ApplicationSchema>::new(config.clone())
             .store(SeaOrmStore::<ApplicationSchema>::new(config, db.clone()).hook(Callbacks))

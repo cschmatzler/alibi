@@ -21,6 +21,7 @@ pub(crate) struct PluginStore<S: AuthSchema> {
     inner: Arc<dyn AuthStore<S>>,
     transforms: UserTransforms,
     session_fields: crate::field_policy::SessionFields,
+    adapter_fields: crate::field_policy::SessionAdapterFields,
 }
 
 impl<S: AuthSchema> PluginStore<S> {
@@ -28,11 +29,13 @@ impl<S: AuthSchema> PluginStore<S> {
         inner: Arc<dyn AuthStore<S>>,
         transforms: UserTransforms,
         session_fields: crate::field_policy::SessionFields,
+        adapter_fields: crate::field_policy::SessionAdapterFields,
     ) -> Self {
         Self {
             inner,
             transforms,
             session_fields,
+            adapter_fields,
         }
     }
 }
@@ -89,15 +92,14 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         token: &str,
         mut fields: crate::field_policy::FieldValues,
     ) -> AuthResult<Option<S::Session>> {
-        self.session_fields
-            .attach_adapter_transforms(&mut fields, false);
+        self.adapter_fields.attach(&mut fields, false);
         self.inner.update_session_fields(token, fields).await
     }
     async fn create_session(&self, mut create_session: CreateSession) -> AuthResult<S::Session> {
         self.session_fields
             .defaults(&mut create_session.additional_fields);
-        self.session_fields
-            .attach_adapter_transforms(&mut create_session.additional_fields, true);
+        self.adapter_fields
+            .attach(&mut create_session.additional_fields, true);
         self.inner.create_session(create_session).await
     }
     async fn get_session(&self, token: &str) -> AuthResult<Option<S::Session>> {
@@ -659,6 +661,7 @@ struct PluginTransaction<'a, S: AuthSchema> {
     inner: &'a dyn AuthTransaction<S>,
     creates: Vec<UserCreateTransform>,
     session_fields: crate::field_policy::SessionFields,
+    adapter_fields: crate::field_policy::SessionAdapterFields,
 }
 
 #[async_trait]
@@ -673,8 +676,8 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
     }
     async fn create_session(&self, mut data: CreateSession) -> AuthResult<S::Session> {
         self.session_fields.defaults(&mut data.additional_fields);
-        self.session_fields
-            .attach_adapter_transforms(&mut data.additional_fields, true);
+        self.adapter_fields
+            .attach(&mut data.additional_fields, true);
         self.inner.create_session(data).await
     }
     async fn create_verification(&self, data: CreateVerification) -> AuthResult<S::Verification> {
@@ -690,6 +693,7 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
     ) -> AuthResult<BoxedTransactionValue> {
         let creates = self.transforms.creates.clone();
         let session_fields = self.session_fields.clone();
+        let adapter_fields = self.adapter_fields.clone();
         self.inner
             .transaction_boxed(Box::new(move |inner| {
                 Box::pin(async move {
@@ -697,6 +701,7 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
                         inner,
                         creates,
                         session_fields,
+                        adapter_fields,
                     };
                     work(&transaction).await
                 })

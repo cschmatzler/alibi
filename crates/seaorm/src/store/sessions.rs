@@ -56,6 +56,21 @@ where
             .take()
             .unwrap_or_else(better_auth_core::utils::sessions::generate_session_token);
         let mut fields = std::mem::take(&mut create_session.additional_fields);
+        for (name, value) in [
+            (
+                "activeOrganizationId",
+                create_session.active_organization_id.as_ref(),
+            ),
+            ("activeTeamId", create_session.active_team_id.as_ref()),
+            ("impersonatedBy", create_session.impersonated_by.as_ref()),
+        ] {
+            if let Some(value) = value {
+                fields.preserve_creation_value(
+                    name,
+                    better_auth_core::utils::json::JsValue::String(value.clone()),
+                );
+            }
+        }
         fields.apply_adapter_transforms()?;
         let mut active = S::Session::new_active(None, token, create_session, now);
         if !fields.is_empty() {

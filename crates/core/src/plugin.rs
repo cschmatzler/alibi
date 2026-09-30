@@ -353,6 +353,10 @@ impl<S: AuthSchema> AuthInitContext<S> {
             self.database.clone(),
             transforms,
             fields.map(|fields| (*fields).clone()).unwrap_or_default(),
+            self.extensions
+                .get::<crate::field_policy::SessionAdapterFields>()
+                .map(|fields| (*fields).clone())
+                .unwrap_or_default(),
         ))
     }
 
@@ -508,7 +512,12 @@ impl<S: AuthSchema> AuthContext<S> {
                 }
             }
         }
-        if self.feature_enabled("admin.enabled") {
+        let declared = |name: &str| {
+            self.extensions
+                .get::<crate::field_policy::SessionFields>()
+                .is_some_and(|fields| fields.0.contains_key(name))
+        };
+        if self.feature_enabled("admin.enabled") || declared("impersonatedBy") {
             if view.impersonated_by.is_none() {
                 _ = view
                     .extension_fields
@@ -517,7 +526,7 @@ impl<S: AuthSchema> AuthContext<S> {
         } else {
             view.impersonated_by = None;
         }
-        if self.feature_enabled("organization.enabled") {
+        if self.feature_enabled("organization.enabled") || declared("activeOrganizationId") {
             if view.active_organization_id.is_none() {
                 _ = view
                     .extension_fields
@@ -527,7 +536,7 @@ impl<S: AuthSchema> AuthContext<S> {
             view.active_organization_id = None;
         }
 
-        if self.feature_enabled("organization.teams.enabled") {
+        if self.feature_enabled("organization.teams.enabled") || declared("activeTeamId") {
             if view.active_team_id.is_none() {
                 _ = view
                     .extension_fields

@@ -40,6 +40,7 @@ async function fieldsScenario(ctx:ScenarioContext,profile:FixtureProfile){
   const initial=responseSession.parse(get.data).session;
   expect(initial).toMatchObject({label:"initial",serverOnly:"locked",callback:"callback-created",payload:{initial:true},transformed:"generated-without-default",validated:"stored:"});
   expect(initial).not.toHaveProperty("hidden");
+  expect(initial.activeOrganizationId).toBe(profile==="session-fields-plugins"?"adapter:configured-default-org":"declared-without-plugin");
   const read=async(target=email)=>{
     const result=await ctx.rawRequest({path:`/__test/session-field-state?email=${encodeURIComponent(target)}`});
     expect(result.status).toBe(200);
@@ -122,6 +123,13 @@ async function fieldsScenario(ctx:ScenarioContext,profile:FixtureProfile){
   expect(await read(otherEmail)).toEqual(otherBefore);
   expect((await read()).find(row=>row.id===sameOwnerSession.id)).toEqual(unrelatedBefore);
   let pluginRejections=[];
+  if(profile==="session-fields") {
+    const explicit=await actor.client.$fetch("/update-session",{method:"POST",body:{activeOrganizationId:"declared-update"}});
+    expect(explicit.error).toBeNull();
+    expect(responseSession.parse(explicit.data).session.activeOrganizationId).toBe("declared-update");
+    expect((await read()).find(row=>row.id===initial.id)?.activeOrganizationId).toBe("declared-update");
+    pluginRejections.push(ctx.snapshot(explicit));
+  }
   if(profile==="session-fields-plugins") {
     for(const name of ["activeOrganizationId","activeTeamId","impersonatedBy"]) {
       const result=await actor.client.$fetch("/update-session",{method:"POST",body:{[name]:otherSession.userId}});

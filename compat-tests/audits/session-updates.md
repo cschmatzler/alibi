@@ -20,8 +20,13 @@ returned undefined: upstream Object.keys is nonempty even though binding omits
 that value. Callback input/output None represents JavaScript undefined, without
 adding undefined to JSON values. Creation invokes a configured adapter transform
 for omitted fields; update skips omitted/undefined fields unless a before hook
-inserts a current value. Configured creation defaults are evaluated before hooks
-and are not reevaluated on update.
+inserts a current value. Input-policy creation defaults are evaluated before hooks;
+remaining adapter defaults are evaluated at binding and neither applies on update.
+Two immutable registries preserve the source distinction: SessionFields merges
+configuration then plugins for parsing/output/default preparation, whereas
+SessionAdapterFields merges plugins then configuration for adapter defaults and
+transforms. Declared builtin values supplied by trusted creation hooks survive
+adapter defaults and reach the configured transform.
 
 Input parsing and adapter binding are separate transform stages. A validator
 wins at parsing, but an adapter transform still runs after database before hooks.
@@ -52,7 +57,7 @@ persisted token used for authorization.
 
 Evidence:
 
-- Three real SDK scenarios / 370 assertions cover the ordinary no-fields route and two concrete
+- Three real SDK scenarios / 382 assertions cover the ordinary no-fields route and two concrete
   custom-schema profiles, one with admin and organization/team policy overrides.
   They compare wire responses/cookies and persisted owner/current-token,
   same-owner second-token and foreign-user state. Controls cover invalid input,
@@ -60,17 +65,23 @@ Evidence:
   transforms, validator precedence, raw numeric callbacks/SQLite text affinity,
   JSON, hook mutation, undefined output, callback errors, browser preferences,
   cancellation and deletion. The initial route control fails on the prior Rust
-  implementation with HTTP404 versus the pinned HTTP401.
+  implementation with HTTP404 versus the pinned HTTP401. A supplemental actual
+  config conflict also failed before repair: pinned storage/wire contained
+  adapter:configured-default-org while Rust returned null. Its configured hidden
+  declaration still returns on the auth wire because the plugin output policy
+  overrides configuration, as the source requires.
 - The public-builder SQLite test uses a real application AuthEntity model,
   prepared JSON columns, dynamic default count, and persisted native model hooks.
   A nonnull undeclared physical-column sentinel demonstrated a pre-fix output
-  leak, then passes with the registered-field projection.
+  leak, then passes with the registered-field projection. A trusted creation-hook
+  organization value wins over a conflicting adapter default and is transformed
+  before real typed storage binding.
 - The manual numeric-ID application schema compiles with default methods and
   rejects an unbound configured field without changing owner, token or updatedAt.
   Existing manual schema ID/migration cases remain passing.
 - Existing session SDK and native refresh/policy/lifecycle scenarios remain the
   owners of shared expiry, revocation and middleware behavior. The focused session
-  SDK directory passes 16 scenarios / 684 assertions; 15 native sibling cases and
+  SDK directory passes 16 scenarios / 696 assertions; 15 native sibling cases and
   13 API session unit cases pass. Production crates and the new custom-model
   native test pass strict Clippy; core tests compile, TS typecheck and formatting
   pass. The manual-schema file retains two pre-existing strict test-Clippy
@@ -88,3 +99,10 @@ and configured-field metadata are integrated with the generated document proof.
 The 2FA disable replacement helper must preserve trusted additional_fields by
 collecting current stored fields into FieldValues; the coordinator owns that
 integration.
+
+Explicitly declared builtin-shaped application fields remain visible without the
+corresponding plugin; undeclared physical columns stay private. The ordinary
+profile declares activeOrganizationId without organization, proves its configured
+creation default and current-token update through the SDK and real SQLite state.
+The regression failed before the projection repair (Rust omitted the persisted
+value while pinned output returned it).
