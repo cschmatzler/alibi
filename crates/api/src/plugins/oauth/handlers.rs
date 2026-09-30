@@ -765,25 +765,28 @@ async fn process_oauth_sign_in(
         apply_default_role(ctx, &mut create_user);
         create_user.image = user_info.image.clone();
 
-        let created_user = ctx
-            .database
-            .create_user(create_user)
-            .await
-            .map_err(|_| "unable to create user".to_string())?;
-
-        let created_account = ctx
-            .database
-            .create_account(CreateAccount {
-                user_id: created_user.id().to_string(),
-                account_id: user_info.id.clone(),
-                provider_id: provider_name.to_string(),
-                access_token: token_bundle.access_token,
-                refresh_token: token_bundle.refresh_token,
-                id_token: token_bundle.id_token,
-                access_token_expires_at: tokens.access_token_expires_at,
-                refresh_token_expires_at: tokens.refresh_token_expires_at,
-                scope: (!tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
-                password: None,
+        let mut create_account = CreateAccount {
+            user_id: String::new(),
+            account_id: user_info.id.clone(),
+            provider_id: provider_name.to_string(),
+            access_token: token_bundle.access_token,
+            refresh_token: token_bundle.refresh_token,
+            id_token: token_bundle.id_token,
+            access_token_expires_at: tokens.access_token_expires_at,
+            refresh_token_expires_at: tokens.refresh_token_expires_at,
+            scope: (!tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
+            password: None,
+        };
+        // OAuth registration commits its identity and provider binding together.
+        // Notifications and session creation follow the committed transaction.
+        let (created_user, created_account) =
+            better_auth_core::store::transaction(ctx.database.as_ref(), move |tx| {
+                Box::pin(async move {
+                    let user = tx.create_user(create_user).await?;
+                    create_account.user_id = user.id().to_string();
+                    let account = tx.create_account(create_account).await?;
+                    Ok((user, account))
+                })
             })
             .await
             .map_err(|_| "unable to create user".to_string())?;
