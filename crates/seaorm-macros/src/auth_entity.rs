@@ -198,6 +198,21 @@ fn gen_user(
         } }
     };
 
+    let prepare_json_metadata = if has("metadata") {
+        quote! {
+            fn prepare_json_metadata(active:&mut Self::ActiveModel,backend:#seaorm_root::sea_orm::DbBackend)->#core_root::AuthResult<()> {
+                if let #seaorm_root::sea_orm::ActiveValue::Set(value)=&active.metadata {
+                    active.metadata=#seaorm_root::sea_orm::ActiveValue::Set(
+                        #seaorm_root::json_metadata::prepare_metadata_value(value.clone(),backend)?
+                    );
+                }
+                Ok(())
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     // new_active — plugin fields get Set(default) when present, omitted when absent
     let plugin_new_active = plugin_set_fields_user(has, optional, seaorm_root, core_root);
 
@@ -260,6 +275,7 @@ fn gen_user(
             fn email_column() -> Self::Column { Column::Email }
             #username_column_impl
             #phone_number_column_impl
+            #prepare_json_metadata
             fn name_column() -> Self::Column { Column::Name }
             fn created_at_column() -> Self::Column { Column::CreatedAt }
             fn parse_id(id: &str) -> #core_root::AuthResult<Self::Id> {
@@ -353,7 +369,7 @@ fn plugin_set_fields_user(
     }
     if has("metadata") {
         let _ = core_root; // used in the json! path
-        out.push(quote! { metadata: #seaorm_root::sea_orm::ActiveValue::Set(create_user.metadata.unwrap_or(::serde_json::json!({}))) });
+        out.push(quote! { metadata: #seaorm_root::sea_orm::ActiveValue::Set(create_user.metadata.unwrap_or(::serde_json::json!({})).into()) });
     }
     for name in [
         "is_anonymous",
@@ -408,7 +424,7 @@ fn plugin_update_fields_user(
     if has("metadata") {
         out.push(quote! {
             if let ::std::option::Option::Some(metadata) = update.metadata {
-                active.metadata = #seaorm_root::sea_orm::ActiveValue::Set(metadata);
+                active.metadata = #seaorm_root::sea_orm::ActiveValue::Set(metadata.into());
             }
         });
     }

@@ -40,6 +40,14 @@ pub trait SeaOrmUserModel:
         now: DateTime<Utc>,
     ) -> Self::ActiveModel;
     fn apply_update(active: &mut Self::ActiveModel, update: UpdateUser, now: DateTime<Utc>);
+    /// Prepare JSON bindings after application hooks and before the atomic write.
+    /// Manual model implementations may retain their existing binding behavior.
+    fn prepare_json_metadata(
+        _active: &mut Self::ActiveModel,
+        _backend: sea_orm::DbBackend,
+    ) -> AuthResult<()> {
+        Ok(())
+    }
 }
 
 pub trait SeaOrmSessionModel:
