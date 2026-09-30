@@ -576,6 +576,34 @@
         ]
       }
     },
+    "/one-time-token/generate": {
+      "get": {
+        "operationId": "generate_one_time_token",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "summary": "generate one time token",
+        "tags": [
+          "One-time-token"
+        ]
+      }
+    },
+    "/one-time-token/verify": {
+      "post": {
+        "operationId": "verify_one_time_token",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "summary": "verify one time token",
+        "tags": [
+          "One-time-token"
+        ]
+      }
+    },
     "/organization/accept-invitation": {
       "post": {
         "operationId": "accept_invitation",
@@ -1318,5 +1346,34 @@
         ]
       }
     }
-  }
+  },
+  "tags": [
+    {
+      "name": "Admin"
+    },
+    {
+      "name": "Api-key"
+    },
+    {
+      "name": "Default"
+    },
+    {
+      "name": "Device-authorization"
+    },
+    {
+      "name": "One-time-token"
+    },
+    {
+      "name": "Organization"
+    },
+    {
+      "name": "Passkey"
+    },
+    {
+      "name": "Two-factor"
+    },
+    {
+      "name": "Username"
+    }
+  ]
 }

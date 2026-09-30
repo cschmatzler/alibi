@@ -202,12 +202,12 @@
     {
       "route": "GET /one-time-token/generate",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "one-time tokens transfer the original session once without creating another session",
+        "rejection": "one-time tokens transfer the original session once without creating another session",
+        "authorization": "one-time tokens transfer the original session once without creating another session",
+        "state": "one-time tokens transfer the original session once without creating another session"
       }
     },
     {
@@ -895,12 +895,12 @@
     {
       "route": "POST /one-time-token/verify",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "one-time tokens transfer the original session once without creating another session",
+        "rejection": "one-time tokens transfer the original session once without creating another session",
         "authorization": null,
-        "state": null
+        "state": "one-time tokens transfer the original session once without creating another session"
       }
     },
     {

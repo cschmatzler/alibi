@@ -17,9 +17,8 @@ use better_auth::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, OrganizationPlugin, PasskeyPlugin,
     PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
 };
-use better_auth::{
-    AuthBuilder, AuthConfig, AuthError, AuthRequest, AuthResult, BetterAuth, HttpMethod,
-};
+use better_auth::prelude::{AuthRequest, HttpMethod};
+use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_seaorm::sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set,
 };
@@ -144,7 +143,9 @@ pub(super) async fn router(
                             AuthRequest::new(HttpMethod::Post, "/__test/one-time-token");
                         for (name, value) in &headers {
                             if let Ok(value) = value.to_str() {
-                                let _ = request.headers.insert(name.as_str(), value);
+                                let _ = request
+                                    .headers
+                                    .insert(name.as_str().to_owned(), value.to_owned());
                             }
                         }
                         let (user, session) = auth

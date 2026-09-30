@@ -1,4 +1,3 @@
-mod one_time_token_fixture;
 
 use axum::{
     extract::Query,
@@ -45,6 +44,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
 mod lifecycle_fixture;
+mod one_time_token_fixture;
 mod organization_timestamp_fixture;
 mod parity_controls;
 mod session_profiles;

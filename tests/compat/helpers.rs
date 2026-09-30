@@ -7,6 +7,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, Once, OnceLock};
 
+use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
+
 use better_auth::{
     AuthBuilder, AuthConfig, BetterAuth,
     plugins::{
@@ -313,6 +315,7 @@ pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth
         .store(store)
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .plugin(SessionManagementPlugin::new())
+            .plugin(OneTimeTokenPlugin::new())
         .plugin(
             PasswordManagementPlugin::new()
                 .require_current_password(true)

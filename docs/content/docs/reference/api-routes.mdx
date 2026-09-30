@@ -161,3 +161,13 @@ This page documents the currently implemented routes; the enforced capability in
 <Callout>
 `view_backup_codes` is intentionally server-only in the pinned v1 compat surface. Use `TwoFactorPlugin::view_backup_codes(...)` from trusted server code when needed; there is no public `/two-factor/view-backup-codes` route.
 </Callout>
+
+## One-time tokens
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/one-time-token/generate` | Issue a credential for the current session |
+| `POST` | `/one-time-token/verify` | Consume the credential and transfer its session |
+
+[`OneTimeTokenPlugin`](/docs/plugins/one-time-token) also supports trusted server
+generation, hashed token storage and disabling client generation or cookie writes.
