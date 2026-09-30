@@ -276,6 +276,7 @@ compatScenario(
       staticState,
     });
   },
+  ["POST /api-key/create", "GET /get-session"],
 );
 
 compatScenario(
@@ -410,6 +411,7 @@ compatScenario(
       after,
     });
   },
+  ["POST /api-key/create"],
 );
 
 compatScenario(

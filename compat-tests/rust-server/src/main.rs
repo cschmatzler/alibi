@@ -49,6 +49,7 @@ use tokio::sync::Mutex;
 
 mod admin_banned_message_fixture;
 mod admin_permission_fixture;
+mod api_key_generation_fixture;
 mod api_key_hook_fixture;
 mod device_fixture;
 mod invitation_fixture;
@@ -65,7 +66,6 @@ mod phone_profiles;
 mod session_field_model;
 mod session_fields_fixture;
 mod session_profiles;
-mod api_key_generation_fixture;
 mod siwe_fixture;
 mod sqlite_fixture;
 mod two_factor_otp_fixture;
@@ -670,7 +670,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let admin_permission_router =
         admin_permission_fixture::router(&config, database.clone()).await?;
     let session_fields_router = session_fields_fixture::router(&config, database.clone()).await?;
-    let api_key_generation_router = api_key_generation_fixture::router(&config, database.clone()).await?;
+    let api_key_generation_router =
+        api_key_generation_fixture::router(&config, database.clone()).await?;
     let siwe_state = siwe_fixture::state();
     let siwe_profile_router =
         siwe_fixture::router(&config, database.clone(), siwe_state.clone()).await?;

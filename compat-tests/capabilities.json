@@ -89,9 +89,13 @@
         ],
         "rejection": [
           "api-key CRUD isolates configurations and preserves all-config listing",
-          "api-key custom getter replaces headers and validator binds the request owner before usage"
+          "api-key custom getter replaces headers and validator binds the request owner before usage",
+          "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization"
         ],
-        "authorization": "api-key organization ownership rejects unrelated users",
+        "authorization": [
+          "api-key organization ownership rejects unrelated users",
+          "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization"
+        ],
         "state": "api-key custom getter replaces headers and validator binds the request owner before usage"
       }
     },
@@ -180,7 +184,8 @@
           "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
           "phone signup binds integral and exponential JSON numbers to exact SQLite text",
           "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
-          "api-key custom getter replaces headers and validator binds the request owner before usage"
+          "api-key custom getter replaces headers and validator binds the request owner before usage",
+          "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -197,7 +202,8 @@
           "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
           "phone signup binds integral and exponential JSON numbers to exact SQLite text",
           "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
-          "api-key custom getter replaces headers and validator binds the request owner before usage"
+          "api-key custom getter replaces headers and validator binds the request owner before usage",
+          "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization"
         ]
       },
       "requiredEvidence": {
@@ -1097,15 +1103,23 @@
       "evidence": {
         "success": [
           "api-key CRUD isolates configurations and preserves all-config listing",
-          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
+          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
+          "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization",
+          "api-key creation rejects client authority before callbacks and preserves deliberate callback errors without secret writes"
         ],
         "rejection": [
           "api-key HTTP requests cannot select a different owner",
-          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
+          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
+          "api-key creation rejects client authority before callbacks and preserves deliberate callback errors without secret writes"
         ],
-        "authorization": "api-key HTTP requests cannot select a different owner",
+        "authorization": [
+          "api-key HTTP requests cannot select a different owner",
+          "api-key creation rejects client authority before callbacks and preserves deliberate callback errors without secret writes"
+        ],
         "state": [
-          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
+          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
+          "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization",
+          "api-key creation rejects client authority before callbacks and preserves deliberate callback errors without secret writes"
         ]
       }
     },
