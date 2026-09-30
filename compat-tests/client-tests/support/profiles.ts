@@ -7,7 +7,11 @@ export type FixtureProfile =
   | "session-cookie-cleanup"
   | "email-verification-required"
   | "email-verification-no-signup-mail"
-  | "email-verification-failing-notifications";
+  | "email-verification-failing-notifications"
+  | "ott-default"
+  | "ott-hashed"
+  | "ott-no-cookie"
+  | "ott-server-header";
 
 export function authProfilePath(profile: FixtureProfile): string {
   return `/__test/profiles/${profile}/api/auth`;

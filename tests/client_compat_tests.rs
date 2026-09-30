@@ -284,3 +284,9 @@ async fn full_client_compat() {
 async fn browser_client_compat() {
     run_client_compat(&["browser"]).await;
 }
+
+#[tokio::test]
+#[ignore = "starts external TS and Rust servers"]
+async fn one_time_token_client_compat() {
+    run_client_compat(&["tests/one-time-token"]).await;
+}

@@ -1,3 +1,5 @@
+mod one_time_token_fixture;
+
 use axum::{
     extract::Query,
     response::IntoResponse,
@@ -640,7 +642,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let lifecycle_fixture = lifecycle_fixture::LifecycleFixture::default();
     let lifecycle_controls = lifecycle_fixture.router();
     let auth = Arc::new(
-        AuthBuilder::<TestSchema>::new(config)
+        AuthBuilder::<TestSchema>::new(config.clone())
             .store(store)
             .rate_limit(RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new().enable_signup(true))
@@ -726,6 +728,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let auth_for_api_key_verify = auth.clone();
     let api_key_for_create = api_key_plugin.clone();
     let api_key_for_update = api_key_plugin.clone();
+
+    let ott_router = one_time_token_fixture::router(&config, reset_database.clone()).await?;
 
     let app = Router::new()
         .merge(lifecycle_controls)
@@ -1502,6 +1506,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }))
             }),
         )
+        .merge(ott_router)
         .nest("/api/auth", auth_router)
         .with_state(auth)
         .merge(verification_profile_router)

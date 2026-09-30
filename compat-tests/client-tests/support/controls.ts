@@ -207,3 +207,13 @@ export async function seedOAuthAccount(
 
   return result.accountId;
 }
+
+/** Read persisted accounts and sessions independently of the API response. */
+export async function readUserState(baseURL: string, args: { userId: string }): Promise<unknown> {
+  return getControl(baseURL, "/__test/user-state", args);
+}
+
+/** Inspect raw verification generations, including expired records. */
+export async function readVerificationState(baseURL: string, args: { identifier: string }): Promise<unknown> {
+  return getControl(baseURL, "/__test/verification-state", args);
+}

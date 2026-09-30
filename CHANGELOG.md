@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Add one-time credentials for existing-session transfer, hashed storage, server generation and new-session headers.
+
 ### Changed
 
 - Serialize organization, member, and invitation timestamps at JavaScript's

@@ -20,7 +20,8 @@
     "test:password-management": "bun test tests/password-management",
     "test:sessions": "bun test tests/sessions",
     "test:two-factor": "bun test tests/two-factor",
-    "test:user-management": "bun test tests/user-management"
+    "test:user-management": "bun test tests/user-management",
+    "test:one-time-token": "bun test tests/one-time-token"
   },
   "dependencies": {
     "@better-auth/api-key": "1.7.6",

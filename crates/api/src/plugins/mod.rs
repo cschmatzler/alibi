@@ -7,6 +7,7 @@ pub mod email_password;
 pub mod email_verification;
 pub mod helpers;
 pub mod oauth;
+pub mod one_time_token;
 pub mod organization;
 pub mod passkey;
 pub mod password_management;

@@ -7,7 +7,7 @@ import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { getMigrations } from "better-auth/db/migration";
 import { APIError } from "better-auth/api";
 import { apiKey } from "@better-auth/api-key";
-import { admin, deviceAuthorization, twoFactor, username } from "better-auth/plugins";
+import { admin, deviceAuthorization, twoFactor, username, oneTimeToken } from "better-auth/plugins";
 import { organization } from "better-auth/plugins/organization";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 
@@ -407,6 +407,18 @@ for (const name of ["session-deferred", "session-no-refresh", "session-deferred-
 
 const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
+
+const OTT_PROFILE_NAMES=["ott-default","ott-hashed","ott-no-cookie","ott-server-header"] as const;
+const ottProfiles=new Map(OTT_PROFILE_NAMES.map(name=>{
+  const options={...authOptions,basePath:`/__test/profiles/${name}/api/auth`,plugins:[...authOptions.plugins,oneTimeToken({
+    storeToken:name==="ott-hashed" ? "hashed" : "plain",
+    disableSetSessionCookie:name==="ott-no-cookie",
+    disableClientRequest:name==="ott-server-header",
+    setOttHeaderOnNewSession:name==="ott-server-header",
+  })]};
+  return [name,{auth:betterAuth(options),options}] as const;
+}));
+
 const RESET_MODELS = [
   "deviceCode",
   "passkey",
@@ -429,11 +441,65 @@ async function resetDatabaseState() {
   }
 }
 
+
+function controlRecord(value: unknown): value is Record<string,unknown> {
+  return value!==null && typeof value==="object" && !Array.isArray(value);
+}
+async function oneTimeTokenControl(request:Request,url:URL):Promise<Response|undefined> {
+  if (url.pathname === "/__test/user-state" && request.method === "GET") {
+    const userId = url.searchParams.get("userId");
+    if (!userId) return jsonResponse({ message: "userId is required" }, { status: 400 });
+    const where = [{ field: "userId", value: userId }];
+    const [user, accounts, sessions, twoFactor] = await Promise.all([
+      authContext.adapter.findOne<Record<string, unknown>>({ model: "user", where: [{ field: "id", value: userId }] }),
+      authContext.adapter.findMany<Record<string, unknown>>({ model: "account", where }),
+      authContext.adapter.findMany<Record<string, unknown>>({ model: "session", where, sortBy: { field: "createdAt", direction: "asc" } }),
+      authContext.adapter.findOne({ model: "twoFactor", where }),
+    ]);
+    return jsonResponse({
+      user: user ? { id: user.id, email: user.email, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled } : null,
+      accounts: accounts.sort((left,right) => String(left.providerId).localeCompare(String(right.providerId)) || String(left.accountId).localeCompare(String(right.accountId))).map(account => ({ id: account.id, userId: account.userId, accountId: account.accountId, providerId: account.providerId })),
+      sessions: sessions.map(session => ({ id: session.id, token: session.token, userId: session.userId, expiresAt: session.expiresAt })),
+      twoFactorExists: twoFactor !== null,
+    });
+  }
+
+  if (url.pathname==="/__test/verification-state" && request.method==="GET") {
+    const identifier=url.searchParams.get("identifier");
+    if (!identifier) return jsonResponse({message:"identifier is required"},{status:400});
+    return jsonResponse(await authContext.adapter.findMany({model:"verification",where:[{field:"identifier",value:identifier}],sortBy:{field:"createdAt",direction:"desc"}}));
+  }
+  if (request.method!=="POST" || !["/__test/verification-state","/__test/expire-session","/__test/one-time-token"].includes(url.pathname)) return;
+  const body:unknown=await readJson(request);
+  if (!controlRecord(body)) return jsonResponse({message:"invalid server operation"},{status:400});
+  if (url.pathname==="/__test/one-time-token") {
+    const selected=ottProfiles.get(typeof body.profile==="string" ? body.profile as typeof OTT_PROFILE_NAMES[number] : "ott-default")?.auth;
+    if (!selected || body.operation!=="generate") return jsonResponse({message:"invalid server operation"},{status:400});
+    return jsonResponse(await selected.api.generateOneTimeToken({headers:request.headers}));
+  }
+  if (typeof body.expiresAt!=="string" || !Number.isFinite(Date.parse(body.expiresAt))) return jsonResponse({message:"valid expiresAt is required"},{status:400});
+  const expiresAt=new Date(body.expiresAt);
+  if (url.pathname==="/__test/expire-session" && typeof body.token==="string") {
+    await authContext.adapter.updateMany({model:"session",where:[{field:"token",value:body.token}],update:{expiresAt}});
+  } else if (url.pathname==="/__test/verification-state" && typeof body.identifier==="string") {
+    if (body.action==="seed" && typeof body.value==="string") await authContext.internalAdapter.createVerificationValue({identifier:body.identifier,value:body.value,expiresAt});
+    else if (body.action==="expire") await authContext.adapter.updateMany({model:"verification",where:[{field:"identifier",value:body.identifier}],update:{expiresAt}});
+    else return jsonResponse({message:"unknown action"},{status:400});
+  } else return jsonResponse({message:"selector is required"},{status:400});
+  return jsonResponse({status:true});
+}
+
 const server = Bun.serve({
   port: PORT,
   async fetch(request) {
     try {
       const url = new URL(request.url);
+      for(const [name,profile] of ottProfiles) {
+        if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return profile.auth.handler(request);
+      }
+      const ottControl=await oneTimeTokenControl(request,url);
+      if(ottControl) return ottControl;
+
 
       if (url.pathname === "/__test/lifecycle" && request.method === "GET") {
         const email = url.searchParams.get("email");
