@@ -14,6 +14,7 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
     use better_auth_seaorm::{Database, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore};
     struct PolicyHook {
         cancel_session: bool,
+        session_forbidden: bool,
         observed: Arc<std::sync::Mutex<Vec<(String, String)>>>,
     }
     #[async_trait]
@@ -66,7 +67,13 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
                 assert_eq!(session.impersonated_by.as_deref(), Some("retained-admin"));
                 assert_eq!(session.ip_address.as_deref(), Some("127.0.0.9"));
                 assert_eq!(session.user_agent.as_deref(), Some("retained-agent"));
-                return Ok(HookControl::Cancel);
+                return if self.session_forbidden {
+                    Err(AuthError::forbidden(
+                        "session creation cancelled by database hook",
+                    ))
+                } else {
+                    Ok(HookControl::Cancel)
+                };
             }
             Ok(HookControl::Continue)
         }
@@ -74,7 +81,7 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
     let password_hash = better_auth_core::hash_password(None, "password123")
         .await
         .unwrap();
-    for cancel_session in [false, true] {
+    for (cancel_session, session_forbidden) in [(false, false), (true, false), (true, true)] {
         for existing in [false, true] {
             let db = Database::connect("sqlite::memory:").await.unwrap();
             better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
@@ -150,6 +157,7 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
                 SeaOrmStore::<TestSchema>::new(config, db.clone()).with_hooks(vec![Arc::new(
                     PolicyHook {
                         cancel_session,
+                        session_forbidden,
                         observed: observed.clone(),
                     },
                 )]),
@@ -187,13 +195,22 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
                 .headers
                 .insert("cookie".into(), cookie.split(';').next().unwrap().into());
             request.body = Some(br#"{"password":"password123"}"#.to_vec());
-            let error = better_auth_core::with_request_hook_context(
+            let result = better_auth_core::with_request_hook_context(
                 &request,
                 plugin.on_request(&request, &ctx),
             )
-            .await
-            .unwrap_err();
-            assert_eq!(error.status_code(), if cancel_session { 403 } else { 400 });
+            .await;
+            if cancel_session && !session_forbidden {
+                let response = result.unwrap().unwrap();
+                assert_eq!(response.status, 500);
+                assert!(response.body.is_empty());
+            } else {
+                let error = result.unwrap_err();
+                assert_eq!(error.status_code(), if cancel_session { 403 } else { 400 });
+                if session_forbidden {
+                    assert!(matches!(error, AuthError::Forbidden(_)));
+                }
+            }
             let expected = if cancel_session {
                 vec![
                     ("user".into(), user.id.clone()),

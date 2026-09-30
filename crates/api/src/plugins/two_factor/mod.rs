@@ -491,7 +491,11 @@ impl TwoFactorPlugin {
         };
 
         let (response, set_cookie_headers) =
-            enable_core(&body, &user, &session, &self.config, ctx).await?;
+            match enable_core(&body, &user, &session, &self.config, ctx).await {
+                Ok(result) => result,
+                Err(AuthError::SessionCreationCancelled) => return Ok(AuthResponse::new(500)),
+                Err(error) => return Err(error),
+            };
         let mut auth_response = AuthResponse::json(200, &response)?;
         for cookie in set_cookie_headers {
             auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
