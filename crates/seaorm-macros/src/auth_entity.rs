@@ -176,6 +176,25 @@ fn gen_user(
         // Use trait default (returns None)
         quote! {}
     };
+    let mut optional_user_getters = Vec::new();
+    for name in ["is_anonymous", "phone_number_verified"] {
+        if has(name) {
+            let field = Ident::new(name, Span::call_site());
+            optional_user_getters.push(quote! { fn #field(&self) -> Option<bool> { self.#field } });
+        }
+    }
+    for name in ["phone_number", "last_login_method"] {
+        if has(name) {
+            let field = Ident::new(name, Span::call_site());
+            optional_user_getters
+                .push(quote! { fn #field(&self) -> Option<&str> { self.#field.as_deref() } });
+        }
+    }
+    let phone_number_column_impl = if has("phone_number") {
+        quote! { fn phone_number_column() -> Option<Self::Column> { Some(Column::PhoneNumber) } }
+    } else {
+        quote! {}
+    };
 
     quote! {
         impl #core_root::entity::AuthUser for #ident {
@@ -194,6 +213,7 @@ fn gen_user(
             #ban_reason_impl
             #ban_expires_impl
             #metadata_impl
+            #(#optional_user_getters)*
         }
 
         impl #seaorm_root::SeaOrmUserModel for #ident {
@@ -205,6 +225,7 @@ fn gen_user(
             fn id_column() -> Self::Column { Column::Id }
             fn email_column() -> Self::Column { Column::Email }
             #username_column_impl
+            #phone_number_column_impl
             fn name_column() -> Self::Column { Column::Name }
             fn created_at_column() -> Self::Column { Column::CreatedAt }
             fn parse_id(id: &str) -> #core_root::AuthResult<Self::Id> {
@@ -289,6 +310,19 @@ fn plugin_set_fields_user(
         let _ = core_root; // used in the json! path
         out.push(quote! { metadata: #seaorm_root::sea_orm::ActiveValue::Set(create_user.metadata.unwrap_or(::serde_json::json!({}))) });
     }
+    for name in [
+        "is_anonymous",
+        "phone_number",
+        "phone_number_verified",
+        "last_login_method",
+    ] {
+        if has(name) {
+            let field = Ident::new(name, Span::call_site());
+            out.push(
+                quote! { #field: #seaorm_root::sea_orm::ActiveValue::Set(create_user.#field) },
+            );
+        }
+    }
     out
 }
 
@@ -358,6 +392,26 @@ fn plugin_update_fields_user(
             }
         });
     }
+    for name in ["is_anonymous", "phone_number_verified"] {
+        if has(name) {
+            let field = Ident::new(name, Span::call_site());
+            out.push(quote! {
+                if let ::std::option::Option::Some(value) = update.#field {
+                    active.#field = #seaorm_root::sea_orm::ActiveValue::Set(::std::option::Option::Some(value));
+                }
+            });
+        }
+    }
+    for name in ["phone_number", "last_login_method"] {
+        if has(name) {
+            let field = Ident::new(name, Span::call_site());
+            out.push(quote! {
+                if let ::std::option::Option::Some(value) = update.#field {
+                    active.#field = #seaorm_root::sea_orm::ActiveValue::Set(value);
+                }
+            });
+        }
+    }
     out
 }
 
@@ -378,6 +432,11 @@ fn gen_session(
     } else {
         quote! { fn active_organization_id(&self) -> Option<&str> { None } }
     };
+    let active_team_impl = if has("active_team_id") {
+        quote! { fn active_team_id(&self) -> Option<&str> { self.active_team_id.as_deref() } }
+    } else {
+        quote! {}
+    };
 
     let mut plugin_new_active = Vec::new();
     if has("impersonated_by") {
@@ -386,6 +445,22 @@ fn gen_session(
     if has("active_organization_id") {
         plugin_new_active.push(quote! { active_organization_id: #seaorm_root::sea_orm::ActiveValue::Set(create_session.active_organization_id) });
     }
+    if has("active_team_id") {
+        plugin_new_active.push(quote! { active_team_id: #seaorm_root::sea_orm::ActiveValue::Set(create_session.active_team_id) });
+    }
+    let set_active_team = if has("active_team_id") {
+        quote! {
+            fn set_active_team_id(
+                active: &mut Self::ActiveModel,
+                team_id: ::std::option::Option<::std::string::String>,
+            ) -> #core_root::AuthResult<()> {
+                active.active_team_id = #seaorm_root::sea_orm::ActiveValue::Set(team_id);
+                Ok(())
+            }
+        }
+    } else {
+        quote! {}
+    };
 
     let set_active_org = if has("active_organization_id") {
         quote! {
@@ -419,6 +494,7 @@ fn gen_session(
             fn user_id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.user_id) }
             #impersonated_by_impl
             #active_org_impl
+            #active_team_impl
             fn active(&self) -> bool { self.active }
         }
 
@@ -480,6 +556,7 @@ fn gen_session(
             }
 
             #set_active_org
+            #set_active_team
         }
     }
 }
@@ -612,6 +689,7 @@ fn gen_verification(
             fn value_column() -> Self::Column { Column::Value }
             fn expires_at_column() -> Self::Column { Column::ExpiresAt }
             fn created_at_column() -> Self::Column { Column::CreatedAt }
+            fn updated_at_column() -> Option<Self::Column> { Some(Column::UpdatedAt) }
             fn parse_id(id: &str) -> #core_root::AuthResult<Self::Id> {
                 Ok(id.to_string())
             }

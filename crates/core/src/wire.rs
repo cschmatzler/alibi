@@ -39,6 +39,33 @@ pub struct UserView {
     pub ban_reason: Option<String>,
     #[serde(rename = "banExpires")]
     pub ban_expires: Option<DateTime<Utc>>,
+    #[serde(
+        rename = "isAnonymous",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub is_anonymous: Option<bool>,
+    #[serde(
+        rename = "phoneNumber",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub phone_number: Option<String>,
+    #[serde(
+        rename = "phoneNumberVerified",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub phone_number_verified: Option<bool>,
+    #[serde(
+        rename = "lastLoginMethod",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub last_login_method: Option<String>,
+    /// Nullable fields contributed by an enabled plugin's output schema.
+    #[serde(flatten, default)]
+    pub extension_fields: std::collections::BTreeMap<String, serde_json::Value>,
     #[serde(skip)]
     pub metadata: serde_json::Value,
 }
@@ -64,6 +91,14 @@ pub struct SessionView {
     pub impersonated_by: Option<String>,
     #[serde(rename = "activeOrganizationId")]
     pub active_organization_id: Option<String>,
+    #[serde(
+        rename = "activeTeamId",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub active_team_id: Option<String>,
+    #[serde(flatten, default)]
+    pub extension_fields: std::collections::BTreeMap<String, serde_json::Value>,
     #[serde(skip)]
     pub active: bool,
 }
@@ -128,6 +163,11 @@ impl<T: AuthUser> From<&T> for UserView {
             banned: user.banned(),
             ban_reason: user.ban_reason().map(str::to_owned),
             ban_expires: user.ban_expires(),
+            is_anonymous: user.is_anonymous(),
+            phone_number: user.phone_number().map(str::to_owned),
+            phone_number_verified: user.phone_number_verified(),
+            last_login_method: user.last_login_method().map(str::to_owned),
+            extension_fields: Default::default(),
             metadata: user.metadata().clone(),
         }
     }
@@ -146,6 +186,8 @@ impl<T: AuthSession> From<&T> for SessionView {
             user_id: session.user_id().into_owned(),
             impersonated_by: session.impersonated_by().map(str::to_owned),
             active_organization_id: session.active_organization_id().map(str::to_owned),
+            active_team_id: session.active_team_id().map(str::to_owned),
+            extension_fields: Default::default(),
             active: session.active(),
         }
     }
@@ -227,6 +269,18 @@ impl AuthUser for UserView {
     fn ban_expires(&self) -> Option<DateTime<Utc>> {
         self.ban_expires
     }
+    fn is_anonymous(&self) -> Option<bool> {
+        self.is_anonymous
+    }
+    fn phone_number(&self) -> Option<&str> {
+        self.phone_number.as_deref()
+    }
+    fn phone_number_verified(&self) -> Option<bool> {
+        self.phone_number_verified
+    }
+    fn last_login_method(&self) -> Option<&str> {
+        self.last_login_method.as_deref()
+    }
     fn metadata(&self) -> &serde_json::Value {
         &self.metadata
     }
@@ -262,6 +316,9 @@ impl AuthSession for SessionView {
     }
     fn active_organization_id(&self) -> Option<&str> {
         self.active_organization_id.as_deref()
+    }
+    fn active_team_id(&self) -> Option<&str> {
+        self.active_team_id.as_deref()
     }
     fn active(&self) -> bool {
         self.active
@@ -396,6 +453,10 @@ pub struct InvitationView {
     pub expires_at: DateTime<Utc>,
     #[serde(rename = "createdAt")]
     pub created_at: DateTime<Utc>,
+    #[serde(rename = "teamId", default, skip_serializing_if = "Option::is_none")]
+    pub team_id: Option<String>,
+    #[serde(flatten, default)]
+    pub extension_fields: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 impl<T: AuthInvitation> From<&T> for InvitationView {
@@ -409,6 +470,8 @@ impl<T: AuthInvitation> From<&T> for InvitationView {
             inviter_id: inv.inviter_id().into_owned(),
             expires_at: inv.expires_at(),
             created_at: inv.created_at(),
+            team_id: inv.team_id().map(str::to_owned),
+            extension_fields: Default::default(),
         }
     }
 }
@@ -566,6 +629,11 @@ mod tests {
             banned: false,
             ban_reason: None,
             ban_expires: None,
+            is_anonymous: None,
+            phone_number: None,
+            phone_number_verified: None,
+            last_login_method: None,
+            extension_fields: Default::default(),
             metadata: serde_json::json!({}),
         };
 
@@ -588,7 +656,9 @@ mod tests {
             user_id: "user-1".to_string(),
             impersonated_by: Some("admin-1".to_string()),
             active_organization_id: Some("org-1".to_string()),
+            active_team_id: None,
             active: true,
+            extension_fields: Default::default(),
         };
 
         let json =

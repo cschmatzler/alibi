@@ -42,6 +42,7 @@ impl From<&entities::invitation::Model> for Invitation {
             organization_id: model.organization_id.clone(),
             email: model.email.clone(),
             role: model.role.clone(),
+            team_id: model.team_id.clone(),
             status: InvitationStatus::from(model.status.clone()),
             inviter_id: model.inviter_id.clone(),
             expires_at: model.expires_at,

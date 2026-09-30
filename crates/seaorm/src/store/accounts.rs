@@ -42,8 +42,10 @@ where
             .insert(db)
             .await
             .map_err(map_db_err)?;
-        for hook in self.hooks() {
-            hook.after_create_account(&account, &hook_context).await?;
+        if tx.is_none() {
+            for hook in self.hooks() {
+                hook.after_create_account(&account, &hook_context).await?;
+            }
         }
         Ok(account)
     }

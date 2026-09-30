@@ -19,6 +19,10 @@ pub struct Model {
     pub ban_reason: Option<String>,
     pub ban_expires: Option<DateTimeUtc>,
     pub metadata: Json,
+    pub is_anonymous: Option<bool>,
+    pub phone_number: Option<String>,
+    pub phone_number_verified: Option<bool>,
+    pub last_login_method: Option<String>,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

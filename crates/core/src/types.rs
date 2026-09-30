@@ -8,8 +8,10 @@ use crate::utils::email::normalize_user_email;
 
 // Re-export organization types
 pub use super::types_org::{
-    CreateInvitation, CreateMember, CreateOrganization, Invitation, InvitationStatus, Member,
-    Organization, UpdateOrganization,
+    AddTeamMemberResult, CreateInvitation, CreateMember, CreateOrganization,
+    CreateOrganizationRole, CreateTeam, Invitation, InvitationStatus, Member, Organization,
+    OrganizationPermissions, OrganizationRole, OrganizationRoleSelector, Team, TeamMember,
+    UpdateOrganization, UpdateOrganizationRole, UpdateTeam,
 };
 pub use super::types_plugin::{
     ApiKey, CreateApiKey, CreateDeviceCode, CreatePasskey, CreateTwoFactor, DeviceCode, Passkey,
@@ -189,6 +191,10 @@ pub struct CreateUser {
     pub display_username: Option<String>,
     pub role: Option<String>,
     pub metadata: Option<serde_json::Value>,
+    pub is_anonymous: Option<bool>,
+    pub phone_number: Option<String>,
+    pub phone_number_verified: Option<bool>,
+    pub last_login_method: Option<String>,
 }
 
 /// User update data
@@ -206,17 +212,27 @@ pub struct UpdateUser {
     pub ban_expires: Option<DateTime<Utc>>,
     pub two_factor_enabled: Option<bool>,
     pub metadata: Option<serde_json::Value>,
+    pub is_anonymous: Option<bool>,
+    /// `None` leaves the field unchanged; `Some(None)` clears it.
+    pub phone_number: Option<Option<String>>,
+    pub phone_number_verified: Option<bool>,
+    /// `None` leaves the field unchanged; `Some(None)` clears it.
+    pub last_login_method: Option<Option<String>>,
 }
 
 /// Session creation data
 #[derive(Debug, Clone)]
 pub struct CreateSession {
+    /// Optional token override for trusted database hooks and server-side creation.
+    /// Stores generate a secure 32-character alphanumeric token when omitted.
+    pub token: Option<String>,
     pub user_id: String,
     pub expires_at: DateTime<Utc>,
     pub ip_address: Option<String>,
     pub user_agent: Option<String>,
     pub impersonated_by: Option<String>,
     pub active_organization_id: Option<String>,
+    pub active_team_id: Option<String>,
 }
 
 /// Account creation data
@@ -254,6 +270,12 @@ pub struct CreateVerification {
     pub expires_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct UpdateVerification {
+    pub value: Option<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
 impl CreateUser {
     pub fn new() -> Self {
         Self {
@@ -266,6 +288,10 @@ impl CreateUser {
             display_username: None,
             role: None,
             metadata: None,
+            is_anonymous: None,
+            phone_number: None,
+            phone_number_verified: None,
+            last_login_method: None,
         }
     }
 
@@ -632,7 +658,9 @@ mod tests {
             user_agent: None,
             impersonated_by: None,
             active_organization_id: None,
+            active_team_id: None,
             active: true,
+            extension_fields: Default::default(),
         });
         assert_eq!(req.virtual_user_id(), Some("user-123"));
     }

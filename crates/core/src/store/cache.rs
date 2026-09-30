@@ -14,6 +14,15 @@ pub trait CacheAdapter: Send + Sync {
     /// Get a value by key
     async fn get(&self, key: &str) -> AuthResult<Option<String>>;
 
+    /// Atomically fetch and remove a value. A read followed by a separate
+    /// delete does not satisfy single-use token semantics.
+    async fn get_and_delete(&self, key: &str) -> AuthResult<Option<String>> {
+        let _ = key;
+        Err(AuthError::internal(
+            "atomic cache consumption is not supported by this adapter",
+        ))
+    }
+
     /// Delete a value by key
     async fn delete(&self, key: &str) -> AuthResult<()>;
 
@@ -107,6 +116,17 @@ impl CacheAdapter for MemoryCacheAdapter {
             .map_err(|_| AuthError::internal("Cache lock poisoned"))?;
         let _ = data.remove(key);
         Ok(())
+    }
+
+    async fn get_and_delete(&self, key: &str) -> AuthResult<Option<String>> {
+        let mut data = self
+            .data
+            .lock()
+            .map_err(|_| AuthError::internal("Cache lock poisoned"))?;
+        Ok(data
+            .remove(key)
+            .filter(|entry| entry.expires_at > Utc::now())
+            .map(|entry| entry.value))
     }
 
     async fn exists(&self, key: &str) -> AuthResult<bool> {
@@ -212,6 +232,19 @@ pub mod redis_adapter {
             Ok(())
         }
 
+        async fn get_and_delete(&self, key: &str) -> AuthResult<Option<String>> {
+            let mut conn = self
+                .client
+                .get_connection()
+                .map_err(|error| AuthError::internal(format!("Redis connection error: {error}")))?;
+            // GETDEL requires Redis 6.2; a single script preserves the same
+            // atomic contract on supported older Redis deployments as well.
+            redis::Script::new("local value = redis.call('GET', KEYS[1]); redis.call('DEL', KEYS[1]); return value")
+                .key(key)
+                .invoke(&mut conn)
+                .map_err(|error| AuthError::internal(format!("Redis consume error: {error}")))
+        }
+
         async fn exists(&self, key: &str) -> AuthResult<bool> {
             let mut conn = self
                 .client
@@ -256,3 +289,45 @@ pub mod redis_adapter {
 
 #[cfg(feature = "redis-cache")]
 pub use redis_adapter::RedisAdapter;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::Barrier;
+    use tokio::task::JoinSet;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn atomic_cache_consumption_has_one_winner_and_rejects_expired_values() -> AuthResult<()>
+    {
+        let cache = Arc::new(MemoryCacheAdapter::new());
+        cache
+            .set("token", "single-use", Duration::minutes(1))
+            .await?;
+        let barrier = Arc::new(Barrier::new(8));
+        let mut tasks = JoinSet::new();
+        for _ in 0..8 {
+            let cache = cache.clone();
+            let barrier = barrier.clone();
+            let _ = tasks.spawn(async move {
+                let _ = barrier.wait().await;
+                cache.get_and_delete("token").await
+            });
+        }
+        let mut winners = Vec::new();
+        while let Some(result) = tasks.join_next().await {
+            if let Some(value) =
+                result.map_err(|error| AuthError::internal(error.to_string()))??
+            {
+                winners.push(value);
+            }
+        }
+        assert_eq!(winners, ["single-use"]);
+        assert!(cache.get_and_delete("token").await?.is_none());
+        cache
+            .set("expired", "expired-value", Duration::seconds(-1))
+            .await?;
+        assert!(cache.get_and_delete("expired").await?.is_none());
+        assert!(!cache.exists("expired").await?);
+        Ok(())
+    }
+}

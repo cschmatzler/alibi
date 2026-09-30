@@ -27,6 +27,9 @@ pub trait SeaOrmUserModel:
     fn username_column() -> Option<Self::Column> {
         None
     }
+    fn phone_number_column() -> Option<Self::Column> {
+        None
+    }
     fn name_column() -> Self::Column;
     fn created_at_column() -> Self::Column;
     fn parse_id(id: &str) -> AuthResult<Self::Id>;
@@ -66,6 +69,15 @@ pub trait SeaOrmSessionModel:
     fn set_expires_at(active: &mut Self::ActiveModel, expires_at: DateTime<Utc>);
     fn set_updated_at(active: &mut Self::ActiveModel, updated_at: DateTime<Utc>);
     fn set_active_organization_id(active: &mut Self::ActiveModel, organization_id: Option<String>);
+    fn set_active_team_id(
+        active: &mut Self::ActiveModel,
+        team_id: Option<String>,
+    ) -> AuthResult<()> {
+        let _ = (active, team_id);
+        Err(better_auth_core::AuthError::internal(
+            "the session schema has no active-team field",
+        ))
+    }
 }
 
 pub trait SeaOrmAccountModel:
@@ -83,6 +95,7 @@ pub trait SeaOrmAccountModel:
     fn user_id_column() -> Self::Column;
     fn created_at_column() -> Self::Column;
     fn parse_id(id: &str) -> AuthResult<Self::Id>;
+
     fn parse_user_id(user_id: &str) -> AuthResult<Self::UserId>;
 
     fn new_active(
@@ -112,7 +125,29 @@ pub trait SeaOrmVerificationModel:
     fn value_column() -> Self::Column;
     fn expires_at_column() -> Self::Column;
     fn created_at_column() -> Self::Column;
+    fn updated_at_column() -> Option<Self::Column> {
+        None
+    }
     fn parse_id(id: &str) -> AuthResult<Self::Id>;
+
+    /// Convert a deterministic reservation key to this schema's ID type.
+    /// String schemas use the upstream key. UUID schemas can accept the UUID
+    /// derived from the same digest; numeric schemas must explicitly provide
+    /// a collision-resistant reservation strategy instead of truncating it.
+    fn parse_reservation_id(encoded: &str, digest: [u8; 32]) -> AuthResult<Self::Id> {
+        if let Ok(id) = Self::parse_id(encoded) {
+            return Ok(id);
+        }
+        let mut bytes = [0; 16];
+        for (byte, source) in bytes.iter_mut().zip(digest) {
+            *byte = source;
+        }
+        Self::parse_id(&uuid::Uuid::from_bytes(bytes).to_string()).map_err(|_| {
+            better_auth_core::AuthError::internal(
+                "the verification schema cannot represent deterministic reservation IDs",
+            )
+        })
+    }
 
     fn new_active(
         id: Option<Self::Id>,

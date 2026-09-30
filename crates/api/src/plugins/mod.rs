@@ -83,6 +83,8 @@ pub(crate) mod test_helpers {
         expires_in: Duration,
     ) -> SessionView {
         let create_session = CreateSession {
+            token: None,
+            active_team_id: None,
             user_id,
             expires_at: Utc::now() + expires_in,
             ip_address: Some("127.0.0.1".to_string()),

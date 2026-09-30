@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect, Select, Set,
+    QueryOrder, QuerySelect, Select, Set, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -144,11 +144,32 @@ where
     }
 
     async fn delete_member(&self, member_id: &str) -> AuthResult<()> {
-        Entity::delete_by_id(member_id.to_owned())
-            .exec(self.connection())
+        let transaction = self
+            .connection()
+            .begin_with_options(sea_orm::TransactionOptions {
+                sqlite_transaction_mode: Some(sea_orm::SqliteTransactionMode::Immediate),
+                ..Default::default()
+            })
             .await
-            .map(|_| ())
-            .map_err(map_db_err)
+            .map_err(map_db_err)?;
+        if let Some(member) = Entity::find_by_id(member_id.to_owned())
+            .lock_exclusive()
+            .one(&transaction)
+            .await
+            .map_err(map_db_err)?
+        {
+            super::teams::remove_owned_team_members(
+                &transaction,
+                &member.user_id,
+                Some(&member.organization_id),
+            )
+            .await?;
+            let _ = Entity::delete_by_id(member_id.to_owned())
+                .exec(&transaction)
+                .await
+                .map_err(map_db_err)?;
+        }
+        transaction.commit().await.map_err(map_db_err)
     }
 
     async fn list_organization_members(&self, organization_id: &str) -> AuthResult<Vec<Member>> {

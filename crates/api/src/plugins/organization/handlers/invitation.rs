@@ -141,6 +141,7 @@ pub(crate) async fn invite_member_core(
         chrono::Utc::now() + chrono::Duration::seconds(config.invitation_expires_in as i64);
 
     let invitation_data = CreateInvitation {
+        team_id: None,
         organization_id: org_id,
         email: body.email.to_lowercase(),
         role: normalized_roles(&body.role),

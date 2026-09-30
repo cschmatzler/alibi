@@ -20,6 +20,8 @@ async fn context() -> (AuthContext<TestSchema>, String, String) {
     let user_id = user.id().to_string();
     let session = database
         .create_session(CreateSession {
+            token: None,
+            active_team_id: None,
             user_id: user_id.clone(),
             expires_at: Utc::now() + Duration::hours(1),
             ip_address: None,

@@ -8,6 +8,7 @@ pub struct Model {
     pub organization_id: String,
     pub email: String,
     pub role: String,
+    pub team_id: Option<String>,
     pub status: String,
     pub inviter_id: String,
     pub expires_at: DateTimeUtc,

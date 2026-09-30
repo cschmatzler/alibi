@@ -6,12 +6,16 @@ mod api_keys;
 mod bundled_schema;
 mod device_codes;
 pub mod entities;
+mod identity_fields;
 mod invitations;
 mod members;
 mod migrator;
+mod organization_extensions;
+mod organization_roles;
 mod organizations;
 mod passkeys;
 mod sessions;
+mod teams;
 mod two_factor;
 mod users;
 mod verifications;
@@ -40,7 +44,9 @@ use sea_orm::{DatabaseConnection, DatabaseTransaction, DbErr, SqlErr, Transactio
 use crate::config::AuthConfig;
 use crate::error::{AuthError, AuthResult, DatabaseError};
 use crate::hooks::{SeaOrmHookContext, SeaOrmHooks, current_request_hook_context};
-use crate::schema::{AuthSchema, SeaOrmAccountModel, SeaOrmSessionModel, SeaOrmUserModel};
+use crate::schema::{
+    AuthSchema, SeaOrmAccountModel, SeaOrmSessionModel, SeaOrmUserModel, SeaOrmVerificationModel,
+};
 
 #[derive(Clone)]
 pub struct SeaOrmStore<S: AuthSchema> {
@@ -102,6 +108,14 @@ impl<S: AuthSchema> SeaOrmStore<S> {
 struct SeaOrmTransaction<'a, S: AuthSchema> {
     store: &'a SeaOrmStore<S>,
     tx: &'a DatabaseTransaction,
+    pending_after: tokio::sync::Mutex<Vec<AfterCreate<S>>>,
+}
+
+enum AfterCreate<S: AuthSchema> {
+    User(S::User),
+    Account(S::Account),
+    Session(S::Session),
+    Verification(S::Verification),
 }
 
 #[async_trait]
@@ -111,27 +125,59 @@ where
     S::User: SeaOrmUserModel,
     S::Account: SeaOrmAccountModel,
     S::Session: SeaOrmSessionModel,
+    S::Verification: SeaOrmVerificationModel,
 {
     async fn create_user(&self, create_user: better_auth_core::CreateUser) -> AuthResult<S::User> {
-        self.store.create_user_in_tx(self.tx, create_user).await
+        let user = self.store.create_user_in_tx(self.tx, create_user).await?;
+        self.pending_after
+            .lock()
+            .await
+            .push(AfterCreate::User(user.clone()));
+        Ok(user)
     }
 
     async fn create_account(
         &self,
         create_account: better_auth_core::CreateAccount,
     ) -> AuthResult<S::Account> {
-        self.store
+        let account = self
+            .store
             .create_account_in_tx(self.tx, create_account)
+            .await?;
+        self.pending_after
+            .lock()
             .await
+            .push(AfterCreate::Account(account.clone()));
+        Ok(account)
     }
 
     async fn create_session(
         &self,
         create_session: better_auth_core::CreateSession,
     ) -> AuthResult<S::Session> {
-        self.store
+        let session = self
+            .store
             .create_session_in_tx(self.tx, create_session)
+            .await?;
+        self.pending_after
+            .lock()
             .await
+            .push(AfterCreate::Session(session.clone()));
+        Ok(session)
+    }
+    async fn create_verification(
+        &self,
+        verification: better_auth_core::CreateVerification,
+    ) -> AuthResult<S::Verification> {
+        let verification = self
+            .store
+            .create_verification_in_tx(self.tx, verification)
+            .await?;
+        self.pending_after
+            .lock()
+            .await
+            .push(AfterCreate::Verification(verification.clone()));
+        Ok(verification)
     }
 }
 
@@ -142,6 +188,7 @@ where
     S::User: SeaOrmUserModel,
     S::Account: SeaOrmAccountModel,
     S::Session: SeaOrmSessionModel,
+    S::Verification: SeaOrmVerificationModel,
 {
     async fn transaction_boxed(
         &self,
@@ -151,11 +198,36 @@ where
         let tx_store = SeaOrmTransaction {
             store: self,
             tx: &tx,
+            pending_after: tokio::sync::Mutex::new(Vec::new()),
         };
-
-        match work(&tx_store).await {
+        let outcome = work(&tx_store).await;
+        let pending_after = tx_store.pending_after.into_inner();
+        match outcome {
             Ok(value) => {
                 tx.commit().await.map_err(map_db_err)?;
+                // The pinned adapter defers after callbacks until commit and
+                // drops them on rollback. Preserve each created snapshot and
+                // its operation order, including interleaved model writes.
+                let hook_context = self.hook_context(None);
+                for created in pending_after {
+                    for hook in self.hooks() {
+                        match &created {
+                            AfterCreate::User(user) => {
+                                hook.after_create_user(user, &hook_context).await?
+                            }
+                            AfterCreate::Account(account) => {
+                                hook.after_create_account(account, &hook_context).await?
+                            }
+                            AfterCreate::Session(session) => {
+                                hook.after_create_session(session, &hook_context).await?
+                            }
+                            AfterCreate::Verification(verification) => {
+                                hook.after_create_verification(verification, &hook_context)
+                                    .await?
+                            }
+                        }
+                    }
+                }
                 Ok(value)
             }
             Err(err) => {

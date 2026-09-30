@@ -572,6 +572,78 @@ mod verification {
 
 pub struct LegacySchema;
 
+#[tokio::test]
+async fn numeric_user_schema_cleans_team_memberships_without_a_bundled_user_foreign_key()
+-> Result<(), Box<dyn std::error::Error>> {
+    use better_auth_core::store::{MemberStore, OrganizationStore, TeamStore, UserStore};
+    use better_auth_core::types::{
+        AddTeamMemberResult, CreateMember, CreateOrganization, CreateTeam,
+    };
+    let database = test_database().await;
+    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
+    let store = SeaOrmStore::<LegacySchema>::new(test_config(), database);
+    let user = store
+        .create_user(CreateUser::new().with_email("numeric-team@example.com"))
+        .await?;
+    assert_eq!(user.id, 1);
+    let first_org = store
+        .create_organization(CreateOrganization::new("Numeric first", "numeric-first"))
+        .await?;
+    let second_org = store
+        .create_organization(CreateOrganization::new("Numeric second", "numeric-second"))
+        .await?;
+    let first_member = store
+        .create_member(CreateMember::new(&first_org.id, "1", "member"))
+        .await?;
+    let _ = store
+        .create_member(CreateMember::new(&second_org.id, "1", "member"))
+        .await?;
+    let first = store
+        .create_team(CreateTeam {
+            name: "First".to_owned(),
+            organization_id: first_org.id.clone(),
+            updated_at: None,
+        })
+        .await?;
+    let second = store
+        .create_team(CreateTeam {
+            name: "Second".to_owned(),
+            organization_id: second_org.id.clone(),
+            updated_at: None,
+        })
+        .await?;
+    assert!(matches!(
+        store.add_team_member(&first.id, "1", Some(1)).await?,
+        AddTeamMemberResult::Added(_)
+    ));
+    assert!(matches!(
+        store.add_team_member(&second.id, "1", Some(1)).await?,
+        AddTeamMemberResult::Added(_)
+    ));
+    store.delete_member(&first_member.id).await?;
+    assert!(store.get_team_member(&first.id, "1").await?.is_none());
+    assert!(store.get_team_member(&second.id, "1").await?.is_some());
+    assert_eq!(
+        store
+            .get_team(None, &first.id)
+            .await?
+            .map(|team| team.member_count),
+        Some(0)
+    );
+    store.delete_user("1").await?;
+    assert!(store.get_user_by_id("1").await?.is_none());
+    assert!(store.list_user_teams("1").await?.is_empty());
+    assert!(store.get_team_member(&second.id, "1").await?.is_none());
+    assert_eq!(
+        store
+            .get_team(None, &second.id)
+            .await?
+            .map(|team| team.member_count),
+        Some(0)
+    );
+    Ok(())
+}
+
 impl AuthSchema for LegacySchema {
     type User = crate::user::Model;
     type Session = crate::session::Model;
@@ -844,4 +916,24 @@ async fn legacy_numeric_schema_store_verifications_use_public_string_ids() {
         .await
         .expect("lookup should succeed");
     assert!(loaded.is_none());
+
+    let reservation = auth
+        .store()
+        .reserve_verification(CreateVerification {
+            identifier: "numeric-reservation".to_owned(),
+            value: "claim".to_owned(),
+            expires_at: Utc::now() + chrono::Duration::minutes(30),
+        })
+        .await;
+    assert!(
+        reservation.is_err(),
+        "numeric schemas must fail closed without a deterministic reservation binding"
+    );
+    assert!(
+        auth.store()
+            .get_latest_verification_by_identifier("numeric-reservation")
+            .await
+            .expect("raw lookup should succeed")
+            .is_none()
+    );
 }

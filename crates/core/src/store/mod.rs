@@ -4,6 +4,8 @@ use std::future::Future;
 use std::pin::Pin;
 
 pub mod cache;
+mod org_extensions;
+pub use org_extensions::{OrganizationRoleStore, TeamStore, team_membership_key};
 
 use crate::error::{AuthError, AuthResult};
 use crate::schema::AuthSchema;
@@ -32,6 +34,14 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     async fn create_user(&self, create_user: CreateUser) -> AuthResult<S::User>;
     async fn create_account(&self, create_account: CreateAccount) -> AuthResult<S::Account>;
     async fn create_session(&self, create_session: CreateSession) -> AuthResult<S::Session>;
+    async fn create_verification(
+        &self,
+        _verification: CreateVerification,
+    ) -> AuthResult<S::Verification> {
+        Err(AuthError::NotImplemented(
+            "Verification creation in a transaction is not supported by this store".to_owned(),
+        ))
+    }
 }
 
 #[async_trait]
@@ -45,6 +55,12 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
     async fn list_users_by_ids(&self, ids: &[String]) -> AuthResult<Vec<S::User>>;
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>>;
     async fn get_user_by_username(&self, username: &str) -> AuthResult<Option<S::User>>;
+    async fn get_user_by_phone_number(&self, phone_number: &str) -> AuthResult<Option<S::User>> {
+        let _ = phone_number;
+        Err(crate::AuthError::internal(
+            "phone-number lookup is not supported by this store",
+        ))
+    }
     async fn update_user(&self, id: &str, update: UpdateUser) -> AuthResult<S::User>;
     async fn delete_user(&self, id: &str) -> AuthResult<()>;
     async fn list_users(&self, params: ListUsersParams) -> AuthResult<(Vec<S::User>, usize)>;
@@ -54,6 +70,17 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
 pub trait SessionStore<S: AuthSchema>: Send + Sync {
     async fn create_session(&self, create_session: CreateSession) -> AuthResult<S::Session>;
     async fn get_session(&self, token: &str) -> AuthResult<Option<S::Session>>;
+    /// Fetch matching sessions once each, including expired rows. The bundled
+    /// SQLite adapter returns token-index order rather than request order.
+    async fn get_sessions_by_tokens(&self, tokens: &[String]) -> AuthResult<Vec<S::Session>> {
+        let mut sessions = Vec::new();
+        for token in tokens.iter().collect::<std::collections::BTreeSet<_>>() {
+            if let Some(session) = self.get_session(token).await? {
+                sessions.push(session);
+            }
+        }
+        Ok(sessions)
+    }
     async fn get_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>>;
     async fn update_session_expiry(
         &self,
@@ -68,6 +95,16 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         token: &str,
         organization_id: Option<&str>,
     ) -> AuthResult<S::Session>;
+    async fn update_session_active_team(
+        &self,
+        token: &str,
+        team_id: Option<&str>,
+    ) -> AuthResult<S::Session> {
+        let _ = (token, team_id);
+        Err(crate::AuthError::internal(
+            "active-team updates are not supported by this store",
+        ))
+    }
 }
 
 #[async_trait]
@@ -104,8 +141,73 @@ pub trait VerificationStore<S: AuthSchema>: Send + Sync {
         identifier: &str,
         value: &str,
     ) -> AuthResult<Option<S::Verification>>;
+    /// Fetch the newest generation, including expired records. The caller
+    /// decides whether cleanup and a distinct expiry error are required.
+    async fn get_latest_verification_by_identifier(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<S::Verification>> {
+        let _ = identifier;
+        Err(crate::AuthError::internal(
+            "raw verification lookup is not supported by this store",
+        ))
+    }
+    /// Atomically invalidate an identifier and return its newest generation.
+    /// Exactly one concurrent caller can receive a row. Expired records are
+    /// removed along with every sibling and return `None`.
+    async fn consume_verification_by_identifier(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<S::Verification>> {
+        let _ = identifier;
+        Err(crate::AuthError::internal(
+            "atomic verification consumption is not supported by this store",
+        ))
+    }
+    async fn delete_verifications_by_identifier(&self, identifier: &str) -> AuthResult<()> {
+        let _ = identifier;
+        Err(crate::AuthError::internal(
+            "verification invalidation is not supported by this store",
+        ))
+    }
+    /// Update a generation only when its value still matches the snapshot.
+    async fn compare_and_swap_verification(
+        &self,
+        id: &str,
+        expected_value: &str,
+        value: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<bool> {
+        let _ = (id, expected_value, value, expires_at);
+        Err(crate::AuthError::internal(
+            "atomic verification updates are not supported by this store",
+        ))
+    }
+    /// Insert a deterministic reservation exactly once. An expired marker
+    /// remains reserved until it is cleaned up or explicitly consumed.
+    async fn reserve_verification(&self, verification: CreateVerification) -> AuthResult<bool> {
+        let _ = verification;
+        Err(crate::AuthError::internal(
+            "verification reservation is not supported by this store",
+        ))
+    }
     async fn delete_verification(&self, id: &str) -> AuthResult<()>;
     async fn delete_expired_verifications(&self) -> AuthResult<usize>;
+}
+
+/// Upstream's deterministic database key for first-writer verification claims.
+pub fn verification_reservation_key(identifier: &str) -> (String, [u8; 32]) {
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+
+    let mut hash = Sha256::new();
+    hash.update(b"reserve:");
+    hash.update(identifier.as_bytes());
+    let digest: [u8; 32] = hash.finalize().into();
+    (
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest),
+        digest,
+    )
 }
 
 /// Query parameters for listing organization members.
@@ -184,6 +286,28 @@ pub trait InvitationStore: Send + Sync {
     /// Count still-pending, unexpired invitations for an organization.
     async fn count_pending_organization_invitations(&self, org_id: &str) -> AuthResult<i64>;
     async fn list_user_invitations(&self, email: &str) -> AuthResult<Vec<Invitation>>;
+    /// Claim a pending invitation and persist memberships/session scope in one transition.
+    async fn accept_invitation_with_teams(
+        &self,
+        _invitation_id: &str,
+        _user_id: &str,
+        _session_token: &str,
+        _team_limits: &[(String, Option<usize>)],
+        _membership_limit: Option<usize>,
+    ) -> AuthResult<Option<(Invitation, Member)>> {
+        Err(AuthError::NotImplemented(
+            "Atomic invitation acceptance is not supported by this store".to_owned(),
+        ))
+    }
+    async fn update_invitation_team_ids(
+        &self,
+        _id: &str,
+        _team_ids: Option<String>,
+    ) -> AuthResult<Invitation> {
+        Err(AuthError::NotImplemented(
+            "Invitation team updates are not supported by this store".to_owned(),
+        ))
+    }
 }
 
 #[async_trait]
@@ -316,6 +440,8 @@ pub trait AuthStore<S: AuthSchema>:
     + OrganizationStore
     + MemberStore
     + InvitationStore
+    + TeamStore
+    + OrganizationRoleStore
     + TwoFactorStore
     + ApiKeyStore
     + PasskeyStore
@@ -336,6 +462,8 @@ where
         + OrganizationStore
         + MemberStore
         + InvitationStore
+        + TeamStore
+        + OrganizationRoleStore
         + TwoFactorStore
         + ApiKeyStore
         + PasskeyStore

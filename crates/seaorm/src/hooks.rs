@@ -8,6 +8,7 @@ pub use better_auth_core::hooks::current_request_hook_context;
 use better_auth_core::schema::AuthSchema;
 use better_auth_core::types::{
     CreateAccount, CreateSession, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
+    UpdateVerification,
 };
 
 /// Control flow returned by SeaORM `before_*` hooks.
@@ -27,11 +28,17 @@ impl HookControl {
 pub struct SeaOrmHookContext<'a> {
     pub config: &'a AuthConfig,
     pub db: &'a DatabaseConnection,
+    /// Present for writes inside an auth transaction. Creation after hooks
+    /// run only after a successful commit and receive no active transaction.
     pub tx: Option<&'a DatabaseTransaction>,
     pub request: Option<RequestHookContext>,
 }
 
 /// SeaORM lifecycle hooks for intercepting auth writes.
+///
+/// Transactional creation after callbacks retain the created snapshots and
+/// run in operation order after commit. Rollback discards them; callback errors
+/// are returned to the caller after the auth writes have committed.
 #[async_trait]
 pub trait SeaOrmHooks<S: AuthSchema>: Send + Sync {
     async fn before_create_user(
@@ -205,6 +212,25 @@ pub trait SeaOrmHooks<S: AuthSchema>: Send + Sync {
     ) -> AuthResult<HookControl> {
         let _ = (verification, ctx);
         Ok(HookControl::Continue)
+    }
+
+    async fn before_update_verification(
+        &self,
+        id: &str,
+        update: &mut UpdateVerification,
+        ctx: &SeaOrmHookContext<'_>,
+    ) -> AuthResult<HookControl> {
+        let _ = (id, update, ctx);
+        Ok(HookControl::Continue)
+    }
+
+    async fn after_update_verification(
+        &self,
+        verification: &S::Verification,
+        ctx: &SeaOrmHookContext<'_>,
+    ) -> AuthResult<()> {
+        let _ = (verification, ctx);
+        Ok(())
     }
 
     async fn after_delete_verification(

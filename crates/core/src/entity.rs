@@ -35,6 +35,19 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
     fn ban_reason(&self) -> Option<&str>;
     fn ban_expires(&self) -> Option<DateTime<Utc>>;
     fn metadata(&self) -> &serde_json::Value;
+    /// Anonymous-plugin state; `None` means the field is absent or unset.
+    fn is_anonymous(&self) -> Option<bool> {
+        None
+    }
+    fn phone_number(&self) -> Option<&str> {
+        None
+    }
+    fn phone_number_verified(&self) -> Option<bool> {
+        None
+    }
+    fn last_login_method(&self) -> Option<&str> {
+        None
+    }
 }
 
 /// Trait representing a session entity.
@@ -49,6 +62,9 @@ pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
     fn user_id(&self) -> Cow<'_, str>;
     fn impersonated_by(&self) -> Option<&str>;
     fn active_organization_id(&self) -> Option<&str>;
+    fn active_team_id(&self) -> Option<&str> {
+        None
+    }
     fn active(&self) -> bool;
 }
 
@@ -95,6 +111,9 @@ pub trait AuthInvitation: Clone + Send + Sync + Serialize + std::fmt::Debug + 's
     fn organization_id(&self) -> Cow<'_, str>;
     fn email(&self) -> &str;
     fn role(&self) -> &str;
+    fn team_id(&self) -> Option<&str> {
+        None
+    }
     fn status(&self) -> &InvitationStatus;
     fn inviter_id(&self) -> Cow<'_, str>;
     fn expires_at(&self) -> DateTime<Utc>;
