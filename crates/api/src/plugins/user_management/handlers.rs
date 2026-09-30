@@ -6,6 +6,8 @@ use better_auth_core::{AuthContext, AuthError, AuthResult, StatusResponse, Updat
 
 use super::types::{ChangeEmailRequest, DeleteUserRequest};
 use super::{UserInfo, UserManagementConfig};
+use crate::plugins::email_verification::EmailVerificationConfig;
+use crate::plugins::email_verification::handlers::verification_url;
 use crate::plugins::email_verification::token::create_email_verification_token;
 use better_auth_core::SuccessMessageResponse;
 
@@ -81,15 +83,13 @@ pub(crate) async fn change_email_core(
         &ctx.config.secret,
         user.email().unwrap_or_default(),
         Some(&new_email),
-        Duration::hours(24),
+        ctx.extensions
+            .get::<EmailVerificationConfig>()
+            .map(|config| config.verification_token_expiry)
+            .unwrap_or_else(|| Duration::hours(1)),
         Some(request_type),
     )?;
-    let verification_url = format!(
-        "{}/verify-email?token={}&callbackURL={}",
-        ctx.config.base_url,
-        verification_token,
-        urlencoding::encode(callback_url),
-    );
+    let verification_url = verification_url(&ctx.config, &verification_token, Some(callback_url));
 
     if let Some(ref callback) = config.change_email.send_change_email_confirmation {
         callback

@@ -9,7 +9,7 @@ use super::token::{create_email_verification_token, decode_email_verification_to
 use super::types::*;
 use super::{EmailVerificationConfig, StatusResponse};
 
-pub(super) fn verification_url(
+pub(crate) fn verification_url(
     config: &better_auth_core::AuthConfig,
     token: &str,
     callback_url: Option<&str>,

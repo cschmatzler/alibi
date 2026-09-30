@@ -7,8 +7,10 @@
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use better_auth::plugins::user_management::{SendChangeEmailConfirmation, UserInfo};
 use better_auth::plugins::{
     EmailPasswordPlugin, EmailVerificationConfig, EmailVerificationPlugin, SendVerificationEmail,
+    UserManagementPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
 use better_auth_core::wire::UserView;
@@ -91,7 +93,10 @@ async fn post_with_cookie(
     body: Value,
     cookie: Option<&str>,
 ) -> (AuthResponse, Value) {
-    let mut req = AuthRequest::new(HttpMethod::Post, format!("/api/auth{path}"));
+    let mut req = AuthRequest::new(
+        HttpMethod::Post,
+        format!("{}{path}", auth.config().base_path),
+    );
     _ = req
         .headers
         .insert("content-type".into(), "application/json".into());
@@ -350,4 +355,163 @@ async fn notification_failure_commits_signup_but_direct_delivery_reports_the_err
         Some(user.id().as_ref())
     );
     assert_eq!(sender.calls.lock().unwrap().len(), 3);
+}
+
+#[derive(Default)]
+struct ChangeProofSender {
+    calls: Mutex<Vec<(String, String, String)>>,
+}
+
+#[async_trait]
+impl SendChangeEmailConfirmation for ChangeProofSender {
+    async fn send(
+        &self,
+        user: &UserInfo,
+        _new_email: &str,
+        url: &str,
+        token: &str,
+    ) -> AuthResult<()> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((user.id.clone(), url.to_owned(), token.to_owned()));
+        Ok(())
+    }
+}
+
+// Modern email-change proofs use initialized email-verification expiry in both
+// delivery stages, including when the auth instance has a custom base path.
+#[tokio::test]
+async fn change_email_delivery_uses_configured_verification_expiry_and_base_path() {
+    for (expiry, path, expected_seconds) in [
+        (chrono::Duration::hours(1), "/api/auth", 3600),
+        (chrono::Duration::seconds(90), "/nested/auth", 90),
+    ] {
+        let config = AuthConfig::new("verification-change-fixture-secret-minimum-32-characters")
+            .base_url(ORIGIN)
+            .base_path(path);
+        let database = Database::connect("sqlite::memory:").await.unwrap();
+        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+            .await
+            .unwrap();
+        let confirmation = Arc::new(ChangeProofSender::default());
+        let follow_up = Arc::new(Sender::default());
+        let auth = AuthBuilder::new(config.clone())
+            .store(SeaOrmStore::<Schema>::new(config, database))
+            .plugin(EmailPasswordPlugin::new().enable_username(false))
+            .plugin(EmailVerificationPlugin::with_config(
+                EmailVerificationConfig {
+                    verification_token_expiry: expiry,
+                    send_on_sign_up: Some(false),
+                    send_verification_email: Some(follow_up.clone()),
+                    ..Default::default()
+                },
+            ))
+            .plugin(
+                UserManagementPlugin::new()
+                    .change_email_enabled(true)
+                    .send_change_email_confirmation(confirmation.clone()),
+            )
+            .build()
+            .await
+            .unwrap();
+        let (registered, user) = post(&auth, "/sign-up/email", signup()).await;
+        assert_eq!(registered.status, 200, "{user}");
+        let id = user.pointer("/user/id").and_then(Value::as_str).unwrap();
+        let _ = auth
+            .store()
+            .update_user(
+                id,
+                better_auth_core::UpdateUser {
+                    email_verified: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let cookie = registered
+            .headers
+            .get("set-cookie")
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap();
+        let target = "changed@verification.fixture.test";
+        let callback = "/complete?flow=change#done";
+        let (changed, body) = post_with_cookie(
+            &auth,
+            "/change-email",
+            json!({"newEmail":target,"callbackURL":callback}),
+            Some(cookie),
+        )
+        .await;
+        assert_eq!(changed.status, 200, "{body}");
+        let deliveries = confirmation.calls.lock().unwrap().clone();
+        assert_eq!(deliveries.len(), 1);
+        let (owner, url, token) = deliveries.first().unwrap();
+        assert_eq!(owner, id);
+        let claims = jsonwebtoken::decode::<Value>(
+            token,
+            &jsonwebtoken::DecodingKey::from_secret(auth.config().secret.as_bytes()),
+            &jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256),
+        )
+        .unwrap()
+        .claims;
+        assert_eq!(
+            claims.get("exp").and_then(Value::as_i64).unwrap()
+                - claims.get("iat").and_then(Value::as_i64).unwrap(),
+            expected_seconds
+        );
+        assert_eq!(claims.get("email").and_then(Value::as_str), Some(EMAIL));
+        assert_eq!(claims.get("updateTo").and_then(Value::as_str), Some(target));
+        assert_eq!(
+            claims.get("requestType").and_then(Value::as_str),
+            Some("change-email-confirmation")
+        );
+        let delivered = reqwest::Url::parse(url).unwrap();
+        assert_eq!(delivered.path(), format!("{path}/verify-email"));
+        let query: std::collections::HashMap<_, _> = delivered.query_pairs().into_owned().collect();
+        assert_eq!(query.get("token"), Some(token));
+        assert_eq!(query.get("callbackURL").map(String::as_str), Some(callback));
+        assert_eq!(
+            auth.store()
+                .get_user_by_id(id)
+                .await
+                .unwrap()
+                .unwrap()
+                .email(),
+            Some(EMAIL)
+        );
+        let mut verify = AuthRequest::new(HttpMethod::Get, delivered.path());
+        verify.query = query;
+        _ = verify.headers.insert("cookie".into(), cookie.into());
+        let confirmed = auth.handle_request(verify).await.unwrap();
+        assert_eq!(confirmed.status, 302);
+        let calls = follow_up.calls.lock().unwrap().clone();
+        assert_eq!(calls.len(), 1);
+        let (follow_up_user, follow_up_token) = calls.first().unwrap();
+        assert_eq!(follow_up_user.id, id);
+        assert_eq!(follow_up_user.email.as_deref(), Some(target));
+        let follow_up_claims = jsonwebtoken::decode::<Value>(
+            follow_up_token,
+            &jsonwebtoken::DecodingKey::from_secret(auth.config().secret.as_bytes()),
+            &jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256),
+        )
+        .unwrap()
+        .claims;
+        assert_eq!(
+            follow_up_claims.get("exp").and_then(Value::as_i64).unwrap()
+                - follow_up_claims.get("iat").and_then(Value::as_i64).unwrap(),
+            expected_seconds
+        );
+        let mut finish = AuthRequest::new(HttpMethod::Get, format!("{path}/verify-email"));
+        _ = finish.query.insert("token".into(), follow_up_token.clone());
+        _ = finish.headers.insert("cookie".into(), cookie.into());
+        assert_eq!(auth.handle_request(finish).await.unwrap().status, 200);
+        let persisted = auth.store().get_user_by_id(id).await.unwrap().unwrap();
+        assert_eq!(persisted.email(), Some(target));
+        assert!(persisted.email_verified());
+        assert_eq!(auth.store().get_user_accounts(id).await.unwrap().len(), 1);
+        assert_eq!(auth.store().get_user_sessions(id).await.unwrap().len(), 1);
+    }
 }
