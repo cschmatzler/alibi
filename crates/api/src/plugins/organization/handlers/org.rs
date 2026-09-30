@@ -1,6 +1,5 @@
 use super::{require_session, resolve_organization_id};
 use crate::plugins::organization::OrganizationConfig;
-use crate::plugins::organization::rbac::{Action, Resource, has_permission_any};
 use crate::plugins::organization::types::{
     BasicMemberResponse, CheckSlugRequest, CheckSlugResponse, CreateOrganizationRequest,
     CreateOrganizationResponse, CreatedOrganizationResponse, DeleteOrganizationRequest,
@@ -16,7 +15,7 @@ use better_auth_core::types::{
     AuthRequest, AuthResponse, CreateMember, CreateOrganization, UpdateOrganization,
 };
 use better_auth_core::utils::cookie_utils::create_session_cookie;
-use better_auth_core::wire::InvitationView;
+use better_auth_core::wire::{InvitationView, SessionView};
 use std::collections::HashMap;
 
 fn has_role(member: &impl AuthMember, role: &str) -> bool {
@@ -34,6 +33,8 @@ fn has_role(member: &impl AuthMember, role: &str) -> bool {
 pub(crate) async fn create_organization_core(
     body: &CreateOrganizationRequest,
     user: &impl AuthUser,
+    request: Option<&AuthRequest>,
+    session: Option<&SessionView>,
     config: &OrganizationConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<CreateOrganizationResponse<CreatedOrganizationResponse, BasicMemberResponse>> {
@@ -78,10 +79,54 @@ pub(crate) async fn create_organization_core(
 
     let member = ctx.database.create_member(member_data).await?;
     let member_response = BasicMemberResponse::from_member(&member);
+    let default_team_id = if config.teams.enabled && config.teams.create_default_team {
+        let mut data = better_auth_core::types::CreateTeam {
+            name: organization.name().to_owned(),
+            organization_id: organization.id().into_owned(),
+            updated_at: None,
+        };
+        let hooks = crate::plugins::organization::extensions::TeamHookContext {
+            organization: organization.clone(),
+            user: Some(ctx.user_view(user)),
+        };
+        if let Some(callback) = &config.teams.hooks {
+            callback.before_create(&mut data, &hooks).await?;
+        }
+        let custom = match &config.teams.default_team_factory {
+            Some(factory) => {
+                let factory_context =
+                    crate::plugins::organization::extensions::DefaultTeamContext {
+                        request: request.cloned(),
+                        user: ctx.user_view(user),
+                        session: session.cloned(),
+                        config: ctx.config.clone(),
+                    };
+                factory
+                    .create(&organization, &factory_context, ctx.database.as_ref())
+                    .await?
+            }
+            None => None,
+        };
+        let team = match custom {
+            Some(team) => team,
+            None => ctx.database.create_team(data).await?,
+        };
+        let _ = ctx
+            .database
+            .add_team_member(&team.id, user.id().as_ref(), None)
+            .await?;
+        if let Some(callback) = &config.teams.hooks {
+            callback.after_create(&team, &hooks).await?;
+        }
+        Some(team.id)
+    } else {
+        None
+    };
 
     Ok(CreateOrganizationResponse {
         organization: CreatedOrganizationResponse::from_organization(&organization),
         members: vec![member_response],
+        default_team_id,
     })
 }
 
@@ -101,12 +146,16 @@ pub(crate) async fn update_organization_core(
         .await?
         .ok_or_else(|| AuthError::forbidden("Not a member of this organization"))?;
 
-    if !has_permission_any(
+    if !super::extension_common::has_action(
         member.role(),
-        &Resource::Organization,
-        &Action::Update,
-        &config.roles,
-    ) {
+        "organization",
+        "update",
+        config,
+        ctx,
+        &org_id,
+    )
+    .await?
+    {
         return Err(AuthError::forbidden(
             "You don't have permission to update this organization",
         ));
@@ -150,12 +199,16 @@ pub(crate) async fn delete_organization_core(
         .await?
         .ok_or_else(|| AuthError::bad_request("User is not a member of the organization"))?;
 
-    if !has_permission_any(
+    if !super::extension_common::has_action(
         member.role(),
-        &Resource::Organization,
-        &Action::Delete,
-        &config.roles,
-    ) {
+        "organization",
+        "delete",
+        config,
+        ctx,
+        body.organization_id.as_str(),
+    )
+    .await?
+    {
         return Err(AuthError::forbidden(
             "You don't have permission to delete this organization",
         ));
@@ -253,7 +306,22 @@ pub(crate) async fn get_full_organization_core(
     Ok(Some(FullOrganizationResponse {
         organization: OrganizationResponse::from_organization(&organization),
         members,
-        invitations: invitations.iter().map(InvitationView::from).collect(),
+        invitations: invitations
+            .iter()
+            .map(|invitation| ctx.invitation_view(invitation))
+            .collect(),
+        teams: if config.teams.enabled {
+            Some(
+                ctx.database
+                    .list_teams(&org_id)
+                    .await?
+                    .into_iter()
+                    .map(Into::into)
+                    .collect(),
+            )
+        } else {
+            None
+        },
     }))
 }
 
@@ -384,7 +452,8 @@ pub async fn handle_create_organization(
         Ok(v) => v,
         Err(resp) => return Ok(resp),
     };
-    let response = create_organization_core(&body, &user, config, ctx).await?;
+    let response =
+        create_organization_core(&body, &user, Some(req), Some(&session), config, ctx).await?;
     if !body.keep_current_active_organization.unwrap_or(false) {
         let _ = ctx
             .database
@@ -393,6 +462,12 @@ pub async fn handle_create_organization(
                 Some(response.organization.id.as_str()),
             )
             .await?;
+        if let Some(team_id) = &response.default_team_id {
+            let _ = ctx
+                .database
+                .update_session_active_team(session.token(), Some(team_id))
+                .await?;
+        }
     }
     Ok(AuthResponse::json(200, &response)?)
 }
@@ -510,7 +585,6 @@ fn parse_query<T: Default + serde::de::DeserializeOwned>(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
 
     use better_auth_core::types::{CreateOrganization, CreateUser, HttpMethod};
     use chrono::Duration;
@@ -533,7 +607,11 @@ mod tests {
             invitation_expires_in: 60 * 60 * 48,
             invitation_limit: Some(100),
             disable_organization_deletion: false,
-            roles: HashMap::new(),
+            roles: None,
+            require_email_verification_on_invitation: None,
+            teams: Default::default(),
+            dynamic_access_control: Default::default(),
+            access_control: None,
         }
     }
 

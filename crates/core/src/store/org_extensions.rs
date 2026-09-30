@@ -97,6 +97,15 @@ pub trait OrganizationRoleStore: Send + Sync {
     async fn count_organization_roles(&self, _organization_id: &str) -> AuthResult<usize> {
         Err(unsupported())
     }
+    /// Check exact comma-separated membership roles in the configured adapter page.
+    /// The organization and role substring predicates are applied before pagination.
+    async fn has_organization_role_members(
+        &self,
+        _organization_id: &str,
+        _role: &str,
+    ) -> AuthResult<bool> {
+        Err(unsupported())
+    }
     async fn update_organization_role(
         &self,
         _organization_id: &str,

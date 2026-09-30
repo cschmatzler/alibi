@@ -553,6 +553,9 @@ impl<S: AuthSchema> OrganizationRoleStore for PluginStore<S> {
     async fn count_organization_roles(&self, _organization_id: &str) -> AuthResult<usize> {
         self.inner.count_organization_roles(_organization_id).await
     }
+    async fn has_organization_role_members(&self, organization_id: &str, role: &str) -> AuthResult<bool> {
+        self.inner.has_organization_role_members(organization_id, role).await
+    }
     async fn update_organization_role(
         &self,
         _organization_id: &str,
