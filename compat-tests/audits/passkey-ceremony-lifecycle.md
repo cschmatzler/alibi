@@ -36,8 +36,22 @@ Equivalent profiles configure freshness to one second or zero. The TS profile
 uses the upstream username plugin to match fields exposed by the Rust fixture's
 bundled user schema.
 
-Three scenarios establish:
+Four scenarios establish:
 
+- Two concurrent submissions of the same valid real registration response commit
+  exactly one credential, with the other response returning the precise
+  `CHALLENGE_NOT_FOUND` error. After sign-out, two concurrent submissions of the
+  same real signed assertion commit exactly one owner session and one counter
+  update. A retry remains rejected. Both complete official-client results,
+  including the winning session token, remain in the shared comparison graph.
+  Separate instances of the existing tracing fetch capture each request; their
+  complete one-entry traces are recorded through `ctx.recordTransport` in
+  success/rejection order. This names unordered outcomes without treating
+  network completion order as a protocol guarantee. No response, trace field,
+  header, or cookie attribute is removed; the existing canonical trace comparison
+  receives all four concurrent requests. Setup cookies come from actual
+  `onSuccess` responses and the winning signed session cookie is independently
+  used to read the real owner session.
 - A wrong registration challenge leaves no credential and retires the challenge;
   replay of the original valid response fails, and a fresh generation succeeds.
   Authentication schema failures retain one generation for a later valid signed
@@ -62,9 +76,24 @@ and accepted stale generation respectively. The narrower
 consumption of a schema-invalid authentication response before its guard was
 added: verification count zero instead of one.
 
-After proof: `/tmp/passkey-lifecycle-sdk-final.log` has five scenarios / 212
-assertions, including both existing passkey scenarios. Genuine TS-to-TS
-`/tmp/passkey-lifecycle-oracle-schema.log` has three scenarios / 174 assertions.
+Initial after proof: `/tmp/passkey-lifecycle-sdk-final.log` has five scenarios /
+212 assertions. Final after the overlapping-ceremony addition:
+`/tmp/passkey-overlap-sdk-final.log` and genuine TS-to-TS
+`/tmp/passkey-overlap-oracle-final.log` each have six scenarios / 306 assertions,
+including both existing passkey scenarios. Client typecheck passes in
+`/tmp/passkey-overlap-typecheck-final.log`.
+
+The real endpoint overlap fails against unchanged production in
+`/tmp/passkey-overlap-baseline.log` on its loser replay classification. Additional
+actual HTTP/ES256 driver evidence isolates concurrent authentication:
+`/tmp/passkey-overlap-auth-baseline.log` records two successful responses with
+separate full session tokens and two persisted sessions in three of four races
+against unchanged `88ad6e0`. The same probe against the actual pinned runtime
+(`/tmp/passkey-overlap-auth-pinned.log`) and fixed Rust
+(`/tmp/passkey-overlap-auth-fixed.log`) yields one 200, one 400 and one persisted
+owner session in each of four races. The auxiliary probe is preserved as
+`/tmp/passkey-overlap-auth-oracle.ts`; the official-client scenario is the primary
+committed owner of this contract.
 Existing distinct native passkey tests (10) pass in
 `/tmp/passkey-lifecycle-native-final.log`; no duplicate native mirror was added.
 Production API Clippy and client typecheck pass in
@@ -81,8 +110,9 @@ authenticatorSelection/extensions, origin arrays, or advanced challenge-cookie
 names. The existing Rust challenge cookie uses a signed JWT rather than the
 upstream opaque HMAC cookie; the actual driver and account ownership paths are
 tested here, while cookie format interoperability is a separate capability.
-Native valid-concurrent WebAuthn transport scheduling is not claimed by these
-sequential SDK scenarios; the underlying atomic verification contract has its
-own installed-store concurrency coverage. Broader malformed JSON/media errors,
+The official-client concurrent WebAuthn scenario exercises the actual bundled
+SQLite runtimes; arbitrary custom adapters and schedulers are not claimed
+universally. The underlying atomic verification contract has its own
+installed-store concurrency coverage. Broader malformed JSON/media errors,
 custom driver failure behavior and authentication metadata-update differences
 are not asserted universally by this slice.

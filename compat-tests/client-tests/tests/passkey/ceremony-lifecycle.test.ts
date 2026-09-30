@@ -4,7 +4,211 @@ import { createAuthClient } from "better-auth/client";
 import { passkeyClient } from "@better-auth/passkey/client";
 import { Authenticator } from "../../support/authenticator";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
+import { createTracingFetch, type TraceEntry } from "../../support/trace";
 import type { FixtureProfile } from "../../support/profiles";
+
+compatScenario(
+  "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
+  async (ctx) => {
+    const owner = ctx.actor("owner");
+    const passkey = client(ctx, "owner");
+    let ownerCookies: string[] = [];
+    const signup = await owner.client.signUp.email(
+      {
+        email: ctx.uniqueEmail("overlap-owner"),
+        password: "password123",
+        name: "Overlap Owner",
+      },
+      {
+        onSuccess({ response }) {
+          ownerCookies = response.headers.getSetCookie();
+        },
+      },
+    );
+    expect(signup.error).toBeNull();
+    const user = identity.parse(signup.data).user;
+    const authenticator = new Authenticator();
+    let challengeCookies: string[] = [];
+    const options = await passkey.$fetch("/passkey/generate-register-options", {
+      method: "GET",
+      onSuccess({ response }) {
+        challengeCookies = response.headers.getSetCookie();
+      },
+    });
+    expect(options.error).toBeNull();
+    expect(ownerCookies.length).toBeGreaterThan(0);
+    expect(challengeCookies.length).toBe(1);
+    const cookieHeader = (cookies: string[]) =>
+      cookies.map((cookie) => cookie.split(";")[0]).join("; ");
+    async function submit(path: string, body: unknown, cookie: string) {
+      // Concurrent outcomes own separate existing traces; completion order is not a protocol guarantee.
+      const traces: TraceEntry[] = [];
+      const local = createAuthClient({
+        baseURL: `${ctx.baseURL}/api/auth`,
+        plugins: [passkeyClient()],
+        fetchOptions: {
+          customFetchImpl: createTracingFetch(ctx.baseURL, "overlap", traces),
+        },
+      });
+      let cookies: string[] = [];
+      const result = await local.$fetch(path, {
+        method: "POST",
+        body,
+        headers: { cookie },
+        onSuccess({ response }) {
+          cookies = response.headers.getSetCookie();
+        },
+      });
+      expect(traces).toHaveLength(1);
+      expect(traces[0]?.path).toBe(`/api/auth${path}`);
+      expect(traces[0]?.method).toBe("POST");
+      expect(traces[0]?.responseStatus).toBe(result.error?.status ?? 200);
+      return { result, traces, cookies };
+    }
+    const response = authenticator.register(options.data, ctx.baseURL);
+    const registrations = await Promise.all(
+      [0, 1].map(() =>
+        submit(
+          "/passkey/verify-registration",
+          { response, name: "One Winner" },
+          cookieHeader([...ownerCookies, ...challengeCookies]),
+        ),
+      ),
+    );
+    expect(registrations).toHaveLength(2);
+    const registered = registrations.filter(
+      ({ result }) => result.error === null,
+    );
+    const rejectedRegistration = registrations.filter(
+      ({ result }) => result.error !== null,
+    );
+    expect(registered).toHaveLength(1);
+    expect(rejectedRegistration).toHaveLength(1);
+    const credential = z
+      .object({
+        userId: z.string(),
+        credentialID: z.string(),
+        counter: z.number(),
+      })
+      .parse(registered[0]?.result.data);
+    expect(credential).toMatchObject({
+      userId: user.id,
+      credentialID: response.id,
+      counter: 0,
+    });
+    expect(rejectedRegistration[0]?.result.error?.status).toBe(400);
+    expect(
+      z
+        .object({ code: z.string() })
+        .parse(rejectedRegistration[0]?.result.error).code,
+    ).toBe("CHALLENGE_NOT_FOUND");
+    ctx.recordTransport(registered[0]?.traces ?? []);
+    ctx.recordTransport(rejectedRegistration[0]?.traces ?? []);
+    const afterRegistration = await state(ctx, user.id);
+    expect(afterRegistration).toEqual({
+      passkeys: [{ userId: user.id, counter: 0, name: "One Winner" }],
+      sessions: { count: 1 },
+      challenges: { count: 0 },
+    });
+    await owner.client.signOut();
+    expect((await owner.client.getSession()).data).toBeNull();
+    const authOptions = await passkey.$fetch(
+      "/passkey/generate-authenticate-options",
+      {
+        method: "GET",
+        onSuccess({ response }) {
+          challengeCookies = response.headers.getSetCookie();
+        },
+      },
+    );
+    expect(authOptions.error).toBeNull();
+    expect(challengeCookies.length).toBe(1);
+    const assertion = authenticator.authenticate(authOptions.data, ctx.baseURL);
+    const authentications = await Promise.all(
+      [0, 1].map(() =>
+        submit(
+          "/passkey/verify-authentication",
+          { response: assertion },
+          cookieHeader(challengeCookies),
+        ),
+      ),
+    );
+    expect(authentications).toHaveLength(2);
+    const authenticated = authentications.filter(
+      ({ result }) => result.error === null,
+    );
+    const rejectedAuthentication = authentications.filter(
+      ({ result }) => result.error !== null,
+    );
+    expect(authenticated).toHaveLength(1);
+    expect(rejectedAuthentication).toHaveLength(1);
+    const session = z
+      .object({
+        user: z.object({ id: z.string() }),
+        session: z.object({
+          id: z.string(),
+          userId: z.string(),
+          token: z.string(),
+        }),
+      })
+      .parse(authenticated[0]?.result.data);
+    expect(session.user.id).toBe(user.id);
+    expect(session.session.userId).toBe(user.id);
+    expect(rejectedAuthentication[0]?.result.error?.status).toBe(400);
+    expect(
+      z
+        .object({ code: z.string() })
+        .parse(rejectedAuthentication[0]?.result.error).code,
+    ).toBe("CHALLENGE_NOT_FOUND");
+    ctx.recordTransport(authenticated[0]?.traces ?? []);
+    ctx.recordTransport(rejectedAuthentication[0]?.traces ?? []);
+    expect(authenticated[0]?.cookies).toHaveLength(1);
+    const current = await owner.client.getSession({
+      fetchOptions: {
+        headers: { cookie: cookieHeader(authenticated[0]?.cookies ?? []) },
+      },
+    });
+    expect(current.data?.user.id).toBe(user.id);
+    expect(current.data?.session.id).toBe(session.session.id);
+    expect(current.data?.session.token).toBe(session.session.token);
+    const committed = await state(ctx, user.id);
+    expect(committed).toEqual({
+      passkeys: [{ userId: user.id, counter: 1, name: "One Winner" }],
+      sessions: { count: 1 },
+      challenges: { count: 0 },
+    });
+    const replay = await passkey.$fetch("/passkey/verify-authentication", {
+      method: "POST",
+      body: { response: assertion },
+    });
+    expect(z.object({ code: z.string() }).parse(replay.error).code).toBe(
+      "CHALLENGE_NOT_FOUND",
+    );
+    expect(await state(ctx, user.id)).toEqual(committed);
+    return {
+      registration: {
+        success: {
+          result: ctx.snapshot(registered[0]?.result),
+        },
+        denied: {
+          result: ctx.snapshot(rejectedRegistration[0]?.result),
+        },
+      },
+      afterRegistration,
+      authentication: {
+        success: {
+          result: ctx.snapshot(authenticated[0]?.result),
+        },
+        denied: {
+          result: ctx.snapshot(rejectedAuthentication[0]?.result),
+        },
+      },
+      current: ctx.snapshot(current),
+      committed,
+      replay: ctx.snapshot(replay),
+    };
+  },
+);
 
 function client(ctx: ScenarioContext, actor: string, profile?: FixtureProfile) {
   const transport = ctx.actor(actor, profile);
