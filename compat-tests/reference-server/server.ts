@@ -6,6 +6,7 @@ import { passkey } from "@better-auth/passkey";
 import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { createApiKeyGenerationFixture } from "./api-key-generation-fixture";
 import { createApiKeyHookFixture } from "./api-key-hook-fixture";
+import { passkeyFixture } from "./passkey-fixture";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { createTwoFactorPolicyFixture } from "./two-factor-policy-fixture";
 import { createTwoFactorOtpFixture } from "./two-factor-otp-fixture";
@@ -445,6 +446,15 @@ for (const name of ["session-deferred", "session-no-refresh", "session-deferred-
   }));
 }
 
+for (const name of ["passkey-fresh", "passkey-no-freshness"]) {
+  const path = `/__test/profiles/${name}/api/auth`;
+  verificationProfiles.set(path, betterAuth({
+    ...authOptions, basePath: path,
+    session: { ...authOptions.session, freshAge: name === "passkey-fresh" ? 1 : 0 },
+    plugins: [passkey(), username()],
+  }));
+}
+
 function createOtpProfile(name:string) {
   const proof=name.startsWith("passwordless-proof");
   return betterAuth({
@@ -734,6 +744,7 @@ async function oneTimeTokenControl(request:Request,url:URL):Promise<Response|und
 
 const openApiInstances=openApiProfiles(PORT,database);
 
+const passkeyControls = passkeyFixture(database);
 const server = Bun.serve({
   port: PORT,
   async fetch(request) {
@@ -985,6 +996,9 @@ const server = Bun.serve({
         const persistedMember = await authContext.adapter.findOne<Record<string, unknown>>({ model: "member", where: memberWhere });
         return jsonResponse({ organizationId: persistedOrg!.id, memberId: persistedMember!.id, userId: persistedMember!.userId, organizationCreatedAtMillis: new Date(persistedOrg!.createdAt as Date).getTime(), memberCreatedAtMillis: new Date(persistedMember!.createdAt as Date).getTime() });
       }
+
+      const passkeyControl = await passkeyControls(request);
+      if (passkeyControl) return passkeyControl;
 
       if (url.pathname === "/__test/expire-session" && request.method === "POST") {
         const body = await readJson(request);

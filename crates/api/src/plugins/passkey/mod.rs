@@ -45,7 +45,14 @@ impl PasskeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = ctx.require_session(req).await?;
+        let (user, session) = ctx.require_session(req).await?;
+        if !ctx.session_manager().is_session_fresh(&session) {
+            return Err(AuthError::Upstream {
+                status: 403,
+                code: "SESSION_NOT_FRESH",
+                message: "Session is not fresh",
+            });
+        }
         let passkey_name = req.query.get("name").map(|s| s.as_str());
         let authenticator_attachment = req.query.get("authenticatorAttachment").map(|s| s.as_str());
         let (result, cookie_header) = generate_register_options_core(
@@ -65,7 +72,14 @@ impl PasskeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = ctx.require_session(req).await?;
+        let (user, session) = ctx.require_session(req).await?;
+        if !ctx.session_manager().is_session_fresh(&session) {
+            return Err(AuthError::Upstream {
+                status: 403,
+                code: "SESSION_NOT_FRESH",
+                message: "Session is not fresh",
+            });
+        }
         let body: VerifyRegistrationRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
