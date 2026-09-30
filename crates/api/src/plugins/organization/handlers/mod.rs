@@ -2,6 +2,7 @@ pub mod extension_common;
 pub mod invitation;
 pub mod member;
 pub mod org;
+pub(crate) mod org_input;
 pub mod role;
 pub mod team;
 mod validation;

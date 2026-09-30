@@ -15,7 +15,8 @@ use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManag
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_core::wire::UserView;
 use better_auth_seaorm::sea_orm::{
-    ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    Statement,
 };
 use better_auth_seaorm::store::entities::{member, organization, session, user};
 use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
@@ -42,8 +43,8 @@ impl OrganizationCreationPolicy for Policy {
         if user.name.as_deref() == Some("Reject Allow") {
             return Err(AuthError::Upstream {
                 status: 403,
-                code: "CREATION_ALLOW_REJECTED".into(),
-                message: "Creation allow callback rejected".into(),
+                code: "CREATION_ALLOW_REJECTED",
+                message: "Creation allow callback rejected",
             });
         }
         Ok(Some(
@@ -57,8 +58,8 @@ impl OrganizationCreationPolicy for Policy {
         if user.name.as_deref() == Some("Paid Reject Limit") {
             return Err(AuthError::Upstream {
                 status: 403,
-                code: "CREATION_LIMIT_REJECTED".into(),
-                message: "Creation limit callback rejected".into(),
+                code: "CREATION_LIMIT_REJECTED",
+                message: "Creation limit callback rejected",
             });
         }
         let count = member::Entity::find()
@@ -72,6 +73,8 @@ impl OrganizationCreationPolicy for Policy {
 #[derive(Deserialize)]
 struct StateQuery {
     email: String,
+    #[serde(default, rename = "includeMetadata")]
+    include_metadata: bool,
 }
 #[derive(Deserialize)]
 struct ServerRequest {
@@ -90,6 +93,10 @@ fn failure(error: AuthError) -> (StatusCode, Json<Value>) {
     let status = StatusCode::from_u16(error.status_code()).unwrap();
     let value = match error {
         AuthError::Upstream { code, message, .. } => json!({"code":code,"message":message}),
+        AuthError::Api { code, message, .. } => match code {
+            Some(code) => json!({"code":code,"message":message}),
+            None => json!({"message":message}),
+        },
         AuthError::Unauthenticated => Value::Null,
         error => json!({"message":error.to_string()}),
     };
@@ -194,14 +201,25 @@ pub(super) async fn router(
                             .await
                             .unwrap()
                         {
-                            joined.push((
-                                org.created_at,
-                                org.id.clone(),
-                                json!({
-                                    "id": org.id, "name": org.name, "slug": org.slug,
-                                    "memberId": row.id, "userId": row.user_id, "role": row.role
-                                }),
-                            ));
+                            let mut value = json!({
+                                "id": org.id, "name": org.name, "slug": org.slug,
+                                "memberId": row.id, "userId": row.user_id, "role": row.role
+                            });
+                            if query.include_metadata {
+                                let metadata = db
+                                    .query_one_raw(Statement::from_sql_and_values(
+                                        DbBackend::Sqlite,
+                                        "SELECT metadata FROM organization WHERE id = ?",
+                                        [org.id.clone().into()],
+                                    ))
+                                    .await
+                                    .unwrap()
+                                    .unwrap()
+                                    .try_get::<Option<String>>("", "metadata")
+                                    .unwrap();
+                                value["metadata"] = json!(metadata);
+                            }
+                            joined.push((org.created_at, org.id.clone(), value));
                         }
                     }
                     joined.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
@@ -274,7 +292,7 @@ pub(super) async fn router(
                     name: request.name,
                     slug: request.slug,
                     logo: None,
-                    metadata: None,
+                    metadata: body.get("metadata").cloned(),
                     keep_current_active_organization: None,
                 };
                 match OrganizationPlugin::with_config(profile.config.clone())

@@ -484,7 +484,7 @@ pub async fn handle_create_organization(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
-    let body: CreateOrganizationRequest = match better_auth_core::validate_request_body(req) {
+    let body = match super::org_input::create(req) {
         Ok(v) => v,
         Err(resp) => return Ok(resp),
     };
@@ -521,10 +521,19 @@ pub async fn handle_update_organization(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
-    let (user, session) = require_session(req, ctx).await?;
-    let body: UpdateOrganizationRequest = match better_auth_core::validate_request_body(req) {
+    let body = match super::org_input::update(req) {
         Ok(v) => v,
         Err(resp) => return Ok(resp),
+    };
+    let (user, session) = match require_session(req, ctx).await {
+        Ok(session) => session,
+        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
+            return Ok(AuthResponse::json(
+                401,
+                &serde_json::json!({"message":"User not found"}),
+            )?);
+        }
+        Err(error) => return Err(error),
     };
     let updated = update_organization_core(&body, &user, &session, config, ctx).await?;
     Ok(AuthResponse::json(200, &updated)?)

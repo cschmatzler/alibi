@@ -1119,13 +1119,19 @@
           "organization creation fractional limits count every membership and preserve other current-token selections",
           "organization creation nonfinite number limits retain the pinned unlimited comparison branch",
           "organization creation async policy sees the persisted principal and true limit results deny public and trusted creation",
-          "organization creator role customization preserves explicit grants and prevents removing the only effective owner"
+          "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
+          "organization metadata record validation precedes policy callbacks and preserves stored rows and selections",
+          "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations",
+          "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs"
         ],
         "rejection": [
           "organization creation static denial and negative limits preserve ownership while trusted creation bypasses only the allow policy",
           "organization creation fractional limits count every membership and preserve other current-token selections",
           "organization creation async policy sees the persisted principal and true limit results deny public and trusted creation",
-          "organization creation callback errors propagate before writes even for trusted callers"
+          "organization creation callback errors propagate before writes even for trusted callers",
+          "organization metadata record validation precedes policy callbacks and preserves stored rows and selections",
+          "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations",
+          "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs"
         ],
         "authorization": [
           "organization creation static denial and negative limits preserve ownership while trusted creation bypasses only the allow policy",
@@ -1139,7 +1145,10 @@
           "organization creation nonfinite number limits retain the pinned unlimited comparison branch",
           "organization creation async policy sees the persisted principal and true limit results deny public and trusted creation",
           "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
-          "organization creation callback errors propagate before writes even for trusted callers"
+          "organization creation callback errors propagate before writes even for trusted callers",
+          "organization metadata record validation precedes policy callbacks and preserves stored rows and selections",
+          "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations",
+          "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs"
         ]
       }
     },
@@ -1302,15 +1311,29 @@
           "organization metadata stores rounded JavaScript numbers before readback",
           "organization metadata lookup default scopes selectors and clears only the denied session",
           "organization metadata lookup org-teams scopes selectors and clears only the denied session",
-          "organization creator role customization preserves explicit grants and prevents removing the only effective owner"
+          "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
+          "organization metadata record validation precedes policy callbacks and preserves stored rows and selections",
+          "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations",
+          "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs"
         ],
-        "rejection": "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
-        "authorization": "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
+        "rejection": [
+          "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
+          "organization metadata record validation precedes policy callbacks and preserves stored rows and selections",
+          "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations",
+          "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs"
+        ],
+        "authorization": [
+          "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
+          "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations"
+        ],
         "state": [
           "organization metadata stores rounded JavaScript numbers before readback",
           "organization metadata lookup default scopes selectors and clears only the denied session",
           "organization metadata lookup org-teams scopes selectors and clears only the denied session",
-          "organization creator role customization preserves explicit grants and prevents removing the only effective owner"
+          "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
+          "organization metadata record validation precedes policy callbacks and preserves stored rows and selections",
+          "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations",
+          "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs"
         ]
       }
     },
