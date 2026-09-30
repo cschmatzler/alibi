@@ -1,3 +1,5 @@
+mod team_fixture;
+
 use axum::{
     extract::Query,
     response::IntoResponse,
@@ -44,6 +46,7 @@ use tokio::sync::Mutex;
 
 mod lifecycle_fixture;
 mod otp_profiles;
+mod organization_timestamp_fixture;
 mod parity_controls;
 mod sqlite_fixture;
 mod verification_profiles;
@@ -217,6 +220,12 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
     passkey::Entity::delete_many().exec(database).await?;
     api_key::Entity::delete_many().exec(database).await?;
     two_factor::Entity::delete_many().exec(database).await?;
+    better_auth_seaorm::store::entities::team_member::Entity::delete_many()
+        .exec(database)
+        .await?;
+    better_auth_seaorm::store::entities::team::Entity::delete_many()
+        .exec(database)
+        .await?;
     invitation::Entity::delete_many().exec(database).await?;
     member::Entity::delete_many().exec(database).await?;
     organization::Entity::delete_many().exec(database).await?;
@@ -585,6 +594,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let database = sqlite_fixture::connect().await?;
     better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
     let reset_database = database.clone();
+    let team_profiles = team_fixture::profiles(&config, &database).await?;
+    let team_router = team_fixture::router(database.clone(), team_profiles);
 
     let otp_outbox = Arc::new(Mutex::new(HashMap::new()));
     let email_otp = otp_profiles::plugin(otp_outbox.clone());
@@ -741,6 +752,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         .merge(lifecycle_controls)
+        .merge(organization_timestamp_fixture::router(
+            reset_database.clone(),
+        ))
         .merge(parity_controls::router())
         .route("/__health", get(health_check))
         .route(
@@ -1513,6 +1527,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }))
             }),
         )
+        .merge(team_router)
         .nest("/api/auth", auth_router)
         .with_state(auth)
         .merge(verification_profile_router)

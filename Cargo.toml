@@ -12,7 +12,7 @@ workspace = true
 [workspace]
 resolver = "2"
 members = ["crates/core", "crates/api", "crates/derive", "crates/seaorm", "crates/seaorm-macros", "crates/schema-registry", "crates/cli"]
-exclude = ["examples/sqlx-custom-entities", "examples/fullstack/backend", "compat-tests/rust-server"]
+exclude = ["compat-tests/rust-server"]
 
 [workspace.package]
 version = "1.0.0-alpha.3"
@@ -36,6 +36,7 @@ async-trait = "0.1"
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
+ryu-js = "1.0.3"
 indexmap = { version = "2", features = ["serde"] }
 
 # Logging and tracing
@@ -150,14 +151,6 @@ oas3 = { version = "0.20.1", features = ["yaml-spec"] }
 proptest = "1.10.0"
 reqwest = { workspace = true }
 
-[[example]]
-name = "axum_server"
-required-features = ["axum", "seaorm2"]
-
-[[example]]
-name = "postgres_usage"
-required-features = ["seaorm2"]
-
 [[bin]]
 name = "sync_better_auth_openapi"
 path = "scripts/sync_better_auth_openapi.rs"
@@ -165,11 +158,6 @@ path = "scripts/sync_better_auth_openapi.rs"
 [[bin]]
 name = "openapi_alignment_report"
 path = "scripts/openapi_alignment_report.rs"
-
-[[bin]]
-name = "generate_docs_openapi"
-path = "scripts/generate_docs_openapi.rs"
-required-features = ["seaorm2"]
 
 [workspace.lints.clippy]
 allow_attributes = "warn"
