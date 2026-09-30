@@ -1,0 +1,46 @@
+# Organization dynamic roles: Better Auth 1.7.6
+
+This descendant of the organization-teams change enables five persisted-role endpoints and connects their permissions to organization, team, invitation, member, and organization-owned API-key operations. The reference remains the installed Better Auth and API-key packages at 1.7.6. This audit accounts for the implemented branches and remaining integration boundaries; it does not claim complete organization-plugin parity.
+
+## Configuration and storage
+
+`OrganizationConfig.dynamic_access_control.enabled` defaults to false. Enabling it registers create, update, delete, get, and list role routes. `access_control` supplies the permitted resource names. With no access-control instance, enabled create/update routes return the pinned `MISSING_AC_INSTANCE` response, while authorized reads, lists, and deletes of existing roles remain available. An optional numeric maximum or asynchronous `OrganizationLimitResolver::maximum_roles` sets the role quota for the actual organization ID. Counting uses every persisted role, independently of the configured adapter list page.
+
+The prerequisite owns concrete organization-role entities and migrations. A role stores its organization ID, name, literal permission JSON, creation time, and nullable update time. Names are not database-unique, matching upstream. Name-selected update/delete affects every matching legacy row in that organization; ID selection affects one scoped row. Update returns the merged pre-update timestamp while the stored timestamp advances, including one shared timestamp for a duplicate-name batch.
+
+The new `OrganizationRoleStore::has_organization_role_members` query filters by organization and the upstream substring predicate before applying the configured find-many page. It then tests exact trimmed names in each comma-separated assignment. This deliberately retains upstream's pagination behavior: a prefix match on the first page can hide a later exact assignment. Deleting in that case retains the stored member role string but removes its authority. Unsupported custom stores return an explicit error rather than a false membership result. The per-auth storage wrapper must forward this method when integrated with the nullable-plugin prerequisite.
+
+## Permission and request behavior
+
+Static role configuration preserves the teams change's `None` default / `Some(map)` replacement semantics. Dynamic permissions merge into matching configured roles and preserve ordered, unique actions. A whole permission request must be satisfied by one assigned role. Delegating a new permission checks each requested action separately, so different held roles may grant distinct actions without unioning a whole-request permission check. Duplicated missing actions remain duplicated and ordered in `missingPermissions`.
+
+Fresh permission checks reload the configured adapter page and replace a process-shared snapshot keyed by organization ID. Delegated create/update grants read the current snapshot. This matches pinned `cacheAllRoles` / `useMemoryCache`: changing stored permissions during an awaited quota callback alone leaves the pending cached grant available; a later fresh permission check for that organization replaces the snapshot and changes the pending decision. A different organization's reload leaves it unchanged. Plugin instances with different configurations share the same organization's cache, also matching the reference. The implementation adds no scheduling hooks or artificial yield points; the regression coordinates through the genuine asynchronous quota policy.
+
+Role names use contextual Unicode lowercase conversion, including Greek final sigma; they are not trimmed. Default validation aggregates issues in schema and JavaScript object-enumeration order, with numeric property indices first. `additionalFields` accepts an object and strips unknown fields when no additional schema is configured; null, numbers, and arrays are rejected before authentication or writes. The permission endpoint retains its canonical/legacy input union, empty-request behavior, active-organization fallback, and distinct nonmember status. Create/update/delete selectors and authorization precedence follow the reference.
+
+Malformed JSON returns `BAD_REQUEST`. An incoming empty chunked JSON stream produces the reference's null-object validation; an absent stream produces undefined-object validation. Direct server-side empty buffers remain invalid JSON. Actual HTTP cases and stored-state checks prove these distinctions without broadening comparison normalization.
+
+Organization-owned API-key checks reload dynamic roles using the correct `apiKey` resource, preserve the configured creator-role bypass, and immediately deny authority removed from a stored role. Permission-resolution failures remain denied, matching the pinned API-key plugin.
+
+## Evidence and review
+
+Ten native role tests use the real SeaORM/SQLite adapter. They cover tenant-scoped duplicate mutations, authorization and validation order, paginated member guards, delegated subsets and API-key revocation, asynchronous quotas beyond list pages, Unicode/default-field validation, live-session requirements, and controlled overlapping cache decisions. Existing team tests also execute the permission integration. The role handler's previous null-field acceptance, stale cache snapshot, and numeric-key error order each fail their owning native regressions before the repair.
+
+Eight official-client differential scenarios inspect returned values, raw roles/members/teams/invitations, and authenticated readback of organization-owned API keys. Configuration profiles cover disabled routes, dynamic roles, numeric quotas, missing access control, delegated static roles, and asynchronous quotas with a one-row adapter page. Six repeated cache rounds coordinate actual in-flight requests through private fixture controls for the application-owned policy; the authentication endpoints themselves use the official client and cookie jar. Legacy duplicate controls write real stored rows through the controlled typed server interface. The focused SDK run has 668 assertions.
+
+Capability evidence is added only to the five role routes; previous requirements remain intact. The comparator's narrow role-ID and API-key entropy additions retain configured prefixes, issued-key/start relationships, lengths, ownership, rotation, every field, array order, and literal application metadata. Focused negative controls reject wrong relationships and fields. Generated OpenAPI artifacts add the five operations while retaining the previous surface.
+
+Independent reviews traced the pinned CRUD, permission/cache, tenant predicates, persistence, and rejection tests. Confirmed validation and cache findings are repaired with pre-fix failures and real state controls. The final integrated canonical gate and measured coverage are recorded in the capability PR after completion.
+
+| Owner | Dependency | Evidence / status |
+| --- | --- | --- |
+| Shared-storage workstream | Storage foundation and teams | Scoped concrete role store; new member-assignment query; prerequisite migrations already gated |
+| Organization role workstream | Concrete role store and configured projections | Ten native role cases, eight differential scenarios, runtime inventory and generated docs |
+| Independent implementation reviewers | Pinned package/runtime probes | Tenant, grant, persistence, cache, transport and ordered-validation findings resolved |
+| Integration coordinator | Frozen capability tree and serialized gate slot | Final canonical gate, measured coverage and PR delivery pending |
+
+## Remaining integration boundaries
+
+Configured additional-field schemas and transforms, arbitrary model/field remapping, and generic access-control utility APIs with alternative authorization operators remain separate capabilities on the complete-target ledger. Default additional-field behavior is implemented; accepting and persisting an arbitrary configured schema is not established by those tests. Existing non-record or malformed permission JSON inserted outside the typed role store also needs separate legacy-state behavior evidence; the Rust role model currently requires a permission record.
+
+Broader organization/member/invitation lifecycle callbacks, functional organization and membership limits, invitation delivery/reissue, arbitrary ID generators, and remaining server-only organization/member APIs are retained from the teams audit. SQLite is the exercised differential integration; additional upstream adapters and application-defined storage mappings remain explicit integration work. The cache's scheduler-level microtask interleavings beyond the controlled awaited callback have not been claimed by the overlap evidence.

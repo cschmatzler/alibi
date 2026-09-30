@@ -10,7 +10,7 @@ type Context = Parameters<Parameters<typeof compatScenario>[1]>[0];
 export function orgActor(ctx: Context, name: string, profile: FixtureProfile = "org-teams") {
   return createAuthClient({
     baseURL: ctx.baseURL,
-    plugins: [organizationClient({ teams: { enabled: true } })],
+    plugins: [organizationClient({ teams: { enabled: true }, dynamicAccessControl: { enabled: true } })],
     fetchOptions: { customFetchImpl: ctx.actor(name, profile).fetch },
   });
 }

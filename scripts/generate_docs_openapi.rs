@@ -5,7 +5,10 @@ use better_auth::plugins::{
     AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
     EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, OrganizationPlugin, PasskeyPlugin,
     PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
-    organization::{OrganizationConfig, TeamsConfig},
+    organization::{
+        DynamicAccessControlConfig, OrganizationConfig, TeamsConfig,
+        default_organization_statements,
+    },
 };
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
 use better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
@@ -132,6 +135,11 @@ const V1_DOCS_PATHS: &[(&str, &str)] = &[
     ("/organization/set-active-team", ORGANIZATION_TAG),
     ("/organization/add-team-member", ORGANIZATION_TAG),
     ("/organization/remove-team-member", ORGANIZATION_TAG),
+    ("/organization/create-role", ORGANIZATION_TAG),
+    ("/organization/update-role", ORGANIZATION_TAG),
+    ("/organization/delete-role", ORGANIZATION_TAG),
+    ("/organization/get-role", ORGANIZATION_TAG),
+    ("/organization/list-roles", ORGANIZATION_TAG),
     ("/passkey/generate-register-options", PASSKEY_TAG),
     ("/passkey/generate-authenticate-options", PASSKEY_TAG),
     ("/passkey/verify-registration", PASSKEY_TAG),
@@ -242,6 +250,11 @@ async fn build_docs_auth() -> Result<BetterAuth<BundledSchema>, DynError> {
                 enabled: true,
                 ..Default::default()
             },
+            dynamic_access_control: DynamicAccessControlConfig {
+                enabled: true,
+                ..Default::default()
+            },
+            access_control: Some(default_organization_statements()),
             ..Default::default()
         }))
         .plugin(
