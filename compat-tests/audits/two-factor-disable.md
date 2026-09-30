@@ -44,8 +44,12 @@ fails with missing organization in `/tmp/two-factor-disable-native-before.log`.
 After: ten focused native tests pass (`/tmp/two-factor-disable-native-final.log`)
 and all ten SDK scenarios / 112 assertions pass against both runtimes
 (`/tmp/two-factor-disable-sdk-final.log`). TypeScript, workspace library Clippy
-with `seaorm2`, formatting and diff checks pass. Full gates, inventory changes
-and publication remain with the coordinator.
+with `seaorm2`, formatting and diff checks pass. Independent coordinator review is clear. The integrated canonical gate passes:
+259 SDK scenarios / 7,374 assertions, 37 harness tests / 210 assertions,
+two Chromium tests / 22 assertions and 79.21% source lines
+(23,646 / 29,853). Log: /tmp/two-factor-disable-selected-canonical.log.
+Both lifecycle and API-key authority scenarios are explicitly required by the
+inventory, including persisted retirement evidence.
 
 Merge-forward contract: once the separately owned `CreateSession.additional_fields`
 and `AuthSession::additional_fields` land, replacement issuance must also carry

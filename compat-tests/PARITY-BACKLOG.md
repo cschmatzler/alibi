@@ -8,7 +8,7 @@ Wider pinned parity work follows these priorities. Excluded external integration
 packages will receive no implementation work. Prepared unmerged work remains
 separate from delivered capabilities.
 
-This snapshot describes merged `origin/master` at `687a9b1` (through PR #28),
+This snapshot describes merged `origin/master` at `4ce3e86` (through PR #29),
 not the older, dirty coordinator worktree. The reference remains Better Auth
 1.7.6. The [upstream audit](audits/upstream-target.md) records source locations
 and wider boundaries. An audit gap means equivalence has not been established;
@@ -39,11 +39,11 @@ it is not automatically a confirmed defect or wholly missing implementation.
 | OAuth popup | Popup login and secure browser completion messaging. | Missing from the original route profiles; audit only. |
 | One Tap, organization metadata, OpenAPI | See the local work table above. | Unmerged capabilities still count as missing on master. |
 
-The merged inventory has 12 missing method/path identities after phone authentication landed. Separately, four
-implemented routes lack successful-flow evidence: organization user invitations,
-admin removal, username availability and two-factor disable. The first two have
-local repairs above; the latter two have frozen implementations and meaningful SDK/native
-evidence awaiting integration. Device approval/denial/token and GET /ok
+The merged inventory has 12 missing method/path identities after phone authentication landed. Separately, three
+implemented routes lack successful-flow evidence on that master: organization
+user invitations, admin removal and two-factor disable. The first two have
+reviewed local repairs; two-factor disable passes the integrated gate and awaits
+publication. Username availability is merged PR #29. Device approval/denial/token and GET /ok
 now have successful evidence on master.
 
 ## Gaps within existing features
