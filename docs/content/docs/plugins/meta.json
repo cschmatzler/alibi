@@ -6,6 +6,7 @@
     "organization",
     "admin",
     "api-key",
-    "passkey"
+    "passkey",
+    "jwt"
   ]
 }

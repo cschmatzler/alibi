@@ -1,4 +1,26 @@
 use chrono::{DateTime, Utc};
+
+/// Private keyring persistence. Public JWKS responses must select public material explicitly.
+#[derive(Debug, Clone)]
+pub struct Jwk {
+    pub id: String,
+    pub public_key: String,
+    pub private_key: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub alg: Option<String>,
+    pub crv: Option<String>,
+}
+#[derive(Debug, Clone)]
+pub struct CreateJwk {
+    pub id: Option<String>,
+    pub public_key: String,
+    pub private_key: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub alg: Option<String>,
+    pub crv: Option<String>,
+}
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 

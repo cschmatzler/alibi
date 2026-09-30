@@ -46,6 +46,8 @@ pub(crate) struct MemoryStore {
 impl crate::store::TeamStore for MemoryStore {}
 impl crate::store::OrganizationRoleStore for MemoryStore {}
 
+impl crate::store::JwkStore for MemoryStore {}
+
 impl MemoryStore {
     pub(crate) fn new(_config: Arc<AuthConfig>) -> Self {
         Self::default()

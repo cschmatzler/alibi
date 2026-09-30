@@ -284,3 +284,9 @@ async fn full_client_compat() {
 async fn browser_client_compat() {
     run_client_compat(&["browser"]).await;
 }
+
+#[tokio::test]
+#[ignore = "requires local TypeScript/Rust fixture servers"]
+async fn jwt_client_compat() {
+    run_client_compat(&["tests/jwt"]).await;
+}

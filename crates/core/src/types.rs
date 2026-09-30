@@ -15,8 +15,9 @@ pub use super::types_org::{
     UpdateOrganization, UpdateOrganizationRole, UpdateTeam,
 };
 pub use super::types_plugin::{
-    ApiKey, CreateApiKey, CreateDeviceCode, CreatePasskey, CreateTwoFactor, DeviceCode, Passkey,
-    TwoFactor, UpdateApiKey, UpdateDeviceCode, UpdatePasskey, UpdatePasskeyAuthentication,
+    ApiKey, CreateApiKey, CreateDeviceCode, CreateJwk, CreatePasskey, CreateTwoFactor, DeviceCode,
+    Jwk, Passkey, TwoFactor, UpdateApiKey, UpdateDeviceCode, UpdatePasskey,
+    UpdatePasskeyAuthentication,
 };
 
 /// HTTP method enumeration

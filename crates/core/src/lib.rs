@@ -87,3 +87,5 @@ pub use wire::{
 
 #[doc(hidden)]
 pub use crate as __private_core;
+
+pub use types::{CreateJwk, Jwk};

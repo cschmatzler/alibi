@@ -25,3 +25,9 @@ opt-level = 3
 
 [profile.dev.package.salsa20]
 opt-level = 3
+
+[profile.dev.package.rsa]
+opt-level = 3
+
+[profile.dev.package.num-bigint-dig]
+opt-level = 3

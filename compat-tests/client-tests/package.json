@@ -20,7 +20,8 @@
     "test:password-management": "bun test tests/password-management",
     "test:sessions": "bun test tests/sessions",
     "test:two-factor": "bun test tests/two-factor",
-    "test:user-management": "bun test tests/user-management"
+    "test:user-management": "bun test tests/user-management",
+    "test:jwt": "bun test tests/jwt"
   },
   "dependencies": {
     "@better-auth/api-key": "1.7.6",
@@ -28,7 +29,8 @@
     "@levischuck/tiny-cbor": "0.3.6",
     "better-auth": "1.7.6",
     "tough-cookie": "6.0.2",
-    "zod": "4.6.5"
+    "zod": "4.6.5",
+    "jose": "6.2.12"
   },
   "devDependencies": {
     "@types/bun": "1.4.2",

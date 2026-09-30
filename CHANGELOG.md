@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Add managed JWT/JWKS signing, trusted verification and persisted asymmetric key rotation with pinned Better Auth 1.7.6 compatibility evidence.
+
 ### Changed
 
 - Serialize organization, member, and invitation timestamps at JavaScript's

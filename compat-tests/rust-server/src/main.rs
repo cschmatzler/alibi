@@ -47,6 +47,7 @@ mod organization_timestamp_fixture;
 mod parity_controls;
 mod sqlite_fixture;
 mod verification_profiles;
+mod jwt_fixture;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
@@ -213,6 +214,9 @@ fn default_github_profile() -> GitHubProfile {
 }
 
 async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr> {
+    better_auth_seaorm::store::entities::jwk::Entity::delete_many()
+        .exec(database)
+        .await?;
     device_code::Entity::delete_many().exec(database).await?;
     passkey::Entity::delete_many().exec(database).await?;
     api_key::Entity::delete_many().exec(database).await?;
@@ -638,7 +642,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let lifecycle_fixture = lifecycle_fixture::LifecycleFixture::default();
     let lifecycle_controls = lifecycle_fixture.router();
     let auth = Arc::new(
-        AuthBuilder::<TestSchema>::new(config)
+        AuthBuilder::<TestSchema>::new(config.clone())
             .store(store)
             .rate_limit(RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new().enable_signup(true))
@@ -686,6 +690,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let auth_router = auth.clone().axum_router();
+    let jwt_router = jwt_fixture::router(&config, reset_database.clone()).await?;
 
     let reset_outbox_for_token = reset_outbox.clone();
     let reset_outbox_for_reset = reset_outbox.clone();
@@ -1500,6 +1505,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }))
             }),
         )
+        .merge(jwt_router)
         .nest("/api/auth", auth_router)
         .with_state(auth)
         .merge(verification_profile_router);

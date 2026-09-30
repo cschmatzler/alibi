@@ -104,3 +104,15 @@ cargo test --test client_compat_tests browser_client_compat -- --ignored --nocap
 The Rust orchestrator starts and checks both servers on allocated ports and
 stops them on completion. Direct Bun scenario runs require running reference
 and Rust servers; configure `AUTH_BASE_URL_TS` and `AUTH_BASE_URL_RUST`.
+
+## Managed JWT capability
+
+`tests/jwt` uses the official `jwtClient` and pinned JOSE 6.2.12 to check public
+JWKS, all five asymmetric signing algorithms, complete authenticated user claims,
+get-session response headers, configured claims/path/header settings, encrypted
+and plain private-key persistence, signing-key rotation and public grace periods.
+Trusted signing and verification run through fixture-only server controls.
+
+Run `./compat-tests/client-tests/run-against-both.sh jwt` for this family.
+Automatic JWT-backed core session cookie caching remains a separate integration
+boundary; the managed-keyring plugin exposes no inactive cache option.

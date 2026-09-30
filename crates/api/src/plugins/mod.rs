@@ -6,11 +6,13 @@ pub mod device_authorization;
 pub mod email_password;
 pub mod email_verification;
 pub mod helpers;
+pub mod jwt;
 pub mod oauth;
 pub mod organization;
 pub mod passkey;
 pub mod password_management;
 pub mod session_management;
+pub(crate) mod token_crypto;
 pub mod two_factor;
 pub mod user_management;
 

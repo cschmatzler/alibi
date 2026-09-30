@@ -55,3 +55,35 @@ test("reset-password URL entropy retains token relationships", () => {
   expect(compareValues(left, { first: { url: "/reset-password/two" }, second: { url: "/reset-password/two" } }, context)).toEqual([]);
   expect(compareValues(left, { first: { url: "/reset-password/two" }, second: { url: "/reset-password/three" } }, context).length).toBeGreaterThan(0);
 });
+
+test("JWTs and JWKS retain full claims key relationships rotation and key sizes",()=>{
+  const start=Date.parse("2026-09-30T00:00:00.000Z");
+  const clocks={...context,leftStartedAt:start,rightStartedAt:start+10000};
+  const encode=(header:unknown,payload:unknown,signature="signature")=>[Buffer.from(JSON.stringify(header)).toString("base64url"),Buffer.from(JSON.stringify(payload)).toString("base64url"),Buffer.from(signature).toString("base64url")].join(".");
+  const leftPayload={sub:"alice",iat:start/1000,exp:start/1000+900,iss:context.leftBaseURL,aud:context.leftBaseURL,name:"Alice"};
+  const rightPayload={...leftPayload,sub:"bob",iat:start/1000+10,exp:start/1000+910,iss:context.rightBaseURL,aud:context.rightBaseURL};
+  const leftHeader={alg:"EdDSA",kid:"left-key"},rightHeader={alg:"EdDSA",kid:"right-key"};
+  const leftKey={kty:"OKP",alg:"EdDSA",crv:"Ed25519",kid:"left-key",x:Buffer.alloc(32,1).toString("base64url")};
+  const rightKey={...leftKey,kid:"right-key",x:Buffer.alloc(32,2).toString("base64url")};
+  const left={user:{id:"alice"},jwks:{keys:[leftKey]},token:encode(leftHeader,leftPayload),checked:leftPayload};
+  const right={user:{id:"bob"},jwks:{keys:[rightKey]},token:encode(rightHeader,rightPayload),checked:rightPayload};
+  expect(compareValues(left,right,clocks)).toEqual([]);
+  for(const incorrect of [
+    {...right,token:encode({...rightHeader,kid:"unrelated"},rightPayload)},
+    {...right,token:encode(rightHeader,{...rightPayload,sub:"wrong-user"})},
+    {...right,token:encode(rightHeader,{...rightPayload,exp:rightPayload.exp+1})},
+    {...right,token:encode(rightHeader,{...rightPayload,iss:"untrusted"})},
+    {...right,token:encode(rightHeader,{...rightPayload,name:"Bob"})},
+    {...right,token:encode({...rightHeader,typ:"JWT"},rightPayload)},
+    {...right,token:encode(rightHeader,rightPayload,"short")},
+    {...right,jwks:{keys:[{...rightKey,x:Buffer.alloc(31,2).toString("base64url")}]}},
+    {...right,jwks:{keys:[]}},
+  ]) expect(compareValues(left,incorrect,clocks).length).toBeGreaterThan(0);
+  expect(compareValues({...left,again:left.token},{...right,again:encode(rightHeader,rightPayload,"different")},clocks).length).toBeGreaterThan(0);
+  const literalLeft=encode(leftHeader,{sub:"service-one",exp:4102444800,iss:"custom",aud:["one","two"]});
+  const literalRight=encode(rightHeader,{sub:"service-two",exp:4102444800,iss:"custom",aud:["one","two"]});
+  expect(compareValues({token:literalLeft},{token:literalRight},clocks).length).toBeGreaterThan(0);
+  const fixed={sub:"service",iat:100,exp:4102444800,iss:"custom",aud:"custom"};
+  expect(compareValues({token:encode(leftHeader,fixed)},{token:encode(rightHeader,{...fixed,iat:110,exp:4102444810})},clocks).length).toBeGreaterThan(0);
+  expect(compareValues({kid:"literal"},{kid:"changed"},clocks).length).toBeGreaterThan(0);
+});

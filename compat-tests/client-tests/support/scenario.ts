@@ -113,6 +113,7 @@ type ScenarioServerContext = {
 type ScenarioRun = {
   oauthURL: string;
   startedAt: number;
+  finishedAt: number;
   observation: unknown;
   traces: TraceEntry[];
 };
@@ -249,6 +250,7 @@ async function runScenario(
     oauthURL: health.oauthBaseURL ?? baseURL.replace("localhost", "127.0.0.1"),
     startedAt,
     observation: normalizeClientValue(await scenario(context)),
+    finishedAt: Date.now(),
     traces,
   };
 }
@@ -269,11 +271,14 @@ export function compatScenario(
     const comparison = {
       leftBaseURL: TS_BASE_URL, rightBaseURL: RUST_BASE_URL,
       leftStartedAt: ts.startedAt, rightStartedAt: rust.startedAt,
+      leftFinishedAt: ts.finishedAt, rightFinishedAt: rust.finishedAt,
       leftOAuthURL: ts.oauthURL, rightOAuthURL: rust.oauthURL,
     };
-    const clientDiffs = compareValues(ts.observation, rust.observation, comparison);
+    // One identity graph binds header tokens, returned claims and public keys.
+    const differences = compareValues({ observation: ts.observation, traces: ts.traces }, { observation: rust.observation, traces: rust.traces }, comparison);
+    const clientDiffs = differences.filter(entry => entry.path.startsWith("observation"));
     if (clientDiffs.length) throw new Error(formatDiffs(`Client-visible drift: ${scenarioName}`, clientDiffs));
-    const rawDiffs = compareValues(ts.traces, rust.traces, comparison).filter(entry =>
+    const rawDiffs = differences.filter(entry => entry.path.startsWith("traces")).filter(entry =>
       !RAW_DIFF_ALLOWLIST.some(allowance => allowance.scenario.test(scenarioName) && allowance.path.test(entry.path)));
     if (rawDiffs.length) throw new Error(formatDiffs(`Raw trace drift: ${scenarioName}`, rawDiffs));
     await recordCoverage(scenarioName, ts.traces, stateTransitions);

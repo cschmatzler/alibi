@@ -6,6 +6,8 @@ use std::pin::Pin;
 pub mod cache;
 mod org_extensions;
 pub use org_extensions::{OrganizationRoleStore, TeamStore, team_membership_key};
+mod jwks;
+pub use jwks::JwkStore;
 
 use crate::error::{AuthError, AuthResult};
 use crate::schema::AuthSchema;
@@ -446,6 +448,7 @@ pub trait AuthStore<S: AuthSchema>:
     + ApiKeyStore
     + PasskeyStore
     + DeviceCodeStore
+    + JwkStore
     + TransactionStore<S>
     + Send
     + Sync
@@ -468,6 +471,7 @@ where
         + ApiKeyStore
         + PasskeyStore
         + DeviceCodeStore
+        + JwkStore
         + TransactionStore<S>
         + Send
         + Sync,
