@@ -574,6 +574,11 @@ impl TwoFactorPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
+        let body: DisableRequest =
+            match parse_password_body(req, self.config.allow_passwordless, false) {
+                Ok(v) => v,
+                Err(resp) => return Ok(resp),
+            };
         let (user, session) = ctx
             .require_authoritative_session(req)
             .await
@@ -585,11 +590,6 @@ impl TwoFactorPlugin {
                 },
                 other => other,
             })?;
-        let body: DisableRequest =
-            match parse_password_body(req, self.config.allow_passwordless, false) {
-                Ok(v) => v,
-                Err(resp) => return Ok(resp),
-            };
 
         let (response, set_cookie_headers) =
             disable_core(&body, &user, &session, req, &self.config, ctx).await?;
