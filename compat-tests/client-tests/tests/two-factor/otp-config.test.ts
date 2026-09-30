@@ -38,7 +38,7 @@ for(const profile of ["two-factor-otp-plain","two-factor-otp-hashed","two-factor
     await owner.signOut();const signIn=await owner.signIn.email({email,password,rememberMe:false});expect(signIn.data).toMatchObject({twoFactorRedirect:true});await owner.twoFactor.sendOtp({});const pending=await control();if(!pending.delivery||!pending.row)throw new Error("pending delivery required");const complete=await owner.twoFactor.verifyOtp({code:pending.delivery.otp});expect(complete.error).toBeNull();expect(complete.data?.user.id).toBe(signup.data.user.id);expect((await owner.getSession()).data?.session.token).toBe(complete.data?.token);expect((await control({identifier:pending.row.identifier})).row).toBeNull();
     expect(await ctx.readUserState({userId:other.data.user.id})).toEqual(foreignBefore);
     return ctx.snapshot({signup,other,foreignBefore,original,sent,wrongOwner,wrong,verified,current,state,replay,expired,signIn,complete,storage:{mode:profile,digits:code.length,initialCounter:counter,receiptPhases:consumed.receipts.map(row=>row.phase)}});
-  });
+  }, {stateTransitions:["POST /two-factor/send-otp", "POST /two-factor/verify-otp"]});
 }
 
 compatScenario("two-factor OTP enable uses an authoritative owner, validates method before password verification and succeeds with disabled TOTP without a factor",async ctx=>{
@@ -60,7 +60,7 @@ compatScenario("two-factor OTP enable uses an authoritative owner, validates met
   const state=z.object({twoFactorExists:z.boolean(),sessions:z.array(z.object({token:z.string()}))}).parse(await ctx.readUserState({userId:signup.data.user.id}));expect(state.twoFactorExists).toBe(false);expect(state.sessions).toHaveLength(1);expect(state.sessions[0]?.token).toBe(current.data?.session.token);
   expect(originalCookie).not.toBe("");const old=await guest.getSession({fetchOptions:{headers:{cookie:originalCookie}}});expect(old.data).toBeNull();
   return ctx.snapshot({guestBody,validGuest,signup,original,invalidBody,wrong,totp,malformedSendBody,enable,current,state,old});
-});
+}, {stateTransitions:["POST /two-factor/enable", "POST /two-factor/send-otp"]});
 
 for (const profile of ["two-factor-otp-hashed", "two-factor-otp-encrypted"] as const) {
   compatScenario(`two-factor ${profile} applies decimal-prefix counters, fractional or zero-default budgets and consumes the exhausted row`, async ctx => {
@@ -80,7 +80,7 @@ for (const profile of ["two-factor-otp-hashed", "two-factor-otp-encrypted"] as c
     const state=await ctx.readUserState({userId:signup.data.user.id});expect(z.object({user:z.object({twoFactorEnabled:z.boolean()}),twoFactorExists:z.boolean(),sessions:z.array(z.unknown())}).parse(state)).toMatchObject({user:{twoFactorEnabled:true},twoFactorExists:false});
     expect((await owner.twoFactor.sendOtp({})).error).toBeNull();const renewed=await control();if(!renewed.delivery||!renewed.row)throw new Error("renewed delivery required");const completion=await owner.twoFactor.verifyOtp({code:renewed.delivery.otp});expect(completion.error).toBeNull();expect(completion.data?.user.id).toBe(signup.data.user.id);const finalState=z.object({sessions:z.array(z.object({token:z.string(),userId:z.string()}))}).parse(await ctx.readUserState({userId:signup.data.user.id}));expect(finalState.sessions).toHaveLength(1);expect(finalState.sessions[0]?.token).toBe(completion.data?.token);expect(finalState.sessions[0]?.userId).toBe(signup.data.user.id);
     return ctx.snapshot({signup,enable,pending,observations,wrong,exhausted,replay,state,completion,finalState});
-  });
+  }, {stateTransitions:["POST /two-factor/enable", "POST /two-factor/send-otp", "POST /two-factor/verify-otp"]});
 }
 
 compatScenario("two-factor OTP resends retain generations until the newest code is consumed once under concurrent requests",async ctx=>{
@@ -102,4 +102,4 @@ compatScenario("two-factor OTP resends retain generations until the newest code 
   const results=outcomes.map(outcome=>outcome.result);const success=results.filter(result=>result.error===null);const denied=results.filter(result=>result.error!==null);expect(success).toHaveLength(1);expect(denied).toHaveLength(1);expect(denied[0]?.error?.code).toBe("OTP_HAS_EXPIRED");
   const consumed=await control({identifier:latest.row.identifier});expect(consumed.row).toBeNull();expect(consumed.generations).toBe(0);const state=z.object({twoFactorExists:z.boolean(),sessions:z.array(z.object({token:z.string()}))}).parse(await ctx.readUserState({userId:signup.data.user.id}));expect(state.sessions).toHaveLength(1);expect(state.sessions[0]?.token).toBe(success[0]?.data?.token);expect(state.twoFactorExists).toBe(false);
   return ctx.snapshot({signup,enabled,success:success[0],denied:denied[0],state,generations:[first.generations,latest.generations,consumed.generations]});
-});
+}, {stateTransitions:["POST /two-factor/enable", "POST /two-factor/send-otp", "POST /two-factor/verify-otp"]});

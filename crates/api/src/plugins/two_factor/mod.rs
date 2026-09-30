@@ -187,7 +187,6 @@ enum EnableMethod {
     Totp,
 }
 
-
 #[derive(Debug, Deserialize, Validate)]
 pub(crate) struct DisableRequest {
     password: Option<String>,
@@ -540,10 +539,11 @@ impl TwoFactorPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: EnableRequest = match parse_password_body(req, self.config.allow_passwordless, true) {
-            Ok(body) => body,
-            Err(response) => return Ok(response),
-        };
+        let body: EnableRequest =
+            match parse_password_body(req, self.config.allow_passwordless, true) {
+                Ok(body) => body,
+                Err(response) => return Ok(response),
+            };
         let (user, session) = ctx
             .require_authoritative_session(req)
             .await
@@ -1875,7 +1875,11 @@ fn parse_password_body<T: serde::de::DeserializeOwned + 'static>(
     use super::authentication_helpers::{JsonField, JsonFieldKind, parse_body_with_fields};
     let fields = [
         JsonField::string("password", !allow_passwordless),
-        JsonField { name: "method", kind: JsonFieldKind::OneOf(&["otp", "totp"]), required: false },
+        JsonField {
+            name: "method",
+            kind: JsonFieldKind::OneOf(&["otp", "totp"]),
+            required: false,
+        },
         JsonField::string("issuer", false),
     ];
     parse_body_with_fields(
