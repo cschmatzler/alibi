@@ -191,7 +191,7 @@ async fn metadata_can_be_cleared_and_disabled_metadata_is_ignored_on_update() {
             &ctx,
             &CreateKeyRequest {
                 user_id: Some(user_id.clone()),
-                metadata: Some(json!(["initial"])),
+                metadata: Some(json!(["initial"]).into()),
                 ..Default::default()
             },
         )

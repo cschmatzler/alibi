@@ -8,7 +8,7 @@ use better_auth_core::{
 use chrono::{Duration, Utc};
 use rand::{Rng, rngs::OsRng};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 use std::sync::Arc;
 use url::Url;
 
@@ -22,12 +22,13 @@ use super::token_crypto::hash_token;
 mod tests;
 
 /// Delivery data. Debug omits the token, URL and arbitrary delivery metadata.
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct MagicLinkDelivery {
     pub email: String,
     pub url: String,
     pub token: String,
-    pub metadata: Option<Value>,
+    #[serde(serialize_with = "better_auth_core::utils::json::serialize")]
+    pub metadata: Option<better_auth_core::utils::json::JsValue>,
 }
 
 impl std::fmt::Debug for MagicLinkDelivery {
@@ -306,7 +307,7 @@ struct SignInRequest {
     new_user_callback_url: Option<String>,
     #[serde(rename = "errorCallbackURL")]
     error_callback_url: Option<String>,
-    metadata: Option<Value>,
+    metadata: Option<better_auth_core::utils::json::JsValue>,
 }
 
 #[derive(Deserialize, Serialize)]

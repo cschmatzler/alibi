@@ -21,6 +21,10 @@ pub(crate) struct SocialSignInRequest {
     #[serde(rename = "loginHint")]
     pub login_hint: Option<String>,
     #[serde(rename = "additionalData")]
+    #[serde(
+        default,
+        deserialize_with = "better_auth_core::utils::json::deserialize_optional_map"
+    )]
     pub additional_data: Option<serde_json::Map<String, serde_json::Value>>,
     pub scopes: Option<Vec<String>>,
 }
@@ -40,6 +44,10 @@ pub(crate) struct LinkSocialRequest {
     #[serde(rename = "requestSignUp")]
     pub request_sign_up: Option<bool>,
     #[serde(rename = "additionalData")]
+    #[serde(
+        default,
+        deserialize_with = "better_auth_core::utils::json::deserialize_optional_map"
+    )]
     pub additional_data: Option<serde_json::Map<String, serde_json::Value>>,
     pub scopes: Option<Vec<String>>,
 }

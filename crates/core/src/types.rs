@@ -200,6 +200,10 @@ pub struct CreateUser {
     pub role: Option<String>,
     /// `None` leaves the admin plugin field unset.
     pub banned: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::utils::json::deserialize_optional_value"
+    )]
     pub metadata: Option<serde_json::Value>,
     pub is_anonymous: Option<bool>,
     pub phone_number: Option<String>,
@@ -221,6 +225,10 @@ pub struct UpdateUser {
     pub ban_reason: Option<String>,
     pub ban_expires: Option<DateTime<Utc>>,
     pub two_factor_enabled: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "crate::utils::json::deserialize_optional_value"
+    )]
     pub metadata: Option<serde_json::Value>,
     pub is_anonymous: Option<bool>,
     /// `None` leaves the field unchanged; `Some(None)` clears it.
@@ -462,11 +470,13 @@ impl AuthRequest {
         self.virtual_session = Some(session);
     }
 
-    pub fn body_as_json<T: for<'de> Deserialize<'de>>(&self) -> Result<T, serde_json::Error> {
+    pub fn body_as_json<T: for<'de> Deserialize<'de> + 'static>(
+        &self,
+    ) -> Result<T, serde_json::Error> {
         if let Some(body) = &self.body {
-            serde_json::from_slice(body)
+            crate::utils::json::from_slice(body)
         } else {
-            serde_json::from_str("{}")
+            crate::utils::json::from_slice(b"{}")
         }
     }
 }
@@ -481,7 +491,7 @@ impl AuthResponse {
     }
 
     pub fn json<T: Serialize>(status: u16, data: &T) -> Result<Self, serde_json::Error> {
-        let body = serde_json::to_vec(data)?;
+        let body = crate::utils::json::to_vec(data)?;
         let mut headers = Headers::new();
         _ = headers.insert("content-type".to_string(), "application/json".to_string());
 
@@ -544,6 +554,10 @@ pub struct UpdateUserRequest {
     #[serde(rename = "displayUsername")]
     pub display_username: Option<String>,
     pub role: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::utils::json::deserialize_optional_value"
+    )]
     pub metadata: Option<serde_json::Value>,
 }
 
@@ -691,11 +705,15 @@ mod tests {
             HttpMethod::Post,
             "/test".into(),
             HashMap::new(),
-            Some(br#"{"name":"test"}"#.to_vec()),
+            Some(br#"{"name":"test","nested":{"$serde_json::private::RawValue":"hello"},"numbers":{"$serde_json::private::Number":"1e400"},"rounded":9007199254740993,"overflow":1e400}"#.to_vec()),
             HashMap::new(),
         );
         let val: serde_json::Value = req.body_as_json().expect("parse");
         assert_eq!(val["name"], "test");
+        assert_eq!(val["nested"]["$serde_json::private::RawValue"], "hello");
+        assert_eq!(val["numbers"]["$serde_json::private::Number"], "1e400");
+        assert_eq!(val["rounded"], 9007199254740992_u64);
+        assert!(val["overflow"].is_null());
     }
 
     // Rust-specific surface: Rust request/response/type helpers are public library behavior with no direct TS analogue.
@@ -751,6 +769,51 @@ mod tests {
         );
         let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
         assert_eq!(body["ok"], true);
+    }
+
+    // Pinned Better Call JSON response boundary: JavaScript numbers are rounded
+    // before emission, including typed integers and arbitrary nested metadata.
+    #[test]
+    fn auth_response_json_emits_javascript_numbers_without_mutating_input() {
+        #[derive(Serialize)]
+        struct ResponseData {
+            integer: u64,
+            metadata: crate::utils::json::JsValue,
+            nonfinite: f64,
+        }
+        let metadata = crate::utils::json::parse_value(
+            r#"{"2":1e400,"1":-0.0,"rounded":9007199254740993,"small":1e-7,"large":1e21,"tie":229069639655724.625,"nested":[-1e400,5e-324],"01":true,"4294967295":false,"id":"9007199254740993","configId":"1e400","providerId":"-0.0"}"#,
+        )
+        .expect("valid JSON number lexemes");
+        let data = ResponseData {
+            integer: u64::MAX,
+            metadata,
+            nonfinite: f64::NAN,
+        };
+        let response = AuthResponse::json(200, &data).expect("emit response");
+        assert_eq!(
+            std::str::from_utf8(&response.body).expect("JSON UTF-8"),
+            r#"{"integer":18446744073709552000,"metadata":{"1":0,"2":null,"rounded":9007199254740992,"small":1e-7,"large":1e+21,"tie":229069639655724.62,"nested":[null,5e-324],"01":true,"4294967295":false,"id":"9007199254740993","configId":"1e400","providerId":"-0.0"},"nonfinite":null}"#
+        );
+        assert_eq!(
+            data.metadata
+                .get("2")
+                .and_then(crate::utils::json::JsValue::as_f64),
+            Some(f64::INFINITY)
+        );
+        assert!(
+            data.metadata
+                .get("1")
+                .and_then(crate::utils::json::JsValue::as_f64)
+                .expect("number")
+                .is_sign_negative()
+        );
+        assert_eq!(
+            data.metadata
+                .get("rounded")
+                .and_then(crate::utils::json::JsValue::as_f64),
+            Some(9007199254740992.0)
+        );
     }
 
     // Rust-specific surface: Rust request/response/type helpers are public library behavior with no direct TS analogue.

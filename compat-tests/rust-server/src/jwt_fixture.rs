@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use axum::{
+    body::Bytes,
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -92,7 +93,7 @@ impl AuthPlugin<TestSchema> for EarlierExposedHeaders {
 struct ServerOperation {
     operation: String,
     profile: Option<String>,
-    payload: Option<Map<String, Value>>,
+    payload: Option<better_auth_core::utils::json::JsValue>,
     token: Option<String>,
     issuer: Option<String>,
 }
@@ -189,14 +190,18 @@ pub(super) async fn router(
         let _ = profiles.insert((*name).to_owned(), (auth, jwt));
     }
     let profiles = Arc::new(profiles);
-    router = router.route("/__test/jwt", post(move |Json(body): Json<ServerOperation>| {
+    router = router.route("/__test/jwt", post(move |body: Bytes| {
         let profiles = profiles.clone();
         async move {
+            let body: ServerOperation = match better_auth_core::utils::json::from_slice(&body) {
+                Ok(body) => body,
+                Err(error) => return failure(error),
+            };
             let operation = async {
                 let (auth, jwt) = profiles.get(body.profile.as_deref().unwrap_or("jwt-default"))
                     .ok_or_else(|| AuthError::bad_request("unknown fixture profile"))?;
                 match body.operation.as_str() {
-                    "sign" => Ok(json!({"token":jwt.sign_jwt(body.payload.ok_or_else(|| AuthError::bad_request("payload is required"))?, &JwtSignOptions::default(), None, auth.context()).await?})),
+                    "sign" => Ok(json!({"token":jwt.sign_jwt_json(&body.payload.ok_or_else(|| AuthError::bad_request("payload is required"))?, &JwtSignOptions::default(), None, auth.context()).await?})),
                     "verify" => Ok(json!({"payload":jwt.verify_jwt(body.token.as_deref().ok_or_else(|| AuthError::bad_request("token is required"))?,body.issuer.as_deref(),None,auth.context()).await?})),
                     "session-state" => {
                         let token = body.token.as_deref().ok_or_else(|| AuthError::bad_request("token is required"))?;

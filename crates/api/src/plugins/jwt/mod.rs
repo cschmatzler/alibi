@@ -412,14 +412,72 @@ impl JwtPlugin {
         request: Option<&AuthRequest>,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<String> {
+        self.sign_jwt_checked(payload, options, request, ctx, Ok(()))
+            .await
+    }
+
+    /// Sign decoded JavaScript JSON through the trusted server API.
+    ///
+    /// The decoded representation retains nonfinite numbers until claim
+    /// validation. Registered NumericDates must be finite; ordinary claims
+    /// follow JSON.stringify, including rounding and null for nonfinite values.
+    pub async fn sign_jwt_json(
+        &self,
+        payload: &better_auth_core::utils::json::JsValue,
+        options: &JwtSignOptions,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<String> {
+        let object = payload
+            .as_object()
+            .ok_or_else(|| AuthError::bad_request("JWT payload must be an object"))?;
+        let validation = (|| {
+            for field in ["exp", "iat", "nbf"] {
+                validate_numeric_date(field, object.get(field).and_then(|value| value.as_f64()))?;
+            }
+            for field in ["iss", "sub", "jti"] {
+                if object
+                    .get(field)
+                    .and_then(|value| value.as_f64())
+                    .is_some_and(|number| {
+                        !number.is_finite() && (field == "iss" || !number.is_nan())
+                    })
+                {
+                    return Err(AuthError::internal(format!(
+                        "\"{field}\" claim must be a string"
+                    )));
+                }
+            }
+            Ok(())
+        })();
+        let payload = payload
+            .to_json_value()?
+            .as_object()
+            .cloned()
+            .ok_or_else(|| AuthError::bad_request("JWT payload must be an object"))?;
+        self.sign_jwt_checked(payload, options, request, ctx, validation)
+            .await
+    }
+
+    async fn sign_jwt_checked(
+        &self,
+        payload: Map<String, Value>,
+        options: &JwtSignOptions,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<impl AuthSchema>,
+        validation: AuthResult<()>,
+    ) -> AuthResult<String> {
         let payload = self.default_claims(payload, options.claims.as_ref(), ctx)?;
         if let Some(remote) = &self.config.remote_signer {
+            validation?;
             return remote.sign(&payload, options).await;
         }
         let key = self
             .resolve_signing_key(options, request, ctx)
             .await?
             .ok_or_else(|| AuthError::internal("No local JWT signing key"))?;
+        // Upstream resolves/mints the local key before JOSE validates claims.
+        validation?;
         self.sign_resolved(payload, options, &key)
     }
 
@@ -467,8 +525,8 @@ impl JwtPlugin {
         normalize_signing_claims(&mut payload)?;
         let input = format!(
             "{}.{}",
-            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header)?),
-            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload)?)
+            URL_SAFE_NO_PAD.encode(better_auth_core::utils::json::to_vec(&header)?),
+            URL_SAFE_NO_PAD.encode(better_auth_core::utils::json::to_vec(&payload)?)
         );
         let signature = crypto::sign(key.algorithm, &key.private_key, input.as_bytes())?;
         Ok(format!("{input}.{}", URL_SAFE_NO_PAD.encode(signature)))
@@ -514,7 +572,7 @@ impl JwtPlugin {
         let [header, payload, signature] = parts.as_slice() else {
             return Ok(None);
         };
-        let header: Value = serde_json::from_slice(&decode_compact_part(header, false)?)?;
+        let header = decode_compact_json(header, false)?;
         let Some(header_object) = header.as_object() else {
             return Ok(None);
         };
@@ -554,8 +612,9 @@ impl JwtPlugin {
         )? {
             return Ok(None);
         }
-        let payload: Map<String, Value> =
-            serde_json::from_slice(&decode_compact_part(payload, true)?)?;
+        let Some(payload) = decode_compact_json(payload, true)?.as_object().cloned() else {
+            return Ok(None);
+        };
         let now = Utc::now().timestamp();
         for field in ["iat", "exp", "nbf"] {
             if payload.get(field).is_some_and(|value| !value.is_number()) {
@@ -680,7 +739,8 @@ fn js_truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(value) => *value,
-        Value::Number(value) => value.as_f64().is_some_and(|value| value != 0.0),
+        Value::Number(value) => better_auth_core::utils::json::number_as_f64(value)
+            .is_some_and(|value| value != 0.0 && !value.is_nan()),
         Value::String(value) => !value.is_empty(),
         Value::Array(_) | Value::Object(_) => true,
     }
@@ -741,6 +801,20 @@ fn decode_compact_part(value: &str, allow_whitespace: bool) -> AuthResult<Vec<u8
     .map_err(|_| AuthError::bad_request("Invalid JWT base64url encoding"))
 }
 
+fn decode_compact_json(value: &str, allow_whitespace: bool) -> AuthResult<Value> {
+    let bytes = decode_compact_part(value, allow_whitespace)?;
+    let text =
+        std::str::from_utf8(&bytes).map_err(|_| AuthError::bad_request("Invalid JWT JSON UTF8"))?;
+    Ok(better_auth_core::utils::json::parse_value(text)?.to_json_value()?)
+}
+
+fn validate_numeric_date(field: &str, number: Option<f64>) -> AuthResult<()> {
+    if number.is_some_and(|number| !number.is_finite()) {
+        return Err(AuthError::internal(format!("Invalid {field} input")));
+    }
+    Ok(())
+}
+
 fn normalize_signing_claims(payload: &mut Map<String, Value>) -> AuthResult<()> {
     let now = Utc::now().timestamp();
     for field in ["exp", "iat", "nbf"] {
@@ -748,7 +822,13 @@ fn normalize_signing_claims(payload: &mut Map<String, Value>) -> AuthResult<()> 
             && (field == "exp" || js_truthy(value))
         {
             let value = match value {
-                Value::Number(_) => value.clone(),
+                Value::Number(number) => {
+                    validate_numeric_date(
+                        field,
+                        better_auth_core::utils::json::number_as_f64(number),
+                    )?;
+                    value.clone()
+                }
                 Value::String(value) => json!(now as f64 + relative_numeric_date(value)?),
                 _ => return Err(AuthError::internal("Invalid time period format")),
             };

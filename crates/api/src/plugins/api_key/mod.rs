@@ -552,13 +552,15 @@ impl ApiKeyPlugin {
 
     pub(super) fn validate_metadata(
         config: &ApiKeyConfig,
-        metadata: &Option<serde_json::Value>,
+        metadata: &Option<better_auth_core::utils::json::JsValue>,
     ) -> AuthResult<()> {
         if let Some(value) = metadata.as_ref().filter(|value| match value {
-            serde_json::Value::Null => false,
-            serde_json::Value::Bool(value) => *value,
-            serde_json::Value::Number(value) => value.as_f64() != Some(0.0),
-            serde_json::Value::String(value) => !value.is_empty(),
+            better_auth_core::utils::json::JsValue::Null => false,
+            better_auth_core::utils::json::JsValue::Bool(value) => *value,
+            better_auth_core::utils::json::JsValue::Number(value) => {
+                *value != 0.0 && !value.is_nan()
+            }
+            better_auth_core::utils::json::JsValue::String(value) => !value.is_empty(),
             _ => true,
         }) {
             if !config.enable_metadata {

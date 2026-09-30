@@ -319,7 +319,7 @@ pub fn validate_request_body<T>(
     req: &crate::types::AuthRequest,
 ) -> Result<T, crate::types::AuthResponse>
 where
-    T: serde::de::DeserializeOwned + validator::Validate,
+    T: serde::de::DeserializeOwned + validator::Validate + 'static,
 {
     let value: T = req.body_as_json().map_err(|e| {
         let message = format!("Invalid JSON: {}", e);

@@ -12,7 +12,7 @@ use crate::schema::AuthSchema;
 use crate::types_org::{CreateOrganization, Organization, UpdateOrganization};
 
 use super::entities;
-use super::entities::organization::{ActiveModel, Column, Entity};
+use super::entities::organization::{ActiveModel, Column, Entity, JsonMetadata};
 use super::{SeaOrmStore, map_db_err};
 
 #[async_trait]
@@ -22,12 +22,18 @@ where
 {
     async fn create_organization(&self, org: CreateOrganization) -> AuthResult<Organization> {
         let now = Utc::now();
+        let metadata = JsonMetadata::for_backend(
+            better_auth_core::utils::json::to_value(
+                &org.metadata.unwrap_or(serde_json::json!({})),
+            )?,
+            self.connection().get_database_backend(),
+        )?;
         ActiveModel {
             id: Set(org.id.unwrap_or_else(|| Uuid::new_v4().to_string())),
             name: Set(org.name),
             slug: Set(org.slug),
             logo: Set(org.logo),
-            metadata: Set(org.metadata.unwrap_or(serde_json::json!({}))),
+            metadata: Set(metadata),
             created_at: Set(now),
             updated_at: Set(now),
         }
@@ -91,7 +97,10 @@ where
             active.logo = Set(Some(logo));
         }
         if let Some(metadata) = update.metadata {
-            active.metadata = Set(metadata);
+            active.metadata = Set(JsonMetadata::for_backend(
+                better_auth_core::utils::json::to_value(&metadata)?,
+                self.connection().get_database_backend(),
+            )?);
         }
         active.updated_at = Set(Utc::now());
 

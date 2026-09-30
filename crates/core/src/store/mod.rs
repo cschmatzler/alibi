@@ -49,9 +49,24 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     }
 }
 
+/// Numeric binding used when a registered user text field accepts a JSON number.
+/// The HTTP caller first rounds it to a JavaScript number, preserving negative zero.
+#[derive(Clone, Copy, Debug)]
+pub enum NumericTextInput {
+    Integer(i64),
+    Real(f64),
+}
+
 #[async_trait]
 pub trait UserStore<S: AuthSchema>: Send + Sync {
     async fn create_user(&self, create_user: CreateUser) -> AuthResult<S::User>;
+    /// Coerce a numeric binding with the configured adapter's text semantics.
+    /// Custom adapters must implement this explicitly when accepting such input.
+    async fn coerce_user_text_number(&self, _input: NumericTextInput) -> AuthResult<String> {
+        Err(AuthError::NotImplemented(
+            "Numeric user-field text coercion is not supported by this store".into(),
+        ))
+    }
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>>;
     /// Fetch multiple users by id.
     ///

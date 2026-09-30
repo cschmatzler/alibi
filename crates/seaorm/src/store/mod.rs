@@ -21,6 +21,7 @@ mod organizations;
 mod passkeys;
 mod sessions;
 mod siwe_wallets;
+mod sqlite_number;
 mod teams;
 mod two_factor;
 mod users;

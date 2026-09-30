@@ -7,6 +7,7 @@ use validator::Validate;
 #[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct VerifyRegistrationRequest {
+    #[serde(deserialize_with = "better_auth_core::utils::json::deserialize_value")]
     pub(super) response: serde_json::Value,
     pub(super) name: Option<String>,
 }
@@ -14,6 +15,7 @@ pub(crate) struct VerifyRegistrationRequest {
 #[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct VerifyAuthenticationRequest {
+    #[serde(deserialize_with = "better_auth_core::utils::json::deserialize_value")]
     pub(super) response: serde_json::Value,
 }
 

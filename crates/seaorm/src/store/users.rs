@@ -6,7 +6,7 @@ use sea_orm::{
 };
 
 use better_auth_core::AuthUser;
-use better_auth_core::store::UserStore;
+use better_auth_core::store::{NumericTextInput, UserStore};
 
 use crate::error::{AuthError, AuthResult};
 use crate::schema::{AuthSchema, SeaOrmUserModel};
@@ -79,6 +79,45 @@ where
     async fn create_user(&self, create_user: CreateUser) -> AuthResult<S::User> {
         self.create_user_with_connection(self.connection(), None, create_user)
             .await
+    }
+
+    async fn coerce_user_text_number(&self, input: NumericTextInput) -> AuthResult<String> {
+        use sea_orm::{DbBackend, Statement};
+        let value: sea_orm::Value = match input {
+            NumericTextInput::Integer(value) => value.into(),
+            NumericTextInput::Real(value) if !value.is_nan() => value.into(),
+            NumericTextInput::Real(_) => {
+                return Err(AuthError::bad_request("Numeric text input must not be NaN"));
+            }
+        };
+        let backend = self.connection().get_database_backend();
+        let sql = match backend {
+            DbBackend::Postgres => "SELECT CAST($1 AS TEXT) AS value",
+            DbBackend::Sqlite => "SELECT CAST(? AS TEXT) AS value",
+            DbBackend::MySql => "SELECT CAST(? AS CHAR) AS value",
+            _ => {
+                return Err(AuthError::NotImplemented(
+                    "Numeric text coercion is not supported by this backend".into(),
+                ));
+            }
+        };
+        let row = self
+            .connection()
+            .query_one_raw(Statement::from_sql_and_values(backend, sql, [value]))
+            .await
+            .map_err(map_db_err)?
+            .ok_or_else(|| AuthError::internal("Numeric text coercion returned no value"))?;
+        let actual: String = row.try_get("", "value").map_err(map_db_err)?;
+        // Older SQLite builds serialize REAL bindings with only 15 significant
+        // digits. Match the pinned Bun adapter's SQLite 3.53 conversion after
+        // executing the actual bound numeric CAST; errors still come from the
+        // configured backend. Other adapters retain their own CAST result.
+        match (backend, input) {
+            (DbBackend::Sqlite, NumericTextInput::Real(value)) if value.is_finite() => {
+                Ok(super::sqlite_number::real_text(value))
+            }
+            _ => Ok(actual),
+        }
     }
 
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {
