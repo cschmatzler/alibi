@@ -10,6 +10,9 @@ mod identity_fields;
 mod invitations;
 mod members;
 mod migrator;
+mod nullable_user_flags;
+#[cfg(test)]
+mod nullable_user_tests;
 mod organization_extensions;
 mod organization_roles;
 mod organizations;
