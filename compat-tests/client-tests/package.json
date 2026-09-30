@@ -15,6 +15,7 @@
     "test:email-verification": "bun test tests/email-verification",
     "test:generic-oauth": "bun test tests/generic-oauth",
     "test:oauth": "bun test tests/oauth",
+    "test:organization-teams": "bun test tests/organization-extensions/teams.test.ts",
     "test:organization": "bun test tests/organization",
     "test:passkey": "bun test tests/passkey",
     "test:password-management": "bun test tests/password-management",
