@@ -104,5 +104,5 @@ devenv shell -- cargo fmt --all -- --check
 devenv shell -- cargo clippy --workspace --locked -- -D warnings
 devenv shell -- cargo clippy --workspace --locked --features axum,seaorm2,redis-cache -- -D warnings
 devenv shell -- cargo test --workspace --locked
-devenv shell -- cargo test --test client_compat_tests phase5_client_compat -- --ignored --nocapture
+devenv shell -- cargo test --test client_compat_tests api_key_client_compat -- --ignored --nocapture
 ```

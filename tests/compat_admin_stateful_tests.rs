@@ -1,4 +1,4 @@
-//! Compatibility tests for phase 10 admin stateful flows.
+//! Compatibility tests for admin admin stateful flows.
 //!
 //! Focused on the shared banned-user session gate and admin stateful semantics
 //! that cross route boundaries.

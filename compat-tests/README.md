@@ -92,7 +92,7 @@ Run these in `devenv shell` after installing both projects with
 ```bash
 bun run --cwd compat-tests/client-tests typecheck
 bun test --cwd compat-tests/client-tests harness
-cargo test --test client_compat_tests phase8_client_compat -- --ignored --nocapture
+cargo test --test client_compat_tests passkey_client_compat -- --ignored --nocapture
 cargo test --test client_compat_tests browser_client_compat -- --ignored --nocapture
 ./scripts/alignment-check.sh
 ```

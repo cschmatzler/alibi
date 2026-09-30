@@ -105,27 +105,27 @@ All notable changes to this project will be documented in this file.
 
 - sanitize error page XSS and respect disable_origin_check in redirects
 
-- align wire behavior with TS reference for phase 5
+- align wire behavior with TS reference for api-key
 
 - start field, list ordering, server-only enforcement
 
 - empty update check, nullable expiresIn on update
 
-- correct phase 0-5 audit coverage
+- correct compatibility audit coverage
 
-- tighten phase 6 audit follow-ups
+- tighten organization audit follow-ups
 
 - honor creator role in member guards
 
 - replace rust,ignore code fences with rust for Shiki compat
 
-- restore phase 6 parity
+- restore organization parity
 
 - move openapi route to private test path
 
-- align phase 0-9 client contract
+- align compatibility client contract
 
-- align phase 0 compat surface
+- align core compat surface
 
 - normalize lookup and avoid double verify
 
@@ -181,9 +181,9 @@ All notable changes to this project will be documented in this file.
 
 - update for CLI, optional plugin fields, and seaorm2 feature
 
-- insert Phase 4 for device authorization grant
+- document the device authorization grant
 
-- update plugin docs and roadmap for phase 5
+- update plugin docs and roadmap for api-key
 
 - align ts public route plan
 
@@ -191,13 +191,13 @@ All notable changes to this project will be documented in this file.
 
 - drop public organization add-member route
 
-- rebalance later phase plan
+- rebalance implementation plan
 
 - move passkey and admin earlier
 
 - move two-factor ahead of jwt
 
-- promote admin stateful flows to phase 10
+- prioritize admin stateful flows
 
 - warn that v1 is in alpha
 
@@ -208,7 +208,7 @@ All notable changes to this project will be documented in this file.
 
 - allow extra fields in AuthEntity derive
 
-- align Rust auth surface with TS better-auth through Phase 3 (social OAuth) ([#54](https://github.com/better-auth-rs/better-auth-rs/pull/54))
+- align Rust auth surface with TS better-auth through social OAuth ([#54](https://github.com/better-auth-rs/better-auth-rs/pull/54))
 
 - add wire response views
 
@@ -222,25 +222,25 @@ All notable changes to this project will be documented in this file.
 
 - add TLS backend feature flags for reqwest
 
-- implement phase 4 device flow
+- implement the device authorization flow
 
-- align phase 6 compat behavior
+- align organization compat behavior
 
-- implement stage 7 account followups
+- implement generic OAuth account followups
 
-- align phase 8 contract
+- align passkey contract
 
 - add passkey fullstack flow
 
-- align phase 9 contract
+- align admin contract
 
 - implement /is-username-available endpoint
 
-- align phase 10 stateful flows
+- align admin stateful flows
 
-- align phase 11 and 12 flows
+- align two-factor authentication and backup-code flows
 
-- finish phase 12 alignment
+- finish two-factor alignment
 
 
 ### Refactoring
@@ -389,27 +389,27 @@ All notable changes to this project will be documented in this file.
 
 - sanitize error page XSS and respect disable_origin_check in redirects
 
-- align wire behavior with TS reference for phase 5
+- align wire behavior with TS reference for api-key
 
 - start field, list ordering, server-only enforcement
 
 - empty update check, nullable expiresIn on update
 
-- correct phase 0-5 audit coverage
+- correct compatibility audit coverage
 
-- tighten phase 6 audit follow-ups
+- tighten organization audit follow-ups
 
 - honor creator role in member guards
 
 - replace rust,ignore code fences with rust for Shiki compat
 
-- restore phase 6 parity
+- restore organization parity
 
 - move openapi route to private test path
 
-- align phase 0-9 client contract
+- align compatibility client contract
 
-- align phase 0 compat surface
+- align core compat surface
 
 - normalize lookup and avoid double verify
 
@@ -461,9 +461,9 @@ All notable changes to this project will be documented in this file.
 
 - update for CLI, optional plugin fields, and seaorm2 feature
 
-- insert Phase 4 for device authorization grant
+- document the device authorization grant
 
-- update plugin docs and roadmap for phase 5
+- update plugin docs and roadmap for api-key
 
 - align ts public route plan
 
@@ -471,13 +471,13 @@ All notable changes to this project will be documented in this file.
 
 - drop public organization add-member route
 
-- rebalance later phase plan
+- rebalance implementation plan
 
 - move passkey and admin earlier
 
 - move two-factor ahead of jwt
 
-- promote admin stateful flows to phase 10
+- prioritize admin stateful flows
 
 - warn that v1 is in alpha
 
@@ -494,7 +494,7 @@ All notable changes to this project will be documented in this file.
 
 - add PluginConfig derive macro
 
-- align Rust auth surface with TS better-auth through Phase 3 (social OAuth) ([#54](https://github.com/better-auth-rs/better-auth-rs/pull/54))
+- align Rust auth surface with TS better-auth through social OAuth ([#54](https://github.com/better-auth-rs/better-auth-rs/pull/54))
 
 - add wire response views
 
@@ -508,25 +508,25 @@ All notable changes to this project will be documented in this file.
 
 - add TLS backend feature flags for reqwest
 
-- implement phase 4 device flow
+- implement the device authorization flow
 
-- align phase 6 compat behavior
+- align organization compat behavior
 
-- implement stage 7 account followups
+- implement generic OAuth account followups
 
-- align phase 8 contract
+- align passkey contract
 
 - add passkey fullstack flow
 
-- align phase 9 contract
+- align admin contract
 
 - implement /is-username-available endpoint
 
-- align phase 10 stateful flows
+- align admin stateful flows
 
-- align phase 11 and 12 flows
+- align two-factor authentication and backup-code flows
 
-- finish phase 12 alignment
+- finish two-factor alignment
 
 
 ### Refactoring
@@ -769,7 +769,7 @@ All notable changes to this project will be documented in this file.
 
 - add better-auth v1.4.19 compatibility badge to README and release notes ([#31](https://github.com/better-auth-rs/better-auth-rs/pull/31))
 
-- add Phase 1-2 documentation with Mermaid diagrams and OpenAPI integration ([#28](https://github.com/better-auth-rs/better-auth-rs/pull/28))
+- add compatibility documentation with Mermaid diagrams and OpenAPI integration ([#28](https://github.com/better-auth-rs/better-auth-rs/pull/28))
 
 
 ### Features
@@ -824,17 +824,17 @@ All notable changes to this project will be documented in this file.
 
 - expand compat coverage with Organization/Passkey tests and fix /ok endpoint ([#19](https://github.com/better-auth-rs/better-auth-rs/pull/19))
 
-- implement AdminPlugin Phase 1 with 6 admin endpoints ([#20](https://github.com/better-auth-rs/better-auth-rs/pull/20))
+- implement AdminPlugin with 6 admin endpoints ([#20](https://github.com/better-auth-rs/better-auth-rs/pull/20))
 
 - add fullstack integration example (better-auth frontend + better-auth-rs backend) ([#21](https://github.com/better-auth-rs/better-auth-rs/pull/21))
 
 
-### phase0
+### core
 
 - unify routes, add capabilities, hooks, and tests
 
 
-### phase1
+### Token and email verification
 
 - jwt validation and email verification flow
 

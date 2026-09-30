@@ -132,7 +132,7 @@ fn start_rust_compat_server(port: u16, executable: &std::path::Path) -> ManagedC
     ManagedChild::new("rust-compat", child)
 }
 
-fn run_bun_phase_suite(paths: &[&str], ts_port: u16, rust_port: u16) {
+fn run_bun_suite(paths: &[&str], ts_port: u16, rust_port: u16) {
     if paths == ["tests"] {
         let directory = project_root().join("compat-tests/client-tests/artifacts/evidence");
         if directory.exists() {
@@ -156,14 +156,14 @@ fn run_bun_phase_suite(paths: &[&str], ts_port: u16, rust_port: u16) {
         .env("NO_PROXY", "localhost,127.0.0.1")
         .env("no_proxy", "localhost,127.0.0.1")
         .output()
-        .unwrap_or_else(|error| panic!("failed to run Bun phase suite: {error}"));
+        .unwrap_or_else(|error| panic!("failed to run Bun compatibility suite: {error}"));
 
     print!("{}", String::from_utf8_lossy(&output.stdout));
     eprint!("{}", String::from_utf8_lossy(&output.stderr));
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-        panic!("Bun phase suite failed.\nstdout:\n{stdout}\n\nstderr:\n{stderr}");
+        panic!("Bun compatibility suite failed.\nstdout:\n{stdout}\n\nstderr:\n{stderr}");
     }
     if paths == ["tests"] {
         let status = Command::new("bun")
@@ -186,85 +186,91 @@ async fn run_client_compat(paths: &[&str]) {
     wait_for_health(ts_port, &mut ts_server, Duration::from_secs(20)).await;
     wait_for_health(rust_port, &mut rust_server, Duration::from_secs(90)).await;
 
-    run_bun_phase_suite(paths, ts_port, rust_port);
+    run_bun_suite(paths, ts_port, rust_port);
 }
 
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
-async fn phase0_client_compat() {
-    run_client_compat(&["tests/phase0"]).await;
+async fn account_management_client_compat() {
+    run_client_compat(&["tests/account-management"]).await;
 }
 
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
-async fn phase1_client_compat() {
-    run_client_compat(&["tests/phase1"]).await;
+async fn admin_client_compat() {
+    run_client_compat(&["tests/admin"]).await;
 }
 
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
-async fn phase2_client_compat() {
-    run_client_compat(&["tests/phase2"]).await;
+async fn api_key_client_compat() {
+    run_client_compat(&["tests/api-key"]).await;
 }
 
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
-async fn phase3_client_compat() {
-    run_client_compat(&["tests/phase3"]).await;
+async fn core_client_compat() {
+    run_client_compat(&["tests/core"]).await;
 }
 
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
-async fn phase4_client_compat() {
-    run_client_compat(&["tests/phase4"]).await;
+async fn device_authorization_client_compat() {
+    run_client_compat(&["tests/device-authorization"]).await;
 }
 
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
-async fn phase5_client_compat() {
-    run_client_compat(&["tests/phase5"]).await;
+async fn email_verification_client_compat() {
+    run_client_compat(&["tests/email-verification"]).await;
 }
 
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
-async fn phase6_client_compat() {
-    run_client_compat(&["tests/phase6"]).await;
+async fn generic_oauth_client_compat() {
+    run_client_compat(&["tests/generic-oauth"]).await;
 }
 
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
-async fn phase7_client_compat() {
-    run_client_compat(&["tests/phase7"]).await;
+async fn oauth_client_compat() {
+    run_client_compat(&["tests/oauth"]).await;
 }
 
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
-async fn phase8_client_compat() {
-    run_client_compat(&["tests/phase8"]).await;
+async fn organization_client_compat() {
+    run_client_compat(&["tests/organization"]).await;
 }
 
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
-async fn phase9_client_compat() {
-    run_client_compat(&["tests/phase9"]).await;
+async fn passkey_client_compat() {
+    run_client_compat(&["tests/passkey"]).await;
 }
 
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
-async fn phase10_client_compat() {
-    run_client_compat(&["tests/phase10"]).await;
+async fn password_management_client_compat() {
+    run_client_compat(&["tests/password-management"]).await;
 }
 
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
-async fn phase11_client_compat() {
-    run_client_compat(&["tests/phase11"]).await;
+async fn sessions_client_compat() {
+    run_client_compat(&["tests/sessions"]).await;
 }
 
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
-async fn phase12_client_compat() {
-    run_client_compat(&["tests/phase12"]).await;
+async fn two_factor_client_compat() {
+    run_client_compat(&["tests/two-factor"]).await;
+}
+
+#[tokio::test]
+#[ignore = "starts external TS and Rust servers"]
+async fn user_management_client_compat() {
+    run_client_compat(&["tests/user-management"]).await;
 }
 
 #[tokio::test]
