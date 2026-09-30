@@ -73,3 +73,9 @@ hook tests; four legacy custom-schema tests; all four JSON Number integrations;
 production workspace Clippy with seaorm2; formatting/diff checks. Independent
 review and the canonical full gate are owned by the coordinator. Dependency
 versions, lockfiles, comparators, inventories and coverage settings are unchanged.
+
+The final integrated canonical gate passes on the merged numeric/SIWE baseline:
+244 SDK scenarios / 6,190 assertions, 37 harness tests / 210 assertions, two
+Chromium tests / 22 assertions and 78.74% source lines (22,945 / 29,139),
+including default/optional tests, Rustls/Redis builds, TypeScript and strict docs.
+The coordinator's cached-binding review finding is resolved.
