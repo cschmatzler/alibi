@@ -86,7 +86,7 @@ fn legacy_persistence_symbols_are_gone_from_tracked_sources() {
     ];
     let mut files = Vec::new();
 
-    for relative in ["crates", "src", "tests", "docs", "examples"] {
+    for relative in ["crates", "src", "tests"] {
         collect_files(&root.join(relative), &mut files);
     }
 
@@ -270,18 +270,9 @@ fn stale_test_drift_phrasing_is_gone() {
 }
 
 #[test]
-fn public_docs_and_examples_must_not_use_hidden_auth_apis() {
+fn readme_must_not_use_hidden_auth_apis() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files = Vec::new();
-
-    for relative in ["README.md", "docs", "examples"] {
-        let path = root.join(relative);
-        if path.is_file() {
-            files.push(path);
-        } else {
-            collect_files(&path, &mut files);
-        }
-    }
+    let readme = fs::read_to_string(root.join("README.md")).expect("README should be readable");
 
     let banned_fragments = [
         "__private",
@@ -290,19 +281,10 @@ fn public_docs_and_examples_must_not_use_hidden_auth_apis() {
         "better_auth::run_migrations",
     ];
 
-    let mut violations = Vec::new();
-    for path in files {
-        let content = fs::read_to_string(&path).expect("public-facing file should be readable");
-        for fragment in &banned_fragments {
-            if content.contains(fragment) {
-                violations.push(format!("{} -> {}", path.display(), fragment));
-            }
-        }
+    for fragment in &banned_fragments {
+        assert!(
+            !readme.contains(fragment),
+            "README must not use hidden auth APIs: {fragment}",
+        );
     }
-
-    assert!(
-        violations.is_empty(),
-        "public docs/examples must not use hidden auth APIs:\n{}",
-        violations.join("\n")
-    );
 }

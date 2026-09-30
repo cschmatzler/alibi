@@ -20,11 +20,10 @@ line coverage. Default and `axum,seaorm2,redis-cache` configurations are tested;
 The excluded Rust compatibility server is built and its formatting checked.
 Missing reference dependencies or an unavailable server fail this gate.
 
-Rust is pinned in `rust-toolchain.toml`. `devenv.lock` pins Bun and native
-packages. CI uses the same Rust and Bun versions and the same gate script.
-Chromium is supplied by devenv; CI installs Playwright's browser and system
-libraries. Outside devenv, run `bunx playwright install --with-deps chromium`
-in `client-tests/` before browser checks.
+Rust is pinned in `devenv.nix`. `devenv.lock` pins Bun and native packages.
+CI runs `devenv test` with the same toolchain, Chromium and gate script.
+Outside devenv, run `bunx playwright install --with-deps chromium` in
+`client-tests/` before browser checks.
 
 ## What the tests establish
 
