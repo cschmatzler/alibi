@@ -285,6 +285,19 @@ impl SessionStore<BundledSchema> for MemoryStore {
         }
     }
 
+    async fn refresh_session(
+        &self,
+        token: &str,
+        expires_at: DateTime<Utc>,
+    ) -> AuthResult<Option<SessionView>> {
+        let mut state = self.lock();
+        let Some(session) = state.sessions.get_mut(token) else {
+            return Ok(None);
+        };
+        session.expires_at = expires_at;
+        session.updated_at = Utc::now();
+        Ok(Some(session.clone()))
+    }
     async fn delete_session(&self, token: &str) -> AuthResult<()> {
         self.lock().sessions.remove(token);
         Ok(())

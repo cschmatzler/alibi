@@ -8,6 +8,29 @@ use crate::schema::AuthSchema;
 use crate::store::AuthStore;
 use crate::types::CreateSession;
 
+/// Controls whether a persistent session read may write to its store.
+#[derive(Debug, Clone, Copy)]
+pub struct SessionReadOptions {
+    pub allow_refresh: bool,
+    pub cleanup_expired: bool,
+}
+
+impl Default for SessionReadOptions {
+    fn default() -> Self {
+        Self {
+            allow_refresh: true,
+            cleanup_expired: true,
+        }
+    }
+}
+
+/// The persisted result and refresh state of a session read.
+pub struct SessionRead<T> {
+    pub session: Option<T>,
+    pub needs_refresh: bool,
+    pub refreshed: bool,
+}
+
 /// Session manager handles session creation, validation, and cleanup
 pub struct SessionManager<S: AuthSchema> {
     config: Arc<AuthConfig>,
@@ -52,89 +75,86 @@ impl<S: AuthSchema> SessionManager<S> {
         Ok(session)
     }
 
-    /// Get session by token
+    /// Read and refresh a session according to the configured expiry window.
     pub async fn get_session(&self, token: &str) -> AuthResult<Option<S::Session>> {
-        let mut session = self.database.get_session(token).await?;
+        Ok(self
+            .read_session(token, SessionReadOptions::default())
+            .await?
+            .session)
+    }
 
-        // Check if session exists and is not expired
-        let should_refresh = if let Some(ref s) = session {
-            let now = Utc::now();
-
-            if s.expires_at() < now || !s.active() {
-                // Session expired or inactive — best-effort cleanup. A DB
-                // hiccup here shouldn't turn "your session is expired" into
-                // a 500; the row will be caught by the next access or the
-                // periodic `cleanup_expired_sessions` sweep.
-                if let Err(err) = self.database.delete_session(token).await {
-                    tracing::warn!(
-                        error = %err,
-                        "Failed to delete expired session; will be retried later"
-                    );
-                }
-                return Ok(None);
-            }
-
-            // Update session if configured to do so
-            if !self.config.session.disable_session_refresh {
-                match self.config.session.update_age {
-                    Some(age) => {
-                        // Only refresh if the session was last updated more than
-                        // `update_age` ago.
-                        let updated = s.updated_at();
-                        Utc::now().signed_duration_since(updated) >= age
-                    }
-                    // No update_age set → refresh on every access.
-                    None => true,
-                }
-            } else {
-                false
-            }
-        } else {
-            false
+    /// Read persisted session state with explicit control over side effects.
+    /// Deferred browser reads leave expired rows in place until a later write.
+    pub async fn read_session(
+        &self,
+        token: &str,
+        options: SessionReadOptions,
+    ) -> AuthResult<SessionRead<S::Session>> {
+        let Some(session) = self.database.get_session(token).await? else {
+            return Ok(SessionRead {
+                session: None,
+                needs_refresh: false,
+                refreshed: false,
+            });
         };
-
-        if should_refresh {
-            let new_expires_at = Utc::now() + self.config.session.expires_in;
-            match self
-                .database
-                .update_session_expiry(token, new_expires_at)
-                .await
-            {
-                Ok(()) => {
-                    // Re-read so the returned session reflects the new expiry.
-                    // Both failure modes fall back to the pre-refresh session:
-                    // a concurrent revoke (re-read returns None) shouldn't log
-                    // the user out mid-request, and a second DB hiccup
-                    // shouldn't turn a successful refresh into a 500.
-                    match self.database.get_session(token).await {
-                        Ok(Some(refreshed)) => session = Some(refreshed),
-                        Ok(None) => {
-                            tracing::warn!(
-                                "Session re-read after refresh returned None (concurrent revoke?); returning pre-refresh value"
-                            );
-                        }
-                        Err(err) => {
-                            tracing::warn!(
-                                error = %err,
-                                "Session re-read after refresh failed; returning pre-refresh value"
-                            );
-                        }
-                    }
-                }
-                Err(err) => {
-                    // Transient write failure (connection reset, contention,
-                    // etc.) must not fail the whole request. Keep the
-                    // pre-refresh session — auth still works, the refresh
-                    // window will be retried on the next call.
-                    tracing::warn!(
-                        error = %err,
-                        "Failed to refresh session expiry; returning pre-refresh session"
-                    );
-                }
+        let now = Utc::now();
+        if session.expires_at() < now || !session.active() {
+            if options.cleanup_expired {
+                self.database.delete_session(token).await?;
             }
+            return Ok(SessionRead {
+                session: None,
+                needs_refresh: false,
+                refreshed: false,
+            });
         }
+        let needs_refresh = !self.config.session.disable_session_refresh
+            && self.config.session.update_age.is_none_or(|age| {
+                session.expires_at() - self.config.session.expires_in + age <= now
+            });
+        if needs_refresh && options.allow_refresh {
+            let session = self
+                .database
+                .refresh_session(token, now + self.config.session.expires_in)
+                .await?;
+            let refreshed = session.is_some();
+            return Ok(SessionRead {
+                session,
+                needs_refresh,
+                refreshed,
+            });
+        }
+        Ok(SessionRead {
+            session: Some(session),
+            needs_refresh,
+            refreshed: false,
+        })
+    }
 
-        Ok(session)
+    /// Whether signed browser preferences or the query suppress refresh.
+    /// Query values use the upstream Boolean coercion: any nonempty string,
+    /// including `false`, disables refreshing.
+    pub fn request_disables_refresh(&self, request: &crate::types::AuthRequest) -> bool {
+        if request
+            .query
+            .get("disableRefresh")
+            .is_some_and(|value| !value.is_empty())
+        {
+            return true;
+        }
+        let name = crate::utils::cookie_utils::related_cookie_name(&self.config, "dont_remember");
+        request.headers.get("cookie").is_some_and(|header| {
+            cookie::Cookie::split_parse(header)
+                .flatten()
+                .find(|cookie| cookie.name() == name)
+                .and_then(|cookie| {
+                    crate::utils::cookie_utils::verify_cookie_value(
+                        cookie.value(),
+                        &self.config.secret,
+                    )
+                })
+                .is_some_and(|value| !value.is_empty())
+        })
     }
 
     /// Delete a session
@@ -218,13 +238,14 @@ impl<S: AuthSchema> SessionManager<S> {
     /// Check whether a session is "fresh" (created recently enough for
     /// sensitive operations like password change or account deletion).
     ///
-    /// Returns `true` when `fresh_age` is set and
-    /// `session.created_at() + fresh_age > now`.
-    /// If `fresh_age` is `None`, the session is never considered fresh.
+    /// A positive freshness window requires creation time within that window.
+    /// `None` and zero disable the restriction, matching upstream `freshAge: 0`.
     pub fn is_session_fresh(&self, session: &impl AuthSession) -> bool {
         match self.config.session.fresh_age {
-            Some(fresh_age) => session.created_at() + fresh_age > Utc::now(),
-            None => false,
+            Some(fresh_age) if fresh_age != chrono::Duration::zero() => {
+                session.created_at() + fresh_age > Utc::now()
+            }
+            _ => true,
         }
     }
 
@@ -245,6 +266,7 @@ impl<S: AuthSchema> SessionManager<S> {
             .and_then(|cookie| {
                 crate::utils::cookie_utils::verify_cookie_value(cookie.value(), &self.config.secret)
             })
+            .filter(|token| !token.is_empty())
     }
 }
 
@@ -421,15 +443,17 @@ mod tests {
 
     // Rust-specific surface: `SessionManager` and its token/session helper APIs are public Rust APIs with no direct TS analogue.
     #[test]
-    fn session_never_fresh_when_no_fresh_age() {
-        let mgr = test_manager(); // default: fresh_age = None
+    fn disabled_freshness_allows_an_old_session() {
+        let mut config = (*test_config()).clone();
+        config.session.fresh_age = None;
+        let mgr = SessionManager::new(Arc::new(config), test_manager().database);
         let session = SessionView {
             active_team_id: None,
             extension_fields: Default::default(),
             id: "s1".into(),
             expires_at: Utc::now() + Duration::hours(1),
             token: "tok".into(),
-            created_at: Utc::now(),
+            created_at: Utc::now() - Duration::days(30),
             updated_at: Utc::now(),
             ip_address: None,
             user_agent: None,
@@ -438,7 +462,7 @@ mod tests {
             active_organization_id: None,
             active: true,
         };
-        assert!(!mgr.is_session_fresh(&session));
+        assert!(mgr.is_session_fresh(&session));
     }
 
     // ── async operations ────────────────────────────────────────────────
@@ -502,6 +526,61 @@ mod tests {
             stored.expires_at(),
             "returned session must reflect the persisted expiry, not the pre-refresh value"
         );
+    }
+
+    #[test]
+    fn refresh_preferences_verify_the_first_cookie_and_use_javascript_truthiness() {
+        let manager = test_manager();
+        let name =
+            crate::utils::cookie_utils::related_cookie_name(&manager.config, "dont_remember");
+        let valid = crate::utils::cookie_utils::sign_cookie_value("true", &manager.config.secret);
+        let empty = crate::utils::cookie_utils::sign_cookie_value("", &manager.config.secret);
+        let wrong = crate::utils::cookie_utils::sign_cookie_value("true", "foreign-secret");
+        for (header, expected) in [
+            (format!("{name}={valid}"), true),
+            (format!("{name}={empty}"), false),
+            (format!("{name}={wrong}"), false),
+            (format!("{name}=invalid; {name}={valid}"), false),
+            (format!("{name}={valid}; {name}=invalid"), true),
+        ] {
+            let mut request = AuthRequest::new(HttpMethod::Get, "/get-session");
+            _ = request.headers.insert("cookie".into(), header);
+            assert_eq!(manager.request_disables_refresh(&request), expected);
+        }
+        for (value, expected) in [("", false), ("false", true), ("0", true), ("true", true)] {
+            let mut request = AuthRequest::new(HttpMethod::Get, "/get-session");
+            _ = request.query.insert("disableRefresh".into(), value.into());
+            assert_eq!(manager.request_disables_refresh(&request), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn recent_sessions_refresh_at_the_expiry_based_half_second_boundary() {
+        let db = test_database().await;
+        let config = test_config();
+        let manager = SessionManager::new(config.clone(), db.clone());
+        let user = db
+            .create_user(crate::types::CreateUser::new().with_email("half-second@test.com"))
+            .await
+            .unwrap();
+        for difference in [Duration::milliseconds(500), Duration::milliseconds(-500)] {
+            let session = manager.create_session(&user, None, None).await.unwrap();
+            let expiry = Utc::now() + config.session.expires_in
+                - config.session.update_age.unwrap()
+                + difference;
+            db.update_session_expiry(session.token(), expiry)
+                .await
+                .unwrap();
+            let returned = manager.get_session(session.token()).await.unwrap().unwrap();
+            let stored = db.get_session(session.token()).await.unwrap().unwrap();
+            assert_eq!(returned.expires_at(), stored.expires_at());
+            assert_eq!(returned.token(), session.token());
+            if difference > Duration::zero() {
+                assert_eq!(stored.expires_at(), expiry);
+            } else {
+                assert!(stored.expires_at() > expiry + Duration::hours(23));
+            }
+        }
     }
 
     // Rust-specific surface: `SessionManager` and its token/session helper APIs are public Rust APIs with no direct TS analogue.

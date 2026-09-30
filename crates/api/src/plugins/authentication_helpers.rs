@@ -86,7 +86,9 @@ pub(crate) fn is_valid_email(email: &str) -> bool {
 #[derive(Clone, Copy)]
 pub(crate) enum JsonFieldKind {
     String,
+    NonEmptyString,
     Email,
+    Boolean,
     Record,
     OneOf(&'static [&'static str]),
 }
@@ -130,7 +132,7 @@ pub(crate) fn parse_body<T: RequestBody>(req: &AuthRequest) -> Result<T, AuthRes
             continue;
         }
         let issue = match field.kind {
-            JsonFieldKind::String | JsonFieldKind::Email
+            JsonFieldKind::String | JsonFieldKind::NonEmptyString | JsonFieldKind::Email
                 if !value.is_some_and(Value::is_string) =>
             {
                 Some(format!(
@@ -138,6 +140,15 @@ pub(crate) fn parse_body<T: RequestBody>(req: &AuthRequest) -> Result<T, AuthRes
                     json_type(value)
                 ))
             }
+            JsonFieldKind::NonEmptyString
+                if value.and_then(Value::as_str).is_some_and(str::is_empty) =>
+            {
+                Some("Too small: expected string to have >=1 characters".to_owned())
+            }
+            JsonFieldKind::Boolean if !value.is_some_and(Value::is_boolean) => Some(format!(
+                "Invalid input: expected boolean, received {}",
+                json_type(value)
+            )),
             JsonFieldKind::Email if !value.and_then(Value::as_str).is_some_and(is_valid_email) => {
                 Some("Invalid email address".to_string())
             }

@@ -1,3 +1,4 @@
+import { expect } from "bun:test";
 import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { compatScenario } from "../../support/scenario";
@@ -171,8 +172,19 @@ compatScenario("two-factor otp flow completes sign-in and rejects requests witho
   });
   const sendOtp = await client.twoFactor.sendOtp({});
   const otpRecord = await ctx.readTwoFactorOtp({ email }) as { otp: string };
+  const verificationStartedAt = Date.now();
   const verifyOtp = await client.twoFactor.verifyOtp({ code: otpRecord.otp });
+  const verificationFinishedAt = Date.now();
+  if (!verifyOtp.data?.user.id) throw new Error("Second-factor completion must return its owner");
+  const persistedBeforeRead = await ctx.readUserState({ userId: verifyOtp.data.user.id });
   const session = await client.getSession();
+  expect(session.data?.session.token).toBe(verifyOtp.data.token);
+  expect(session.data?.session.userId).toBe(verifyOtp.data.user.id);
+  const persistedAfterRead = await ctx.readUserState({ userId: verifyOtp.data.user.id });
+  expect(persistedAfterRead).toEqual(persistedBeforeRead);
+  if (!session.data) throw new Error("Second-factor session must authenticate");
+  expect(session.data.session.expiresAt.getTime()).toBeGreaterThanOrEqual(verificationStartedAt + 86_400_000);
+  expect(session.data.session.expiresAt.getTime()).toBeLessThanOrEqual(verificationFinishedAt + 86_400_000);
 
   const missingCookieClient = twoFactorActor(ctx, "missing-cookie");
   const missingCookie = await missingCookieClient.twoFactor.verifyOtp({
@@ -184,6 +196,8 @@ compatScenario("two-factor otp flow completes sign-in and rejects requests witho
     sendOtp: ctx.snapshot(sendOtp),
     verifyOtp: ctx.snapshot(verifyOtp),
     session: ctx.snapshot(session),
+    persistedBeforeRead: ctx.snapshot(persistedBeforeRead),
+    persistedAfterRead: ctx.snapshot(persistedAfterRead),
     missingCookie: ctx.snapshot(missingCookie),
   };
 });

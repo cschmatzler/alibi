@@ -84,6 +84,13 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn get_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
         self.inner.get_user_sessions(user_id).await
     }
+    async fn refresh_session(
+        &self,
+        token: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<S::Session>> {
+        self.inner.refresh_session(token, expires_at).await
+    }
     async fn update_session_expiry(
         &self,
         token: &str,

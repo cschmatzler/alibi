@@ -294,6 +294,17 @@ where
         token: &str,
         expires_at: DateTime<Utc>,
     ) -> AuthResult<()> {
+        self.refresh_session(token, expires_at)
+            .await?
+            .map(|_| ())
+            .ok_or(AuthError::SessionNotFound)
+    }
+
+    async fn refresh_session(
+        &self,
+        token: &str,
+        expires_at: DateTime<Utc>,
+    ) -> AuthResult<Option<S::Session>> {
         let Some(model) = <S::Session as SeaOrmSessionModel>::Entity::find()
             .filter(<S::Session as SeaOrmSessionModel>::token_column().eq(token))
             .filter(<S::Session as SeaOrmSessionModel>::active_column().eq(true))
@@ -301,17 +312,17 @@ where
             .await
             .map_err(map_db_err)?
         else {
-            return Err(AuthError::SessionNotFound);
+            return Ok(None);
         };
 
         let mut active = model.into_active_model();
         S::Session::set_expires_at(&mut active, expires_at);
         S::Session::set_updated_at(&mut active, Utc::now());
-        active
-            .update(self.connection())
-            .await
-            .map(|_| ())
-            .map_err(map_db_err)
+        match active.update(self.connection()).await {
+            Ok(updated) => Ok(Some(updated)),
+            Err(sea_orm::DbErr::RecordNotUpdated) => Ok(None),
+            Err(error) => Err(map_db_err(error)),
+        }
     }
 
     async fn delete_session(&self, token: &str) -> AuthResult<()> {

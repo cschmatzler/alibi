@@ -1,5 +1,10 @@
 /** Explicit equivalent configurations of the pinned runtime. */
 export type FixtureProfile =
+  | "session-deferred"
+  | "session-no-refresh"
+  | "session-deferred-no-refresh"
+  | "session-no-freshness"
+  | "session-cookie-cleanup"
   | "magic-link-hashed"
   | "magic-link-disabled"
   | "passwordless-hashed"

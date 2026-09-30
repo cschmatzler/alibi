@@ -375,8 +375,14 @@ impl AdminPlugin {
             ctx,
         )
         .await?;
-        let dont_remember =
-            get_cookie(req, &related_cookie_name(&ctx.config, "dont_remember")).is_some();
+        let dont_remember = get_cookie(req, &related_cookie_name(&ctx.config, "dont_remember"))
+            .and_then(|value| {
+                better_auth_core::utils::cookie_utils::verify_cookie_value(
+                    &value,
+                    &ctx.config.secret,
+                )
+            })
+            .is_some_and(|value| !value.is_empty());
         let admin_cookie = create_admin_session_cookie_value(
             &ctx.config.secret,
             &AdminSessionCookiePayload {
@@ -408,7 +414,10 @@ impl AdminPlugin {
             "Set-Cookie",
             create_session_like_cookie(
                 &related_cookie_name(&ctx.config, "dont_remember"),
-                "true",
+                &better_auth_core::utils::cookie_utils::sign_cookie_value(
+                    "true",
+                    &ctx.config.secret,
+                ),
                 None,
                 &ctx.config,
             ),
@@ -421,15 +430,7 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let session_manager = ctx.session_manager();
-        let token = session_manager
-            .extract_session_token(req)
-            .ok_or(AuthError::Unauthenticated)?;
-        let session = session_manager
-            .get_session(&token)
-            .await?
-            .ok_or(AuthError::Unauthenticated)?;
-        let session = SessionView::from(&session);
+        let (_, session) = ctx.require_session(req).await?;
         if session.impersonated_by.is_none() {
             return Err(AuthError::bad_request("You are not impersonating anyone"));
         }
@@ -461,7 +462,10 @@ impl AdminPlugin {
                 "Set-Cookie",
                 create_session_like_cookie(
                     &related_cookie_name(&ctx.config, "dont_remember"),
-                    "true",
+                    &better_auth_core::utils::cookie_utils::sign_cookie_value(
+                        "true",
+                        &ctx.config.secret,
+                    ),
                     None,
                     &ctx.config,
                 ),

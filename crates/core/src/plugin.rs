@@ -562,24 +562,72 @@ impl<S: AuthSchema> AuthContext<S> {
         &self,
         req: &AuthRequest,
     ) -> AuthResult<(S::User, crate::wire::SessionView)> {
-        if let Some(session) = req.virtual_session() {
+        self.authenticated_session(req, true).await
+    }
+
+    /// Authorize against the persisted signed-cookie session.
+    /// This bypasses hook-provided virtual sessions while preserving normal
+    /// refresh, browser preferences and deferred-read behavior.
+    pub async fn require_authoritative_session(
+        &self,
+        req: &AuthRequest,
+    ) -> AuthResult<(S::User, crate::wire::SessionView)> {
+        self.authenticated_session(req, false).await
+    }
+
+    async fn authenticated_session(
+        &self,
+        req: &AuthRequest,
+        allow_virtual: bool,
+    ) -> AuthResult<(S::User, crate::wire::SessionView)> {
+        if allow_virtual && let Some(session) = req.virtual_session() {
             let user = self
                 .database
                 .get_user_by_id(&session.user_id)
                 .await?
-                .ok_or(AuthError::UserNotFound)?;
+                .ok_or(AuthError::Unauthenticated)?;
             return Ok((user, session.clone()));
         }
         let session_manager = self.session_manager();
 
-        if let Some(token) = session_manager.extract_session_token(req)
-            && let Some(session) = session_manager.get_session(&token).await?
-            && let Some(user) = self.database.get_user_by_id(&session.user_id()).await?
-        {
-            return Ok((user, self.session_view(&session)));
+        let options = crate::session::SessionReadOptions {
+            allow_refresh: !session_manager.request_disables_refresh(req)
+                && !self.config.session.defer_session_refresh,
+            cleanup_expired: !self.config.session.defer_session_refresh,
+        };
+        let Some(token) = session_manager.extract_session_token(req) else {
+            return Err(AuthError::Unauthenticated);
+        };
+        let read = session_manager
+            .read_session(&token, options)
+            .await
+            .map_err(|_| AuthError::Unauthenticated)?;
+        let Some(session) = read.session else {
+            self.queue_session_cleanup(req);
+            return Err(AuthError::Unauthenticated);
+        };
+        let Some(user) = self
+            .database
+            .get_user_by_id(&session.user_id())
+            .await
+            .map_err(|_| AuthError::Unauthenticated)?
+        else {
+            self.queue_session_cleanup(req);
+            return Err(AuthError::Unauthenticated);
+        };
+        if read.refreshed {
+            req.queue_response_header(
+                "Set-Cookie",
+                crate::utils::cookie_utils::create_session_cookie(session.token(), &self.config),
+            );
         }
+        Ok((user, self.session_view(&session)))
+    }
 
-        Err(AuthError::Unauthenticated)
+    fn queue_session_cleanup(&self, req: &AuthRequest) {
+        for cookie in crate::utils::cookie_utils::delete_session_cookie_headers(&self.config) {
+            req.queue_response_header("Set-Cookie", cookie);
+        }
     }
 }
 
