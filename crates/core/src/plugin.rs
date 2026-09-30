@@ -270,6 +270,54 @@ impl<S: AuthSchema> AuthInitContext<S> {
         self.metadata.get(key)
     }
 
+    /// Register a transform for user creation, including transactional creation.
+    pub fn register_user_create_transform<F>(&mut self, transform: F)
+    where
+        F: Fn(crate::types::CreateUser) -> AuthResult<crate::types::CreateUser>
+            + Send
+            + Sync
+            + 'static,
+    {
+        let mut transforms = self
+            .extensions
+            .get::<crate::store::plugin_hooks::UserTransforms>()
+            .map(|value| (*value).clone())
+            .unwrap_or_default();
+        transforms.creates.push(Arc::new(transform));
+        self.extensions.insert(transforms);
+    }
+
+    /// Register a transform applied to every user update through this auth instance.
+    pub fn register_user_update_transform<F>(&mut self, transform: F)
+    where
+        F: Fn(&str, crate::types::UpdateUser) -> AuthResult<crate::types::UpdateUser>
+            + Send
+            + Sync
+            + 'static,
+    {
+        let mut transforms = self
+            .extensions
+            .get::<crate::store::plugin_hooks::UserTransforms>()
+            .map(|value| (*value).clone())
+            .unwrap_or_default();
+        transforms.updates.push(Arc::new(transform));
+        self.extensions.insert(transforms);
+    }
+
+    /// Finalize the instance's store without mutating a shared underlying adapter.
+    pub fn database_with_registered_transforms(&self) -> Arc<dyn AuthStore<S>> {
+        match self
+            .extensions
+            .get::<crate::store::plugin_hooks::UserTransforms>()
+        {
+            Some(transforms) => Arc::new(crate::store::plugin_hooks::PluginStore::new(
+                self.database.clone(),
+                (*transforms).clone(),
+            )),
+            None => self.database.clone(),
+        }
+    }
+
     pub fn into_parts(self) -> AuthInitParts {
         AuthInitParts {
             metadata: self.metadata,
@@ -336,13 +384,21 @@ impl<S: AuthSchema> AuthContext<S> {
             view.username = None;
             view.display_username = None;
         }
-        view.two_factor_enabled = self
-            .feature_enabled("two_factor.enabled")
-            .then(|| user.two_factor_enabled());
+        if self.feature_enabled("two_factor.enabled") {
+            view.two_factor_enabled = user.two_factor_enabled_value();
+            if view.two_factor_enabled.is_none() {
+                _ = view
+                    .extension_fields
+                    .insert("twoFactorEnabled".into(), serde_json::Value::Null);
+            }
+        } else {
+            view.two_factor_enabled = None;
+        }
         if self.feature_enabled("admin.enabled") {
-            view.banned = Some(user.banned());
+            view.banned = user.banned_value();
             for (key, absent) in [
                 ("role", view.role.is_none()),
+                ("banned", view.banned.is_none()),
                 ("banReason", view.ban_reason.is_none()),
                 ("banExpires", view.ban_expires.is_none()),
             ] {

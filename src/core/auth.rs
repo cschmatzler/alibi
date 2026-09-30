@@ -137,6 +137,7 @@ impl<S: AuthSchema> AuthBuilder<S> {
             plugin.on_init(&mut init_context).await?;
         }
 
+        let store = init_context.database_with_registered_transforms();
         let init_parts = init_context.into_parts();
 
         // Create session manager

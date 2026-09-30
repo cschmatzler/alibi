@@ -206,7 +206,7 @@ async fn test_unban_clears_ban_reason_and_expires() {
         .await
         .unwrap()
         .unwrap();
-    assert!(!updated_user.banned);
+    assert_eq!(updated_user.banned, Some(false));
     assert!(updated_user.ban_reason.is_none());
     assert!(updated_user.ban_expires.is_none());
 }
