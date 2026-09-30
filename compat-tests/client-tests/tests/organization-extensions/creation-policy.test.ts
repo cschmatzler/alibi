@@ -36,7 +36,7 @@ compatScenario("organization creation static denial and negative limits preserve
   observations.push({profile,owner:ctx.snapshot(owner.result),foreign:ctx.snapshot(foreign.result),before,foreignBefore,guest,denied:ctx.snapshot(denied),trusted,unknown,foreignAfter:await state(ctx,foreign.email)});
  }
  return observations;
-});
+}, ["POST /organization/create"]);
 
 compatScenario("organization creation fractional limits count every membership and preserve other current-token selections",async ctx=>{
  const profile="org-creation-limit";
@@ -53,13 +53,13 @@ compatScenario("organization creation fractional limits count every membership a
  const deniedOwner=await create(ctx,owner,"third-owner");expect(deniedOwner.error).toMatchObject(limitError);
  expect(await state(ctx,another.email)).toEqual(anotherBefore);expect(await state(ctx,owner.email)).toEqual(ownerBefore);
  return {one:ctx.snapshot(one),two:ctx.snapshot(two),own:ctx.snapshot(own),invitation:ctx.snapshot(invitation),accepted:ctx.snapshot(accepted),ownerBefore,anotherBefore,denied:ctx.snapshot(denied),deniedOwner:ctx.snapshot(deniedOwner)};
-});
+}, ["POST /organization/create"]);
 
 compatScenario("organization creation nonfinite number limits retain the pinned unlimited comparison branch",async ctx=>{
  const observations=[];
  for(const profile of ["org-creation-infinity","org-creation-nan"] as const){const owner=await signup(ctx,profile,"owner","Unlimited");const one=await create(ctx,owner,`${profile}-one`);const two=await create(ctx,owner,`${profile}-two`);expect(one.error).toBeNull();expect(two.error).toBeNull();const rows=await state(ctx,owner.email);expect(rows.organizations).toHaveLength(2);expect(rows.organizations.every(row=>row.userId===owner.userId&&row.role==="owner")).toBe(true);observations.push({profile,one:ctx.snapshot(one),two:ctx.snapshot(two),rows});}
  return observations;
-});
+}, ["POST /organization/create"]);
 
 compatScenario("organization creation async policy sees the persisted principal and true limit results deny public and trusted creation",async ctx=>{
  const profile="org-creation-callback";const paid=await signup(ctx,profile,"paid","Paid Current");const free=await signup(ctx,profile,"free","Free Current");
@@ -71,7 +71,7 @@ compatScenario("organization creation async policy sees the persisted principal 
  const trusted=await server(ctx,profile,free.userId,"trusted-free-allowed");expect(trusted.status).toBe(200);expect(organization.parse(trusted.body).members[0]?.userId).toBe(free.userId);
  const freeBefore=await state(ctx,free.email);expect(freeBefore.sessions).toEqual(freeDenied.sessions);const trustedDenied=await server(ctx,profile,free.userId,"trusted-free-at-limit");expect(trustedDenied.status).toBe(403);expect(trustedDenied.body).toMatchObject({code:limitError.code,message:limitError.message});const freeAfter=await state(ctx,free.email);expect(freeAfter.organizations).toEqual(freeBefore.organizations);expect(freeAfter.sessions).toEqual(freeBefore.sessions);expect(freeAfter.receipts.map(row=>row.operation)).toEqual(["allow","allow","limit","allow","limit"]);
  return {forged:ctx.snapshot(forged),freeDenied,first:ctx.snapshot(first),paidBefore,denied:ctx.snapshot(denied),paidAfter,trusted,freeBefore,trustedDenied,freeAfter};
-});
+}, ["POST /organization/create"]);
 
 compatScenario("organization creator role customization preserves explicit grants and prevents removing the only effective owner",async ctx=>{
  const founder=await signup(ctx,"org-creation-founder","founder","Founder");const created=await create(ctx,founder,"custom-founder",{metadata:{policy:"creator-grants"}});expect(created.error).toBeNull();const org=organization.parse(created.data);expect(org.members[0]?.role).toBe("founder");const before=await state(ctx,founder.email);
@@ -81,7 +81,7 @@ compatScenario("organization creator role customization preserves explicit grant
  const empty=await signup(ctx,"org-creation-empty-role","empty","Effective Owner");const defaulted=await create(ctx,empty,"empty-creator");expect(defaulted.error).toBeNull();const ownerOrg=organization.parse(defaulted.data);expect(ownerOrg.members[0]?.role).toBe("owner");const ownerBefore=await state(ctx,empty.email);
  const demotion=await empty.client.$fetch("/organization/update-member-role",{method:"POST",body:{organizationId:ownerOrg.id,memberId:ownerOrg.members[0]!.id,role:"member"}});expect(demotion.error).toMatchObject({status:400,code:"YOU_CANNOT_LEAVE_THE_ORGANIZATION_WITHOUT_AN_OWNER"});expect(await state(ctx,empty.email)).toEqual(ownerBefore);
  return {created:ctx.snapshot(created),before,denied:ctx.snapshot(denied),assigned:ctx.snapshot(assigned),updated:ctx.snapshot(updated),founderAfter:await state(ctx,founder.email),defaulted:ctx.snapshot(defaulted),ownerBefore,demotion:ctx.snapshot(demotion)};
-});
+}, ["POST /organization/create", "POST /organization/update", "POST /organization/update-member-role"]);
 
 compatScenario("organization creation callback errors propagate before writes even for trusted callers", async ctx => {
  const observations = [];
@@ -109,4 +109,4 @@ compatScenario("organization creation callback errors propagate before writes ev
   observations.push({rejected:ctx.snapshot(rejected), trusted, before, afterPublic, afterTrusted});
  }
  return observations;
-});
+}, ["POST /organization/create"]);

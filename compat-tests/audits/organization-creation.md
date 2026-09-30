@@ -38,3 +38,11 @@ The upstream membership list uses the configured adapter page limit. The existin
 Organization/member lifecycle hooks, configured additional fields/model names, broader membership/invitation policies, and concurrent creation-limit admission remain unproved here. The pinned creation check and writes are sequential; this change does not add an atomic capacity guarantee or rollback rejected after-write hooks. Callback `UserView` projection follows the application's existing registered core/plugin fields; arbitrary user-schema additions are a separate contract.
 
 Creation/update metadata still need the pinned record-only input validation, and broad malformed-body/authentication ordering remains unresolved. The existing typed trusted helper consumes a `CreateOrganizationRequest`; this evidence uses valid server input and does not establish upstream Zod behavior for invalid typed values. A successful absent-metadata organization update exposed a separate mutation response mismatch (upstream omits the field, Rust emitted null). The coordinator owns that repair and its absent/empty/populated metadata persistence evidence; the creator-grant scenario uses explicitly stored metadata to isolate its authorization contract.
+
+Coordinator independent review checked the installed source, policy error/order,
+trusted bypass, role consumers, actual persistence assertions and before-fix
+failures. The bounded contract is clear. Mutation state evidence is now required
+for every creation policy scenario, with success/rejection/authorization evidence
+for the applicable configuration branches. Shared inventory requirements were
+appended without removing earlier evidence. Integrated canonical validation is
+pending. The separately merged metadata projection repair remains intact.

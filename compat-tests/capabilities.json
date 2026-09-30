@@ -1115,12 +1115,31 @@
       "evidence": {
         "success": [
           "api-key organization ownership rejects unrelated users",
-          "organization metadata stores rounded JavaScript numbers before readback"
+          "organization metadata stores rounded JavaScript numbers before readback",
+          "organization creation fractional limits count every membership and preserve other current-token selections",
+          "organization creation nonfinite number limits retain the pinned unlimited comparison branch",
+          "organization creation async policy sees the persisted principal and true limit results deny public and trusted creation",
+          "organization creator role customization preserves explicit grants and prevents removing the only effective owner"
         ],
-        "rejection": null,
-        "authorization": null,
+        "rejection": [
+          "organization creation static denial and negative limits preserve ownership while trusted creation bypasses only the allow policy",
+          "organization creation fractional limits count every membership and preserve other current-token selections",
+          "organization creation async policy sees the persisted principal and true limit results deny public and trusted creation",
+          "organization creation callback errors propagate before writes even for trusted callers"
+        ],
+        "authorization": [
+          "organization creation static denial and negative limits preserve ownership while trusted creation bypasses only the allow policy",
+          "organization creation async policy sees the persisted principal and true limit results deny public and trusted creation",
+          "organization creation callback errors propagate before writes even for trusted callers"
+        ],
         "state": [
-          "organization metadata stores rounded JavaScript numbers before readback"
+          "organization metadata stores rounded JavaScript numbers before readback",
+          "organization creation static denial and negative limits preserve ownership while trusted creation bypasses only the allow policy",
+          "organization creation fractional limits count every membership and preserve other current-token selections",
+          "organization creation nonfinite number limits retain the pinned unlimited comparison branch",
+          "organization creation async policy sees the persisted principal and true limit results deny public and trusted creation",
+          "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
+          "organization creation callback errors propagate before writes even for trusted callers"
         ]
       }
     },
@@ -1282,14 +1301,16 @@
           "organization core lifecycle matches TS",
           "organization metadata stores rounded JavaScript numbers before readback",
           "organization metadata lookup default scopes selectors and clears only the denied session",
-          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session",
+          "organization creator role customization preserves explicit grants and prevents removing the only effective owner"
         ],
-        "rejection": null,
-        "authorization": null,
+        "rejection": "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
+        "authorization": "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
         "state": [
           "organization metadata stores rounded JavaScript numbers before readback",
           "organization metadata lookup default scopes selectors and clears only the denied session",
-          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session",
+          "organization creator role customization preserves explicit grants and prevents removing the only effective owner"
         ]
       }
     },
@@ -1298,10 +1319,13 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "organization membership mutations cover permissions, role updates, removal, and leave",
-        "rejection": null,
+        "success": [
+          "organization membership mutations cover permissions, role updates, removal, and leave",
+          "organization creator role customization preserves explicit grants and prevents removing the only effective owner"
+        ],
+        "rejection": "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
         "authorization": null,
-        "state": null
+        "state": "organization creator role customization preserves explicit grants and prevents removing the only effective owner"
       }
     },
     {
