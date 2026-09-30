@@ -37,9 +37,10 @@ impl RolePermissions {
 
         requested.iter().all(|(resource, actions)| {
             self.permissions.get(resource).is_some_and(|allowed| {
-                actions
-                    .iter()
-                    .all(|action| allowed.iter().any(|item| item == action))
+                !actions.is_empty()
+                    && actions
+                        .iter()
+                        .all(|action| allowed.iter().any(|item| item == action))
             })
         })
     }
@@ -71,18 +72,14 @@ pub(super) fn default_roles() -> HashMap<String, RolePermissions> {
 }
 
 fn configured_roles(config: &AdminConfig) -> HashMap<String, RolePermissions> {
-    if config.roles.is_empty() {
-        default_roles()
-    } else {
-        config.roles.clone()
-    }
+    config.roles.clone().unwrap_or_else(default_roles)
 }
 
 fn role_names<'a>(role: Option<&'a str>, default_role: &'a str) -> Vec<&'a str> {
-    role.unwrap_or(default_role)
+    role.filter(|role| !role.is_empty())
+        .or_else(|| (!default_role.is_empty()).then_some(default_role))
+        .unwrap_or("user")
         .split(',')
-        .map(str::trim)
-        .filter(|role| !role.is_empty())
         .collect()
 }
 
@@ -115,5 +112,5 @@ pub(super) fn has_permission(
 pub(super) fn is_admin_role(role: Option<&str>, config: &AdminConfig) -> bool {
     role_names(role, &config.default_role)
         .into_iter()
-        .any(|role| config.admin_roles.iter().any(|admin| admin == role))
+        .any(|role| config.admin_roles.iter().any(|admin| admin.trim() == role))
 }
