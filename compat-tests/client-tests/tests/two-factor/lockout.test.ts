@@ -208,7 +208,10 @@ compatScenario("two-factor enrollment reuses only an unverified factor generatio
   const completion = await client.twoFactor.verifyBackupCode({code:backup}); expect(completion.error).toBeNull();
   expect((await client.getSession()).data?.user.id).toBe(signup.data.user.id);
   const final = await factorState(ctx,signup.data.user.id); expect(final.failedVerificationCount).toBe(0); expect(final.verified).toBe(false);
-  return ctx.snapshot({signup,firstState:publicFactorState(firstState),secondState:publicFactorState(secondState),wrongPassword,verified,established:publicFactorState(established),denied,foreignWrong,pending,unverified:publicFactorState(unverified),deniedTotp,completion,final:publicFactorState(final)});
+  const replay = await client.twoFactor.verifyBackupCode({code:backup});
+  expect(replay.error).toMatchObject({status:401,code:"INVALID_BACKUP_CODE"});
+  expect(await factorState(ctx,signup.data.user.id)).toEqual(final);
+  return ctx.snapshot({signup,firstState:publicFactorState(firstState),secondState:publicFactorState(secondState),wrongPassword,verified,established:publicFactorState(established),denied,foreignWrong,pending,unverified:publicFactorState(unverified),deniedTotp,completion,replay,final:publicFactorState(final)});
 }, ["POST /two-factor/enable", "POST /two-factor/verify-totp", "POST /two-factor/verify-backup-code", "POST /two-factor/verify-otp", "POST /two-factor/send-otp"]);
 
 compatScenario("two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code", async ctx => {
@@ -261,5 +264,9 @@ compatScenario("two-factor skip-verification enrollment persists verified state 
   await client.signOut(); expect((await client.signIn.email({email,password})).data).toHaveProperty("twoFactorRedirect",true);
   const backup = z.object({backupCodes:z.array(z.string())}).parse(enabled.data).backupCodes[0]!;
   const completion = await client.twoFactor.verifyBackupCode({code:backup}); expect(completion.error).toBeNull(); expect((await client.getSession()).data?.user.id).toBe(signup.data.user.id);
-  return ctx.snapshot({signup,original,wrong,before,enrollment:{error:enabled.error,backupCount:z.object({backupCodes:z.array(z.string())}).parse(enabled.data).backupCodes.length},state:publicFactorState(state),current,persisted,reenroll,completion});
+  const afterCompletion = await factorState(ctx,signup.data.user.id);
+  const replay = await client.twoFactor.verifyBackupCode({code:backup});
+  expect(replay.error).toMatchObject({status:401,code:"INVALID_BACKUP_CODE"});
+  expect(await factorState(ctx,signup.data.user.id)).toEqual(afterCompletion);
+  return ctx.snapshot({signup,original,wrong,before,enrollment:{error:enabled.error,backupCount:z.object({backupCodes:z.array(z.string())}).parse(enabled.data).backupCodes.length},state:publicFactorState(state),current,persisted,reenroll,completion,replay,afterCompletion:publicFactorState(afterCompletion)});
 }, ["POST /two-factor/enable", "POST /two-factor/verify-totp", "POST /two-factor/verify-backup-code", "POST /two-factor/verify-otp", "POST /two-factor/send-otp"]);
