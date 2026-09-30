@@ -113,3 +113,11 @@ regression failed before the repair by exposing the undeclared physical sentinel
 afterward the sentinel and returned:false fields stay hidden while declared
 fields, including a builtin-shaped field without its plugin, remain visible.
 Trusted AuthSession.additional_fields continues to return the raw storage data.
+
+Independent JWT-owner review checked input/adapter policy precedence, actual
+SQLite bindings, undefined/default/transform hook lifecycle, registered output
+privacy and authorization through the immutable persisted token. Review findings
+are resolved. The coordinator preserved replacement additional fields and
+requires both custom-schema scenarios plus default validation/auth/state proof
+in the shared inventory without removing earlier evidence. Final integrated gate
+is pending; this proves the stateful SQLite slice rather than every storage mode.

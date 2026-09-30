@@ -26,7 +26,7 @@ compatScenario("update-session validates records before authentication and rejec
   expect(media.body).toEqual({code:"UNSUPPORTED_MEDIA_TYPE",message:'Content-Type "text/plain" is not allowed. Allowed types: application/json'});
   expect(await ctx.readUserState({userId: z.object({user:z.object({id:z.string()})}).parse(signup.data).user.id})).toEqual(before);
   return {unauthenticated:ctx.snapshot(unauthenticated),malformed,signup:ctx.snapshot(signup),empty:ctx.snapshot(empty),immutable:ctx.snapshot(immutable),foreignScope:ctx.snapshot(foreignScope),media,before};
-});
+}, ["POST /update-session"]);
 
 const stateRow=z.object({id:z.string(),token:z.string(),userId:z.string(),updatedAt:z.string(),label:z.string().nullable(),hidden:z.string().nullable(),serverOnly:z.string().nullable(),transformed:z.string().nullable(),validated:z.string().nullable(),callback:z.string().nullable(),number:z.number().nullable(),payload:z.unknown(),activeOrganizationId:z.string().nullable(),activeTeamId:z.string().nullable(),impersonatedBy:z.string().nullable()});
 const responseSession=z.object({session:z.object({id:z.string(),token:z.string(),userId:z.string(),label:z.string().nullable(),serverOnly:z.string().nullable(),callback:z.string().nullable(),payload:z.unknown()}).passthrough()});
