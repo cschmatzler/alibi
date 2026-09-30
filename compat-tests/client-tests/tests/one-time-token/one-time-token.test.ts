@@ -211,3 +211,33 @@ compatScenario("disabled client OTT generation still supports server generation 
   expect(fromServer.data?.session.token).toBe(signupToken);
   return { signup: ctx.snapshot(signup), header: { token: headerToken }, exposedHeaders, persistedHeader, disabled, serverGenerated, fromHeader: ctx.snapshot(fromHeader), fromServer: ctx.snapshot(fromServer) };
 });
+
+compatScenario("one-time token schema errors preserve an issued credential until a valid single consumption", async ctx => {
+  const { client, userId } = await signUp(ctx);
+  const session = await client.getSession();
+  const issued = await client.oneTimeToken.generate();
+  if (!issued.data || !session.data) throw new Error("schema rejection requires a real issued transfer credential");
+  const identifier = `one-time-token:${issued.data.token}`;
+  const rejected = [];
+  for (const [body, received] of [[null, "null"], [{}, "undefined"], [{ token: null }, "null"], [{ token: 7 }, "number"], [{ token: [] }, "array"], [{ token: false }, "boolean"]] as const) {
+    const response = await ctx.rawRequest({ path: "/__test/profiles/ott-default/api/auth/one-time-token/verify", method: "POST", json: body });
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ code: "VALIDATION_ERROR", message: body === null ? "[body] Invalid input: expected object, received null" : `[body.token] Invalid input: expected string, received ${received}` });
+    const pending = rows.parse(await ctx.readVerificationState({ identifier }));
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.value).toBe(session.data.session.token);
+    rejected.push(response);
+  }
+  const empty = await ctx.rawRequest({ path: "/__test/profiles/ott-default/api/auth/one-time-token/verify", method: "POST", json: { token: "" } });
+  expect(empty.status).toBe(400);
+  expect(empty.body).toEqual({ message: "Invalid token" });
+  expect(rows.parse(await ctx.readVerificationState({ identifier }))).toHaveLength(1);
+  const consumed = await ottActor(ctx, "schema-consumer").oneTimeToken.verify({ token: issued.data.token });
+  expect(consumed.error).toBeNull();
+  expect(consumed.data?.session.token).toBe(session.data.session.token);
+  expect(consumed.data?.user.id).toBe(userId);
+  expect(await ctx.readVerificationState({ identifier })).toEqual([]);
+  const replay = await ottActor(ctx, "schema-consumer").oneTimeToken.verify({ token: issued.data.token });
+  expect(replay.error).toMatchObject({ status: 400, message: "Invalid token" });
+  return { issued, rejected, empty, consumed: ctx.snapshot(consumed), replay };
+}, ["POST /one-time-token/verify"]);
