@@ -36,12 +36,16 @@ for(const profile of [undefined,"org-teams"] as const satisfies readonly (Fixtur
   expect(updatedAbsent.data).not.toHaveProperty("metadata");
   const updatedEmpty=await owner.org.organization.update({organizationId:empty.data.id,data:{name:"Metadata Empty Renamed"}});
   expect(updatedEmpty.error).toBeNull();expect(updatedEmpty.data?.metadata).toEqual({});
+  const updatedEmptyStored=await owner.org.organization.getOrganization({query:{organizationId:empty.data.id}});
+  expect(updatedEmptyStored.data?.name).toBe("Metadata Empty Renamed");expect(updatedEmptyStored.data?.metadata).toBe("{}");
   const updatedPresent=await owner.org.organization.update({organizationId:first.data.id,data:{name:"Metadata Alpha Renamed"}});
   expect(updatedPresent.error).toBeNull();
   expect(updatedPresent.data?.metadata).toEqual({tier:"gold",fixed:1e20,tiny:3.8730639354761726e-71,nested:{"2":"two","10":"ten"}});
   const active=await owner.org.organization.getOrganization();
   expect(active.data?.metadata).toBeNull();
+  expect(active.data?.name).toBe("Metadata Beta Renamed");
   const byId=await owner.org.organization.getOrganization({query:{organizationId:first.data.id}});
+  expect(byId.data?.name).toBe("Metadata Alpha Renamed");
   const bySlug=await owner.org.organization.getOrganization({query:{organizationId:first.data.id,organizationSlug:second.data.slug}});
   expect(active.data?.id).toBe(second.data.id);expect(byId.data?.id).toBe(first.data.id);expect(bySlug.data?.id).toBe(second.data.id);
   expect(byId.data?.metadata).toBe('{"tier":"gold","fixed":100000000000000000000,"tiny":3.8730639354761726e-71,"nested":{"2":"two","10":"ten"}}');
@@ -85,6 +89,6 @@ for(const profile of [undefined,"org-teams"] as const satisfies readonly (Fixtur
   const afterFull=persisted.parse(await ctx.readUserState({userId:outsiderSignup.data.user.id}));
   expect(afterFull.sessions.find(session=>session.token===current.data?.session.token)?.activeOrganizationId).toBeNull();
   expect(afterFull.sessions.find(session=>session.token===other.data?.session.token)).toEqual(beforeFull.sessions.find(session=>session.token===other.data?.session.token));
-  return ctx.snapshot({ownerSignup,outsiderSignup,noSelection,guestDenied,first,second,empty,emptyMetadata,updatedAbsent,updatedEmpty,updatedPresent,active,byId,bySlug,full,emptySelectors,beforeMissing,missingSlug,missing,missingFull,afterMissing,preserved,own,extraSignin,selected,current,other,before,denied,after,cleared,unaffected,restored,beforeFull,deniedFull,afterFull});
- },["GET /organization/get-organization", "GET /organization/get-full-organization"]);
+  return ctx.snapshot({ownerSignup,outsiderSignup,noSelection,guestDenied,first,second,empty,emptyMetadata,updatedAbsent,updatedEmpty,updatedEmptyStored,updatedPresent,active,byId,bySlug,full,emptySelectors,beforeMissing,missingSlug,missing,missingFull,afterMissing,preserved,own,extraSignin,selected,current,other,before,denied,after,cleared,unaffected,restored,beforeFull,deniedFull,afterFull});
+ },["GET /organization/get-organization", "GET /organization/get-full-organization", "POST /organization/update"]);
 }
