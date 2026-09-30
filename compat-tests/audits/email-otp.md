@@ -88,8 +88,12 @@ configured cookie name. It independently checks persisted full-length expiry,
 signed-cookie identity, HTTP-only/path attributes and preference-cookie reissue.
 The pre-fix native and official-client runs fail at the wrong empty-preference
 Max-Age after the pinned runtime passes all four cases. This repair passes all 20 native OTP tests, 21 SDK scenarios (750 assertions),
-TypeScript, fixture build, production Clippy and a bounded independent review; the next complete magic-link descendant gate
-will validate the final combined ancestry before claiming a fresh full gate.
+TypeScript, fixture build, production Clippy and a bounded independent review.
+The complete magic-link descendant gate then passes on
+`25544d9341d60e22fd3fdc8a03158c9fba05fd93`, inheriting this repair: 171 strict
+SDK scenarios (1,720 assertions), 23 harness tests, two Chromium tests and
+77.59% source coverage (18,043/23,254 lines), with every canonical native,
+feature, lint, browser and documentation check retained.
 
 ## Remaining audited boundaries
 
