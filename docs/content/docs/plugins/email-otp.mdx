@@ -1,0 +1,76 @@
+---
+title: Email OTP
+description: Authenticate, verify mailboxes, reset credentials, and change email with single-use codes.
+---
+
+`EmailOtpPlugin` binds each code to its mailbox and operation. Codes expire
+after five minutes by default and have a three-attempt verification budget.
+
+```rust
+use better_auth::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, EmailOtpStorage};
+use std::sync::Arc;
+
+let plugin = EmailOtpPlugin::new(EmailOtpConfig {
+    send_verification_otp: Some(Arc::new(mail_sender)),
+    storage: EmailOtpStorage::Hashed,
+    ..Default::default()
+});
+
+let auth = BetterAuth::<AppAuthSchema>::new(config)
+    .store(store)
+    .plugin(plugin.clone())
+    .build()
+    .await?;
+```
+
+The sender implements `SendEmailOtp` and receives `email`, `otp`, and `otp_type`.
+Notification failures are logged while the issued verification remains stored.
+
+## Client behavior
+
+| Endpoint | Behavior |
+|----------|----------|
+| `POST /email-otp/send-verification-otp` | Issue and deliver a code for its mailbox and type |
+| `POST /email-otp/check-verification-otp` | Check a code without consuming a successful proof |
+| `POST /email-otp/verify-email` | Consume an email-verification proof and update mailbox verification |
+| `POST /sign-in/email-otp` | Consume a sign-in proof and issue a session |
+| `POST /email-otp/request-password-reset` | Deliver a credential-reset proof for an existing account |
+| `POST /forget-password/email-otp` | Alias of the password-reset request |
+| `POST /email-otp/reset-password` | Consume the reset proof and update the credential |
+| `POST /email-otp/request-email-change` | Request an authenticated mailbox-change proof |
+| `POST /email-otp/change-email` | Consume the mailbox-bound change proof and persist the new email |
+
+Consumption rejects expired, wrong-operation, wrong-mailbox, reused, and
+exhausted proofs. Concurrent consumption permits one successful winner. A
+successful sign-in may create a new verified user unless `disable_sign_up` is
+enabled. Existing unverified accounts lose their unproven sessions and external
+accounts when the mailbox is proved by passwordless sign-in.
+
+Email-change support requires `change_email_enabled`. Enable
+`verify_current_email` to require proof of the current mailbox before issuing a
+new-mailbox challenge. The current session's user controls the change.
+
+## Configuration and storage
+
+`EmailOtpStorage` supports `Plain`, `Hashed`, `Encrypted`, and an application
+codec. `OtpResendStrategy::Reuse` reuses decryptable/plain proofs and resets their
+expiry while preserving the attempt budget. Hashed proofs rotate because their
+plaintext cannot be recovered.
+
+`override_default_email_verification` replaces core verification mail with OTP
+delivery when no explicit core sender is configured. Core before/after
+verification hooks and automatic sign-in settings are inherited. Password and
+reset policies inherit initialized email/password and password-management
+settings, including custom password hashing and configured session revocation.
+
+The store must persist verification identifier, value, expiry and creation
+order. Raw newest lookup and atomic consumption are distinct operations.
+Configured reads clean globally expired verification values unless
+`AuthConfig.verification.disable_cleanup` is enabled.
+
+## Trusted server operations
+
+`create_verification_otp` issues a code without delivery or an existing-user
+check. `get_verification_otp` reads a live plaintext or decryptable code without
+consuming it; hashed storage rejects retrieval. These methods accept the
+initialized authentication context and do not register public HTTP endpoints.

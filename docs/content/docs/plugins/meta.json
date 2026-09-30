@@ -1,6 +1,7 @@
 {
   "pages": [
     "email-verification",
+    "email-otp",
     "oauth",
     "two-factor",
     "organization",

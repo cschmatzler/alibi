@@ -34,7 +34,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
     config: &EmailVerificationConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<StatusResponse> {
-    if config.send_verification_email.is_none() {
+    if config.send_verification_email.is_none() && ctx.email_verification_override().is_none() {
         return Err(AuthError::bad_request("Verification email isn't enabled"));
     }
 
@@ -57,7 +57,11 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
             )?;
             let url = verification_url(&ctx.config, &token, body.callback_url.as_deref());
             let user = ctx.user_view(user);
-            if let Some(ref sender) = config.send_verification_email {
+            if config.send_verification_email.is_none()
+                && let Some(sender) = ctx.email_verification_override()
+            {
+                sender.0.send(&user, None, ctx).await?;
+            } else if let Some(ref sender) = config.send_verification_email {
                 sender.send(&user, &url, &token).await?;
             }
         }
@@ -77,7 +81,11 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
                     )?;
                     let url = verification_url(&ctx.config, &token, body.callback_url.as_deref());
                     let user = ctx.user_view(&user);
-                    if let Some(ref sender) = config.send_verification_email {
+                    if config.send_verification_email.is_none()
+                        && let Some(sender) = ctx.email_verification_override()
+                    {
+                        sender.0.send(&user, None, ctx).await?;
+                    } else if let Some(ref sender) = config.send_verification_email {
                         sender.send(&user, &url, &token).await?;
                     }
                     Ok(())
@@ -210,7 +218,11 @@ where
                 let url = verification_url(&ctx.config, &new_token, query.callback_url.as_deref());
                 let mut updated_user = ctx.user_view(&user);
                 updated_user.email = Some(update_to.to_string());
-                if let Some(ref sender) = config.send_verification_email {
+                if config.send_verification_email.is_none()
+                    && let Some(sender) = ctx.email_verification_override()
+                {
+                    sender.0.send(&updated_user, None, ctx).await?;
+                } else if let Some(ref sender) = config.send_verification_email {
                     super::super::authentication_helpers::run_notification(sender.send(
                         &updated_user,
                         &url,
@@ -306,7 +318,11 @@ where
                 )?;
                 let url = verification_url(&ctx.config, &new_token, query.callback_url.as_deref());
                 let wire_user = ctx.user_view(&updated_user);
-                if let Some(ref sender) = config.send_verification_email {
+                if config.send_verification_email.is_none()
+                    && let Some(sender) = ctx.email_verification_override()
+                {
+                    sender.0.send(&wire_user, None, ctx).await?;
+                } else if let Some(ref sender) = config.send_verification_email {
                     super::super::authentication_helpers::run_notification(
                         sender.send(&wire_user, &url, &new_token),
                     )

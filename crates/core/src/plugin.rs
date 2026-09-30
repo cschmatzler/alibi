@@ -38,6 +38,29 @@ pub struct AuthInitParts {
     pub extensions: ContextExtensions,
 }
 
+/// A plugin override for delivery of the core email-verification challenge.
+#[async_trait]
+pub trait VerificationEmailOverride<S: AuthSchema>: Send + Sync {
+    async fn send(
+        &self,
+        user: &crate::wire::UserView,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<()>;
+
+    async fn send_in_transaction(
+        &self,
+        user: &crate::wire::UserView,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<S>,
+        _transaction: &dyn crate::store::AuthTransaction<S>,
+    ) -> AuthResult<()> {
+        self.send(user, request, ctx).await
+    }
+}
+
+pub struct VerificationEmailOverrideHandle<S: AuthSchema>(pub Arc<dyn VerificationEmailOverride<S>>);
+
 /// Action returned by [`AuthPlugin::before_request`].
 #[derive(Debug)]
 pub enum BeforeRequestAction {
@@ -318,6 +341,10 @@ impl<S: AuthSchema> AuthInitContext<S> {
         }
     }
 
+    pub fn set_email_verification_override(&mut self, sender: Arc<dyn VerificationEmailOverride<S>>) {
+        self.extensions.insert(VerificationEmailOverrideHandle(sender));
+    }
+
     pub fn into_parts(self) -> AuthInitParts {
         AuthInitParts {
             metadata: self.metadata,
@@ -365,6 +392,10 @@ impl<S: AuthSchema> AuthContext<S> {
     pub fn with_extensions(mut self, extensions: ContextExtensions) -> Self {
         self.extensions = extensions;
         self
+    }
+
+    pub fn email_verification_override(&self) -> Option<Arc<VerificationEmailOverrideHandle<S>>> {
+        self.extensions.get()
     }
 
     pub fn user_view(&self, user: &impl crate::entity::AuthUser) -> crate::wire::UserView {

@@ -92,21 +92,34 @@ impl EmailVerificationPlugin {
     }
 }
 
-/// Password registration emits verification before creating its session.
+/// Password registration emits verification before creating its session. The
+/// transaction handle keeps OTP challenges in the same transaction as the user.
 pub(crate) async fn send_signup_verification<S: better_auth_core::AuthSchema>(
     user: &S::User,
     callback_url: Option<&str>,
     required: bool,
     ctx: &AuthContext<S>,
+    tx: &dyn better_auth_core::store::AuthTransaction<S>,
 ) -> AuthResult<()> {
     let config = ctx.extensions.get::<EmailVerificationConfig>();
-    let Some(config) = config else {
-        return Ok(());
-    };
-    if !config.send_on_sign_up.unwrap_or(required) {
+    if !config
+        .as_ref()
+        .and_then(|config| config.send_on_sign_up)
+        .unwrap_or(required)
+    {
         return Ok(());
     }
     let user = ctx.user_view(user);
+    if !config
+        .as_ref()
+        .is_some_and(|config| config.send_verification_email.is_some())
+        && let Some(sender) = ctx.email_verification_override()
+    {
+        return sender.0.send_in_transaction(&user, None, ctx, tx).await;
+    }
+    let Some(config) = config else {
+        return Ok(());
+    };
     let Some(sender) = &config.send_verification_email else {
         return Ok(());
     };
@@ -263,6 +276,11 @@ impl EmailVerificationPlugin {
         callback_url: Option<&str>,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<()> {
+        if self.config.send_verification_email.is_none()
+            && let Some(sender) = ctx.email_verification_override()
+        {
+            return sender.0.send(&ctx.user_view(user), None, ctx).await;
+        }
         let verification_token = token::create_email_verification_token(
             &ctx.config.secret,
             email,

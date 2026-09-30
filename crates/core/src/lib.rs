@@ -60,6 +60,7 @@ pub use middleware::{
 pub use openapi::{OpenApiBuilder, OpenApiInfo, OpenApiOperation, OpenApiResponse, OpenApiSpec};
 pub use plugin::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRoute, BeforeRequestAction, ContextExtensions,
+    VerificationEmailOverride, VerificationEmailOverrideHandle,
 };
 pub use schema::AuthSchema;
 pub use session::SessionManager;

@@ -1,0 +1,1523 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "test fixtures require successful setup and decoding"
+)]
+
+use super::*;
+use crate::plugins::test_helpers::{self, create_auth_json_request_no_query};
+use better_auth_core::{
+    AuthError, AuthPlugin, AuthSession, AuthUser, AuthVerification, CreateAccount, CreateUser,
+    CreateVerification, HttpMethod,
+};
+use serde_json::{Value, json};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+#[derive(Default)]
+struct Outbox(Mutex<Vec<EmailOtpDelivery>>);
+
+#[async_trait]
+impl SendEmailOtp for Outbox {
+    async fn send(&self, delivery: &EmailOtpDelivery) -> AuthResult<()> {
+        self.0.lock().unwrap().push(delivery.clone());
+        Ok(())
+    }
+}
+
+struct RejectingSender(Arc<Outbox>);
+
+#[async_trait]
+impl SendEmailOtp for RejectingSender {
+    async fn send(&self, delivery: &EmailOtpDelivery) -> AuthResult<()> {
+        self.0.0.lock().unwrap().push(delivery.clone());
+        Err(AuthError::bad_request("fixture delivery failed"))
+    }
+}
+
+struct CounterGenerator(AtomicUsize);
+
+#[async_trait]
+impl EmailOtpGenerator for CounterGenerator {
+    async fn generate(&self, _: &str, _: EmailOtpType) -> AuthResult<Option<String>> {
+        Ok(Some(format!(
+            "{:06}",
+            self.0.fetch_add(1, Ordering::SeqCst) + 100000
+        )))
+    }
+}
+
+struct CancelVerificationUpdate(Arc<AtomicUsize>);
+
+#[async_trait]
+impl
+    better_auth_seaorm::SeaOrmHooks<
+        better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema,
+    > for CancelVerificationUpdate
+{
+    async fn before_update_verification(
+        &self,
+        _: &str,
+        _: &mut better_auth_core::UpdateVerification,
+        _: &better_auth_seaorm::SeaOrmHookContext<'_>,
+    ) -> AuthResult<better_auth_seaorm::HookControl> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Ok(better_auth_seaorm::HookControl::Cancel)
+    }
+}
+
+fn configured() -> (EmailOtpConfig, Arc<Outbox>) {
+    let outbox = Arc::new(Outbox::default());
+    (
+        EmailOtpConfig {
+            send_verification_otp: Some(outbox.clone()),
+            generate_otp: Some(Arc::new(CounterGenerator(AtomicUsize::new(0)))),
+            ..Default::default()
+        },
+        outbox,
+    )
+}
+
+async fn post(
+    plugin: &EmailOtpPlugin,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    path: &str,
+    body: Value,
+) -> AuthResponse {
+    let req = create_auth_json_request_no_query(HttpMethod::Post, path, None, Some(body));
+    match plugin.on_request(&req, ctx).await {
+        Ok(Some(response)) => response,
+        Ok(None) => AuthResponse::text(404, "missing test route"),
+        Err(error) => error.to_auth_response(),
+    }
+}
+
+// The pinned endpoint awaits runInBackgroundOrAwait: a rejected notification
+// leaves its real proof available and does not replace the successful response.
+#[tokio::test]
+async fn notification_failure_retains_the_issued_otp_for_single_use_signin() {
+    let ctx = test_helpers::create_test_context().await;
+    let (mut config, outbox) = configured();
+    config.send_verification_otp = Some(Arc::new(RejectingSender(outbox.clone())));
+    let plugin = EmailOtpPlugin::new(config);
+    let email = "delivery-failure@fixture.test";
+    let issued = post(
+        &plugin,
+        &ctx,
+        "/email-otp/send-verification-otp",
+        json!({"email":email,"type":"sign-in"}),
+    )
+    .await;
+    assert_eq!(issued.status, 200);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&issued.body).unwrap(),
+        json!({"success":true})
+    );
+    let delivery = outbox.0.lock().unwrap().first().unwrap().clone();
+    assert_eq!(delivery.email, email);
+    let identifier = format!("sign-in-otp-{email}");
+    let proof = ctx
+        .database
+        .get_latest_verification_by_identifier(&identifier)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(proof.value(), format!("{}:0", delivery.otp));
+    assert!(
+        ctx.database
+            .get_user_by_email(email)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let received = post(
+        &plugin,
+        &ctx,
+        "/sign-in/email-otp",
+        json!({"email":email,"otp":delivery.otp}),
+    )
+    .await;
+    assert_eq!(received.status, 200);
+    let user = ctx
+        .database
+        .get_user_by_email(email)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(user.email_verified());
+    assert_eq!(
+        ctx.database
+            .get_user_sessions(&user.id())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        ctx.database
+            .get_latest_verification_by_identifier(&identifier)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/sign-in/email-otp",
+            json!({"email":email,"otp":delivery.otp})
+        )
+        .await
+        .status,
+        400
+    );
+    assert_eq!(outbox.0.lock().unwrap().len(), 1);
+}
+
+// Upstream checkVerificationOTP rejects once when a database update hook
+// returns false. Hook cancellation must not be retried as CAS contention.
+#[tokio::test]
+async fn cancelled_attempt_update_rejects_once_without_hanging_or_consuming_proof() {
+    use better_auth_seaorm::store::__private_test_support::{
+        bundled_schema::BundledSchema, migrator,
+    };
+    use better_auth_seaorm::{Database, SeaOrmStore};
+    let config = Arc::new(test_helpers::create_test_config());
+    let database = Database::connect("sqlite::memory:").await.unwrap();
+    migrator::run_migrations(&database).await.unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let store = Arc::new(
+        SeaOrmStore::<BundledSchema>::new(config.clone(), database)
+            .hook(CancelVerificationUpdate(calls.clone())),
+    );
+    let ctx = AuthContext::new(config, store);
+    let _ = ctx
+        .database
+        .create_user(CreateUser::new().with_email("veto@example.com"))
+        .await
+        .unwrap();
+    let (config, _) = configured();
+    let plugin = EmailOtpPlugin::new(config);
+    let otp = plugin
+        .create_verification_otp(&ctx, "veto@example.com", EmailOtpType::EmailVerification)
+        .await
+        .unwrap();
+    let identifier = "email-verification-otp-veto@example.com";
+    let before = ctx
+        .database
+        .get_latest_verification_by_identifier(identifier)
+        .await
+        .unwrap()
+        .unwrap();
+    let rejected = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/check-verification-otp",
+            json!({"email":"veto@example.com","type":"email-verification","otp":"incorrect"}),
+        ),
+    )
+    .await
+    .expect("A cancelled attempt update must return rather than retry forever");
+    assert_eq!(rejected.status, 400);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&rejected.body).unwrap(),
+        json!({"code":"INVALID_OTP","message":"Invalid OTP"})
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let after = ctx
+        .database
+        .get_latest_verification_by_identifier(identifier)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.id(), before.id());
+    assert_eq!(after.value(), before.value());
+    assert_eq!(after.expires_at(), before.expires_at());
+    let accepted = post(
+        &plugin,
+        &ctx,
+        "/email-otp/check-verification-otp",
+        json!({"email":"veto@example.com","type":"email-verification","otp":otp}),
+    )
+    .await;
+    assert_eq!(accepted.status, 200);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&accepted.body).unwrap(),
+        json!({"success":true})
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+// Upstream: email-otp/routes.ts :: sendVerificationOTP anti-enumeration branch.
+#[tokio::test]
+async fn unknown_verification_and_reset_mailboxes_leave_no_code_or_delivery() {
+    let ctx = test_helpers::create_test_context().await;
+    let (config, outbox) = configured();
+    let plugin = EmailOtpPlugin::new(config);
+    for otp_type in [
+        EmailOtpType::EmailVerification,
+        EmailOtpType::ForgetPassword,
+    ] {
+        let response = post(
+            &plugin,
+            &ctx,
+            "/email-otp/send-verification-otp",
+            json!({"email":"missing@example.com","type":otp_type}),
+        )
+        .await;
+        assert_eq!(response.status, 200);
+        assert!(
+            ctx.database
+                .get_latest_verification_by_identifier(&types::identifier(
+                    otp_type,
+                    "missing@example.com"
+                ))
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+    assert!(outbox.0.lock().unwrap().is_empty());
+}
+
+// Upstream: email-otp/routes.ts :: signInEmailOTP + atomicVerifyOTP.
+#[tokio::test]
+async fn sign_in_creates_verified_user_and_owned_session_then_rejects_replay() {
+    let ctx = test_helpers::create_test_context().await;
+    let (config, outbox) = configured();
+    let plugin = EmailOtpPlugin::new(config);
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/send-verification-otp",
+            json!({"email":"Owner@Example.com","type":"sign-in"})
+        )
+        .await
+        .status,
+        200
+    );
+    let delivery = outbox.0.lock().unwrap().last().unwrap().clone();
+    assert_eq!(delivery.email, "owner@example.com");
+    let body = json!({"email":"OWNER@example.com","otp":delivery.otp,"name":"Mailbox Owner"});
+    let response = post(&plugin, &ctx, "/sign-in/email-otp", body.clone()).await;
+    assert_eq!(response.status, 200);
+    let payload: Value = serde_json::from_slice(&response.body).unwrap();
+    let token = payload.get("token").and_then(Value::as_str).unwrap();
+    let user = ctx
+        .database
+        .get_user_by_email("owner@example.com")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(user.email_verified());
+    assert_eq!(user.name(), Some("Mailbox Owner"));
+    assert_eq!(
+        ctx.database
+            .get_session(token)
+            .await
+            .unwrap()
+            .unwrap()
+            .user_id(),
+        user.id()
+    );
+    assert!(
+        ctx.database
+            .get_latest_verification_by_identifier("sign-in-otp-owner@example.com")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        post(&plugin, &ctx, "/sign-in/email-otp", body).await.status,
+        400
+    );
+}
+
+// Upstream: atomicVerifyOTP attempt count is enforced before code validation.
+#[tokio::test]
+async fn invalid_attempts_preserve_deadline_and_exhaust_the_budget() {
+    let ctx = test_helpers::create_test_context().await;
+    let (config, _) = configured();
+    let plugin = EmailOtpPlugin::new(config);
+    let code = plugin
+        .create_verification_otp(&ctx, "attempts@example.com", EmailOtpType::SignIn)
+        .await
+        .unwrap();
+    let key = "sign-in-otp-attempts@example.com";
+    let original = ctx
+        .database
+        .get_latest_verification_by_identifier(key)
+        .await
+        .unwrap()
+        .unwrap();
+    for attempts in 1..=3 {
+        let response = post(
+            &plugin,
+            &ctx,
+            "/sign-in/email-otp",
+            json!({"email":"attempts@example.com","otp":"wrong"}),
+        )
+        .await;
+        assert_eq!(response.status, 400);
+        let value = ctx
+            .database
+            .get_latest_verification_by_identifier(key)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(value.expires_at(), original.expires_at());
+        assert_eq!(types::split_value(value.value()).1, attempts);
+    }
+    let response = post(
+        &plugin,
+        &ctx,
+        "/sign-in/email-otp",
+        json!({"email":"attempts@example.com","otp":code}),
+    )
+    .await;
+    assert_eq!(response.status, 403);
+    assert!(
+        ctx.database
+            .get_latest_verification_by_identifier(key)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        ctx.database
+            .get_user_by_email("attempts@example.com")
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+// Upstream: checkVerificationOTP is non-consuming; verifyEmailOTP consumes.
+#[tokio::test]
+async fn checking_does_not_verify_or_consume_then_verification_persists_state() {
+    let ctx = test_helpers::create_test_context().await;
+    let user = ctx
+        .database
+        .create_user(CreateUser::new().with_email("verify@example.com"))
+        .await
+        .unwrap();
+    let (config, _) = configured();
+    let plugin = EmailOtpPlugin::new(config);
+    let otp = plugin
+        .create_verification_otp(&ctx, "verify@example.com", EmailOtpType::EmailVerification)
+        .await
+        .unwrap();
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/check-verification-otp",
+            json!({"email":"verify@example.com","type":"email-verification","otp":otp})
+        )
+        .await
+        .status,
+        200
+    );
+    assert!(
+        !ctx.database
+            .get_user_by_id(&user.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .email_verified()
+    );
+    assert!(
+        plugin
+            .get_verification_otp(&ctx, "verify@example.com", EmailOtpType::EmailVerification)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let response = post(
+        &plugin,
+        &ctx,
+        "/email-otp/verify-email",
+        json!({"email":"verify@example.com","otp":otp}),
+    )
+    .await;
+    assert_eq!(response.status, 200);
+    let payload: Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(payload.get("token"), Some(&Value::Null));
+    assert!(
+        ctx.database
+            .get_user_by_id(&user.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .email_verified()
+    );
+    assert!(
+        plugin
+            .get_verification_otp(&ctx, "verify@example.com", EmailOtpType::EmailVerification)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+// Upstream: expired code has a distinct error and is removed before consuming.
+#[tokio::test]
+async fn expired_and_cross_scope_codes_cannot_authenticate() {
+    let ctx = test_helpers::create_test_context().await;
+    let (config, _) = configured();
+    let plugin = EmailOtpPlugin::new(config);
+    let _ = ctx
+        .database
+        .create_verification(CreateVerification {
+            identifier: "sign-in-otp-expired@example.com".into(),
+            value: "654321:0".into(),
+            expires_at: chrono::Utc::now() - Duration::seconds(1),
+        })
+        .await
+        .unwrap();
+    let expired = post(
+        &plugin,
+        &ctx,
+        "/sign-in/email-otp",
+        json!({"email":"expired@example.com","otp":"654321"}),
+    )
+    .await;
+    let payload: Value = serde_json::from_slice(&expired.body).unwrap();
+    assert_eq!(
+        payload.get("code").and_then(Value::as_str),
+        Some("OTP_EXPIRED")
+    );
+    assert!(
+        ctx.database
+            .get_latest_verification_by_identifier("sign-in-otp-expired@example.com")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let code = plugin
+        .create_verification_otp(
+            &ctx,
+            "wrong-scope@example.com",
+            EmailOtpType::EmailVerification,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/sign-in/email-otp",
+            json!({"email":"wrong-scope@example.com","otp":code})
+        )
+        .await
+        .status,
+        400
+    );
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/sign-in/email-otp",
+            json!({"email":"foreign@example.com","otp":code})
+        )
+        .await
+        .status,
+        400
+    );
+    assert!(
+        ctx.database
+            .get_user_by_email("wrong-scope@example.com")
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+// Upstream: a mailbox proof promotes an unverified row only after deleting
+// every standing account/session that predates proof of ownership.
+#[tokio::test]
+async fn existing_unverified_account_loses_password_oauth_and_old_sessions() {
+    let ctx = test_helpers::create_test_context().await;
+    let user = ctx
+        .database
+        .create_user(CreateUser::new().with_email("promote@example.com"))
+        .await
+        .unwrap();
+    for provider in ["credential", "google"] {
+        let _ = ctx
+            .database
+            .create_account(CreateAccount {
+                user_id: user.id().to_string(),
+                account_id: format!("{provider}-identity"),
+                provider_id: provider.into(),
+                access_token: None,
+                refresh_token: None,
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: None,
+                password: (provider == "credential").then_some("old-password-hash".into()),
+            })
+            .await
+            .unwrap();
+    }
+    let old_session = ctx
+        .session_manager()
+        .create_session(&user, None, None)
+        .await
+        .unwrap();
+    let (config, _) = configured();
+    let plugin = EmailOtpPlugin::new(config);
+    let otp = plugin
+        .create_verification_otp(&ctx, "promote@example.com", EmailOtpType::SignIn)
+        .await
+        .unwrap();
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/sign-in/email-otp",
+            json!({"email":"promote@example.com","otp":otp})
+        )
+        .await
+        .status,
+        200
+    );
+    let promoted = ctx
+        .database
+        .get_user_by_id(&user.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(promoted.email_verified());
+    assert!(
+        ctx.database
+            .get_user_accounts(&user.id())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        ctx.database
+            .get_session(old_session.token())
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+// Upstream: atomicVerifyOTP has exactly one successful concurrent consumer.
+#[tokio::test]
+async fn concurrent_sign_in_cannot_reuse_a_code() {
+    let ctx = test_helpers::create_test_context().await;
+    let (config, _) = configured();
+    let plugin = EmailOtpPlugin::new(config);
+    let otp = plugin
+        .create_verification_otp(&ctx, "race@example.com", EmailOtpType::SignIn)
+        .await
+        .unwrap();
+    let body = json!({"email":"race@example.com","otp":otp});
+    let (first, second) = tokio::join!(
+        post(&plugin, &ctx, "/sign-in/email-otp", body.clone()),
+        post(&plugin, &ctx, "/sign-in/email-otp", body)
+    );
+    let mut statuses = [first.status, second.status];
+    statuses.sort();
+    assert_eq!(statuses, [200, 400]);
+}
+
+// Upstream: parseUserInput ignores fields contributed by an absent plugin.
+// Persisted fields are checked because response projection alone can hide writes.
+#[tokio::test]
+async fn signup_ignores_unregistered_username_fields() {
+    let ctx = test_helpers::create_test_context().await;
+    let (config, _) = configured();
+    let plugin = EmailOtpPlugin::new(config);
+    for (index, username, display) in [
+        (0, json!("ab"), json!("Ignored Display")),
+        (1, json!(7), json!({"unexpected":true})),
+    ] {
+        let email = format!("unregistered-{index}@example.com");
+        let otp = plugin
+            .create_verification_otp(&ctx, &email, EmailOtpType::SignIn)
+            .await
+            .unwrap();
+        let response = post(
+            &plugin,
+            &ctx,
+            "/sign-in/email-otp",
+            json!({"email":email,"otp":otp,"username":username,"displayUsername":display}),
+        )
+        .await;
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        let user = ctx
+            .database
+            .get_user_by_email(&email)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(user.username(), None);
+        assert_eq!(user.display_username(), None);
+        assert!(user.email_verified());
+        assert_eq!(
+            ctx.database
+                .get_user_sessions(&user.id())
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            ctx.database
+                .get_latest_verification_by_identifier(&format!("sign-in-otp-{email}"))
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+}
+
+// Upstream: reusable plain OTPs keep attempts and extend expiry; hashes cannot
+// recover a plaintext for delivery, and must therefore rotate even in reuse mode.
+#[tokio::test]
+async fn reuse_extends_existing_code_and_hashed_storage_rotates() {
+    let ctx = test_helpers::create_test_context().await;
+    let (mut config, outbox) = configured();
+    config.resend_strategy = OtpResendStrategy::Reuse;
+    let mut plugin = EmailOtpPlugin::new(config);
+    let request = json!({"email":"reuse@example.com","type":"sign-in"});
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/send-verification-otp",
+            request.clone()
+        )
+        .await
+        .status,
+        200
+    );
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/send-verification-otp",
+            request.clone()
+        )
+        .await
+        .status,
+        200
+    );
+    let codes = outbox
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|delivery| delivery.otp.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(codes.first(), codes.last());
+    plugin.config.storage = EmailOtpStorage::Hashed;
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/send-verification-otp",
+            request.clone()
+        )
+        .await
+        .status,
+        200
+    );
+    assert_eq!(
+        post(&plugin, &ctx, "/email-otp/send-verification-otp", request)
+            .await
+            .status,
+        200
+    );
+    let codes = outbox
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|delivery| delivery.otp.clone())
+        .collect::<Vec<_>>();
+    assert_ne!(codes.get(2), codes.get(3));
+    assert!(
+        plugin
+            .get_verification_otp(&ctx, "reuse@example.com", EmailOtpType::SignIn)
+            .await
+            .is_err()
+    );
+    let raw = ctx
+        .database
+        .get_latest_verification_by_identifier("sign-in-otp-reuse@example.com")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!codes.iter().any(|code| raw.value().contains(code)));
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/sign-in/email-otp",
+            json!({"email":"reuse@example.com","otp":codes.last().unwrap()})
+        )
+        .await
+        .status,
+        200
+    );
+}
+
+// Upstream: change-email identifier binds both current and target mailboxes.
+#[tokio::test]
+async fn changing_email_rejects_another_users_code_and_keeps_current_session() {
+    let ctx = test_helpers::create_test_context().await;
+    let owner = ctx
+        .database
+        .create_user(
+            CreateUser::new()
+                .with_email("owner@example.com")
+                .with_email_verified(true),
+        )
+        .await
+        .unwrap();
+    let stranger = ctx
+        .database
+        .create_user(
+            CreateUser::new()
+                .with_email("stranger@example.com")
+                .with_email_verified(true),
+        )
+        .await
+        .unwrap();
+    let owner_session = ctx
+        .session_manager()
+        .create_session(&owner, None, None)
+        .await
+        .unwrap();
+    let stranger_session = ctx
+        .session_manager()
+        .create_session(&stranger, None, None)
+        .await
+        .unwrap();
+    let (mut config, outbox) = configured();
+    config.change_email_enabled = true;
+    let plugin = EmailOtpPlugin::new(config);
+    let req = create_auth_json_request_no_query(
+        HttpMethod::Post,
+        "/email-otp/request-email-change",
+        Some(owner_session.token()),
+        Some(json!({"newEmail":"target@example.com"})),
+    );
+    assert_eq!(
+        plugin.on_request(&req, &ctx).await.unwrap().unwrap().status,
+        200
+    );
+    let code = outbox.0.lock().unwrap().last().unwrap().otp.clone();
+    let req = create_auth_json_request_no_query(
+        HttpMethod::Post,
+        "/email-otp/change-email",
+        Some(stranger_session.token()),
+        Some(json!({"newEmail":"target@example.com","otp":code})),
+    );
+    assert_eq!(
+        plugin
+            .on_request(&req, &ctx)
+            .await
+            .unwrap_err()
+            .status_code(),
+        400
+    );
+    assert_eq!(
+        ctx.database
+            .get_user_by_id(&stranger.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .email(),
+        Some("stranger@example.com")
+    );
+    let req = create_auth_json_request_no_query(
+        HttpMethod::Post,
+        "/email-otp/change-email",
+        Some(owner_session.token()),
+        Some(json!({"newEmail":"target@example.com","otp":code})),
+    );
+    assert_eq!(
+        plugin.on_request(&req, &ctx).await.unwrap().unwrap().status,
+        200
+    );
+    assert_eq!(
+        ctx.database
+            .get_user_by_id(&owner.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .email(),
+        Some("target@example.com")
+    );
+    assert_eq!(
+        ctx.database
+            .get_session(owner_session.token())
+            .await
+            .unwrap()
+            .unwrap()
+            .user_id(),
+        owner.id()
+    );
+}
+
+// Ciphertext produced by the installed 1.7.6 symmetricEncrypt runtime. This
+// proves the persistence encoding independently of our encryption round-trip.
+#[tokio::test]
+async fn encrypted_codec_reads_upstream_ciphertext_and_hides_plaintext() {
+    let fixture = "89c516b9ba08b2f347ecf25375ca9524bca3e8c57ec3982eaf21996f87742a4a739b47adfce936e33fe71e424a45";
+    let storage = EmailOtpStorage::Encrypted;
+    assert_eq!(
+        storage
+            .retrieve(fixture, "upstream-otp-codec-fixture-secret")
+            .await
+            .unwrap(),
+        Some("654321".into())
+    );
+    let encrypted = storage
+        .store("654321", "upstream-otp-codec-fixture-secret")
+        .await
+        .unwrap();
+    assert_ne!(encrypted, "654321");
+    assert!(
+        storage
+            .verify(&encrypted, "654321", "upstream-otp-codec-fixture-secret")
+            .await
+            .unwrap()
+    );
+    assert!(
+        !storage
+            .verify(&encrypted, "000000", "upstream-otp-codec-fixture-secret")
+            .await
+            .unwrap()
+    );
+    assert!(
+        storage
+            .verify(&encrypted, "654321", "wrong-secret")
+            .await
+            .is_err()
+    );
+}
+
+// Upstream: password policy runs before consumption; reset callbacks see the
+// pre-verification user and configured session revocation applies afterward.
+#[tokio::test]
+async fn reset_updates_password_runs_hook_and_revokes_owned_sessions() {
+    use better_auth_core::AuthAccount;
+    let ctx = test_helpers::create_test_context().await;
+    let user = ctx
+        .database
+        .create_user(CreateUser::new().with_email("reset@example.com"))
+        .await
+        .unwrap();
+    let session = ctx
+        .session_manager()
+        .create_session(&user, None, None)
+        .await
+        .unwrap();
+    let account = ctx
+        .database
+        .create_account(CreateAccount {
+            user_id: user.id().to_string(),
+            account_id: user.id().to_string(),
+            provider_id: "credential".into(),
+            access_token: None,
+            refresh_token: None,
+            id_token: None,
+            access_token_expires_at: None,
+            refresh_token_expires_at: None,
+            scope: None,
+            password: Some("old-hash".into()),
+        })
+        .await
+        .unwrap();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let (mut config, outbox) = configured();
+    let calls_for_hook = calls.clone();
+    config.on_password_reset = Some(Arc::new(move |user| {
+        let calls = calls_for_hook.clone();
+        Box::pin(async move {
+            calls.lock().unwrap().push(user);
+            Ok(())
+        })
+    }));
+    config.revoke_sessions_on_password_reset = true;
+    let plugin = EmailOtpPlugin::new(config);
+    for path in [
+        "/email-otp/request-password-reset",
+        "/forget-password/email-otp",
+    ] {
+        assert_eq!(
+            post(&plugin, &ctx, path, json!({"email":"RESET@example.com"}))
+                .await
+                .status,
+            200
+        );
+    }
+    let otp = outbox.0.lock().unwrap().last().unwrap().otp.clone();
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/reset-password",
+            json!({"email":"reset@example.com","otp":otp,"password":"short"})
+        )
+        .await
+        .status,
+        400
+    );
+    assert!(
+        plugin
+            .get_verification_otp(&ctx, "reset@example.com", EmailOtpType::ForgetPassword)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/reset-password",
+            json!({"email":"reset@example.com","otp":otp,"password":"replacement-password"})
+        )
+        .await
+        .status,
+        200
+    );
+    let updated = ctx
+        .database
+        .get_account("credential", account.account_id())
+        .await
+        .unwrap()
+        .unwrap();
+    better_auth_core::utils::password::verify_password(
+        None,
+        "replacement-password",
+        updated.password().unwrap(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        ctx.database
+            .get_session(session.token())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        ctx.database
+            .get_user_by_id(&user.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .email_verified()
+    );
+    assert_eq!(calls.lock().unwrap().len(), 1);
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/reset-password",
+            json!({"email":"reset@example.com","otp":otp,"password":"replacement-password"})
+        )
+        .await
+        .status,
+        400
+    );
+}
+
+// Upstream: an OTP reset can create the credential for a passwordless account;
+// unknown mailboxes do not receive reset codes.
+#[tokio::test]
+async fn reset_creates_missing_credential_and_unknown_reset_is_indistinguishable() {
+    let ctx = test_helpers::create_test_context().await;
+    let user = ctx
+        .database
+        .create_user(
+            CreateUser::new()
+                .with_email("passwordless@example.com")
+                .with_email_verified(true),
+        )
+        .await
+        .unwrap();
+    let (config, outbox) = configured();
+    let plugin = EmailOtpPlugin::new(config);
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/request-password-reset",
+            json!({"email":"absent@example.com"})
+        )
+        .await
+        .status,
+        200
+    );
+    assert!(outbox.0.lock().unwrap().is_empty());
+    let otp = plugin
+        .create_verification_otp(
+            &ctx,
+            "passwordless@example.com",
+            EmailOtpType::ForgetPassword,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/reset-password",
+            json!({"email":"passwordless@example.com","otp":otp,"password":"new-password123"})
+        )
+        .await
+        .status,
+        200
+    );
+    let accounts = ctx.database.get_user_accounts(&user.id()).await.unwrap();
+    assert_eq!(accounts.len(), 1);
+    use better_auth_core::AuthAccount;
+    assert_eq!(accounts.first().unwrap().account_id(), user.id());
+    assert_eq!(accounts.first().unwrap().provider_id(), "credential");
+}
+
+// Upstream: checks preserve a correct code even if the mailbox has no user,
+// while wrong checks count toward the same budget and expired checks delete it.
+#[tokio::test]
+async fn nonconsuming_checks_count_attempts_and_reject_unowned_and_expired_mailboxes() {
+    let ctx = test_helpers::create_test_context().await;
+    let (mut config, _) = configured();
+    config.allowed_attempts = 1;
+    let plugin = EmailOtpPlugin::new(config);
+    let otp = plugin
+        .create_verification_otp(&ctx, "unknown@example.com", EmailOtpType::EmailVerification)
+        .await
+        .unwrap();
+    let checked = post(
+        &plugin,
+        &ctx,
+        "/email-otp/check-verification-otp",
+        json!({"email":"unknown@example.com","type":"email-verification","otp":otp}),
+    )
+    .await;
+    let payload: Value = serde_json::from_slice(&checked.body).unwrap();
+    assert_eq!(payload.get("code"), Some(&json!("USER_NOT_FOUND")));
+    assert_eq!(
+        plugin
+            .get_verification_otp(&ctx, "unknown@example.com", EmailOtpType::EmailVerification)
+            .await
+            .unwrap(),
+        Some(otp)
+    );
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/check-verification-otp",
+            json!({"email":"unknown@example.com","type":"email-verification","otp":"wrong"})
+        )
+        .await
+        .status,
+        400
+    );
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/check-verification-otp",
+            json!({"email":"unknown@example.com","type":"email-verification","otp":"wrong"})
+        )
+        .await
+        .status,
+        403
+    );
+    assert!(
+        plugin
+            .get_verification_otp(&ctx, "unknown@example.com", EmailOtpType::EmailVerification)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let _ = ctx
+        .database
+        .create_verification(CreateVerification {
+            identifier: "email-verification-otp-expired-check@example.com".into(),
+            value: "654321:0".into(),
+            expires_at: chrono::Utc::now() - Duration::seconds(1),
+        })
+        .await
+        .unwrap();
+    assert!(
+        plugin
+            .get_verification_otp(
+                &ctx,
+                "expired-check@example.com",
+                EmailOtpType::EmailVerification
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/check-verification-otp",
+            json!({"email":"expired-check@example.com","type":"email-verification","otp":"654321"})
+        )
+        .await
+        .status,
+        400
+    );
+    assert!(
+        ctx.database
+            .get_latest_verification_by_identifier(
+                "email-verification-otp-expired-check@example.com"
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+// Upstream: verification invokes before/after hooks around the persisted change
+// and auto sign-in creates an actual owned session. Hook errors consume the OTP.
+#[tokio::test]
+async fn verification_hooks_and_auto_signin_observe_order_and_ownership() {
+    let ctx = test_helpers::create_test_context().await;
+    let user = ctx
+        .database
+        .create_user(CreateUser::new().with_email("hooks@example.com"))
+        .await
+        .unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let (mut config, _) = configured();
+    config.auto_sign_in_after_verification = true;
+    let before = seen.clone();
+    config.before_email_verification = Some(Arc::new(move |user| {
+        let before = before.clone();
+        let verified = user.email_verified;
+        Box::pin(async move {
+            before.lock().unwrap().push(("before", verified));
+            Ok(())
+        })
+    }));
+    let after = seen.clone();
+    config.after_email_verification = Some(Arc::new(move |user| {
+        let after = after.clone();
+        let verified = user.email_verified;
+        Box::pin(async move {
+            after.lock().unwrap().push(("after", verified));
+            Ok(())
+        })
+    }));
+    let mut plugin = EmailOtpPlugin::new(config);
+    let otp = plugin
+        .create_verification_otp(&ctx, "hooks@example.com", EmailOtpType::EmailVerification)
+        .await
+        .unwrap();
+    let response = post(
+        &plugin,
+        &ctx,
+        "/email-otp/verify-email",
+        json!({"email":"hooks@example.com","otp":otp}),
+    )
+    .await;
+    assert_eq!(response.status, 200);
+    let payload: Value = serde_json::from_slice(&response.body).unwrap();
+    let token = payload.get("token").and_then(Value::as_str).unwrap();
+    assert_eq!(
+        ctx.database
+            .get_session(token)
+            .await
+            .unwrap()
+            .unwrap()
+            .user_id(),
+        user.id()
+    );
+    assert_eq!(*seen.lock().unwrap(), [("before", false), ("after", true)]);
+    plugin.config.before_email_verification = Some(Arc::new(|_| {
+        Box::pin(async {
+            Err(better_auth_core::AuthError::forbidden(
+                "blocked by verification policy",
+            ))
+        })
+    }));
+    let otp = plugin
+        .create_verification_otp(&ctx, "hooks@example.com", EmailOtpType::EmailVerification)
+        .await
+        .unwrap();
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/verify-email",
+            json!({"email":"hooks@example.com","otp":otp})
+        )
+        .await
+        .status,
+        403
+    );
+    assert!(
+        plugin
+            .get_verification_otp(&ctx, "hooks@example.com", EmailOtpType::EmailVerification)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+// Upstream: changeEmail.verifyCurrentEmail consumes current-mailbox proof before
+// issuing a code bound to both mailboxes; occupied targets remain undisclosed.
+#[tokio::test]
+async fn email_change_requires_current_proof_and_hides_existing_target() {
+    let ctx = test_helpers::create_test_context().await;
+    let user = ctx
+        .database
+        .create_user(CreateUser::new().with_email("proof@example.com"))
+        .await
+        .unwrap();
+    let _ = ctx
+        .database
+        .create_user(CreateUser::new().with_email("occupied@example.com"))
+        .await
+        .unwrap();
+    let session = ctx
+        .session_manager()
+        .create_session(&user, None, None)
+        .await
+        .unwrap();
+    let (mut config, outbox) = configured();
+    config.change_email_enabled = true;
+    config.verify_current_email = true;
+    let plugin = EmailOtpPlugin::new(config);
+    let request = |body| {
+        test_helpers::create_auth_json_request_no_query(
+            HttpMethod::Post,
+            "/email-otp/request-email-change",
+            Some(session.token()),
+            Some(body),
+        )
+    };
+    assert_eq!(
+        plugin
+            .on_request(&request(json!({"newEmail":"target@example.com"})), &ctx)
+            .await
+            .unwrap_err()
+            .status_code(),
+        400
+    );
+    assert!(outbox.0.lock().unwrap().is_empty());
+    let current = plugin
+        .create_verification_otp(&ctx, "proof@example.com", EmailOtpType::EmailVerification)
+        .await
+        .unwrap();
+    assert_eq!(
+        plugin
+            .on_request(
+                &request(json!({"newEmail":"occupied@example.com","otp":current})),
+                &ctx
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        200
+    );
+    assert!(outbox.0.lock().unwrap().is_empty());
+    assert!(
+        plugin
+            .get_verification_otp(&ctx, "proof@example.com", EmailOtpType::EmailVerification)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        ctx.database
+            .get_latest_verification_by_identifier(
+                "change-email-otp-proof@example.com-occupied@example.com"
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let current = plugin
+        .create_verification_otp(&ctx, "proof@example.com", EmailOtpType::EmailVerification)
+        .await
+        .unwrap();
+    assert_eq!(
+        plugin
+            .on_request(
+                &request(json!({"newEmail":"target@example.com","otp":current})),
+                &ctx
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        200
+    );
+    let code = outbox.0.lock().unwrap().last().unwrap().otp.clone();
+    let confirm = test_helpers::create_auth_json_request_no_query(
+        HttpMethod::Post,
+        "/email-otp/change-email",
+        Some(session.token()),
+        Some(json!({"newEmail":"target@example.com","otp":code})),
+    );
+    assert_eq!(
+        plugin
+            .on_request(&confirm, &ctx)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        200
+    );
+    assert_eq!(
+        ctx.database
+            .get_user_by_id(&user.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .email(),
+        Some("target@example.com")
+    );
+}
+
+// Golden error vectors from the 1.7.6 runtime. Optional nulls are invalid;
+// the schema reports every failed field before authentication middleware.
+#[tokio::test]
+async fn request_validation_matches_pinned_runtime_error_vectors() {
+    let ctx = test_helpers::create_test_context().await;
+    let (config, _) = configured();
+    let plugin = EmailOtpPlugin::new(config);
+    for (path, body, message) in [
+        (
+            "/email-otp/send-verification-otp",
+            json!({}),
+            "[body.email] Invalid input: expected string, received undefined; [body.type] Invalid option: expected one of \"email-verification\"|\"sign-in\"|\"forget-password\"|\"change-email\"",
+        ),
+        (
+            "/sign-in/email-otp",
+            json!({"email":5,"otp":false,"name":null,"image":1}),
+            "[body.email] Invalid input: expected string, received number; [body.otp] Invalid input: expected string, received boolean; [body.name] Invalid input: expected string, received null; [body.image] Invalid input: expected string, received number",
+        ),
+        (
+            "/email-otp/change-email",
+            json!({}),
+            "[body.newEmail] Invalid input: expected string, received undefined; [body.otp] Invalid input: expected string, received undefined",
+        ),
+    ] {
+        let response = post(&plugin, &ctx, path, body).await;
+        assert_eq!(response.status, 400);
+        let payload: Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(
+            payload,
+            json!({"message":message,"code":"VALIDATION_ERROR"})
+        );
+    }
+    for email in [
+        "a@b.c",
+        ".a@example.com",
+        "a..b@example.com",
+        "a!b@example.com",
+        "a'@example.com",
+    ] {
+        assert_eq!(
+            post(
+                &plugin,
+                &ctx,
+                "/email-otp/send-verification-otp",
+                json!({"email":email,"type":"sign-in"})
+            )
+            .await
+            .status,
+            400
+        );
+    }
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/send-verification-otp",
+            json!({"email":"a'b@example.com","type":"change-email"})
+        )
+        .await
+        .status,
+        400
+    );
+}
+
+// Upstream: sendVerificationOnSignUp runs after a successful sign-up response,
+// and disabled signup never issues a delivered login for an unknown mailbox.
+#[tokio::test]
+async fn signup_hook_and_disabled_signup_preserve_delivery_and_state_contracts() {
+    let ctx = test_helpers::create_test_context().await;
+    let (mut config, outbox) = configured();
+    config.send_verification_on_sign_up = true;
+    config.disable_sign_up = true;
+    let plugin = EmailOtpPlugin::new(config);
+    let request = AuthRequest::new(HttpMethod::Post, "/sign-up/email");
+    let response =
+        AuthResponse::json(200, &json!({"user":{"email":"signup@example.com"}})).unwrap();
+    let _ = plugin
+        .after_request(&request, &ctx, response)
+        .await
+        .unwrap();
+    assert_eq!(
+        outbox.0.lock().unwrap().last().unwrap().otp_type,
+        EmailOtpType::EmailVerification
+    );
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/email-otp/send-verification-otp",
+            json!({"email":"missing@example.com","type":"sign-in"})
+        )
+        .await
+        .status,
+        200
+    );
+    assert!(
+        ctx.database
+            .get_latest_verification_by_identifier("sign-in-otp-missing@example.com")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let otp = plugin
+        .create_verification_otp(&ctx, "missing@example.com", EmailOtpType::SignIn)
+        .await
+        .unwrap();
+    assert_eq!(
+        post(
+            &plugin,
+            &ctx,
+            "/sign-in/email-otp",
+            json!({"email":"missing@example.com","otp":otp})
+        )
+        .await
+        .status,
+        400
+    );
+    assert!(
+        ctx.database
+            .get_user_by_email("missing@example.com")
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
