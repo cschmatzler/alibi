@@ -3,7 +3,6 @@ import { authProfilePath, type FixtureProfile } from "./profiles";
 import { recordCoverage } from "./coverage";
 import { compareValues, type Difference } from "./compare";
 import { createAuthClient } from "better-auth/client";
-import { authProfilePath, type FixtureProfile } from "./profiles";
 import { usernameClient, adminClient } from "better-auth/client/plugins";
 
 function configuredClient(baseURL: string, fetchImpl: (input: string | URL | Request, init?: RequestInit) => Promise<Response>) {
