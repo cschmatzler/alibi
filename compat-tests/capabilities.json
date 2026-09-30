@@ -730,89 +730,89 @@
     {
       "route": "POST /email-otp/change-email",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "email OTP email change binds the requesting user and preserves its session identity",
+        "rejection": "email OTP email change binds the requesting user and preserves its session identity",
+        "authorization": "email OTP email change binds the requesting user and preserves its session identity",
+        "state": "email OTP email change binds the requesting user and preserves its session identity"
       }
     },
     {
       "route": "POST /email-otp/check-verification-otp",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "email OTP check preserves the code until email verification consumes it",
+        "rejection": "email OTP check preserves the code until email verification consumes it",
         "authorization": null,
-        "state": null
+        "state": "email OTP check preserves the code until email verification consumes it"
       }
     },
     {
       "route": "POST /email-otp/request-email-change",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "email OTP email change binds the requesting user and preserves its session identity",
+        "rejection": "email OTP email change binds the requesting user and preserves its session identity",
+        "authorization": "email OTP email change binds the requesting user and preserves its session identity",
+        "state": "email OTP email change binds the requesting user and preserves its session identity"
       }
     },
     {
       "route": "POST /email-otp/request-password-reset",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "email OTP password reset and deprecated request alias update credentials and verification",
+        "rejection": "email OTP validates all body fields before issuing or consuming authentication state",
         "authorization": null,
-        "state": null
+        "state": "email OTP password reset and deprecated request alias update credentials and verification"
       }
     },
     {
       "route": "POST /email-otp/reset-password",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "email OTP password reset and deprecated request alias update credentials and verification",
+        "rejection": "email OTP password reset and deprecated request alias update credentials and verification",
         "authorization": null,
-        "state": null
+        "state": "email OTP password reset and deprecated request alias update credentials and verification"
       }
     },
     {
       "route": "POST /email-otp/send-verification-otp",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "email OTP signs up a verified user and consumes its scoped code once",
+        "rejection": "email OTP validates all body fields before issuing or consuming authentication state",
         "authorization": null,
-        "state": null
+        "state": "email OTP signs up a verified user and consumes its scoped code once"
       }
     },
     {
       "route": "POST /email-otp/verify-email",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "email OTP check preserves the code until email verification consumes it",
+        "rejection": "email OTP check preserves the code until email verification consumes it",
         "authorization": null,
-        "state": null
+        "state": "email OTP check preserves the code until email verification consumes it"
       }
     },
     {
       "route": "POST /forget-password/email-otp",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "email OTP password reset and deprecated request alias update credentials and verification",
+        "rejection": "email OTP validates all body fields before issuing or consuming authentication state",
         "authorization": null,
-        "state": null
+        "state": "email OTP password reset and deprecated request alias update credentials and verification"
       }
     },
     {
@@ -1335,12 +1335,12 @@
     {
       "route": "POST /sign-in/email-otp",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "email OTP signs up a verified user and consumes its scoped code once",
+        "rejection": "email OTP signs up a verified user and consumes its scoped code once",
         "authorization": null,
-        "state": null
+        "state": "email OTP signs up a verified user and consumes its scoped code once"
       }
     },
     {

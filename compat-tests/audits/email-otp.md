@@ -1,8 +1,8 @@
 # Email OTP capability
 
 Owner: upstream_audit. Reference: published `better-auth@1.7.6`; the oracle
-remains pinned. The capability branch descends from the core email-verification
-prerequisite and shared storage foundation, and activates no magic-link or
+remains pinned. The capability branch descends from the core email-verification,
+nullable plugin-fields/defaults and shared storage prerequisites, and activates no magic-link or
 phone-number authentication.
 
 ## Included behavior
@@ -56,22 +56,25 @@ notification failure after proof issuance. An absent username schema ignores
 malformed additional username inputs and persists no username fields; the
 SQLite and official-client regressions both fail before the parsing repair.
 
-The first official-client isolated run passes 14 of 19 SDK scenarios,
-including the three inherited email-verification configuration scenarios.
-Five configuration scenarios expose a real shared persistence deviation:
-upstream stores null `twoFactorEnabled` when its plugin is absent, while the
-bundled Rust entity currently stores false. The difference remains visible;
-no normalization or comparison exception was introduced. The shared nullable
-storage and plugin-default prerequisite is coordinated centrally before the
-capability can pass its canonical gate.
+The final focused official-client run passes all 20 SDK scenarios with 614
+assertions, including three inherited email-verification configuration scenarios.
+The initial five raw null-versus-false failures were repaired by the shared
+nullable storage and per-auth plugin defaults prerequisite. The trusted state
+inspector uses the optional persisted getter. No normalization or comparison
+exception was introduced.
 
-The additional absent-username official-client regression passes with 44
-assertions after repair. Production Clippy for core/API, client TypeScript
-checking and the excluded fixture build pass.
+The absent-username official-client regression passes with 44 assertions after
+repair. Client TypeScript checking and the excluded fixture build pass. A
+focused transport regression exposed duplicate binary/JSON content types in
+the trusted server fixture's error projection; replacing the auto-added header
+with the actual JSON header repairs it without changing authentication behavior.
 
 Independent review resolved the hook-cancellation loop and global expired-row
 cleanup findings. Canonical coverage, browser checks, optional builds and
-inventory updates remain serialized coordinator responsibilities.
+inventory verification remain serialized coordinator responsibilities. The
+nine OTP inventory entries are activated deliberately with successful flow,
+rejection, applicable authorization and real state-transition evidence; all
+other committed requirements are preserved.
 
 ## Remaining audited boundaries
 

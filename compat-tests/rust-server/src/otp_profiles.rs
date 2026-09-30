@@ -85,7 +85,7 @@ fn response(result: AuthResult<Value>) -> Response {
             *response.status_mut() =
                 axum::http::StatusCode::from_u16(auth_response.status).unwrap();
             for (name, value) in auth_response.headers {
-                _ = response.headers_mut().append(
+                _ = response.headers_mut().insert(
                     name.parse::<axum::http::HeaderName>().unwrap(),
                     value.parse().unwrap(),
                 );

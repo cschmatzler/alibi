@@ -10,6 +10,7 @@ compatScenario("email OTP signs up a verified user and consumes its scoped code 
   const send = await client.emailOtp.sendVerificationOtp({ email, type: "sign-in" });
   expect(send.error).toBeNull();
   const otp = await readOtp(ctx, email, "sign-in");
+  expect(await verificationCount(ctx, `sign-in-otp-${email}`)).toBe(1);
   const signIn = await client.signIn.emailOtp({ email: email.toUpperCase(), otp, name: "OTP Owner" });
   expect(signIn.error).toBeNull();
   const user = requireUser(signIn.data?.user);
@@ -34,6 +35,8 @@ compatScenario("email OTP check preserves the code until email verification cons
   const otp = await readOtp(ctx, email, "email-verification");
   const check = await client.emailOtp.checkVerificationOtp({ email, type: "email-verification", otp });
   expect(check.error).toBeNull();
+  const wrongCheck = await client.emailOtp.checkVerificationOtp({ email, type: "email-verification", otp: "incorrect" });
+  expect(wrongCheck.error?.code).toBe("INVALID_OTP");
   const before = await readUserState(ctx, user.id);
   expect(before.user?.emailVerified).toBe(false);
   expect(await verificationCount(ctx, `email-verification-otp-${email}`)).toBe(1);
@@ -45,7 +48,7 @@ compatScenario("email OTP check preserves the code until email verification cons
   const replay = await client.emailOtp.verifyEmail({ email, otp });
   expect(replay.error?.code).toBe("INVALID_OTP");
   expect(await verificationCount(ctx, `email-verification-otp-${email}`)).toBe(0);
-  return { send: ctx.snapshot(send), check: ctx.snapshot(check), verify: ctx.snapshot(verify), replay: ctx.snapshot(replay), state: ctx.snapshot(state) };
+  return { send: ctx.snapshot(send), check: ctx.snapshot(check), wrongCheck: ctx.snapshot(wrongCheck), verify: ctx.snapshot(verify), replay: ctx.snapshot(replay), state: ctx.snapshot(state) };
 }, ["POST /email-otp/check-verification-otp", "POST /email-otp/verify-email"]);
 
 compatScenario("email OTP rejects wrong mailbox scope exhausted attempts and expiry", async (ctx) => {
@@ -116,6 +119,9 @@ compatScenario("email OTP email change binds the requesting user and preserves i
   const otp = await readOtp(ctx, target, "change-email");
   const foreignChange = await foreign.emailOtp.changeEmail({ newEmail: target, otp });
   expect(foreignChange.error?.code).toBe("INVALID_OTP");
+  const guestChange = await passwordlessClient(ctx, "visitor").emailOtp.changeEmail({ newEmail: target, otp });
+  expect(guestChange.error?.status).toBe(401);
+  expect(await verificationCount(ctx, `change-email-otp-${email}-${target}`)).toBe(1);
   const change = await owner.emailOtp.changeEmail({ newEmail: target, otp });
   expect(change.error).toBeNull();
   const session = await owner.getSession();
@@ -129,7 +135,7 @@ compatScenario("email OTP email change binds the requesting user and preserves i
   expect(await verificationCount(ctx, `change-email-otp-${email}-${target}`)).toBe(0);
   const unauthorized = await passwordlessClient(ctx, "visitor").emailOtp.requestEmailChange({ newEmail: target });
   expect(unauthorized.error?.status).toBe(401);
-  return { initial: ctx.snapshot(initial), request: ctx.snapshot(request), foreignChange: ctx.snapshot(foreignChange), change: ctx.snapshot(change), session: ctx.snapshot(session), replay: ctx.snapshot(replay), unauthorized: ctx.snapshot(unauthorized), state: ctx.snapshot(state) };
+  return { initial: ctx.snapshot(initial), request: ctx.snapshot(request), foreignChange: ctx.snapshot(foreignChange), guestChange: ctx.snapshot(guestChange), change: ctx.snapshot(change), session: ctx.snapshot(session), replay: ctx.snapshot(replay), unauthorized: ctx.snapshot(unauthorized), state: ctx.snapshot(state) };
 }, ["POST /email-otp/request-email-change", "POST /email-otp/change-email"]);
 
 compatScenario("email OTP proof revokes unverified credentials linked accounts and previous sessions", async (ctx) => {
@@ -214,6 +220,11 @@ compatScenario("email OTP validates all body fields before issuing or consuming 
   const results = [];
   for (const [path, json] of [
     ["/api/auth/email-otp/send-verification-otp", {}],
+    ["/api/auth/email-otp/check-verification-otp", {}],
+    ["/api/auth/email-otp/verify-email", {}],
+    ["/api/auth/email-otp/request-password-reset", {}],
+    ["/api/auth/forget-password/email-otp", {}],
+    ["/api/auth/email-otp/reset-password", {}],
     ["/api/auth/email-otp/send-verification-otp", { email: null, type: "other" }],
     ["/api/auth/sign-in/email-otp", { email: 5, otp: false, name: null, image: 1 }],
     ["/api/auth/email-otp/change-email", {}],
