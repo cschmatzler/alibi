@@ -31,6 +31,14 @@ for(const profile of [undefined,"org-teams"] as const satisfies readonly (Fixtur
   expect(empty.data.metadata).toEqual({});
   const emptyMetadata=await owner.org.organization.getOrganization({query:{organizationId:empty.data.id}});
   expect(emptyMetadata.data?.metadata).toBe("{}");
+  const updatedAbsent=await owner.org.organization.update({organizationId:second.data.id,data:{name:"Metadata Beta Renamed"}});
+  expect(updatedAbsent.error).toBeNull();expect(updatedAbsent.data?.name).toBe("Metadata Beta Renamed");
+  expect(updatedAbsent.data).not.toHaveProperty("metadata");
+  const updatedEmpty=await owner.org.organization.update({organizationId:empty.data.id,data:{name:"Metadata Empty Renamed"}});
+  expect(updatedEmpty.error).toBeNull();expect(updatedEmpty.data?.metadata).toEqual({});
+  const updatedPresent=await owner.org.organization.update({organizationId:first.data.id,data:{name:"Metadata Alpha Renamed"}});
+  expect(updatedPresent.error).toBeNull();
+  expect(updatedPresent.data?.metadata).toEqual({tier:"gold",fixed:1e20,tiny:3.8730639354761726e-71,nested:{"2":"two","10":"ten"}});
   const active=await owner.org.organization.getOrganization();
   expect(active.data?.metadata).toBeNull();
   const byId=await owner.org.organization.getOrganization({query:{organizationId:first.data.id}});
@@ -77,6 +85,6 @@ for(const profile of [undefined,"org-teams"] as const satisfies readonly (Fixtur
   const afterFull=persisted.parse(await ctx.readUserState({userId:outsiderSignup.data.user.id}));
   expect(afterFull.sessions.find(session=>session.token===current.data?.session.token)?.activeOrganizationId).toBeNull();
   expect(afterFull.sessions.find(session=>session.token===other.data?.session.token)).toEqual(beforeFull.sessions.find(session=>session.token===other.data?.session.token));
-  return ctx.snapshot({ownerSignup,outsiderSignup,noSelection,guestDenied,first,second,empty,emptyMetadata,active,byId,bySlug,full,emptySelectors,beforeMissing,missingSlug,missing,missingFull,afterMissing,preserved,own,extraSignin,selected,current,other,before,denied,after,cleared,unaffected,restored,beforeFull,deniedFull,afterFull});
+  return ctx.snapshot({ownerSignup,outsiderSignup,noSelection,guestDenied,first,second,empty,emptyMetadata,updatedAbsent,updatedEmpty,updatedPresent,active,byId,bySlug,full,emptySelectors,beforeMissing,missingSlug,missing,missingFull,afterMissing,preserved,own,extraSignin,selected,current,other,before,denied,after,cleared,unaffected,restored,beforeFull,deniedFull,afterFull});
  },["GET /organization/get-organization", "GET /organization/get-full-organization"]);
 }
