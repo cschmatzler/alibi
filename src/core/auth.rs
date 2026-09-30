@@ -203,7 +203,10 @@ impl<S: AuthSchema> BetterAuth<S> {
         let request_context = RequestHookContext::from_request(&req);
         with_request_hook_context_value(request_context, async {
             let mut run_after_hooks = false;
-            let mut response = match self.handle_request_inner(&mut req, &mut run_after_hooks).await {
+            let mut response = match self
+                .handle_request_inner(&mut req, &mut run_after_hooks)
+                .await
+            {
                 Ok(response) => response,
                 Err(err) => err.to_auth_response(),
             };
@@ -219,11 +222,18 @@ impl<S: AuthSchema> BetterAuth<S> {
             let mut hook_request = req.clone();
             let base_path = &self.config.base_path;
             if !base_path.is_empty() && base_path != "/" {
-                hook_request.path = req.path().strip_prefix(base_path).unwrap_or(req.path()).to_string();
+                hook_request.path = req
+                    .path()
+                    .strip_prefix(base_path)
+                    .unwrap_or(req.path())
+                    .to_string();
             }
             for plugin in self.plugins.iter().filter(|_| run_after_hooks) {
                 let accumulated_headers = response.headers.clone();
-                response = match plugin.after_request(&hook_request, &self.context, response).await {
+                response = match plugin
+                    .after_request(&hook_request, &self.context, response)
+                    .await
+                {
                     Ok(response) => response,
                     Err(error) => {
                         let mut response = error.to_auth_response();
@@ -251,7 +261,11 @@ impl<S: AuthSchema> BetterAuth<S> {
     }
 
     /// Inner request handler that may return errors.
-    async fn handle_request_inner(&self, req: &mut AuthRequest, run_after_hooks: &mut bool) -> AuthResult<AuthResponse> {
+    async fn handle_request_inner(
+        &self,
+        req: &mut AuthRequest,
+        run_after_hooks: &mut bool,
+    ) -> AuthResult<AuthResponse> {
         // Run before-request middleware chain
         if let Some(response) = middleware::run_before(&self.middlewares, req).await? {
             return Ok(response);
@@ -287,8 +301,10 @@ impl<S: AuthSchema> BetterAuth<S> {
         // An unknown path or method cannot trigger authentication side effects.
         let core_route = matches!(
             (internal_req.method(), internal_req.path()),
-            (HttpMethod::Get, core_paths::OK | core_paths::ERROR | core_paths::OPENAPI_SPEC)
-                | (HttpMethod::Post, core_paths::UPDATE_USER)
+            (
+                HttpMethod::Get,
+                core_paths::OK | core_paths::ERROR | core_paths::OPENAPI_SPEC
+            ) | (HttpMethod::Post, core_paths::UPDATE_USER)
         );
         let plugin_route = self.plugins.iter().any(|plugin| {
             plugin.routes().iter().any(|route| {
@@ -596,7 +612,9 @@ fn route_path_matches(pattern: &str, path: &str) -> bool {
         if part == "*" {
             return true;
         }
-        let Some(actual) = path_parts.next() else { return false; };
+        let Some(actual) = path_parts.next() else {
+            return false;
+        };
         let parameter = part.starts_with(':') || (part.starts_with('{') && part.ends_with('}'));
         if (parameter && actual.is_empty()) || (!parameter && part != actual) {
             return false;
