@@ -110,7 +110,7 @@ custom numeric-ID schema using `"0001"` to refer to owner `"1"`.
   fail before canonical cleanup and pass after it.
 - `cargo test --test client_compat_tests siwe_client_compat -- --ignored
   --nocapture`: official SDK, unchanged reference, exact wire/cookies and
-  persisted identity graph across nine named scenarios.
+  persisted identity graph across eleven named scenarios (724 assertions).
 - Client TypeScript checking and strict production/fixture Clippy.
 
 Test-authoring review gives authoritative wire/state checks to SDK scenarios,

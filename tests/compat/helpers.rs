@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, Once, OnceLock};
 
 use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
+use better_auth::plugins::siwe::{Eip191Verifier, RandomSiweNonce, SiweConfig, SiwePlugin};
 
 use better_auth::{
     AuthBuilder, AuthConfig, BetterAuth,
@@ -369,6 +370,11 @@ pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth
         )
         .plugin(AdminPlugin::new())
         .plugin(JwtPlugin::new())
+        .plugin(SiwePlugin::new(SiweConfig::new(
+            "localhost",
+            Arc::new(RandomSiweNonce),
+            Arc::new(Eip191Verifier),
+        )))
         .build()
         .await
         .unwrap_or_else(|e| panic!("Failed to create test auth instance: {e}"))
