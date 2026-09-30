@@ -66,7 +66,7 @@ pub struct PasswordManagementConfig {
     /// The user is provided as a serialized `serde_json::Value`.
     #[config(default = None)]
     pub on_password_reset: Option<Arc<OnPasswordResetCallback>>,
-    /// Custom password hasher. When `None`, the default Argon2 hasher is used.
+    /// Custom password hasher. When `None`, the default scrypt hasher is used.
     #[config(default = None)]
     pub password_hasher: Option<Arc<dyn PasswordHasher>>,
 }

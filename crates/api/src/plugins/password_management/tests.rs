@@ -1,7 +1,7 @@
 use super::*;
 use crate::plugins::test_helpers;
 use better_auth_core::AuthContext;
-use better_auth_core::config::{Argon2Config, AuthConfig, PasswordConfig};
+use better_auth_core::config::{AuthConfig, PasswordConfig};
 use better_auth_core::wire::{SessionView, UserView};
 use better_auth_core::{CreateAccount, CreateUser, CreateVerification};
 use chrono::{Duration, Utc};
@@ -34,7 +34,6 @@ async fn create_test_context_with_user() -> (AuthContext<TestSchema>, UserView, 
         require_lowercase: true,
         require_numbers: true,
         require_special: true,
-        argon2_config: Argon2Config::default(),
     };
 
     let ctx = test_helpers::create_test_context_with_config(config).await;
@@ -703,7 +702,6 @@ async fn test_password_validation() {
         require_lowercase: true,
         require_numbers: true,
         require_special: true,
-        argon2_config: Argon2Config::default(),
     };
     let database = test_helpers::create_test_database().await;
     let ctx = AuthContext::new(Arc::new(config), database);

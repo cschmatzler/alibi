@@ -24,9 +24,11 @@ use better_auth::plugins::{
     PasswordManagementPlugin, SendTwoFactorOtp, SessionManagementPlugin, TwoFactorPlugin,
     UserManagementPlugin,
 };
-use better_auth::prelude::{AuthAccount, AuthUser, CreateAccount, CreateVerification};
+use better_auth::prelude::{
+    AuthAccount, AuthUser, CreateAccount, CreateVerification, UpdateAccount,
+};
 use better_auth::wire::UserView;
-use better_auth::{AuthBuilder, AuthConfig};
+use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_seaorm::sea_orm::{DatabaseConnection, DbErr, EntityTrait};
 use better_auth_seaorm::store::entities::{
     account, api_key, device_code, invitation, member, organization, passkey, session, two_factor,
@@ -41,6 +43,71 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+
+#[derive(Deserialize)]
+#[serde(tag = "operation", rename_all = "kebab-case")]
+enum PasswordFixtureRequest {
+    Hash { password: String },
+    Verify { password: String, hash: String },
+    Import { email: String, hash: String },
+    Credential { email: String },
+}
+
+async fn password_fixture_operation(
+    auth: &BetterAuth<TestSchema>,
+    body: PasswordFixtureRequest,
+) -> AuthResult<serde_json::Value> {
+    match body {
+        PasswordFixtureRequest::Hash { password } => Ok(serde_json::json!({
+            "hash": better_auth::hash_password(None, &password).await?,
+        })),
+        PasswordFixtureRequest::Verify { password, hash } => {
+            let valid = match better_auth::verify_password(None, &password, &hash).await {
+                Ok(()) => true,
+                Err(AuthError::InvalidCredentials) => false,
+                Err(error) => return Err(error),
+            };
+            Ok(serde_json::json!({ "valid": valid }))
+        }
+        body => {
+            let (email, imported_hash) = match body {
+                PasswordFixtureRequest::Import { email, hash } => (email, Some(hash)),
+                PasswordFixtureRequest::Credential { email } => (email, None),
+                _ => return Err(AuthError::bad_request("Invalid password operation")),
+            };
+            let user = auth
+                .store()
+                .get_user_by_email(&email)
+                .await?
+                .ok_or_else(|| AuthError::not_found("Credential not found"))?;
+            let account = auth
+                .store()
+                .get_user_accounts(&user.id())
+                .await?
+                .into_iter()
+                .find(|account| account.provider_id() == "credential")
+                .ok_or_else(|| AuthError::not_found("Credential not found"))?;
+            let account = if let Some(hash) = imported_hash {
+                auth.store()
+                    .update_account(
+                        &account.id(),
+                        UpdateAccount {
+                            password: Some(hash),
+                            ..Default::default()
+                        },
+                    )
+                    .await?
+            } else {
+                account
+            };
+            Ok(serde_json::json!({
+                "userId": user.id(),
+                "accountId": account.id(),
+                "hash": account.password(),
+            }))
+        }
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -636,6 +703,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let auth_for_oauth_seed = auth.clone();
     let auth_for_promote_admin = auth.clone();
     let auth_for_view_backup_codes = auth.clone();
+    let auth_for_password = auth.clone();
     let two_factor_plugin_for_view_backup_codes = two_factor_plugin.clone();
 
     let auth_for_api_key_create = auth.clone();
@@ -646,6 +714,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         .route("/__health", get(health_check))
+        .route(
+            "/__test/password",
+            post(move |Json(body): Json<PasswordFixtureRequest>| {
+                let auth = auth_for_password.clone();
+                async move {
+                    match password_fixture_operation(&auth, body).await {
+                        Ok(value) => Json(value).into_response(),
+                        Err(error) => (
+                            axum::http::StatusCode::from_u16(error.status_code()).unwrap(),
+                            Json(serde_json::json!({ "message": error.to_string() })),
+                        )
+                            .into_response(),
+                    }
+                }
+            }),
+        )
         .route(
             "/__test/api-key/create",
             post(move |Json(body): Json<CreateKeyRequest>| {

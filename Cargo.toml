@@ -57,7 +57,8 @@ uuid = { version = "1.18", features = ["v4", "v7", "serde"] }
 validator = { version = "0.21", features = ["derive"] }
 
 # Crypto
-argon2 = "0.5"
+scrypt = "0.11"
+unicode-normalization = "0.1"
 rand = "0.8"
 base64 = "0.22"
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
@@ -124,7 +125,6 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 
 # Crypto
-argon2 = { workspace = true }
 rand = { workspace = true }
 base64 = { workspace = true }
 jsonwebtoken = { workspace = true }
@@ -201,6 +201,13 @@ panic = "abort"
 strip = true
 incremental = false
 debug = false
+
+# Password interoperability retains the pinned runtime parameters in tests.
+[profile.dev.package.scrypt]
+opt-level = 3
+
+[profile.dev.package.salsa20]
+opt-level = 3
 
 [profile.ci]
 inherits = "release"

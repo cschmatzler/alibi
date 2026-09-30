@@ -83,7 +83,7 @@ Controls the optional JWT surface.
 
 ## PasswordConfig
 
-Controls password validation and Argon2 hashing parameters.
+Controls password validation. The built-in hasher uses the pinned Better Auth scrypt format.
 
 | Field | Type | Default |
 |-------|------|---------|
@@ -93,13 +93,10 @@ Controls password validation and Argon2 hashing parameters.
 | `require_numbers` | `bool` | `false` |
 | `require_special` | `bool` | `false` |
 
-`PasswordConfig::argon2_config` defaults to:
-
-| Field | Type | Default |
-|-------|------|---------|
-| `memory_cost` | `u32` | `4096` |
-| `time_cost` | `u32` | `3` |
-| `parallelism` | `u32` | `1` |
+The built-in hasher normalizes passwords with NFKC and uses scrypt with
+`N = 16384`, `r = 16`, `p = 1`, and a 64-byte derived key. Each hash stores a
+random 16-byte salt as hexadecimal followed by `:` and the hexadecimal key.
+These parameters are fixed for compatibility with TypeScript Better Auth 1.7.6.
 
 ## Email Provider
 

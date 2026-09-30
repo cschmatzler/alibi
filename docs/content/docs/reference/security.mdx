@@ -9,13 +9,16 @@ Better Auth is designed with security as a core principle. This page documents t
 
 ### Hashing Algorithm
 
-Better Auth uses **Argon2id** for password hashing, which is the current recommendation from OWASP and the winner of the Password Hashing Competition. Argon2 is resistant to:
+The built-in hasher uses **scrypt** with `N = 16384`, `r = 16`, `p = 1`, and a
+64-byte key, matching TypeScript Better Auth 1.7.6. Passwords are normalized with
+NFKC before hashing and verification. Each hash uses a fresh random 16-byte salt
+and stores `hexadecimal-salt:hexadecimal-key`; the hexadecimal salt string is the
+salt input to scrypt.
 
-- GPU-based attacks
-- Side-channel attacks
-- Time-memory trade-off attacks
-
-Passwords are hashed with a unique random salt per user.
+The format is compatible in both directions: Rust can verify credentials
+created by the pinned TypeScript runtime, and that runtime can verify
+credentials created by Rust. Existing hashes in another format require a
+password reset or an application-provided migration strategy.
 
 ### Password Policies
 
@@ -141,7 +144,7 @@ TOTP secrets are stored securely in the database. Codes are time-based with a co
 
 ### Backup Codes
 
-Backup codes are hashed with Argon2 before storage. Only the plaintext codes are returned once during generation.
+Backup codes are encrypted before storage. Plaintext codes are returned during generation; using a code removes it from the stored set.
 
 ### OTP
 

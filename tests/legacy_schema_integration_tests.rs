@@ -6,8 +6,6 @@
 
 use std::borrow::Cow;
 
-use argon2::password_hash::SaltString;
-use argon2::{Argon2, PasswordHasher};
 use better_auth::plugins::{
     AccountManagementPlugin, EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin,
 };
@@ -24,7 +22,6 @@ use better_auth_seaorm::{
     SeaOrmUserModel, SeaOrmVerificationModel,
 };
 use chrono::{DateTime, Utc};
-use rand::rngs::OsRng;
 use serde_json::json;
 
 mod user {
@@ -658,7 +655,9 @@ fn auth_request(method: HttpMethod, path: &str, token: &str) -> AuthRequest {
 
 async fn seed_legacy_user(database: &DatabaseConnection) -> i32 {
     let now = Utc::now();
-    let password_hash = hash_seed_password("legacy-password").expect("seed password should hash");
+    let password_hash = better_auth_core::hash_password(None, "legacy-password")
+        .await
+        .expect("seed password should hash");
     let user = user::ActiveModel {
         id: NotSet,
         name: Set(Some("Legacy User".to_string())),
@@ -702,13 +701,6 @@ async fn seed_legacy_user(database: &DatabaseConnection) -> i32 {
     .expect("legacy credential account should insert");
 
     user.id
-}
-
-fn hash_seed_password(password: &str) -> Result<String, argon2::password_hash::Error> {
-    let salt = SaltString::generate(&mut OsRng);
-    Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
-        .map(|hash| hash.to_string())
 }
 
 #[tokio::test]

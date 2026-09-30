@@ -70,7 +70,7 @@ pub struct EmailPasswordConfig {
     /// Whether to automatically sign in the user after sign-up (default: true).
     /// When false, sign-up returns the user but doesn't create a session.
     pub auto_sign_in: bool,
-    /// Custom password hasher. When `None`, the default Argon2 hasher is used.
+    /// Custom password hasher. When `None`, the default scrypt hasher is used.
     pub password_hasher: Option<Arc<dyn PasswordHasher>>,
 }
 
