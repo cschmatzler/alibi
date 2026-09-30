@@ -16,8 +16,10 @@ export async function recordCoverage(scenario: string, traces: readonly TraceEnt
   if (process.env.COMPAT_COVERAGE !== "1") return;
   const observations = new Map<string, Map<EvidenceKind, Set<string>>>();
   for (const trace of traces) {
-    const path = new URL(trace.path, "http://compat.local").pathname.replace(/^\/api\/auth/, "");
-    if (!trace.path.startsWith("/api/auth/")) continue;
+    const pathname = new URL(trace.path, "http://compat.local").pathname;
+    const prefix = pathname.match(/^(?:\/__test\/profiles\/[a-z0-9-]+)?\/api\/auth(?=\/)/)?.[0];
+    if (!prefix) continue;
+    const path = pathname.slice(prefix.length);
     const route = inventory.capabilities.find(entry => entry.route === `${trace.method} ${path}`)?.route ?? inventory.capabilities.find(entry => {
       const [method, pattern] = entry.route.split(" ");
       return method === trace.method && pattern !== undefined && pattern.split("/").length === path.split("/").length && pattern.split("/").every((part, i) => part === "{}" || part === path.split("/")[i]);

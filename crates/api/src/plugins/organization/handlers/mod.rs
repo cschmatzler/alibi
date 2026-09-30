@@ -1,6 +1,8 @@
+pub mod extension_common;
 pub mod invitation;
 pub mod member;
 pub mod org;
+pub mod team;
 
 pub use invitation::*;
 pub use member::*;
@@ -12,7 +14,6 @@ use better_auth_core::plugin::AuthContext;
 use better_auth_core::types::{AuthRequest, AuthResponse};
 
 use super::OrganizationConfig;
-use super::rbac::{Action, Resource, has_permission_any};
 use super::types::{HasPermissionRequest, HasPermissionResponse};
 
 /// Helper function to require authenticated session
@@ -68,36 +69,13 @@ pub(crate) async fn has_permission_core(
         .await?
         .ok_or_else(|| AuthError::forbidden("Not a member of this organization"))?;
 
-    let mut has_all_permissions = true;
-
-    for (resource_str, actions) in &body.permissions {
-        let resource = match Resource::parse(resource_str) {
-            Some(r) => r,
-            None => {
-                has_all_permissions = false;
-                break;
-            }
-        };
-
-        for action_str in actions {
-            let action = match Action::parse(action_str) {
-                Some(a) => a,
-                None => {
-                    has_all_permissions = false;
-                    break;
-                }
-            };
-
-            if !has_permission_any(member.role(), &resource, &action, &config.roles) {
-                has_all_permissions = false;
-                break;
-            }
-        }
-
-        if !has_all_permissions {
-            break;
-        }
-    }
+    let required = body
+        .permissions
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    let has_all_permissions =
+        extension_common::has_permissions(member.role(), &required, config, ctx, &org_id)?;
 
     Ok(HasPermissionResponse {
         success: has_all_permissions,

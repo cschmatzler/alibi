@@ -18,6 +18,7 @@ use better_auth::{
             OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
             OAuthUserInfoResponse,
         },
+        organization::{OrganizationConfig, TeamsConfig},
         password_management::SendResetPassword,
     },
     prelude::{AuthRequest, HttpMethod},
@@ -144,6 +145,7 @@ pub enum ResetSenderMode {
 pub struct TestAuthOptions {
     pub reset_sender_mode: ResetSenderMode,
     pub creator_role: Option<String>,
+    pub teams_enabled: bool,
 }
 
 struct TestResetSender {
@@ -297,11 +299,17 @@ pub async fn create_test_auth() -> TestAuth {
 pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth {
     let config = test_config();
     let store = test_store(&config).await;
-    let organization_plugin = if let Some(creator_role) = options.creator_role.clone() {
-        OrganizationPlugin::new().creator_role(creator_role)
-    } else {
-        OrganizationPlugin::new()
-    };
+    let organization_plugin = OrganizationPlugin::with_config(OrganizationConfig {
+        creator_role: options
+            .creator_role
+            .clone()
+            .unwrap_or_else(|| "owner".to_owned()),
+        teams: TeamsConfig {
+            enabled: options.teams_enabled,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
 
     AuthBuilder::<TestSchema>::new(config)
         .store(store)

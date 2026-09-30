@@ -36,6 +36,7 @@ async-trait = "0.1"
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
+ryu-js = "1.0.3"
 indexmap = { version = "2", features = ["serde"] }
 
 # Logging and tracing

@@ -4,6 +4,7 @@ import { Database } from "bun:sqlite";
 import { passkey } from "@better-auth/passkey";
 import { betterAuth } from "better-auth";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
+import { APIError } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { apiKey } from "@better-auth/api-key";
 import { admin, deviceAuthorization, twoFactor, username } from "better-auth/plugins";
@@ -372,6 +373,79 @@ await runMigrations();
 
 const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
+
+const TEAM_PROFILES = ["org-teams", "org-teams-no-default", "org-teams-limited", "org-teams-removable"] as const;
+const teamProfiles = new Map(TEAM_PROFILES.map(name => {
+  const options = {
+    ...authOptions,
+    basePath: `/__test/profiles/${name}/api/auth`,
+    plugins: [
+      ...authOptions.plugins.filter(plugin => plugin.id !== "organization"),
+      organization({teams:{
+        enabled:true,defaultTeam:{enabled:name!=="org-teams-no-default"},allowRemovingAllTeams:name==="org-teams-removable",
+        ...(name === "org-teams-limited" ? {
+          maximumTeams: async ({session}, ctx) => session?.user.name === "limit-owner" && ctx?.headers?.get("x-team-policy") === "expanded" ? 3 : 1,
+          maximumMembersPerTeam: async ({session}) => session.user.name === "limit-owner" ? 1 : 0,
+        } : {}),
+      }}),
+    ],
+  };
+  return [name, {auth:betterAuth(options),options}] as const;
+}));
+for (const {options} of teamProfiles.values()) {
+  await (await getMigrations(options)).runMigrations();
+}
+
+async function teamFixture(request: Request, url: URL): Promise<Response | undefined> {
+  const profileName = url.pathname.match(/^\/__test\/profiles\/([^/]+)\/api\/auth(?:\/|$)/)?.[1];
+  if (profileName) {
+    const profile = [...teamProfiles.entries()].find(([name]) => name === profileName)?.[1];
+    return profile ? profile.auth.handler(request) : jsonResponse({message:"unknown fixture profile"},{status:404});
+  }
+  if (url.pathname === "/__test/organization-state" && request.method === "GET") {
+    const organizationId = url.searchParams.get("organizationId");
+    if (!organizationId) return jsonResponse({message:"organizationId is required"},{status:400});
+    const profileName = url.searchParams.get("profile") ?? "org-teams";
+    const selected = [...teamProfiles.entries()].find(([name]) => name === profileName)?.[1].auth;
+    if (!selected) return jsonResponse({message:"Unknown fixture profile"},{status:400});
+    const {adapter} = await selected.$context;
+    const where = [{field:"organizationId",value:organizationId}];
+    const sortBy = {field:"createdAt",direction:"asc"} as const;
+    const [teams,members,invitations] = await Promise.all(["team","member","invitation"].map(model=>adapter.findMany<Record<string,unknown>>({model,where,sortBy})));
+    if (!teams || !members || !invitations) throw new Error("Organization state query failed");
+    const teamMembers = (await Promise.all(teams.map(team=>adapter.findMany<Record<string,unknown>>({model:"teamMember",where:[{field:"teamId",value:String(team.id)}],sortBy})))).flat();
+    return jsonResponse({
+      teams:teams.map(team=>({id:team.id,name:team.name,organizationId:team.organizationId,createdAt:team.createdAt,updatedAt:team.updatedAt,memberCount:team.memberCount})),
+      teamMembers:teamMembers.map(member=>({id:member.id,teamId:member.teamId,userId:member.userId,createdAt:member.createdAt})),
+      roles:[],members,invitations,
+    });
+  }
+  if (url.pathname === "/__test/organization-api" && request.method === "POST") {
+    const body = await readJson(request);
+    const profileName = typeof body?.profile === "string" ? body.profile : "org-teams";
+    const selected = [...teamProfiles.entries()].find(([name]) => name === profileName)?.[1].auth;
+    if (!selected) return jsonResponse({message:"Unknown fixture profile"},{status:400});
+    try {
+      if (body?.operation === "create-team" && typeof body.organizationId === "string" && typeof body.name === "string") {
+        return jsonResponse(await selected.api.createTeam({body:{organizationId:body.organizationId,name:body.name}}));
+      }
+      if (body?.operation === "seed-member" && typeof body.organizationId === "string" && typeof body.id === "string" && typeof body.email === "string" && typeof body.name === "string") {
+        const {adapter} = await selected.$context;
+        const user = await adapter.create<Record<string,unknown>>({model:"user",forceAllowId:true,data:{id:body.id,email:body.email,name:body.name,emailVerified:true,createdAt:new Date(),updatedAt:new Date()}});
+        const member = await selected.api.addMember({body:{organizationId:body.organizationId,userId:String(user.id),role:"member"}});
+        return jsonResponse({userId:user.id,memberId:member.id});
+      }
+      if (body?.operation === "remove-team" && typeof body.organizationId === "string" && typeof body.teamId === "string") {
+        return jsonResponse(await selected.api.removeTeam({body:{organizationId:body.organizationId,teamId:body.teamId}}));
+      }
+      return jsonResponse({message:"Invalid organization operation"},{status:400});
+    } catch (error) {
+      if (error instanceof APIError) return jsonResponse(error.body,{status:error.statusCode});
+      throw error;
+    }
+  }
+}
+
 const RESET_MODELS = [
   "deviceCode",
   "passkey",
@@ -386,6 +460,8 @@ const RESET_MODELS = [
 ] as const;
 
 async function resetDatabaseState() {
+  const {adapter} = await teamProfiles.get("org-teams")!.auth.$context;
+  for (const model of ["teamMember","team"]) await adapter.deleteMany({model,where:[]});
   for (const model of RESET_MODELS) {
     await authContext.adapter.deleteMany({
       model,
@@ -399,6 +475,8 @@ const server = Bun.serve({
   async fetch(request) {
     try {
       const url = new URL(request.url);
+      const teamResponse = await teamFixture(request, url);
+      if (teamResponse) return teamResponse;
 
       if (url.pathname === "/__test/lifecycle" && request.method === "GET") {
         const email = url.searchParams.get("email");

@@ -4,7 +4,7 @@ use validator::Validate;
 
 use better_auth_core::config::AuthConfig;
 use better_auth_core::entity::{AuthSession, AuthUser};
-use better_auth_core::wire::{SessionView, UserView};
+use better_auth_core::wire::SessionView;
 use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
 
 use better_auth_core::{AuthError, AuthResult};
@@ -115,7 +115,10 @@ pub(crate) async fn list_sessions_core(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<Vec<SessionView>> {
     let sessions = ctx.session_manager().list_user_sessions(user_id).await?;
-    Ok(sessions.iter().map(SessionView::from).collect())
+    Ok(sessions
+        .iter()
+        .map(|session| ctx.session_view(session))
+        .collect())
 }
 
 pub(crate) async fn revoke_session_core(
@@ -168,8 +171,8 @@ impl SessionManagementPlugin {
         match ctx.require_session(req).await {
             Ok((user, session)) => {
                 let response = GetSessionResponse {
-                    session: SessionView::from(&session),
-                    user: UserView::from(&user),
+                    session: ctx.session_view(&session),
+                    user: ctx.user_view(&user),
                 };
                 Ok(AuthResponse::json(200, &response)?)
             }
