@@ -3,7 +3,7 @@ use super::*;
 use crate::plugins::test_helpers;
 use async_trait::async_trait;
 use better_auth_core::wire::UserView;
-use better_auth_core::{AuthResult, CreateUser, UpdateUser};
+use better_auth_core::{AuthResult, AuthSession, CreateUser, UpdateUser};
 use chrono::{Duration, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -20,7 +20,7 @@ use better_auth_core::{AuthPlugin, HttpMethod};
 #[test]
 fn test_default_config() {
     let config = EmailVerificationConfig::default();
-    assert_eq!(config.verification_token_expiry, Duration::hours(24));
+    assert_eq!(config.verification_token_expiry, Duration::hours(1));
     assert!(config.send_email_notifications);
     assert!(!config.require_verification_for_signin);
     assert!(!config.auto_verify_new_users);
@@ -142,11 +142,6 @@ fn test_builder_after_email_verification_hook() {
 /// Helper to create a minimal wire user view for unit tests.
 fn make_test_user(email: &str, verified: bool) -> UserView {
     UserView {
-        is_anonymous: None,
-        phone_number: None,
-        phone_number_verified: None,
-        last_login_method: None,
-        extension_fields: Default::default(),
         id: "test-id".into(),
         name: Some("Test".into()),
         email: Some(email.into()),
@@ -156,12 +151,17 @@ fn make_test_user(email: &str, verified: bool) -> UserView {
         updated_at: Utc::now(),
         username: None,
         display_username: None,
-        two_factor_enabled: false,
+        two_factor_enabled: Some(false),
         role: None,
-        banned: false,
+        banned: Some(false),
         ban_reason: None,
         ban_expires: None,
         metadata: serde_json::Value::Null,
+        is_anonymous: None,
+        phone_number: None,
+        phone_number_verified: None,
+        last_login_method: None,
+        extension_fields: Default::default(),
     }
 }
 
@@ -179,6 +179,258 @@ fn jwt_token(
         request_type,
     )
     .unwrap()
+}
+
+// The legacy updateTo flow always sets a real session cookie and sends its
+// follow-up proof with the token helper's default lifetime, despite expiresIn.
+#[tokio::test]
+async fn legacy_email_change_reuses_or_issues_session_and_default_lifetime_followup() {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+
+    struct Sender(Arc<std::sync::Mutex<Vec<(UserView, String)>>>);
+    #[async_trait]
+    impl SendVerificationEmail for Sender {
+        async fn send(&self, user: &UserView, _: &str, token: &str) -> AuthResult<()> {
+            self.0.lock().unwrap().push((user.clone(), token.into()));
+            Err(AuthError::bad_request("fixture delivery failed"))
+        }
+    }
+
+    for authenticated in [false, true] {
+        let ctx = test_helpers::create_test_context().await;
+        let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let plugin = EmailVerificationPlugin::new()
+            .verification_token_expiry(Duration::seconds(90))
+            .custom_send_verification_email(Arc::new(Sender(calls.clone())));
+        let user = ctx
+            .database
+            .create_user(CreateUser::new().with_email("before@legacy.fixture.test"))
+            .await
+            .unwrap();
+        let current = if authenticated {
+            Some(
+                ctx.database
+                    .create_session(better_auth_core::CreateSession {
+                        token: None,
+                        user_id: user.id().to_string(),
+                        expires_at: Utc::now() + ctx.config.session.expires_in,
+                        ip_address: None,
+                        user_agent: None,
+                        impersonated_by: None,
+                        active_organization_id: None,
+                        active_team_id: None,
+                    })
+                    .await
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+        let mut query = HashMap::new();
+        query.insert(
+            "token".into(),
+            jwt_token(
+                &ctx,
+                "before@legacy.fixture.test",
+                Some("After@legacy.fixture.test"),
+                None,
+            ),
+        );
+        let req = test_helpers::create_auth_request(
+            HttpMethod::Get,
+            "/verify-email",
+            current.as_ref().map(|session| session.token.as_str()),
+            None,
+            query,
+        );
+        let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
+        assert_eq!(response.status, 200);
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(body["user"]["id"].as_str(), Some(user.id().as_ref()));
+        assert_eq!(body["user"]["email"], "after@legacy.fixture.test");
+        assert_eq!(body["user"]["emailVerified"], false);
+        let sessions = ctx.database.get_user_sessions(&user.id()).await.unwrap();
+        assert_eq!(sessions.len(), 1, "Anonymous proof must issue a session");
+        let session = sessions.first().unwrap();
+        if let Some(previous) = current {
+            assert_eq!(session.id(), previous.id());
+            assert_eq!(session.token(), previous.token());
+        }
+        assert_eq!(
+            response.headers.get("set-cookie"),
+            Some(&create_session_cookie(session.token(), &ctx.config))
+        );
+        let updated = ctx
+            .database
+            .get_user_by_email("after@legacy.fixture.test")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(updated.id(), user.id());
+        assert!(!updated.email_verified());
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        let (recipient, token) = calls.first().unwrap();
+        assert_eq!(recipient.id, user.id());
+        assert_eq!(
+            recipient.email.as_deref(),
+            Some("after@legacy.fixture.test")
+        );
+        let encoded = token.split('.').nth(1).unwrap();
+        let claims: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(encoded).unwrap()).unwrap();
+        assert_eq!(claims["email"], "after@legacy.fixture.test");
+        assert_eq!(
+            claims["exp"].as_i64().unwrap() - claims["iat"].as_i64().unwrap(),
+            3600
+        );
+        assert!(claims.get("updateTo").is_none());
+    }
+}
+
+fn external_verification_token(
+    secret: &str,
+    algorithm: jsonwebtoken::Algorithm,
+    payload: &serde_json::Value,
+) -> String {
+    let mut header = jsonwebtoken::Header::new(algorithm);
+    header.typ = None;
+    jsonwebtoken::encode(
+        &header,
+        payload,
+        &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .unwrap()
+}
+
+// Proof must fail at the signature/algorithm/date guard before touching its
+// claimed user's verification state, including the exact expiry second.
+#[tokio::test]
+async fn external_verification_proofs_enforce_signature_algorithm_and_numeric_dates() {
+    use better_auth_core::AuthUser;
+    let ctx = test_helpers::create_test_context().await;
+    let plugin = EmailVerificationPlugin::new().auto_sign_in_after_verification(true);
+    let user = ctx
+        .database
+        .create_user(CreateUser::new().with_email("proof-owner@fixture.test"))
+        .await
+        .unwrap();
+    let now = Utc::now().timestamp();
+    for (secret, algorithm, dates, code) in [
+        (
+            ctx.config.secret.as_str(),
+            jsonwebtoken::Algorithm::HS256,
+            serde_json::json!({"exp":now-30}),
+            "TOKEN_EXPIRED",
+        ),
+        (
+            ctx.config.secret.as_str(),
+            jsonwebtoken::Algorithm::HS256,
+            serde_json::json!({"exp":now}),
+            "TOKEN_EXPIRED",
+        ),
+        (
+            ctx.config.secret.as_str(),
+            jsonwebtoken::Algorithm::HS256,
+            serde_json::json!({"exp":now+300,"nbf":now+30}),
+            "INVALID_TOKEN",
+        ),
+        (
+            ctx.config.secret.as_str(),
+            jsonwebtoken::Algorithm::HS256,
+            serde_json::json!({"exp":now+300,"iat":"invalid"}),
+            "INVALID_TOKEN",
+        ),
+        (
+            ctx.config.secret.as_str(),
+            jsonwebtoken::Algorithm::HS384,
+            serde_json::json!({"exp":now+300}),
+            "INVALID_TOKEN",
+        ),
+        (
+            "different-signing-key-for-fixture-only",
+            jsonwebtoken::Algorithm::HS256,
+            serde_json::json!({"exp":now+300}),
+            "INVALID_TOKEN",
+        ),
+    ] {
+        let mut payload = dates;
+        payload["email"] = serde_json::json!("proof-owner@fixture.test");
+        let token = external_verification_token(secret, algorithm, &payload);
+        let query = HashMap::from([("token".to_owned(), token.clone())]);
+        let req =
+            test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
+        let error = plugin.handle_verify_email(&req, &ctx).await.unwrap_err();
+        assert_eq!(error.status_code(), 401);
+        assert_eq!(error.error_payload().1.as_deref(), Some(code));
+        let callback = "/verification-error?source=caller&error=existing#details";
+        let query = HashMap::from([
+            ("token".to_owned(), token),
+            ("callbackURL".to_owned(), callback.to_owned()),
+        ]);
+        let req =
+            test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
+        let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
+        assert_eq!(response.status, 302);
+        assert_eq!(
+            response.headers.get("Location"),
+            Some(&format!(
+                "/verification-error?source=caller&error=existing&error={code}#details"
+            ))
+        );
+        let persisted = ctx
+            .database
+            .get_user_by_id(&user.id())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!persisted.email_verified());
+        assert!(
+            ctx.database
+                .get_user_sessions(&user.id())
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+}
+
+// JOSE does not require iat/exp, an audience, or an issuer for this endpoint.
+// Accepting a legitimately signed proof must preserve that embedding contract.
+#[tokio::test]
+async fn externally_signed_verification_without_dates_or_matching_audience_is_accepted() {
+    use better_auth_core::AuthUser;
+    let ctx = test_helpers::create_test_context().await;
+    let plugin = EmailVerificationPlugin::new();
+    let user = ctx
+        .database
+        .create_user(CreateUser::new().with_email("legacy-proof@fixture.test"))
+        .await
+        .unwrap();
+    let token = external_verification_token(
+        &ctx.config.secret,
+        jsonwebtoken::Algorithm::HS256,
+        &serde_json::json!({"email":"legacy-proof@fixture.test","aud":"embedding-app","iss":"embedding-issuer"}),
+    );
+    let query = HashMap::from([("token".to_owned(), token)]);
+    let req =
+        test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
+    let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
+    assert_eq!(response.status, 200);
+    let persisted = ctx
+        .database
+        .get_user_by_id(&user.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(persisted.email_verified());
+    assert!(
+        ctx.database
+            .get_user_sessions(&user.id())
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 // Rust-specific surface: helper methods exposing plugin state are public Rust
@@ -229,11 +481,6 @@ async fn test_is_user_verified_or_not_required() {
 #[test]
 fn test_to_user_preserves_fields() {
     let user = UserView {
-        is_anonymous: None,
-        phone_number: None,
-        phone_number_verified: None,
-        last_login_method: None,
-        extension_fields: Default::default(),
         id: "test-id".into(),
         name: Some("Test User".into()),
         email: Some("test@example.com".into()),
@@ -243,12 +490,17 @@ fn test_to_user_preserves_fields() {
         updated_at: Utc::now(),
         username: Some("testuser".into()),
         display_username: Some("TestUser".into()),
-        two_factor_enabled: true,
+        two_factor_enabled: Some(true),
         role: Some("admin".into()),
-        banned: true,
+        banned: Some(true),
         ban_reason: Some("spam".into()),
         ban_expires: None,
         metadata: serde_json::Value::Null,
+        is_anonymous: None,
+        phone_number: None,
+        phone_number_verified: None,
+        last_login_method: None,
+        extension_fields: Default::default(),
     };
     let converted = UserView::from(&user);
     assert_eq!(converted.id, "test-id");
@@ -261,9 +513,9 @@ fn test_to_user_preserves_fields() {
     );
     assert_eq!(converted.username.as_deref(), Some("testuser"));
     assert_eq!(converted.display_username.as_deref(), Some("TestUser"));
-    assert!(converted.two_factor_enabled);
+    assert_eq!(converted.two_factor_enabled, Some(true));
     assert_eq!(converted.role.as_deref(), Some("admin"));
-    assert!(converted.banned);
+    assert_eq!(converted.banned, Some(true));
     assert_eq!(converted.ban_reason.as_deref(), Some("spam"));
 }
 
@@ -924,7 +1176,8 @@ async fn test_verify_email_invalid_token() {
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
     let err = plugin.handle_verify_email(&req, &ctx).await.unwrap_err();
-    assert_eq!(err.status_code(), 400);
+    assert_eq!(err.status_code(), 401);
+    assert_eq!(err.error_payload().1.as_deref(), Some("INVALID_TOKEN"));
 }
 
 // Upstream reference: packages/better-auth/src/api/routes/email-verification.test.ts :: describe("Email Verification") and packages/better-auth/src/api/routes/email-verification.ts; adapted to the Rust email verification plugin.
@@ -1036,34 +1289,84 @@ async fn test_send_verification_email_already_verified_returns_error() {
 
 // Upstream reference: packages/better-auth/src/api/routes/email-verification.test.ts :: describe("Email Verification") and packages/better-auth/src/api/routes/email-verification.ts; adapted to the Rust email verification plugin.
 #[tokio::test]
-async fn test_send_verification_email_user_not_found() {
-    struct NoopSender;
+async fn unauthenticated_verification_email_has_fixed_floor_for_all_mailbox_states() {
+    struct Sender {
+        calls: Arc<AtomicU32>,
+        fail: bool,
+    }
     #[async_trait]
-    impl SendVerificationEmail for NoopSender {
-        async fn send(&self, _user: &UserView, _url: &str, _token: &str) -> AuthResult<()> {
-            Ok(())
+    impl SendVerificationEmail for Sender {
+        async fn send(&self, _: &UserView, _: &str, _: &str) -> AuthResult<()> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.fail {
+                Err(AuthError::bad_request("fixture delivery failed"))
+            } else {
+                Ok(())
+            }
         }
     }
-
-    let plugin =
-        EmailVerificationPlugin::new().custom_send_verification_email(Arc::new(NoopSender));
-    let ctx = test_helpers::create_test_context().await;
-
-    let body = serde_json::json!({ "email": "nobody@test.com" });
-    let mut headers = HashMap::new();
-    headers.insert("content-type".to_string(), "application/json".to_string());
-    let req = AuthRequest::from_parts(
-        HttpMethod::Post,
-        "/send-verification-email".to_string(),
-        headers,
-        Some(body.to_string().into_bytes()),
-        HashMap::new(),
-    );
-    let response = plugin
-        .handle_send_verification_email(&req, &ctx)
-        .await
-        .unwrap();
-    assert_eq!(response.status, 200);
+    for (existing, fail) in [
+        (None, false),
+        (Some(true), false),
+        (Some(false), false),
+        (Some(false), true),
+    ] {
+        let ctx = test_helpers::create_test_context().await;
+        let email = "enumeration@fixture.test";
+        let user = if let Some(verified) = existing {
+            Some(
+                ctx.database
+                    .create_user(
+                        CreateUser::new()
+                            .with_email(email)
+                            .with_email_verified(verified),
+                    )
+                    .await
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+        let calls = Arc::new(AtomicU32::new(0));
+        let plugin =
+            EmailVerificationPlugin::new().custom_send_verification_email(Arc::new(Sender {
+                calls: calls.clone(),
+                fail,
+            }));
+        let req = test_helpers::create_auth_json_request_no_query(
+            HttpMethod::Post,
+            "/send-verification-email",
+            None,
+            Some(serde_json::json!({"email":email})),
+        );
+        let start = std::time::Instant::now();
+        let response = plugin.handle_send_verification_email(&req, &ctx).await;
+        assert!(
+            start.elapsed() >= std::time::Duration::from_millis(500),
+            "Every unauthenticated mailbox result must retain the timing floor"
+        );
+        if fail {
+            assert_eq!(response.unwrap_err().status_code(), 400);
+        } else {
+            assert_eq!(response.unwrap().status, 200);
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            u32::from(existing == Some(false))
+        );
+        let after = ctx.database.get_user_by_email(email).await.unwrap();
+        assert_eq!(after.as_ref().map(AuthUser::email_verified), existing);
+        if let Some(user) = user {
+            assert_eq!(after.as_ref().unwrap().id(), user.id());
+            assert!(
+                ctx.database
+                    .get_user_sessions(&user.id())
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+    }
 }
 
 // ------------------------------------------------------------------

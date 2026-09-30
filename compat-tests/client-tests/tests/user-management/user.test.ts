@@ -1,4 +1,13 @@
 import { compatScenario } from "../../support/scenario";
+import { expect } from "bun:test";
+import { z } from "zod";
+
+function proofLifetime(token: string): number {
+  const claims = z.object({ iat: z.number().int(), exp: z.number().int() }).parse(
+    JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8")),
+  );
+  return claims.exp - claims.iat;
+}
 
 compatScenario("update user changes session-visible profile fields", async (ctx) => {
   const primary = ctx.actor();
@@ -101,6 +110,7 @@ compatScenario("change email for an unverified user completes after verify email
     newEmail,
   });
   const record = await ctx.readVerificationEmail({ email: newEmail }) as { token: string };
+  expect(proofLifetime(record.token)).toBe(3600);
   const verify = await primary.client.verifyEmail({
     query: {
       token: record.token,
@@ -139,12 +149,14 @@ compatScenario("change email for a verified user requires old-email confirmation
     newEmail,
   });
   const confirmation = await ctx.readChangeEmailConfirmation({ email }) as { token: string };
+  expect(proofLifetime(confirmation.token)).toBe(3600);
   const confirm = await primary.client.verifyEmail({
     query: {
       token: confirmation.token,
     },
   });
   const newVerification = await ctx.readVerificationEmail({ email: newEmail }) as { token: string };
+  expect(proofLifetime(newVerification.token)).toBe(3600);
   const finish = await primary.client.verifyEmail({
     query: {
       token: newVerification.token,

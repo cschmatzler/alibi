@@ -3,6 +3,7 @@ use crate::config::{AuthConfig, extract_origin};
 use crate::error::{AuthError, AuthResult};
 use crate::types::{AuthRequest, AuthResponse, HttpMethod};
 use async_trait::async_trait;
+#[cfg(test)]
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -151,7 +152,7 @@ impl CsrfMiddleware {
             return Ok(());
         }
 
-        for (name, value) in Self::request_target_values(req) {
+        for (name, value) in Self::request_target_values(req)? {
             if !self.auth_config.is_redirect_target_trusted(&value) {
                 return Err(AuthError::forbidden(Self::target_error_message(name)));
             }
@@ -160,53 +161,69 @@ impl CsrfMiddleware {
         Ok(())
     }
 
-    fn request_target_values(req: &AuthRequest) -> Vec<(&'static str, String)> {
+    fn request_target_values(req: &AuthRequest) -> Result<Vec<(&'static str, String)>, AuthError> {
+        let body = Self::request_body_map(req).unwrap_or_default();
         let mut targets = Vec::new();
-        Self::append_target_from_map(&mut targets, &req.query);
-
-        if let Some(body) = Self::request_body_map(req) {
-            Self::append_target_from_map(&mut targets, &body);
-        }
-
-        targets
-    }
-
-    fn append_target_from_map(
-        targets: &mut Vec<(&'static str, String)>,
-        values: &HashMap<String, String>,
-    ) {
-        for key in [
-            "callbackURL",
-            "redirectTo",
-            "errorCallbackURL",
-            "newUserCallbackURL",
+        for (key, label) in [
+            ("callbackURL", "callbackURL"),
+            ("redirectTo", "redirectURL"),
+            ("errorCallbackURL", "errorCallbackURL"),
+            ("newUserCallbackURL", "newUserCallbackURL"),
         ] {
-            if let Some(value) = values.get(key) {
-                targets.push((key, value.clone()));
-            }
+            let value = body
+                .get(key)
+                .filter(|value| Self::is_truthy(value))
+                .cloned()
+                .or_else(|| {
+                    (key == "callbackURL")
+                        .then(|| req.query.get(key))
+                        .flatten()
+                        .filter(|value| !value.is_empty())
+                        .cloned()
+                        .map(serde_json::Value::String)
+                });
+            let Some(value) = value else {
+                continue;
+            };
+            let Some(value) = value.as_str() else {
+                return Err(AuthError::bad_request(format!(
+                    "Invalid {label}: expected a string"
+                )));
+            };
+            targets.push((key, value.to_owned()));
+        }
+        Ok(targets)
+    }
+
+    fn is_truthy(value: &serde_json::Value) -> bool {
+        match value {
+            serde_json::Value::Null => false,
+            serde_json::Value::Bool(value) => *value,
+            serde_json::Value::Number(value) => value.as_f64() != Some(0.0),
+            serde_json::Value::String(value) => !value.is_empty(),
+            serde_json::Value::Array(_) | serde_json::Value::Object(_) => true,
         }
     }
 
-    fn request_body_map(req: &AuthRequest) -> Option<HashMap<String, String>> {
+    fn request_body_map(req: &AuthRequest) -> Option<serde_json::Map<String, serde_json::Value>> {
         let content_type = Self::header(req, "content-type").unwrap_or_default();
-
         if content_type.contains("application/x-www-form-urlencoded") {
             let body = req.body.as_ref()?;
             return Some(
                 url::form_urlencoded::parse(body)
-                    .map(|(key, value)| (key.into_owned(), value.into_owned()))
+                    .map(|(key, value)| {
+                        (
+                            key.into_owned(),
+                            serde_json::Value::String(value.into_owned()),
+                        )
+                    })
                     .collect(),
             );
         }
-
-        let value = req.body_as_json::<serde_json::Value>().ok()?;
-        let object = value.as_object()?;
-        Some(
-            object
-                .iter()
-                .filter_map(|(key, value)| Some((key.clone(), value.as_str()?.to_string())))
-                .collect(),
-        )
+        req.body_as_json::<serde_json::Value>()
+            .ok()?
+            .as_object()
+            .cloned()
     }
 
     fn target_error_message(name: &str) -> &'static str {
@@ -361,22 +378,80 @@ mod tests {
         assert!(mw.before_request(&req).await.unwrap().is_none());
     }
 
-    // Rust-specific surface: Rust middleware implementations are library-specific behavior with no direct TS analogue.
+    // Pinned origin-check middleware applies JavaScript truthiness, then checks
+    // each redirect field's type before route schema parsing.
     #[tokio::test]
-    async fn callback_targets_must_be_relative_or_trusted() {
+    async fn redirect_targets_enforce_types_origins_and_callback_precedence() {
         let mw = CsrfMiddleware::new(CsrfConfig::new(), test_auth_config(vec![]));
-        let mut req = make_request("/sign-in/social", None, false, &[]);
-        req.body = Some(
-            serde_json::json!({
-                "provider": "google",
-                "callbackURL": "http://evil.com/dashboard"
-            })
-            .to_string()
-            .into_bytes(),
+        for (field, label) in [
+            ("callbackURL", "callbackURL"),
+            ("redirectTo", "redirectURL"),
+            ("errorCallbackURL", "errorCallbackURL"),
+            ("newUserCallbackURL", "newUserCallbackURL"),
+        ] {
+            for value in [
+                serde_json::json!(5),
+                serde_json::json!(true),
+                serde_json::json!([]),
+                serde_json::json!({}),
+            ] {
+                let mut req = make_request("/send-verification-email", None, false, &[]);
+                req.body = Some(serde_json::json!({field:value}).to_string().into_bytes());
+                let response = mw
+                    .before_request(&req)
+                    .await
+                    .unwrap()
+                    .expect("truthy non-string redirect must be rejected before the route");
+                assert_eq!(response.status, 400);
+                assert_eq!(
+                    serde_json::from_slice::<serde_json::Value>(&response.body).unwrap(),
+                    serde_json::json!({"message":format!("Invalid {label}: expected a string")})
+                );
+            }
+            for value in [
+                serde_json::Value::Null,
+                serde_json::json!(false),
+                serde_json::json!(0),
+                serde_json::json!(""),
+            ] {
+                let mut req = make_request("/send-verification-email", None, false, &[]);
+                req.body = Some(serde_json::json!({field:value}).to_string().into_bytes());
+                assert!(mw.before_request(&req).await.unwrap().is_none());
+            }
+        }
+        let mut request = make_request("/send-verification-email", None, false, &[]);
+        request.query.insert(
+            "callbackURL".to_owned(),
+            "http://evil.com/dashboard".to_owned(),
         );
-
-        let message = forbidden_message(mw.before_request(&req).await.unwrap()).await;
-        assert_eq!(message, INVALID_CALLBACK_URL);
+        request.body = Some(
+            serde_json::json!({"callbackURL":"/safe"})
+                .to_string()
+                .into_bytes(),
+        );
+        assert!(
+            mw.before_request(&request).await.unwrap().is_none(),
+            "the body callback overrides the query callback"
+        );
+        request.body = Some(
+            serde_json::json!({"callbackURL":null})
+                .to_string()
+                .into_bytes(),
+        );
+        let message = forbidden_message(mw.before_request(&request).await.unwrap()).await;
+        assert_eq!(
+            message, INVALID_CALLBACK_URL,
+            "a falsy body callback falls back to the query"
+        );
+        request.query.clear();
+        request.query.insert(
+            "redirectTo".to_owned(),
+            "http://evil.com/ignored".to_owned(),
+        );
+        assert!(
+            mw.before_request(&request).await.unwrap().is_none(),
+            "upstream reads other redirects from the body only"
+        );
     }
 
     // Rust-specific surface: Rust middleware implementations are library-specific behavior with no direct TS analogue.

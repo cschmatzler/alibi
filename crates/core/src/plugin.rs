@@ -320,11 +320,98 @@ impl<S: AuthSchema> AuthContext<S> {
     }
 
     pub fn user_view(&self, user: &impl crate::entity::AuthUser) -> crate::wire::UserView {
-        crate::wire::UserView::from(user)
+        let mut view = crate::wire::UserView::from(user);
+        if self.feature_enabled("username.enabled") {
+            for (key, absent) in [
+                ("username", view.username.is_none()),
+                ("displayUsername", view.display_username.is_none()),
+            ] {
+                if absent {
+                    _ = view
+                        .extension_fields
+                        .insert(key.into(), serde_json::Value::Null);
+                }
+            }
+        } else {
+            view.username = None;
+            view.display_username = None;
+        }
+        view.two_factor_enabled = self
+            .feature_enabled("two_factor.enabled")
+            .then(|| user.two_factor_enabled());
+        if self.feature_enabled("admin.enabled") {
+            view.banned = Some(user.banned());
+            for (key, absent) in [
+                ("role", view.role.is_none()),
+                ("banReason", view.ban_reason.is_none()),
+                ("banExpires", view.ban_expires.is_none()),
+            ] {
+                if absent {
+                    _ = view
+                        .extension_fields
+                        .insert(key.into(), serde_json::Value::Null);
+                }
+            }
+        } else {
+            view.role = None;
+            view.banned = None;
+            view.ban_reason = None;
+            view.ban_expires = None;
+        }
+
+        if self.feature_enabled("anonymous.enabled") {
+            view.is_anonymous = Some(user.is_anonymous().unwrap_or(false));
+        } else {
+            view.is_anonymous = None;
+        }
+        if self.feature_enabled("phone-number.enabled") {
+            if view.phone_number.is_none() {
+                _ = view
+                    .extension_fields
+                    .insert("phoneNumber".into(), serde_json::Value::Null);
+            }
+            if view.phone_number_verified.is_none() {
+                _ = view
+                    .extension_fields
+                    .insert("phoneNumberVerified".into(), serde_json::Value::Null);
+            }
+        } else {
+            view.phone_number = None;
+            view.phone_number_verified = None;
+        }
+        if self.feature_enabled("last-login-method.enabled") {
+            if view.last_login_method.is_none() {
+                _ = view
+                    .extension_fields
+                    .insert("lastLoginMethod".into(), serde_json::Value::Null);
+            }
+        } else {
+            view.last_login_method = None;
+        }
+        view
     }
 
     pub fn session_view(&self, session: &impl AuthSession) -> crate::wire::SessionView {
         let mut view = crate::wire::SessionView::from(session);
+        if self.feature_enabled("admin.enabled") {
+            if view.impersonated_by.is_none() {
+                _ = view
+                    .extension_fields
+                    .insert("impersonatedBy".into(), serde_json::Value::Null);
+            }
+        } else {
+            view.impersonated_by = None;
+        }
+        if self.feature_enabled("organization.enabled") {
+            if view.active_organization_id.is_none() {
+                _ = view
+                    .extension_fields
+                    .insert("activeOrganizationId".into(), serde_json::Value::Null);
+            }
+        } else {
+            view.active_organization_id = None;
+        }
+
         if self.feature_enabled("organization.teams.enabled") {
             if view.active_team_id.is_none() {
                 _ = view
@@ -396,7 +483,7 @@ impl<S: AuthSchema> AuthContext<S> {
             && let Some(session) = session_manager.get_session(&token).await?
             && let Some(user) = self.database.get_user_by_id(&session.user_id()).await?
         {
-            return Ok((user, crate::wire::SessionView::from(&session)));
+            return Ok((user, self.session_view(&session)));
         }
 
         Err(AuthError::Unauthenticated)
@@ -501,7 +588,10 @@ mod tests {
         let mut req = AuthRequest::new(HttpMethod::Get, "/test");
         let _ = req.headers.insert(
             "cookie".into(),
-            format!("better-auth.session_token={}", session.token()),
+            format!(
+                "better-auth.session_token={}",
+                crate::utils::cookie_utils::sign_cookie_value(session.token(), &config.secret)
+            ),
         );
 
         let (found_user, _found_session) = ctx.require_session(&req).await.unwrap();

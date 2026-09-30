@@ -627,9 +627,16 @@ async fn test_contract_signout_response_shape() {
 
     // Sign out
     let mut req = AuthRequest::new(HttpMethod::Post, "/sign-out");
-    let _ = req
+    let _ = req.headers.insert(
+        "cookie".to_string(),
+        format!(
+            "better-auth.session_token={}",
+            better_auth_core::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
+        ),
+    );
+    _ = req
         .headers
-        .insert("authorization".to_string(), format!("Bearer {}", token));
+        .insert("origin".to_string(), "http://localhost:3000".to_string());
     let resp = auth
         .handle_request(req)
         .await
@@ -638,6 +645,7 @@ async fn test_contract_signout_response_shape() {
     assert_eq!(resp.status, 200);
     let body: Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(body["success"], true);
+    assert!(auth.store().get_session(token).await.unwrap().is_none());
 }
 
 /// Error responses must have { "message": "..." } shape

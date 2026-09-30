@@ -319,7 +319,10 @@ pub(crate) async fn list_user_sessions_core(
     let session_manager = ctx.session_manager();
     let sessions = session_manager.list_user_sessions(&body.user_id).await?;
     Ok(ListSessionsResponse {
-        sessions: sessions.iter().map(SessionView::from).collect(),
+        sessions: sessions
+            .iter()
+            .map(|session| ctx.session_view(session))
+            .collect(),
     })
 }
 
@@ -454,8 +457,8 @@ pub(crate) async fn impersonate_user_core(
     let session = ctx.database.create_session(create_session).await?;
     let token = session.token().to_string();
     let response = SessionUserResponse {
-        session: SessionView::from(&session),
-        user: UserView::from(&target),
+        session: ctx.session_view(&session),
+        user: ctx.user_view(&target),
     };
 
     Ok((response, token))
@@ -493,8 +496,8 @@ pub(crate) async fn stop_impersonating_core(
 
     let token = admin_session.token().to_string();
     let response = SessionUserResponse {
-        session: SessionView::from(&admin_session),
-        user: UserView::from(&admin_user),
+        session: ctx.session_view(&admin_session),
+        user: ctx.user_view(&admin_user),
     };
 
     Ok((response, token))

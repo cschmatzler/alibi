@@ -1,6 +1,6 @@
 use better_auth_core::entity::AuthUser;
 use better_auth_core::store::ConsumeApiKeyResult;
-use better_auth_core::wire::{ApiKeyView, SessionView, UserView};
+use better_auth_core::wire::{ApiKeyView, SessionView};
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, BeforeRequestAction,
 };
@@ -263,7 +263,7 @@ impl ApiKeyPlugin {
             return Ok(Some(BeforeRequestAction::Respond(AuthResponse::json(
                 200,
                 &serde_json::json!({
-                    "user": UserView::from(&user),
+                    "user": ctx.user_view(&user),
                     "session": {
                         "id": session.id,
                         "token": session.token,

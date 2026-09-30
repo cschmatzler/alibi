@@ -317,37 +317,6 @@ pub struct CurrentSession<T: AuthSchema> {
 #[derive(Debug, Clone)]
 pub struct OptionalSession<T: AuthSchema>(pub Option<CurrentSession<T>>);
 
-/// Extract a session token from the request parts.
-///
-/// Checks the `Authorization: Bearer <token>` header first, then falls
-/// back to the configured session cookie.
-#[cfg(feature = "axum")]
-fn extract_token_from_parts(parts: &Parts, cookie_name: &str) -> Option<String> {
-    // Try Bearer token first
-    if let Some(auth_header) = parts.headers.get("authorization")
-        && let Ok(auth_str) = auth_header.to_str()
-        && let Some(token) = auth_str.strip_prefix("Bearer ")
-    {
-        return Some(token.to_string());
-    }
-
-    // Fall back to cookie
-    if let Some(cookie_header) = parts.headers.get("cookie")
-        && let Ok(cookie_str) = cookie_header.to_str()
-    {
-        for part in cookie_str.split(';') {
-            let part = part.trim();
-            if let Some(value) = part.strip_prefix(&format!("{}=", cookie_name))
-                && !value.is_empty()
-            {
-                return Some(value.to_string());
-            }
-        }
-    }
-
-    None
-}
-
 #[cfg(feature = "axum")]
 impl<S, T> FromRequestParts<S> for CurrentSession<T>
 where
@@ -359,12 +328,19 @@ where
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let auth = Arc::<BetterAuth<T>>::from_ref(state);
-        let cookie_name = &auth.config().session.cookie_name;
-        let token = extract_token_from_parts(parts, cookie_name)
+        let mut request = AuthRequest::new(HttpMethod::Get, parts.uri.path());
+        for (name, value) in &parts.headers {
+            if let Ok(value) = value.to_str() {
+                _ = request.headers.insert(name.to_string(), value.to_string());
+            }
+        }
+        let token = auth
+            .session_manager()
+            .extract_session_token(&request)
             .ok_or_else(|| AuthError::Unauthenticated.into_response())?;
 
         let session = auth
-            .store()
+            .session_manager()
             .get_session(&token)
             .await
             .map_err(IntoResponse::into_response)?

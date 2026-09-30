@@ -68,6 +68,10 @@ async function getControl(baseURL: string, path: string, params: Record<string, 
   return response.json().catch(() => null);
 }
 
+export async function readUserState(baseURL: string, args: { userId: string }): Promise<unknown> {
+  return getControl(baseURL, "/__test/user-state", args);
+}
+
 export async function resetServerState(baseURL: string) {
   return postControl(baseURL, "/__test/reset-state", {});
 }

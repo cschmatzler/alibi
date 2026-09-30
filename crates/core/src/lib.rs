@@ -58,7 +58,9 @@ pub use middleware::{
     EndpointRateLimit, Middleware, RateLimitConfig, RateLimitMiddleware,
 };
 pub use openapi::{OpenApiBuilder, OpenApiInfo, OpenApiOperation, OpenApiResponse, OpenApiSpec};
-pub use plugin::{AuthContext, AuthInitContext, AuthPlugin, AuthRoute, BeforeRequestAction};
+pub use plugin::{
+    AuthContext, AuthInitContext, AuthPlugin, AuthRoute, BeforeRequestAction, ContextExtensions,
+};
 pub use schema::AuthSchema;
 pub use session::SessionManager;
 pub use store::{

@@ -449,7 +449,7 @@
         "success": "change email for a verified user requires old-email confirmation first",
         "rejection": "verify email rejects untrusted callbackURL",
         "authorization": "verify email rejects untrusted callbackURL",
-        "state": null
+        "state": "required email verification issues proof without a session and gates sign-in until verification"
       }
     },
     {

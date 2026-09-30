@@ -87,7 +87,16 @@ fn create_auth_request(
 ) -> AuthRequest {
     let mut headers = HashMap::new();
     if let Some(token) = token {
-        headers.insert("authorization".to_string(), format!("Bearer {}", token));
+        headers.insert(
+            "cookie".to_string(),
+            format!(
+                "better-auth.session_token={}",
+                better_auth_core::utils::cookie_utils::sign_cookie_value(
+                    token,
+                    &crate::plugins::test_helpers::create_test_config().secret
+                )
+            ),
+        );
     }
 
     AuthRequest::from_parts(

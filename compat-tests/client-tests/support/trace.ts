@@ -45,7 +45,7 @@ export function createTracingFetch(baseURL: string, actor: string, traces: Trace
   const origin = new URL(baseURL);
   return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const target = new URL(input instanceof Request ? input.url : input, baseURL);
-    if (target.origin === origin.origin && target.pathname.startsWith("/api/auth/")) {
+    if (authPath !== "/api/auth" && target.origin === origin.origin && target.pathname.startsWith("/api/auth/")) {
       target.pathname = `${authPath}${target.pathname.slice("/api/auth".length)}`;
     }
     const supplied = input instanceof Request ? new Request(input, init) : undefined;

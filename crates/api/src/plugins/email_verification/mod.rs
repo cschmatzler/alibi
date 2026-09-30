@@ -43,15 +43,19 @@ pub struct EmailVerificationPlugin {
     config: EmailVerificationConfig,
 }
 
-#[derive(better_auth_core::PluginConfig)]
+#[derive(Clone, better_auth_core::PluginConfig)]
 #[plugin(name = "EmailVerificationPlugin")]
 pub struct EmailVerificationConfig {
-    /// How long a verification token stays valid. Default: 24 hours.
-    #[config(default = Duration::hours(24))]
+    /// How long a verification token stays valid. Default: one hour.
+    #[config(default = Duration::hours(1))]
     pub verification_token_expiry: Duration,
     /// Whether to send email notifications (on sign-up). Default: true.
     #[config(default = true)]
     pub send_email_notifications: bool,
+    /// Send the verification challenge during password sign-up. When unset,
+    /// the email/password requirement decides, as in the upstream defaults.
+    #[config(default = None)]
+    pub send_on_sign_up: Option<bool>,
     /// Whether email verification is required before sign-in. Default: false.
     #[config(default = false)]
     pub require_verification_for_signin: bool,
@@ -88,6 +92,39 @@ impl EmailVerificationPlugin {
     }
 }
 
+/// Password registration emits verification before creating its session.
+pub(crate) async fn send_signup_verification<S: better_auth_core::AuthSchema>(
+    user: &S::User,
+    callback_url: Option<&str>,
+    required: bool,
+    ctx: &AuthContext<S>,
+) -> AuthResult<()> {
+    let config = ctx.extensions.get::<EmailVerificationConfig>();
+    let Some(config) = config else {
+        return Ok(());
+    };
+    if !config.send_on_sign_up.unwrap_or(required) {
+        return Ok(());
+    }
+    let user = ctx.user_view(user);
+    let Some(sender) = &config.send_verification_email else {
+        return Ok(());
+    };
+    let Some(email) = user.email.as_deref() else {
+        return Ok(());
+    };
+    let token = token::create_email_verification_token(
+        &ctx.config.secret,
+        email,
+        None,
+        config.verification_token_expiry,
+        None,
+    )?;
+    let url = handlers::verification_url(&ctx.config, &token, callback_url);
+    super::authentication_helpers::run_notification(sender.send(&user, &url, &token)).await;
+    Ok(())
+}
+
 better_auth_core::impl_auth_plugin! {
     EmailVerificationPlugin, "email-verification";
     routes {
@@ -95,6 +132,11 @@ better_auth_core::impl_auth_plugin! {
         get "/verify-email" => handle_verify_email, "verify_email";
     }
     extra {
+        async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
+            ctx.extensions.insert(self.config.clone());
+            Ok(())
+        }
+
         async fn on_user_created(&self, user: &S::User, ctx: &AuthContext<S>) -> AuthResult<()> {
             // Send verification email for new users if configured.
             // Also fire when a custom sender is set, even if send_email_notifications is false.
@@ -126,11 +168,11 @@ impl EmailVerificationPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: SendVerificationEmailRequest = match better_auth_core::validate_request_body(req)
-        {
-            Ok(v) => v,
-            Err(resp) => return Ok(resp),
-        };
+        let body: SendVerificationEmailRequest =
+            match super::authentication_helpers::parse_body(req) {
+                Ok(v) => v,
+                Err(resp) => return Ok(resp),
+            };
         let current_user = ctx.require_session(req).await.ok().map(|(user, _)| user);
         let response =
             send_verification_email_core(&body, current_user.as_ref(), &self.config, ctx).await?;
@@ -142,11 +184,16 @@ impl EmailVerificationPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let token = req
+        let token = req.query.get("token").ok_or(AuthError::Upstream {
+            status: 400,
+            code: "VALIDATION_ERROR",
+            message: "[query.token] Invalid input: expected string, received undefined",
+        })?;
+        let callback_url = req
             .query
-            .get("token")
-            .ok_or_else(|| AuthError::bad_request("Verification token is required"))?;
-        let callback_url = req.query.get("callbackURL").cloned();
+            .get("callbackURL")
+            .filter(|url| !url.is_empty())
+            .cloned();
 
         // Validate callbackURL against trusted origins, matching the TS
         // `originCheck` middleware applied to the verify-email endpoint.
@@ -223,20 +270,18 @@ impl EmailVerificationPlugin {
             self.config.verification_token_expiry,
             None,
         )?;
-        let callback_url = callback_url.unwrap_or("/");
-        let verification_url = format!(
-            "{}/verify-email?token={}&callbackURL={}",
-            ctx.config.base_url,
-            verification_token,
-            urlencoding::encode(callback_url),
-        );
+        let verification_url =
+            handlers::verification_url(&ctx.config, &verification_token, callback_url);
 
         // Use custom sender if configured, otherwise fall back to EmailProvider
         if let Some(ref custom_sender) = self.config.send_verification_email {
-            let user = UserView::from(user);
-            custom_sender
-                .send(&user, &verification_url, &verification_token)
-                .await?;
+            let user = ctx.user_view(user);
+            super::authentication_helpers::run_notification(custom_sender.send(
+                &user,
+                &verification_url,
+                &verification_token,
+            ))
+            .await;
         } else if self.config.send_email_notifications {
             // Gracefully skip if no email provider is configured
             if ctx.email_provider.is_some() {
@@ -248,9 +293,10 @@ impl EmailVerificationPlugin {
                 );
                 let text = format!("Verify your email address: {}", verification_url);
 
-                ctx.email_provider()?
-                    .send(email, subject, &html, &text)
-                    .await?;
+                super::authentication_helpers::run_notification(
+                    ctx.email_provider()?.send(email, subject, &html, &text),
+                )
+                .await;
             } else {
                 tracing::warn!(
                     email = %email,

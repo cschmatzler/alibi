@@ -280,6 +280,12 @@ fn mock_oauth_plugin() -> OAuthPlugin {
         },
     )
 }
+fn test_session_cookie(token: &str) -> String {
+    format!(
+        "better-auth.session_token={}",
+        better_auth_core::utils::cookie_utils::sign_cookie_value(token, &test_secret())
+    )
+}
 
 async fn test_database() -> DatabaseConnection {
     ensure_local_proxy_bypass();
@@ -386,7 +392,7 @@ pub fn get_with_auth(path: &str, token: &str) -> AuthRequest {
     let mut req = AuthRequest::new(HttpMethod::Get, path);
     let _ = req
         .headers
-        .insert("authorization".to_string(), format!("Bearer {}", token));
+        .insert("cookie".to_string(), test_session_cookie(&token));
     let _ = req
         .headers
         .insert("origin".to_string(), "http://localhost:3000".to_string());
@@ -397,7 +403,7 @@ pub fn get_with_auth_and_query(path: &str, token: &str, query: Vec<(&str, &str)>
     let mut req = AuthRequest::new(HttpMethod::Get, path);
     let _ = req
         .headers
-        .insert("authorization".to_string(), format!("Bearer {}", token));
+        .insert("cookie".to_string(), test_session_cookie(&token));
     let _ = req
         .headers
         .insert("origin".to_string(), "http://localhost:3000".to_string());
@@ -411,7 +417,7 @@ pub fn post_json_with_auth(path: &str, body: Value, token: &str) -> AuthRequest 
     let mut req = post_json(path, body);
     let _ = req
         .headers
-        .insert("authorization".to_string(), format!("Bearer {}", token));
+        .insert("cookie".to_string(), test_session_cookie(&token));
     req
 }
 
@@ -419,7 +425,7 @@ pub fn delete_with_auth(path: &str, token: &str) -> AuthRequest {
     let mut req = AuthRequest::new(HttpMethod::Delete, path);
     let _ = req
         .headers
-        .insert("authorization".to_string(), format!("Bearer {}", token));
+        .insert("cookie".to_string(), test_session_cookie(&token));
     let _ = req
         .headers
         .insert("origin".to_string(), "http://localhost:3000".to_string());
@@ -435,7 +441,7 @@ pub fn post_with_auth(path: &str, token: &str) -> AuthRequest {
     req.body = Some(b"{}".to_vec());
     let _ = req
         .headers
-        .insert("authorization".to_string(), format!("Bearer {}", token));
+        .insert("cookie".to_string(), test_session_cookie(&token));
     let _ = req
         .headers
         .insert("origin".to_string(), "http://localhost:3000".to_string());
@@ -669,7 +675,7 @@ impl TestHarness {
     /// `integration_tests.rs` conventions (EmailPassword, SessionManagement,
     /// PasswordManagement, AccountManagement, ApiKey).
     pub async fn minimal() -> Self {
-        let config = AuthConfig::new("test-secret-key-that-is-at-least-32-characters-long")
+        let config = test_config()
             .base_url("http://localhost:3000")
             .password_min_length(6);
         let store = test_store(&config).await;

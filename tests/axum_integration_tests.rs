@@ -32,6 +32,16 @@ impl FromRef<AppState> for Arc<BetterAuth<TestSchema>> {
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
+fn test_session_cookie(token: &str) -> String {
+    format!(
+        "better-auth.session_token={}",
+        better_auth_core::utils::cookie_utils::sign_cookie_value(
+            token,
+            "test-secret-key-that-is-at-least-32-characters-long"
+        )
+    )
+}
+
 /// Helper to create test BetterAuth instance with all plugins
 async fn test_database() -> DatabaseConnection {
     let database = Database::connect("sqlite::memory:").await.unwrap();
@@ -252,7 +262,8 @@ async fn test_axum_current_session_extractor() {
     let request = Request::builder()
         .method(Method::GET)
         .uri("/current-session")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .body(Body::empty())
         .unwrap();
 
@@ -268,6 +279,72 @@ async fn test_axum_current_session_extractor() {
     assert_eq!(response_data["userId"], user_data["user"]["id"]);
 }
 
+// Rust-specific surface: CurrentSession must enforce the shared session boundary.
+// The framework extractor uses the same signed-cookie and expiry boundaries
+// as the authentication runtime, including the first duplicate cookie.
+#[tokio::test]
+async fn test_axum_extractor_rejects_forged_unsigned_and_expired_sessions() {
+    let auth = create_test_auth().await;
+    let router = create_extractor_test_router(auth.clone());
+    let (_, token) = create_test_user(router.clone()).await;
+    let valid = test_session_cookie(&token);
+    for (cookie, bearer, expected) in [
+        (None, Some(token.as_str()), StatusCode::UNAUTHORIZED),
+        (
+            Some(format!("better-auth.session_token={token}")),
+            None,
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            Some(format!("better-auth.session_token={token}.forged")),
+            Some(token.as_str()),
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            Some(format!("better-auth.session_token=invalid; {valid}")),
+            None,
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            Some(format!("{valid}; better-auth.session_token=invalid")),
+            None,
+            StatusCode::OK,
+        ),
+        (Some(valid.clone()), Some("different-token"), StatusCode::OK),
+    ] {
+        let mut request = Request::builder()
+            .method(Method::GET)
+            .uri("/current-session");
+        if let Some(cookie) = cookie {
+            request = request.header("cookie", cookie);
+        }
+        if let Some(bearer) = bearer {
+            request = request.header("authorization", format!("Bearer {bearer}"));
+        }
+        let response = router
+            .clone()
+            .oneshot(request.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+    }
+    assert!(auth.store().get_session(&token).await.unwrap().is_some());
+    auth.store()
+        .update_session_expiry(&token, chrono::Utc::now() - chrono::Duration::seconds(1))
+        .await
+        .unwrap();
+    let request = Request::builder()
+        .uri("/current-session")
+        .header("cookie", valid)
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(
+        router.oneshot(request).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert!(auth.store().get_session(&token).await.unwrap().is_none());
+}
+
 // Rust-specific surface: `CurrentSession` must work with app state that
 // exposes `Arc<BetterAuth>` via `FromRef`, without wrapper extractors.
 #[tokio::test]
@@ -280,7 +357,8 @@ async fn test_axum_current_session_extractor_with_app_state() {
     let request = Request::builder()
         .method(Method::GET)
         .uri("/current-session")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .body(Body::empty())
         .unwrap();
 
@@ -439,7 +517,8 @@ async fn test_axum_get_session() {
     let request = Request::builder()
         .method(Method::GET)
         .uri("/auth/get-session")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .body(Body::empty())
         .unwrap();
 
@@ -468,7 +547,8 @@ async fn test_axum_list_sessions() {
     let request = Request::builder()
         .method(Method::GET)
         .uri("/auth/list-sessions")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .body(Body::empty())
         .unwrap();
 
@@ -496,7 +576,8 @@ async fn test_axum_sign_out() {
     let request = Request::builder()
         .method(Method::POST)
         .uri("/auth/sign-out")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
@@ -562,7 +643,8 @@ async fn test_axum_change_password() {
     let request = Request::builder()
         .method(Method::POST)
         .uri("/auth/change-password")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .header("content-type", "application/json")
         .body(Body::from(change_data.to_string()))
         .unwrap();
@@ -597,7 +679,8 @@ async fn test_axum_change_password_with_revocation() {
     let request = Request::builder()
         .method(Method::POST)
         .uri("/auth/change-password")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .header("content-type", "application/json")
         .body(Body::from(change_data.to_string()))
         .unwrap();
@@ -816,7 +899,8 @@ async fn test_axum_session_revocation_flow() {
     let request = Request::builder()
         .method(Method::GET)
         .uri("/auth/list-sessions")
-        .header("authorization", format!("Bearer {}", token1))
+        .header("cookie", test_session_cookie(&token1))
+        .header("origin", "http://localhost:3000")
         .body(Body::empty())
         .unwrap();
 
@@ -837,7 +921,8 @@ async fn test_axum_session_revocation_flow() {
     let request = Request::builder()
         .method(Method::POST)
         .uri("/auth/revoke-session")
-        .header("authorization", format!("Bearer {}", token1))
+        .header("cookie", test_session_cookie(&token1))
+        .header("origin", "http://localhost:3000")
         .header("content-type", "application/json")
         .body(Body::from(revoke_data.to_string()))
         .unwrap();
@@ -855,7 +940,8 @@ async fn test_axum_session_revocation_flow() {
     let request = Request::builder()
         .method(Method::GET)
         .uri("/auth/get-session")
-        .header("authorization", format!("Bearer {}", token2))
+        .header("cookie", test_session_cookie(&token2))
+        .header("origin", "http://localhost:3000")
         .body(Body::empty())
         .unwrap();
 
@@ -876,7 +962,8 @@ async fn test_axum_revoke_all_sessions() {
     let request = Request::builder()
         .method(Method::POST)
         .uri("/auth/revoke-sessions")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
@@ -894,7 +981,8 @@ async fn test_axum_revoke_all_sessions() {
     let request = Request::builder()
         .method(Method::GET)
         .uri("/auth/get-session")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .body(Body::empty())
         .unwrap();
 
@@ -1011,7 +1099,8 @@ async fn test_axum_signout_clears_cookie() {
     let request = Request::builder()
         .method(Method::POST)
         .uri("/auth/sign-out")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
@@ -1078,7 +1167,8 @@ async fn test_axum_update_user() {
     let request = Request::builder()
         .method(Method::POST)
         .uri("/auth/update-user")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .header("content-type", "application/json")
         .body(Body::from(update_data.to_string()))
         .unwrap();
@@ -1128,7 +1218,8 @@ async fn test_axum_update_user_invalid_json() {
     let request = Request::builder()
         .method(Method::POST)
         .uri("/auth/update-user")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .header("content-type", "application/json")
         .body(Body::from("invalid json"))
         .unwrap();
@@ -1149,7 +1240,8 @@ async fn test_axum_delete_user() {
     let request = Request::builder()
         .method(Method::POST)
         .uri("/auth/delete-user")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
@@ -1197,7 +1289,8 @@ async fn test_axum_delete_user_invalidates_sessions() {
     let delete_request = Request::builder()
         .method(Method::POST)
         .uri("/auth/delete-user")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
@@ -1209,7 +1302,8 @@ async fn test_axum_delete_user_invalidates_sessions() {
     let session_request = Request::builder()
         .method(Method::GET)
         .uri("/auth/get-session")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .body(Body::empty())
         .unwrap();
 
@@ -1236,7 +1330,8 @@ async fn test_axum_user_profile_workflow() {
     let request1 = Request::builder()
         .method(Method::POST)
         .uri("/auth/update-user")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .header("content-type", "application/json")
         .body(Body::from(update1_data.to_string()))
         .unwrap();
@@ -1253,7 +1348,8 @@ async fn test_axum_user_profile_workflow() {
     let request2 = Request::builder()
         .method(Method::POST)
         .uri("/auth/update-user")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .header("content-type", "application/json")
         .body(Body::from(update2_data.to_string()))
         .unwrap();
@@ -1273,7 +1369,8 @@ async fn test_axum_user_profile_workflow() {
     let session_request = Request::builder()
         .method(Method::GET)
         .uri("/auth/get-session")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .body(Body::empty())
         .unwrap();
 
@@ -1292,7 +1389,8 @@ async fn test_axum_user_profile_workflow() {
     let delete_request = Request::builder()
         .method(Method::POST)
         .uri("/auth/delete-user")
-        .header("authorization", format!("Bearer {}", token))
+        .header("cookie", test_session_cookie(&token))
+        .header("origin", "http://localhost:3000")
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
@@ -1357,7 +1455,8 @@ async fn test_axum_complete_workflow() {
     let request = Request::builder()
         .method(Method::GET)
         .uri("/auth/get-session")
-        .header("authorization", format!("Bearer {}", signin_token))
+        .header("cookie", test_session_cookie(&signin_token))
+        .header("origin", "http://localhost:3000")
         .body(Body::empty())
         .unwrap();
 
@@ -1368,7 +1467,8 @@ async fn test_axum_complete_workflow() {
     let request = Request::builder()
         .method(Method::GET)
         .uri("/auth/list-sessions")
-        .header("authorization", format!("Bearer {}", signin_token))
+        .header("cookie", test_session_cookie(&signin_token))
+        .header("origin", "http://localhost:3000")
         .body(Body::empty())
         .unwrap();
 
@@ -1391,7 +1491,8 @@ async fn test_axum_complete_workflow() {
     let request = Request::builder()
         .method(Method::POST)
         .uri("/auth/change-password")
-        .header("authorization", format!("Bearer {}", signin_token))
+        .header("cookie", test_session_cookie(&signin_token))
+        .header("origin", "http://localhost:3000")
         .header("content-type", "application/json")
         .body(Body::from(change_data.to_string()))
         .unwrap();
@@ -1403,7 +1504,8 @@ async fn test_axum_complete_workflow() {
     let request = Request::builder()
         .method(Method::POST)
         .uri("/auth/sign-out")
-        .header("authorization", format!("Bearer {}", signin_token))
+        .header("cookie", test_session_cookie(&signin_token))
+        .header("origin", "http://localhost:3000")
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
@@ -1415,7 +1517,8 @@ async fn test_axum_complete_workflow() {
     let request = Request::builder()
         .method(Method::GET)
         .uri("/auth/get-session")
-        .header("authorization", format!("Bearer {}", signin_token))
+        .header("cookie", test_session_cookie(&signin_token))
+        .header("origin", "http://localhost:3000")
         .body(Body::empty())
         .unwrap();
 

@@ -1,6 +1,7 @@
 pub mod account_management;
 pub mod admin;
 pub mod api_key;
+pub(crate) mod authentication_helpers;
 pub mod device_authorization;
 pub mod email_password;
 pub mod email_verification;
@@ -124,7 +125,15 @@ pub(crate) mod test_helpers {
     ) -> AuthRequest {
         let mut headers = HashMap::new();
         if let Some(token) = token {
-            headers.insert("authorization".to_string(), format!("Bearer {}", token));
+            let config = create_test_config();
+            headers.insert(
+                "cookie".to_string(),
+                format!(
+                    "{}={}",
+                    config.session.cookie_name,
+                    better_auth_core::utils::cookie_utils::sign_cookie_value(token, &config.secret)
+                ),
+            );
         }
 
         AuthRequest::from_parts(method, path.to_string(), headers, body, query)

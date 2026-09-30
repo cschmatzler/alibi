@@ -572,6 +572,16 @@ mod verification {
 
 pub struct LegacySchema;
 
+fn test_session_cookie(token: &str) -> String {
+    format!(
+        "better-auth.session_token={}",
+        better_auth_core::utils::cookie_utils::sign_cookie_value(
+            token,
+            "test-secret-key-that-is-at-least-32-characters-long"
+        )
+    )
+}
+
 #[tokio::test]
 async fn numeric_user_schema_cleans_team_memberships_without_a_bundled_user_foreign_key()
 -> Result<(), Box<dyn std::error::Error>> {
@@ -721,7 +731,9 @@ fn auth_request(method: HttpMethod, path: &str, token: &str) -> AuthRequest {
     let mut req = AuthRequest::new(method, path);
     let _ = req
         .headers
-        .insert("authorization".to_string(), format!("Bearer {token}"));
+        .insert("cookie".to_string(), test_session_cookie(token));
+    req.headers
+        .insert("origin".to_string(), "http://localhost:3000".to_string());
     req
 }
 
