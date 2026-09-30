@@ -33,18 +33,23 @@ callback authorization before consumption, one-use sessions, expiry, disabled
 signup, account promotion/revocation, custom generation/storage, concurrent
 consumption, strict body validation and delivery-error retention.
 
-Five default-configuration SDK scenarios pass against both actual fixtures.
+All seven default and configuration SDK scenarios pass against both actual
+fixtures with 176 assertions.
 The new-user lifecycle scenario fails on the pre-feature fixture at the
-expected missing route before repair. Two additional hashed/disabled signup
-configuration scenarios currently expose the shared raw-persistence difference:
-upstream stores null twoFactorEnabled when its plugin is absent; the earlier
-Rust bundled entity stores false. This difference remains compared and blocks
-the gate until the nullable/plugin-default prerequisite is integrated.
+expected missing route before repair. The initial two hashed/disabled signup
+configuration failures exposed a real raw-persistence difference: upstream
+stores null twoFactorEnabled when its plugin is absent, while the earlier Rust
+bundled entity stored false. The integrated nullable/plugin-default prerequisite
+repairs storage and per-auth creation defaults; the trusted state inspector
+preserves the actual optional value. No comparison exception was added.
 
 The official SDK is used for issuance and JSON consumption; actual delivered
 URLs exercise redirect flows. Assertions inspect real users, accounts,
 sessions and verification rows. TypeScript checking and the excluded Rust
-fixture build pass. Full canonical validation and measured coverage remain
+fixture build, focused production Clippy and formatting pass. The two magic-link
+inventory entries require the actual successful flow, malformed-input rejection,
+applicable callback authorization and persisted state evidence. All other
+committed requirements remain unchanged. Full canonical validation and measured coverage remain
 serialized with the coordinator after dependency integration.
 
 ## Explicit audit boundaries

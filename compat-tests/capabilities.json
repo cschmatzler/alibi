@@ -158,12 +158,12 @@
     {
       "route": "GET /magic-link/verify",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "magic links deliver metadata and authenticate a new user with one-time consumption",
+        "rejection": "magic links reject malformed bodies callbacks and missing query tokens before consumption",
+        "authorization": "magic-link redirect validates origin before consuming and chooses the new-user callback",
+        "state": "magic links deliver metadata and authenticate a new user with one-time consumption"
       }
     },
     {
@@ -1346,12 +1346,12 @@
     {
       "route": "POST /sign-in/magic-link",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "magic links deliver metadata and authenticate a new user with one-time consumption",
+        "rejection": "magic links reject malformed bodies callbacks and missing query tokens before consumption",
         "authorization": null,
-        "state": null
+        "state": "magic links deliver metadata and authenticate a new user with one-time consumption"
       }
     },
     {
