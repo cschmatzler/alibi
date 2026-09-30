@@ -254,7 +254,22 @@ static PLUGINS: &[PluginSchema] = &[
         name: "two-factor",
         user_fields: &[f!("two_factor_enabled", "Option<bool>")],
         session_fields: &[],
-        extra_entities: &[],
+        extra_entities: &[ExtraEntitySchema {
+            mod_name: "two_factor",
+            table_name: "two_factor",
+            role: None,
+            fields: &[
+                pk!("id", "String"),
+                f!("secret", "String"),
+                f!("backup_codes", "String"),
+                f!("user_id", "String"),
+                f!("verified", "Option<bool>"),
+                f!("failed_verification_count", "Option<f64>"),
+                f!("locked_until", "Option<DateTimeUtc>"),
+                f!("created_at", "DateTimeUtc"),
+                f!("updated_at", "DateTimeUtc"),
+            ],
+        }],
     },
     PluginSchema {
         name: "device-authorization",

@@ -25,6 +25,7 @@ impl MigratorTrait for AuthMigrator {
             Box::new(super::device_code_user_reference::DeviceCodeUserReference),
             Box::new(super::siwe_wallets::SiweWallets),
             Box::new(super::two_factor_user_reference::TwoFactorUserReference),
+            Box::new(super::two_factor_verification_policy::TwoFactorVerificationPolicy),
         ]
     }
 

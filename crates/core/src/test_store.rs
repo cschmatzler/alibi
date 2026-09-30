@@ -743,6 +743,44 @@ impl TwoFactorStore for MemoryStore {
     }
 }
 
+#[cfg(test)]
+mod factor_extension_contract_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn unsupported_factor_security_extensions_fail_closed() {
+        let store = MemoryStore::default();
+        let now = chrono::Utc::now();
+        let errors = [
+            store
+                .update_two_factor("factor", crate::UpdateTwoFactor::default())
+                .await
+                .unwrap_err(),
+            store
+                .increment_two_factor_failure("factor")
+                .await
+                .unwrap_err(),
+            store
+                .set_two_factor_lock_if_count_at_least("factor", 0.0, now)
+                .await
+                .unwrap_err(),
+            store
+                .clear_expired_two_factor_lock("factor", now)
+                .await
+                .unwrap_err(),
+            store.reset_two_factor_failures("factor").await.unwrap_err(),
+            store
+                .compare_and_swap_two_factor_backup_codes("factor", "old", "new")
+                .await
+                .unwrap_err(),
+        ];
+        for error in errors {
+            assert!(matches!(error, AuthError::NotImplemented(_)));
+            assert_eq!(error.status_code(), 501);
+        }
+    }
+}
+
 #[async_trait]
 impl ApiKeyStore for MemoryStore {
     async fn create_api_key(&self, _input: CreateApiKey) -> AuthResult<ApiKey> {

@@ -392,6 +392,7 @@ async fn test_view_backup_codes_returns_decrypted_codes() {
             user_id: user.id.clone(),
             secret: encrypt_value(&ctx.config.secret, "totp-secret").unwrap(),
             backup_codes: encrypted,
+            ..Default::default()
         })
         .await
         .unwrap();
@@ -412,6 +413,7 @@ async fn test_view_backup_codes_rejects_invalid_stored_json() {
             user_id: user.id.clone(),
             secret: encrypt_value(&ctx.config.secret, "totp-secret").unwrap(),
             backup_codes: encrypt_value(&ctx.config.secret, "\"not-an-array\"").unwrap(),
+            ..Default::default()
         })
         .await
         .unwrap();
@@ -476,6 +478,7 @@ async fn disable_preserves_persisted_extensions_and_removes_all_matching_trust_r
             user_id: user.id.clone(),
             secret: "stored-secret".to_owned(),
             backup_codes: "stored-codes".to_owned(),
+            ..Default::default()
         })
         .await
         .unwrap();

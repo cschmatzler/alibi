@@ -8,7 +8,7 @@ Wider pinned parity work follows these priorities. Excluded external integration
 packages will receive no implementation work. Prepared unmerged work remains
 separate from delivered capabilities.
 
-This snapshot describes merged `origin/master` at `05ba854` (through PR #37), plus the reviewed TOTP configuration change,
+This snapshot describes merged `origin/master` at `7896892` (through PR #38), plus the reviewed factor storage prerequisite,
 not the older, dirty coordinator worktree. The reference remains Better Auth
 1.7.6. The [upstream audit](audits/upstream-target.md) records source locations
 and wider boundaries. An audit gap means equivalence has not been established;
@@ -24,7 +24,8 @@ it is not automatically a confirmed defect or wholly missing implementation.
 | Organization invitation listing | Verified HTTP ownership, expired/processed invitations, trusted server-only scope and configured page-limit behavior are proved. | Independent review clear; canonical gate passed with 268 SDK scenarios and 79.25% source coverage. Merged PR #36. |
 | Admin user deletion | Real enrolled-factor flow proves credential/session revocation and rejects unauthorized principals; installed-schema repair preserves two-factor rows. | Independent review clear; canonical gate passed with 265 SDK scenarios and 79.34% source coverage. Merged PR #35. |
 | Organization metadata lookup | Reviewed metadata and session lifecycle implementation passed the canonical gate: 270 SDK scenarios and 79.20% source coverage. | Merged PR #37; input validation, custom fields and callback branches remain separate work. |
-| TOTP configuration | Exact URI/issuer/default/disabled behavior and trusted UTF-8-secret generation passed independent review and the canonical gate: 274 SDK scenarios, 78.97% source coverage. | PR #38 ready; verification/lockout, passwordless, OTP storage and trust policy remain selected work. |
+| Two-factor policy storage | Nullable verification/failure/lock fields and atomic exact-row operations passed the integrated gate: 274 SDK scenarios, 78.96% source coverage. | PR #39 ready; reviewed lockout/enrollment policy follows after its session-cancellation repair. |
+| TOTP configuration | Exact URI/issuer/default/disabled behavior and trusted UTF-8-secret generation passed independent review and the canonical gate: 274 SDK scenarios, 78.97% source coverage. | Merged PR #38; verification/lockout, passwordless, OTP storage and trust policy remain selected work. |
 | OpenAPI and reference page | Frozen generator, source metadata, reference page and complete default/custom-session documents; eleven scenarios / 494 assertions pass. | Complete dependencies, notably update-session, independent review, integration and publication. |
 | One Tap | Frozen implementation with local RSA Google JWKS, configuration and lifecycle evidence. All 14 complete-token official-client scenarios / 664 assertions pass. | Integrate the reviewed narrow comparator repair and shared OAuth prerequisites, complete review/gate and publish. |
 | SIWE | Merged PR #25; full canonical gate passed with 238 SDK scenarios and 78.65% source coverage. | Nonstandard media/legacy-date/custom-storage boundaries are documented, not new selected tasks. |

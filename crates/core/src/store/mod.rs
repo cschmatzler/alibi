@@ -19,7 +19,7 @@ use crate::types::{
     CreateOrganization, CreatePasskey, CreateSession, CreateTwoFactor, CreateUser,
     CreateVerification, DeviceCode, Invitation, InvitationStatus, ListUsersParams, Member,
     Organization, Passkey, TwoFactor, UpdateAccount, UpdateApiKey, UpdateDeviceCode,
-    UpdateOrganization, UpdatePasskeyAuthentication, UpdateUser,
+    UpdateOrganization, UpdatePasskeyAuthentication, UpdateTwoFactor, UpdateUser,
 };
 
 pub use cache::{CacheAdapter, MemoryCacheAdapter};
@@ -353,6 +353,62 @@ pub trait TwoFactorStore: Send + Sync {
         backup_codes: &str,
     ) -> AuthResult<TwoFactor>;
     async fn delete_two_factor(&self, user_id: &str) -> AuthResult<()>;
+    async fn update_two_factor(
+        &self,
+        id: &str,
+        update: UpdateTwoFactor,
+    ) -> AuthResult<Option<TwoFactor>> {
+        let _ = (id, update);
+        Err(AuthError::not_implemented(
+            "Exact factor updates are not supported by this store",
+        ))
+    }
+    /// Atomically increment the stored counter, returning the winning row.
+    /// SQL-backed adapters preserve NULL, matching the pinned Kysely adapter.
+    async fn increment_two_factor_failure(&self, id: &str) -> AuthResult<Option<TwoFactor>> {
+        let _ = id;
+        Err(AuthError::not_implemented(
+            "Atomic factor failure increments are not supported by this store",
+        ))
+    }
+    async fn set_two_factor_lock_if_count_at_least(
+        &self,
+        id: &str,
+        threshold: f64,
+        until: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<TwoFactor>> {
+        let _ = (id, threshold, until);
+        Err(AuthError::not_implemented(
+            "Conditional factor locking is not supported by this store",
+        ))
+    }
+    async fn clear_expired_two_factor_lock(
+        &self,
+        id: &str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<TwoFactor>> {
+        let _ = (id, now);
+        Err(AuthError::not_implemented(
+            "Conditional factor unlocking is not supported by this store",
+        ))
+    }
+    async fn reset_two_factor_failures(&self, id: &str) -> AuthResult<()> {
+        let _ = id;
+        Err(AuthError::not_implemented(
+            "Factor failure reset is not supported by this store",
+        ))
+    }
+    async fn compare_and_swap_two_factor_backup_codes(
+        &self,
+        id: &str,
+        expected: &str,
+        replacement: &str,
+    ) -> AuthResult<bool> {
+        let _ = (id, expected, replacement);
+        Err(AuthError::not_implemented(
+            "Atomic factor backup consumption is not supported by this store",
+        ))
+    }
 }
 
 #[async_trait]
