@@ -73,6 +73,73 @@ async fn default_keys_are_encrypted_and_jwt_claims_signature_and_public_material
 }
 
 #[tokio::test]
+async fn explicit_key_pinning_is_independent_of_the_public_keyring_limit() {
+    use better_auth_seaorm::{Database, SeaOrmStore};
+    let mut config = test_helpers::create_test_config();
+    config.advanced.database.default_find_many_limit = 1;
+    let database = Database::connect("sqlite::memory:").await.unwrap();
+    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        .await
+        .unwrap();
+    let ctx = AuthContext::<TestSchema>::new(
+        Arc::new(config.clone()),
+        Arc::new(SeaOrmStore::<TestSchema>::new(
+            config.clone(),
+            database.clone(),
+        )),
+    );
+    let plugin = JwtPlugin::new();
+    let first = plugin.create_jwk(None, None, &ctx).await.unwrap();
+    let pinned = plugin.create_jwk(None, None, &ctx).await.unwrap();
+    assert_eq!(
+        ctx.database
+            .list_jwks()
+            .await
+            .unwrap()
+            .iter()
+            .map(|key| key.id.as_str())
+            .collect::<Vec<_>>(),
+        vec![first.id.as_str()]
+    );
+    let token = plugin
+        .sign_jwt(
+            payload("pinned-owner"),
+            &JwtSignOptions {
+                signing_key_id: Some(pinned.id.clone()),
+                ..Default::default()
+            },
+            None,
+            &ctx,
+        )
+        .await
+        .expect("explicit key lookup must use findOne rather than a limited public list");
+    assert_eq!(decoded(&token).0["kid"], pinned.id);
+    // Verification intentionally uses findMany and cannot see this key under
+    // the same limit. A full keyring verifies the actual issued signature.
+    assert!(
+        plugin
+            .verify_jwt(&token, None, None, &ctx)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    config.advanced.database.default_find_many_limit = 100;
+    let full = AuthContext::<TestSchema>::new(
+        Arc::new(config.clone()),
+        Arc::new(SeaOrmStore::<TestSchema>::new(config, database)),
+    );
+    assert_eq!(full.database.list_jwks().await.unwrap().len(), 2);
+    assert_eq!(
+        plugin
+            .verify_jwt(&token, None, None, &full)
+            .await
+            .unwrap()
+            .unwrap()["sub"],
+        "pinned-owner"
+    );
+}
+
+#[tokio::test]
 async fn verification_rejects_tampering_wrong_claims_unknown_key_and_algorithm_confusion() {
     let ctx = test_helpers::create_test_context().await;
     let plugin = JwtPlugin::new();

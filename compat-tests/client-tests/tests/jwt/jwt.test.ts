@@ -165,6 +165,8 @@ compatScenario("JWT trusted server operations preserve explicit claims and rejec
   const checked = await verify(explicit.token);
   expect(checked.status).toBe(200);
   expect(z.object({ payload: z.record(z.string(), z.unknown()) }).parse(checked.body).payload).toEqual({ sub: "server-subject", iat: 100, exp: 4102444800, custom: ["a", "b"], iss: ctx.baseURL, aud: ctx.baseURL });
+  const emptyIssuer = await verify(explicit.token, "");
+  expect(emptyIssuer).toEqual(checked);
   const nullish = await sign({ sub: "server-subject", iat: 4102443800.5, exp: null, iss: null, aud: null });
   const nullishChecked = await verify(nullish.token);
   expect(z.object({ payload: z.record(z.string(), z.unknown()) }).parse(nullishChecked.body).payload).toEqual({ sub: "server-subject", iat: 4102443800.5, exp: 4102444700.5, iss: ctx.baseURL, aud: ctx.baseURL });
@@ -205,7 +207,7 @@ compatScenario("JWT trusted server operations preserve explicit claims and rejec
     const body: unknown = responseText.length ? JSON.parse(responseText) : null;
     notPublic.push({ status: response.status, body });
   }
-  return { explicit, checked, nullish, nullishChecked, noIat, noIatChecked, relative, relativeChecked, invalidClaims, rejected, signatureRejected, issuerRejected, notPublic };
+  return { explicit, checked, emptyIssuer, nullish, nullishChecked, noIat, noIatChecked, relative, relativeChecked, invalidClaims, rejected, signatureRejected, issuerRejected, notPublic };
 });
 
 compatScenario("JWT configured issuer audience lifetime and path header branches remain observable", async ctx => {

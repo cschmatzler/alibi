@@ -292,7 +292,13 @@ impl JwtPlugin {
         if self.config.remote_signer.is_some() {
             return Ok(None);
         }
-        let mut keys = self.keys(request, ctx).await?;
+        // Pinned IDs use findOne independently of the adapter's findMany
+        // limit. Custom keyrings supply the raw full set once for this lookup.
+        let mut keys = if options.signing_key_id.is_some() {
+            Vec::new()
+        } else {
+            self.keys(request, ctx).await?
+        };
         keys.sort_by_key(|key| std::cmp::Reverse(key.created_at));
         let primary = self.config.key_pair.algorithm;
         let key_alg = |key: &Jwk| {
@@ -304,7 +310,10 @@ impl JwtPlugin {
         let now = Utc::now();
         let live = |key: &&Jwk| key.expires_at.is_none_or(|expiry| expiry > now);
         let mut key = if let Some(id) = &options.signing_key_id {
-            let key = keys.iter().find(|key| &key.id == id).cloned().ok_or_else(|| AuthError::config(format!("signJWT: signingKeyId \"{id}\" not found in JWKS. The key must be provisioned before it can be referenced.")))?;
+            let key = match &self.config.keyring {
+                Some(_) => self.keys(request, ctx).await?.into_iter().find(|key| &key.id == id),
+                None => ctx.database.get_jwk_by_id(id).await?,
+            }.ok_or_else(|| AuthError::config(format!("signJWT: signingKeyId \"{id}\" not found in JWKS. The key must be provisioned before it can be referenced.")))?;
             if let Some(algorithm) = options.signing_algorithm
                 && key_alg(&key)? != algorithm
             {
@@ -459,6 +468,7 @@ impl JwtPlugin {
     ) -> AuthResult<Option<Map<String, Value>>> {
         let claims = self.config.claims.clone();
         let issuer = issuer
+            .filter(|issuer| !issuer.is_empty())
             .or(claims.issuer.as_deref())
             .unwrap_or(&ctx.config.base_url);
         let audience = claims
