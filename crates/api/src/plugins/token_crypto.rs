@@ -1,11 +1,16 @@
 //! Shared token hashing and the pinned runtime's symmetric persistence encoding.
 
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use better_auth_core::{AuthError, AuthResult};
 use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
     aead::{Aead, AeadCore, KeyInit, OsRng},
 };
 use sha2::{Digest, Sha256};
+
+pub(crate) fn hash_token(token: &str) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(token.as_bytes()))
+}
 
 // Upstream symmetricEncrypt uses SHA256(secret), XChaCha20-Poly1305's managed
 // 24-byte nonce followed by ciphertext/tag, serialized as lowercase hexadecimal.

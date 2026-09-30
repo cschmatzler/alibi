@@ -360,7 +360,9 @@ pub struct Team {
     pub id: String,
     pub name: String,
     pub organization_id: String,
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
+    #[serde(serialize_with = "crate::utils::datetime::serialize_optional")]
     pub updated_at: Option<DateTime<Utc>>,
     #[serde(skip)]
     pub member_count: i64,
@@ -385,6 +387,7 @@ pub struct TeamMember {
     pub id: String,
     pub team_id: String,
     pub user_id: String,
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
     #[serde(skip)]
     pub membership_key: Option<String>,
@@ -407,7 +410,9 @@ pub struct OrganizationRole {
     pub organization_id: String,
     pub role: String,
     pub permission: OrganizationPermissions,
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
+    #[serde(serialize_with = "crate::utils::datetime::serialize_optional")]
     pub updated_at: Option<DateTime<Utc>>,
 }
 

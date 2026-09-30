@@ -30,8 +30,16 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
     fn username(&self) -> Option<&str>;
     fn display_username(&self) -> Option<&str>;
     fn two_factor_enabled(&self) -> bool;
+    /// Persisted plugin state. `None` preserves an absent or unset field.
+    fn two_factor_enabled_value(&self) -> Option<bool> {
+        Some(self.two_factor_enabled())
+    }
     fn role(&self) -> Option<&str>;
     fn banned(&self) -> bool;
+    /// Persisted plugin state. `None` preserves an absent or unset field.
+    fn banned_value(&self) -> Option<bool> {
+        Some(self.banned())
+    }
     fn ban_reason(&self) -> Option<&str>;
     fn ban_expires(&self) -> Option<DateTime<Utc>>;
     fn metadata(&self) -> &serde_json::Value;

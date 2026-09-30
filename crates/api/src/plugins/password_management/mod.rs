@@ -103,6 +103,11 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin
         "password-management"
     }
 
+    async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
+        ctx.extensions.insert(self.config.clone());
+        Ok(())
+    }
+
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
             AuthRoute::post("/request-password-reset", "request_password_reset"),

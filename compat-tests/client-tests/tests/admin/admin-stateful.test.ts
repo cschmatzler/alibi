@@ -1,3 +1,4 @@
+import { expect } from "bun:test";
 import { compatScenario } from "../../support/scenario";
 import { adminActor, signUpAndPromoteAdmin } from "../admin/helpers";
 
@@ -176,7 +177,13 @@ compatScenario("admin impersonation restores the original admin session and hide
   const impersonate = await admin.adminClient.admin.impersonateUser({
     userId: targetId,
   });
+  const persistedImpersonation = await ctx.readUserState({ userId: targetId });
   const impersonatedSession = await admin.client.getSession();
+  expect(impersonatedSession.data?.session.token).toBe(impersonate.data?.session.token);
+  expect(impersonatedSession.data?.session.id).toBe(impersonate.data?.session.id);
+  expect(impersonatedSession.data?.session.expiresAt.getTime()).toBe(impersonate.data?.session.expiresAt.getTime());
+  const persistedAfterRead = await ctx.readUserState({ userId: targetId });
+  expect(persistedAfterRead).toEqual(persistedImpersonation);
 
   const directSignIn = await target.client.signIn.email({
     email: targetEmail,
@@ -195,20 +202,10 @@ compatScenario("admin impersonation restores the original admin session and hide
   });
 
   return {
-    impersonate: {
-      data: {
-        hasImpersonatedBy: Boolean(impersonate.data?.session && "impersonatedBy" in impersonate.data.session && impersonate.data.session.impersonatedBy),
-        user: ctx.snapshot(impersonate.data?.user),
-      },
-      error: ctx.snapshot(impersonate.error),
-    },
-    impersonatedSession: {
-      data: {
-        hasImpersonatedBy: Boolean(impersonatedSession.data?.session?.impersonatedBy),
-        user: ctx.snapshot(impersonatedSession.data?.user),
-      },
-      error: ctx.snapshot(impersonatedSession.error),
-    },
+    impersonate: ctx.snapshot(impersonate),
+    impersonatedSession: ctx.snapshot(impersonatedSession),
+    persistedImpersonation: ctx.snapshot(persistedImpersonation),
+    persistedAfterRead: ctx.snapshot(persistedAfterRead),
     directSignIn: ctx.snapshot(directSignIn),
     listedSessions: ctx.snapshot(listedSessions),
     stopImpersonating: ctx.snapshot(stopImpersonating),

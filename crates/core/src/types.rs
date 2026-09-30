@@ -193,7 +193,11 @@ pub struct CreateUser {
     pub email_verified: Option<bool>,
     pub username: Option<String>,
     pub display_username: Option<String>,
+    /// `None` leaves the two-factor plugin field unset.
+    pub two_factor_enabled: Option<bool>,
     pub role: Option<String>,
+    /// `None` leaves the admin plugin field unset.
+    pub banned: Option<bool>,
     pub metadata: Option<serde_json::Value>,
     pub is_anonymous: Option<bool>,
     pub phone_number: Option<String>,
@@ -290,7 +294,9 @@ impl CreateUser {
             email_verified: None,
             username: None,
             display_username: None,
+            two_factor_enabled: None,
             role: None,
+            banned: None,
             metadata: None,
             is_anonymous: None,
             phone_number: None,

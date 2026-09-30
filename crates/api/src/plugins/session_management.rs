@@ -1,8 +1,6 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use validator::Validate;
 
-use better_auth_core::config::AuthConfig;
 use better_auth_core::entity::{AuthSession, AuthUser};
 use better_auth_core::wire::SessionView;
 use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
@@ -11,7 +9,8 @@ use better_auth_core::{AuthError, AuthResult};
 use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 
 use super::StatusResponse;
-use super::helpers::{admin_plugin_enabled, delete_session_cookie_headers, get_cookie};
+use super::authentication_helpers::{JsonField, RequestBody, parse_body};
+use super::helpers::{admin_plugin_enabled, delete_session_cookie_headers};
 use better_auth_core::SuccessResponse;
 
 /// Session management plugin for handling session operations
@@ -31,16 +30,21 @@ pub struct SessionManagementConfig {
 }
 
 // Request structures for session endpoints
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize)]
 struct RevokeSessionRequest {
-    #[validate(length(min = 1, message = "Token is required"))]
     token: String,
+}
+
+impl RequestBody for RevokeSessionRequest {
+    const FIELDS: &'static [JsonField] = &[JsonField::string("token", true)];
 }
 
 #[derive(Debug, Serialize)]
 struct GetSessionResponse<S: Serialize, U: Serialize> {
     session: S,
     user: U,
+    #[serde(rename = "needsRefresh", skip_serializing_if = "Option::is_none")]
+    needs_refresh: Option<bool>,
 }
 
 #[async_trait]
@@ -69,13 +73,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin 
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
         match (req.method(), req.path()) {
-            (HttpMethod::Get, "/get-session") => Ok(Some(self.handle_get_session(req, ctx).await?)),
-            (HttpMethod::Post, "/get-session") => {
-                if !ctx.config.session.defer_session_refresh {
-                    return Err(AuthError::method_not_allowed(
-                        "POST method requires deferSessionRefresh to be enabled in session config",
-                    ));
-                }
+            (HttpMethod::Get | HttpMethod::Post, "/get-session") => {
                 Ok(Some(self.handle_get_session(req, ctx).await?))
             }
             (HttpMethod::Post, "/sign-out") => Ok(Some(self.handle_sign_out(req, ctx).await?)),
@@ -126,8 +124,7 @@ pub(crate) async fn revoke_session_core(
     token: &str,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<StatusResponse> {
-    let session_manager = ctx.session_manager();
-    if let Some(session_to_revoke) = session_manager.get_session(token).await?
+    if let Some(session_to_revoke) = ctx.database.get_session(token).await?
         && session_to_revoke.user_id() == user.id()
     {
         ctx.database.delete_session(token).await?;
@@ -167,27 +164,109 @@ impl SessionManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        // Returns 200 with null body when unauthenticated (never an error status).
-        match ctx.require_session(req).await {
-            Ok((user, session)) => {
-                let response = GetSessionResponse {
-                    session: ctx.session_view(&session),
-                    user: ctx.user_view(&user),
-                };
-                Ok(AuthResponse::json(200, &response)?)
-            }
-            Err(_) => {
-                let mut response = AuthResponse::json(200, &serde_json::Value::Null)?;
-                if get_cookie(req, &ctx.config.session.cookie_name)
-                    .is_some_and(|value| !value.is_empty())
-                {
-                    for cookie in delete_session_cookie_headers(&ctx.config) {
-                        response.headers.append("Set-Cookie", cookie);
+        let response =
+            if req.method() == &HttpMethod::Post && !ctx.config.session.defer_session_refresh {
+                AuthError::Upstream {
+                status: 405,
+                code: "METHOD_NOT_ALLOWED_DEFER_SESSION_REQUIRED",
+                message: "POST method requires deferSessionRefresh to be enabled in session config",
+            }.to_auth_response()
+            } else {
+                match self.get_session_response(req, ctx).await {
+                    Ok(response) => response,
+                    Err(error @ AuthError::Upstream { .. }) => error.to_auth_response(),
+                    Err(_) => AuthError::Upstream {
+                        status: 500,
+                        code: "FAILED_TO_GET_SESSION",
+                        message: "Failed to get session",
                     }
+                    .to_auth_response(),
                 }
-                Ok(response)
-            }
+            };
+        Ok(response
+            .with_header("cache-control", "no-store")
+            .with_header("pragma", "no-cache"))
+    }
+
+    async fn get_session_response(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
+        if let Some(session) = req.virtual_session() {
+            let Some(user) = ctx.database.get_user_by_id(&session.user_id).await? else {
+                return Ok(AuthResponse::json(200, &serde_json::Value::Null)?);
+            };
+            return Ok(AuthResponse::json(
+                200,
+                &GetSessionResponse {
+                    session: ctx.session_view(session),
+                    user: ctx.user_view(&user),
+                    needs_refresh: None,
+                },
+            )?);
         }
+        let manager = ctx.session_manager();
+        let Some(token) = manager.extract_session_token(req) else {
+            return Ok(AuthResponse::json(200, &serde_json::Value::Null)?);
+        };
+        let suppressed = manager.request_disables_refresh(req);
+        let deferred_read =
+            ctx.config.session.defer_session_refresh && req.method() == &HttpMethod::Get;
+        let read = manager
+            .read_session(
+                &token,
+                better_auth_core::session::SessionReadOptions {
+                    allow_refresh: !suppressed && !deferred_read,
+                    cleanup_expired: !deferred_read,
+                },
+            )
+            .await?;
+        let Some(session) = read.session else {
+            let mut response = if read.needs_refresh {
+                AuthError::Upstream {
+                    status: 401,
+                    code: "FAILED_TO_GET_SESSION",
+                    message: "Failed to get session",
+                }
+                .to_auth_response()
+            } else {
+                AuthResponse::json(200, &serde_json::Value::Null)?
+            };
+            for header in delete_session_cookie_headers(&ctx.config) {
+                response.headers.append("Set-Cookie", header);
+            }
+            return Ok(response);
+        };
+        let Some(user) = ctx
+            .database
+            .get_user_by_id(session.user_id().as_ref())
+            .await?
+        else {
+            let mut response = AuthResponse::json(200, &serde_json::Value::Null)?;
+            for header in delete_session_cookie_headers(&ctx.config) {
+                response.headers.append("Set-Cookie", header);
+            }
+            return Ok(response);
+        };
+        let mut response = AuthResponse::json(
+            200,
+            &GetSessionResponse {
+                session: ctx.session_view(&session),
+                user: ctx.user_view(&user),
+                needs_refresh: (deferred_read && !suppressed).then_some(read.needs_refresh),
+            },
+        )?;
+        if read.refreshed {
+            response.headers.append(
+                "Set-Cookie",
+                better_auth_core::utils::cookie_utils::create_session_cookie(
+                    session.token(),
+                    &ctx.config,
+                ),
+            );
+        }
+        Ok(response)
     }
 
     async fn handle_sign_out(
@@ -195,12 +274,16 @@ impl SessionManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        if let Ok((_user, session)) = ctx.require_session(req).await {
-            let _ = sign_out_core(&session, ctx).await;
+        if let Some(token) = ctx.session_manager().extract_session_token(req) {
+            if let Ok(Some(session)) = ctx.database.get_session(&token).await {
+                let _ = sign_out_core(&session, ctx).await;
+            } else {
+                let _ = ctx.database.delete_session(&token).await;
+            }
         }
 
         let mut response = AuthResponse::json(200, &SuccessResponse { success: true })?;
-        for cookie in sign_out_cookies(&ctx.config) {
+        for cookie in delete_session_cookie_headers(&ctx.config) {
             response.headers.append("Set-Cookie", cookie);
         }
         Ok(response)
@@ -211,7 +294,17 @@ impl SessionManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _) = ctx.require_session(req).await?;
+        let (user, session) = ctx
+            .require_session(req)
+            .await
+            .map_err(session_authorization_error)?;
+        if !ctx.session_manager().is_session_fresh(&session) {
+            return Err(AuthError::Upstream {
+                status: 403,
+                code: "SESSION_NOT_FRESH",
+                message: "Session is not fresh",
+            });
+        }
         let mut sessions = list_sessions_core(user.id(), ctx).await?;
         if admin_plugin_enabled(ctx) {
             sessions.retain(|session| session.impersonated_by.is_none());
@@ -224,13 +317,15 @@ impl SessionManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _) = ctx.require_session(req).await?;
-
-        let revoke_req: RevokeSessionRequest = match better_auth_core::validate_request_body(req) {
+        let revoke_req: RevokeSessionRequest = match parse_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
 
+        let (user, _) = ctx
+            .require_authoritative_session(req)
+            .await
+            .map_err(session_authorization_error)?;
         let response = revoke_session_core(&user, &revoke_req.token, ctx).await?;
         Ok(AuthResponse::json(200, &response)?)
     }
@@ -240,7 +335,10 @@ impl SessionManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _) = ctx.require_session(req).await?;
+        let (user, _) = ctx
+            .require_authoritative_session(req)
+            .await
+            .map_err(session_authorization_error)?;
         let response = revoke_sessions_core(user.id(), ctx).await?;
         Ok(AuthResponse::json(200, &response)?)
     }
@@ -250,42 +348,25 @@ impl SessionManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, current_session) = ctx.require_session(req).await?;
+        let (user, current_session) = ctx
+            .require_authoritative_session(req)
+            .await
+            .map_err(session_authorization_error)?;
         let response = revoke_other_sessions_core(user.id(), &current_session, ctx).await?;
         Ok(AuthResponse::json(200, &response)?)
     }
 }
 
-fn related_cookie_name(config: &AuthConfig, suffix: &str) -> String {
-    config
-        .session
-        .cookie_name
-        .strip_suffix("session_token")
-        .map(|prefix| format!("{}{}", prefix, suffix))
-        .unwrap_or_else(|| format!("better-auth.{}", suffix))
-}
-
-fn sign_out_cookies(config: &AuthConfig) -> Vec<String> {
-    let mut cookies = vec![
-        better_auth_core::utils::cookie_utils::create_clear_session_cookie(config),
-        better_auth_core::utils::cookie_utils::create_clear_cookie(
-            &related_cookie_name(config, "session_data"),
-            config,
-        ),
-        better_auth_core::utils::cookie_utils::create_clear_cookie(
-            &related_cookie_name(config, "dont_remember"),
-            config,
-        ),
-    ];
-
-    if config.account.store_account_cookie {
-        cookies.push(better_auth_core::utils::cookie_utils::create_clear_cookie(
-            &related_cookie_name(config, "account_data"),
-            config,
-        ));
+fn session_authorization_error(error: AuthError) -> AuthError {
+    if matches!(error, AuthError::Unauthenticated) {
+        AuthError::Upstream {
+            status: 401,
+            code: "UNAUTHORIZED",
+            message: "Unauthorized",
+        }
+    } else {
+        error
     }
-
-    cookies
 }
 
 #[cfg(test)]
@@ -293,6 +374,7 @@ mod tests {
     use super::*;
     use crate::plugins::test_helpers;
     use better_auth_core::config::AccountConfig;
+    use better_auth_core::utils::cookie_utils::related_cookie_name;
     use better_auth_core::wire::SessionView;
     use better_auth_core::{CreateSession, CreateUser};
     use chrono::{Duration, Utc};
@@ -462,13 +544,13 @@ mod tests {
 
         let create_session2 = CreateSession {
             token: None,
-            active_team_id: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
             ip_address: Some("192.168.1.1".to_string()),
             user_agent: Some("another-agent".to_string()),
             impersonated_by: None,
             active_organization_id: None,
+            active_team_id: None,
         };
         ctx.database.create_session(create_session2).await.unwrap();
 
@@ -501,25 +583,25 @@ mod tests {
 
         let direct_session = CreateSession {
             token: None,
-            active_team_id: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
             ip_address: Some("192.168.1.1".to_string()),
             user_agent: Some("another-agent".to_string()),
             impersonated_by: None,
             active_organization_id: None,
+            active_team_id: None,
         };
         ctx.database.create_session(direct_session).await.unwrap();
 
         let impersonated_session = CreateSession {
             token: None,
-            active_team_id: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
             ip_address: Some("10.0.0.5".to_string()),
             user_agent: Some("impersonated-agent".to_string()),
             impersonated_by: Some("admin-user".to_string()),
             active_organization_id: None,
+            active_team_id: None,
         };
         let impersonated = ctx
             .database
@@ -562,13 +644,13 @@ mod tests {
 
         let create_session2 = CreateSession {
             token: None,
-            active_team_id: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
             ip_address: Some("192.168.1.1".to_string()),
             user_agent: Some("another-agent".to_string()),
             impersonated_by: None,
             active_organization_id: None,
+            active_team_id: None,
         };
         let session2 = ctx.database.create_session(create_session2).await.unwrap();
 
@@ -609,13 +691,13 @@ mod tests {
 
         let create_session2 = CreateSession {
             token: None,
-            active_team_id: None,
             user_id: user2.id,
             expires_at: Utc::now() + Duration::hours(24),
             ip_address: Some("192.168.1.1".to_string()),
             user_agent: Some("another-agent".to_string()),
             impersonated_by: None,
             active_organization_id: None,
+            active_team_id: None,
         };
         let session2 = ctx.database.create_session(create_session2).await.unwrap();
 
@@ -654,13 +736,13 @@ mod tests {
 
         let create_session2 = CreateSession {
             token: None,
-            active_team_id: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
             ip_address: Some("192.168.1.1".to_string()),
             user_agent: Some("another-agent".to_string()),
             impersonated_by: None,
             active_organization_id: None,
+            active_team_id: None,
         };
         ctx.database.create_session(create_session2).await.unwrap();
 
@@ -751,8 +833,20 @@ mod tests {
             Some(&session.token),
             Some(b"{}".to_vec()),
         );
-        let err = plugin.on_request(&req, &ctx).await.unwrap_err();
-        assert_eq!(err.status_code(), 405);
+        let response = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
+        assert_eq!(response.status, 405);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&response.body).unwrap(),
+            serde_json::json!({
+                "code": "METHOD_NOT_ALLOWED_DEFER_SESSION_REQUIRED",
+                "message": "POST method requires deferSessionRefresh to be enabled in session config",
+            }),
+        );
+        assert_eq!(
+            response.headers.get("cache-control"),
+            Some(&"no-store".to_owned())
+        );
+        assert_eq!(response.headers.get("pragma"), Some(&"no-cache".to_owned()));
 
         // Test invalid route
         let req = test_helpers::create_auth_request_no_query(

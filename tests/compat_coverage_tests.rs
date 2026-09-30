@@ -5,7 +5,7 @@
     reason = "test fixture validation fails immediately"
 )]
 mod compat;
-use compat::helpers::create_test_auth;
+use compat::helpers::{TestAuthOptions, create_test_auth_with_options};
 use serde_json::Value;
 use std::collections::BTreeSet;
 
@@ -24,7 +24,12 @@ fn canonical(path: &str) -> String {
 
 #[tokio::test]
 async fn runtime_routes_match_capability_inventory() {
-    let auth = create_test_auth().await;
+    let auth = create_test_auth_with_options(TestAuthOptions {
+        teams_enabled: true,
+        dynamic_roles_enabled: true,
+        ..Default::default()
+    })
+    .await;
     let spec = auth
         .openapi_spec()
         .to_value()

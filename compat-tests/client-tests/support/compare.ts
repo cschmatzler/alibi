@@ -16,13 +16,17 @@ export type ComparisonContext = {
 
 const entityKeys = new Set([
   "id", "accountId", "userId", "sessionId", "organizationId", "memberId", "invitationId",
-  "inviterId", "activeOrganizationId", "activeTeamId", "teamId", "impersonatedBy", "referenceId",
+  "roleId", "inviterId", "activeOrganizationId", "activeTeamId", "teamId", "impersonatedBy", "referenceId",
 ]);
 const opaqueKeys = new Set(["token", "sessionToken", "state", "challenge", "code_challenge", "device_code", "user_code", "access_token", "refresh_token"]);
 const urlKeys = new Set(["url", "location", "path", "verification_uri", "verification_uri_complete"]);
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function traceShape(path: string): boolean {
+  return /^\.?traces\.\d+\.(?:request|response)BodyShape(?:\.|$)/.test(path);
 }
 
 /** A bijection preserves identity, repeated references, and token rotation across a run. */
@@ -32,6 +36,25 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   const reverseIdentities = new Map<string, string>();
   const fail = (path: string, reason: string) => { differences.push({ path, reason }); };
   const normalizedLeft=normalizeClientValue(left),normalizedRight=normalizeClientValue(right);
+
+  function apiKeyRow(value: Record<string, unknown>): boolean {
+    return typeof value.configId === "string" && typeof value.enabled === "boolean"
+      && (value.remaining === null || typeof value.remaining === "number");
+  }
+
+  function issuedApiKeys(value: unknown, path = "", result = new Map<string, string>()): Map<string, string> {
+    if (Array.isArray(value)) value.forEach((child, index) => issuedApiKeys(child, `${path}.${index}`, result));
+    else if (record(value) && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path) && !traceShape(path)) {
+      if (apiKeyRow(value) && typeof value.id === "string" && typeof value.key === "string") {
+        const previous = result.get(value.id);
+        if (previous !== undefined && previous !== value.key) fail(path, "API key changed for a persisted row");
+        result.set(value.id, value.key);
+      }
+      for (const [key, child] of Object.entries(value)) issuedApiKeys(child, `${path}.${key}`, result);
+    }
+    return result;
+  }
+  const leftApiKeys = issuedApiKeys(normalizedLeft), rightApiKeys = issuedApiKeys(normalizedRight);
 
   function entityValues(value:unknown,result=new Set<string>()):Set<string> {
     if (Array.isArray(value)) for (const child of value) entityValues(child,result);
@@ -97,7 +120,18 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   }
 
   function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false) {
-    if (typeof a === "string" && typeof b === "string" && !path.includes("BodyShape")) {
+    if (typeof a === "string" && typeof b === "string" && !traceShape(path)
+      && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path)) {
+      if (key === "teamId" && (a.includes(",") || b.includes(","))) {
+        const leftTeams = a.split(","), rightTeams = b.split(",");
+        if (leftTeams.length !== rightTeams.length) fail(path, "team selection length differs");
+        leftTeams.forEach((team, index) => {
+          const other = rightTeams[index];
+          if (other === undefined) return;
+          identity(team, other, `${path}.${index}`, "entity");
+        });
+        return;
+      }
       const leftJwt=jwt(a),rightJwt=jwt(b);
       if (leftJwt || rightJwt) {
         if (!leftJwt || !rightJwt) {fail(path,"JWT structure differs");return;}
@@ -131,7 +165,10 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     }
     if (record(a) && record(b)) {
       const jwtClaims=!applicationData && typeof a.exp==="number" && typeof b.exp==="number" && (jwtPayload || ("iss" in a && "iss" in b && "aud" in a && "aud" in b));
-      const inApplicationData=applicationData || jwtPayload || jwtClaims;
+      const inApplicationData=applicationData || jwtPayload || jwtClaims || key === "metadata" || key === "additionalFields";
+      const apiKey = !inApplicationData && !traceShape(path) && apiKeyRow(a) && apiKeyRow(b);
+      const issuedLeft = typeof a.key === "string" ? a.key : typeof a.id === "string" ? leftApiKeys.get(a.id) : undefined;
+      const issuedRight = typeof b.key === "string" ? b.key : typeof b.id === "string" ? rightApiKeys.get(b.id) : undefined;
       // User claims retain literal key-shaped content; only public key material carries key entropy.
       const jwk=!inApplicationData && typeof a.kty==="string" && typeof b.kty==="string" && ["EC","OKP","RSA"].includes(a.kty) && ["EC","OKP","RSA"].includes(b.kty);
       const inClock=(date:unknown,start:number,end:number|undefined)=>typeof date==="number" && Number.isInteger(date) && date>=Math.floor(start/1000)-1 && date<=Math.ceil((end ?? start)/1000)+1;
@@ -153,13 +190,20 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           if (!/^[A-Za-z0-9_-]+$/.test(leftMaterial) || !/^[A-Za-z0-9_-]+$/.test(rightMaterial) || Buffer.from(leftMaterial,"base64url").length!==Buffer.from(rightMaterial,"base64url").length) fail(childPath,"JWK key encoding or size differs");
           identity(leftMaterial,rightMaterial,childPath,`jwk:${childKey}`);
         }
-        else if (!/^traces\.\d+\.(?:request|response)BodyShape(?:\.|$)/.test(path) && childKey === "key" && typeof a.key === "string" && typeof b.key === "string" && typeof a.configId === "string" && typeof b.configId === "string" && "enabled" in a && "enabled" in b && "remaining" in a && "remaining" in b) {
+        else if (apiKey && childKey === "key" && typeof a.key === "string" && typeof b.key === "string") {
           if (a.key.length !== b.key.length) fail(childPath, "API key length differs");
-          for (const item of [a,b]) {
-            if (typeof item.prefix === "string" && typeof item.key === "string" && !item.key.startsWith(item.prefix)) fail(childPath, "API key prefix relationship differs");
-            if (typeof item.start === "string" && typeof item.key === "string" && !item.key.startsWith(item.start)) fail(childPath, "API key stored-prefix relationship differs");
+          for (const row of [a,b]) {
+            if (typeof row.prefix === "string" && typeof row.key === "string" && !row.key.startsWith(row.prefix)) fail(childPath, "API key prefix relationship differs");
           }
           identity(a.key,b.key,childPath,"api-key");
+        }
+        else if (apiKey && childKey === "start" && typeof a.start === "string" && typeof b.start === "string" && (issuedLeft !== undefined || issuedRight !== undefined)) {
+          if (a.start.length !== b.start.length) fail(childPath, "API key stored-prefix length differs");
+          if (issuedLeft === undefined || issuedRight === undefined) fail(childPath, "API key stored-prefix lacks observed issuance");
+          else {
+            if (!issuedLeft.startsWith(a.start) || !issuedRight.startsWith(b.start)) fail(childPath, "API key stored-prefix relationship differs");
+            identity(issuedLeft, issuedRight, childPath, "api-key");
+          }
         }
         else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData);
       }

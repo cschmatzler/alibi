@@ -290,3 +290,15 @@ async fn browser_client_compat() {
 async fn jwt_client_compat() {
     run_client_compat(&["tests/jwt"]).await;
 }
+
+#[tokio::test]
+#[ignore = "starts external TS and Rust servers"]
+async fn organization_teams_client_compat() {
+    run_client_compat(&["tests/organization-extensions/teams.test.ts"]).await;
+}
+
+#[tokio::test]
+#[ignore = "starts external TS and Rust servers"]
+async fn organization_dynamic_roles_client_compat() {
+    run_client_compat(&["tests/organization-extensions/dynamic-roles.test.ts"]).await;
+}

@@ -167,3 +167,34 @@ fn map_same_site(s: &crate::config::SameSite) -> CookieSameSite {
         crate::config::SameSite::None => CookieSameSite::None,
     }
 }
+
+/// Clear all cookies associated with the current session.
+pub fn delete_session_cookie_headers(config: &AuthConfig) -> Vec<String> {
+    let mut cookies = vec![
+        create_clear_session_cookie(config),
+        create_clear_cookie(&related_cookie_name(config, "session_data"), config),
+    ];
+
+    if config.account.store_account_cookie {
+        cookies.push(create_clear_cookie(
+            &related_cookie_name(config, "account_data"),
+            config,
+        ));
+    }
+
+    if matches!(
+        config.account.store_state_strategy,
+        crate::config::OAuthStateStrategy::Cookie
+    ) {
+        cookies.push(create_clear_cookie(
+            &related_cookie_name(config, "oauth_state"),
+            config,
+        ));
+    }
+
+    cookies.push(create_clear_cookie(
+        &related_cookie_name(config, "dont_remember"),
+        config,
+    ));
+    cookies
+}

@@ -2,7 +2,6 @@
 //!
 //! Extracted to avoid duplicating common patterns across plugins (DRY).
 
-use better_auth_core::config::OAuthStateStrategy;
 use better_auth_core::entity::{AuthAccount, AuthUser};
 use better_auth_core::{AuthContext, AuthError, AuthRequest, AuthResult, CreateUser, UpdateUser};
 use chrono::Utc;
@@ -73,11 +72,10 @@ pub async fn require_org_api_key_permission(
     action: &str,
 ) -> AuthResult<()> {
     use crate::plugins::api_key::{ApiKeyErrorCode, api_key_error};
-    use crate::plugins::organization::rbac::{Action, Resource, has_permission_any};
     use crate::plugins::organization::{
-        METADATA_CREATOR_ROLE, METADATA_ENABLED, METADATA_ROLES, RolePermissions,
+        DynamicAccessControlConfig, METADATA_CREATOR_ROLE, METADATA_ENABLED, METADATA_ROLES,
+        OrganizationConfig,
     };
-    use std::collections::HashMap;
 
     // Organization-owned keys are meaningless without the organization plugin,
     // which is what supplies the access control below.
@@ -100,23 +98,40 @@ pub async fn require_org_api_key_permission(
         .get_metadata(METADATA_CREATOR_ROLE)
         .and_then(|value| value.as_str().map(str::to_string))
         .unwrap_or_else(|| "owner".to_string());
-    if member
-        .role
-        .split(',')
-        .map(str::trim)
-        .any(|role| role == creator_role)
-    {
+    if member.role.split(',').any(|role| role == creator_role) {
         return Ok(());
     }
 
-    let custom_roles: HashMap<String, RolePermissions> = ctx
-        .get_metadata(METADATA_ROLES)
-        .and_then(|value| serde_json::from_value(value.clone()).ok())
-        .unwrap_or_default();
-
-    let allowed = Action::parse(action)
-        .map(|action| has_permission_any(&member.role, &Resource::ApiKey, &action, &custom_roles))
-        .unwrap_or(false);
+    let config = OrganizationConfig {
+        roles: ctx
+            .get_metadata(METADATA_ROLES)
+            .and_then(|value| serde_json::from_value(value.clone()).ok())
+            .flatten(),
+        access_control: ctx
+            .get_metadata("organization.access_control")
+            .and_then(|value| serde_json::from_value(value.clone()).ok())
+            .flatten(),
+        dynamic_access_control: DynamicAccessControlConfig {
+            enabled: ctx
+                .get_metadata("organization.dynamic_roles.enabled")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    // The pinned API-key plugin turns failed dynamic role resolution into a
+    // denied permission rather than allowing or exposing its internal error.
+    let allowed = crate::plugins::organization::handlers::extension_common::has_action(
+        &member.role,
+        "apiKey",
+        action,
+        &config,
+        ctx,
+        organization_id,
+    )
+    .await
+    .unwrap_or(false);
 
     if allowed {
         Ok(())
@@ -291,34 +306,5 @@ pub fn get_cookie(req: &AuthRequest, name: &str) -> Option<String> {
 
 /// TS-style cookie clearing used by `deleteSessionCookie`.
 pub fn delete_session_cookie_headers(config: &better_auth_core::AuthConfig) -> Vec<String> {
-    let mut cookies = vec![
-        better_auth_core::utils::cookie_utils::create_clear_session_cookie(config),
-        better_auth_core::utils::cookie_utils::create_clear_cookie(
-            &better_auth_core::utils::cookie_utils::related_cookie_name(config, "session_data"),
-            config,
-        ),
-        better_auth_core::utils::cookie_utils::create_clear_cookie(
-            &better_auth_core::utils::cookie_utils::related_cookie_name(config, "dont_remember"),
-            config,
-        ),
-    ];
-
-    if config.account.store_account_cookie {
-        cookies.push(better_auth_core::utils::cookie_utils::create_clear_cookie(
-            &better_auth_core::utils::cookie_utils::related_cookie_name(config, "account_data"),
-            config,
-        ));
-    }
-
-    if matches!(
-        config.account.store_state_strategy,
-        OAuthStateStrategy::Cookie
-    ) {
-        cookies.push(better_auth_core::utils::cookie_utils::create_clear_cookie(
-            &better_auth_core::utils::cookie_utils::related_cookie_name(config, "oauth_state"),
-            config,
-        ));
-    }
-
-    cookies
+    better_auth_core::utils::cookie_utils::delete_session_cookie_headers(config)
 }

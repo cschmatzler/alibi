@@ -101,9 +101,9 @@ impl UserStore<BundledSchema> for MemoryStore {
             updated_at: now,
             username,
             display_username: create_user.display_username,
-            two_factor_enabled: Some(false),
+            two_factor_enabled: create_user.two_factor_enabled,
             role: create_user.role,
-            banned: Some(false),
+            banned: create_user.banned,
             ban_reason: None,
             ban_expires: None,
             metadata: create_user
@@ -287,6 +287,19 @@ impl SessionStore<BundledSchema> for MemoryStore {
         }
     }
 
+    async fn refresh_session(
+        &self,
+        token: &str,
+        expires_at: DateTime<Utc>,
+    ) -> AuthResult<Option<SessionView>> {
+        let mut state = self.lock();
+        let Some(session) = state.sessions.get_mut(token) else {
+            return Ok(None);
+        };
+        session.expires_at = expires_at;
+        session.updated_at = Utc::now();
+        Ok(Some(session.clone()))
+    }
     async fn delete_session(&self, token: &str) -> AuthResult<()> {
         self.lock().sessions.remove(token);
         Ok(())

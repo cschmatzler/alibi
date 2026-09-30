@@ -11,13 +11,17 @@ use better_auth::{
     AuthBuilder, AuthConfig, BetterAuth,
     plugins::{
         AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
-        EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, OrganizationPlugin,
-        PasskeyPlugin, PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin,
-        UserManagementPlugin,
+        EmailOtpConfig, EmailOtpPlugin, EmailPasswordPlugin, EmailVerificationPlugin,
+        MagicLinkPlugin, OAuthPlugin, OrganizationPlugin, PasskeyPlugin, PasswordManagementPlugin,
+        SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
         jwt::JwtPlugin,
         oauth::{
             OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
             OAuthUserInfoResponse,
+        },
+        organization::{
+            DynamicAccessControlConfig, OrganizationConfig, TeamsConfig,
+            default_organization_statements,
         },
         password_management::SendResetPassword,
     },
@@ -145,6 +149,8 @@ pub enum ResetSenderMode {
 pub struct TestAuthOptions {
     pub reset_sender_mode: ResetSenderMode,
     pub creator_role: Option<String>,
+    pub teams_enabled: bool,
+    pub dynamic_roles_enabled: bool,
 }
 
 struct TestResetSender {
@@ -304,11 +310,24 @@ pub async fn create_test_auth() -> TestAuth {
 pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth {
     let config = test_config();
     let store = test_store(&config).await;
-    let organization_plugin = if let Some(creator_role) = options.creator_role.clone() {
-        OrganizationPlugin::new().creator_role(creator_role)
-    } else {
-        OrganizationPlugin::new()
-    };
+    let organization_plugin = OrganizationPlugin::with_config(OrganizationConfig {
+        creator_role: options
+            .creator_role
+            .clone()
+            .unwrap_or_else(|| "owner".to_owned()),
+        teams: TeamsConfig {
+            enabled: options.teams_enabled,
+            ..Default::default()
+        },
+        dynamic_access_control: DynamicAccessControlConfig {
+            enabled: options.dynamic_roles_enabled,
+            ..Default::default()
+        },
+        access_control: options
+            .dynamic_roles_enabled
+            .then(default_organization_statements),
+        ..Default::default()
+    });
 
     AuthBuilder::<TestSchema>::new(config)
         .store(store)
@@ -323,6 +342,11 @@ pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth
         )
         .plugin(AccountManagementPlugin::new())
         .plugin(EmailVerificationPlugin::new())
+        .plugin(EmailOtpPlugin::new(EmailOtpConfig {
+            change_email_enabled: true,
+            ..Default::default()
+        }))
+        .plugin(MagicLinkPlugin::new(Default::default()))
         .plugin(
             UserManagementPlugin::new()
                 .change_email_enabled(true)

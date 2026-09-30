@@ -66,3 +66,51 @@ fn extra_fields_get_not_set_in_new_active() {
     assert!(matches!(active.locale, ActiveValue::NotSet));
     assert!(matches!(active.tenant_id, ActiveValue::NotSet));
 }
+
+#[tokio::test]
+async fn boolean_custom_entities_keep_explicit_plugin_flags_through_persistence()
+-> Result<(), Box<dyn std::error::Error>> {
+    use better_auth::prelude::{AuthUser, CreateUser, UpdateUser};
+    use sea_orm::{
+        ActiveModelTrait, ConnectionTrait, Database, EntityTrait, IntoActiveModel, Schema,
+    };
+    let database = Database::connect("sqlite::memory:").await?;
+    let schema = Schema::new(database.get_database_backend());
+    let _ = database
+        .execute(&schema.create_table_from_entity(user_with_extras::Entity))
+        .await?;
+    let user = user_with_extras::Model::new_active(
+        Some("legacy-boolean-user".to_owned()),
+        CreateUser {
+            email: Some("legacy-boolean-user@example.com".to_owned()),
+            two_factor_enabled: Some(true),
+            banned: Some(true),
+            ..Default::default()
+        },
+        chrono::Utc::now(),
+    )
+    .insert(&database)
+    .await?;
+    assert!(user.two_factor_enabled());
+    assert!(user.banned());
+    assert_eq!(user.two_factor_enabled_value(), Some(true));
+    assert_eq!(user.banned_value(), Some(true));
+    let mut active = user.into_active_model();
+    user_with_extras::Model::apply_update(
+        &mut active,
+        UpdateUser {
+            two_factor_enabled: Some(false),
+            banned: Some(false),
+            ..Default::default()
+        },
+        chrono::Utc::now(),
+    );
+    let _ = active.update(&database).await?;
+    let persisted = user_with_extras::Entity::find_by_id("legacy-boolean-user")
+        .one(&database)
+        .await?
+        .ok_or_else(|| std::io::Error::other("custom user disappeared"))?;
+    assert_eq!(persisted.two_factor_enabled_value(), Some(false));
+    assert_eq!(persisted.banned_value(), Some(false));
+    Ok(())
+}

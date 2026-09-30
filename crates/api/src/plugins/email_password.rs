@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use validator::{Validate, ValidateEmail};
+use validator::Validate;
 
 use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
 use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
@@ -13,7 +13,8 @@ use better_auth_core::{
 
 use super::{email_verification::EmailVerificationPlugin, two_factor};
 use better_auth_core::utils::cookie_utils::{
-    create_session_cookie, create_session_cookie_with_max_age,
+    create_session_cookie, create_session_cookie_with_max_age, create_session_like_cookie,
+    related_cookie_name, sign_cookie_value,
 };
 use better_auth_core::utils::password::{self as password_utils, PasswordHasher};
 use better_auth_core::utils::username::{
@@ -21,6 +22,9 @@ use better_auth_core::utils::username::{
 };
 use better_auth_core::wire::UserView;
 
+use crate::plugins::authentication_helpers::{
+    JsonField, JsonFieldKind, RequestBody, is_valid_email, parse_body,
+};
 use crate::plugins::helpers::{SessionIssueError, apply_default_role, issue_user_session};
 
 const MESSAGE_INVALID_USERNAME_OR_PASSWORD: &str = "Invalid username or password";
@@ -50,6 +54,25 @@ fn create_session_cookie_for_remember_me(
         create_session_cookie_with_max_age(Some(token), None, config)
     } else {
         create_session_cookie(token, config)
+    }
+}
+fn append_dont_remember_cookie(
+    response: AuthResponse,
+    remember_me: Option<bool>,
+    config: &better_auth_core::AuthConfig,
+) -> AuthResponse {
+    if remember_me == Some(false) {
+        response.with_appended_header(
+            "Set-Cookie",
+            create_session_like_cookie(
+                &related_cookie_name(config, "dont_remember"),
+                &sign_cookie_value("true", &config.secret),
+                None,
+                config,
+            ),
+        )
+    } else {
+        response
     }
 }
 /// Email and password authentication plugin
@@ -109,6 +132,32 @@ pub(crate) struct SignUpRequest {
     display_username: Option<String>,
     #[serde(rename = "callbackURL")]
     callback_url: Option<String>,
+    image: Option<String>,
+    #[serde(rename = "rememberMe")]
+    remember_me: Option<bool>,
+}
+
+impl RequestBody for SignUpRequest {
+    const FIELDS: &'static [JsonField] = &[
+        JsonField::string("name", true),
+        JsonField {
+            name: "email",
+            kind: JsonFieldKind::Email,
+            required: true,
+        },
+        JsonField {
+            name: "password",
+            kind: JsonFieldKind::NonEmptyString,
+            required: true,
+        },
+        JsonField::string("image", false),
+        JsonField::string("callbackURL", false),
+        JsonField {
+            name: "rememberMe",
+            kind: JsonFieldKind::Boolean,
+            required: false,
+        },
+    ];
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -121,6 +170,19 @@ pub(crate) struct SignInRequest {
     callback_url: Option<String>,
     #[serde(rename = "rememberMe")]
     remember_me: Option<bool>,
+}
+
+impl RequestBody for SignInRequest {
+    const FIELDS: &'static [JsonField] = &[
+        JsonField::string("email", true),
+        JsonField::string("password", true),
+        JsonField::string("callbackURL", false),
+        JsonField {
+            name: "rememberMe",
+            kind: JsonFieldKind::Boolean,
+            required: false,
+        },
+    ];
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -258,11 +320,10 @@ impl EmailPasswordPlugin {
             }
             Some(filtered)
         };
-        let mut signup_req: SignUpRequest =
-            match better_auth_core::validate_request_body(filtered_req.as_ref().unwrap_or(req)) {
-                Ok(v) => v,
-                Err(resp) => return Ok(resp),
-            };
+        let mut signup_req: SignUpRequest = match parse_body(filtered_req.as_ref().unwrap_or(req)) {
+            Ok(v) => v,
+            Err(resp) => return Ok(resp),
+        };
 
         signup_req.email = signup_req.email.to_lowercase();
 
@@ -315,8 +376,13 @@ impl EmailPasswordPlugin {
         let (response, session_token) = sign_up_core(&signup_req, &self.config, &meta, ctx).await?;
 
         if let Some(token) = session_token {
-            let cookie_header = create_session_cookie(&token, &ctx.config);
-            Ok(AuthResponse::json(200, &response)?.with_header("Set-Cookie", cookie_header))
+            let cookie_header =
+                create_session_cookie_for_remember_me(&token, signup_req.remember_me, &ctx.config);
+            Ok(append_dont_remember_cookie(
+                AuthResponse::json(200, &response)?.with_header("Set-Cookie", cookie_header),
+                signup_req.remember_me,
+                &ctx.config,
+            ))
         } else {
             Ok(AuthResponse::json(200, &response)?)
         }
@@ -327,18 +393,18 @@ impl EmailPasswordPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        if let Ok(raw_body) = req.body_as_json::<serde_json::Value>()
-            && let Some(email) = raw_body.get("email").and_then(|value| value.as_str())
-            && !email.validate_email()
-        {
-            return Err(AuthError::bad_request("Invalid email"));
-        }
-
-        let signin_req: SignInRequest = match better_auth_core::validate_request_body(req) {
+        let signin_req: SignInRequest = match parse_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
 
+        if !is_valid_email(&signin_req.email) {
+            return Err(AuthError::Upstream {
+                status: 400,
+                code: "INVALID_EMAIL",
+                message: "Invalid email",
+            });
+        }
         let meta = RequestMeta::from_request(req);
         match sign_in_core(
             req,
@@ -366,7 +432,11 @@ impl EmailPasswordPlugin {
                 for cookie in set_cookie_headers {
                     auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
                 }
-                Ok(auth_response)
+                Ok(append_dont_remember_cookie(
+                    auth_response,
+                    signin_req.remember_me,
+                    &ctx.config,
+                ))
             }
             SignInCoreResult::TwoFactorRedirect {
                 response,
@@ -457,7 +527,11 @@ impl EmailPasswordPlugin {
                 for cookie in set_cookie_headers {
                     auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
                 }
-                Ok(auth_response)
+                Ok(append_dont_remember_cookie(
+                    auth_response,
+                    signin_req.remember_me,
+                    &ctx.config,
+                ))
             }
             Ok(SignInCoreResult::TwoFactorRedirect {
                 response,
@@ -563,6 +637,7 @@ pub(crate) async fn sign_up_core(
     let mut create_user = CreateUser::new()
         .with_email(&body.email)
         .with_name(&body.name);
+    create_user.image = body.image.clone();
     apply_default_role(ctx, &mut create_user);
     if config.enable_username {
         if let Some(ref username) = body.username {
@@ -575,7 +650,11 @@ pub(crate) async fn sign_up_core(
         }
     }
     let auto_sign_in = config.auto_sign_in && !config.require_email_verification;
-    let expires_in = ctx.config.session.expires_in;
+    let expires_in = if body.remember_me == Some(false) {
+        chrono::Duration::days(1)
+    } else {
+        ctx.config.session.expires_in
+    };
     let ip_address = meta.ip_address.clone();
     let user_agent = meta.user_agent.clone();
     let database = ctx.database.clone();
@@ -623,6 +702,7 @@ pub(crate) async fn sign_up_core(
                 callback_url.as_deref(),
                 require_email_verification,
                 &signup_context,
+                tx,
             )
             .await?;
 
@@ -713,8 +793,19 @@ async fn finalize_sign_in_with_user_core(
 
     let _ = (email_verification, callback_url);
 
+    let mut issuing_config = (*ctx.config).clone();
+    if remember_me == Some(false) {
+        issuing_config.session.expires_in = chrono::Duration::days(1);
+    }
+    let issuing_context = AuthContext {
+        config: Arc::new(issuing_config),
+        database: ctx.database.clone(),
+        email_provider: ctx.email_provider.clone(),
+        metadata: ctx.metadata.clone(),
+        extensions: ctx.extensions.clone(),
+    };
     let issued = issue_user_session(
-        ctx,
+        &issuing_context,
         &user.id(),
         meta.ip_address.clone(),
         meta.user_agent.clone(),

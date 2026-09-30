@@ -402,6 +402,10 @@ better_auth_core::impl_auth_plugin! {
             &self,
             ctx: &mut better_auth_core::AuthInitContext<S>,
         ) -> better_auth_core::AuthResult<()> {
+            ctx.register_user_create_transform(|mut input| {
+                _ = input.two_factor_enabled.get_or_insert(false);
+                Ok(input)
+            });
             ctx.set_metadata(METADATA_ENABLED, serde_json::Value::Bool(true));
             ctx.set_metadata(
                 METADATA_OTP_ENABLED,
@@ -946,6 +950,7 @@ async fn resolve_two_factor_state<S: better_auth_core::AuthSchema>(
     }
 
     let identifier = read_signed_cookie(req, TWO_FACTOR_COOKIE_SUFFIX, ctx)?
+        .filter(|identifier| !identifier.is_empty())
         .ok_or_else(|| AuthError::authentication_failed("Invalid two factor cookie"))?;
     let verification = ctx
         .database
@@ -966,7 +971,8 @@ async fn resolve_two_factor_state<S: better_auth_core::AuthSchema>(
         .get_user_by_id(verification.value())
         .await?
         .ok_or_else(|| AuthError::authentication_failed("Invalid two factor cookie"))?;
-    let dont_remember = read_signed_cookie(req, DONT_REMEMBER_COOKIE_SUFFIX, ctx)?.is_some();
+    let dont_remember = read_signed_cookie(req, DONT_REMEMBER_COOKIE_SUFFIX, ctx)?
+        .is_some_and(|value| !value.is_empty());
 
     Ok(ResolvedTwoFactorState::Pending(PendingTwoFactorState {
         user,
@@ -1246,14 +1252,16 @@ fn read_signed_cookie<S: better_auth_core::AuthSchema>(
 }
 
 fn sign_cookie_value(secret: &str, value: &str) -> AuthResult<String> {
-    Ok(format!("{}.{}", value, sign_value(secret, value)?))
+    Ok(better_auth_core::utils::cookie_utils::sign_cookie_value(
+        value, secret,
+    ))
 }
 
 fn verify_signed_cookie_value(secret: &str, signed_value: &str) -> AuthResult<Option<String>> {
-    let Some((value, signature)) = signed_value.rsplit_once('.') else {
-        return Ok(None);
-    };
-    Ok(verify_signature(secret, value, signature)?.then(|| value.to_string()))
+    Ok(better_auth_core::utils::cookie_utils::verify_cookie_value(
+        signed_value,
+        secret,
+    ))
 }
 
 fn sign_value(secret: &str, value: &str) -> AuthResult<String> {
@@ -1261,17 +1269,6 @@ fn sign_value(secret: &str, value: &str) -> AuthResult<String> {
         .map_err(|error| AuthError::internal(format!("Failed to initialize HMAC: {}", error)))?;
     mac.update(value.as_bytes());
     Ok(URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes()))
-}
-
-fn verify_signature(secret: &str, value: &str, signature: &str) -> AuthResult<bool> {
-    let decoded = match URL_SAFE_NO_PAD.decode(signature) {
-        Ok(decoded) => decoded,
-        Err(_) => return Ok(false),
-    };
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(secret.as_bytes())
-        .map_err(|error| AuthError::internal(format!("Failed to initialize HMAC: {}", error)))?;
-    mac.update(value.as_bytes());
-    Ok(mac.verify_slice(&decoded).is_ok())
 }
 
 fn derive_encryption_key(secret: &str) -> AuthResult<Key<Aes256Gcm>> {

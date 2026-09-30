@@ -2,7 +2,7 @@ use better_auth_schema_registry::{self as registry, EntityRole};
 use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
-use syn::{Data, DeriveInput, Fields, LitStr};
+use syn::{Data, DeriveInput, Fields, LitStr, Type};
 
 fn found_crate_tokens(name: &str) -> Option<TokenStream> {
     match crate_name(name).ok()? {
@@ -88,6 +88,12 @@ pub(crate) fn derive_auth_entity(input: &DeriveInput) -> TokenStream {
     }
 
     let has = |name: &str| idents.iter().any(|i| i == name);
+    let optional = |name: &str| {
+        fields.named.iter().any(|field| {
+            field.ident.as_ref().is_some_and(|ident| ident == name)
+                && matches!(&field.ty, Type::Path(path) if path.path.segments.last().is_some_and(|segment| segment.ident == "Option"))
+        })
+    };
 
     // Extra fields: not core, not plugin — user-defined.
     let all_known: Vec<&str> = core.iter().chain(plugin.iter()).copied().collect();
@@ -102,7 +108,14 @@ pub(crate) fn derive_auth_entity(input: &DeriveInput) -> TokenStream {
     let ident = &input.ident;
 
     match role {
-        EntityRole::User => gen_user(ident, &has, &extra_not_set, &seaorm_root, &core_root),
+        EntityRole::User => gen_user(
+            ident,
+            &has,
+            &optional,
+            &extra_not_set,
+            &seaorm_root,
+            &core_root,
+        ),
         EntityRole::Session => gen_session(ident, &has, &extra_not_set, &seaorm_root, &core_root),
         EntityRole::Account => gen_account(ident, &extra_not_set, &seaorm_root, &core_root),
         EntityRole::Verification => {
@@ -114,6 +127,7 @@ pub(crate) fn derive_auth_entity(input: &DeriveInput) -> TokenStream {
 fn gen_user(
     ident: &Ident,
     has: &dyn Fn(&str) -> bool,
+    optional: &dyn Fn(&str) -> bool,
     extras: &[TokenStream],
     seaorm_root: &TokenStream,
     core_root: &TokenStream,
@@ -130,9 +144,19 @@ fn gen_user(
         quote! { fn display_username(&self) -> Option<&str> { None } }
     };
     let two_factor_impl = if has("two_factor_enabled") {
-        quote! { fn two_factor_enabled(&self) -> bool { self.two_factor_enabled } }
+        if optional("two_factor_enabled") {
+            quote! {
+                fn two_factor_enabled(&self) -> bool { self.two_factor_enabled.unwrap_or(false) }
+                fn two_factor_enabled_value(&self) -> Option<bool> { self.two_factor_enabled }
+            }
+        } else {
+            quote! { fn two_factor_enabled(&self) -> bool { self.two_factor_enabled } }
+        }
     } else {
-        quote! { fn two_factor_enabled(&self) -> bool { false } }
+        quote! {
+            fn two_factor_enabled(&self) -> bool { false }
+            fn two_factor_enabled_value(&self) -> Option<bool> { None }
+        }
     };
     let role_impl = if has("role") {
         quote! { fn role(&self) -> Option<&str> { self.role.as_deref() } }
@@ -140,9 +164,19 @@ fn gen_user(
         quote! { fn role(&self) -> Option<&str> { None } }
     };
     let banned_impl = if has("banned") {
-        quote! { fn banned(&self) -> bool { self.banned } }
+        if optional("banned") {
+            quote! {
+                fn banned(&self) -> bool { self.banned.unwrap_or(false) }
+                fn banned_value(&self) -> Option<bool> { self.banned }
+            }
+        } else {
+            quote! { fn banned(&self) -> bool { self.banned } }
+        }
     } else {
-        quote! { fn banned(&self) -> bool { false } }
+        quote! {
+            fn banned(&self) -> bool { false }
+            fn banned_value(&self) -> Option<bool> { None }
+        }
     };
     let ban_reason_impl = if has("ban_reason") {
         quote! { fn ban_reason(&self) -> Option<&str> { self.ban_reason.as_deref() } }
@@ -165,7 +199,7 @@ fn gen_user(
     };
 
     // new_active — plugin fields get Set(default) when present, omitted when absent
-    let plugin_new_active = plugin_set_fields_user(has, seaorm_root, core_root);
+    let plugin_new_active = plugin_set_fields_user(has, optional, seaorm_root, core_root);
 
     // apply_update — only update fields that exist
     let plugin_apply_update = plugin_update_fields_user(has, seaorm_root);
@@ -279,6 +313,7 @@ fn gen_user(
 /// Generate `new_active` field assignments for present plugin fields on User.
 fn plugin_set_fields_user(
     has: &dyn Fn(&str) -> bool,
+    optional: &dyn Fn(&str) -> bool,
     seaorm_root: &TokenStream,
     core_root: &TokenStream,
 ) -> Vec<TokenStream> {
@@ -292,13 +327,23 @@ fn plugin_set_fields_user(
         out.push(quote! { display_username: #seaorm_root::sea_orm::ActiveValue::Set(create_user.display_username) });
     }
     if has("two_factor_enabled") {
-        out.push(quote! { two_factor_enabled: #seaorm_root::sea_orm::ActiveValue::Set(false) });
+        let value = if optional("two_factor_enabled") {
+            quote! { create_user.two_factor_enabled }
+        } else {
+            quote! { create_user.two_factor_enabled.unwrap_or(false) }
+        };
+        out.push(quote! { two_factor_enabled: #seaorm_root::sea_orm::ActiveValue::Set(#value) });
     }
     if has("role") {
         out.push(quote! { role: #seaorm_root::sea_orm::ActiveValue::Set(create_user.role) });
     }
     if has("banned") {
-        out.push(quote! { banned: #seaorm_root::sea_orm::ActiveValue::Set(false) });
+        let value = if optional("banned") {
+            quote! { create_user.banned }
+        } else {
+            quote! { create_user.banned.unwrap_or(false) }
+        };
+        out.push(quote! { banned: #seaorm_root::sea_orm::ActiveValue::Set(#value) });
     }
     if has("ban_reason") {
         out.push(quote! { ban_reason: #seaorm_root::sea_orm::ActiveValue::Set(::std::option::Option::None) });
@@ -356,7 +401,7 @@ fn plugin_update_fields_user(
     if has("two_factor_enabled") {
         out.push(quote! {
             if let ::std::option::Option::Some(two_factor_enabled) = update.two_factor_enabled {
-                active.two_factor_enabled = #seaorm_root::sea_orm::ActiveValue::Set(two_factor_enabled);
+                active.two_factor_enabled = #seaorm_root::sea_orm::ActiveValue::Set(two_factor_enabled.into());
             }
         });
     }
@@ -370,7 +415,7 @@ fn plugin_update_fields_user(
     if has("banned") && has("ban_reason") && has("ban_expires") {
         out.push(quote! {
             if let ::std::option::Option::Some(banned) = update.banned {
-                active.banned = #seaorm_root::sea_orm::ActiveValue::Set(banned);
+                active.banned = #seaorm_root::sea_orm::ActiveValue::Set(banned.into());
                 if !banned {
                     active.ban_reason = #seaorm_root::sea_orm::ActiveValue::Set(::std::option::Option::None);
                     active.ban_expires = #seaorm_root::sea_orm::ActiveValue::Set(::std::option::Option::None);
@@ -388,7 +433,7 @@ fn plugin_update_fields_user(
     } else if has("banned") {
         out.push(quote! {
             if let ::std::option::Option::Some(banned) = update.banned {
-                active.banned = #seaorm_root::sea_orm::ActiveValue::Set(banned);
+                active.banned = #seaorm_root::sea_orm::ActiveValue::Set(banned.into());
             }
         });
     }

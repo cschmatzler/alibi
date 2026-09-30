@@ -38,6 +38,31 @@ pub struct AuthInitParts {
     pub extensions: ContextExtensions,
 }
 
+/// A plugin override for delivery of the core email-verification challenge.
+#[async_trait]
+pub trait VerificationEmailOverride<S: AuthSchema>: Send + Sync {
+    async fn send(
+        &self,
+        user: &crate::wire::UserView,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<()>;
+
+    async fn send_in_transaction(
+        &self,
+        user: &crate::wire::UserView,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<S>,
+        _transaction: &dyn crate::store::AuthTransaction<S>,
+    ) -> AuthResult<()> {
+        self.send(user, request, ctx).await
+    }
+}
+
+pub struct VerificationEmailOverrideHandle<S: AuthSchema>(
+    pub Arc<dyn VerificationEmailOverride<S>>,
+);
+
 /// Action returned by [`AuthPlugin::before_request`].
 #[derive(Debug)]
 pub enum BeforeRequestAction {
@@ -270,6 +295,62 @@ impl<S: AuthSchema> AuthInitContext<S> {
         self.metadata.get(key)
     }
 
+    /// Register a transform for user creation, including transactional creation.
+    pub fn register_user_create_transform<F>(&mut self, transform: F)
+    where
+        F: Fn(crate::types::CreateUser) -> AuthResult<crate::types::CreateUser>
+            + Send
+            + Sync
+            + 'static,
+    {
+        let mut transforms = self
+            .extensions
+            .get::<crate::store::plugin_hooks::UserTransforms>()
+            .map(|value| (*value).clone())
+            .unwrap_or_default();
+        transforms.creates.push(Arc::new(transform));
+        self.extensions.insert(transforms);
+    }
+
+    /// Register a transform applied to every user update through this auth instance.
+    pub fn register_user_update_transform<F>(&mut self, transform: F)
+    where
+        F: Fn(&str, crate::types::UpdateUser) -> AuthResult<crate::types::UpdateUser>
+            + Send
+            + Sync
+            + 'static,
+    {
+        let mut transforms = self
+            .extensions
+            .get::<crate::store::plugin_hooks::UserTransforms>()
+            .map(|value| (*value).clone())
+            .unwrap_or_default();
+        transforms.updates.push(Arc::new(transform));
+        self.extensions.insert(transforms);
+    }
+
+    /// Finalize the instance's store without mutating a shared underlying adapter.
+    pub fn database_with_registered_transforms(&self) -> Arc<dyn AuthStore<S>> {
+        match self
+            .extensions
+            .get::<crate::store::plugin_hooks::UserTransforms>()
+        {
+            Some(transforms) => Arc::new(crate::store::plugin_hooks::PluginStore::new(
+                self.database.clone(),
+                (*transforms).clone(),
+            )),
+            None => self.database.clone(),
+        }
+    }
+
+    pub fn set_email_verification_override(
+        &mut self,
+        sender: Arc<dyn VerificationEmailOverride<S>>,
+    ) {
+        self.extensions
+            .insert(VerificationEmailOverrideHandle(sender));
+    }
+
     pub fn into_parts(self) -> AuthInitParts {
         AuthInitParts {
             metadata: self.metadata,
@@ -319,6 +400,10 @@ impl<S: AuthSchema> AuthContext<S> {
         self
     }
 
+    pub fn email_verification_override(&self) -> Option<Arc<VerificationEmailOverrideHandle<S>>> {
+        self.extensions.get()
+    }
+
     pub fn user_view(&self, user: &impl crate::entity::AuthUser) -> crate::wire::UserView {
         let mut view = crate::wire::UserView::from(user);
         if self.feature_enabled("username.enabled") {
@@ -336,13 +421,21 @@ impl<S: AuthSchema> AuthContext<S> {
             view.username = None;
             view.display_username = None;
         }
-        view.two_factor_enabled = self
-            .feature_enabled("two_factor.enabled")
-            .then(|| user.two_factor_enabled());
+        if self.feature_enabled("two_factor.enabled") {
+            view.two_factor_enabled = user.two_factor_enabled_value();
+            if view.two_factor_enabled.is_none() {
+                _ = view
+                    .extension_fields
+                    .insert("twoFactorEnabled".into(), serde_json::Value::Null);
+            }
+        } else {
+            view.two_factor_enabled = None;
+        }
         if self.feature_enabled("admin.enabled") {
-            view.banned = Some(user.banned());
+            view.banned = user.banned_value();
             for (key, absent) in [
                 ("role", view.role.is_none()),
+                ("banned", view.banned.is_none()),
                 ("banReason", view.ban_reason.is_none()),
                 ("banExpires", view.ban_expires.is_none()),
             ] {
@@ -424,6 +517,23 @@ impl<S: AuthSchema> AuthContext<S> {
         view
     }
 
+    pub fn invitation_view(
+        &self,
+        invitation: &impl crate::entity::AuthInvitation,
+    ) -> crate::wire::InvitationView {
+        let mut view = crate::wire::InvitationView::from(invitation);
+        if self.feature_enabled("organization.teams.enabled") {
+            if view.team_id.is_none() {
+                _ = view
+                    .extension_fields
+                    .insert("teamId".into(), serde_json::Value::Null);
+            }
+        } else {
+            view.team_id = None;
+        }
+        view
+    }
+
     fn feature_enabled(&self, key: &str) -> bool {
         self.metadata
             .get(key)
@@ -452,24 +562,72 @@ impl<S: AuthSchema> AuthContext<S> {
         &self,
         req: &AuthRequest,
     ) -> AuthResult<(S::User, crate::wire::SessionView)> {
-        if let Some(session) = req.virtual_session() {
+        self.authenticated_session(req, true).await
+    }
+
+    /// Authorize against the persisted signed-cookie session.
+    /// This bypasses hook-provided virtual sessions while preserving normal
+    /// refresh, browser preferences and deferred-read behavior.
+    pub async fn require_authoritative_session(
+        &self,
+        req: &AuthRequest,
+    ) -> AuthResult<(S::User, crate::wire::SessionView)> {
+        self.authenticated_session(req, false).await
+    }
+
+    async fn authenticated_session(
+        &self,
+        req: &AuthRequest,
+        allow_virtual: bool,
+    ) -> AuthResult<(S::User, crate::wire::SessionView)> {
+        if allow_virtual && let Some(session) = req.virtual_session() {
             let user = self
                 .database
                 .get_user_by_id(&session.user_id)
                 .await?
-                .ok_or(AuthError::UserNotFound)?;
+                .ok_or(AuthError::Unauthenticated)?;
             return Ok((user, session.clone()));
         }
         let session_manager = self.session_manager();
 
-        if let Some(token) = session_manager.extract_session_token(req)
-            && let Some(session) = session_manager.get_session(&token).await?
-            && let Some(user) = self.database.get_user_by_id(&session.user_id()).await?
-        {
-            return Ok((user, self.session_view(&session)));
+        let options = crate::session::SessionReadOptions {
+            allow_refresh: !session_manager.request_disables_refresh(req)
+                && !self.config.session.defer_session_refresh,
+            cleanup_expired: !self.config.session.defer_session_refresh,
+        };
+        let Some(token) = session_manager.extract_session_token(req) else {
+            return Err(AuthError::Unauthenticated);
+        };
+        let read = session_manager
+            .read_session(&token, options)
+            .await
+            .map_err(|_| AuthError::Unauthenticated)?;
+        let Some(session) = read.session else {
+            self.queue_session_cleanup(req);
+            return Err(AuthError::Unauthenticated);
+        };
+        let Some(user) = self
+            .database
+            .get_user_by_id(&session.user_id())
+            .await
+            .map_err(|_| AuthError::Unauthenticated)?
+        else {
+            self.queue_session_cleanup(req);
+            return Err(AuthError::Unauthenticated);
+        };
+        if read.refreshed {
+            req.queue_response_header(
+                "Set-Cookie",
+                crate::utils::cookie_utils::create_session_cookie(session.token(), &self.config),
+            );
         }
+        Ok((user, self.session_view(&session)))
+    }
 
-        Err(AuthError::Unauthenticated)
+    fn queue_session_cleanup(&self, req: &AuthRequest) {
+        for cookie in crate::utils::cookie_utils::delete_session_cookie_headers(&self.config) {
+            req.queue_response_header("Set-Cookie", cookie);
+        }
     }
     /// Read the request's established session without extending its lifetime.
     /// Before hooks can establish a virtual session; otherwise a signed cookie
