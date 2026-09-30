@@ -455,6 +455,10 @@ compatScenario(
     const context = ctx.uniqueToken("failure-policy");
     const failures: unknown[] = [];
     for (const [mode, expectedStatus, expectedCode] of [
+      ["after-dynamic-api", 500, "APPLICATION_POLICY_DENIED"],
+      ["after-forbidden", 403, null],
+      ["after-validation", 400, null],
+      ["session-error", 403, null],
       ["after-throw", 500, "FAILED_TO_VERIFY_REGISTRATION"],
       ["after-api", 403, "CALLBACK_DENIED"],
       ["missing-user", 500, "USER_NOT_FOUND"],
@@ -471,12 +475,31 @@ compatScenario(
       const failed = await client(ctx).$fetch("/passkey/verify-registration", {
         method: "POST",
         body: { response, createSession: true },
-        ...(mode === "normal"
-          ? { headers: { "x-passkey-policy": "session-deny" } }
+        ...(mode === "normal" || mode === "session-error"
+          ? {
+              headers: {
+                "x-passkey-policy":
+                  mode === "normal" ? "session-deny" : "session-error",
+              },
+            }
           : {}),
       });
       expect(failed.error?.status).toBe(expectedStatus);
-      expect(code(failed)).toBe(expectedCode);
+      if (mode === "after-dynamic-api")
+        expect(
+          z.object({ message: z.string() }).parse(failed.error).message,
+        ).toBe(`Application enrollment denied: ${attemptContext}`);
+      if (expectedCode) expect(code(failed)).toBe(expectedCode);
+      if (!expectedCode) {
+        expect(failed.error).not.toHaveProperty("code");
+        expect(
+          z.object({ message: z.string() }).parse(failed.error).message,
+        ).toBe(
+          mode === "after-validation"
+            ? "Validation error: Callback validation rejected"
+            : "session creation cancelled by database hook",
+        );
+      }
       const replay = await client(ctx).$fetch("/passkey/verify-registration", {
         method: "POST",
         body: { response, createSession: true },

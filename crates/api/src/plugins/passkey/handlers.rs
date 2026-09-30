@@ -455,15 +455,11 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
                         })
                         .await
                         .map_err(|error| match error {
-                            AuthError::Forbidden(message)
-                                if message == "session creation cancelled by database hook" =>
-                            {
-                                AuthError::Upstream {
-                                    status: 500,
-                                    code: "UNABLE_TO_CREATE_SESSION",
-                                    message: "Unable to create session",
-                                }
-                            }
+                            AuthError::SessionCreationCancelled => AuthError::Upstream {
+                                status: 500,
+                                code: "UNABLE_TO_CREATE_SESSION",
+                                message: "Unable to create session",
+                            },
                             other => other,
                         })?;
                     Ok(Box::new((passkey, user, session))
@@ -505,7 +501,7 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
     };
     match outcome {
         Ok(value) => Ok(PasskeyHandlerOutcome::Success(value)),
-        Err(error @ AuthError::Upstream { .. }) => Err(error),
+        Err(error) if super::registration::is_application_error(&error) => Err(error),
         Err(_) => passkey_registration_failure(),
     }
 }

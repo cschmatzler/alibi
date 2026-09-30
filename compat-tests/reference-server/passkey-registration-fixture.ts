@@ -94,6 +94,19 @@ export function passkeyRegistrationFixture(
           backedUp: info.credentialBackedUp,
           clientData,
         });
+        if (enrollment.mode === "after-dynamic-api")
+          throw new APIError("INTERNAL_SERVER_ERROR", {
+            code: "APPLICATION_POLICY_DENIED",
+            message: `Application enrollment denied: ${context}`,
+          });
+        if (enrollment.mode === "after-forbidden")
+          throw new APIError("FORBIDDEN", {
+            message: "session creation cancelled by database hook",
+          });
+        if (enrollment.mode === "after-validation")
+          throw new APIError("BAD_REQUEST", {
+            message: "Validation error: Callback validation rejected",
+          });
         if (enrollment.mode === "after-throw")
           throw new Error("after verification failed");
         if (enrollment.mode === "after-api")
@@ -122,10 +135,14 @@ export function passkeyRegistrationFixture(
         databaseHooks: {
           session: {
             create: {
-              before: async (_session, ctx) =>
-                ctx?.headers?.get("x-passkey-policy") === "session-deny"
-                  ? false
-                  : undefined,
+              before: async (_session, ctx) => {
+                const policy = ctx?.headers?.get("x-passkey-policy");
+                if (policy === "session-error")
+                  throw new APIError("FORBIDDEN", {
+                    message: "session creation cancelled by database hook",
+                  });
+                return policy === "session-deny" ? false : undefined;
+              },
             },
           },
         },

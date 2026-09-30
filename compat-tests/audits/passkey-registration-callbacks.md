@@ -142,10 +142,54 @@ challenge cookie encoding, broad response/name/media validation variants,
 custom schema/additional-field profiles, alternate stores/cache/secondary
 storage, and arbitrary callback side-effect rollback remain unproved here.
 Typed Rust callback return values cannot represent invalid JavaScript non-string
-IDs/names or rejected Promise/panic behavior. Explicit structured callback errors
-use AuthError::Upstream; generic failures use AuthError::Internal. This does not
-claim that every Rust AuthError subtype reproduces arbitrary JavaScript APIError
-objects. Existing source cookie-cache behavior is outside this profile.
+IDs/names or rejected Promise/panic behavior. Domain 4xx errors and explicit
+AuthError::Upstream/AuthError::Api errors retain their public contract (including
+explicit public 500 errors); internal runtime/store failures retain the generic
+source failure. This does not claim arbitrary JavaScript callback return types.
+Existing source cookie-cache behavior is outside this profile.
 
 Central integration onto newer session.additional_fields must retain that
 branch's CreateSession default/transform contract when applying this slice.
+
+## Application error follow-up
+
+Review identified two distinctions the original blanket registration catch did
+not preserve: idiomatic callback Forbidden/Validation errors are source APIError
+equivalents, and an ordinary before-create-session hook Forbidden can have the
+same text as an actual cancelled session. The source uses APIError identity, not
+message text, to distinguish public failures.
+
+The follow-up uses the independent typed cancellation prerequisite 1655472 and
+dynamic public API error prerequisite 56299c2. Only
+AuthError::SessionCreationCancelled returned by session creation becomes
+UNABLE_TO_CREATE_SESSION. Domain 4xx and explicit Upstream/Api errors pass
+through unchanged; internal Database/Config/Serialization/Plugin/PasswordHash/
+Jwt/Runtime errors remain generic registration failures. Resolver internal
+failures remain empty 500 responses. No call-local error capture or new shared
+core variant is introduced by this passkey follow-up.
+
+Actual official-client before evidence is /tmp/passkey-errors-before-boundaries.log
+versus /tmp/passkey-errors-source-boundaries.log. Each of three real verified
+ceremonies leaves no credential/session and burns its challenge, while responses
+differ: callback Forbidden became 500 FAILED instead of 403, callback Validation
+became 500 FAILED instead of 400, and a genuine before-session hook Forbidden with
+the cancellation message became 500 UNABLE instead of 403. The complete local
+trace entries are retained in these diagnostic logs.
+
+The existing primary SDK failure lifecycle now protects these three distinctions
+and an intentional dynamic Api 500 with a public application code/message, in
+addition to the previous Upstream error, generic failure, missing-owner, actual
+HookControl::Cancel rollback, replay, persisted state, and successful retry.
+Phone-owned native direct/transaction tests independently own the shared typed
+primitive and same-message Forbidden control; this slice adds no duplicate
+private primitive/native mirror.
+
+Focused final follow-up evidence: /tmp/passkey-errors-sdk-final.log (all 10
+passkey scenarios / 854 assertions), /tmp/passkey-errors-oracle-final.log
+(TS→TS four registration scenarios / 548 assertions), /tmp/passkey-errors-native-final.log
+(10 existing native passkey tests), /tmp/passkey-errors-clippy-final.log,
+/tmp/passkey-errors-fixture-clippy-final.log, /tmp/passkey-errors-build-final.log,
+and /tmp/passkey-errors-typecheck-final.log. The original 7c48aac tree/commit
+remains untouched. Integrate the two shared prerequisites centrally before the
+separate follow-up commit; no lock/inventory/schema/comparator change belongs
+to this correction.

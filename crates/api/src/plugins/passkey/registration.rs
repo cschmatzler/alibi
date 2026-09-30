@@ -96,3 +96,11 @@ pub(super) fn trim_name(value: &str) -> &str {
         '\u{205F}' | '\u{3000}' | '\u{FEFF}')
     })
 }
+
+/// Domain client errors and explicit public API errors preserve their wire contract.
+pub(super) fn is_application_error(error: &better_auth_core::AuthError) -> bool {
+    matches!(
+        error,
+        better_auth_core::AuthError::Upstream { .. } | better_auth_core::AuthError::Api { .. }
+    ) || error.status_code() < 500
+}

@@ -155,6 +155,24 @@ impl PasskeyRegistrationAfterVerification for Enrollment {
         }
         self.record(json!({"stage":"verified","context":context,"user":user,"userId":proof.user_id,"credentialID":verified.credential_id,"publicKey":STANDARD.encode(&verified.public_key),"counter":verified.counter,"aaguid":verified.aaguid,"deviceType":verified.device_type,"backedUp":verified.backed_up,"clientData":client_data}));
         match proof.mode.as_str() {
+            "after-dynamic-api" => {
+                return Err(AuthError::Api {
+                    status: 500,
+                    code: Some("APPLICATION_POLICY_DENIED".to_owned()),
+                    message: format!(
+                        "Application enrollment denied: {}",
+                        context.unwrap_or_default()
+                    ),
+                });
+            }
+            "after-forbidden" => {
+                return Err(AuthError::forbidden(
+                    "session creation cancelled by database hook",
+                ));
+            }
+            "after-validation" => {
+                return Err(AuthError::Validation("Callback validation rejected".into()));
+            }
             "after-throw" => return Err(AuthError::internal("after verification failed")),
             "after-api" => {
                 return Err(AuthError::Upstream {
@@ -183,6 +201,16 @@ impl SeaOrmHooks<TestSchema> for CancelSession {
         _session: &mut CreateSession,
         ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
+        if ctx
+            .request
+            .as_ref()
+            .and_then(|request| request.headers.get("x-passkey-policy"))
+            .is_some_and(|value| value == "session-error")
+        {
+            return Err(AuthError::forbidden(
+                "session creation cancelled by database hook",
+            ));
+        }
         Ok(
             if ctx
                 .request

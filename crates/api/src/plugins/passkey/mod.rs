@@ -90,8 +90,8 @@ impl PasskeyPlugin {
                         &serde_json::json!({"code":"RESOLVED_USER_INVALID","message":"Resolved user is invalid"}),
                     )?);
                 }
-                Err(AuthError::Internal(_)) => return Ok(AuthResponse::new(500)),
-                Err(error) => return Err(error),
+                Err(error) if registration::is_application_error(&error) => return Err(error),
+                Err(_) => return Ok(AuthResponse::new(500)),
             }
         };
         let passkey_name = req.query.get("name").map(|s| s.as_str());
