@@ -1,6 +1,10 @@
 /** Explicit equivalent configurations of the pinned runtime. */
 export type FixtureProfile =
   | "multi-session" | "multi-session-limited"
+  | "two-factor-pending-session-cancel" | "two-factor-pending-session-forbidden"
+  | "two-factor-skip-session-cancel" | "two-factor-skip-session-forbidden"
+  | "two-factor-skip-user-hook"
+  | "two-factor-lockout-fractional" | "two-factor-lockout-zero" | "two-factor-lockout-disabled" | "two-factor-skip-verification"
   | "two-factor-totp-default" | "two-factor-totp-config" | "two-factor-totp-disabled" | "two-factor-totp-zero"
   | "session-fields" | "session-fields-plugins"
   | "device-custom" | "device-configured" | "device-unicode" | "device-too-long"

@@ -60,6 +60,7 @@ mod session_fields_fixture;
 mod session_profiles;
 mod siwe_fixture;
 mod sqlite_fixture;
+mod two_factor_policy_fixture;
 mod two_factor_totp_fixture;
 mod verification_profiles;
 
@@ -802,6 +803,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_key_for_update = api_key_plugin.clone();
 
     let totp_router = two_factor_totp_fixture::router(&config, reset_database.clone()).await?;
+    let policy_router = two_factor_policy_fixture::router(&config, reset_database.clone()).await?;
     let ott_router = one_time_token_fixture::router(&config, reset_database.clone()).await?;
 
     let app = Router::new()
@@ -1592,6 +1594,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }),
         )
         .merge(totp_router)
+        .merge(policy_router)
         .merge(ott_router)
         .merge(jwt_router)
         .merge(device_profiles)

@@ -4,6 +4,7 @@ import { Database } from "bun:sqlite";
 import { passkey } from "@better-auth/passkey";
 import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
+import { createTwoFactorPolicyFixture } from "./two-factor-policy-fixture";
 import { createTwoFactorTotpFixture } from "./two-factor-totp-fixture";
 import { createSiweFixture } from "./siwe-fixture";
 import { createPhoneFixture } from "./phone-fixture";
@@ -461,6 +462,7 @@ for (const name of ["magic-link-hashed", "magic-link-disabled"]) {
 
 const phoneFixture = await createPhoneFixture(authOptions, twoFactorOtpOutbox);
 const twoFactorTotpFixture = createTwoFactorTotpFixture(authOptions);
+const twoFactorPolicyFixture = createTwoFactorPolicyFixture(authOptions, database);
 const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
 
@@ -732,6 +734,8 @@ const server = Bun.serve({
       for(const [name,profile] of ottProfiles) {
         if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return profile.auth.handler(request);
       }
+      const policyControl = await twoFactorPolicyFixture(request, url);
+      if (policyControl) return policyControl;
       const totpControl = await twoFactorTotpFixture(request, url);
       if (totpControl) return totpControl;
       const ottControl=await oneTimeTokenControl(request,url);

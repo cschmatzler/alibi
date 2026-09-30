@@ -42,6 +42,12 @@ pub enum AuthError {
     #[error("{0}")]
     Forbidden(String),
 
+    /// A session-create lifecycle hook explicitly cancelled creation.
+    /// Callers may apply endpoint-specific null-session behavior; the default
+    /// public response retains the existing cancellation status and message.
+    #[error("session creation cancelled by database hook")]
+    SessionCreationCancelled,
+
     #[error("{0}")]
     BannedUser(String),
 
@@ -107,7 +113,10 @@ impl AuthError {
             | Self::AuthenticationFailed(_)
             | Self::SessionNotFound => 401,
             // 403
-            Self::Forbidden(_) | Self::BannedUser(_) | Self::Unauthorized => 403,
+            Self::Forbidden(_)
+            | Self::SessionCreationCancelled
+            | Self::BannedUser(_)
+            | Self::Unauthorized => 403,
             // 404
             Self::UserNotFound | Self::NotFound(_) => 404,
             // 409

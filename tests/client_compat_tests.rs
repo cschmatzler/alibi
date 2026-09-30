@@ -344,3 +344,21 @@ async fn multiple_sessions_client_compat() {
 async fn two_factor_totp_client_compat() {
     run_client_compat(&["tests/two-factor/totp-config.test.ts"]).await;
 }
+
+#[tokio::test]
+#[ignore = "requires Bun and the compatibility fixtures"]
+async fn two_factor_lockout_client_compat() {
+    run_client_compat(&["tests/two-factor/lockout.test.ts"]).await;
+}
+
+#[tokio::test]
+#[ignore = "requires the pinned Bun and Rust compatibility servers"]
+async fn two_factor_skip_order_client_compat() {
+    run_client_compat(&["tests/two-factor/skip-order.test.ts"]).await;
+}
+
+#[tokio::test]
+#[ignore = "requires the pinned Bun and Rust compatibility servers"]
+async fn two_factor_pending_cancel_client_compat() {
+    run_client_compat(&["tests/two-factor/pending-cancel.test.ts"]).await;
+}

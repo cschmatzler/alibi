@@ -45,7 +45,7 @@ where
                 .await?
                 .is_cancelled()
             {
-                return Err(cancelled_by_hook("session creation"));
+                return Err(AuthError::SessionCreationCancelled);
             }
         }
         let now = Utc::now();
@@ -149,6 +149,86 @@ mod tests {
             active_organization_id: None,
             active_team_id: None,
         }
+    }
+
+    #[tokio::test]
+    async fn session_cancel_preserves_default_wire_error_and_transaction_rollback()
+    -> Result<(), Box<dyn std::error::Error>> {
+        struct RejectSession {
+            cancel: bool,
+            observed_transaction: Arc<Mutex<Option<bool>>>,
+        }
+        #[async_trait]
+        impl SeaOrmHooks<BundledSchema> for RejectSession {
+            async fn before_create_session(
+                &self,
+                _session: &mut CreateSession,
+                context: &SeaOrmHookContext<'_>,
+            ) -> AuthResult<HookControl> {
+                *self.observed_transaction.lock().unwrap() = Some(context.tx.is_some());
+                if self.cancel {
+                    Ok(HookControl::Cancel)
+                } else {
+                    Err(AuthError::forbidden(
+                        "session creation cancelled by database hook",
+                    ))
+                }
+            }
+        }
+        for cancel in [false, true] {
+            for in_transaction in [false, true] {
+                let db = Database::connect("sqlite::memory:").await?;
+                run_migrations(&db).await?;
+                let observed = Arc::new(Mutex::new(None));
+                let store = SeaOrmStore::<BundledSchema>::new(
+                    AuthConfig::new("cancel-session-hook-secret-at-least-32"),
+                    db.clone(),
+                )
+                .hook(RejectSession {
+                    cancel,
+                    observed_transaction: observed.clone(),
+                });
+                let email = "cancel-owner@fixture.test";
+                let expiry = Utc::now() + Duration::hours(1);
+                let error = if in_transaction {
+                    better_auth_core::store::transaction(&store, move |tx| {
+                        Box::pin(async move {
+                            let user = tx.create_user(CreateUser::new().with_email(email)).await?;
+                            _ = tx
+                                .create_session(input(&user.id, Some("cancel-token"), expiry))
+                                .await?;
+                            Ok(())
+                        })
+                    })
+                    .await
+                    .unwrap_err()
+                } else {
+                    let user = store
+                        .create_user(CreateUser::new().with_email(email))
+                        .await?;
+                    store
+                        .create_session(input(&user.id, Some("cancel-token"), expiry))
+                        .await
+                        .unwrap_err()
+                };
+                assert_eq!(*observed.lock().unwrap(), Some(in_transaction));
+                assert_eq!(matches!(error, AuthError::SessionCreationCancelled), cancel);
+                assert_eq!(matches!(error, AuthError::Forbidden(_)), !cancel);
+                let response = error.to_auth_response();
+                assert_eq!(response.status, 403);
+                assert_eq!(
+                    serde_json::from_slice::<serde_json::Value>(&response.body)?,
+                    serde_json::json!({"message":"session creation cancelled by database hook"})
+                );
+                assert!(store.get_session("cancel-token").await?.is_none());
+                assert_eq!(
+                    store.get_user_by_email(email).await?.is_none(),
+                    in_transaction
+                );
+                db.close().await?;
+            }
+        }
+        Ok(())
     }
 
     #[tokio::test]
