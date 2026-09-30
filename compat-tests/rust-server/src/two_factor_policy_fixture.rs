@@ -11,7 +11,7 @@ use better_auth::{
     AuthBuilder, AuthConfig, AuthResult, BetterAuth,
 };
 use better_auth_core::{
-    store::TwoFactorStore,
+    store::{TwoFactorStore, VerificationStore},
     utils::json::{self, JsValue},
 };
 use better_auth_seaorm::{
@@ -46,6 +46,7 @@ impl better_auth_seaorm::SeaOrmHooks<TestSchema> for RejectUserUpdate {
 
 struct RejectSessionCreate {
     cancel: bool,
+    pending: bool,
 }
 #[async_trait::async_trait]
 impl better_auth_seaorm::SeaOrmHooks<TestSchema> for RejectSessionCreate {
@@ -54,11 +55,13 @@ impl better_auth_seaorm::SeaOrmHooks<TestSchema> for RejectSessionCreate {
         _session: &mut better_auth_core::CreateSession,
         context: &better_auth_seaorm::SeaOrmHookContext<'_>,
     ) -> AuthResult<better_auth_seaorm::HookControl> {
-        if context
-            .request
-            .as_ref()
-            .is_some_and(|request| request.path.ends_with("/two-factor/enable"))
-        {
+        if context.request.as_ref().is_some_and(|request| {
+            if self.pending {
+                request.path.contains("/two-factor/verify-")
+            } else {
+                request.path.ends_with("/two-factor/enable")
+            }
+        }) {
             if self.cancel {
                 return Ok(better_auth_seaorm::HookControl::Cancel);
             }
@@ -96,6 +99,8 @@ pub(super) async fn router(
         "two-factor-skip-user-hook",
         "two-factor-skip-session-cancel",
         "two-factor-skip-session-forbidden",
+        "two-factor-pending-session-cancel",
+        "two-factor-pending-session-forbidden",
     ] {
         let lockout = match name {
             "two-factor-lockout-fractional" => AccountLockoutConfig {
@@ -120,9 +125,10 @@ pub(super) async fn router(
         let store = SeaOrmStore::<TestSchema>::new(config.clone(), database.clone());
         let store = if name == "two-factor-skip-user-hook" {
             store.with_hooks(vec![Arc::new(RejectUserUpdate)])
-        } else if name.starts_with("two-factor-skip-session-") {
+        } else if name.contains("-session-") {
             store.with_hooks(vec![Arc::new(RejectSessionCreate {
-                cancel: name == "two-factor-skip-session-cancel",
+                cancel: name.ends_with("-cancel"),
+                pending: name.starts_with("two-factor-pending-"),
             })])
         } else {
             store
@@ -139,7 +145,8 @@ pub(super) async fn router(
                 .plugin(SessionManagementPlugin::new())
                 .plugin(TwoFactorPlugin::with_config(TwoFactorConfig {
                     account_lockout: lockout,
-                    skip_verification_on_enable: name.starts_with("two-factor-skip-"),
+                    skip_verification_on_enable: name.starts_with("two-factor-skip-")
+                        || name.starts_with("two-factor-pending-"),
                     send_otp: Some(Arc::new(delivery.clone())),
                     ..Default::default()
                 }))
@@ -192,6 +199,41 @@ async fn control(
             .into_response();
     };
     let value = value.as_ref().unwrap();
+    if value.get("pendingState").and_then(JsValue::as_bool) == Some(true) {
+        let read=async {
+        let key = if let Some(key) = value.get("pendingKey").and_then(JsValue::as_str) {
+            Some(key.to_owned())
+        } else {
+            database.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"SELECT identifier FROM verifications WHERE value=? AND identifier LIKE '2fa-%'",[user_id.into()])).await.map_err(|_|())?.map(|row|row.try_get::<String>("","identifier").map_err(|_|())).transpose()?
+        };
+        let (challenge, attempts, otp_exists) = if let Some(key) = key.as_ref() {
+            let challenge = store
+                .get_verification_by_identifier(key)
+                .await
+                .map_err(|_|())?
+                .is_some();
+            let attempts = store
+                .get_verification_by_identifier(&format!("2fa-attempts-{key}"))
+                .await
+                .map_err(|_|())?
+                .map(|row| row.value);
+            let otp = store
+                .get_verification_by_identifier(&format!("2fa-otp-{key}"))
+                .await
+                .map_err(|_|())?
+                .is_some();
+            (challenge, attempts, otp)
+        } else {
+            (false, None, false)
+        };
+        let trust_count=database.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"SELECT count(*) AS n FROM verifications WHERE value=? AND identifier LIKE 'trust-device-%'",[user_id.into()])).await.map_err(|_|())?.ok_or(())?.try_get::<i64>("","n").map_err(|_|())?;
+        Ok::<_,()>(json!({"key":key,"challenge":challenge,"attempts":attempts,"otpExists":otp_exists,"trustCount":trust_count}))
+      }.await;
+        return match read {
+            Ok(value) => Json(value).into_response(),
+            Err(()) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
+    }
     let mutation = async {
         if let Some(count) = value.get("count") {
             let _ = database

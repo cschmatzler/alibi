@@ -1486,7 +1486,14 @@ async fn finalize_pending_two_factor<S: better_auth_core::AuthSchema>(
         meta.user_agent,
     )
     .await
-    .map_err(SessionIssueError::into_auth_error)?;
+    .map_err(|error| match error {
+        SessionIssueError::Auth(AuthError::SessionCreationCancelled) => AuthError::Upstream {
+            status: 500,
+            code: "FAILED_TO_CREATE_SESSION",
+            message: "failed to create session",
+        },
+        error => error.into_auth_error(),
+    })?;
     // Upstream createSession(user, dontRememberMe) uses a one-day lifetime.
     if pending.dont_remember {
         ctx.database
