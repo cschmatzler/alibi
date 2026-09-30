@@ -129,14 +129,20 @@
         "success": [
           "admin impersonation restores the original admin session and hides impersonated sessions",
           "JWT session headers preserve original refresh expiry cleanup and exposed header order",
-          "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged"
+          "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged",
+          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
+          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
+          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners"
         ],
         "rejection": "api-key shared headers select the first configured session",
         "authorization": "api-key shared headers select the first configured session",
         "state": [
           "session reads refresh from persisted expiry and renew the signed cookie",
           "JWT session headers preserve original refresh expiry cleanup and exposed header order",
-          "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged"
+          "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged",
+          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
+          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
+          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners"
         ]
       }
     },
@@ -1580,10 +1586,20 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "account info requires an explicit account selector",
+        "success": [
+          "account info requires an explicit account selector",
+          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
+          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
+          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners"
+        ],
         "rejection": "sign up with duplicate email returns error",
         "authorization": null,
-        "state": "official client signs in with imported TypeScript scrypt credentials"
+        "state": [
+          "official client signs in with imported TypeScript scrypt credentials",
+          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
+          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
+          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners"
+        ]
       }
     },
     {
