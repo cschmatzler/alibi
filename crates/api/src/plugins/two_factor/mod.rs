@@ -74,7 +74,7 @@ pub struct TwoFactorPlugin {
 #[derive(Clone, better_auth_core::PluginConfig)]
 #[plugin(name = "TwoFactorPlugin")]
 pub struct TwoFactorConfig {
-    /// Override the issuer embedded in generated TOTP URIs.
+    /// Override the issuer embedded in enrollment TOTP URIs.
     #[config(default = None)]
     pub issuer: Option<String>,
     /// Skip the enrollment verification step and enable 2FA immediately.
@@ -92,6 +92,12 @@ pub struct TwoFactorConfig {
     /// TOTP digit count.
     #[config(default = DEFAULT_TOTP_DIGITS)]
     pub totp_digits: usize,
+    /// Issuer used when retrieving an existing authenticator URI.
+    #[config(default = None)]
+    pub totp_issuer: Option<String>,
+    /// Reject TOTP enrollment, URI retrieval, verification and server generation.
+    #[config(default = false)]
+    pub totp_disabled: bool,
     /// Optional OTP sender callback. When absent, `/two-factor/send-otp` is disabled.
     #[config(default = None, skip)]
     pub send_otp: Option<Arc<dyn SendTwoFactorOtp>>,
@@ -109,6 +115,8 @@ impl std::fmt::Debug for TwoFactorConfig {
             .field("trust_device_max_age", &self.trust_device_max_age)
             .field("totp_period", &self.totp_period)
             .field("totp_digits", &self.totp_digits)
+            .field("totp_issuer", &self.totp_issuer)
+            .field("totp_disabled", &self.totp_disabled)
             .field("send_otp", &self.send_otp.as_ref().map(|_| "custom"))
             .finish()
     }
@@ -371,6 +379,16 @@ impl TwoFactorPlugin {
         self
     }
 
+    /// Generate a current TOTP from an application-owned UTF-8 secret.
+    ///
+    /// This corresponds to `auth.api.generateTOTP`; it has no public HTTP route.
+    pub fn generate_totp(&self, secret: &str) -> AuthResult<String> {
+        require_totp_enabled(&self.config)?;
+        build_totp(&self.config, secret)?
+            .generate_current()
+            .map_err(|error| AuthError::internal(format!("Failed to generate TOTP: {error}")))
+    }
+
     /// Read the currently stored backup codes for a user.
     ///
     /// This is the Rust server-side equivalent of the TypeScript
@@ -577,6 +595,13 @@ async fn enable_core(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<(EnableResponse, Vec<String>)> {
     verify_user_password(ctx, user, &body.password).await?;
+    if config.totp_disabled {
+        return Err(AuthError::Upstream {
+            status: 400,
+            code: "TOTP_NOT_CONFIGURED",
+            message: "TOTP is not available",
+        });
+    }
 
     let _ = ctx.database.delete_two_factor(user.id().as_ref()).await;
 
@@ -619,7 +644,19 @@ async fn enable_core(
         set_cookie_headers.push(create_session_cookie(issued.session.token(), &ctx.config));
     }
 
-    let totp_uri = build_totp(config, &secret, body.issuer.as_deref(), user, ctx)?.get_url();
+    let issuer = body
+        .issuer
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .or_else(|| config.issuer.as_deref().filter(|value| !value.is_empty()))
+        .unwrap_or(&ctx.config.app_name);
+    let totp_uri = totp_uri(
+        config,
+        &secret,
+        issuer,
+        user.email().unwrap_or("user"),
+        true,
+    );
     Ok((
         EnableResponse {
             method: "totp",
@@ -702,11 +739,23 @@ async fn get_totp_uri_core(
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<TotpUriResponse> {
-    verify_user_password(ctx, user, &body.password).await?;
+    require_totp_enabled(config)?;
     let two_factor = load_two_factor_record(user, ctx).await?;
     let secret = decrypt_value(&ctx.config.secret, two_factor.secret())?;
+    verify_user_password(ctx, user, &body.password).await?;
+    let issuer = config
+        .totp_issuer
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&ctx.config.app_name);
     Ok(TotpUriResponse {
-        totp_uri: build_totp(config, &secret, None, user, ctx)?.get_url(),
+        totp_uri: totp_uri(
+            config,
+            &secret,
+            issuer,
+            user.email().unwrap_or("user"),
+            false,
+        ),
     })
 }
 
@@ -716,10 +765,11 @@ async fn verify_totp_core(
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<(SessionTokenResponse<UserView>, Vec<String>)> {
+    require_totp_enabled(config)?;
     let state = resolve_two_factor_state(req, ctx).await?;
     let two_factor = load_two_factor_record(state.user(), ctx).await?;
     let secret = decrypt_value(&ctx.config.secret, two_factor.secret())?;
-    let totp = build_totp(config, &secret, None, state.user(), ctx)?;
+    let totp = build_totp(config, &secret)?;
 
     if !totp
         .check_current(&body.code)
@@ -1122,28 +1172,90 @@ async fn load_two_factor_record(
         .ok_or_else(|| AuthError::bad_request("TOTP not enabled"))
 }
 
-fn build_totp(
+fn require_totp_enabled(config: &TwoFactorConfig) -> AuthResult<()> {
+    if config.totp_disabled {
+        return Err(AuthError::Upstream {
+            status: 400,
+            code: "TOTP_NOT_CONFIGURED",
+            message: "totp isn't configured",
+        });
+    }
+    Ok(())
+}
+
+fn totp_digits(config: &TwoFactorConfig) -> usize {
+    if config.totp_digits == 0 {
+        DEFAULT_TOTP_DIGITS
+    } else {
+        config.totp_digits
+    }
+}
+
+fn totp_period(config: &TwoFactorConfig) -> u64 {
+    if config.totp_period == 0 {
+        DEFAULT_TOTP_PERIOD_SECS
+    } else {
+        config.totp_period
+    }
+}
+
+fn build_totp(config: &TwoFactorConfig, secret: &str) -> AuthResult<TOTP> {
+    let digits = totp_digits(config);
+    if !(1..=8).contains(&digits) || secret.is_empty() {
+        return Err(AuthError::internal("Invalid TOTP HMAC input"));
+    }
+    // The upstream UTF-8 HMAC accepts short nonempty keys. Validate the runtime
+    // constraints before bypassing the library's stronger 128-bit key policy.
+    Ok(TOTP::new_unchecked(
+        Algorithm::SHA1,
+        digits,
+        1,
+        totp_period(config),
+        secret.as_bytes().to_vec(),
+        None,
+        String::new(),
+    ))
+}
+
+fn uri_component(value: &str) -> String {
+    urlencoding::encode(value)
+        .replace("%21", "!")
+        .replace("%27", "'")
+        .replace("%28", "(")
+        .replace("%29", ")")
+        .replace("%2A", "*")
+}
+
+fn totp_uri(
     config: &TwoFactorConfig,
     secret: &str,
-    request_issuer: Option<&str>,
-    user: &impl AuthUser,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<TOTP> {
-    let issuer = request_issuer
-        .map(str::to_owned)
-        .or_else(|| config.issuer.clone())
-        .unwrap_or_else(|| ctx.config.app_name.clone());
-    let account_name = user.email().unwrap_or("user").to_string();
-    TOTP::new(
-        Algorithm::SHA1,
-        config.totp_digits,
-        1,
-        config.totp_period,
-        secret.as_bytes().to_vec(),
-        Some(issuer),
-        account_name,
+    issuer: &str,
+    email: &str,
+    enrollment: bool,
+) -> String {
+    let secret = totp_rs::Secret::Raw(secret.as_bytes().to_vec())
+        .to_encoded()
+        .to_string();
+    let digits = totp_digits(config).to_string();
+    // Enrollment forwards the configured period directly; the authenticator
+    // provider and generator use the upstream truthy default for zero.
+    let period = if enrollment {
+        config.totp_period
+    } else {
+        totp_period(config)
+    }
+    .to_string();
+    let query = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("secret", &secret)
+        .append_pair("issuer", issuer)
+        .append_pair("digits", &digits)
+        .append_pair("period", &period)
+        .finish();
+    format!(
+        "otpauth://totp/{}:{}?{query}",
+        uri_component(issuer),
+        uri_component(email)
     )
-    .map_err(|error| AuthError::internal(format!("Failed to create TOTP: {}", error)))
 }
 
 async fn verify_user_password(

@@ -338,3 +338,9 @@ async fn username_availability_client_compat() {
 async fn multiple_sessions_client_compat() {
     run_client_compat(&["tests/multiple-sessions"]).await;
 }
+
+#[tokio::test]
+#[ignore = "starts external TS and Rust servers"]
+async fn two_factor_totp_client_compat() {
+    run_client_compat(&["tests/two-factor/totp-config.test.ts"]).await;
+}
