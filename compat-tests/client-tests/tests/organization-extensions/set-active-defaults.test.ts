@@ -83,7 +83,7 @@ compatScenario("organization set-active respects blank selector precedence and w
   expect(z.object({id:z.string()}).parse(retried.body).id).toBe(firstId);
   expect(await state(ctx,email)).toEqual(before);
   return {before,blank,slug,afterSlug,idWins,missingSlug,nullWins,cleared,unselected,retried};
-});
+}, ["POST /organization/set-active"]);
 
 compatScenario("organization set-active clears only the denied current token and validates guest bodies before authentication", async ctx => {
   const {owner,email,token,firstId,firstSlug,otherToken,before}=await setup(ctx);
@@ -119,4 +119,4 @@ compatScenario("organization set-active clears only the denied current token and
   expect(await state(ctx,email)).toEqual(cleared);
   expect(await state(ctx,foreignEmail)).toEqual(foreignBefore);
   return {before,foreignBefore,denied,cleared,invalid,validGuest,badMedia,retry,missingId};
-});
+}, ["POST /organization/set-active"]);
