@@ -45,12 +45,12 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
+mod admin_permission_fixture;
 mod device_fixture;
 mod invitation_fixture;
 mod jwt_fixture;
 mod lifecycle_fixture;
 mod magic_profiles;
-mod admin_permission_fixture;
 mod multiple_session_fixture;
 mod one_time_token_fixture;
 mod open_api_fixture;
@@ -655,7 +655,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         multiple_session_counter.clone(),
     )
     .await?;
-    let admin_permission_router = admin_permission_fixture::router(&config, database.clone()).await?;
+    let admin_permission_router =
+        admin_permission_fixture::router(&config, database.clone()).await?;
     let session_fields_router = session_fields_fixture::router(&config, database.clone()).await?;
     let siwe_state = siwe_fixture::state();
     let siwe_profile_router =
