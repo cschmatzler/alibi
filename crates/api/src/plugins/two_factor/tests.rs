@@ -9,6 +9,232 @@ use cookie::Cookie;
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 #[tokio::test]
+async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rejection() {
+    use better_auth_core::{AuthConfig, CreateSession};
+    use better_auth_seaorm::{Database, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore};
+    struct PolicyHook {
+        cancel_session: bool,
+        observed: Arc<std::sync::Mutex<Vec<(String, String)>>>,
+    }
+    #[async_trait]
+    impl SeaOrmHooks<TestSchema> for PolicyHook {
+        async fn before_update_user(
+            &self,
+            id: &str,
+            update: &mut UpdateUser,
+            context: &SeaOrmHookContext<'_>,
+        ) -> AuthResult<HookControl> {
+            if context
+                .request
+                .as_ref()
+                .is_some_and(|request| request.path.ends_with("/two-factor/enable"))
+            {
+                self.observed
+                    .lock()
+                    .unwrap()
+                    .push(("user".into(), id.into()));
+                assert_eq!(update.two_factor_enabled, Some(true));
+                if !self.cancel_session {
+                    return Err(AuthError::Upstream {
+                        status: 400,
+                        code: "USER_UPDATE_DENIED",
+                        message: "Configured user update denied",
+                    });
+                }
+            }
+            Ok(HookControl::Continue)
+        }
+        async fn before_create_session(
+            &self,
+            session: &mut CreateSession,
+            context: &SeaOrmHookContext<'_>,
+        ) -> AuthResult<HookControl> {
+            if context
+                .request
+                .as_ref()
+                .is_some_and(|request| request.path.ends_with("/two-factor/enable"))
+            {
+                self.observed
+                    .lock()
+                    .unwrap()
+                    .push(("session".into(), session.user_id.clone()));
+                assert_eq!(
+                    session.active_organization_id.as_deref(),
+                    Some("retained-org")
+                );
+                assert_eq!(session.active_team_id.as_deref(), Some("retained-team"));
+                assert_eq!(session.impersonated_by.as_deref(), Some("retained-admin"));
+                assert_eq!(session.ip_address.as_deref(), Some("127.0.0.9"));
+                assert_eq!(session.user_agent.as_deref(), Some("retained-agent"));
+                return Ok(HookControl::Cancel);
+            }
+            Ok(HookControl::Continue)
+        }
+    }
+    let password_hash = better_auth_core::hash_password(None, "password123")
+        .await
+        .unwrap();
+    for cancel_session in [false, true] {
+        for existing in [false, true] {
+            let db = Database::connect("sqlite::memory:").await.unwrap();
+            better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+                .await
+                .unwrap();
+            let config = Arc::new(AuthConfig::new("skip-hook-secret-at-least-32-characters"));
+            let mut ctx = AuthContext::new(
+                config.clone(),
+                Arc::new(SeaOrmStore::<TestSchema>::new(config.clone(), db.clone())),
+            );
+            let user = ctx
+                .database
+                .create_user(
+                    CreateUser::new()
+                        .with_name("Hook Owner")
+                        .with_email("hook-owner@fixture.test"),
+                )
+                .await
+                .unwrap();
+            _ = ctx
+                .database
+                .create_account(CreateAccount {
+                    user_id: user.id.clone(),
+                    account_id: user.id.clone(),
+                    provider_id: "credential".into(),
+                    password: Some(password_hash.clone()),
+                    access_token: None,
+                    refresh_token: None,
+                    id_token: None,
+                    access_token_expires_at: None,
+                    refresh_token_expires_at: None,
+                    scope: None,
+                })
+                .await
+                .unwrap();
+            let session = ctx
+                .database
+                .create_session(CreateSession {
+                    token: None,
+                    user_id: user.id.clone(),
+                    expires_at: Utc::now() + ctx.config.session.expires_in,
+                    active_organization_id: Some("retained-org".into()),
+                    active_team_id: Some("retained-team".into()),
+                    impersonated_by: Some("retained-admin".into()),
+                    ip_address: Some("127.0.0.9".into()),
+                    user_agent: Some("retained-agent".into()),
+                })
+                .await
+                .unwrap();
+            let factor = if existing {
+                Some(
+                    ctx.database
+                        .create_two_factor(CreateTwoFactor {
+                            user_id: user.id.clone(),
+                            secret: encrypt_value(&ctx.config.secret, "historical-secret").unwrap(),
+                            backup_codes: encrypt_value(
+                                &ctx.config.secret,
+                                "[\"historical-backup\"]",
+                            )
+                            .unwrap(),
+                            verified: Some(false),
+                            failed_verification_count: Some(0.5),
+                            locked_until: Some(Utc::now() + Duration::minutes(1)),
+                        })
+                        .await
+                        .unwrap(),
+                )
+            } else {
+                None
+            };
+            let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
+            ctx.database = Arc::new(
+                SeaOrmStore::<TestSchema>::new(config, db.clone()).with_hooks(vec![Arc::new(
+                    PolicyHook {
+                        cancel_session,
+                        observed: observed.clone(),
+                    },
+                )]),
+            );
+            let plugin = TwoFactorPlugin::with_config(TwoFactorConfig {
+                skip_verification_on_enable: true,
+                ..Default::default()
+            });
+            let mut init =
+                better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+            plugin.on_init(&mut init).await.unwrap();
+            crate::plugins::OrganizationPlugin::with_config(
+                crate::plugins::organization::OrganizationConfig {
+                    teams: crate::plugins::organization::TeamsConfig {
+                        enabled: true,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            )
+            .on_init(&mut init)
+            .await
+            .unwrap();
+            crate::plugins::AdminPlugin::new()
+                .on_init(&mut init)
+                .await
+                .unwrap();
+            ctx.database = init.database_with_registered_transforms();
+            let parts = init.into_parts();
+            ctx.metadata = parts.metadata;
+            ctx.extensions = parts.extensions;
+            let cookie = create_session_cookie(&session.token, &ctx.config);
+            let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
+            _ = request
+                .headers
+                .insert("cookie".into(), cookie.split(';').next().unwrap().into());
+            request.body = Some(br#"{"password":"password123"}"#.to_vec());
+            let error = better_auth_core::with_request_hook_context(
+                &request,
+                plugin.on_request(&request, &ctx),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.status_code(), if cancel_session { 403 } else { 400 });
+            let expected = if cancel_session {
+                vec![
+                    ("user".into(), user.id.clone()),
+                    ("session".into(), user.id.clone()),
+                ]
+            } else {
+                vec![("user".into(), user.id.clone())]
+            };
+            assert_eq!(*observed.lock().unwrap(), expected);
+            assert_eq!(
+                serde_json::to_value(
+                    ctx.database
+                        .get_two_factor_by_user_id(&user.id)
+                        .await
+                        .unwrap()
+                )
+                .unwrap(),
+                serde_json::to_value(factor).unwrap()
+            );
+            let stored_user = ctx
+                .database
+                .get_user_by_id(&user.id)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(stored_user.two_factor_enabled(), cancel_session);
+            let sessions = ctx.database.get_user_sessions(&user.id).await.unwrap();
+            assert_eq!(sessions.len(), 1);
+            assert_eq!(
+                serde_json::to_value(&sessions[0]).unwrap(),
+                serde_json::to_value(&session).unwrap()
+            );
+            let (current_user, current_session) = ctx.require_session(&request).await.unwrap();
+            assert_eq!(current_user.id, user.id);
+            assert_eq!(current_session.token, session.token);
+            db.close().await.unwrap();
+        }
+    }
+}
+
+#[tokio::test]
 async fn signed_empty_factor_challenge_cannot_read_a_seeded_empty_identifier() {
     let (ctx, user, _) =
         create_test_context_with_credential_user("empty-challenge@fixture.test", true).await;

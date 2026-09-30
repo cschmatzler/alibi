@@ -24,6 +24,26 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 type Auth = Arc<BetterAuth<TestSchema>>;
 
+struct RejectUserUpdate;
+#[async_trait::async_trait]
+impl better_auth_seaorm::SeaOrmHooks<TestSchema> for RejectUserUpdate {
+    async fn before_update_user(
+        &self,
+        _id: &str,
+        update: &mut better_auth_core::UpdateUser,
+        _context: &better_auth_seaorm::SeaOrmHookContext<'_>,
+    ) -> AuthResult<better_auth_seaorm::HookControl> {
+        if update.two_factor_enabled == Some(true) {
+            return Err(better_auth_core::AuthError::Upstream {
+                status: 400,
+                code: "USER_UPDATE_DENIED",
+                message: "Configured user update denied",
+            });
+        }
+        Ok(better_auth_seaorm::HookControl::Continue)
+    }
+}
+
 #[derive(Clone, Default)]
 struct Delivery(Arc<Mutex<HashMap<String, String>>>);
 #[async_trait::async_trait]
@@ -47,6 +67,7 @@ pub(super) async fn router(
         "two-factor-lockout-zero",
         "two-factor-lockout-disabled",
         "two-factor-skip-verification",
+        "two-factor-skip-user-hook",
     ] {
         let lockout = match name {
             "two-factor-lockout-fractional" => AccountLockoutConfig {
@@ -68,9 +89,15 @@ pub(super) async fn router(
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = base.clone().base_path(&path);
         config.app_name = "Fixture Auth".to_owned();
+        let store = SeaOrmStore::<TestSchema>::new(config.clone(), database.clone());
+        let store = if name == "two-factor-skip-user-hook" {
+            store.with_hooks(vec![Arc::new(RejectUserUpdate)])
+        } else {
+            store
+        };
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+                .store(store)
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(
                     EmailPasswordPlugin::new()
@@ -80,7 +107,8 @@ pub(super) async fn router(
                 .plugin(SessionManagementPlugin::new())
                 .plugin(TwoFactorPlugin::with_config(TwoFactorConfig {
                     account_lockout: lockout,
-                    skip_verification_on_enable: name == "two-factor-skip-verification",
+                    skip_verification_on_enable: name == "two-factor-skip-verification"
+                        || name == "two-factor-skip-user-hook",
                     send_otp: Some(Arc::new(delivery.clone())),
                     ..Default::default()
                 }))

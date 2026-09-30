@@ -671,31 +671,6 @@ async fn enable_core(
     let encrypted_backup_codes =
         encrypt_value(&ctx.config.secret, &serde_json::to_string(&backup_codes)?)?;
 
-    if let Some(existing) = existing {
-        let _ = ctx
-            .database
-            .update_two_factor(
-                existing.id().as_ref(),
-                UpdateTwoFactor {
-                    secret: Some(encrypted_secret),
-                    backup_codes: Some(encrypted_backup_codes),
-                    verified: Some(config.skip_verification_on_enable),
-                },
-            )
-            .await?;
-    } else {
-        _ = ctx
-            .database
-            .create_two_factor(CreateTwoFactor {
-                user_id: user.id().to_string(),
-                secret: encrypted_secret,
-                backup_codes: encrypted_backup_codes,
-                verified: Some(config.skip_verification_on_enable),
-                ..Default::default()
-            })
-            .await?;
-    }
-
     let mut set_cookie_headers = Vec::new();
     if config.skip_verification_on_enable {
         let updated_user = ctx
@@ -719,6 +694,31 @@ async fn enable_core(
         .map_err(SessionIssueError::into_auth_error)?;
         ctx.database.delete_session(current_session.token()).await?;
         set_cookie_headers.push(create_session_cookie(issued.session.token(), &ctx.config));
+    }
+
+    if let Some(existing) = existing {
+        let _ = ctx
+            .database
+            .update_two_factor(
+                existing.id().as_ref(),
+                UpdateTwoFactor {
+                    secret: Some(encrypted_secret),
+                    backup_codes: Some(encrypted_backup_codes),
+                    verified: Some(config.skip_verification_on_enable),
+                },
+            )
+            .await?;
+    } else {
+        _ = ctx
+            .database
+            .create_two_factor(CreateTwoFactor {
+                user_id: user.id().to_string(),
+                secret: encrypted_secret,
+                backup_codes: encrypted_backup_codes,
+                verified: Some(config.skip_verification_on_enable),
+                ..Default::default()
+            })
+            .await?;
     }
 
     let issuer = body

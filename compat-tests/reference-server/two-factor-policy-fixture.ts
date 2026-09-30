@@ -1,13 +1,15 @@
 import type { Database } from "bun:sqlite";
 import { betterAuth } from "better-auth";
 import { twoFactor } from "better-auth/plugins";
+import { APIError } from "better-auth/api";
 
 export function createTwoFactorPolicyFixture(base: Parameters<typeof betterAuth>[0], database: Database) {
   const deliveries = new Map<string, { otp: string }>();
-  const profiles = new Map(["two-factor-lockout-fractional", "two-factor-lockout-zero", "two-factor-lockout-disabled", "two-factor-skip-verification"].map(name => [name, betterAuth({
+  const profiles = new Map(["two-factor-lockout-fractional", "two-factor-lockout-zero", "two-factor-lockout-disabled", "two-factor-skip-verification", "two-factor-skip-user-hook"].map(name => [name, betterAuth({
     ...base, appName: "Fixture Auth", basePath: `/__test/profiles/${name}/api/auth`,
+    ...(name === "two-factor-skip-user-hook" ? {databaseHooks:{...base.databaseHooks,user:{...base.databaseHooks?.user,update:{...base.databaseHooks?.user?.update,before:async data=>{if(data.twoFactorEnabled===true)throw new APIError("BAD_REQUEST",{message:"Configured user update denied",code:"USER_UPDATE_DENIED"});}}}}} : {}),
     plugins: [twoFactor({
-      skipVerificationOnEnable: name === "two-factor-skip-verification",
+      skipVerificationOnEnable: name === "two-factor-skip-verification" || name === "two-factor-skip-user-hook",
       accountLockout: name === "two-factor-lockout-fractional" ? { maxFailedAttempts: 2.5, durationSeconds: 600.25 }
         : name === "two-factor-lockout-zero" ? { maxFailedAttempts: 0, durationSeconds: 0 }
         : name === "two-factor-lockout-disabled" ? { enabled: false } : {},
