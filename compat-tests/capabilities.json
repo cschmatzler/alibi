@@ -84,11 +84,15 @@
       "evidence": {
         "success": [
           "api-key concurrent verification cannot overdraw quota",
-          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
+          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
+          "api-key custom getter replaces headers and validator binds the request owner before usage"
         ],
-        "rejection": "api-key CRUD isolates configurations and preserves all-config listing",
+        "rejection": [
+          "api-key CRUD isolates configurations and preserves all-config listing",
+          "api-key custom getter replaces headers and validator binds the request owner before usage"
+        ],
         "authorization": "api-key organization ownership rejects unrelated users",
-        "state": null
+        "state": "api-key custom getter replaces headers and validator binds the request owner before usage"
       }
     },
     {
@@ -175,17 +179,25 @@
           "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged",
           "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
           "phone signup binds integral and exponential JSON numbers to exact SQLite text",
-          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners"
+          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
+          "api-key custom getter replaces headers and validator binds the request owner before usage"
         ],
-        "rejection": "api-key shared headers select the first configured session",
-        "authorization": "api-key shared headers select the first configured session",
+        "rejection": [
+          "api-key shared headers select the first configured session",
+          "api-key custom getter replaces headers and validator binds the request owner before usage"
+        ],
+        "authorization": [
+          "api-key shared headers select the first configured session",
+          "api-key custom getter replaces headers and validator binds the request owner before usage"
+        ],
         "state": [
           "session reads refresh from persisted expiry and renew the signed cookie",
           "JWT session headers preserve original refresh expiry cleanup and exposed header order",
           "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged",
           "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
           "phone signup binds integral and exponential JSON numbers to exact SQLite text",
-          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners"
+          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
+          "api-key custom getter replaces headers and validator binds the request owner before usage"
         ]
       },
       "requiredEvidence": {

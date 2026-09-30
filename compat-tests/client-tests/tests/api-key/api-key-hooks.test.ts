@@ -229,6 +229,7 @@ compatScenario(
       after,
     };
   },
+  ["GET /get-session", "GET /api-key/get"],
 );
 
 compatScenario(
