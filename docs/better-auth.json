@@ -1024,6 +1024,76 @@
         }
       }
     },
+    "/organization/create-role": {
+      "post": {
+        "operationId": "create_role",
+        "summary": "create role",
+        "tags": [
+          "Organization"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/organization/update-role": {
+      "post": {
+        "operationId": "update_role",
+        "summary": "update role",
+        "tags": [
+          "Organization"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/organization/delete-role": {
+      "post": {
+        "operationId": "delete_role",
+        "summary": "delete role",
+        "tags": [
+          "Organization"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/organization/get-role": {
+      "get": {
+        "operationId": "get_role",
+        "summary": "get role",
+        "tags": [
+          "Organization"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/organization/list-roles": {
+      "get": {
+        "operationId": "list_roles",
+        "summary": "list roles",
+        "tags": [
+          "Organization"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/passkey/generate-register-options": {
       "get": {
         "operationId": "passkey_generate_register_options",

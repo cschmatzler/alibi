@@ -9,6 +9,8 @@ import { getMigrations } from "better-auth/db/migration";
 import { apiKey } from "@better-auth/api-key";
 import { admin, deviceAuthorization, twoFactor, username } from "better-auth/plugins";
 import { organization } from "better-auth/plugins/organization";
+import { createAccessControl } from "better-auth/plugins/access";
+import { defaultStatements } from "better-auth/plugins/organization/access";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 
 function getPort() {
@@ -374,14 +376,44 @@ await runMigrations();
 const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
 
-const TEAM_PROFILES = ["org-teams", "org-teams-no-default", "org-teams-limited", "org-teams-removable"] as const;
+type RolePolicyBarrier = {entered:Promise<void>; enter:()=>void; released:Promise<void>; release:()=>void};
+const rolePolicyBarriers = new Map<string,RolePolicyBarrier>();
+async function waitForRolePolicy(promise:Promise<void>, message:string) {
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  try { await Promise.race([promise,new Promise<void>((_,reject)=>{timer=setTimeout(()=>reject(new Error(message)),10000);})]); }
+  finally { if (timer !== undefined) clearTimeout(timer); }
+}
+
+const TEAM_PROFILES = ["org-teams", "org-teams-no-default", "org-teams-limited", "org-teams-removable", "org-teams-dynamic", "org-roles-limited", "org-roles-no-ac", "org-roles-delegated", "org-roles-callback"] as const;
 const teamProfiles = new Map(TEAM_PROFILES.map(name => {
+  const dynamic = name === "org-teams-dynamic" || name.startsWith("org-roles-");
+  const statements = name === "org-roles-delegated" ? {...defaultStatements,apiKey:["create","read","update","delete"]} as const : defaultStatements;
+  const ac = createAccessControl(statements);
   const options = {
     ...authOptions,
     basePath: `/__test/profiles/${name}/api/auth`,
+    ...(name === "org-roles-callback" ? {advanced:{...authOptions.advanced,database:{defaultFindManyLimit:1}}} : {}),
     plugins: [
       ...authOptions.plugins.filter(plugin => plugin.id !== "organization"),
-      organization({teams:{
+      organization({
+        ...(dynamic ? {dynamicAccessControl:{enabled:true,
+          ...(name === "org-roles-limited" ? {maximumRolesPerOrganization:1} : {}),
+          ...(name === "org-roles-callback" ? {maximumRolesPerOrganization:async (organizationId:string) => {
+            const barrier = rolePolicyBarriers.get(organizationId);
+            if (barrier) { barrier.enter(); await waitForRolePolicy(barrier.released,"Role policy release timed out"); }
+            const row = database.query("SELECT name FROM organization WHERE id=?").get(organizationId) as {name:string}|null;
+            if (!row) throw new Error("Organization not found");
+            return row.name === "Two role budget" ? 2 : 1;
+          }} : {}),
+        }} : {}),
+        ...(dynamic && name !== "org-roles-no-ac" ? {ac} : {}),
+        ...(name === "org-roles-delegated" ? {roles:{
+          owner:ac.newRole(statements),
+          delegator:ac.newRole({team:["create"],ac:["create","read","update"]}),
+          auditor:ac.newRole({member:["update"]}),
+          member:ac.newRole({}),
+        }} : {}),
+        teams:{
         enabled:true,defaultTeam:{enabled:name!=="org-teams-no-default"},allowRemovingAllTeams:name==="org-teams-removable",
         ...(name === "org-teams-limited" ? {
           maximumTeams: async ({session}, ctx) => session?.user.name === "limit-owner" && ctx?.headers?.get("x-team-policy") === "expanded" ? 3 : 1,
@@ -411,13 +443,14 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
     const {adapter} = await selected.$context;
     const where = [{field:"organizationId",value:organizationId}];
     const sortBy = {field:"createdAt",direction:"asc"} as const;
-    const [teams,members,invitations] = await Promise.all(["team","member","invitation"].map(model=>adapter.findMany<Record<string,unknown>>({model,where,sortBy})));
+    const [teams,members,invitations] = await Promise.all(["team","member","invitation"].map(model=>adapter.findMany<Record<string,unknown>>({model,where,sortBy,limit:10000})));
     if (!teams || !members || !invitations) throw new Error("Organization state query failed");
-    const teamMembers = (await Promise.all(teams.map(team=>adapter.findMany<Record<string,unknown>>({model:"teamMember",where:[{field:"teamId",value:String(team.id)}],sortBy})))).flat();
+    const roles = profileName === "org-teams-dynamic" || profileName.startsWith("org-roles-") ? await adapter.findMany<Record<string,unknown>>({model:"organizationRole",where,sortBy,limit:10000}) : [];
+    const teamMembers = (await Promise.all(teams.map(team=>adapter.findMany<Record<string,unknown>>({model:"teamMember",where:[{field:"teamId",value:String(team.id)}],sortBy,limit:10000})))).flat();
     return jsonResponse({
       teams:teams.map(team=>({id:team.id,name:team.name,organizationId:team.organizationId,createdAt:team.createdAt,updatedAt:team.updatedAt,memberCount:team.memberCount})),
       teamMembers:teamMembers.map(member=>({id:member.id,teamId:member.teamId,userId:member.userId,createdAt:member.createdAt})),
-      roles:[],members,invitations,
+      roles,members,invitations,
     });
   }
   if (url.pathname === "/__test/organization-api" && request.method === "POST") {
@@ -426,6 +459,40 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
     const selected = [...teamProfiles.entries()].find(([name]) => name === profileName)?.[1].auth;
     if (!selected) return jsonResponse({message:"Unknown fixture profile"},{status:400});
     try {
+      if (body?.operation === "role-policy" && typeof body.organizationId === "string") {
+        if (profileName !== "org-roles-callback" || !database.query("SELECT id FROM organization WHERE id=?").get(body.organizationId)) {
+          return jsonResponse({message:"Role policy organization not found"},{status:400});
+        }
+        if (body.stage === "arm") {
+          if (rolePolicyBarriers.has(body.organizationId)) return jsonResponse({message:"Role policy already armed"},{status:400});
+          const entered = Promise.withResolvers<void>(), released = Promise.withResolvers<void>();
+          rolePolicyBarriers.set(body.organizationId,{entered:entered.promise,enter:entered.resolve,released:released.promise,release:released.resolve});
+        } else if (body.stage === "wait") {
+          const barrier = rolePolicyBarriers.get(body.organizationId);
+          if (!barrier) return jsonResponse({message:"Role policy is not armed"},{status:400});
+          await waitForRolePolicy(barrier.entered,"Role policy entry timed out");
+        } else if (body.stage === "release") {
+          const barrier = rolePolicyBarriers.get(body.organizationId);
+          if (!barrier) return jsonResponse({message:"Role policy is not armed"},{status:400});
+          rolePolicyBarriers.delete(body.organizationId);
+          barrier.release();
+        } else return jsonResponse({message:"Invalid role policy stage"},{status:400});
+        return jsonResponse({organizationId:body.organizationId,stage:body.stage});
+      }
+      if (body?.operation === "seed-role" && typeof body.organizationId === "string" && typeof body.role === "string" && body.permission && typeof body.permission === "object") {
+        const {adapter} = await selected.$context;
+        const role = await adapter.create<Record<string,unknown>>({model:"organizationRole",data:{organizationId:body.organizationId,role:body.role,permission:JSON.stringify(body.permission),createdAt:new Date()}});
+        return jsonResponse({roleId:role.id,organizationId:role.organizationId,role:role.role});
+      }
+      if (body?.operation === "set-member-role" && typeof body.organizationId === "string" && typeof body.memberId === "string" && typeof body.role === "string") {
+        const {adapter} = await selected.$context;
+        const where = [{field:"organizationId",value:body.organizationId},{field:"id",value:body.memberId}];
+        const member = await adapter.findOne<Record<string,unknown>>({model:"member",where});
+        if (!member) return jsonResponse({message:"Member not found"},{status:400});
+        const updated = await adapter.update<Record<string,unknown>>({model:"member",where,update:{role:body.role}});
+        if (!updated) throw new Error("Member role update failed");
+        return jsonResponse({memberId:updated.id,organizationId:updated.organizationId,role:updated.role});
+      }
       if (body?.operation === "create-team" && typeof body.organizationId === "string" && typeof body.name === "string") {
         return jsonResponse(await selected.api.createTeam({body:{organizationId:body.organizationId,name:body.name}}));
       }
@@ -462,6 +529,8 @@ const RESET_MODELS = [
 async function resetDatabaseState() {
   const {adapter} = await teamProfiles.get("org-teams")!.auth.$context;
   for (const model of ["teamMember","team"]) await adapter.deleteMany({model,where:[]});
+  const roleAdapter = (await teamProfiles.get("org-teams-dynamic")!.auth.$context).adapter;
+  await roleAdapter.deleteMany({model:"organizationRole",where:[]});
   for (const model of RESET_MODELS) {
     await authContext.adapter.deleteMany({
       model,

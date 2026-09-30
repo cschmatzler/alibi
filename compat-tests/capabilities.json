@@ -279,12 +279,12 @@
     {
       "route": "GET /organization/get-role",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization dynamic roles persist ordered permissions and revoke assigned authority on update",
+        "rejection": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "authorization": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "state": "organization dynamic roles persist ordered permissions and revoke assigned authority on update"
       }
     },
     {
@@ -323,12 +323,12 @@
     {
       "route": "GET /organization/list-roles",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization dynamic roles persist ordered permissions and revoke assigned authority on update",
+        "rejection": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "authorization": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "state": "organization dynamic roles persist ordered permissions and revoke assigned authority on update"
       }
     },
     {
@@ -961,12 +961,12 @@
     {
       "route": "POST /organization/create-role",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization dynamic roles persist ordered permissions and revoke assigned authority on update",
+        "rejection": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "authorization": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "state": "organization dynamic roles persist ordered permissions and revoke assigned authority on update"
       }
     },
     {
@@ -994,12 +994,12 @@
     {
       "route": "POST /organization/delete-role",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization dynamic roles persist ordered permissions and revoke assigned authority on update",
+        "rejection": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "authorization": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "state": "organization dynamic roles persist ordered permissions and revoke assigned authority on update"
       }
     },
     {
@@ -1126,12 +1126,12 @@
     {
       "route": "POST /organization/update-role",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization dynamic roles persist ordered permissions and revoke assigned authority on update",
+        "rejection": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "authorization": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "state": "organization dynamic roles persist ordered permissions and revoke assigned authority on update"
       }
     },
     {

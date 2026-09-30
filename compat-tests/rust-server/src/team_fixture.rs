@@ -10,24 +10,30 @@ use axum::{
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::organization::{
-    OrganizationConfig, OrganizationLimitResolver, TeamsConfig,
+    default_organization_statements, DynamicAccessControlConfig, OrganizationConfig,
+    OrganizationLimitResolver, RolePermissions, TeamsConfig,
 };
 use better_auth::plugins::{
-    AccountManagementPlugin, AdminPlugin, EmailPasswordPlugin, OrganizationPlugin,
+    AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, EmailPasswordPlugin, OrganizationPlugin,
     SessionManagementPlugin, TwoFactorPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use better_auth_core::types::{CreateMember, CreateTeam, CreateUser};
+use better_auth_core::types::{
+    CreateMember, CreateOrganizationRole, CreateTeam, CreateUser, OrganizationPermissions,
+};
 use better_auth_core::AuthUser;
 use better_auth_seaorm::sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
 };
-use better_auth_seaorm::store::entities::{invitation, member, team, team_member};
+use better_auth_seaorm::store::entities::{
+    invitation, member, organization, organization_role, team, team_member,
+};
 use better_auth_seaorm::SeaOrmStore;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 
 type Auth = Arc<BetterAuth<TestSchema>>;
 
@@ -40,6 +46,139 @@ pub(super) struct TeamProfile {
 
 #[derive(Debug)]
 struct RequestTeamLimits;
+
+#[derive(Debug)]
+struct DatabaseRoleLimits(DatabaseConnection);
+
+#[derive(Debug, Default)]
+struct RolePolicyBarrier {
+    entered: tokio::sync::Notify,
+    release: tokio::sync::Notify,
+}
+
+fn role_policy_barriers() -> &'static Mutex<HashMap<String, Arc<RolePolicyBarrier>>> {
+    static BARRIERS: OnceLock<Mutex<HashMap<String, Arc<RolePolicyBarrier>>>> = OnceLock::new();
+    BARRIERS.get_or_init(Mutex::default)
+}
+
+fn role_policy_barrier(organization_id: &str) -> AuthResult<Option<Arc<RolePolicyBarrier>>> {
+    Ok(role_policy_barriers()
+        .lock()
+        .map_err(|_| AuthError::internal("Role policy unavailable"))?
+        .get(organization_id)
+        .cloned())
+}
+
+#[async_trait::async_trait]
+impl OrganizationLimitResolver for DatabaseRoleLimits {
+    async fn maximum_roles(&self, organization_id: &str) -> AuthResult<Option<usize>> {
+        if let Some(barrier) = role_policy_barrier(organization_id)? {
+            barrier.entered.notify_one();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                barrier.release.notified(),
+            )
+            .await
+            .map_err(|_| AuthError::internal("Role policy release timed out"))?;
+        }
+        let organization = organization::Entity::find_by_id(organization_id)
+            .one(&self.0)
+            .await
+            .map_err(|error| AuthError::internal(error.to_string()))?
+            .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
+        Ok(Some(if organization.name == "Two role budget" {
+            2
+        } else {
+            1
+        }))
+    }
+}
+
+fn delegated_roles() -> std::collections::HashMap<String, RolePermissions> {
+    [
+        (
+            "owner".to_owned(),
+            RolePermissions {
+                organization: vec!["update".to_owned(), "delete".to_owned()],
+                member: vec![
+                    "create".to_owned(),
+                    "update".to_owned(),
+                    "delete".to_owned(),
+                ],
+                invitation: vec!["create".to_owned(), "cancel".to_owned()],
+                team: vec![
+                    "create".to_owned(),
+                    "update".to_owned(),
+                    "delete".to_owned(),
+                ],
+                ac: vec![
+                    "create".to_owned(),
+                    "read".to_owned(),
+                    "update".to_owned(),
+                    "delete".to_owned(),
+                ],
+                api_key: vec![
+                    "create".to_owned(),
+                    "read".to_owned(),
+                    "update".to_owned(),
+                    "delete".to_owned(),
+                ],
+                ..Default::default()
+            },
+        ),
+        (
+            "delegator".to_owned(),
+            RolePermissions {
+                team: vec!["create".to_owned()],
+                ac: vec!["create".to_owned(), "read".to_owned(), "update".to_owned()],
+                ..Default::default()
+            },
+        ),
+        (
+            "auditor".to_owned(),
+            RolePermissions {
+                member: vec!["update".to_owned()],
+                ..Default::default()
+            },
+        ),
+        ("member".to_owned(), RolePermissions::default()),
+    ]
+    .into()
+}
+
+fn api_key_plugin() -> ApiKeyPlugin {
+    use better_auth::plugins::api_key::{ApiKeyConfig, ApiKeyReferences};
+    let plugin = ApiKeyPlugin::builder()
+        .enable_metadata(true)
+        .build()
+        .configuration(ApiKeyConfig {
+            config_id: "secondary".to_owned(),
+            enable_metadata: true,
+            ..Default::default()
+        })
+        .configuration(ApiKeyConfig {
+            config_id: "organization".to_owned(),
+            references: ApiKeyReferences::Organization,
+            enable_metadata: true,
+            ..Default::default()
+        })
+        .configuration(ApiKeyConfig {
+            config_id: "session".to_owned(),
+            enable_session_for_api_keys: true,
+            api_key_headers: vec!["x-api-key".to_owned(), "x-machine-key".to_owned()],
+            ..Default::default()
+        });
+    ["shared-first", "shared-second"]
+        .into_iter()
+        .fold(plugin, |plugin, id| {
+            plugin.configuration(ApiKeyConfig {
+                config_id: id.to_owned(),
+                enable_session_for_api_keys: true,
+                api_key_headers: vec!["x-shared-key".to_owned()],
+                ..Default::default()
+            })
+        })
+}
 
 #[async_trait::async_trait]
 impl OrganizationLimitResolver for RequestTeamLimits {
@@ -79,11 +218,20 @@ pub(super) async fn profiles(
         "org-teams-no-default",
         "org-teams-limited",
         "org-teams-removable",
+        "org-teams-dynamic",
+        "org-roles-limited",
+        "org-roles-no-ac",
+        "org-roles-delegated",
+        "org-roles-callback",
     ] {
-        let config = base
+        let mut config = base
             .clone()
             .base_path(format!("/__test/profiles/{name}/api/auth"));
-        let organization = OrganizationConfig {
+        if name == "org-roles-callback" {
+            config.advanced.database.default_find_many_limit = 1;
+        }
+        let dynamic = name == "org-teams-dynamic" || name.starts_with("org-roles-");
+        let mut organization = OrganizationConfig {
             teams: TeamsConfig {
                 enabled: true,
                 create_default_team: name != "org-teams-no-default",
@@ -92,8 +240,34 @@ pub(super) async fn profiles(
                     .then(|| Arc::new(RequestTeamLimits) as Arc<dyn OrganizationLimitResolver>),
                 ..Default::default()
             },
+            dynamic_access_control: DynamicAccessControlConfig {
+                enabled: dynamic,
+                maximum_roles_per_organization: (name == "org-roles-limited").then_some(1),
+                limit_resolver: (name == "org-roles-callback").then(|| {
+                    Arc::new(DatabaseRoleLimits(database.clone()))
+                        as Arc<dyn OrganizationLimitResolver>
+                }),
+            },
+            access_control: (dynamic && name != "org-roles-no-ac")
+                .then(default_organization_statements),
+            roles: (name == "org-roles-delegated").then(delegated_roles),
             ..Default::default()
         };
+        if name == "org-roles-delegated" {
+            let _ = organization
+                .access_control
+                .as_mut()
+                .expect("Delegated access control configured")
+                .insert(
+                    "apiKey".to_owned(),
+                    vec![
+                        "create".to_owned(),
+                        "read".to_owned(),
+                        "update".to_owned(),
+                        "delete".to_owned(),
+                    ],
+                );
+        }
         let auth = AuthBuilder::<TestSchema>::new(config.clone())
             .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
             .rate_limit(RateLimitConfig::new().enabled(false))
@@ -102,6 +276,7 @@ pub(super) async fn profiles(
             .plugin(AccountManagementPlugin::new())
             .plugin(AdminPlugin::new())
             .plugin(TwoFactorPlugin::new())
+            .plugin(api_key_plugin())
             .plugin(OrganizationPlugin::with_config(organization.clone()))
             .build()
             .await?;
@@ -124,6 +299,11 @@ struct OrganizationQuery {
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case")]
 enum TeamOperation {
+    RolePolicy {
+        #[serde(rename = "organizationId")]
+        organization_id: String,
+        stage: RolePolicyStage,
+    },
     CreateTeam {
         #[serde(rename = "organizationId")]
         organization_id: String,
@@ -142,6 +322,80 @@ enum TeamOperation {
         email: String,
         name: String,
     },
+    SeedRole {
+        #[serde(rename = "organizationId")]
+        organization_id: String,
+        role: String,
+        permission: OrganizationPermissions,
+    },
+    SetMemberRole {
+        #[serde(rename = "organizationId")]
+        organization_id: String,
+        #[serde(rename = "memberId")]
+        member_id: String,
+        role: String,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum RolePolicyStage {
+    Arm,
+    Wait,
+    Release,
+}
+
+async fn control_role_policy(
+    profile: &TeamProfile,
+    organization_id: String,
+    stage: RolePolicyStage,
+) -> AuthResult<Value> {
+    if profile.name != "org-roles-callback"
+        || profile
+            .auth
+            .store()
+            .get_organization_by_id(&organization_id)
+            .await?
+            .is_none()
+    {
+        return Err(AuthError::bad_request("Role policy organization not found"));
+    }
+    let stage = match stage {
+        RolePolicyStage::Arm => {
+            let mut barriers = role_policy_barriers()
+                .lock()
+                .map_err(|_| AuthError::internal("Role policy unavailable"))?;
+            if barriers.contains_key(&organization_id) {
+                return Err(AuthError::bad_request("Role policy already armed"));
+            }
+            let _ = barriers.insert(
+                organization_id.clone(),
+                Arc::new(RolePolicyBarrier::default()),
+            );
+            "arm"
+        }
+        RolePolicyStage::Wait => {
+            let barrier = role_policy_barrier(&organization_id)?
+                .ok_or_else(|| AuthError::bad_request("Role policy is not armed"))?;
+            tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                barrier.entered.notified(),
+            )
+            .await
+            .map_err(|_| AuthError::internal("Role policy entry timed out"))?;
+            "wait"
+        }
+        RolePolicyStage::Release => {
+            let barrier = role_policy_barriers()
+                .lock()
+                .map_err(|_| AuthError::internal("Role policy unavailable"))?
+                .remove(&organization_id)
+                .ok_or_else(|| AuthError::bad_request("Role policy is not armed"))?;
+            barrier.release.notify_one();
+            "release"
+        }
+    };
+    Ok(json!({"organizationId":organization_id,"stage":stage}))
 }
 
 #[derive(Deserialize)]
@@ -190,6 +444,9 @@ pub(super) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                 };
                 let plugin = OrganizationPlugin::with_config(profile.config.clone());
                 let result = match body.operation {
+                    TeamOperation::RolePolicy { organization_id, stage } => {
+                        control_role_policy(profile, organization_id, stage).await
+                    },
                     TeamOperation::CreateTeam { organization_id, name } => {
                         plugin.create_team(profile.auth.context(), CreateTeam {
                             organization_id, name, updated_at: Some(Utc::now()),
@@ -210,7 +467,20 @@ pub(super) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                             }).await?;
                             Ok::<_, AuthError>(json!({"userId":user.id(),"memberId":member.id}))
                         }.await
-                    }
+                    },
+                    TeamOperation::SeedRole {organization_id,role,permission} => {
+                        profile.auth.store().create_organization_role(CreateOrganizationRole {organization_id,role,permission}).await
+                            .map(|role|json!({"roleId":role.id,"organizationId":role.organization_id,"role":role.role}))
+                    },
+                    TeamOperation::SetMemberRole {organization_id,member_id,role} => {
+                        async {
+                            let member = profile.auth.store().get_member_by_id(&member_id).await?
+                                .filter(|member| member.organization_id == organization_id)
+                                .ok_or_else(|| AuthError::bad_request("Member not found"))?;
+                            let updated = profile.auth.store().update_member_role(&member.id, &role).await?;
+                            Ok::<_, AuthError>(json!({"memberId":updated.id,"organizationId":updated.organization_id,"role":updated.role}))
+                        }.await
+                    },
                 };
                 match result { Ok(value) => (StatusCode::OK, Json(value)), Err(error) => failure(error) }
             }
@@ -226,6 +496,7 @@ pub(super) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                     let teams = team::Entity::find().filter(team::Column::OrganizationId.eq(&query.organization_id)).order_by_asc(team::Column::CreatedAt).all(&database).await?;
                     let members = member::Entity::find().filter(member::Column::OrganizationId.eq(&query.organization_id)).order_by_asc(member::Column::CreatedAt).all(&database).await?;
                     let invitations = invitation::Entity::find().filter(invitation::Column::OrganizationId.eq(&query.organization_id)).order_by_asc(invitation::Column::CreatedAt).all(&database).await?;
+                    let roles = organization_role::Entity::find().filter(organization_role::Column::OrganizationId.eq(&query.organization_id)).order_by_asc(organization_role::Column::CreatedAt).all(&database).await?;
                     let mut team_members = Vec::new();
                     for parent in &teams {
                         team_members.extend(team_member::Entity::find().filter(team_member::Column::TeamId.eq(&parent.id)).order_by_asc(team_member::Column::CreatedAt).all(&database).await?);
@@ -233,7 +504,7 @@ pub(super) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                     Ok::<_, better_auth_seaorm::sea_orm::DbErr>(json!({
                         "teams":teams.into_iter().map(|team|json!({"id":team.id,"name":team.name,"organizationId":team.organization_id,"createdAt":timestamp(team.created_at),"updatedAt":team.updated_at.map(timestamp),"memberCount":team.member_count})).collect::<Vec<_>>(),
                         "teamMembers":team_members.into_iter().map(|member|json!({"id":member.id,"teamId":member.team_id,"userId":member.user_id,"createdAt":timestamp(member.created_at)})).collect::<Vec<_>>(),
-                        "roles":[],
+                        "roles":roles.into_iter().map(|role|json!({"id":role.id,"organizationId":role.organization_id,"role":role.role,"permission":role.permission,"createdAt":timestamp(role.created_at),"updatedAt":role.updated_at.map(timestamp)})).collect::<Vec<_>>(),
                         "members":members.into_iter().map(|member|json!({"id":member.id,"organizationId":member.organization_id,"userId":member.user_id,"role":member.role,"createdAt":timestamp(member.created_at)})).collect::<Vec<_>>(),
                         "invitations":invitations.into_iter().map(|invitation|json!({"id":invitation.id,"organizationId":invitation.organization_id,"email":invitation.email,"role":invitation.role,"status":invitation.status,"teamId":invitation.team_id,"inviterId":invitation.inviter_id,"expiresAt":timestamp(invitation.expires_at),"createdAt":timestamp(invitation.created_at)})).collect::<Vec<_>>(),
                     }))

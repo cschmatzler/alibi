@@ -194,7 +194,8 @@ pub(crate) async fn remove_member_core(
             config,
             ctx,
             &org_id,
-        )?
+        )
+        .await?
     {
         return Err(AuthError::forbidden(
             "You don't have permission to remove members",
@@ -255,7 +256,8 @@ pub(crate) async fn update_member_role_core(
             config,
             ctx,
             &org_id,
-        )?
+        )
+        .await?
     {
         return Err(AuthError::forbidden(
             "You are not allowed to update this member",
@@ -308,6 +310,15 @@ pub(crate) async fn update_member_role_core(
         "member".to_owned(),
     ]);
     valid_roles.extend(config.roles.iter().flat_map(|roles| roles.keys().cloned()));
+    if config.dynamic_access_control.enabled {
+        valid_roles.extend(
+            ctx.database
+                .list_organization_roles(&org_id)
+                .await?
+                .into_iter()
+                .map(|role| role.role),
+        );
+    }
     let unknown = body
         .role
         .roles()

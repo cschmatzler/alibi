@@ -67,7 +67,9 @@ pub(crate) async fn invite_member_core(
         config,
         ctx,
         &org_id,
-    )? {
+    )
+    .await?
+    {
         return Err(AuthError::forbidden(
             "You don't have permission to invite members",
         ));
@@ -80,6 +82,15 @@ pub(crate) async fn invite_member_core(
 
     let mut valid_roles = vec!["owner".to_owned(), "admin".to_owned(), "member".to_owned()];
     valid_roles.extend(config.roles.iter().flat_map(|roles| roles.keys().cloned()));
+    if config.dynamic_access_control.enabled {
+        valid_roles.extend(
+            ctx.database
+                .list_organization_roles(&org_id)
+                .await?
+                .into_iter()
+                .map(|role| role.role),
+        );
+    }
 
     let unknown_roles: Vec<_> = roles
         .iter()
@@ -523,7 +534,9 @@ pub(crate) async fn cancel_invitation_core(
         config,
         ctx,
         invitation.organization_id().as_ref(),
-    )? {
+    )
+    .await?
+    {
         return Err(AuthError::forbidden(
             "You don't have permission to cancel invitations",
         ));

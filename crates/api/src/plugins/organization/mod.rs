@@ -3,8 +3,8 @@ pub mod handlers;
 pub mod rbac;
 pub mod types;
 pub use extensions::{
-    DefaultTeamContext, DefaultTeamFactory, OrganizationLimitResolver, OrganizationTeamHooks,
-    TeamsConfig, default_organization_statements,
+    DefaultTeamContext, DefaultTeamFactory, DynamicAccessControlConfig, OrganizationLimitResolver,
+    OrganizationTeamHooks, TeamsConfig, default_organization_statements,
 };
 
 use std::collections::HashMap;
@@ -67,6 +67,10 @@ pub struct OrganizationConfig {
     pub require_email_verification_on_invitation: Option<bool>,
     #[config(default = TeamsConfig::default(), skip)]
     pub teams: TeamsConfig,
+    #[config(default = DynamicAccessControlConfig::default(), skip)]
+    pub dynamic_access_control: DynamicAccessControlConfig,
+    #[config(default = None, skip)]
+    pub access_control: Option<better_auth_core::types::OrganizationPermissions>,
 }
 
 /// Organization plugin for multi-tenancy support
@@ -76,6 +80,9 @@ pub struct OrganizationPlugin {
 
 #[cfg(test)]
 mod extension_tests;
+
+#[cfg(test)]
+mod dynamic_role_tests;
 
 /// Metadata key announcing that the organization plugin is installed.
 pub(crate) const METADATA_ENABLED: &str = "organization.enabled";
@@ -99,6 +106,14 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
         ctx.set_metadata(
             "organization.teams.enabled",
             serde_json::Value::Bool(self.config.teams.enabled),
+        );
+        ctx.set_metadata(
+            "organization.dynamic_roles.enabled",
+            serde_json::Value::Bool(self.config.dynamic_access_control.enabled),
+        );
+        ctx.set_metadata(
+            "organization.access_control",
+            serde_json::to_value(&self.config.access_control)?,
         );
         ctx.set_metadata(
             METADATA_ROLES,
@@ -159,6 +174,15 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
                 AuthRoute::post("/organization/set-active-team", "set_active_team"),
                 AuthRoute::post("/organization/add-team-member", "add_team_member"),
                 AuthRoute::post("/organization/remove-team-member", "remove_team_member"),
+            ]);
+        }
+        if self.config.dynamic_access_control.enabled {
+            routes.extend([
+                AuthRoute::post("/organization/create-role", "create_role"),
+                AuthRoute::post("/organization/update-role", "update_role"),
+                AuthRoute::post("/organization/delete-role", "delete_role"),
+                AuthRoute::get("/organization/get-role", "get_role"),
+                AuthRoute::get("/organization/list-roles", "list_roles"),
             ]);
         }
         routes
@@ -243,7 +267,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
                 {
                     return Ok(Some(response));
                 }
-                Ok(None)
+                handlers::role::handle_role_request(req, ctx, &self.config).await
             }
         }
     }

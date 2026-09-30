@@ -18,7 +18,10 @@ use better_auth::{
             OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
             OAuthUserInfoResponse,
         },
-        organization::{OrganizationConfig, TeamsConfig},
+        organization::{
+            DynamicAccessControlConfig, OrganizationConfig, TeamsConfig,
+            default_organization_statements,
+        },
         password_management::SendResetPassword,
     },
     prelude::{AuthRequest, HttpMethod},
@@ -146,6 +149,7 @@ pub struct TestAuthOptions {
     pub reset_sender_mode: ResetSenderMode,
     pub creator_role: Option<String>,
     pub teams_enabled: bool,
+    pub dynamic_roles_enabled: bool,
 }
 
 struct TestResetSender {
@@ -308,6 +312,13 @@ pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth
             enabled: options.teams_enabled,
             ..Default::default()
         },
+        dynamic_access_control: DynamicAccessControlConfig {
+            enabled: options.dynamic_roles_enabled,
+            ..Default::default()
+        },
+        access_control: options
+            .dynamic_roles_enabled
+            .then(default_organization_statements),
         ..Default::default()
     });
 

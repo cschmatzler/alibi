@@ -99,6 +99,7 @@ bun test --cwd compat-tests/client-tests harness
 cargo test --test client_compat_tests passkey_client_compat -- --ignored --nocapture
 cargo test --test client_compat_tests browser_client_compat -- --ignored --nocapture
 cargo test --test client_compat_tests organization_teams_client_compat -- --ignored --nocapture
+cargo test --test client_compat_tests organization_dynamic_roles_client_compat -- --ignored --nocapture
 ./scripts/alignment-check.sh
 ```
 
@@ -112,3 +113,10 @@ fixture controls inspect persisted organization state and invoke typed server-on
 team APIs; public flows use the official client and its cookie jar. See the
 [organization-team implementation audit](audits/organization-teams.md) for the
 supported branches, lifecycle evidence, and remaining integration boundaries.
+
+Dynamic-role checks add disabled, quota, missing-access-control, delegated-role,
+and asynchronous-policy profiles. They inspect stored permission JSON, tenant
+scopes, member assignments, API-key authority, and controlled overlapping
+permission-cache reloads. See the [dynamic-role implementation audit](audits/organization-dynamic-roles.md)
+for the configuration contracts, source quirks, review evidence, and remaining
+schema and integration boundaries.

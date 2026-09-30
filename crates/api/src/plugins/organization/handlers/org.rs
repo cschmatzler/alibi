@@ -153,7 +153,9 @@ pub(crate) async fn update_organization_core(
         config,
         ctx,
         &org_id,
-    )? {
+    )
+    .await?
+    {
         return Err(AuthError::forbidden(
             "You don't have permission to update this organization",
         ));
@@ -204,7 +206,9 @@ pub(crate) async fn delete_organization_core(
         config,
         ctx,
         body.organization_id.as_str(),
-    )? {
+    )
+    .await?
+    {
         return Err(AuthError::forbidden(
             "You don't have permission to delete this organization",
         ));
@@ -606,6 +610,8 @@ mod tests {
             roles: None,
             require_email_verification_on_invitation: None,
             teams: Default::default(),
+            dynamic_access_control: Default::default(),
+            access_control: None,
         }
     }
 
