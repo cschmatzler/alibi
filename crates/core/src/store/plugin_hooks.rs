@@ -84,7 +84,11 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn get_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
         self.inner.get_user_sessions(user_id).await
     }
-    async fn refresh_session(&self, token: &str, expires_at: chrono::DateTime<chrono::Utc>) -> AuthResult<Option<S::Session>> {
+    async fn refresh_session(
+        &self,
+        token: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<S::Session>> {
         self.inner.refresh_session(token, expires_at).await
     }
     async fn update_session_expiry(
@@ -556,8 +560,14 @@ impl<S: AuthSchema> OrganizationRoleStore for PluginStore<S> {
     async fn count_organization_roles(&self, _organization_id: &str) -> AuthResult<usize> {
         self.inner.count_organization_roles(_organization_id).await
     }
-    async fn has_organization_role_members(&self, organization_id: &str, role: &str) -> AuthResult<bool> {
-        self.inner.has_organization_role_members(organization_id, role).await
+    async fn has_organization_role_members(
+        &self,
+        organization_id: &str,
+        role: &str,
+    ) -> AuthResult<bool> {
+        self.inner
+            .has_organization_role_members(organization_id, role)
+            .await
     }
     async fn update_organization_role(
         &self,
