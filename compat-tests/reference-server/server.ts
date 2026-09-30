@@ -5,7 +5,6 @@ import { passkey } from "@better-auth/passkey";
 import { betterAuth } from "better-auth";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { getMigrations } from "better-auth/db/migration";
-import { APIError } from "better-auth/api";
 import { apiKey } from "@better-auth/api-key";
 import { admin, deviceAuthorization, emailOTP, magicLink, twoFactor, username, jwt } from "better-auth/plugins";
 import { organization } from "better-auth/plugins/organization";
