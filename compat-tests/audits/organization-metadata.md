@@ -83,3 +83,11 @@ passed 28 organization scenarios / 1,582 assertions
 clear; the final gate includes additional persisted-name assertions. Default
 create/update metadata input-type validation is a separate confirmed branch
 under investigation by the organization owner.
+
+Final integrated `devenv shell -- ./scripts/check.sh` passed on the reviewed
+repair: 270 SDK scenarios / 7,974 assertions, 37 harness tests / 210 assertions,
+two Chromium tests / 22 assertions, and 79.20% source line coverage
+(24,009 / 30,313). Log: `/tmp/organization-metadata-selected-reviewed-canonical.log`.
+The inventory retains all earlier requirements and adds mutation state evidence;
+eight method/path identities remain unimplemented. No comparison exceptions,
+normalization rules, timeouts or coverage thresholds changed.

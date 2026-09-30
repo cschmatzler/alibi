@@ -43,6 +43,8 @@ they do not establish all configuration or integration behavior.
 | Intermittent admin creation timestamp | Coordinator; independent JWT-owner investigation | Existing impersonation/list-users scenario | One full run reported a list-user createdAt mismatch; focused admin and a subsequent complete gate passed without comparator/source changes. Exact observation remains under investigation in `/tmp/phone-numeric-evidence-canonical.log`; no unexplained timestamp difference is treated as parity evidence. |
 | Admin user deletion | Coordinator; independent phone-owner review | Shared closed-enum SQLite user-reference upgrade | Real factor enrollment, two credentials/sessions, guest/non-admin/self rejection, deletion/reuse and retained orphan factor have state evidence. Installed schema and existing device rollback tests pass. Canonical gate passed: 265 SDK / 7,604 assertions, 37 harness / 210, two Chromium / 22, 79.34% source lines (23,962 / 30,202). Merged PR #35. |
 | Organization user invitations | Coordinator; independent SIWE-owner review | Adapter page policy and equivalent verification sender | Real verified HTTP ownership, selector rejection, expired/processed state and trusted server-only limit-before-filter behavior are required. Canonical gate passed: 268 SDK / 7,718 assertions, 37 harness / 210, two Chromium / 22, 79.25% source lines (23,962 / 30,237). Merged PR #36. |
+| Organization metadata and selector lifecycle | Coordinator; independent phone/SIWE-owner review | Existing organization store and exact JSON writer | Parsed create/update projections omit only absent metadata; metadata/full getters retain exact raw JSON text. Default and teams profiles prove ownership, missing/blank selectors, denial token retirement, and persisted mutation readback. Canonical gate passed: 270 SDK / 7,974 assertions, 37 harness / 210, two Chromium / 22, 79.20% source lines (24,009 / 30,313). PR #37 ready for publication. |
+| Hosted canonical gate | Coordinator; independent JWT-owner review | Source-only Cargo cache and runner disk reservation | PR #34 hosted run 36785187757 completed successfully with the complete gate, unchanged coverage floor and optional configurations. |
 | Reference/OpenAPI | SIWE owner | Typed route/model metadata and application schema override | Frozen source metadata, reference page and complete default/custom-session documents are ready for coordinator integration after update-session. Eleven document scenarios / 494 assertions and sixteen session scenarios / 696 assertions pass; integrated canonical gate remains pending. |
 
 Full local compatibility/coverage gates and inventory mutations are serialized.
@@ -58,7 +60,7 @@ gaps without claiming all configurations of the feature families.
 
 Remaining inventoried families include anonymous authentication/deletion,
 update-session,
-OAuth proxy, One Tap, organization get-organization, and reference/OpenAPI.
+OAuth proxy, One Tap, and reference/OpenAPI. Organization get-organization is now implemented with real evidence.
 Prepared old prototypes do not count as integrated capability completion.
 
 ## Explicit unresolved target beyond routes
@@ -70,8 +72,8 @@ MCP, CIMD, SSO, SCIM, Stripe, i18n, Expo, Electron and Redis-storage packages.
 Framework/client, database-adapter and runtime-tooling boundaries are also
 accounted for there. None is silently excluded by the route inventory.
 
-Specific known gaps include organization get-full metadata returning an object
-where upstream returns stored JSON text; anonymous OAuth linking without the
+The organization raw-metadata getter difference is repaired. Specific known gaps
+include create/update input validation, further callbacks and fields; anonymous OAuth linking without the
 state cookie; default OpenAPI completeness and additional session-field update
 policy; secondary/custom storage branches; and unproven optional configurations
 listed in each family audit. These need implementation or explicit equivalence
