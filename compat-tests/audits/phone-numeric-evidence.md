@@ -24,4 +24,7 @@ coverage floor are unchanged. Independent family review is clear: all 17 samples
 remain covered exactly once. The focused phone suite passes 13 scenarios and
 1,058 assertions, exactly the previous family assertion count, with the default
 deadline intact (`/tmp/phone-numeric-split-focused.log`). Client TypeScript and
-diff checks pass. Final canonical validation is required before publication.
+diff checks pass. The final canonical gate passes: 264 SDK scenarios / 7,568 assertions,
+37 harness tests / 210 assertions, two Chromium tests / 22 assertions and
+79.30% source lines (23,849 / 30,076). Log:
+`/tmp/phone-numeric-evidence-reviewed-canonical.log`.
