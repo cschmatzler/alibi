@@ -35,6 +35,14 @@ where
             updated_at: Set(now),
         };
         let backend = self.connection().get_database_backend();
+        if !matches!(
+            backend,
+            sea_orm::DatabaseBackend::Sqlite | sea_orm::DatabaseBackend::Postgres
+        ) {
+            return Err(crate::error::AuthError::not_implemented(
+                "Atomic factor insertion requires SQLite or PostgreSQL",
+            ));
+        }
         let mut query = Entity::insert(active);
         let _ = QueryTrait::query(&mut query).returning(factor_returning(backend));
         Entity::find()

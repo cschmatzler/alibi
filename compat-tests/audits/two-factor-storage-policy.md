@@ -28,7 +28,11 @@ statement; RETURNING captures its winning snapshot without a later SELECT.
 Unchanged updates only read. New source field-only updates preserve factor
 timestamps; the existing backup-update operation retains its timestamp policy.
 SQLite and PostgreSQL support RETURNING; PostgreSQL uses double precision for
-numeric counters. Only SQLite has runtime proof in this slice.
+numeric counters. Only SQLite has runtime proof in this slice. Unsupported
+backends are rejected before insertion or atomic updates. Independent review
+found insertion lacked the update path's backend guard; the coordinator repaired
+it so an unsupported RETURNING dialect cannot persist a row before reporting
+a missing return value.
 
 The namespaced `m20260930_000012_two_factor_verification_policy` migration adds
 missing nullable columns in place. It preserves existing factor rows, secret
