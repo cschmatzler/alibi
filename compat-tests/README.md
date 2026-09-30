@@ -53,6 +53,13 @@ Outside devenv, run `bunx playwright install --with-deps chromium` in
   lifetimes, redirects, array structure and cookies. A live HTTP/SDK canary
   confirms wrong session ownership and removed cookie protection are detected.
 
+Concurrent request scenarios may use separate instances of the same tracing
+fetch and record both complete observations through `ctx.recordTransport` in
+success/rejection order. This describes unordered outcomes without comparing
+network completion order. Every request, response shape, status, selected header
+and cookie attribute remains in the canonical trace comparison; returned values
+and stored state share its identity graph.
+
 The browser fixture uses local HTTP. Production HTTPS/Secure-cookie deployment
 behavior is not claimed by that test. Structural route evidence is also not a
 claim that every behavior of an endpoint has been tested.
