@@ -326,3 +326,9 @@ async fn json_numbers_client_compat() {
 async fn phone_number_client_compat() {
     run_client_compat(&["tests/phone-number"]).await;
 }
+
+#[tokio::test]
+#[ignore = "starts external TS and Rust servers"]
+async fn username_availability_client_compat() {
+    run_client_compat(&["tests/username"]).await;
+}
