@@ -27,7 +27,9 @@ Independent review found and resolved pre-authentication validation ordering,
 missing media rejection, unscoped aliases in JWT claims and missing destructive
 migration rollback evidence. Focused proof: 19 SDK scenarios / 326 assertions,
 production Clippy, native generator/collision/concurrency checks and installed
-SQLite upgrade/rollback. Canonical integration remains coordinator-owned.
+SQLite upgrade/rollback. The final canonical `scripts/check.sh` gate passed
+with 227 SDK scenarios / 5,064 assertions, 37 harness tests / 210 assertions,
+two Chromium tests / 22 assertions, and 79.23% source lines (21,526 / 27,170).
 
 An inherited custom-adapter boundary remains explicit: Rust uses conditional
 pending-status decision writes; upstream's delayed asynchronous adapter can let
