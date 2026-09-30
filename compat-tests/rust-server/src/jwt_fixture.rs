@@ -9,8 +9,8 @@ use axum::{
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::jwt::{
-    JwtAlgorithm, JwtAudience, JwtClaimsConfig, JwtExpiration, JwtPlugin, JwtPluginConfig,
-    JwtSignOptions,
+    DefineJwtPayload, JwtAlgorithm, JwtAudience, JwtClaimsConfig, JwtExpiration, JwtPlugin,
+    JwtPluginConfig, JwtSession, JwtSignOptions,
 };
 use better_auth::plugins::{
     AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
@@ -18,6 +18,9 @@ use better_auth::plugins::{
     PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use better_auth_core::{
+    AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, AuthSession,
+};
 use better_auth_seaorm::sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use better_auth_seaorm::store::entities::jwk;
 use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
@@ -38,7 +41,52 @@ const PROFILES: &[&str] = &[
     "jwt-claims",
     "jwt-path-header",
     "jwt-plain-rotation",
+    "jwt-session-normal",
+    "jwt-session-disabled",
+    "jwt-session-deferred",
 ];
+
+struct SessionSnapshotClaims;
+
+#[async_trait::async_trait]
+impl DefineJwtPayload for SessionSnapshotClaims {
+    async fn define_payload(&self, session: &JwtSession) -> AuthResult<Map<String, Value>> {
+        Ok(json!({"snapshot":session}).as_object().unwrap().clone())
+    }
+}
+
+struct EarlierExposedHeaders(bool);
+
+#[async_trait::async_trait]
+impl AuthPlugin<TestSchema> for EarlierExposedHeaders {
+    fn name(&self) -> &'static str {
+        "jwt-earlier-exposed-headers"
+    }
+    fn routes(&self) -> Vec<AuthRoute> {
+        Vec::new()
+    }
+    async fn on_request(
+        &self,
+        _req: &AuthRequest,
+        _ctx: &AuthContext<TestSchema>,
+    ) -> AuthResult<Option<AuthResponse>> {
+        Ok(None)
+    }
+    async fn after_request(
+        &self,
+        req: &AuthRequest,
+        _ctx: &AuthContext<TestSchema>,
+        mut response: AuthResponse,
+    ) -> AuthResult<AuthResponse> {
+        if self.0 && req.path() == "/get-session" {
+            _ = response.headers.insert(
+                "access-control-expose-headers",
+                " existing, ,existing, set-auth-jwt, set-auth-jwt, Existing ",
+            );
+        }
+        Ok(response)
+    }
+}
 
 #[derive(Deserialize)]
 struct ServerOperation {
@@ -96,9 +144,15 @@ pub(super) async fn router(
             config.rotation_interval = Some(Duration::hours(1));
             config.grace_period = Duration::hours(1);
         }
+        let session_profile = name.starts_with("jwt-session-");
+        if session_profile {
+            config.define_payload = Some(Arc::new(SessionSnapshotClaims));
+        }
         let jwt = JwtPlugin::with_config(config);
         let path = format!("/__test/profiles/{name}/api/auth");
-        let config = base.clone().base_path(&path);
+        let mut config = base.clone().base_path(&path);
+        config.session.disable_session_refresh = *name == "jwt-session-disabled";
+        config.session.defer_session_refresh = *name == "jwt-session-deferred";
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
                 .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
@@ -107,7 +161,12 @@ pub(super) async fn router(
                 .plugin(SessionManagementPlugin::new())
                 .plugin(AccountManagementPlugin::new())
                 .plugin(DeviceAuthorizationPlugin::new())
-                .plugin(ApiKeyPlugin::builder().enable_metadata(true).build())
+                .plugin(
+                    ApiKeyPlugin::builder()
+                        .enable_metadata(true)
+                        .enable_session_for_api_keys(session_profile)
+                        .build(),
+                )
                 .plugin(OrganizationPlugin::new())
                 .plugin(AdminPlugin::new())
                 .plugin(PasskeyPlugin::new())
@@ -120,6 +179,7 @@ pub(super) async fn router(
                         .require_delete_verification(false),
                 )
                 .plugin(TwoFactorPlugin::new())
+                .plugin(EarlierExposedHeaders(session_profile))
                 .plugin(jwt.clone())
                 .build()
                 .await?,
@@ -138,6 +198,12 @@ pub(super) async fn router(
                 match body.operation.as_str() {
                     "sign" => Ok(json!({"token":jwt.sign_jwt(body.payload.ok_or_else(|| AuthError::bad_request("payload is required"))?, &JwtSignOptions::default(), None, auth.context()).await?})),
                     "verify" => Ok(json!({"payload":jwt.verify_jwt(body.token.as_deref().ok_or_else(|| AuthError::bad_request("token is required"))?,body.issuer.as_deref(),None,auth.context()).await?})),
+                    "session-state" => {
+                        let token = body.token.as_deref().ok_or_else(|| AuthError::bad_request("token is required"))?;
+                        let Some(session) = auth.store().get_session(token).await? else { return Ok(Value::Null); };
+                        let Some(user) = auth.store().get_user_by_id(session.user_id().as_ref()).await? else { return Ok(Value::Null); };
+                        Ok(json!(JwtSession {user:auth.context().user_view(&user),session:auth.context().session_view(&session),needs_refresh:None}))
+                    }
                     _ => Err(AuthError::bad_request("invalid server operation")),
                 }
             }.await;

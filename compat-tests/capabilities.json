@@ -116,10 +116,18 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "admin impersonation restores the original admin session and hides impersonated sessions",
+        "success": [
+          "admin impersonation restores the original admin session and hides impersonated sessions",
+          "JWT session headers preserve original refresh expiry cleanup and exposed header order",
+          "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged"
+        ],
         "rejection": "api-key shared headers select the first configured session",
         "authorization": "api-key shared headers select the first configured session",
-        "state": "session reads refresh from persisted expiry and renew the signed cookie"
+        "state": [
+          "session reads refresh from persisted expiry and renew the signed cookie",
+          "JWT session headers preserve original refresh expiry cleanup and exposed header order",
+          "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged"
+        ]
       }
     },
     {
@@ -435,10 +443,27 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "JWT default JWKS token and get-session header carry the complete authenticated user",
-        "rejection": "JWT default JWKS token and get-session header carry the complete authenticated user",
-        "authorization": "JWT default JWKS token and get-session header carry the complete authenticated user",
-        "state": "JWT rotation persists replacement keys and retains expired public keys only through grace"
+        "success": [
+          "JWT default JWKS token and get-session header carry the complete authenticated user",
+          "JWT token middleware signs persisted refresh and browser preference branches",
+          "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged"
+        ],
+        "rejection": [
+          "JWT default JWKS token and get-session header carry the complete authenticated user",
+          "JWT session headers preserve original refresh expiry cleanup and exposed header order",
+          "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged"
+        ],
+        "authorization": [
+          "JWT default JWKS token and get-session header carry the complete authenticated user",
+          "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged",
+          "JWT session headers preserve original refresh expiry cleanup and exposed header order"
+        ],
+        "state": [
+          "JWT rotation persists replacement keys and retains expired public keys only through grace",
+          "JWT token middleware signs persisted refresh and browser preference branches",
+          "JWT session headers preserve original refresh expiry cleanup and exposed header order",
+          "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged"
+        ]
       }
     },
     {

@@ -197,6 +197,7 @@ impl SessionManagementPlugin {
             let Some(user) = ctx.database.get_user_by_id(&session.user_id).await? else {
                 return Ok(AuthResponse::json(200, &serde_json::Value::Null)?);
             };
+            req.set_session_hook_snapshot(ctx.user_view(&user), ctx.session_view(session));
             return Ok(AuthResponse::json(
                 200,
                 &GetSessionResponse {
@@ -213,9 +214,31 @@ impl SessionManagementPlugin {
         let suppressed = manager.request_disables_refresh(req);
         let deferred_read =
             ctx.config.session.defer_session_refresh && req.method() == &HttpMethod::Get;
+        let Some(original_session) = ctx.database.get_session(&token).await? else {
+            let mut response = AuthResponse::json(200, &serde_json::Value::Null)?;
+            for header in delete_session_cookie_headers(&ctx.config) {
+                response.headers.append("Set-Cookie", header);
+            }
+            return Ok(response);
+        };
+        let Some(user) = ctx
+            .database
+            .get_user_by_id(original_session.user_id().as_ref())
+            .await?
+        else {
+            let mut response = AuthResponse::json(200, &serde_json::Value::Null)?;
+            for header in delete_session_cookie_headers(&ctx.config) {
+                response.headers.append("Set-Cookie", header);
+            }
+            return Ok(response);
+        };
+        // The pinned direct endpoint keeps this original context through a
+        // refresh or expired-row cleanup. Response hooks observe it even when
+        // the endpoint ultimately returns null or an update error.
+        req.set_session_hook_snapshot(ctx.user_view(&user), ctx.session_view(&original_session));
         let read = manager
-            .read_session(
-                &token,
+            .read_loaded_session(
+                original_session,
                 better_auth_core::session::SessionReadOptions {
                     allow_refresh: !suppressed && !deferred_read,
                     cleanup_expired: !deferred_read,
@@ -233,17 +256,6 @@ impl SessionManagementPlugin {
             } else {
                 AuthResponse::json(200, &serde_json::Value::Null)?
             };
-            for header in delete_session_cookie_headers(&ctx.config) {
-                response.headers.append("Set-Cookie", header);
-            }
-            return Ok(response);
-        };
-        let Some(user) = ctx
-            .database
-            .get_user_by_id(session.user_id().as_ref())
-            .await?
-        else {
-            let mut response = AuthResponse::json(200, &serde_json::Value::Null)?;
             for header in delete_session_cookie_headers(&ctx.config) {
                 response.headers.append("Set-Cookie", header);
             }

@@ -126,6 +126,14 @@ Run `./compat-tests/client-tests/run-against-both.sh jwt` for this family.
 Automatic JWT-backed core session cookie caching remains a separate integration
 boundary; the managed-keyring plugin exposes no inactive cache option.
 
+The JWT family also exercises normally refreshed token middleware, suppressed
+and deferred reads, original completed-handler snapshots, API-key session
+ownership and exact exposed-header ordering. Payload callbacks receive the
+complete nested session response, including deferred `needsRefresh`; direct
+get-session hooks observe the original stored snapshot. See the
+[interaction audit](audits/jwt-session-interactions.md) for configuration evidence
+and the pinned expiry-cleanup behavior.
+
 Organization-team checks use dedicated teams, no-default-team, request-dependent
 limit, and removable-final-team configurations under `/__test/profiles/`. Private
 fixture controls inspect persisted organization state and invoke typed server-only

@@ -733,7 +733,7 @@ async fn explicit_algorithm_lazy_mints_only_configured_keys_and_default_uses_pri
 }
 
 #[tokio::test]
-async fn session_payload_header_hook_and_server_only_endpoints_have_distinct_authority() {
+async fn session_payload_and_server_only_endpoints_have_distinct_authority() {
     let ctx = test_helpers::create_test_context().await;
     let plugin = JwtPlugin::new();
     let (user, session) = test_helpers::create_user_and_session(
@@ -764,43 +764,6 @@ async fn session_payload_header_hook_and_server_only_endpoints_have_distinct_aut
         .unwrap();
     assert_eq!(claims["sub"], user.id);
     assert_eq!(claims["email"], user.email.as_deref().unwrap());
-    request.path = "/get-session".to_owned();
-    let mut response = AuthResponse::json(200, &json!({"session":session,"user":user})).unwrap();
-    response
-        .headers
-        .insert("access-control-expose-headers", "existing, set-auth-jwt");
-    let response = plugin
-        .after_request(&request, &ctx, response)
-        .await
-        .unwrap();
-    assert_eq!(
-        response
-            .headers
-            .get("access-control-expose-headers")
-            .unwrap(),
-        "existing, set-auth-jwt"
-    );
-    assert!(
-        plugin
-            .verify_jwt(
-                response.headers.get("set-auth-jwt").unwrap(),
-                None,
-                None,
-                &ctx
-            )
-            .await
-            .unwrap()
-            .is_some()
-    );
-    let disabled = JwtPlugin::with_config(JwtPluginConfig {
-        disable_setting_jwt_header: true,
-        ..Default::default()
-    });
-    let response = disabled
-        .after_request(&request, &ctx, AuthResponse::new(200))
-        .await
-        .unwrap();
-    assert!(response.headers.get("set-auth-jwt").is_none());
     for path in ["/sign-jwt", "/verify-jwt", "/jwt/sign", "/jwt/verify"] {
         assert!(
             plugin

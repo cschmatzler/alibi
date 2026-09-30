@@ -562,6 +562,17 @@ impl<S: AuthSchema> AuthContext<S> {
         &self,
         req: &AuthRequest,
     ) -> AuthResult<(S::User, crate::wire::SessionView)> {
+        let (user, session, _) = self.require_session_with_refresh_state(req).await?;
+        Ok((user, session))
+    }
+
+    /// Authorize once and retain the optional deferred-refresh response field.
+    /// Payload callbacks can observe the same context as nested session middleware
+    /// without issuing another session read or refresh.
+    pub async fn require_session_with_refresh_state(
+        &self,
+        req: &AuthRequest,
+    ) -> AuthResult<(S::User, crate::wire::SessionView, Option<bool>)> {
         self.authenticated_session(req, true).await
     }
 
@@ -572,27 +583,28 @@ impl<S: AuthSchema> AuthContext<S> {
         &self,
         req: &AuthRequest,
     ) -> AuthResult<(S::User, crate::wire::SessionView)> {
-        self.authenticated_session(req, false).await
+        let (user, session, _) = self.authenticated_session(req, false).await?;
+        Ok((user, session))
     }
 
     async fn authenticated_session(
         &self,
         req: &AuthRequest,
         allow_virtual: bool,
-    ) -> AuthResult<(S::User, crate::wire::SessionView)> {
+    ) -> AuthResult<(S::User, crate::wire::SessionView, Option<bool>)> {
         if allow_virtual && let Some(session) = req.virtual_session() {
             let user = self
                 .database
                 .get_user_by_id(&session.user_id)
                 .await?
                 .ok_or(AuthError::Unauthenticated)?;
-            return Ok((user, session.clone()));
+            return Ok((user, session.clone(), None));
         }
         let session_manager = self.session_manager();
 
+        let suppressed = session_manager.request_disables_refresh(req);
         let options = crate::session::SessionReadOptions {
-            allow_refresh: !session_manager.request_disables_refresh(req)
-                && !self.config.session.defer_session_refresh,
+            allow_refresh: !suppressed && !self.config.session.defer_session_refresh,
             cleanup_expired: !self.config.session.defer_session_refresh,
         };
         let Some(token) = session_manager.extract_session_token(req) else {
@@ -621,7 +633,12 @@ impl<S: AuthSchema> AuthContext<S> {
                 crate::utils::cookie_utils::create_session_cookie(session.token(), &self.config),
             );
         }
-        Ok((user, self.session_view(&session)))
+        Ok((
+            user,
+            self.session_view(&session),
+            (self.config.session.defer_session_refresh && !suppressed)
+                .then_some(read.needs_refresh),
+        ))
     }
 
     fn queue_session_cleanup(&self, req: &AuthRequest) {

@@ -468,18 +468,26 @@ const ottProfiles=new Map(OTT_PROFILE_NAMES.map(name=>{
   })]};
   return [name,{auth:betterAuth(options),options}] as const;
 }));
-const JWT_PROFILE_NAMES = ["jwt-default", "jwt-es256", "jwt-es512", "jwt-rs256", "jwt-ps256", "jwt-claims", "jwt-path-header", "jwt-plain-rotation"] as const;
+const JWT_PROFILE_NAMES = ["jwt-default", "jwt-es256", "jwt-es512", "jwt-rs256", "jwt-ps256", "jwt-claims", "jwt-path-header", "jwt-plain-rotation", "jwt-session-normal", "jwt-session-disabled", "jwt-session-deferred"] as const;
 const jwtProfiles = new Map(JWT_PROFILE_NAMES.map(name => {
+  const sessionProfile = name.startsWith("jwt-session-");
   const options = {
     ...authOptions,
     basePath: `/__test/profiles/${name}/api/auth`,
-    plugins: [...authOptions.plugins, jwt({
+    session: {...authOptions.session, disableSessionRefresh:name === "jwt-session-disabled", deferSessionRefresh:name === "jwt-session-deferred"},
+    plugins: [...authOptions.plugins.filter(plugin => !sessionProfile || plugin.id !== "api-key"),
+      ...(sessionProfile ? [apiKey({enableSessionForAPIKeys:true,enableMetadata:true})] : []),
+      ...(sessionProfile ? [{id:"jwt-earlier-exposed-headers",hooks:{after:[{matcher:ctx=>ctx.path === "/get-session",handler:createAuthMiddleware(async ctx=>{
+        ctx.setHeader("access-control-expose-headers"," existing, ,existing, set-auth-jwt, set-auth-jwt, Existing ");
+      })}]}} satisfies BetterAuthPlugin] : []),
+      jwt({
       jwks: {
         keyPairConfig: name === "jwt-es256" ? {alg:"ES256",crv:"P-256"} : name === "jwt-es512" ? {alg:"ES512",crv:"P-521"} : name === "jwt-rs256" ? {alg:"RS256"} : name === "jwt-ps256" ? {alg:"PS256"} : {alg:"EdDSA",crv:"Ed25519"},
         ...(name === "jwt-path-header" ? {jwksPath:"/.well-known/jwks.json"} : {}),
         ...(name === "jwt-plain-rotation" ? {disablePrivateKeyEncryption:true,rotationInterval:3600,gracePeriod:3600} : {}),
       },
       ...(name === "jwt-claims" ? {jwt:{issuer:"fixture-issuer",audience:"fixture-audience",expirationTime:"60s"}} : {}),
+      ...(sessionProfile ? {jwt:{definePayload:session=>({snapshot:session})}} : {}),
       disableSettingJwtHeader:name === "jwt-path-header",
     })],
   };
@@ -722,6 +730,10 @@ const server = Bun.serve({
         if (!selected) return jsonResponse({message:"unknown fixture profile"},{status:400});
         if (body.operation === "sign" && jwtRecord(body.payload)) return jsonResponse(await selected.api.signJWT({body:{payload:body.payload}}));
         if (body.operation === "verify" && typeof body.token === "string") return jsonResponse(await selected.api.verifyJWT({body:{token:body.token,...(typeof body.issuer === "string" ? {issuer:body.issuer} : {})}}));
+        if (body.operation === "session-state" && typeof body.token === "string") {
+          const context = await selected.$context;
+          return jsonResponse(await context.internalAdapter.findSession(body.token));
+        }
         return jsonResponse({message:"invalid server operation"},{status:400});
       }
 
