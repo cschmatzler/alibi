@@ -129,3 +129,8 @@ Both private marker objects retain ordinary object String coercion. The before
 SDK run selected userId null instead of Infinity; after repair 5 scenarios and
 290 assertions pass. 32 organization native tests and production API Clippy pass.
 Custom raw JWT callback claim production remains a separate JWT owner slice.
+
+Custom `jwt.sign` callbacks bypass upstream JOSE setter validation and can receive
+nonfinite claims. The current Rust remote-signer map cannot preserve those raw
+values; that callback branch remains a separate JWT interface capability.
+Local managed-key signing is the scope of the numeric signing proof.
