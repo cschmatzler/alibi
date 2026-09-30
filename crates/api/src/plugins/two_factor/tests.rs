@@ -430,3 +430,128 @@ fn test_routes_do_not_expose_view_backup_codes() {
         "view-backup-codes must stay server-only",
     );
 }
+
+#[tokio::test]
+async fn disable_preserves_persisted_extensions_and_removes_all_matching_trust_records() {
+    let (mut ctx, user, first_session) =
+        create_test_context_with_credential_user("disable-extensions@fixture.test", true).await;
+    let mut init = better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    crate::plugins::admin::AdminPlugin::new()
+        .on_init(&mut init)
+        .await
+        .unwrap();
+    crate::plugins::organization::OrganizationPlugin::with_config(
+        crate::plugins::organization::OrganizationConfig {
+            teams: crate::plugins::organization::TeamsConfig {
+                enabled: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    )
+    .on_init(&mut init)
+    .await
+    .unwrap();
+    ctx.metadata.extend(init.into_parts().metadata);
+    ctx.database
+        .delete_session(&first_session.token)
+        .await
+        .unwrap();
+    let current = ctx
+        .database
+        .create_session(better_auth_core::CreateSession {
+            token: None,
+            user_id: user.id.clone(),
+            expires_at: Utc::now() + Duration::hours(1),
+            ip_address: Some("192.0.2.45".to_owned()),
+            user_agent: Some("fixture-agent".to_owned()),
+            impersonated_by: Some("trusted-impersonator".to_owned()),
+            active_organization_id: Some("trusted-organization".to_owned()),
+            active_team_id: Some("trusted-team".to_owned()),
+        })
+        .await
+        .unwrap();
+    ctx.database
+        .create_two_factor(CreateTwoFactor {
+            user_id: user.id.clone(),
+            secret: "stored-secret".to_owned(),
+            backup_codes: "stored-codes".to_owned(),
+        })
+        .await
+        .unwrap();
+    for _ in 0..2 {
+        ctx.database
+            .create_verification(CreateVerification {
+                identifier: "trusted-device-record".to_owned(),
+                value: user.id.clone(),
+                expires_at: Utc::now() + Duration::days(30),
+            })
+            .await
+            .unwrap();
+    }
+    let session_cookie = better_auth_core::utils::cookie_utils::sign_cookie_value(
+        current.token(),
+        &ctx.config.secret,
+    );
+    let trust_cookie = better_auth_core::utils::cookie_utils::sign_cookie_value(
+        "trust-token!trusted-device-record",
+        &ctx.config.secret,
+    );
+    let mut req = AuthRequest::new(HttpMethod::Post, "/two-factor/disable");
+    req.body = Some(serde_json::to_vec(&serde_json::json!({"password":"password123"})).unwrap());
+    _ = req.headers.insert(
+        "cookie".to_owned(),
+        format!(
+            "{}={session_cookie}; {}={trust_cookie}",
+            ctx.config.session.cookie_name,
+            related_cookie_name(&ctx.config, TRUST_DEVICE_COOKIE_SUFFIX)
+        ),
+    );
+    let response = TwoFactorPlugin::new()
+        .on_request(&req, &ctx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(response.status, 200);
+    let stored = ctx.database.get_user_sessions(&user.id).await.unwrap();
+    assert_eq!(stored.len(), 1);
+    let replacement = &stored[0];
+    assert_ne!(replacement.token(), current.token());
+    assert_eq!(
+        replacement.active_organization_id(),
+        Some("trusted-organization")
+    );
+    assert_eq!(replacement.active_team_id(), Some("trusted-team"));
+    assert_eq!(replacement.impersonated_by(), Some("trusted-impersonator"));
+    assert_eq!(replacement.ip_address(), current.ip_address());
+    assert_eq!(replacement.user_agent(), current.user_agent());
+    assert!(
+        ctx.database
+            .get_session(current.token())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        !ctx.database
+            .get_user_by_id(&user.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .two_factor_enabled()
+    );
+    assert!(
+        ctx.database
+            .get_two_factor_by_user_id(&user.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        ctx.database
+            .get_verification_by_identifier("trusted-device-record")
+            .await
+            .unwrap()
+            .is_none()
+    );
+}

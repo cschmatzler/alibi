@@ -26,7 +26,7 @@ use better_auth_core::{
 
 use crate::plugins::helpers::{
     SessionIssueError, delete_session_cookie_headers, get_cookie, get_credential_password_hash,
-    issue_user_session,
+    issue_user_session, issue_user_session_with_overrides,
 };
 
 use super::StatusResponse;
@@ -450,7 +450,17 @@ impl TwoFactorPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, session) = ctx.require_session(req).await?;
+        let (user, session) = ctx
+            .require_authoritative_session(req)
+            .await
+            .map_err(|error| match error {
+                AuthError::Unauthenticated | AuthError::SessionNotFound => AuthError::Upstream {
+                    status: 401,
+                    code: "UNAUTHORIZED",
+                    message: "Unauthorized",
+                },
+                other => other,
+            })?;
         let body: DisableRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
@@ -629,8 +639,6 @@ async fn disable_core(
 ) -> AuthResult<(StatusResponse, Vec<String>)> {
     verify_user_password(ctx, user, &body.password).await?;
 
-    ctx.database.delete_two_factor(user.id().as_ref()).await?;
-
     let updated_user = ctx
         .database
         .update_user(
@@ -642,29 +650,45 @@ async fn disable_core(
         )
         .await?;
 
-    let issued = issue_user_session(
+    ctx.database.delete_two_factor(user.id().as_ref()).await?;
+
+    let issued = issue_user_session_with_overrides(
         ctx,
         updated_user.id().as_ref(),
         current_session.ip_address().map(str::to_owned),
         current_session.user_agent().map(str::to_owned),
+        current_session,
     )
     .await
     .map_err(SessionIssueError::into_auth_error)?;
     ctx.database.delete_session(current_session.token()).await?;
 
-    let mut set_cookie_headers = vec![create_session_cookie(issued.session.token(), &ctx.config)];
+    let dont_remember = read_signed_cookie(req, DONT_REMEMBER_COOKIE_SUFFIX, ctx)?
+        .is_some_and(|value| !value.is_empty());
+    let mut set_cookie_headers = vec![create_session_cookie_for_dont_remember(
+        issued.session.token(),
+        dont_remember,
+        &ctx.config,
+    )];
+    if dont_remember {
+        set_cookie_headers.push(create_signed_cookie_header(
+            &ctx.config.secret,
+            &ctx.config,
+            DONT_REMEMBER_COOKIE_SUFFIX,
+            "true",
+            None,
+        )?);
+    }
 
-    if let Some(trust_cookie) = read_signed_cookie(req, TRUST_DEVICE_COOKIE_SUFFIX, ctx)? {
-        if let Some((_, trust_identifier)) = trust_cookie.split_once('!')
-            && let Some(verification) = ctx
-                .database
-                .get_verification_by_identifier(trust_identifier)
-                .await?
+    if let Some(trust_cookie) = read_signed_cookie(req, TRUST_DEVICE_COOKIE_SUFFIX, ctx)?
+        && !trust_cookie.is_empty()
+    {
+        if let Some(trust_identifier) = trust_cookie.split('!').nth(1)
+            && !trust_identifier.is_empty()
         {
-            let _ = ctx
-                .database
-                .delete_verification(verification.id().as_ref())
-                .await;
+            ctx.database
+                .delete_verifications_by_identifier(trust_identifier)
+                .await?;
         }
         set_cookie_headers.push(clear_cookie_header(&ctx.config, TRUST_DEVICE_COOKIE_SUFFIX));
     }
