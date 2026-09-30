@@ -116,13 +116,28 @@ pub(crate) trait RequestBody: DeserializeOwned + 'static {
 /// Parse the upstream schema at the HTTP boundary. The error includes all
 /// failed fields in declaration order, including explicitly null optionals.
 pub(crate) fn parse_body<T: RequestBody>(req: &AuthRequest) -> Result<T, AuthResponse> {
-    parse_body_with_ignored_fields(req, &[])
+    parse_body_with_fields(req, T::FIELDS)
 }
 
-/// Remove configured unknown fields before schema validation without serializing
-/// the remaining JavaScript numbers (which may include infinity or signed zero).
+/// Parse schemas whose required fields depend on trusted plugin configuration.
+pub(crate) fn parse_body_with_fields<T: DeserializeOwned + 'static>(
+    req: &AuthRequest,
+    fields: &[JsonField],
+) -> Result<T, AuthResponse> {
+    parse_body_with_fields_and_ignored(req, fields, &[])
+}
+
+/// Remove configured unknown fields without serializing raw JavaScript numbers.
 pub(crate) fn parse_body_with_ignored_fields<T: RequestBody>(
     req: &AuthRequest,
+    ignored: &[&str],
+) -> Result<T, AuthResponse> {
+    parse_body_with_fields_and_ignored(req, T::FIELDS, ignored)
+}
+
+fn parse_body_with_fields_and_ignored<T: DeserializeOwned + 'static>(
+    req: &AuthRequest,
+    fields: &[JsonField],
     ignored: &[&str],
 ) -> Result<T, AuthResponse> {
     let mut value: better_auth_core::utils::json::JsValue = req.body_as_json().map_err(|_| {
@@ -144,7 +159,7 @@ pub(crate) fn parse_body_with_ignored_fields<T: RequestBody>(
         )));
     };
     let mut issues = Vec::new();
-    for field in T::FIELDS {
+    for field in fields {
         let value = object.get(field.name);
         if value.is_none() && !field.required {
             continue;

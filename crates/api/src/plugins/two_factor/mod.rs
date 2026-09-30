@@ -93,6 +93,15 @@ impl Default for AccountLockoutConfig {
 #[derive(Clone, better_auth_core::PluginConfig)]
 #[plugin(name = "TwoFactorPlugin")]
 pub struct TwoFactorConfig {
+    /// Allow omission of passwords for users without a stored credential hash.
+    #[config(default = false)]
+    pub allow_passwordless: bool,
+    /// Override the global passwordless policy for existing TOTP URI retrieval.
+    #[config(default = None)]
+    pub totp_allow_passwordless: Option<bool>,
+    /// Override the global passwordless policy for backup regeneration.
+    #[config(default = None)]
+    pub backup_allow_passwordless: Option<bool>,
     #[config(default = AccountLockoutConfig::default())]
     pub account_lockout: AccountLockoutConfig,
     /// Override the issuer embedded in enrollment TOTP URIs.
@@ -127,6 +136,9 @@ pub struct TwoFactorConfig {
 impl std::fmt::Debug for TwoFactorConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TwoFactorConfig")
+            .field("allow_passwordless", &self.allow_passwordless)
+            .field("totp_allow_passwordless", &self.totp_allow_passwordless)
+            .field("backup_allow_passwordless", &self.backup_allow_passwordless)
             .field("account_lockout", &self.account_lockout)
             .field("issuer", &self.issuer)
             .field(
@@ -146,18 +158,18 @@ impl std::fmt::Debug for TwoFactorConfig {
 
 #[derive(Debug, Deserialize, Validate)]
 pub(crate) struct EnableRequest {
-    password: String,
+    password: Option<String>,
     issuer: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
 pub(crate) struct DisableRequest {
-    password: String,
+    password: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
 pub(crate) struct GetTotpUriRequest {
-    password: String,
+    password: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -176,7 +188,7 @@ pub(crate) struct VerifyOtpRequest {
 
 #[derive(Debug, Deserialize, Validate)]
 pub(crate) struct GenerateBackupCodesRequest {
-    password: String,
+    password: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -485,10 +497,11 @@ impl TwoFactorPlugin {
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, session) = ctx.require_session(req).await?;
-        let body: EnableRequest = match better_auth_core::validate_request_body(req) {
-            Ok(v) => v,
-            Err(resp) => return Ok(resp),
-        };
+        let body: EnableRequest =
+            match parse_password_body(req, self.config.allow_passwordless, true) {
+                Ok(v) => v,
+                Err(resp) => return Ok(resp),
+            };
 
         let (response, set_cookie_headers) =
             match enable_core(&body, &user, &session, &self.config, ctx).await {
@@ -519,12 +532,14 @@ impl TwoFactorPlugin {
                 },
                 other => other,
             })?;
-        let body: DisableRequest = match better_auth_core::validate_request_body(req) {
-            Ok(v) => v,
-            Err(resp) => return Ok(resp),
-        };
+        let body: DisableRequest =
+            match parse_password_body(req, self.config.allow_passwordless, false) {
+                Ok(v) => v,
+                Err(resp) => return Ok(resp),
+            };
 
-        let (response, set_cookie_headers) = disable_core(&body, &user, &session, req, ctx).await?;
+        let (response, set_cookie_headers) =
+            disable_core(&body, &user, &session, req, &self.config, ctx).await?;
         let mut auth_response = AuthResponse::json(200, &response)?;
         for cookie in set_cookie_headers {
             auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
@@ -538,7 +553,11 @@ impl TwoFactorPlugin {
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, _session) = ctx.require_session(req).await?;
-        let body: GetTotpUriRequest = match better_auth_core::validate_request_body(req) {
+        let allow_passwordless = self
+            .config
+            .totp_allow_passwordless
+            .unwrap_or(self.config.allow_passwordless);
+        let body: GetTotpUriRequest = match parse_password_body(req, allow_passwordless, false) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
@@ -606,12 +625,17 @@ impl TwoFactorPlugin {
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, _session) = ctx.require_session(req).await?;
-        let body: GenerateBackupCodesRequest = match better_auth_core::validate_request_body(req) {
-            Ok(v) => v,
-            Err(resp) => return Ok(resp),
-        };
+        let allow_passwordless = self
+            .config
+            .backup_allow_passwordless
+            .unwrap_or(self.config.allow_passwordless);
+        let body: GenerateBackupCodesRequest =
+            match parse_password_body(req, allow_passwordless, false) {
+                Ok(v) => v,
+                Err(resp) => return Ok(resp),
+            };
 
-        let response = generate_backup_codes_core(&body, &user, ctx).await?;
+        let response = generate_backup_codes_core(&body, &user, &self.config, ctx).await?;
         AuthResponse::json(200, &response).map_err(AuthError::from)
     }
 
@@ -645,7 +669,13 @@ async fn enable_core(
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<(EnableResponse, Vec<String>)> {
-    verify_user_password(ctx, user, &body.password).await?;
+    verify_user_password(
+        ctx,
+        user,
+        body.password.as_deref(),
+        config.allow_passwordless,
+    )
+    .await?;
     if config.totp_disabled {
         return Err(AuthError::Upstream {
             status: 400,
@@ -753,9 +783,16 @@ async fn disable_core(
     user: &impl AuthUser,
     current_session: &impl AuthSession,
     req: &AuthRequest,
+    config: &TwoFactorConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<(StatusResponse, Vec<String>)> {
-    verify_user_password(ctx, user, &body.password).await?;
+    verify_user_password(
+        ctx,
+        user,
+        body.password.as_deref(),
+        config.allow_passwordless,
+    )
+    .await?;
 
     let updated_user = ctx
         .database
@@ -823,7 +860,15 @@ async fn get_totp_uri_core(
     require_totp_enabled(config)?;
     let two_factor = load_two_factor_record(user, ctx).await?;
     let secret = decrypt_value(&ctx.config.secret, two_factor.secret())?;
-    verify_user_password(ctx, user, &body.password).await?;
+    verify_user_password(
+        ctx,
+        user,
+        body.password.as_deref(),
+        config
+            .totp_allow_passwordless
+            .unwrap_or(config.allow_passwordless),
+    )
+    .await?;
     let issuer = config
         .totp_issuer
         .as_deref()
@@ -1049,13 +1094,22 @@ async fn verify_otp_core(
 async fn generate_backup_codes_core(
     body: &GenerateBackupCodesRequest,
     user: &impl AuthUser,
+    config: &TwoFactorConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<BackupCodesResponse> {
     if !user.two_factor_enabled() {
         return Err(AuthError::bad_request("Two factor isn't enabled"));
     }
 
-    verify_user_password(ctx, user, &body.password).await?;
+    verify_user_password(
+        ctx,
+        user,
+        body.password.as_deref(),
+        config
+            .backup_allow_passwordless
+            .unwrap_or(config.allow_passwordless),
+    )
+    .await?;
     let _ = load_two_factor_record(user, ctx).await?;
 
     let backup_codes = generate_backup_codes();
@@ -1634,16 +1688,56 @@ fn totp_uri(
 async fn verify_user_password(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     user: &impl AuthUser,
-    password: &str,
+    password: Option<&str>,
+    allow_passwordless: bool,
 ) -> AuthResult<()> {
-    let stored_hash = get_credential_password_hash(ctx, user)
-        .await?
+    let stored_hash = get_credential_password_hash(ctx, user).await?;
+    if allow_passwordless && stored_hash.as_deref().is_none_or(str::is_empty) {
+        return Ok(());
+    }
+    let password = password
+        .filter(|password| !password.is_empty())
         .ok_or_else(|| AuthError::bad_request("Invalid password"))?;
-    match better_auth_core::verify_password(None, password, &stored_hash).await {
+    let password_config = ctx
+        .extensions
+        .get::<super::email_password::EmailPasswordConfig>();
+    let maximum = password_config
+        .as_ref()
+        .map_or(128, |config| config.password_max_length);
+    if password.encode_utf16().count() > maximum {
+        return Err(AuthError::bad_request("Password too long"));
+    }
+    let stored_hash = stored_hash
+        .filter(|hash| !hash.is_empty())
+        .ok_or_else(|| AuthError::bad_request("Invalid password"))?;
+    let hasher = password_config
+        .as_ref()
+        .and_then(|config| config.password_hasher.as_ref());
+    match better_auth_core::verify_password(hasher, password, &stored_hash).await {
         Ok(()) => Ok(()),
         Err(AuthError::InvalidCredentials) => Err(AuthError::bad_request("Invalid password")),
         Err(error) => Err(error),
     }
+}
+
+fn parse_password_body<T: serde::de::DeserializeOwned + 'static>(
+    req: &AuthRequest,
+    allow_passwordless: bool,
+    include_issuer: bool,
+) -> Result<T, AuthResponse> {
+    use super::authentication_helpers::{JsonField, parse_body_with_fields};
+    let fields = [
+        JsonField::string("password", !allow_passwordless),
+        JsonField::string("issuer", false),
+    ];
+    parse_body_with_fields(
+        req,
+        if include_issuer {
+            &fields[..]
+        } else {
+            &fields[..1]
+        },
+    )
 }
 
 fn generate_secret() -> String {
