@@ -1,161 +1,25 @@
 //! Device authorization records use an unconstrained optional user reference.
-
-use super::nullable_user_flags::sql_tokens;
-use sea_orm::sqlx::{Connection, Row, SqliteConnection};
-use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseExecutor, Statement};
+#[cfg(test)]
+use sea_orm::{DatabaseBackend, Statement};
 use sea_orm_migration::prelude::*;
 
 pub(super) struct DeviceCodeUserReference;
-
 impl MigrationName for DeviceCodeUserReference {
     fn name(&self) -> &str {
         "m20260930_000006_device_code_user_reference"
     }
 }
-
 #[async_trait::async_trait]
 impl MigrationTrait for DeviceCodeUserReference {
     fn use_transaction(&self) -> Option<bool> {
         Some(false)
     }
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        let connection = manager.get_connection();
-        match connection.get_database_backend() {
-            DatabaseBackend::Postgres => {
-                let _ = connection
-                    .execute_unprepared(
-                        "ALTER TABLE device_code DROP CONSTRAINT IF EXISTS fk_device_code_user_id",
-                    )
-                    .await?;
-                Ok(())
-            }
-            DatabaseBackend::Sqlite => {
-                let rows = connection
-                    .query_all_raw(Statement::from_string(
-                        DatabaseBackend::Sqlite,
-                        "PRAGMA foreign_key_list('device_code')",
-                    ))
-                    .await?;
-                let mut has_user_reference = false;
-                for row in rows {
-                    has_user_reference |= row.try_get::<String>("", "from")? == "user_id";
-                }
-                if !has_user_reference {
-                    return Ok(());
-                }
-                rebuild_sqlite_device_codes(manager).await
-            }
-            backend => Err(DbErr::Custom(format!(
-                "device-code user-reference migration does not support {backend:?}"
-            ))),
-        }
-    }
-}
-
-fn sqlx_error(error: sea_orm::sqlx::Error) -> DbErr {
-    DbErr::Migration(format!("Device user reference: {error}"))
-}
-
-async fn rebuild_sqlite_device_codes(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
-    let DatabaseExecutor::Connection(database) = manager.get_connection() else {
-        return Err(DbErr::Migration(
-            "SQLite device user references must be migrated outside an existing transaction"
-                .to_owned(),
-        ));
-    };
-    let mut connection = database
-        .get_sqlite_connection_pool()
-        .acquire()
+        super::user_reference::remove_user_reference(
+            manager,
+            super::user_reference::UserReference::DeviceCode,
+        )
         .await
-        .map_err(sqlx_error)?;
-    let foreign_keys: i64 = sea_orm::sqlx::query_scalar("PRAGMA foreign_keys")
-        .fetch_one(&mut *connection)
-        .await
-        .map_err(sqlx_error)?;
-    let legacy_alter_table: i64 = sea_orm::sqlx::query_scalar("PRAGMA legacy_alter_table")
-        .fetch_one(&mut *connection)
-        .await
-        .map_err(sqlx_error)?;
-    // Cancellation/error must never return a connection with foreign keys
-    // disabled to the pool. Successful restoration returns it explicitly.
-    connection.close_on_drop();
-    let _ = sea_orm::sqlx::query("PRAGMA foreign_keys = OFF")
-        .execute(&mut *connection)
-        .await
-        .map_err(sqlx_error)?;
-    // Existing views temporarily refer to the dropped name inside this
-    // transaction. Legacy rename validation leaves those definitions intact
-    // until the replacement restores that same name.
-    let _ = sea_orm::sqlx::query("PRAGMA legacy_alter_table = ON")
-        .execute(&mut *connection)
-        .await
-        .map_err(sqlx_error)?;
-    let result = rebuild_device_transaction(&mut connection).await;
-    let _ = sea_orm::sqlx::query(&format!("PRAGMA foreign_keys = {foreign_keys}"))
-        .execute(&mut *connection)
-        .await
-        .map_err(sqlx_error)?;
-    let _ = sea_orm::sqlx::query(&format!("PRAGMA legacy_alter_table = {legacy_alter_table}"))
-        .execute(&mut *connection)
-        .await
-        .map_err(sqlx_error)?;
-    let restored: i64 = sea_orm::sqlx::query_scalar("PRAGMA foreign_keys")
-        .fetch_one(&mut *connection)
-        .await
-        .map_err(sqlx_error)?;
-    let restored_legacy: i64 = sea_orm::sqlx::query_scalar("PRAGMA legacy_alter_table")
-        .fetch_one(&mut *connection)
-        .await
-        .map_err(sqlx_error)?;
-    if restored != foreign_keys || restored_legacy != legacy_alter_table {
-        return Err(DbErr::Migration(
-            "Unable to restore SQLite foreign-key and rename settings".to_owned(),
-        ));
-    }
-    connection.return_to_pool().await;
-    result
-}
-
-async fn rebuild_device_transaction(connection: &mut SqliteConnection) -> Result<(), DbErr> {
-    let mut transaction = connection.begin().await.map_err(sqlx_error)?;
-    let outcome = async {
-        let sql: String = sea_orm::sqlx::query_scalar("SELECT sql FROM sqlite_schema WHERE type='table' AND name='device_code'").fetch_one(&mut *transaction).await.map_err(sqlx_error)?;
-        let statements: Vec<String> = sea_orm::sqlx::query_scalar("SELECT sql FROM sqlite_schema WHERE tbl_name='device_code' AND type IN ('index','trigger') AND sql IS NOT NULL ORDER BY type,name").fetch_all(&mut *transaction).await.map_err(sqlx_error)?;
-        let body = sql_tokens(&sql)?.into_iter().find(|span| sql[span.clone()].starts_with('(')).ok_or_else(|| DbErr::Migration("Missing device table definition".to_owned()))?;
-        let definitions = &sql[body.start+1..body.end-1];
-        let mut kept = Vec::new();
-        let mut start = 0;
-        let mut removed = 0;
-        for end in sql_tokens(definitions)?.into_iter().filter(|span| &definitions[span.clone()] == ",").map(|span| (span.start,span.end)).chain(std::iter::once((definitions.len(),definitions.len()))) {
-            let definition = &definitions[start..end.0];
-            let tokens = sql_tokens(definition)?;
-            let target = matches!(tokens.as_slice(), [constraint,name,foreign,key,..] if definition[constraint.clone()].eq_ignore_ascii_case("CONSTRAINT") && definition[name.clone()].trim_matches(['\"','\'','`','[',']']).eq_ignore_ascii_case("fk_device_code_user_id") && definition[foreign.clone()].eq_ignore_ascii_case("FOREIGN") && definition[key.clone()].eq_ignore_ascii_case("KEY"));
-            if target { removed += 1; } else { kept.push(definition); }
-            start = end.1;
-        }
-        if removed != 1 { return Err(DbErr::Migration("Unable to safely remove the installed device user constraint".to_owned())); }
-        let rewritten = format!("CREATE TABLE \"device_code__user_reference\" ({}){}", kept.join(","), &sql[body.end..]);
-        let columns = sea_orm::sqlx::query("PRAGMA table_xinfo(\"device_code\")").fetch_all(&mut *transaction).await.map_err(sqlx_error)?;
-        let mut copied = columns.iter().filter(|row| row.get::<i64,_>("hidden") == 0).map(|row| format!("\"{}\"",row.get::<String,_>("name").replace('\"',"\"\""))).collect::<Vec<_>>();
-        let suffix = &sql[body.end..];
-        let without_rowid = sql_tokens(suffix)?.windows(2).any(|pair| matches!(pair, [without,rowid] if suffix[without.clone()].eq_ignore_ascii_case("WITHOUT") && suffix[rowid.clone()].eq_ignore_ascii_case("ROWID")));
-        if !without_rowid && let Some(alias) = ["rowid","_rowid_","oid"].into_iter().find(|alias| !columns.iter().any(|row| row.get::<String,_>("name").eq_ignore_ascii_case(alias))) { copied.insert(0,format!("\"{alias}\"")); }
-        let copied = copied.join(",");
-        let _ = sea_orm::sqlx::query(&rewritten).execute(&mut *transaction).await.map_err(sqlx_error)?;
-        let _ = sea_orm::sqlx::query(&format!("INSERT INTO \"device_code__user_reference\" ({copied}) SELECT {copied} FROM \"device_code\"")).execute(&mut *transaction).await.map_err(sqlx_error)?;
-        let _ = sea_orm::sqlx::query("DROP TABLE \"device_code\"").execute(&mut *transaction).await.map_err(sqlx_error)?;
-        let _ = sea_orm::sqlx::query("ALTER TABLE \"device_code__user_reference\" RENAME TO \"device_code\"").execute(&mut *transaction).await.map_err(sqlx_error)?;
-        for statement in statements { let _ = sea_orm::sqlx::query(&statement).execute(&mut *transaction).await.map_err(sqlx_error)?; }
-        let violations = sea_orm::sqlx::query("PRAGMA foreign_key_check").fetch_all(&mut *transaction).await.map_err(sqlx_error)?;
-        if !violations.is_empty() { return Err(DbErr::Migration("Device migration would invalidate foreign-key relationships".to_owned())); }
-        Ok(())
-    }.await;
-    match outcome {
-        Ok(()) => transaction.commit().await.map_err(sqlx_error),
-        Err(error) => {
-            transaction.rollback().await.map_err(sqlx_error)?;
-            Err(error)
-        }
     }
 }
 

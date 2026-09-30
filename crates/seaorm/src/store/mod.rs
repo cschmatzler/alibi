@@ -24,6 +24,8 @@ mod siwe_wallets;
 mod sqlite_number;
 mod teams;
 mod two_factor;
+mod two_factor_user_reference;
+mod user_reference;
 mod users;
 mod verifications;
 #[cfg(test)]
