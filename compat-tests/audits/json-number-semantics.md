@@ -134,3 +134,9 @@ Custom `jwt.sign` callbacks bypass upstream JOSE setter validation and can recei
 nonfinite claims. The current Rust remote-signer map cannot preserve those raw
 values; that callback branch remains a separate JWT interface capability.
 Local managed-key signing is the scope of the numeric signing proof.
+
+The final integrated canonical gate passes after SIWE integration: 244 SDK
+scenarios / 6,190 assertions, 37 harness tests / 210 assertions, two Chromium
+tests / 22 assertions, default/optional configurations, Rustls/Redis builds,
+TypeScript, documentation and 78.67% source line coverage (22,900 / 29,109).
+Independent findings are resolved within this numeric and storage scope.
