@@ -1,5 +1,6 @@
 /** Explicit equivalent configurations of the pinned runtime. */
 export type FixtureProfile =
+  | "device-custom" | "device-configured" | "device-unicode" | "device-too-long"
   | "session-deferred"
   | "session-no-refresh"
   | "session-deferred-no-refresh"

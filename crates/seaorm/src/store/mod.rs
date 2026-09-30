@@ -4,6 +4,7 @@ mod accounts;
 mod api_key_numbers;
 mod api_keys;
 mod bundled_schema;
+mod device_code_user_reference;
 mod device_codes;
 pub mod entities;
 mod identity_fields;

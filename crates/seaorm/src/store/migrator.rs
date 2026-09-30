@@ -22,6 +22,7 @@ impl MigratorTrait for AuthMigrator {
             Box::new(super::organization_extensions::OrganizationExtensions),
             Box::new(super::jwks::JwkKeys),
             Box::new(super::nullable_user_flags::NullableUserPluginFlags),
+            Box::new(super::device_code_user_reference::DeviceCodeUserReference),
         ]
     }
 
@@ -992,13 +993,6 @@ async fn create_device_codes(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
                 .col(ColumnDef::new(device_code::Column::PollingInterval).big_integer())
                 .col(ColumnDef::new(device_code::Column::ClientId).string())
                 .col(ColumnDef::new(device_code::Column::Scope).string())
-                .foreign_key(
-                    ForeignKey::create()
-                        .name("fk_device_code_user_id")
-                        .from(device_code::Entity, device_code::Column::UserId)
-                        .to(user::Entity, user::Column::Id)
-                        .on_delete(ForeignKeyAction::Cascade),
-                )
                 .to_owned(),
         )
         .await?;

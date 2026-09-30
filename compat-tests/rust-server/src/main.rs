@@ -44,6 +44,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
+mod device_fixture;
 mod jwt_fixture;
 mod lifecycle_fixture;
 mod magic_profiles;
@@ -726,6 +727,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let otp_outbox_for_reset = otp_outbox.clone();
     let auth_router = auth.clone().axum_router();
     let jwt_router = jwt_fixture::router(&config, reset_database.clone()).await?;
+    let device_profiles = device_fixture::profiles(&config, reset_database.clone()).await?;
 
     let reset_outbox_for_token = reset_outbox.clone();
     let reset_outbox_for_reset = reset_outbox.clone();
@@ -773,6 +775,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             reset_database.clone(),
         ))
         .merge(parity_controls::router())
+        .merge(device_fixture::router(reset_database.clone()))
         .route("/__health", get(health_check))
         .route(
             "/__test/password",
@@ -1548,6 +1551,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .merge(ott_router)
         .merge(jwt_router)
+        .merge(device_profiles)
         .merge(team_router)
         .nest("/api/auth", auth_router)
         .with_state(auth)

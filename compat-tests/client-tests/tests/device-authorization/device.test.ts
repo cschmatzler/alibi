@@ -1,300 +1,433 @@
+import { expect } from "bun:test";
+import { createAuthClient } from "better-auth/client";
+import { deviceAuthorizationClient } from "better-auth/client/plugins";
+import { z } from "zod";
+import type { FixtureProfile } from "../../support/profiles";
 import { compatScenario } from "../../support/scenario";
 
 const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
+type Context = Parameters<Parameters<typeof compatScenario>[1]>[0];
+const deviceState = z.object({
+  id: z.string(), deviceCode: z.string(), userCode: z.string(), userId: z.string().nullable(),
+  status: z.string(), clientId: z.string().nullable(), scope: z.string().nullable(),
+  expiresAt: z.string(), lastPolledAt: z.string().nullable(), pollingInterval: z.number().nullable(),
+});
 
-function asRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("expected object response body");
-  }
-  return value as Record<string, unknown>;
+function deviceActor(ctx: Context, name = "primary", profile?: FixtureProfile) {
+  return createAuthClient({
+    baseURL: ctx.baseURL,
+    plugins: [deviceAuthorizationClient()],
+    fetchOptions: { customFetchImpl: ctx.actor(name, profile).fetch },
+  });
 }
 
-function asString(value: unknown, key: string): string {
-  if (typeof value !== "string") {
-    throw new Error(`expected string for ${key}`);
-  }
-  return value;
+async function requestCode(ctx: Context, scope?: string) {
+  const result = await deviceActor(ctx, "device").device.code({
+    client_id: "compat-device-client",
+    ...(scope === undefined ? {} : { scope }),
+  });
+  expect(result.error).toBeNull();
+  if (!result.data) throw new Error("device issuance must return codes");
+  return result.data;
 }
 
-function normalizeApprovedTokenResponse(response: {
-  status: number;
-  location: string | null;
-  body: unknown;
-}) {
-  const snapshot = structuredClone(response) as {
-    status: number;
-    location: string | null;
-    body: Record<string, unknown> | null;
-  };
+async function signUpOwner(ctx: Context, prefix: string) {
+  const owner = deviceActor(ctx, "owner");
+  const signup = await owner.signUp.email({ email: ctx.uniqueEmail(prefix), password: "password123", name: "Device Owner" });
+  expect(signup.error).toBeNull();
+  if (!signup.data) throw new Error("device owner must have a session");
+  return { owner, signup, userId: signup.data.user.id };
+}
 
-  if (snapshot.body && typeof snapshot.body.expires_in === "number") {
-    const expiresIn = snapshot.body.expires_in;
-    snapshot.body.expires_in =
-      Math.abs(expiresIn - 604800) <= 5 ? "<week-session-ttl>" : expiresIn;
-  }
-
-  return snapshot;
+function tokenRequest(deviceCode: string, clientId = "compat-device-client") {
+  return { grant_type: DEVICE_GRANT_TYPE, device_code: deviceCode, client_id: clientId } as const;
 }
 
 compatScenario("device code request returns oauth device response fields", async (ctx) => {
-  const code = await ctx.rawRequest({
-    path: "/api/auth/device/code",
-    method: "POST",
-    json: {
-      client_id: "compat-device-client",
-      scope: "openid profile",
-    },
-  });
-  const body = asRecord(code.body);
-  const userCode = asString(body.user_code, "user_code");
-  const verificationUri = asString(body.verification_uri, "verification_uri");
-  const verificationUriComplete = asString(
-    body.verification_uri_complete,
-    "verification_uri_complete",
-  );
-
-  return {
-    code: {
-      status: code.status,
-      hasDeviceCode: typeof body.device_code === "string" && body.device_code.length >= 40,
-      userCodeFormat: /^[A-Z0-9]{8}$/.test(userCode),
-      expiresIn: body.expires_in,
-      interval: body.interval,
-      verificationUriHasDevicePath: verificationUri.includes("/device"),
-      verificationUriCompleteHasUserCode: verificationUriComplete.includes("user_code="),
-    },
-  };
+  const code = await requestCode(ctx, "openid profile");
+  expect(code.device_code).toHaveLength(40);
+  expect(code.user_code).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/);
+  expect(code.expires_in).toBe(1800);
+  expect(code.interval).toBe(5);
+  expect(new URL(code.verification_uri).pathname).toBe("/device");
+  expect(new URL(code.verification_uri_complete).searchParams.get("user_code")).toBe(code.user_code);
+  return { code: ctx.snapshot(code) };
 });
 
 compatScenario("device token returns authorization_pending while request is pending", async (ctx) => {
-  const code = await ctx.rawRequest({
-    path: "/api/auth/device/code",
-    method: "POST",
-    json: {
-      client_id: "compat-device-client",
-    },
-  });
-  const deviceCode = asString(asRecord(code.body).device_code, "device_code");
-
-  const token = await ctx.rawRequest({
-    path: "/api/auth/device/token",
-    method: "POST",
-    json: {
-      grant_type: DEVICE_GRANT_TYPE,
-      device_code: deviceCode,
-      client_id: "compat-device-client",
-    },
-  });
-
-  return {
-    token: ctx.snapshot(token),
-  };
+  const code = await requestCode(ctx);
+  const token = await deviceActor(ctx, "device").device.token(tokenRequest(code.device_code));
+  expect(token.data).toBeNull();
+  expect(token.error).toMatchObject({ status: 400, error: "authorization_pending" });
+  return { code: ctx.snapshot(code), token: ctx.snapshot(token) };
 });
 
 compatScenario("device token returns invalid_grant for an unknown device code", async (ctx) => {
-  const token = await ctx.rawRequest({
-    path: "/api/auth/device/token",
-    method: "POST",
-    json: {
-      grant_type: DEVICE_GRANT_TYPE,
-      device_code: "unknown-device-code",
-      client_id: "compat-device-client",
-    },
-  });
-
-  return {
-    token: ctx.snapshot(token),
-  };
+  const token = await deviceActor(ctx, "device").device.token(tokenRequest("unknown-device-code"));
+  expect(token.error).toMatchObject({ status: 400, error: "invalid_grant" });
+  return { token: ctx.snapshot(token) };
 });
 
 compatScenario("device verify accepts a hyphenated user code", async (ctx) => {
-  const code = await ctx.rawRequest({
-    path: "/api/auth/device/code",
-    method: "POST",
-    json: {
-      client_id: "compat-device-client",
-    },
-  });
-  const userCode = asString(asRecord(code.body).user_code, "user_code");
-  const formattedUserCode = `${userCode.slice(0, 4)}-${userCode.slice(4)}`;
-
-  const verify = await ctx.rawRequest({
-    path: `/api/auth/device?user_code=${encodeURIComponent(formattedUserCode)}`,
-  });
-  const verifyBody = asRecord(verify.body);
-
-  return {
-    verify: {
-      status: verify.status,
-      location: verify.location,
-      body: {
-        status: verifyBody.status,
-        echoedHyphenatedInput: verifyBody.user_code === formattedUserCode,
-      },
-    },
-  };
+  const code = await requestCode(ctx);
+  const formatted = `${code.user_code.slice(0, 4)}-${code.user_code.slice(4)}`;
+  const verify = await deviceActor(ctx, "device").device({ query: { user_code: formatted } });
+  expect(verify.error).toBeNull();
+  expect(verify.data).toEqual({ user_code: formatted, status: "pending" });
+  return { code: ctx.snapshot(code), verify: ctx.snapshot(verify) };
 });
 
 compatScenario("device approve flow returns a bearer token", async (ctx) => {
-  const primary = ctx.actor();
-  const email = ctx.uniqueEmail("device-authorization-device-approve");
-
-  const signup = await primary.client.signUp.email({
-    email,
-    password: "password123",
-    name: "Device Approve User",
-  });
-
-  const code = await ctx.rawRequest({
-    path: "/api/auth/device/code",
-    method: "POST",
-    json: {
-      client_id: "compat-device-client",
-      scope: "read write",
-    },
-  });
-  const codeBody = asRecord(code.body);
-  const deviceCode = asString(codeBody.device_code, "device_code");
-  const userCode = asString(codeBody.user_code, "user_code");
-
-  const approve = await ctx.rawRequest({
-    actor: "primary",
-    path: "/api/auth/device/approve",
-    method: "POST",
-    json: {
-      userCode,
-    },
-  });
-
-  const token = await ctx.rawRequest({
-    path: "/api/auth/device/token",
-    method: "POST",
-    json: {
-      grant_type: DEVICE_GRANT_TYPE,
-      device_code: deviceCode,
-      client_id: "compat-device-client",
-    },
-  });
-
+  const { owner, signup, userId } = await signUpOwner(ctx, "device-authorization-device-approve");
+  const code = await requestCode(ctx, "read write");
+  const unclaimedState = deviceState.parse(await ctx.readDeviceState({ deviceCode: code.device_code }));
+  expect(unclaimedState.userId).toBeNull();
+  const verify = await owner.device({ query: { user_code: code.user_code } });
+  expect(verify.data).toEqual({ user_code: code.user_code, status: "pending", client_id: "compat-device-client", scope: "read write" });
+  const approve = await owner.device.approve({ userCode: code.user_code });
+  expect(approve.data).toEqual({ success: true });
+  const approvedState = await owner.device({ query: { user_code: code.user_code } });
+  expect(approvedState.data?.status).toBe("approved");
+  const persistedApproval = deviceState.parse(await ctx.readDeviceState({ deviceCode: code.device_code }));
+  expect(persistedApproval.userId).toBe(userId);
+  expect(persistedApproval.status).toBe("approved");
+  const device = deviceActor(ctx, "device");
+  const redemptionStartedAt = Date.now();
+  const token = await device.device.token(tokenRequest(code.device_code));
+  const redemptionCompletedAt = Date.now();
+  expect(token.error).toBeNull();
+  if (!token.data) throw new Error("approved code must issue a session token");
+  expect(token.data.token_type).toBe("Bearer");
+  expect(token.data.scope).toBe("read write");
+  expect(token.data.expires_in).toBeGreaterThanOrEqual(604799);
+  expect(token.data.expires_in).toBeLessThanOrEqual(604800);
+  const sessions = await owner.listSessions();
+  expect(sessions.data).toHaveLength(2);
+  const issuedSession = sessions.data?.find(session => session.token === token.data?.access_token);
+  expect(issuedSession?.userId).toBe(userId);
+  expect(issuedSession?.token).not.toBe(signup.data?.token);
+  if (!issuedSession) throw new Error("device token must identify its persisted session");
+  const absoluteExpiry = new Date(issuedSession.expiresAt).getTime();
+  expect(token.data.expires_in).toBeGreaterThanOrEqual(Math.floor((absoluteExpiry - redemptionCompletedAt) / 1000));
+  expect(token.data.expires_in).toBeLessThanOrEqual(Math.floor((absoluteExpiry - redemptionStartedAt) / 1000));
+  const deviceCookieSession = await device.getSession();
+  expect(deviceCookieSession.data).toBeNull();
+  const replay = await device.device.token(tokenRequest(code.device_code));
+  expect(replay.error).toMatchObject({ status: 400, error: "invalid_grant" });
+  const consumed = await owner.device({ query: { user_code: code.user_code } });
+  expect(consumed.error).toMatchObject({ status: 400, error: "invalid_request" });
+  expect(await ctx.readDeviceState({ deviceCode: code.device_code })).toBeNull();
   return {
-    signup: ctx.snapshot(signup),
-    approve: ctx.snapshot(approve),
-    token: normalizeApprovedTokenResponse(ctx.snapshot(token) as typeof token),
+    signup: ctx.snapshot(signup), code: ctx.snapshot(code), verify: ctx.snapshot(verify),
+    approve: ctx.snapshot(approve), approvedState: ctx.snapshot(approvedState), token: ctx.snapshot(token),
+    sessions: ctx.snapshot(sessions), deviceCookieSession: ctx.snapshot(deviceCookieSession),
+    replay: ctx.snapshot(replay), consumed: ctx.snapshot(consumed),
+    unclaimedState, persistedApproval,
   };
-});
+}, ["GET /device", "POST /device/approve", "POST /device/token"]);
 
 compatScenario("device deny flow returns access_denied", async (ctx) => {
-  const primary = ctx.actor();
-  const email = ctx.uniqueEmail("device-authorization-device-deny");
-
-  const signup = await primary.client.signUp.email({
-    email,
-    password: "password123",
-    name: "Device Deny User",
-  });
-
-  const code = await ctx.rawRequest({
-    path: "/api/auth/device/code",
-    method: "POST",
-    json: {
-      client_id: "compat-device-client",
-    },
-  });
-  const codeBody = asRecord(code.body);
-  const deviceCode = asString(codeBody.device_code, "device_code");
-  const userCode = asString(codeBody.user_code, "user_code");
-
-  const deny = await ctx.rawRequest({
-    actor: "primary",
-    path: "/api/auth/device/deny",
-    method: "POST",
-    json: {
-      userCode,
-    },
-  });
-
-  const token = await ctx.rawRequest({
-    path: "/api/auth/device/token",
-    method: "POST",
-    json: {
-      grant_type: DEVICE_GRANT_TYPE,
-      device_code: deviceCode,
-      client_id: "compat-device-client",
-    },
-  });
-
+  const { owner, signup } = await signUpOwner(ctx, "device-authorization-device-deny");
+  const code = await requestCode(ctx);
+  const claim = await owner.device({ query: { user_code: code.user_code } });
+  expect(claim.error).toBeNull();
+  const deny = await owner.device.deny({ userCode: code.user_code });
+  expect(deny.data).toEqual({ success: true });
+  const deniedState = await owner.device({ query: { user_code: code.user_code } });
+  expect(deniedState.data?.status).toBe("denied");
+  const device = deviceActor(ctx, "device");
+  const token = await device.device.token(tokenRequest(code.device_code));
+  expect(token.error).toMatchObject({ status: 400, error: "access_denied" });
+  const replay = await device.device.token(tokenRequest(code.device_code));
+  expect(replay.error).toMatchObject({ status: 400, error: "invalid_grant" });
+  const sessions = await owner.listSessions();
+  expect(sessions.data).toHaveLength(1);
   return {
-    signup: ctx.snapshot(signup),
-    deny: ctx.snapshot(deny),
-    token: ctx.snapshot(token),
+    signup: ctx.snapshot(signup), code: ctx.snapshot(code), claim: ctx.snapshot(claim), deny: ctx.snapshot(deny),
+    deniedState: ctx.snapshot(deniedState), token: ctx.snapshot(token), replay: ctx.snapshot(replay), sessions: ctx.snapshot(sessions),
   };
-});
+}, ["POST /device/deny", "POST /device/token"]);
 
 compatScenario("device approve blocks already-processed codes", async (ctx) => {
-  const primary = ctx.actor();
-  const email = ctx.uniqueEmail("device-authorization-device-double-approve");
-
-  const signup = await primary.client.signUp.email({
-    email,
-    password: "password123",
-    name: "Device Double Approve User",
-  });
-
-  const code = await ctx.rawRequest({
-    path: "/api/auth/device/code",
-    method: "POST",
-    json: {
-      client_id: "compat-device-client",
-    },
-  });
-  const userCode = asString(asRecord(code.body).user_code, "user_code");
-
-  const firstApprove = await ctx.rawRequest({
-    actor: "primary",
-    path: "/api/auth/device/approve",
-    method: "POST",
-    json: {
-      userCode,
-    },
-  });
-
-  const secondApprove = await ctx.rawRequest({
-    actor: "primary",
-    path: "/api/auth/device/approve",
-    method: "POST",
-    json: {
-      userCode,
-    },
-  });
-
-  return {
-    signup: ctx.snapshot(signup),
-    firstApprove: ctx.snapshot(firstApprove),
-    secondApprove: ctx.snapshot(secondApprove),
-  };
-});
+  const { owner } = await signUpOwner(ctx, "device-authorization-device-double-approve");
+  const code = await requestCode(ctx);
+  await owner.device({ query: { user_code: code.user_code } });
+  const firstApprove = await owner.device.approve({ userCode: code.user_code });
+  expect(firstApprove.data).toEqual({ success: true });
+  const secondApprove = await owner.device.approve({ userCode: code.user_code });
+  expect(secondApprove.error).toMatchObject({ status: 400, error: "invalid_request", error_description: "Device code already processed" });
+  const denyApproved = await owner.device.deny({ userCode: code.user_code });
+  expect(denyApproved.error).toMatchObject({ status: 400, error: "invalid_request", error_description: "Device code already processed" });
+  const state = await owner.device({ query: { user_code: code.user_code } });
+  expect(state.data?.status).toBe("approved");
+  return { firstApprove: ctx.snapshot(firstApprove), secondApprove: ctx.snapshot(secondApprove), denyApproved: ctx.snapshot(denyApproved), state: ctx.snapshot(state) };
+}, ["POST /device/approve"]);
 
 compatScenario("device token rejects a mismatched client id", async (ctx) => {
-  const code = await ctx.rawRequest({
-    path: "/api/auth/device/code",
-    method: "POST",
-    json: {
-      client_id: "compat-device-client-a",
-    },
-  });
-  const deviceCode = asString(asRecord(code.body).device_code, "device_code");
+  const code = await requestCode(ctx);
+  const token = await deviceActor(ctx, "device").device.token(tokenRequest(code.device_code, "another-device-client"));
+  expect(token.error).toMatchObject({ status: 400, error: "invalid_grant", error_description: "Client ID mismatch" });
+  const state = await deviceActor(ctx, "device").device({ query: { user_code: code.user_code } });
+  expect(state.data?.status).toBe("pending");
+  return { token: ctx.snapshot(token), state: ctx.snapshot(state) };
+});
 
-  const token = await ctx.rawRequest({
-    path: "/api/auth/device/token",
-    method: "POST",
-    json: {
-      grant_type: DEVICE_GRANT_TYPE,
-      device_code: deviceCode,
-      client_id: "compat-device-client-b",
-    },
-  });
-
+compatScenario("device decisions require the claiming user and redact other actors", async (ctx) => {
+  const { owner } = await signUpOwner(ctx, "device-authorization-claim-owner");
+  const other = deviceActor(ctx, "other");
+  await other.signUp.email({ email: ctx.uniqueEmail("device-authorization-claim-other"), password: "password123", name: "Other User" });
+  const device = deviceActor(ctx, "device");
+  const code = await requestCode(ctx, "private scope");
+  const unauthenticatedApprove = await device.device.approve({ userCode: code.user_code });
+  const unauthenticatedDeny = await device.device.deny({ userCode: code.user_code });
+  expect(unauthenticatedApprove.error).toMatchObject({ status: 401, error: "unauthorized" });
+  expect(unauthenticatedDeny.error).toMatchObject({ status: 401, error: "unauthorized" });
+  const unclaimedApprove = await owner.device.approve({ userCode: code.user_code });
+  const unclaimedDeny = await owner.device.deny({ userCode: code.user_code });
+  expect(unclaimedApprove.error).toMatchObject({ status: 400, error: "invalid_request" });
+  expect(unclaimedDeny.error).toMatchObject({ status: 400, error: "invalid_request" });
+  const claim = await owner.device({ query: { user_code: code.user_code } });
+  expect(claim.data?.client_id).toBe("compat-device-client");
+  expect(claim.data?.scope).toBe("private scope");
+  const otherReview = await other.device({ query: { user_code: code.user_code } });
+  const publicReview = await device.device({ query: { user_code: code.user_code } });
+  expect(otherReview.data).toEqual({ user_code: code.user_code, status: "pending" });
+  expect(publicReview.data).toEqual(otherReview.data);
+  const otherApprove = await other.device.approve({ userCode: code.user_code });
+  const otherDeny = await other.device.deny({ userCode: code.user_code });
+  expect(otherApprove.error).toMatchObject({ status: 403, error: "access_denied" });
+  expect(otherDeny.error).toMatchObject({ status: 403, error: "access_denied" });
+  const ownerApprove = await owner.device.approve({ userCode: code.user_code });
+  expect(ownerApprove.data).toEqual({ success: true });
   return {
-    token: ctx.snapshot(token),
+    unauthenticatedApprove: ctx.snapshot(unauthenticatedApprove), unauthenticatedDeny: ctx.snapshot(unauthenticatedDeny),
+    unclaimedApprove: ctx.snapshot(unclaimedApprove), unclaimedDeny: ctx.snapshot(unclaimedDeny), claim: ctx.snapshot(claim),
+    otherReview: ctx.snapshot(otherReview), publicReview: ctx.snapshot(publicReview), otherApprove: ctx.snapshot(otherApprove),
+    otherDeny: ctx.snapshot(otherDeny), ownerApprove: ctx.snapshot(ownerApprove),
   };
+}, ["GET /device", "POST /device/approve"]);
+
+compatScenario("device verification normalizes punctuation and case in default user codes", async (ctx) => {
+  const { owner } = await signUpOwner(ctx, "device-authorization-device-normalize");
+  const code = await requestCode(ctx, "normalized");
+  const formatted = `${code.user_code.slice(0, 4).toLowerCase()} . ${code.user_code.slice(4).toLowerCase()}`;
+  const claim = await owner.device({ query: { user_code: formatted } });
+  expect(claim.data?.user_code).toBe(formatted);
+  expect(claim.data?.client_id).toBe("compat-device-client");
+  const approve = await owner.device.approve({ userCode: formatted });
+  expect(approve.data).toEqual({ success: true });
+  return { code: ctx.snapshot(code), claim: ctx.snapshot(claim), approve: ctx.snapshot(approve) };
+}, ["GET /device", "POST /device/approve"]);
+
+compatScenario("device requests pre-bound to a user cannot be claimed by another user", async (ctx) => {
+  const { owner, userId } = await signUpOwner(ctx, "device-authorization-device-prebound");
+  const other = deviceActor(ctx, "other");
+  await other.signUp.email({ email: ctx.uniqueEmail("device-authorization-device-prebound-other"), password: "password123", name: "Other User" });
+  const code = await deviceActor(ctx, "device").device.code({ client_id: "compat-device-client", user_id: userId, scope: "prebound scope" });
+  expect(code.error).toBeNull();
+  if (!code.data) throw new Error("device issuance must return codes");
+  const otherReview = await other.device({ query: { user_code: code.data.user_code } });
+  expect(otherReview.data).toEqual({ user_code: code.data.user_code, status: "pending" });
+  const otherApprove = await other.device.approve({ userCode: code.data.user_code });
+  expect(otherApprove.error).toMatchObject({ status: 403, error: "access_denied" });
+  const ownerApprove = await owner.device.approve({ userCode: code.data.user_code });
+  expect(ownerApprove.data).toEqual({ success: true });
+  const state = await owner.device({ query: { user_code: code.data.user_code } });
+  expect(state.data?.status).toBe("approved");
+  expect(state.data?.scope).toBe("prebound scope");
+  return { code: ctx.snapshot(code), otherReview: ctx.snapshot(otherReview), otherApprove: ctx.snapshot(otherApprove), ownerApprove: ctx.snapshot(ownerApprove), state: ctx.snapshot(state) };
+}, ["POST /device/code", "POST /device/approve"]);
+
+compatScenario("device polling enforces its interval without consuming a pending request", async (ctx) => {
+  const code = await requestCode(ctx);
+  const device = deviceActor(ctx, "device");
+  const initial = deviceState.parse(await ctx.readDeviceState({ deviceCode: code.device_code }));
+  expect(initial.lastPolledAt).toBeNull();
+  const firstPoll = await device.device.token(tokenRequest(code.device_code));
+  expect(firstPoll.error).toMatchObject({ status: 400, error: "authorization_pending" });
+  const afterFirst = deviceState.parse(await ctx.readDeviceState({ deviceCode: code.device_code }));
+  expect(afterFirst.lastPolledAt).not.toBeNull();
+  const repeatedPoll = await device.device.token(tokenRequest(code.device_code));
+  expect(repeatedPoll.error).toMatchObject({ status: 400, error: "slow_down" });
+  const afterRepeated = deviceState.parse(await ctx.readDeviceState({ deviceCode: code.device_code }));
+  expect(afterRepeated).toEqual(afterFirst);
+  expect(afterRepeated.status).toBe("pending");
+  return { initial, firstPoll: ctx.snapshot(firstPoll), afterFirst, repeatedPoll: ctx.snapshot(repeatedPoll), afterRepeated };
+}, ["POST /device/token"]);
+
+compatScenario("expired device requests reject decisions and are deleted on redemption", async (ctx) => {
+  const { owner } = await signUpOwner(ctx, "device-authorization-device-expiry");
+  const code = await requestCode(ctx);
+  await owner.device({ query: { user_code: code.user_code } });
+  await ctx.expireDevice({ deviceCode: code.device_code, expiresAt: "2000-01-01T00:00:00.000Z" });
+  const approve = await owner.device.approve({ userCode: code.user_code });
+  const deny = await owner.device.deny({ userCode: code.user_code });
+  const review = await owner.device({ query: { user_code: code.user_code } });
+  expect(approve.error).toMatchObject({ status: 400, error: "expired_token" });
+  expect(deny.error).toMatchObject({ status: 400, error: "expired_token" });
+  expect(review.error).toMatchObject({ status: 400, error: "expired_token" });
+  const beforeRedemption = deviceState.parse(await ctx.readDeviceState({ deviceCode: code.device_code }));
+  expect(beforeRedemption.status).toBe("pending");
+  const token = await deviceActor(ctx, "device").device.token(tokenRequest(code.device_code));
+  expect(token.error).toMatchObject({ status: 400, error: "expired_token" });
+  expect(await ctx.readDeviceState({ deviceCode: code.device_code })).toBeNull();
+  const replay = await deviceActor(ctx, "device").device.token(tokenRequest(code.device_code));
+  expect(replay.error).toMatchObject({ status: 400, error: "invalid_grant" });
+  const sessions = await owner.listSessions();
+  expect(sessions.data).toHaveLength(1);
+  return { approve: ctx.snapshot(approve), deny: ctx.snapshot(deny), review: ctx.snapshot(review), beforeRedemption, token: ctx.snapshot(token), replay: ctx.snapshot(replay), sessions: ctx.snapshot(sessions) };
+}, ["POST /device/token"]);
+
+compatScenario("device issuance preserves unknown user prebinding and normalizes empty optional parameters", async (ctx) => {
+  const device = deviceActor(ctx, "device");
+  const unknownUser = ctx.uniqueToken("device-authorization-unknown-owner");
+  const code = await device.device.code({ client_id: "compat-device-client", user_id: unknownUser, scope: "" });
+  expect(code.error).toBeNull();
+  if (!code.data) throw new Error("prebound device code must be issued");
+  const persisted = deviceState.parse(await ctx.readDeviceState({ deviceCode: code.data.device_code }));
+  expect(persisted.userId).toBe(unknownUser);
+  expect(persisted.scope).toBeNull();
+  const { owner } = await signUpOwner(ctx, "device-authorization-prebound-unrelated");
+  const review = await owner.device({ query: { user_code: code.data.user_code } });
+  expect(review.data).toEqual({ user_code: code.data.user_code, status: "pending" });
+  const approve = await owner.device.approve({ userCode: code.data.user_code });
+  expect(approve.error).toMatchObject({ status: 403, error: "access_denied" });
+  const afterRejection = deviceState.parse(await ctx.readDeviceState({ deviceCode: code.data.device_code }));
+  expect(afterRejection.userId).toBe(unknownUser);
+  expect(afterRejection.status).toBe("pending");
+  const emptyUser = await device.device.code({ client_id: "compat-device-client", user_id: "", scope: "" });
+  expect(emptyUser.error).toBeNull();
+  if (!emptyUser.data) throw new Error("empty optional parameters must be accepted");
+  const emptyPersisted = deviceState.parse(await ctx.readDeviceState({ deviceCode: emptyUser.data.device_code }));
+  expect(emptyPersisted.userId).toBeNull();
+  expect(emptyPersisted.scope).toBeNull();
+  const emptyClient = await device.device.code({ client_id: "" });
+  expect(emptyClient.error).toMatchObject({ status: 400, error: "invalid_request", error_description: "client_id is required" });
+  return { code: ctx.snapshot(code), persisted, review: ctx.snapshot(review), approve: ctx.snapshot(approve), afterRejection, emptyUser: ctx.snapshot(emptyUser), emptyPersisted, emptyClient: ctx.snapshot(emptyClient) };
+});
+
+compatScenario("device issuance accepts OAuth form parameters and rejects repeated effective values", async (ctx) => {
+  const body = new URLSearchParams({ client_id: "form-client", scope: "" });
+  body.append("client_id", "");
+  body.append("scope", "form scope");
+  body.append("user_id", "");
+  const issuedResponse = await ctx.actor("device").fetch(`${ctx.baseURL}/api/auth/device/code`, {
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body,
+  });
+  expect(issuedResponse.status).toBe(200);
+  const issued = z.object({ device_code: z.string(), user_code: z.string(), verification_uri: z.string(), verification_uri_complete: z.string(), expires_in: z.number(), interval: z.number() }).parse(await issuedResponse.json());
+  const headers = { cacheControl: issuedResponse.headers.get("cache-control"), pragma: issuedResponse.headers.get("pragma") };
+  expect(headers).toEqual({ cacheControl: "no-store", pragma: "no-cache" });
+  const stored = deviceState.parse(await ctx.readDeviceState({ deviceCode: issued.device_code }));
+  expect(stored.clientId).toBe("form-client");
+  expect(stored.scope).toBe("form scope");
+  expect(stored.userId).toBeNull();
+  const repeated = [];
+  for (const parameter of ["client_id", "user_id", "scope"]) {
+    const parameters = new URLSearchParams({ client_id: "form-client" });
+    if (parameter !== "client_id") parameters.append(parameter, "one");
+    parameters.append(parameter, "two");
+    const response = await ctx.rawRequest({ actor: "device", path: "/api/auth/device/code", method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: parameters });
+    expect(response).toMatchObject({ status: 400, body: { error: "invalid_request", error_description: `${parameter} must not be repeated` } });
+    repeated.push(response);
+  }
+  return { issued, headers, stored, repeated };
+}, ["POST /device/code"]);
+
+compatScenario("device endpoint schemas preserve OAuth validation and media type errors", async (ctx) => {
+  const missingClient = await ctx.rawRequest({ path: "/api/auth/device/code", method: "POST", json: {} });
+  expect(missingClient).toMatchObject({ status: 400, body: { error: "invalid_request", error_description: "[body.client_id] Invalid input: expected string, received undefined" } });
+  const invalidTypes = await ctx.rawRequest({ path: "/api/auth/device/code", method: "POST", json: { client_id: 2, user_id: null, scope: true } });
+  expect(invalidTypes).toMatchObject({ status: 400, body: { error: "invalid_request", error_description: "[body.client_id] Invalid input: expected string, received number; [body.user_id] Invalid input: expected string, received null; [body.scope] Invalid input: expected string, received boolean" } });
+  const wrongGrant = await ctx.rawRequest({ path: "/api/auth/device/token", method: "POST", json: { grant_type: "invalid-grant", client_id: "form-client", device_code: "unused" } });
+  expect(wrongGrant).toMatchObject({ status: 400, body: { code: "VALIDATION_ERROR", message: `[body.grant_type] Invalid input: expected "${DEVICE_GRANT_TYPE}"` } });
+  const tokenForm = await ctx.rawRequest({ path: "/api/auth/device/token", method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(tokenRequest("unused")) });
+  expect(tokenForm).toMatchObject({ status: 415, body: { code: "UNSUPPORTED_MEDIA_TYPE", message: 'Content-Type "application/x-www-form-urlencoded" is not allowed. Allowed types: application/json' } });
+  const codeText = await ctx.rawRequest({ path: "/api/auth/device/code", method: "POST", headers: { "content-type": "text/plain" }, body: '{"client_id":"form-client"}' });
+  expect(codeText).toMatchObject({ status: 415, body: { code: "UNSUPPORTED_MEDIA_TYPE", message: 'Content-Type "text/plain" is not allowed. Allowed types: application/json, application/x-www-form-urlencoded' } });
+  const signup = await ctx.actor("validation-owner").client.signUp.email({email:ctx.uniqueEmail("device-validation"),password:"password123",name:"Validation Owner"});
+  expect(signup.error).toBeNull();
+  const decisions=[];
+  for (const route of ["approve","deny"]) {
+    const path=`/api/auth/device/${route}`;
+    const malformed=await ctx.rawRequest({path,method:"POST",headers:{"content-type":"application/json"},body:"{",actor:"validation-guest"});
+    expect(malformed.status).toBe(400);
+    const missing=await ctx.rawRequest({path,method:"POST",json:{},actor:"validation-guest"});
+    expect(missing).toMatchObject({status:400,body:{code:"VALIDATION_ERROR"}});
+    const wrongType=await ctx.rawRequest({path,method:"POST",json:{userCode:7},actor:"validation-guest"});
+    expect(wrongType).toMatchObject({status:400,body:{code:"VALIDATION_ERROR"}});
+    for (const actor of ["validation-guest","validation-owner"]) {
+      const media=await ctx.rawRequest({path,method:"POST",headers:{"content-type":"text/plain"},body:'{"userCode":"unused"}',actor});
+      expect(media).toMatchObject({status:415,body:{code:"UNSUPPORTED_MEDIA_TYPE"}});
+      decisions.push(media);
+    }
+    decisions.push(malformed,missing,wrongType);
+  }
+  return { missingClient, invalidTypes, wrongGrant, tokenForm, codeText, signup:ctx.snapshot(signup), decisions };
+});
+
+
+compatScenario("device custom asynchronous generators preserve exact codes and reject normalized aliases", async ctx => {
+  const client = deviceActor(ctx,"custom","device-custom");
+  const code=await client.device.code({client_id:"custom-client"});
+  expect(code.error).toBeNull();
+  if (!code.data) throw new Error("custom device issuance failed");
+  expect(code.data.device_code).toBe("custom-device-🔐");
+  expect(code.data.user_code).toBe(" café-Code! ");
+  const signup=await client.signUp.email({email:ctx.uniqueEmail("device-custom"),password:"password123",name:"Custom Owner"});
+  expect(signup.error).toBeNull();
+  const alias=await client.device({query:{user_code:"CAFCODE"}});
+  expect(alias.error).toMatchObject({status:400,error:"invalid_request"});
+  const exact=await client.device({query:{user_code:code.data.user_code}});
+  expect(ctx.snapshot(exact.data)).toEqual({user_code:code.data.user_code,status:"pending",client_id:"custom-client",scope:null});
+  const approved=await client.device.approve({userCode:code.data.user_code});
+  expect(approved.data).toEqual({success:true});
+  const consumed=await client.device.token(tokenRequest(code.data.device_code,"custom-client"));
+  expect(consumed.error).toBeNull();
+  const sessions=await client.listSessions();
+  expect(sessions.data?.find(session=>session.token===consumed.data?.access_token)?.userId).toBe(signup.data?.user.id);
+  expect(await ctx.readDeviceState({deviceCode:code.data.device_code})).toBeNull();
+  const replay=await client.device.token(tokenRequest(code.data.device_code,"custom-client"));
+  expect(replay.error).toMatchObject({status:400,error:"invalid_grant"});
+  return {code:ctx.snapshot(code),signup:ctx.snapshot(signup),alias:ctx.snapshot(alias),exact:ctx.snapshot(exact),approved:ctx.snapshot(approved),consumed:ctx.snapshot(consumed),sessions:ctx.snapshot(sessions),replay:ctx.snapshot(replay)};
+},["GET /device","POST /device/approve","POST /device/token"]);
+
+compatScenario("device configuration controls client validation lifetime polling and verification URL parameters", async ctx => {
+  const client=deviceActor(ctx,"configured","device-configured");
+  const rejected=await client.device.code({client_id:"wrong-client"});
+  expect(rejected.error).toMatchObject({status:400,error:"invalid_client"});
+  const startedAt=Date.now();
+  const issued=await client.device.code({client_id:"allowed-client",scope:"custom scope"});
+  const finishedAt=Date.now();
+  expect(issued.error).toBeNull();
+  if (!issued.data) throw new Error("configured issuance failed");
+  expect(issued.data.expires_in).toBe(120);
+  expect(issued.data.interval).toBe(2);
+  const uri=new URL(issued.data.verification_uri_complete);
+  expect(uri.origin).toBe("https://verification.fixture");
+  expect(uri.searchParams.getAll("user_code")).toEqual([issued.data.user_code]);
+  expect(uri.searchParams.getAll("keep")).toEqual(["a","b"]);
+  expect(uri.hash).toBe("#fragment");
+  const persisted=deviceState.parse(await ctx.readDeviceState({deviceCode:issued.data.device_code}));
+  expect(persisted.pollingInterval).toBe(2000);
+  expect(new Date(persisted.expiresAt).getTime()).toBeGreaterThanOrEqual(startedAt+120000);
+  expect(new Date(persisted.expiresAt).getTime()).toBeLessThanOrEqual(finishedAt+120000);
+  const pending=await client.device.token(tokenRequest(issued.data.device_code,"allowed-client"));
+  expect(pending.error).toMatchObject({status:400,error:"authorization_pending"});
+  const slow=await client.device.token(tokenRequest(issued.data.device_code,"allowed-client"));
+  expect(slow.error).toMatchObject({status:400,error:"slow_down"});
+  return {rejected:ctx.snapshot(rejected),issued:ctx.snapshot(issued),persisted,pending:ctx.snapshot(pending),slow:ctx.snapshot(slow)};
+},["POST /device/code","POST /device/token"]);
+
+compatScenario("device generators count Unicode characters and reject oversized codes before persistence", async ctx => {
+  const boundary=await deviceActor(ctx,"boundary","device-unicode").device.code({client_id:"boundary-client"});
+  expect(boundary.error).toBeNull();
+  if(!boundary.data) throw new Error("Unicode boundary must issue");
+  expect([...boundary.data.device_code]).toHaveLength(191);
+  const persisted=deviceState.parse(await ctx.readDeviceState({deviceCode:boundary.data.device_code}));
+  expect(persisted.deviceCode).toBe(boundary.data.device_code);
+  const rejected=await deviceActor(ctx,"oversized","device-too-long").device.code({client_id:"boundary-client"});
+  expect(rejected.error).toMatchObject({status:400,error:"invalid_request",error_description:"Generated device code must be at most 191 characters"});
+  expect(await ctx.readDeviceState({deviceCode:"😀".repeat(192)})).toBeNull();
+  return {boundary:ctx.snapshot(boundary),persisted,rejected:ctx.snapshot(rejected)};
 });

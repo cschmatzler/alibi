@@ -20,7 +20,7 @@ const entityKeys = new Set([
   "roleId", "inviterId", "activeOrganizationId", "activeTeamId", "teamId", "impersonatedBy", "referenceId",
 ]);
 const opaqueKeys = new Set(["token", "sessionToken", "state", "challenge", "code_challenge", "device_code", "user_code", "access_token", "refresh_token"]);
-const opaqueAliases: Readonly<Record<string, string>> = { "set-ott": "token" };
+const opaqueAliases: Readonly<Record<string, string>> = { deviceCode: "device_code", userCode: "user_code", "set-ott": "token" };
 const urlKeys = new Set(["url", "location", "path", "verification_uri", "verification_uri_complete"]);
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -49,6 +49,17 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     return result;
   }
   const leftSessions = sessions(normalizedLeft), rightSessions = sessions(normalizedRight);
+
+  function deviceSessions(value: unknown, path = "", result = new Map<string, number>()): Map<string, number> {
+    if (Array.isArray(value)) value.forEach((child, index) => deviceSessions(child, `${path}.${index}`, result));
+    else if (record(value) && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path) && !traceShape(path)) {
+      if (typeof value.id === "string" && typeof value.userId === "string" && typeof value.token === "string" && typeof value.expiresAt === "string" && Number.isFinite(Date.parse(value.expiresAt))) result.set(value.token, Date.parse(value.expiresAt));
+      if (!("exp" in value && "iss" in value && "aud" in value)) for (const [key, child] of Object.entries(value)) deviceSessions(child, `${path}.${key}`, result);
+    }
+    return result;
+  }
+  const leftDeviceSessions = deviceSessions(normalizedLeft), rightDeviceSessions = deviceSessions(normalizedRight);
+
 
   function issuedTokens(value: unknown, result = new Set<string>()): Set<string> {
     if (Array.isArray(value)) for (const child of value) issuedTokens(child, result);
@@ -121,6 +132,24 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   function clock(a:number,b:number,path:string) {
     if (a!==b && Math.abs((a-context.leftStartedAt/1000)-(b-context.rightStartedAt/1000))>1.5) fail(path,"JWT timestamp differs");
   }
+  function sessionLifetime(a:Record<string,unknown>,b:Record<string,unknown>,path:string):boolean {
+    if (a.token_type!=="Bearer" || b.token_type!=="Bearer" || typeof a.access_token!=="string" || typeof b.access_token!=="string" || typeof a.expires_in!=="number" || typeof b.expires_in!=="number") return false;
+    const leftExpiry=leftDeviceSessions.get(a.access_token),rightExpiry=rightDeviceSessions.get(b.access_token);
+    if (leftExpiry===undefined || rightExpiry===undefined) return false;
+    // The reference floors (absolute persisted expiry - response time) to seconds.
+    // Only this proven session relationship gets the one-second floor allowance.
+    for (const [ttl,expiry,start,end] of [
+      [a.expires_in,leftExpiry,context.leftStartedAt,context.leftFinishedAt],
+      [b.expires_in,rightExpiry,context.rightStartedAt,context.rightFinishedAt],
+    ]) {
+      if (typeof ttl!=="number" || typeof expiry!=="number" || typeof start!=="number" || typeof end!=="number") return false;
+      if (!Number.isInteger(ttl) || ttl<Math.floor((expiry-end)/1000) || ttl>Math.floor((expiry-start)/1000)) fail(path,"session TTL disagrees with persisted expiry and execution interval");
+    }
+    if (Math.abs(a.expires_in-b.expires_in)>1) fail(path,"session TTL differs beyond floor boundary");
+    if (Math.abs((leftExpiry-context.leftStartedAt)-(rightExpiry-context.rightStartedAt))>1500) fail(path,"persisted session lifetime differs");
+    return true;
+  }
+
   function identity(a: string, b: string, path: string, namespace: string) {
     if (!a.trim() || !b.trim()) { fail(path, "empty identity or token"); return; }
     const source = `${namespace}:${a}`;
@@ -153,7 +182,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   }
 
   function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false) {
-    if (typeof a === "string" && typeof b === "string" && !traceShape(path)
+    if (typeof a === "string" && typeof b === "string" && !applicationData && !jwtPayload && !traceShape(path)
       && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path)) {
       if (key === "teamId" && (a.includes(",") || b.includes(","))) {
         const leftTeams = a.split(","), rightTeams = b.split(",");
@@ -211,6 +240,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
         && ["id", "expiresAt", "createdAt", "updatedAt"].every(field => Object.hasOwn(a, field) && Object.hasOwn(b, field));
       const jwtClaims=!applicationData && typeof a.exp==="number" && typeof b.exp==="number" && (jwtPayload || ("iss" in a && "iss" in b && "aud" in a && "aud" in b));
       const inApplicationData=applicationData || jwtPayload || jwtClaims || key === "metadata" || key === "additionalFields";
+      const computedLifetime = !inApplicationData && !traceShape(path) && sessionLifetime(a,b,path);
       const apiKey = !inApplicationData && !traceShape(path) && apiKeyRow(a) && apiKeyRow(b);
       const issuedLeft = typeof a.key === "string" ? a.key : typeof a.id === "string" ? leftApiKeys.get(a.id) : undefined;
       const issuedRight = typeof b.key === "string" ? b.key : typeof b.id === "string" ? rightApiKeys.get(b.id) : undefined;
@@ -226,6 +256,8 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       for (const childKey of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
         const childPath = path ? `${path}.${childKey}` : childKey;
         if (!Object.hasOwn(a, childKey) || !Object.hasOwn(b, childKey)) fail(childPath, "field presence differs");
+        else if (computedLifetime && childKey === "expires_in") continue;
+        else if (computedLifetime && childKey === "access_token" && typeof a.access_token === "string" && typeof b.access_token === "string") identity(a.access_token,b.access_token,childPath,"token");
         else if (oneTimeRow && childKey === "value" && typeof a.value === "string" && typeof b.value === "string") {
           if (!leftSessions.has(a.value) || !rightSessions.has(b.value)) fail(childPath, "one-time-token value is not an observed persisted session token");
           else identity(a.value, b.value, childPath, "token");

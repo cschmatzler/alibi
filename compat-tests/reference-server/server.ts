@@ -468,6 +468,15 @@ const ottProfiles=new Map(OTT_PROFILE_NAMES.map(name=>{
   })]};
   return [name,{auth:betterAuth(options),options}] as const;
 }));
+const deviceProfiles = new Map(["device-custom","device-configured","device-unicode","device-too-long"].map(name => {
+  const options = { ...authOptions, basePath:`/__test/profiles/${name}/api/auth`, plugins:[deviceAuthorization({
+    ...(name === "device-custom" ? {generateDeviceCode:async()=>"custom-device-🔐",generateUserCode:async()=>" café-Code! "} : {}),
+    ...(name === "device-configured" ? {expiresIn:"120s",interval:"2s",verificationUri:"https://verification.fixture/device?keep=a&user_code=old&keep=b&user_code=other#fragment",validateClient:async(clientId:string)=>clientId==="allowed-client"} : {}),
+    ...(name === "device-unicode" ? {generateDeviceCode:async()=>"😀".repeat(191),generateUserCode:()=>"boundary-user"} : {}),
+    ...(name === "device-too-long" ? {generateDeviceCode:async()=>"😀".repeat(192)} : {}),
+  })] };
+  return [name,betterAuth(options)] as const;
+}));
 const JWT_PROFILE_NAMES = ["jwt-default", "jwt-es256", "jwt-es512", "jwt-rs256", "jwt-ps256", "jwt-claims", "jwt-path-header", "jwt-plain-rotation", "jwt-session-normal", "jwt-session-disabled", "jwt-session-deferred"] as const;
 const jwtProfiles = new Map(JWT_PROFILE_NAMES.map(name => {
   const sessionProfile = name.startsWith("jwt-session-");
@@ -582,6 +591,7 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
     const selected = [...teamProfiles.entries()].find(([name]) => name === profileName)?.[1].auth;
     if (!selected) return jsonResponse({message:"Unknown fixture profile"},{status:400});
     try {
+
       if (body?.operation === "role-policy" && typeof body.organizationId === "string") {
         if (profileName !== "org-roles-callback" || !database.query("SELECT id FROM organization WHERE id=?").get(body.organizationId)) {
           return jsonResponse({message:"Role policy organization not found"},{status:400});
@@ -682,6 +692,20 @@ const server = Bun.serve({
   async fetch(request) {
     try {
       const url = new URL(request.url);
+      for (const [name,profile] of deviceProfiles) if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return profile.handler(request);
+
+      if (url.pathname === "/__test/device-state" && request.method === "GET") {
+        const deviceCode = url.searchParams.get("deviceCode");
+        if (!deviceCode) return jsonResponse({message:"deviceCode is required"},{status:400});
+        return jsonResponse(await authContext.adapter.findOne({model:"deviceCode",where:[{field:"deviceCode",value:deviceCode}]}));
+      }
+      if (url.pathname === "/__test/expire-device" && request.method === "POST") {
+        const body:unknown = await readJson(request);
+        if (!controlRecord(body) || typeof body.deviceCode!=="string" || typeof body.expiresAt!=="string" || !Number.isFinite(Date.parse(body.expiresAt))) return jsonResponse({message:"deviceCode and valid expiresAt are required"},{status:400});
+        await authContext.adapter.updateMany({model:"deviceCode",where:[{field:"deviceCode",value:body.deviceCode}],update:{expiresAt:new Date(body.expiresAt)}});
+        return jsonResponse({status:true});
+      }
+
       for(const [name,profile] of ottProfiles) {
         if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return profile.auth.handler(request);
       }

@@ -363,7 +363,7 @@ fn nullable_column(definition: &str) -> Result<String, DbErr> {
 // expressions intact. This preserves custom CHECKs, generated columns,
 // quoted commas and table constraints rather than reconstructing a schema
 // from only the bundled entity's known fields.
-fn sql_tokens(sql: &str) -> Result<Vec<Range<usize>>, DbErr> {
+pub(super) fn sql_tokens(sql: &str) -> Result<Vec<Range<usize>>, DbErr> {
     let bytes = sql.as_bytes();
     let mut tokens = Vec::new();
     let mut cursor = 0;
