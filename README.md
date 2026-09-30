@@ -120,8 +120,6 @@ Better Auth RS ships with a rich set of plugins. Enable only what you need:
 | **API Key** | API key generation, rotation, and revocation |
 | **Admin** | User management and administrative operations |
 
-> See the [Plugins documentation](docs/content/docs/concepts/plugins.mdx) for usage details.
-
 ## Feature Flags
 
 | Feature | Description |
@@ -140,46 +138,24 @@ Better Auth RS ships with a rich set of plugins. Enable only what you need:
 | [`better-auth-seaorm`](https://crates.io/crates/better-auth-seaorm) | SeaORM store, entity traits, and `AuthEntity` derive macro |
 | [`better-auth-cli`](https://crates.io/crates/better-auth-cli) | CLI tools (`better-auth-rs generate`) |
 
-## Documentation
-
-Detailed guides and API reference are available in the [`docs/`](docs/) directory:
-
-- [Contributing](CONTRIBUTING.md)
-- [Compatibility testing](compat-tests/README.md)
-- [Installation](docs/content/docs/installation.mdx)
-- [Quick Start](docs/content/docs/quick-start.mdx)
-- **Authentication** — [Email/Password](docs/content/docs/authentication/email-password.mdx) · [Sessions](docs/content/docs/authentication/sessions.mdx) · [Email Verification](docs/content/docs/authentication/email-verification.mdx)
-- **Concepts** — [Configuration](docs/content/docs/concepts/configuration.mdx) · [Database](docs/content/docs/concepts/database.mdx) · [Plugins](docs/content/docs/concepts/plugins.mdx) · [Middleware](docs/content/docs/concepts/middleware.mdx) · [Hooks](docs/content/docs/concepts/hooks.mdx)
-- **Plugins** — [OAuth](docs/content/docs/plugins/oauth.mdx) · [Organization](docs/content/docs/plugins/organization.mdx) · [Two-Factor](docs/content/docs/plugins/two-factor.mdx) · [Passkey](docs/content/docs/plugins/passkey.mdx) · [API Key](docs/content/docs/plugins/api-key.mdx) · [Admin](docs/content/docs/plugins/admin.mdx)
-- **Reference** — [API Routes](docs/content/docs/reference/api-routes.mdx) · [Configuration Options](docs/content/docs/reference/configuration-options.mdx) · [Errors](docs/content/docs/reference/errors.mdx) · [Security](docs/content/docs/reference/security.mdx) · [OpenAPI](docs/content/docs/reference/openapi.mdx)
-- **Integrations** — [Axum](docs/content/docs/integrations/axum.mdx)
-- **Compatibility** — [Compatibility Harness](compat-tests/README.md)
-
-## Examples
-
-```bash
-# Axum web server
-cargo run --example axum_server --features axum,seaorm2
-
-# PostgreSQL (custom ID types, manual trait impls)
-cargo run --example postgres_usage --features seaorm2
-
-# Full-stack (better-auth frontend + better-auth-rs backend)
-cargo run --manifest-path examples/fullstack/backend/Cargo.toml
-```
-
-> See [examples/README.md](examples/README.md) for detailed documentation on each example.
-
 ## Development
 
-Install [devenv](https://devenv.sh/getting-started/), then run:
+Install [devenv](https://devenv.sh/getting-started/) and
+[direnv](https://direnv.net/docs/hook.html) with its shell hook enabled.
+The repository's `.envrc` activates the development environment automatically.
+Allow it once, then run the complete test gate:
 
 ```bash
-devenv shell
+direnv allow
 devenv test
 ```
 
-See [Contributing](CONTRIBUTING.md) for focused checks and the compatibility contract.
+You can also enter the environment manually with `devenv shell`.
+Rust and its components are configured in `devenv.nix`; `devenv.lock` pins the
+remaining tools. CI runs `devenv test` using the same environment.
+
+See [Compatibility testing](compat-tests/README.md) for focused checks and the
+compatibility contract.
 
 ## License
 

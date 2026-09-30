@@ -22,18 +22,14 @@ fn crate_minor_version() -> String {
     format!("{major}.{minor}")
 }
 
-// Rust-specific surface: public docs are part of the Rust crate interface and
+// Rust-specific surface: the README is part of the Rust crate interface and
 // must stay aligned with the published crate version and canonical module paths.
 #[test]
-fn docs_use_current_minor_version_and_canonical_paths() {
+fn readme_uses_current_minor_version_and_canonical_paths() {
     let expected_minor = crate_minor_version();
     let expected_full = env!("CARGO_PKG_VERSION");
 
     let readme = read_repo_file("README.md");
-    let installation = read_repo_file("docs/content/docs/installation.mdx");
-    let quick_start = read_repo_file("docs/content/docs/quick-start.mdx");
-    let axum = read_repo_file("docs/content/docs/integrations/axum.mdx");
-
     assert!(
         readme.contains(&format!("better-auth = \"{expected_minor}\""))
             || readme.contains(&format!("better-auth = \"{expected_full}\""))
@@ -41,53 +37,10 @@ fn docs_use_current_minor_version_and_canonical_paths() {
             || readme.contains(&format!("version = \"{expected_full}\"")),
         "README should use the current minor or full crate version",
     );
-    assert!(
-        installation.contains(&format!("better-auth = \"{expected_minor}\""))
-            || installation.contains(&format!("better-auth = \"{expected_full}\""))
-            || installation.contains(&format!("version = \"{expected_minor}\""))
-            || installation.contains(&format!("version = \"{expected_full}\"")),
-        "installation guide should use the current minor or full crate version",
-    );
-    assert!(
-        axum.contains(&format!("better-auth = {{ version = \"{expected_minor}\""))
-            || axum.contains(&format!("better-auth = {{ version = \"{expected_full}\"")),
-        "axum guide should use the current minor or full crate version",
-    );
-
-    for text in [&readme, &quick_start, &axum] {
-        assert!(!text.contains("better_auth::handlers"));
-        assert!(!text.contains("better_auth::types"));
-        assert!(text.contains("better_auth::seaorm"));
-        assert!(text.contains("Database"));
-        assert!(text.contains("SeaOrmStore"));
-        assert!(!text.contains("better_auth::store::sea_orm::Database"));
-    }
-}
-
-// Rust-specific surface: cookie names are user-visible and must stay aligned
-// with the actual default session cookie emitted by the crate.
-#[test]
-fn docs_use_current_session_cookie_name() {
-    let sessions = read_repo_file("docs/content/docs/authentication/sessions.mdx");
-    let cookies = read_repo_file("docs/content/docs/concepts/cookies.mdx");
-    let config = read_repo_file("docs/content/docs/reference/configuration-options.mdx");
-
-    for text in [&sessions, &cookies, &config] {
-        assert!(text.contains("better-auth.session_token"));
-        assert!(!text.contains("better-auth.session-token"));
-    }
-}
-
-// Rust-specific surface: the documented Axum integration should point to a
-// canonical example file rather than asserting exact prose fragments.
-#[test]
-fn axum_docs_reference_and_validate_canonical_example() {
-    let axum = read_repo_file("docs/content/docs/integrations/axum.mdx");
-    let example = read_repo_file("examples/axum_server.rs");
-
-    assert!(axum.contains("examples/axum_server.rs"));
-    assert!(example.contains("impl FromRef<AppState> for Arc<BetterAuth<AppAuthSchema>>"));
-    assert!(example.contains("axum_router_with_state::<AppState>()"));
-    assert!(example.contains("CurrentSession<AppAuthSchema>"));
-    assert!(example.contains("OptionalSession<AppAuthSchema>"));
+    assert!(!readme.contains("better_auth::handlers"));
+    assert!(!readme.contains("better_auth::types"));
+    assert!(readme.contains("better_auth::seaorm"));
+    assert!(readme.contains("Database"));
+    assert!(readme.contains("SeaOrmStore"));
+    assert!(!readme.contains("better_auth::store::sea_orm::Database"));
 }
