@@ -480,6 +480,23 @@ impl<S: AuthSchema> AuthContext<S> {
         view
     }
 
+    pub fn invitation_view(
+        &self,
+        invitation: &impl crate::entity::AuthInvitation,
+    ) -> crate::wire::InvitationView {
+        let mut view = crate::wire::InvitationView::from(invitation);
+        if self.feature_enabled("organization.teams.enabled") {
+            if view.team_id.is_none() {
+                _ = view
+                    .extension_fields
+                    .insert("teamId".into(), serde_json::Value::Null);
+            }
+        } else {
+            view.team_id = None;
+        }
+        view
+    }
+
     fn feature_enabled(&self, key: &str) -> bool {
         self.metadata
             .get(key)

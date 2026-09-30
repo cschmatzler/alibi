@@ -1,3 +1,4 @@
+use super::entities::member;
 use super::entities::organization_role::{self, Column, Entity};
 use super::{SeaOrmStore, map_db_err};
 use crate::error::{AuthError, AuthResult};
@@ -8,18 +9,23 @@ use better_auth_core::types::{
     CreateOrganizationRole, OrganizationRole, OrganizationRoleSelector, UpdateOrganizationRole,
 };
 use chrono::Utc;
+use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
+    ActiveModelTrait, ColumnTrait, Condition, EntityTrait, PaginatorTrait, QueryFilter,
     QuerySelect, Set,
 };
 use uuid::Uuid;
 
-fn scoped(organization_id: &str, selector: &OrganizationRoleSelector) -> sea_orm::Select<Entity> {
-    let query = Entity::find().filter(Column::OrganizationId.eq(organization_id));
+fn scope(organization_id: &str, selector: &OrganizationRoleSelector) -> Condition {
+    let predicate = Condition::all().add(Column::OrganizationId.eq(organization_id));
     match selector {
-        OrganizationRoleSelector::Id(id) => query.filter(Column::Id.eq(id)),
-        OrganizationRoleSelector::Name(name) => query.filter(Column::Role.eq(name)),
+        OrganizationRoleSelector::Id(id) => predicate.add(Column::Id.eq(id)),
+        OrganizationRoleSelector::Name(name) => predicate.add(Column::Role.eq(name)),
     }
+}
+
+fn scoped(organization_id: &str, selector: &OrganizationRoleSelector) -> sea_orm::Select<Entity> {
+    Entity::find().filter(scope(organization_id, selector))
 }
 
 #[async_trait]
@@ -75,46 +81,61 @@ impl<S: AuthSchema> OrganizationRoleStore for SeaOrmStore<S> {
             .map_err(map_db_err)?;
         usize::try_from(count).map_err(|_| AuthError::internal("Organization role count overflow"))
     }
+    async fn has_organization_role_members(
+        &self,
+        organization_id: &str,
+        role: &str,
+    ) -> AuthResult<bool> {
+        let members = member::Entity::find()
+            .filter(member::Column::OrganizationId.eq(organization_id))
+            .filter(member::Column::Role.contains(role))
+            .limit(self.config().advanced.database.default_find_many_limit as u64)
+            .all(self.connection())
+            .await
+            .map_err(map_db_err)?;
+        Ok(members.iter().any(|member| {
+            member
+                .role
+                .split(',')
+                .map(str::trim)
+                .any(|name| name == role)
+        }))
+    }
     async fn update_organization_role(
         &self,
         organization_id: &str,
         selector: &OrganizationRoleSelector,
         update: UpdateOrganizationRole,
     ) -> AuthResult<OrganizationRole> {
-        let row = scoped(organization_id, selector)
+        let mut row = scoped(organization_id, selector)
             .one(self.connection())
             .await
             .map_err(map_db_err)?
             .ok_or_else(|| AuthError::bad_request("Role not found"))?;
-        let mut active = row.into_active_model();
+        let updated_at = Utc::now();
+        let mut query = Entity::update_many()
+            .filter(scope(organization_id, selector))
+            .col_expr(Column::UpdatedAt, Expr::value(Some(updated_at)));
         if let Some(role) = update.role {
-            active.role = Set(role);
+            query = query.col_expr(Column::Role, Expr::value(role.clone()));
+            row.role = role;
         }
         if let Some(permission) = update.permission {
-            active.permission = Set(serde_json::to_string(&permission)?);
+            let permission = serde_json::to_string(&permission)?;
+            query = query.col_expr(Column::Permission, Expr::value(permission.clone()));
+            row.permission = permission;
         }
-        active.updated_at = Set(Some(Utc::now()));
-        active
-            .update(self.connection())
-            .await
-            .map_err(map_db_err)?
-            .try_into()
+        let _ = query.exec(self.connection()).await.map_err(map_db_err)?;
+        row.updated_at = Some(updated_at);
+        row.try_into()
     }
     async fn delete_organization_role(
         &self,
         organization_id: &str,
         selector: &OrganizationRoleSelector,
     ) -> AuthResult<bool> {
-        let Some(role) = scoped(organization_id, selector)
-            .one(self.connection())
-            .await
-            .map_err(map_db_err)?
-        else {
-            return Ok(false);
-        };
         Entity::delete_many()
-            .filter(Column::Id.eq(role.id))
-            .filter(Column::OrganizationId.eq(organization_id))
+            .filter(scope(organization_id, selector))
             .exec(self.connection())
             .await
             .map(|r| r.rows_affected > 0)
