@@ -22,12 +22,15 @@ where
 {
     async fn create_organization(&self, org: CreateOrganization) -> AuthResult<Organization> {
         let now = Utc::now();
-        let metadata = JsonMetadata::for_backend(
-            better_auth_core::utils::json::to_value(
-                &org.metadata.unwrap_or(serde_json::Value::Null),
-            )?,
-            self.connection().get_database_backend(),
-        )?;
+        let metadata = org
+            .metadata
+            .map(|metadata| {
+                JsonMetadata::for_backend(
+                    better_auth_core::utils::json::to_value(&metadata)?,
+                    self.connection().get_database_backend(),
+                )
+            })
+            .transpose()?;
         ActiveModel {
             id: Set(org.id.unwrap_or_else(|| Uuid::new_v4().to_string())),
             name: Set(org.name),
@@ -97,10 +100,10 @@ where
             active.logo = Set(logo);
         }
         if let Some(metadata) = update.metadata {
-            active.metadata = Set(JsonMetadata::for_backend(
+            active.metadata = Set(Some(JsonMetadata::for_backend(
                 better_auth_core::utils::json::to_value(&metadata)?,
                 self.connection().get_database_backend(),
-            )?);
+            )?));
         }
         active.updated_at = Set(Utc::now());
 

@@ -26,6 +26,7 @@ impl MigratorTrait for AuthMigrator {
             Box::new(super::siwe_wallets::SiweWallets),
             Box::new(super::two_factor_user_reference::TwoFactorUserReference),
             Box::new(super::two_factor_verification_policy::TwoFactorVerificationPolicy),
+            Box::new(super::nullable_organization_metadata::NullableOrganizationMetadata),
         ]
     }
 
@@ -480,11 +481,7 @@ async fn create_organizations(manager: &SchemaManager<'_>) -> Result<(), DbErr> 
                         .unique_key(),
                 )
                 .col(ColumnDef::new(organization::Column::Logo).string())
-                .col(
-                    ColumnDef::new(organization::Column::Metadata)
-                        .json_binary()
-                        .not_null(),
-                )
+                .col(ColumnDef::new(organization::Column::Metadata).json_binary())
                 .col(
                     ColumnDef::new(organization::Column::CreatedAt)
                         .timestamp_with_time_zone()

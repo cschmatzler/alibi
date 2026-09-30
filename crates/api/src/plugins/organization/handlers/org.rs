@@ -262,10 +262,11 @@ pub(crate) async fn list_organizations_core(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<Vec<OrganizationResponse>> {
     let organizations = ctx.database.list_user_organizations(&user.id()).await?;
-    Ok(organizations
+    let responses = organizations
         .iter()
-        .map(OrganizationResponse::from_organization)
-        .collect())
+        .map(OrganizationResponse::from_stored_organization)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(responses)
 }
 
 pub(crate) async fn get_full_organization_core(

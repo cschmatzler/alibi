@@ -8,7 +8,7 @@ pub struct Model {
     pub name: String,
     pub slug: String,
     pub logo: Option<String>,
-    pub metadata: JsonMetadata,
+    pub metadata: Option<JsonMetadata>,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

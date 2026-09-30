@@ -730,6 +730,9 @@ const server = Bun.serve({
       if (url.pathname === "/__test/organization-create" && request.method === "POST") {
         return organizationCreationFixture.server(await request.json() as Record<string,unknown>);
       }
+      if (url.pathname === "/__test/organization-metadata-legacy" && request.method === "POST") {
+        return organizationCreationFixture.legacyMetadata(await request.json() as Record<string,unknown>);
+      }
       for (const [name,profile] of deviceProfiles) if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return profile.handler(request);
 
       if (url.pathname === "/__test/device-state" && request.method === "GET") {
