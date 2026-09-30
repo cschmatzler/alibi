@@ -1,4 +1,5 @@
 import {expect} from "bun:test";
+import {z} from "zod";
 import {compatScenario} from "../../support/scenario";
 import {CONTRACT,EOA,SECOND_EOA,control,identity,message,nonce,signature,siweActor,state,verify} from "./helpers";
 
@@ -154,9 +155,12 @@ compatScenario("SIWE nonce aliases reject wallet body fields and strict verifica
   const actor=siweActor(ctx);
   const prior=await control(ctx,{operation:"create-user",email:ctx.uniqueEmail("protected-user")}) as {userId:string};
   const before=await state(ctx);
-  const rejection=await ctx.rawRequest({path:"/__test/profiles/siwe/api/auth/siwe/nonce",method:"POST",json:{address:EOA,chainId:1}});
-  expect(rejection.status).toBe(400);expect(rejection.body).toMatchObject({code:"VALIDATION_ERROR",message:'[body] Unrecognized keys: "address", "chainId"'});
-  expect(await state(ctx)).toEqual(before);
+  const rejections=[];
+  for(const alias of ["nonce","get-nonce"]) {
+    const rejection=await ctx.rawRequest({path:`/__test/profiles/siwe/api/auth/siwe/${alias}`,method:"POST",json:{address:EOA,chainId:1}});
+    expect(rejection.status).toBe(400);expect(rejection.body).toMatchObject({code:"VALIDATION_ERROR",message:'[body] Unrecognized keys: "address", "chainId"'});
+    expect(await state(ctx)).toEqual(before);rejections.push(rejection);
+  }
   const absentBody=await ctx.rawRequest({path:"/__test/profiles/siwe/api/auth/siwe/get-nonce",method:"POST"});expect(absentBody.status).toBe(200);
   const challenge=(absentBody.body as {nonce:string}).nonce;
   const signed=message(challenge);
@@ -167,7 +171,10 @@ compatScenario("SIWE nonce aliases reject wallet body fields and strict verifica
   const pending=await state(ctx);expect(pending.users).toEqual(before.users);expect(pending.proofs).toHaveLength(1);expect(pending.inputs).toEqual([]);
   const success=await verify(actor,signed);expect(success.error).toBeNull();const owner=identity.parse(success.data);expect(owner.user.id).not.toBe(prior.userId);
   const after=await state(ctx);expect(after.users[0]).toEqual(before.users[0]);expect(after.sessions).toHaveLength(1);expect(after.sessions[0]?.userId).toBe(owner.user.id);expect(after.accounts[0]?.userId).toBe(owner.user.id);expect(after.wallets[0]?.userId).toBe(owner.user.id);expect(after.proofs).toEqual([]);
-  return {before,rejection,absentBody,injected,invalidBody,pending,success:ctx.snapshot(success),after};
+  const alternateChallenge=await nonce(actor);
+  const alternate=await verify(actor,message(alternateChallenge));expect(alternate.error).toBeNull();expect(identity.parse(alternate.data).user.id).toBe(owner.user.id);
+  const alternateState=await state(ctx);expect(alternateState.proofs).toEqual([]);expect(alternateState.users).toEqual(after.users);expect(alternateState.accounts).toEqual(after.accounts);expect(alternateState.wallets).toEqual(after.wallets);expect(alternateState.sessions).toHaveLength(2);
+  return {before,rejections,absentBody,injected,invalidBody,pending,success:ctx.snapshot(success),after,alternate:ctx.snapshot(alternate),alternateState};
 },["POST /siwe/nonce","POST /siwe/get-nonce","POST /siwe/verify"]);
 
 compatScenario("SIWE media validation preserves signed nonce and verifier state before successful JSON retry",async ctx=>{
@@ -187,7 +194,12 @@ compatScenario("SIWE media validation preserves signed nonce and verifier state 
  const accepted=await actor.fetch(`${ctx.baseURL}/api/auth/siwe/verify`,{method:"POST",body:JSON.stringify({message:signed,signature:signature(signed)}),headers:{"content-type":"APPLICATION/JSON; charset=UTF-8"}});
  expect(accepted.status).toBe(200);const result=identity.parse(await accepted.json());
  const after=await state(ctx);expect(after.proofs).toEqual([]);expect(after.inputs).toHaveLength(1);expect(after.users).toHaveLength(1);expect(after.wallets[0]?.userId).toBe(result.user.id);
- return {before,observations,result,after};
+ const aliasRetry=await actor.fetch(`${ctx.baseURL}/api/auth/siwe/get-nonce`,{method:"POST",body:"{}",headers:{"content-type":"APPLICATION/JSON; charset=UTF-8"}});
+ expect(aliasRetry.status).toBe(200);const aliasNonce=z.object({nonce:z.string()}).parse(await aliasRetry.json());
+ const aliasPending=await state(ctx);expect(aliasPending.inputs).toEqual(after.inputs);expect(aliasPending.proofs).toHaveLength(1);
+ const aliasVerified=await verify(actor,message(aliasNonce.nonce));expect(aliasVerified.error).toBeNull();expect(identity.parse(aliasVerified.data).user.id).toBe(result.user.id);
+ const aliasAfter=await state(ctx);expect(aliasAfter.proofs).toEqual([]);expect(aliasAfter.wallets).toEqual(after.wallets);expect(aliasAfter.accounts).toEqual(after.accounts);expect(aliasAfter.sessions).toHaveLength(2);
+ return {before,observations,result,after,aliasNonce,aliasPending,aliasVerified:ctx.snapshot(aliasVerified),aliasAfter};
 },["POST /siwe/nonce","POST /siwe/get-nonce","POST /siwe/verify"]);
 
 compatScenario("SIWE hour 24 validates every fraction digit before applying date bounds",async ctx=>{
