@@ -640,7 +640,7 @@ async fn numeric_user_schema_cleans_team_memberships_without_a_bundled_user_fore
             .map(|team| team.member_count),
         Some(0)
     );
-    store.delete_user("1").await?;
+    store.delete_user("0001").await?;
     assert!(store.get_user_by_id("1").await?.is_none());
     assert!(store.list_user_teams("1").await?.is_empty());
     assert!(store.get_team_member(&second.id, "1").await?.is_none());
