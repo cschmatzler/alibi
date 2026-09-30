@@ -1,10 +1,11 @@
-//! Pinned create/update organization schemas, validated before authentication.
+//! Pinned organization request schemas, validated before authentication.
 use better_auth_core::utils::json::JsValue;
 use better_auth_core::{AuthError, AuthRequest, AuthResponse};
 use serde_json::{Value, json};
 
 use crate::plugins::organization::types::{
-    CreateOrganizationRequest, UpdateOrganizationData, UpdateOrganizationRequest,
+    CreateOrganizationRequest, NullableStringField, SetActiveOrganizationRequest,
+    UpdateOrganizationData, UpdateOrganizationRequest,
 };
 
 fn response(status: u16, code: &str, message: impl Into<String>) -> AuthResponse {
@@ -224,6 +225,34 @@ pub(super) fn update(req: &AuthRequest) -> Result<UpdateOrganizationRequest, Aut
     Ok(UpdateOrganizationRequest {
         organization_id,
         data: fields,
+    })
+}
+
+pub(super) fn set_active(req: &AuthRequest) -> Result<SetActiveOrganizationRequest, AuthResponse> {
+    let decoded = decode(req)?;
+    object(decoded.as_ref(), "body")
+        .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
+    let get = |key| decoded.as_ref().and_then(|value| value.get(key));
+    let mut issues = Vec::new();
+    let id = get("organizationId");
+    let parsed_id = string(id, "body.organizationId", false, false, true, &mut issues);
+    let organization_id = match id {
+        None => NullableStringField::Missing,
+        Some(JsValue::Null) => NullableStringField::Null,
+        _ => parsed_id.map_or(NullableStringField::Missing, NullableStringField::Value),
+    };
+    let organization_slug = string(
+        get("organizationSlug"),
+        "body.organizationSlug",
+        false,
+        false,
+        false,
+        &mut issues,
+    );
+    validate(issues)?;
+    Ok(SetActiveOrganizationRequest {
+        organization_id,
+        organization_slug,
     })
 }
 
