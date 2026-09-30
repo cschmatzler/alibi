@@ -19,6 +19,19 @@ Existing Value fields remain source-compatible, including their ordinary SQLx
 Value decoder; a caller requiring arbitrary marker-key support uses the public
 wrapper. No schema or migration changes occur.
 
+The wrapped Value is private and Deref is read-only. Mutation uses Into<Value>,
+an ordinary edit, From<Value> and preparation of the replacement. A public-field
+review regression proved that changing prepared `.0` made serialization show the
+new value while an actual ActiveModel insert persisted the old cached SQLite
+text (/tmp/user-json-cached-mutation-before.log). The compile-fail public-access
+contract also failed before the fix because direct mutation compiled
+(/tmp/user-json-cached-privacy-before.log). The repaired API prevents that stale
+binding; actual direct ActiveModel insert/update tests exercise replacement and
+exact JavaScript numeric text, separately from the AuthStore hook/derive paths.
+Seven user/numeric integrations pass in /tmp/user-json-cached-focused-final.log;
+the compile-fail contract passes in /tmp/user-json-cached-privacy-final.log and
+production workspace Clippy passes in /tmp/user-json-cached-clippy-final.log.
+
 SeaOrmUserModel adds prepare_json_metadata with a default no-op for manual
 implementations. AuthEntity generates preparation only for a present metadata
 field, and create/update field conversion uses Into so existing Value schemas

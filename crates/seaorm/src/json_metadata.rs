@@ -9,9 +9,18 @@
 /// JSON storage preserving every application object key. Convert through `From`;
 /// the SQL column remains JSON. SQLite writes bind JavaScript JSON text directly
 /// because SeaORM's intermediate Value cannot preserve every numeric spelling.
+/// Convert to `Value` to edit and construct a new wrapper before preparation.
+/// The prepared value has no mutable access, so its SQLite binding cannot become
+/// stale relative to its public JSON serialization.
+///
+/// ```compile_fail
+/// use better_auth_seaorm::JsonMetadata;
+/// let mut metadata = JsonMetadata::from(serde_json::json!({"version": "old"}));
+/// metadata.0["version"] = serde_json::json!("edited");
+/// ```
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(transparent)]
-pub struct JsonMetadata(pub serde_json::Value, #[serde(skip)] Option<String>);
+pub struct JsonMetadata(serde_json::Value, #[serde(skip)] Option<String>);
 
 impl JsonMetadata {
     pub(crate) fn for_backend(

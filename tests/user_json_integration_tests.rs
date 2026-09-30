@@ -10,6 +10,59 @@ use better_auth_seaorm::{Database, SeaOrmStore};
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
+#[tokio::test]
+async fn prepared_metadata_replacement_persists_the_edited_value() {
+    use better_auth_seaorm::sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel};
+    use better_auth_seaorm::store::entities::organization;
+    use better_auth_seaorm::{JsonMetadata, json_metadata::prepare_metadata_value};
+    let db = Database::connect("sqlite::memory:").await.unwrap();
+    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+        .await
+        .unwrap();
+    let prepared: JsonMetadata = prepare_metadata_value(
+        JsonMetadata::from(serde_json::json!({"version":"old","fixed":1e20})),
+        DbBackend::Sqlite,
+    )
+    .unwrap();
+    let mut value: serde_json::Value = prepared.into();
+    value["version"] = serde_json::json!("edited");
+    let prepared = prepare_metadata_value(JsonMetadata::from(value), DbBackend::Sqlite).unwrap();
+    let inserted = organization::ActiveModel {
+        id: Set("prepared-metadata".into()),
+        name: Set("Prepared".into()),
+        slug: Set("prepared-metadata".into()),
+        logo: Set(None),
+        metadata: Set(prepared),
+        created_at: Set(chrono::Utc::now()),
+        updated_at: Set(chrono::Utc::now()),
+        ..Default::default()
+    }
+    .insert(&db)
+    .await
+    .unwrap();
+    assert_eq!(inserted.metadata["version"], "edited");
+    let mut value: serde_json::Value = inserted.metadata.clone().into();
+    value["version"] = serde_json::json!("updated");
+    let mut active = inserted.into_active_model();
+    active.metadata =
+        Set(prepare_metadata_value(JsonMetadata::from(value), DbBackend::Sqlite).unwrap());
+    let updated = active.update(&db).await.unwrap();
+    assert_eq!(updated.metadata["version"], "updated");
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT metadata FROM organization WHERE id = ?",
+            ["prepared-metadata".into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        row.try_get::<String>("", "metadata").unwrap(),
+        r#"{"version":"updated","fixed":100000000000000000000}"#
+    );
+}
+
 struct MetadataHook;
 #[async_trait::async_trait]
 impl better_auth_seaorm::SeaOrmHooks<Schema> for MetadataHook {
