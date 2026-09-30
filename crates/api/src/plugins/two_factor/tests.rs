@@ -128,6 +128,7 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
                     impersonated_by: Some("retained-admin".into()),
                     ip_address: Some("127.0.0.9".into()),
                     user_agent: Some("retained-agent".into()),
+                    additional_fields: Default::default(),
                 })
                 .await
                 .unwrap();
@@ -599,6 +600,7 @@ async fn totp_enrollment_and_real_verification_apply_user_hooks_and_preserve_rot
             active_organization_id: Some("configured-organization".into()),
             active_team_id: Some("configured-team".into()),
             impersonated_by: Some("configured-admin".into()),
+            additional_fields: Default::default(),
         })
         .await
         .unwrap();
