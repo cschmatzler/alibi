@@ -1329,7 +1329,7 @@
         "success": "admin ban, unban, and user-session routes match TS",
         "rejection": "admin create-user, set-role, set-user-password, and remove-user match TS",
         "authorization": "admin create-user, set-role, set-user-password, and remove-user match TS",
-        "state": null
+        "state": "official client signs in with imported TypeScript scrypt credentials"
       }
     },
     {
@@ -1406,7 +1406,7 @@
         "success": "account info requires an explicit account selector",
         "rejection": "sign up with duplicate email returns error",
         "authorization": null,
-        "state": null
+        "state": "official client signs in with imported TypeScript scrypt credentials"
       }
     },
     {
