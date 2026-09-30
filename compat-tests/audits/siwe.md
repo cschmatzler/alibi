@@ -137,3 +137,24 @@ Upstream does not wrap user, wallet, account and session creation in one
 transaction. This implementation preserves that ordering rather than claiming
 rollback of all registration writes on an account/session callback failure.
 Independent wallet insertion/deletion integrity is enforced by the store.
+
+Independent integration review reproduced two additional wire boundaries against
+actual signed requests. SIWE now rejects a present request body with a missing or
+unsupported Content-Type before body validation, nonce generation/consumption,
+or verifier calls (415 `UNSUPPORTED_MEDIA_TYPE`, including both nonce aliases).
+JSON media type matching is case insensitive and accepts charset parameters.
+The signed SDK regression preserves the entire persisted state through twelve
+rejections, then consumes the original nonce once with uppercase JSON media type.
+
+For ISO hour 24, every fractional digit must be zero before milliseconds are
+truncated. The upstream runtime treats `24:00:00.0000Z` as valid and applies its
+future Not Before bound; `24:00:00.0001Z` is invalid and imposes no date bound.
+The paired real signature regression proves rejection and successful issuance,
+including verifier/persisted state, rather than testing the parser in isolation.
+
+The upstream Better Call allowlist also accepts malformed media types containing
+`application/json`. Its decoder can subsequently produce a string or a Bun
+ReadableStream instead of JSON (for example `text/plainapplication/json` and
+`x-application/json`). Rust's byte-based JSON request representation does not yet
+reproduce those runtime-specific structural validation errors. This remains an
+explicit wire gap; the standard media-type review fix does not claim otherwise.

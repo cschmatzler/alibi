@@ -28,6 +28,30 @@ fn received(value: Option<&Value>) -> &'static str {
 }
 
 fn body(request: &AuthRequest, optional: bool) -> Result<Map<String, Value>, AuthResponse> {
+    if request.body.is_some() {
+        let content_type = request
+            .header("content-type")
+            .map(String::as_str)
+            .unwrap_or_default();
+        let normalized = content_type.to_ascii_lowercase();
+        let media_type = normalized.split(';').next().unwrap_or_default().trim();
+        // Better Call checks the explicit endpoint allowlist before decoding any
+        // body. Its matching rule permits a containing media type as well.
+        if !media_type.contains("application/json") {
+            let message = if normalized.is_empty() {
+                "Content-Type is required. Allowed types: application/json".to_string()
+            } else {
+                format!(
+                    "Content-Type \"{content_type}\" is not allowed. Allowed types: application/json"
+                )
+            };
+            return Err(AuthResponse::json(
+                415,
+                &json!({"message":message,"code":"UNSUPPORTED_MEDIA_TYPE"}),
+            )
+            .unwrap_or_else(|_| AuthResponse::text(415, "Unsupported media type")));
+        }
+    }
     let parsed = request
         .body
         .as_deref()

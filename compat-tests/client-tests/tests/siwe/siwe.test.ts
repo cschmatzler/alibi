@@ -1,6 +1,6 @@
 import {expect} from "bun:test";
 import {compatScenario} from "../../support/scenario";
-import {CONTRACT,EOA,SECOND_EOA,control,identity,message,nonce,siweActor,state,verify} from "./helpers";
+import {CONTRACT,EOA,SECOND_EOA,control,identity,message,nonce,signature,siweActor,state,verify} from "./helpers";
 
 compatScenario("SIWE official client binds real Unicode signatures to nonce wallet account and rotated session state",async ctx=>{
   const actor=siweActor(ctx);
@@ -169,3 +169,36 @@ compatScenario("SIWE nonce aliases reject wallet body fields and strict verifica
   const after=await state(ctx);expect(after.users[0]).toEqual(before.users[0]);expect(after.sessions).toHaveLength(1);expect(after.sessions[0]?.userId).toBe(owner.user.id);expect(after.accounts[0]?.userId).toBe(owner.user.id);expect(after.wallets[0]?.userId).toBe(owner.user.id);expect(after.proofs).toEqual([]);
   return {before,rejection,absentBody,injected,invalidBody,pending,success:ctx.snapshot(success),after};
 },["POST /siwe/nonce","POST /siwe/get-nonce","POST /siwe/verify"]);
+
+compatScenario("SIWE media validation preserves signed nonce and verifier state before successful JSON retry",async ctx=>{
+ const actor=siweActor(ctx);const challenge=await nonce(actor);const signed=message(challenge);
+ const before=await state(ctx);const observations=[];
+ for(const path of ["/siwe/nonce","/siwe/get-nonce","/siwe/verify"]) {
+  for(const media of ["text/plain","application/x-www-form-urlencoded","application/problem+json",""]) {
+   const payload=path==="/siwe/verify" ? {message:signed,signature:signature(signed)} : {};
+   const response=await actor.fetch(`${ctx.baseURL}/api/auth${path}`,{method:"POST",body:new TextEncoder().encode(JSON.stringify(payload)),headers:media ? {"content-type":media} : {}});
+   expect(response.status).toBe(415);
+   const body=await response.json();
+   expect(body).toEqual({code:"UNSUPPORTED_MEDIA_TYPE",message:media ? `Content-Type "${media}" is not allowed. Allowed types: application/json` : "Content-Type is required. Allowed types: application/json"});
+   expect(await state(ctx)).toEqual(before);
+   observations.push({path,media,body});
+  }
+ }
+ const accepted=await actor.fetch(`${ctx.baseURL}/api/auth/siwe/verify`,{method:"POST",body:JSON.stringify({message:signed,signature:signature(signed)}),headers:{"content-type":"APPLICATION/JSON; charset=UTF-8"}});
+ expect(accepted.status).toBe(200);const result=identity.parse(await accepted.json());
+ const after=await state(ctx);expect(after.proofs).toEqual([]);expect(after.inputs).toHaveLength(1);expect(after.users).toHaveLength(1);expect(after.wallets[0]?.userId).toBe(result.user.id);
+ return {before,observations,result,after};
+},["POST /siwe/nonce","POST /siwe/get-nonce","POST /siwe/verify"]);
+
+compatScenario("SIWE hour 24 validates every fraction digit before applying date bounds",async ctx=>{
+ const actor=siweActor(ctx);const observations=[];
+ for (const [fraction,accepted] of [["0000",false],["0001",true]] as const) {
+  const challenge=await nonce(actor);const signed=message(challenge,{extra:`Not Before: 2099-01-01T24:00:00.${fraction}Z`});
+  const result=await verify(actor,signed);
+  if(accepted) {expect(result.error).toBeNull();identity.parse(result.data);}
+  else expect(result.error).toMatchObject({status:401,code:"UNAUTHORIZED_SIWE_MESSAGE_NOT_YET_VALID"});
+  const after=await state(ctx);expect(after.proofs).toEqual([]);expect(after.inputs).toHaveLength(accepted ? 1 : 0);expect(after.users).toHaveLength(accepted ? 1 : 0);
+  observations.push({fraction,result:ctx.snapshot(result),after});
+ }
+ return observations;
+},["POST /siwe/nonce","POST /siwe/verify"]);

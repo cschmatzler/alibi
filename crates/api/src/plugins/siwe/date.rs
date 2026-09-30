@@ -64,6 +64,7 @@ fn parse_iso(mut input: &str) -> Option<i64> {
     let minute = digits(&mut input, 2)?;
     let mut second = 0;
     let mut milliseconds = 0;
+    let mut fractional_nonzero = false;
     if input.starts_with(':') {
         separator(&mut input, ':')?;
         second = digits(&mut input, 2)?;
@@ -73,6 +74,7 @@ fn parse_iso(mut input: &str) -> Option<i64> {
             if length == 0 {
                 return None;
             }
+            fractional_nonzero = input.get(..length)?.bytes().any(|digit| digit != b'0');
             let first = input.get(..length.min(3))?;
             milliseconds = first.parse::<i64>().ok()? * 10i64.pow((3 - first.len()) as u32);
             input = input.get(length..)?;
@@ -81,7 +83,7 @@ fn parse_iso(mut input: &str) -> Option<i64> {
     if hour > 24
         || minute > 59
         || second > 59
-        || (hour == 24 && (minute != 0 || second != 0 || milliseconds != 0))
+        || (hour == 24 && (minute != 0 || second != 0 || fractional_nonzero))
     {
         return None;
     }
