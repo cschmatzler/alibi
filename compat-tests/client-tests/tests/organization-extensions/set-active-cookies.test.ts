@@ -92,4 +92,4 @@ compatScenario("organization selection and clearing honor only the first verifie
   expect(z.object({id:z.string()}).parse(restored.value).id).toBe(id);
   expect(restored.state).toEqual(invalidSelected.state);
   return {signedIn,created,before,selected,cleared,unselected,invalidSelected,invalidCleared,restored};
-});
+}, ["POST /organization/set-active"]);
