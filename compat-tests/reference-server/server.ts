@@ -3,6 +3,7 @@
 import { Database } from "bun:sqlite";
 import { passkey } from "@better-auth/passkey";
 import { betterAuth } from "better-auth";
+import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { APIError } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { apiKey } from "@better-auth/api-key";
@@ -320,6 +321,7 @@ const authOptions = {
     },
   },
   plugins: [
+    lifecycleFixture(),
     admin(),
     apiKey([
       { configId: "default", enableMetadata: true },
@@ -544,6 +546,18 @@ const server = Bun.serve({
       const url = new URL(request.url);
       const teamResponse = await teamFixture(request, url);
       if (teamResponse) return teamResponse;
+
+      if (url.pathname === "/__test/lifecycle" && request.method === "GET") {
+        const email = url.searchParams.get("email");
+        const user = email ? await authContext.internalAdapter.findUserByEmail(email, {includeAccounts:true}) : null;
+        const sessions = user?.user ? await authContext.adapter.findMany({model:"session",where:[{field:"userId",value:user.user.id}]}) : [];
+        const state = !email ? null : !user?.user ? {userId:null,accounts:[],sessions:[]} : {
+          userId:user.user.id,
+          accounts:user.accounts.map(row => ({id:row.id,userId:row.userId,providerId:row.providerId})),
+          sessions:sessions.map(row => ({id:row.id,userId:row.userId,token:row.token})),
+        };
+        return jsonResponse({events:lifecycleEvents.splice(0),state});
+      }
 
       if (url.pathname === "/__health") {
         return jsonResponse({ ok: true, oauthBaseURL });

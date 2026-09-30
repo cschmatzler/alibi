@@ -216,27 +216,25 @@ mod tests {
     fn make_options(origin: &str) -> AuthRequest {
         let mut headers = HashMap::new();
         headers.insert("origin".to_string(), origin.to_string());
-        AuthRequest {
-            method: HttpMethod::Options,
-            path: "/sign-in/email".to_string(),
+        AuthRequest::from_parts(
+            HttpMethod::Options,
+            "/sign-in/email".to_string(),
             headers,
-            body: None,
-            query: HashMap::new(),
-            virtual_session: None,
-        }
+            None,
+            HashMap::new(),
+        )
     }
 
     fn make_get(origin: &str) -> AuthRequest {
         let mut headers = HashMap::new();
         headers.insert("origin".to_string(), origin.to_string());
-        AuthRequest {
-            method: HttpMethod::Get,
-            path: "/get-session".to_string(),
+        AuthRequest::from_parts(
+            HttpMethod::Get,
+            "/get-session".to_string(),
             headers,
-            body: None,
-            query: HashMap::new(),
-            virtual_session: None,
-        }
+            None,
+            HashMap::new(),
+        )
     }
 
     // Rust-specific surface: Rust middleware implementations are library-specific behavior with no direct TS analogue.
@@ -295,14 +293,13 @@ mod tests {
     async fn test_cors_no_origin_header() {
         let config = CorsConfig::new().allowed_origin("http://localhost:5173");
         let mw = CorsMiddleware::new(config);
-        let req = AuthRequest {
-            method: HttpMethod::Get,
-            path: "/get-session".to_string(),
-            headers: HashMap::new(),
-            body: None,
-            query: HashMap::new(),
-            virtual_session: None,
-        };
+        let req = AuthRequest::from_parts(
+            HttpMethod::Get,
+            "/get-session".to_string(),
+            HashMap::new(),
+            None,
+            HashMap::new(),
+        );
 
         assert!(mw.before_request(&req).await.unwrap().is_none());
 

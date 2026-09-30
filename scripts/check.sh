@@ -14,6 +14,7 @@ cargo check -p better-auth --locked --no-default-features --features rustls,axum
 mkdir -p coverage
 bun compat-tests/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json
 cargo test --workspace --locked
+cargo test --locked --manifest-path compat-tests/rust-server/Cargo.toml
 cargo test --workspace --locked --features axum,seaorm2,redis-cache
 bun run --cwd compat-tests/client-tests typecheck
 bun test --cwd compat-tests/client-tests harness

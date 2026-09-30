@@ -710,16 +710,15 @@ async fn test_contract_openapi_endpoint() {
     assert!(body["paths"].is_object(), "Must have 'paths' object");
 }
 
-/// Unhandled routes should return 404 with { "message": "..." }
+/// The pinned router leaves unknown routes empty and skips endpoint hooks.
 #[tokio::test]
 async fn test_contract_not_found_response() {
     let auth = create_full_auth().await;
-    let (status, body) =
-        send_json_request(&auth, HttpMethod::Get, "/nonexistent-route", None).await;
-
-    assert_eq!(status, 404);
-    assert!(
-        body["message"].is_string(),
-        "404 response must have 'message' field"
-    );
+    let response = auth
+        .handle_request(AuthRequest::new(HttpMethod::Get, "/nonexistent-route"))
+        .await
+        .unwrap();
+    assert_eq!(response.status, 404);
+    assert!(response.body.is_empty());
+    assert!(!response.headers.contains_key("content-type"));
 }

@@ -88,14 +88,13 @@ mod tests {
     use std::collections::HashMap;
 
     fn make_request_with_body(body_size: usize) -> AuthRequest {
-        AuthRequest {
-            method: HttpMethod::Post,
-            path: "/sign-up/email".to_string(),
-            headers: HashMap::new(),
-            body: Some(vec![0u8; body_size]),
-            query: HashMap::new(),
-            virtual_session: None,
-        }
+        AuthRequest::from_parts(
+            HttpMethod::Post,
+            "/sign-up/email".to_string(),
+            HashMap::new(),
+            Some(vec![0u8; body_size]),
+            HashMap::new(),
+        )
     }
 
     // Rust-specific surface: Rust middleware implementations are library-specific behavior with no direct TS analogue.
@@ -128,14 +127,13 @@ mod tests {
     #[tokio::test]
     async fn test_body_limit_allows_no_body() {
         let mw = BodyLimitMiddleware::new(BodyLimitConfig::new().max_bytes(1024));
-        let req = AuthRequest {
-            method: HttpMethod::Get,
-            path: "/get-session".to_string(),
-            headers: HashMap::new(),
-            body: None,
-            query: HashMap::new(),
-            virtual_session: None,
-        };
+        let req = AuthRequest::from_parts(
+            HttpMethod::Get,
+            "/get-session".to_string(),
+            HashMap::new(),
+            None,
+            HashMap::new(),
+        );
         assert!(mw.before_request(&req).await.unwrap().is_none());
     }
 

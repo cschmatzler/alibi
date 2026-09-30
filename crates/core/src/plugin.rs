@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -14,9 +15,27 @@ use crate::types::{AuthRequest, AuthResponse, HttpMethod};
 
 type MetadataMap = HashMap<String, serde_json::Value>;
 
+/// Typed settings and callbacks published during plugin initialization.
+///
+/// Registration is complete before requests begin; readers share immutable
+/// values rather than interpreting configuration through JSON metadata.
+#[derive(Clone, Default)]
+pub struct ContextExtensions(HashMap<TypeId, Arc<dyn Any + Send + Sync>>);
+
+impl ContextExtensions {
+    pub fn insert<T: Any + Send + Sync>(&mut self, value: T) {
+        _ = self.0.insert(TypeId::of::<T>(), Arc::new(value));
+    }
+
+    pub fn get<T: Any + Send + Sync>(&self) -> Option<Arc<T>> {
+        self.0.get(&TypeId::of::<T>())?.clone().downcast().ok()
+    }
+}
+
 pub struct AuthInitParts {
     pub metadata: MetadataMap,
     pub email_provider: Option<Arc<dyn EmailProvider>>,
+    pub extensions: ContextExtensions,
 }
 
 /// Action returned by [`AuthPlugin::before_request`].
@@ -64,6 +83,19 @@ pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>>;
+
+    /// Transform a completed response, including redirects and rejections.
+    ///
+    /// Hooks run in plugin registration order with the normalized auth path.
+    /// This supports cookie and header lifecycles that span other plugins.
+    async fn after_request(
+        &self,
+        _req: &AuthRequest,
+        _ctx: &AuthContext<S>,
+        response: AuthResponse,
+    ) -> AuthResult<AuthResponse> {
+        Ok(response)
+    }
 
     /// Called after a user is created
     async fn on_user_created(&self, user: &S::User, ctx: &AuthContext<S>) -> AuthResult<()> {
@@ -176,6 +208,7 @@ pub struct AuthInitContext<S: AuthSchema> {
     pub database: Arc<dyn AuthStore<S>>,
     pub email_provider: Option<Arc<dyn EmailProvider>>,
     pub metadata: MetadataMap,
+    pub extensions: ContextExtensions,
 }
 
 /// Context passed to plugin methods.
@@ -184,6 +217,7 @@ pub struct AuthContext<S: AuthSchema> {
     pub database: Arc<dyn AuthStore<S>>,
     pub email_provider: Option<Arc<dyn EmailProvider>>,
     pub metadata: MetadataMap,
+    pub extensions: ContextExtensions,
 }
 
 impl AuthRoute {
@@ -224,6 +258,7 @@ impl<S: AuthSchema> AuthInitContext<S> {
             database,
             email_provider,
             metadata: MetadataMap::new(),
+            extensions: ContextExtensions::default(),
         }
     }
 
@@ -239,6 +274,7 @@ impl<S: AuthSchema> AuthInitContext<S> {
         AuthInitParts {
             metadata: self.metadata,
             email_provider: self.email_provider,
+            extensions: self.extensions,
         }
     }
 }
@@ -251,6 +287,7 @@ impl<S: AuthSchema> AuthContext<S> {
             database,
             email_provider,
             metadata: MetadataMap::new(),
+            extensions: ContextExtensions::default(),
         }
     }
 
@@ -265,6 +302,7 @@ impl<S: AuthSchema> AuthContext<S> {
             database,
             email_provider,
             metadata,
+            extensions: ContextExtensions::default(),
         }
     }
 
@@ -274,6 +312,11 @@ impl<S: AuthSchema> AuthContext<S> {
 
     pub fn get_metadata(&self, key: &str) -> Option<&serde_json::Value> {
         self.metadata.get(key)
+    }
+
+    pub fn with_extensions(mut self, extensions: ContextExtensions) -> Self {
+        self.extensions = extensions;
+        self
     }
 
     pub fn user_view(&self, user: &impl crate::entity::AuthUser) -> crate::wire::UserView {

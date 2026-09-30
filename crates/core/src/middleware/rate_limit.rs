@@ -177,14 +177,13 @@ mod tests {
     fn make_request(path: &str, ip: &str) -> AuthRequest {
         let mut headers = StdHashMap::new();
         headers.insert("x-forwarded-for".to_string(), ip.to_string());
-        AuthRequest {
-            method: HttpMethod::Post,
-            path: path.to_string(),
+        AuthRequest::from_parts(
+            HttpMethod::Post,
+            path.to_string(),
             headers,
-            body: None,
-            query: StdHashMap::new(),
-            virtual_session: None,
-        }
+            None,
+            StdHashMap::new(),
+        )
     }
 
     // Rust-specific surface: Rust middleware implementations are library-specific behavior with no direct TS analogue.

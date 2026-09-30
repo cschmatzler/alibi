@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Index;
+use std::sync::{Arc, Mutex};
 use validator::Validate;
 
 use crate::utils::email::normalize_user_email;
@@ -40,6 +41,8 @@ pub struct AuthRequest {
     pub query: HashMap<String, String>,
     /// Session authenticated by a trusted plugin hook for the current request.
     pub(crate) virtual_session: Option<crate::wire::SessionView>,
+    /// Headers emitted by trusted nested handlers during this dispatch.
+    response_headers: Arc<Mutex<Headers>>,
 }
 
 /// Metadata extracted from an incoming request for session creation.
@@ -341,6 +344,7 @@ impl AuthRequest {
             body: None,
             query: HashMap::new(),
             virtual_session: None,
+            response_headers: Arc::new(Mutex::new(Headers::new())),
         }
     }
 
@@ -361,6 +365,7 @@ impl AuthRequest {
             body,
             query,
             virtual_session: None,
+            response_headers: Arc::new(Mutex::new(Headers::new())),
         }
     }
 
@@ -374,6 +379,28 @@ impl AuthRequest {
 
     pub fn header(&self, name: &str) -> Option<&String> {
         self.headers.get(name)
+    }
+
+    /// Forward a header emitted by a nested server handler to the final response.
+    ///
+    /// Internal request clones share this accumulator, including clones used to
+    /// normalize a route. Dispatch starts with a fresh accumulator, so values
+    /// supplied by an external caller cannot become response headers.
+    pub fn queue_response_header(&self, name: impl Into<String>, value: impl Into<String>) {
+        self.response_headers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .append(name, value);
+    }
+
+    /// Drain headers accumulated by trusted handlers for this request.
+    pub fn take_response_headers(&self) -> Headers {
+        std::mem::take(
+            &mut *self
+                .response_headers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
     }
 
     /// Return the user ID authenticated by a trusted plugin hook.
@@ -621,14 +648,13 @@ mod tests {
     // Rust-specific surface: Rust request/response/type helpers are public library behavior with no direct TS analogue.
     #[test]
     fn auth_request_body_as_json_with_body() {
-        let req = AuthRequest {
-            method: HttpMethod::Post,
-            path: "/test".into(),
-            headers: HashMap::new(),
-            body: Some(br#"{"name":"test"}"#.to_vec()),
-            query: HashMap::new(),
-            virtual_session: None,
-        };
+        let req = AuthRequest::from_parts(
+            HttpMethod::Post,
+            "/test".into(),
+            HashMap::new(),
+            Some(br#"{"name":"test"}"#.to_vec()),
+            HashMap::new(),
+        );
         let val: serde_json::Value = req.body_as_json().expect("parse");
         assert_eq!(val["name"], "test");
     }
