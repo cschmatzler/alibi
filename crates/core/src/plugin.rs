@@ -59,7 +59,9 @@ pub trait VerificationEmailOverride<S: AuthSchema>: Send + Sync {
     }
 }
 
-pub struct VerificationEmailOverrideHandle<S: AuthSchema>(pub Arc<dyn VerificationEmailOverride<S>>);
+pub struct VerificationEmailOverrideHandle<S: AuthSchema>(
+    pub Arc<dyn VerificationEmailOverride<S>>,
+);
 
 /// Action returned by [`AuthPlugin::before_request`].
 #[derive(Debug)]
@@ -341,8 +343,12 @@ impl<S: AuthSchema> AuthInitContext<S> {
         }
     }
 
-    pub fn set_email_verification_override(&mut self, sender: Arc<dyn VerificationEmailOverride<S>>) {
-        self.extensions.insert(VerificationEmailOverrideHandle(sender));
+    pub fn set_email_verification_override(
+        &mut self,
+        sender: Arc<dyn VerificationEmailOverride<S>>,
+    ) {
+        self.extensions
+            .insert(VerificationEmailOverrideHandle(sender));
     }
 
     pub fn into_parts(self) -> AuthInitParts {
