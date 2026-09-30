@@ -465,6 +465,22 @@ impl CreatedOrganizationResponse {
 }
 
 impl OrganizationResponse {
+    pub(crate) fn from_stored_organization(
+        organization: &impl AuthOrganization,
+    ) -> Result<Self, serde_json::Error> {
+        let mut response = Self::from_organization(organization);
+        response.metadata = response
+            .metadata
+            .map(|value| match value {
+                serde_json::Value::String(value) => Ok(serde_json::Value::String(value)),
+                value => {
+                    better_auth_core::utils::json::to_string(&value).map(serde_json::Value::String)
+                }
+            })
+            .transpose()?;
+        Ok(response)
+    }
+
     pub fn from_organization(organization: &impl AuthOrganization) -> Self {
         Self {
             id: organization.id().to_string(),

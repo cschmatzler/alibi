@@ -63,18 +63,27 @@ async fn blank_organization_selector_uses_persisted_active_organization_without_
         before.first().unwrap().active_organization_id(),
         organization["id"].as_str()
     );
-    let mut lookup = AuthRequest::new(HttpMethod::Get, "/api/auth/organization/get-organization");
-    _ = lookup.headers.insert("cookie".into(), cookie);
-    _ = lookup.query.insert("organizationId".into(), String::new());
-    _ = lookup
-        .query
-        .insert("organizationSlug".into(), String::new());
-    let result = auth.handle_request(lookup).await.unwrap();
-    assert_eq!(result.status, 200);
-    let body: Value = serde_json::from_slice(&result.body).unwrap();
-    assert_eq!(body["id"], organization["id"]);
-    assert_eq!(body["metadata"], Value::Null);
-    assert!(body.get("members").is_none());
+    for route in [
+        "/api/auth/organization/get-organization",
+        "/api/auth/organization/get-full-organization",
+    ] {
+        let mut lookup = AuthRequest::new(HttpMethod::Get, route);
+        _ = lookup.headers.insert("cookie".into(), cookie.clone());
+        _ = lookup.query.insert("organizationId".into(), String::new());
+        _ = lookup
+            .query
+            .insert("organizationSlug".into(), String::new());
+        let result = auth.handle_request(lookup).await.unwrap();
+        assert_eq!(result.status, 200);
+        let body: Value = serde_json::from_slice(&result.body).unwrap();
+        assert_eq!(body["id"], organization["id"]);
+        assert_eq!(body["metadata"], Value::Null);
+        if route.ends_with("get-organization") {
+            assert!(body.get("members").is_none());
+        } else {
+            assert_eq!(body["members"].as_array().unwrap().len(), 1);
+        }
+    }
     assert_eq!(
         auth.store().get_user_sessions(user_id).await.unwrap(),
         before

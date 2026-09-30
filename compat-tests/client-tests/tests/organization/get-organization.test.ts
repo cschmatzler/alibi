@@ -22,7 +22,7 @@ for(const profile of [undefined,"org-teams"] as const satisfies readonly (Fixtur
   expect(noSelection).toMatchObject({data:null,error:null});
   const guestDenied=await guest.org.organization.getOrganization({query:{organizationId:"missing"}});
   expect(guestDenied.error).toMatchObject({status:401});
-  const first=await owner.org.organization.create({name:"Metadata Alpha",slug:ctx.uniqueToken("metadata-alpha"),metadata:{tier:"gold"}});
+  const first=await owner.org.organization.create({name:"Metadata Alpha",slug:ctx.uniqueToken("metadata-alpha"),metadata:{tier:"gold",fixed:1e20,tiny:3.8730639354761726e-71,nested:{"10":"ten","2":"two"}}});
   const second=await owner.org.organization.create({name:"Metadata Beta",slug:ctx.uniqueToken("metadata-beta")});
   expect(first.error).toBeNull();expect(second.error).toBeNull();
   if(!first.data||!second.data)throw new Error("owned organizations must persist");
@@ -36,8 +36,12 @@ for(const profile of [undefined,"org-teams"] as const satisfies readonly (Fixtur
   const byId=await owner.org.organization.getOrganization({query:{organizationId:first.data.id}});
   const bySlug=await owner.org.organization.getOrganization({query:{organizationId:first.data.id,organizationSlug:second.data.slug}});
   expect(active.data?.id).toBe(second.data.id);expect(byId.data?.id).toBe(first.data.id);expect(bySlug.data?.id).toBe(second.data.id);
-  expect(byId.data?.metadata).toBe('{"tier":"gold"}');
+  expect(byId.data?.metadata).toBe('{"tier":"gold","fixed":100000000000000000000,"tiny":3.8730639354761726e-71,"nested":{"2":"two","10":"ten"}}');
   for(const result of [active,byId,bySlug]) {expect(result.error).toBeNull();expect(result.data).not.toHaveProperty("members");expect(result.data).not.toHaveProperty("invitations");expect(result.data).not.toHaveProperty("teams");}
+  const full=await owner.org.organization.getFullOrganization({query:{organizationId:first.data.id}});
+  expect(full.error).toBeNull();
+  expect(full.data?.metadata).toBe('{"tier":"gold","fixed":100000000000000000000,"tiny":3.8730639354761726e-71,"nested":{"2":"two","10":"ten"}}');
+  expect(full.data?.members.some(member=>member.userId===ownerSignup.data!.user.id)).toBe(true);
   const emptySelectors=await owner.org.organization.getOrganization({query:{organizationSlug:""}});
   expect(emptySelectors.data?.id).toBe(second.data.id);
   const beforeMissing=persisted.parse(await ctx.readUserState({userId:ownerSignup.data.user.id}));
@@ -45,6 +49,8 @@ for(const profile of [undefined,"org-teams"] as const satisfies readonly (Fixtur
   expect(missingSlug.error).toMatchObject({status:400,code:"ORGANIZATION_NOT_FOUND"});
   const missing=await owner.org.organization.getOrganization({query:{organizationId:ctx.uniqueToken("metadata-absent")}});
   expect(missing.error).toMatchObject({status:400,code:"ORGANIZATION_NOT_FOUND"});
+  const missingFull=await owner.org.organization.getFullOrganization({query:{organizationId:ctx.uniqueToken("metadata-full-absent")}});
+  expect(missingFull.error).toMatchObject({status:400,code:"ORGANIZATION_NOT_FOUND"});
   const afterMissing=persisted.parse(await ctx.readUserState({userId:ownerSignup.data.user.id}));expect(afterMissing).toEqual(beforeMissing);
   const preserved=await owner.org.organization.getOrganization();expect(preserved.data?.id).toBe(second.data.id);
   const own=await outsider.org.organization.create({name:"Other Principal",slug:ctx.uniqueToken("metadata-other")});
@@ -63,6 +69,14 @@ for(const profile of [undefined,"org-teams"] as const satisfies readonly (Fixtur
   expect(after.sessions.find(session=>session.token===other.data?.session.token)).toEqual(before.sessions.find(session=>session.token===other.data?.session.token));
   const cleared=await outsider.org.organization.getOrganization();expect(cleared).toMatchObject({data:null,error:null});
   const unaffected=await otherSession.org.organization.getOrganization();expect(unaffected.data?.id).toBe(own.data.id);
-  return ctx.snapshot({ownerSignup,outsiderSignup,noSelection,guestDenied,first,second,empty,emptyMetadata,active,byId,bySlug,emptySelectors,beforeMissing,missingSlug,missing,afterMissing,preserved,own,extraSignin,selected,current,other,before,denied,after,cleared,unaffected});
- },["GET /organization/get-organization"]);
+  const restored=await outsider.org.organization.setActive({organizationId:own.data.id});
+  expect(restored.error).toBeNull();
+  const beforeFull=persisted.parse(await ctx.readUserState({userId:outsiderSignup.data.user.id}));
+  const deniedFull=await outsider.org.organization.getFullOrganization({query:{organizationId:first.data.id}});
+  expect(deniedFull.error).toMatchObject({status:403,code:"USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION"});
+  const afterFull=persisted.parse(await ctx.readUserState({userId:outsiderSignup.data.user.id}));
+  expect(afterFull.sessions.find(session=>session.token===current.data?.session.token)?.activeOrganizationId).toBeNull();
+  expect(afterFull.sessions.find(session=>session.token===other.data?.session.token)).toEqual(beforeFull.sessions.find(session=>session.token===other.data?.session.token));
+  return ctx.snapshot({ownerSignup,outsiderSignup,noSelection,guestDenied,first,second,empty,emptyMetadata,active,byId,bySlug,full,emptySelectors,beforeMissing,missingSlug,missing,missingFull,afterMissing,preserved,own,extraSignin,selected,current,other,before,denied,after,cleared,unaffected,restored,beforeFull,deniedFull,afterFull});
+ },["GET /organization/get-organization", "GET /organization/get-full-organization"]);
 }

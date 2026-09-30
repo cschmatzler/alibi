@@ -1,7 +1,6 @@
 # Organization metadata lookup (Better Auth 1.7.6)
 
-This prerequisite implements `GET /organization/get-organization`, independently
-of full-organization retrieval and its members, invitations and teams.
+This prerequisite implements `GET /organization/get-organization`, and repairs full-organization lookup, authorization ordering and raw metadata.
 
 Pinned source is `better-auth/dist/plugins/organization/routes/crud-org.mjs`
 (`getOrganization`), `call.mjs` (`orgSessionMiddleware`), and `adapter.mjs`
@@ -18,8 +17,8 @@ only the authenticated session token's active organization. Membership is read
 from storage using the authenticated principal, before any organization data is
 returned. Other sessions for the same user retain their independent selection.
 
-Unlike create/full responses, this metadata-only endpoint returns metadata as its
-raw stored JSON string. Omitted metadata returns null, explicit `{}` returns
+Both lookup endpoints return metadata as its raw stored JSON string;
+create and update responses retain parsed metadata. Omitted metadata returns null, explicit `{}` returns
 `"{}"`, and an object such as `{ "tier": "gold" }` returns its serialized JSON
 string. Creation now stores omitted metadata as JSON null, and parsed responses
 preserve explicit empty objects. No entity columns, migrations or existing rows
@@ -47,9 +46,26 @@ The logs are `/tmp/organization-metadata-baseline.log` and
 `/tmp/organization-metadata-empty-baseline.log` in the implementation workspace.
 The existing three organization core lifecycle scenarios also validate parsed
 response compatibility. Focused results are recorded with the frozen commit;
-full gates, inventory and final publication belong to the coordinator.
+full gates and final publication belong to the coordinator.
 
-Focused validation: both new SDK scenarios and all three existing organization
-core scenarios pass (alongside nine OpenAPI scenarios: 14 scenarios / 576
-assertions). The native blank-selector test, client TypeScript check and strict
-production Clippy for root/core/API/SeaORM pass.
+Review also demonstrated and repaired exact JavaScript numeric serialization,
+full retrieval returning parsed metadata, missing full organizations returning
+membership errors, and denied full retrieval retaining the current selection.
+The full handler now fetches the organization before its membership check and
+clears only the requesting token on denial. Independent review confirmed that
+another same-user session remains unchanged and foreign data is never returned.
+
+Before-repair logs: `/tmp/organization-metadata-numbers-before.log`,
+`/tmp/organization-full-metadata-before.log`,
+`/tmp/organization-full-lookup-order-before.log`, and
+`/tmp/organization-full-denied-session-before.log`.
+Focused final validation: 25 SDK scenarios / 1,440 assertions including both
+lookup scenarios and existing organization/team/dynamic-role families, plus the
+native blank-selector contract for both actual routes. Logs are
+`/tmp/organization-metadata-reviewed-final.log` and
+`/tmp/organization-metadata-blank-final.log`. The client TypeScript check and
+strict production Clippy passed before the final reviewed handler adjustments;
+the canonical integrated gate must validate the final tree.
+
+Custom adapter internal query ordering and physical SQL NULL versus JSON null
+storage are not established by these SQLite response and lifecycle tests.
