@@ -28,15 +28,15 @@ jobs:
           name: devenv
       - name: Install devenv
         run: nix profile add nixpkgs#devenv
+      # Build outputs can exhaust the hosted runner during restoration.
+      # Cache downloaded dependencies; every gate builds its own artifacts.
       - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-            compat-tests/rust-server/target
-          key: rust-${{ runner.os }}-${{ hashFiles('devenv.nix', 'devenv.lock', 'Cargo.lock', 'compat-tests/rust-server/Cargo.lock') }}
-          restore-keys: rust-${{ runner.os }}-
+          key: rust-sources-v2-${{ runner.os }}-${{ hashFiles('devenv.nix', 'devenv.lock', 'Cargo.lock', 'compat-tests/rust-server/Cargo.lock') }}
+          restore-keys: rust-sources-v2-${{ runner.os }}-
       - name: Run the complete test gate
         run: devenv test
       - uses: actions/upload-artifact@v4
