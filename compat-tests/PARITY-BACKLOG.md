@@ -8,7 +8,7 @@ Wider pinned parity work follows these priorities. Excluded external integration
 packages will receive no implementation work. Prepared unmerged work remains
 separate from delivered capabilities.
 
-This snapshot describes merged `origin/master` at `4ce3e86` (through PR #29),
+This snapshot describes merged `origin/master` at `eaa478e` (through PR #30),
 not the older, dirty coordinator worktree. The reference remains Better Auth
 1.7.6. The [upstream audit](audits/upstream-target.md) records source locations
 and wider boundaries. An audit gap means equivalence has not been established;
@@ -33,17 +33,16 @@ it is not automatically a confirmed defect or wholly missing implementation.
 | Capability | What it provides | Preparation |
 | --- | --- | --- |
 | Anonymous authentication | Guest accounts, deletion and safe conversion/linking to real accounts. | Earlier prototype exists; extraction, review and integrated evidence remain. |
-| Multiple sessions | List accounts/sessions remembered on a device, switch active session, revoke one and maintain the cookie set. | Frozen extraction has three SDK scenarios / 194 assertions and three native cookie contracts. Independent review found a signed-empty-proof edge case; repair is underway. |
+| Multiple sessions | List accounts/sessions remembered on a device, switch active session, revoke one and maintain the cookie set. | Reviewed extraction has three SDK scenarios / 194 assertions and three native cookie contracts, including duplicate and signed-empty rejection. The integrated gate passed with 262 SDK scenarios and 79.30% source coverage; ready for publication. |
 | Session updates | Validated/configured extra session fields with persisted updates and hooks. | Shared raw-field/storage contracts established; production implementation compiles. Real custom model and SDK evidence is underway. |
 | OAuth proxy | Production OAuth credentials serving preview/development hosts with encrypted, origin-bound profile transfer. | Actual pinned multi-server flow investigated; implementation remains. |
 | OAuth popup | Popup login and secure browser completion messaging. | Missing from the original route profiles; audit only. |
 | One Tap, organization metadata, OpenAPI | See the local work table above. | Unmerged capabilities still count as missing on master. |
 
-The merged inventory has 12 missing method/path identities after phone authentication landed. Separately, three
+The merged inventory has 12 missing method/path identities after phone authentication landed. Separately, two
 implemented routes lack successful-flow evidence on that master: organization
-user invitations, admin removal and two-factor disable. The first two have
-reviewed local repairs; two-factor disable passes the integrated gate and awaits
-publication. Username availability is merged PR #29. Device approval/denial/token and GET /ok
+user invitations and admin removal. Both have reviewed local repairs.
+Username availability is merged PR #29 and two-factor disable PR #30. Device approval/denial/token and GET /ok
 now have successful evidence on master.
 
 ## Gaps within existing features

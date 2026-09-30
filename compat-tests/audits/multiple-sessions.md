@@ -90,3 +90,14 @@ semantics. Three native owner tests and three SDK scenarios / 194 assertions
 pass after repair (`/tmp/multiple-sessions-signed-empty-native-final.log`,
 `/tmp/multiple-sessions-signed-empty-sdk-final.log`). Production Clippy and
 formatting pass; no inventory or shared schema changes were made.
+
+Independent coordinator review found the signed-empty selection-proof difference;
+its real SQLite rejection regression failed before repair and now passes.
+The reviewed integrated canonical gate passes: 262 SDK scenarios / 7,568
+assertions, 37 harness tests / 210 assertions, two Chromium tests / 22 assertions
+and 79.30% source lines (23,849 / 30,076).
+Log: /tmp/multiple-sessions-selected-canonical.log. Each new route requires
+successful configured/expiry flows and persisted-state evidence; selection and
+revocation also require rejection and browser-proof authorization evidence.
+The inventory enables this plugin independently of the matching baseline wire
+configuration.
