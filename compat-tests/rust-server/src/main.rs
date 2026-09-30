@@ -51,6 +51,8 @@ mod jwt_fixture;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
+mod sqlite_fixture;
+
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case")]
 enum PasswordFixtureRequest {

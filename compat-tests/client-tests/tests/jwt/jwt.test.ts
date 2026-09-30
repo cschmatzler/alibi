@@ -25,6 +25,15 @@ async function verifyWithOfficialJose(token: string, keys: JWK[], issuer: string
   return { header, payload: verified.payload };
 }
 
+async function advancePastJwtSecond(issuedAt: number): Promise<void> {
+  // EdDSA signs identical claims deterministically. Exercise real issuance
+  // across explicit clock transitions so repeated-token identity cannot depend
+  // on one runtime happening to cross a second boundary first.
+  while (Math.floor(Date.now() / 1000) <= issuedAt) {
+    await Bun.sleep(Math.max(1, (issuedAt + 1) * 1000 - Date.now()));
+  }
+}
+
 compatScenario("JWT default JWKS token and get-session header carry the complete authenticated user", async ctx => {
   const client = jwtActor(ctx);
   const anonymousToken = await jwtActor(ctx, "guest").token();
@@ -49,6 +58,7 @@ compatScenario("JWT default JWKS token and get-session header carry the complete
   if (!signupCookie.value || !signup.data?.token) throw new Error("signup must issue a signed persistent session cookie");
   const invalidCookie = "better-auth.session_token=invalid";
   const cookieAuthorizations = [];
+  let cookieTokenIssuedAt: number | undefined;
   for (const [name, headers, successful] of [
     ["valid-first", { cookie: `${signupCookie.value}; ${invalidCookie}` }, true],
     ["invalid-first", { cookie: `${invalidCookie}; ${signupCookie.value}` }, false],
@@ -61,27 +71,35 @@ compatScenario("JWT default JWKS token and get-session header carry the complete
       if (!result.data) throw new Error("first valid signed cookie must authorize issuance");
       const checked = await verifyWithOfficialJose(result.data.token, jwksBefore.data.keys, ctx.baseURL, ctx.baseURL);
       expect(checked.payload.sub).toBe(signup.data.user.id);
+      cookieTokenIssuedAt = z.number().parse(checked.payload.iat);
     } else {
       expect(result.error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
     }
     cookieAuthorizations.push({ name, result });
   }
+  if (cookieTokenIssuedAt === undefined) throw new Error("valid cookie must issue a timestamped JWT");
+  await advancePastJwtSecond(cookieTokenIssuedAt);
   const responseHeaders: { token: string | null; exposed: string | null } = { token: null, exposed: null };
   const session = await client.getSession({ fetchOptions: { onSuccess({ response }) { responseHeaders.token = response.headers.get("set-auth-jwt"); responseHeaders.exposed = response.headers.get("access-control-expose-headers"); } } });
   expect(session.error).toBeNull();
   const { token: headerToken, exposed: exposedHeaders } = responseHeaders;
   if (!session.data || !headerToken) throw new Error("authenticated get-session must set a JWT header");
   expect(exposedHeaders?.split(",").map(value => value.trim())).toContain("set-auth-jwt");
+  const verifiedHeader = await verifyWithOfficialJose(headerToken, jwksBefore.data.keys, ctx.baseURL, ctx.baseURL);
+  const headerIssuedAt = z.number().parse(verifiedHeader.payload.iat);
+  expect(headerIssuedAt).toBeGreaterThan(cookieTokenIssuedAt);
+  await advancePastJwtSecond(headerIssuedAt);
   const issuedAt = Math.floor(Date.now() / 1000);
   const token = await client.token();
   expect(token.error).toBeNull();
   if (!token.data) throw new Error("JWT endpoint must issue a signed token");
   const verified = await verifyWithOfficialJose(token.data.token, jwksBefore.data.keys, ctx.baseURL, ctx.baseURL);
-  const verifiedHeader = await verifyWithOfficialJose(headerToken, jwksBefore.data.keys, ctx.baseURL, ctx.baseURL);
+  expect(token.data.token).not.toBe(headerToken);
   expect(verified.header.alg).toBe("EdDSA");
   expect(verified.header.typ).toBeUndefined();
   expect(verified.payload.sub).toBe(session.data.user.id);
   expect(verified.payload.iat).toBeGreaterThanOrEqual(issuedAt);
+  expect(verified.payload.iat).toBeGreaterThan(headerIssuedAt);
   expect(verified.payload.exp).toBe((verified.payload.iat ?? 0) + 900);
   const userClaims = { ...verified.payload };
   for (const key of ["iat", "exp", "iss", "aud", "sub"]) delete userClaims[key];

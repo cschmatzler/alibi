@@ -16,6 +16,7 @@ bun compat-tests/reference-server/generate-openapi.mjs --profile all-in --format
 cargo test --workspace --locked
 cargo test --locked --manifest-path compat-tests/rust-server/Cargo.toml
 cargo test --workspace --locked --features axum,seaorm2,redis-cache
+cargo test --locked --manifest-path compat-tests/rust-server/Cargo.toml
 bun run --cwd compat-tests/client-tests typecheck
 bun test --cwd compat-tests/client-tests harness
 ./scripts/alignment-check.sh

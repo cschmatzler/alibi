@@ -14,6 +14,7 @@ use better_auth::{
         EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, OrganizationPlugin,
         PasskeyPlugin, PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin,
         UserManagementPlugin,
+        jwt::JwtPlugin,
         oauth::{
             OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
             OAuthUserInfoResponse,
@@ -340,6 +341,7 @@ pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth
                 .origin("http://localhost:3000"),
         )
         .plugin(AdminPlugin::new())
+        .plugin(JwtPlugin::new())
         .build()
         .await
         .unwrap_or_else(|e| panic!("Failed to create test auth instance: {e}"))

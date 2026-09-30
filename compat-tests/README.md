@@ -17,7 +17,9 @@ feature builds, TypeScript type checking, harness negative controls, raw wire
 checks, the complete SDK scenario directory, Chromium tests, docs, and LLVM
 line coverage. Default and `axum,seaorm2,redis-cache` configurations are tested;
 `rustls,axum,seaorm2,redis-cache` is also compiled without default features.
-The excluded Rust compatibility server is built and its formatting checked.
+The excluded Rust compatibility server is built, formatted, and tested. Its
+SQLite regression verifies that connection maintenance retains migrated tables
+and persisted user identity throughout the fixture lifetime.
 Missing reference dependencies or an unavailable server fail this gate.
 
 Rust is pinned in `rust-toolchain.toml`. `devenv.lock` pins Bun and native

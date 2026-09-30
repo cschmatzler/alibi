@@ -5,6 +5,7 @@ use better_auth::plugins::{
     AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
     EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, OrganizationPlugin, PasskeyPlugin,
     PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
+    jwt::JwtPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
 use better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
@@ -26,6 +27,7 @@ const ORGANIZATION_TAG: &str = "Organization";
 const PASSKEY_TAG: &str = "Passkey";
 const ADMIN_TAG: &str = "Admin";
 const TWO_FACTOR_TAG: &str = "Two-factor";
+const JWT_TAG: &str = "Jwt";
 
 const V1_DOCS_PATHS: &[(&str, &str)] = &[
     ("/ok", DEFAULT_TAG),
@@ -120,6 +122,8 @@ const V1_DOCS_PATHS: &[(&str, &str)] = &[
     ("/two-factor/verify-otp", TWO_FACTOR_TAG),
     ("/two-factor/generate-backup-codes", TWO_FACTOR_TAG),
     ("/two-factor/verify-backup-code", TWO_FACTOR_TAG),
+    ("/jwks", JWT_TAG),
+    ("/token", JWT_TAG),
 ];
 
 #[derive(Debug, Parser)]
@@ -166,6 +170,7 @@ async fn generate_docs_openapi() -> Result<Value, DynError> {
     let auth = build_docs_auth().await?;
     let mut spec = auth.openapi_spec().to_value()?;
     rewrite_for_docs(&mut spec)?;
+    spec.sort_all_objects();
     Ok(spec)
 }
 
@@ -203,6 +208,7 @@ async fn build_docs_auth() -> Result<BetterAuth<BundledSchema>, DynError> {
                 .origin("http://localhost:3000"),
         )
         .plugin(AdminPlugin::new())
+        .plugin(JwtPlugin::new())
         .build()
         .await?;
 
@@ -252,6 +258,14 @@ fn rewrite_for_docs(spec: &mut Value) -> Result<(), DynError> {
     }
 
     _ = root.insert("paths".to_string(), Value::Object(filtered_paths));
+    let tags = V1_DOCS_PATHS
+        .iter()
+        .map(|(_, tag)| *tag)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .map(|name| serde_json::json!({"name": name}))
+        .collect();
+    _ = root.insert("tags".to_string(), Value::Array(tags));
     Ok(())
 }
 
@@ -294,6 +308,7 @@ mod tests {
                     | PASSKEY_TAG
                     | ADMIN_TAG
                     | TWO_FACTOR_TAG
+                    | JWT_TAG
             ));
         }
     }

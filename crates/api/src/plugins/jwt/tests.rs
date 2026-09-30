@@ -725,3 +725,228 @@ async fn session_payload_header_hook_and_server_only_endpoints_have_distinct_aut
         2
     );
 }
+
+struct ApplicationClaims;
+
+#[async_trait]
+impl DefineJwtPayload for ApplicationClaims {
+    async fn define_payload(&self, session: &JwtSession) -> AuthResult<Map<String, Value>> {
+        Ok(
+            json!({"purpose":"application","ownerId":session.user.id,"loginId":session.session.id})
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+    }
+}
+
+struct ApplicationSubject(Option<String>);
+
+#[async_trait]
+impl DefineJwtSubject for ApplicationSubject {
+    async fn subject(&self, _session: &JwtSession) -> AuthResult<Option<String>> {
+        Ok(self.0.clone())
+    }
+}
+
+#[tokio::test]
+async fn application_session_callbacks_replace_default_claims_and_preserve_subject_fallback() {
+    let ctx = test_helpers::create_test_context().await;
+    let (user, session) = test_helpers::create_user_and_session(
+        &ctx,
+        CreateUser::new()
+            .with_email("callback-owner@fixture.test")
+            .with_name("Private name"),
+        Duration::hours(1),
+    )
+    .await;
+    let request = test_helpers::create_auth_request_no_query(
+        HttpMethod::Get,
+        "/token",
+        Some(&session.token),
+        None,
+    );
+    for subject in [Some("application-subject".to_owned()), None] {
+        let plugin = JwtPlugin::with_config(JwtPluginConfig {
+            define_payload: Some(Arc::new(ApplicationClaims)),
+            define_subject: Some(Arc::new(ApplicationSubject(subject.clone()))),
+            ..Default::default()
+        });
+        let response = plugin.on_request(&request, &ctx).await.unwrap().unwrap();
+        assert_eq!(response.status, 200);
+        let response: Value = serde_json::from_slice(&response.body).unwrap();
+        let claims = plugin
+            .verify_jwt(response["token"].as_str().unwrap(), None, None, &ctx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(claims["purpose"], "application");
+        assert_eq!(claims["ownerId"], user.id);
+        assert_eq!(claims["loginId"], session.id);
+        assert_eq!(claims["sub"], subject.as_deref().unwrap_or(&user.id));
+        assert!(!claims.contains_key("email"));
+        assert!(!claims.contains_key("name"));
+        assert_eq!(
+            claims["exp"].as_i64().unwrap() - claims["iat"].as_i64().unwrap(),
+            900
+        );
+    }
+}
+
+struct ApplicationKeyring {
+    database: Arc<dyn better_auth_core::AuthStore<TestSchema>>,
+}
+
+#[async_trait]
+impl JwtKeyring for ApplicationKeyring {
+    async fn keys(&self, _request: Option<&AuthRequest>) -> AuthResult<Vec<Jwk>> {
+        self.database.list_jwks().await
+    }
+    async fn create_key(
+        &self,
+        mut key: CreateJwk,
+        request: Option<&AuthRequest>,
+    ) -> AuthResult<Jwk> {
+        if request.map(AuthRequest::path) != Some("/jwks") {
+            return Err(AuthError::forbidden(
+                "Application key provisioning requires its public key request",
+            ));
+        }
+        key.id = Some("application-signing-key".to_owned());
+        self.database.create_jwk(key).await
+    }
+}
+
+#[tokio::test]
+async fn application_keyring_persists_and_resolves_keys_outside_auth_storage() {
+    let ctx = test_helpers::create_test_context().await;
+    let application_keys = test_helpers::create_test_context().await;
+    let plugin = JwtPlugin::with_config(JwtPluginConfig {
+        keyring: Some(Arc::new(ApplicationKeyring {
+            database: application_keys.database.clone(),
+        })),
+        ..Default::default()
+    });
+    let request = test_helpers::create_auth_request_no_query(HttpMethod::Get, "/jwks", None, None);
+    let response = plugin.on_request(&request, &ctx).await.unwrap().unwrap();
+    assert_eq!(response.status, 200);
+    let public: Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(public["keys"][0]["kid"], "application-signing-key");
+    let options = JwtSignOptions {
+        signing_key_id: Some("application-signing-key".to_owned()),
+        ..Default::default()
+    };
+    let token = plugin
+        .sign_jwt(payload("external-key-owner"), &options, None, &ctx)
+        .await
+        .unwrap();
+    let (header, claims) = decoded(&token);
+    assert_eq!(header["kid"], "application-signing-key");
+    assert_eq!(
+        plugin
+            .verify_jwt(&token, None, None, &ctx)
+            .await
+            .unwrap()
+            .unwrap(),
+        claims.as_object().unwrap().clone()
+    );
+    assert!(ctx.database.list_jwks().await.unwrap().is_empty());
+    let persisted = application_keys.database.list_jwks().await.unwrap();
+    assert_eq!(persisted.len(), 1);
+    assert_eq!(persisted[0].id, "application-signing-key");
+    assert!(!persisted[0].private_key.contains("\"d\""));
+    let private = decrypt(
+        &serde_json::from_str::<String>(&persisted[0].private_key).unwrap(),
+        &ctx.config.secret,
+    )
+    .unwrap();
+    assert!(serde_json::from_str::<Value>(&private).unwrap()["d"].is_string());
+    assert!(
+        JwtPlugin::new()
+            .verify_jwt(&token, None, None, &ctx)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+struct ApplicationSigner {
+    context: AuthContext<TestSchema>,
+    plugin: JwtPlugin,
+}
+
+#[async_trait]
+impl SignRemoteJwt for ApplicationSigner {
+    async fn sign(
+        &self,
+        payload: &Map<String, Value>,
+        options: &JwtSignOptions,
+    ) -> AuthResult<String> {
+        self.plugin
+            .sign_jwt(payload.clone(), options, None, &self.context)
+            .await
+    }
+}
+
+#[tokio::test]
+async fn delegated_signing_uses_external_keys_and_preserves_explicit_payload_and_headers() {
+    let ctx = test_helpers::create_test_context().await;
+    let service = Arc::new(ApplicationSigner {
+        context: test_helpers::create_test_context().await,
+        plugin: JwtPlugin::new(),
+    });
+    let plugin = JwtPlugin::with_config(JwtPluginConfig {
+        remote_url: Some("https://keys.fixture.test/jwks".to_owned()),
+        remote_signer: Some(service.clone()),
+        ..Default::default()
+    });
+    let options = JwtSignOptions {
+        header: json!({"typ":"application+jwt"})
+            .as_object()
+            .unwrap()
+            .clone(),
+        ..Default::default()
+    };
+    let explicit = json!({"sub":"delegated-owner","permission":"read","iat":Utc::now().timestamp(),"exp":Utc::now().timestamp()+600}).as_object().unwrap().clone();
+    let token = plugin
+        .sign_jwt(explicit.clone(), &options, None, &ctx)
+        .await
+        .unwrap();
+    let (header, claims) = decoded(&token);
+    assert_eq!(header["typ"], "application+jwt");
+    for (name, value) in explicit {
+        assert_eq!(claims[&name], value);
+    }
+    assert_eq!(claims["iss"], ctx.config.base_url);
+    assert_eq!(claims["aud"], ctx.config.base_url);
+    assert_eq!(
+        service
+            .plugin
+            .verify_jwt(&token, None, None, &service.context)
+            .await
+            .unwrap()
+            .unwrap(),
+        claims.as_object().unwrap().clone()
+    );
+    assert!(ctx.database.list_jwks().await.unwrap().is_empty());
+    assert_eq!(service.context.database.list_jwks().await.unwrap().len(), 1);
+    let request = test_helpers::create_auth_request_no_query(HttpMethod::Get, "/jwks", None, None);
+    let response = plugin.on_request(&request, &ctx).await.unwrap().unwrap();
+    assert_eq!(response.status, 404);
+    assert!(response.body.is_empty());
+    // The reference verifier reads its configured keyring; remoteUrl does not
+    // substitute external keys for the local verification adapter.
+    assert!(
+        plugin
+            .verify_jwt(&token, None, None, &ctx)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let invalid = JwtPlugin::with_config(JwtPluginConfig {
+        remote_signer: Some(service),
+        ..Default::default()
+    });
+    let mut init = AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    assert!(invalid.on_init(&mut init).await.is_err());
+}

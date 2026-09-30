@@ -161,3 +161,14 @@ This page documents the currently implemented routes; the enforced capability in
 <Callout>
 `view_backup_codes` is intentionally server-only in the pinned v1 compat surface. Use `TwoFactorPlugin::view_backup_codes(...)` from trusted server code when needed; there is no public `/two-factor/view-backup-codes` route.
 </Callout>
+
+## JWT and JWKS
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/jwks` | Publish managed public verification keys |
+| `GET` | `/token` | Issue an asymmetric JWT for the authenticated session |
+
+Trusted server code can also sign and verify application payloads through
+[`JwtPlugin`](/docs/plugins/jwt). Key rotation and public grace periods use the
+persistent keyring.

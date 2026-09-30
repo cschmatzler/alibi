@@ -520,6 +520,20 @@
         ]
       }
     },
+    "/jwks": {
+      "get": {
+        "operationId": "get_jwks",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "summary": "get jwks",
+        "tags": [
+          "Jwt"
+        ]
+      }
+    },
     "/link-social": {
       "post": {
         "operationId": "link_social",
@@ -1150,6 +1164,20 @@
         ]
       }
     },
+    "/token": {
+      "get": {
+        "operationId": "get_token",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        },
+        "summary": "get token",
+        "tags": [
+          "Jwt"
+        ]
+      }
+    },
     "/two-factor/disable": {
       "post": {
         "operationId": "disable_two_factor",
@@ -1318,5 +1346,34 @@
         ]
       }
     }
-  }
+  },
+  "tags": [
+    {
+      "name": "Admin"
+    },
+    {
+      "name": "Api-key"
+    },
+    {
+      "name": "Default"
+    },
+    {
+      "name": "Device-authorization"
+    },
+    {
+      "name": "Jwt"
+    },
+    {
+      "name": "Organization"
+    },
+    {
+      "name": "Passkey"
+    },
+    {
+      "name": "Two-factor"
+    },
+    {
+      "name": "Username"
+    }
+  ]
 }
