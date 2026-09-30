@@ -135,8 +135,12 @@ impl PasskeyPlugin {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
-        let result = delete_passkey_core(&body, &user, ctx).await?;
-        AuthResponse::json(200, &result).map_err(AuthError::from)
+        match delete_passkey_core(&body, &user, ctx).await? {
+            PasskeyHandlerOutcome::Success(result) => {
+                AuthResponse::json(200, &result).map_err(AuthError::from)
+            }
+            PasskeyHandlerOutcome::Response(response) => Ok(response),
+        }
     }
 
     /// POST /passkey/update-passkey
@@ -150,8 +154,12 @@ impl PasskeyPlugin {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
-        let result = update_passkey_core(&body, &user, ctx).await?;
-        AuthResponse::json(200, &result).map_err(AuthError::from)
+        match update_passkey_core(&body, &user, ctx).await? {
+            PasskeyHandlerOutcome::Success(result) => {
+                AuthResponse::json(200, &result).map_err(AuthError::from)
+            }
+            PasskeyHandlerOutcome::Response(response) => Ok(response),
+        }
     }
 }
 

@@ -129,7 +129,8 @@ compatScenario("two-factor totp verification enables the user and later sign-in 
   });
 
   const enable = await client.twoFactor.enable({ password });
-  const code = await generateCurrentTotp(enable.data!.totpURI);
+  if (!enable.data || !("totpURI" in enable.data)) throw new Error("TOTP enrollment must return a URI");
+  const code = await generateCurrentTotp(enable.data.totpURI);
   const verifyTotp = await client.twoFactor.verifyTotp({ code });
   const session = await client.getSession();
 
@@ -159,7 +160,7 @@ compatScenario("two-factor otp flow completes sign-in and rejects requests witho
   });
 
   const enable = await client.twoFactor.enable({ password });
-  const setupCode = await generateCurrentTotp(enable.data!.totpURI);
+  const setupCode = await generateCurrentTotp(enrollmentUri(enable.data));
   await client.twoFactor.verifyTotp({ code: setupCode });
   await client.signOut();
 
@@ -199,7 +200,7 @@ compatScenario("two-factor trusted devices bypass the second-factor challenge on
   });
 
   const enable = await client.twoFactor.enable({ password });
-  const setupCode = await generateCurrentTotp(enable.data!.totpURI);
+  const setupCode = await generateCurrentTotp(enrollmentUri(enable.data));
   await client.twoFactor.verifyTotp({ code: setupCode });
   await client.signOut();
 
@@ -226,3 +227,8 @@ compatScenario("two-factor trusted devices bypass the second-factor challenge on
     trustedSignIn: ctx.snapshot(trustedSignIn),
   };
 });
+
+function enrollmentUri(value: unknown): string {
+  if (value && typeof value === "object" && "totpURI" in value && typeof value.totpURI === "string") return value.totpURI;
+  throw new Error("TOTP enrollment must return a URI");
+}

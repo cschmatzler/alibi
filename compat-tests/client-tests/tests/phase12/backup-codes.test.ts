@@ -127,7 +127,7 @@ compatScenario("two-factor generate-backup-codes replaces the backup code set fo
   });
 
   const enable = await client.twoFactor.enable({ password });
-  const setupCode = await generateCurrentTotp(enable.data!.totpURI);
+  const setupCode = await generateCurrentTotp(enrollmentUri(enable.data));
   await client.twoFactor.verifyTotp({ code: setupCode });
 
   const generateBackupCodes = await client.twoFactor.generateBackupCodes({ password });
@@ -149,7 +149,7 @@ compatScenario("two-factor verify-backup-code signs the user in and consumes the
   });
 
   const enable = await client.twoFactor.enable({ password });
-  const setupCode = await generateCurrentTotp(enable.data!.totpURI);
+  const setupCode = await generateCurrentTotp(enrollmentUri(enable.data));
   await client.twoFactor.verifyTotp({ code: setupCode });
 
   const generated = await client.twoFactor.generateBackupCodes({ password });
@@ -191,7 +191,7 @@ compatScenario("two-factor server-only backup code retrieval returns parsed arra
   });
 
   const enable = await client.twoFactor.enable({ password });
-  const setupCode = await generateCurrentTotp(enable.data!.totpURI);
+  const setupCode = await generateCurrentTotp(enrollmentUri(enable.data));
   await client.twoFactor.verifyTotp({ code: setupCode });
   const generated = await client.twoFactor.generateBackupCodes({ password });
 
@@ -217,7 +217,7 @@ compatScenario("two-factor view-backup-codes stays unexposed as a public HTTP ro
   });
 
   const enable = await client.twoFactor.enable({ password });
-  const setupCode = await generateCurrentTotp(enable.data!.totpURI);
+  const setupCode = await generateCurrentTotp(enrollmentUri(enable.data));
   await client.twoFactor.verifyTotp({ code: setupCode });
 
   const publicRoute = await ctx.rawRequest({
@@ -232,3 +232,8 @@ compatScenario("two-factor view-backup-codes stays unexposed as a public HTTP ro
     publicRoute: ctx.snapshot(publicRoute),
   };
 });
+
+function enrollmentUri(value: unknown): string {
+  if (value && typeof value === "object" && "totpURI" in value && typeof value.totpURI === "string") return value.totpURI;
+  throw new Error("TOTP enrollment must return a URI");
+}

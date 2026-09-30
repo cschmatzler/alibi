@@ -6,63 +6,48 @@ on:
   pull_request:
     branches: [master]
 
-env:
-  CARGO_TERM_COLOR: always
-  # The Test job builds the workspace and compat-tests/rust-server, which is a
-  # separate manifest with its own target directory. Debug info for two full
-  # dependency trees is enough to starve a hosted runner.
-  CARGO_PROFILE_DEV_DEBUG: 0
-  CARGO_PROFILE_TEST_DEBUG: 0
+permissions:
+  contents: read
 
 jobs:
-  fmt:
-    name: Format
+  check:
+    name: Complete test gate
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - run: cargo fmt --all -- --check
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace -- -D warnings
-      - run: cargo clippy --workspace --features axum -- -D warnings
-
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: oven-sh/setup-bun@v2
-      - name: Install reference server dependencies
-        run: bun install --frozen-lockfile
-        working-directory: compat-tests/reference-server
-      - name: Install client compatibility dependencies
-        run: bun install --frozen-lockfile
-        working-directory: compat-tests/client-tests
-      - name: Run library unit tests
-        run: cargo test --workspace --lib
-      - name: Run alignment checks
-        run: ./scripts/alignment-check.sh
-
-  doc:
-    name: Documentation
-    runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
-      RUSTDOCFLAGS: "-D warnings"
+      CARGO_TERM_COLOR: always
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+          components: clippy,rustfmt,llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
-      - run: cargo doc --workspace --no-deps
+        with:
+          workspaces: |
+            .
+            compat-tests/rust-server
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install coverage tool
+        run: cargo install cargo-llvm-cov --version 0.9.0 --locked
+      - name: Install browser dependencies
+        run: |
+          bun install --cwd compat-tests/client-tests --frozen-lockfile
+          cd compat-tests/client-tests
+          bunx playwright install --with-deps chromium
+      - name: Run the same gate as devenv test
+        run: ./scripts/check.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: |
+            coverage/lcov.info
+            compat-tests/client-tests/artifacts/
+          if-no-files-found: warn

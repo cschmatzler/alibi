@@ -17,3 +17,7 @@ AGENTS.md
 # Local devenv state
 .devenv/
 .direnv/
+
+# Test artifacts
+/coverage/
+/compat-tests/client-tests/artifacts/

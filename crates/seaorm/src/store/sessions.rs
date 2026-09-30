@@ -97,7 +97,7 @@ where
         <S::Session as SeaOrmSessionModel>::Entity::find()
             .filter(<S::Session as SeaOrmSessionModel>::user_id_column().eq(user_id))
             .filter(<S::Session as SeaOrmSessionModel>::active_column().eq(true))
-            .order_by_desc(<S::Session as SeaOrmSessionModel>::created_at_column())
+            .order_by_asc(<S::Session as SeaOrmSessionModel>::created_at_column())
             .all(self.connection())
             .await
             .map_err(map_db_err)

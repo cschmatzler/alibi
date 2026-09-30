@@ -36,8 +36,9 @@ pub(crate) struct UpdatePasskeyRequest {
 // -- Response helpers --
 
 #[derive(Debug, Serialize)]
-pub(crate) struct SessionResponse<S: Serialize> {
+pub(crate) struct SessionResponse<S: Serialize, U: Serialize> {
     pub(crate) session: S,
+    pub(crate) user: U,
 }
 
 #[derive(Debug, Serialize)]

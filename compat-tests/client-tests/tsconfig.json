@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target": "ESNext", "module": "Preserve", "moduleResolution": "Bundler",
+    "lib": ["ESNext", "DOM"], "types": ["bun"], "strict": true,
+    "noUncheckedIndexedAccess": true, "noEmit": true, "skipLibCheck": true
+  },
+  "include": ["support/**/*.ts", "harness/**/*.ts", "tests/**/*.ts", "browser/**/*.ts"]
+}

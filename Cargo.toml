@@ -96,7 +96,7 @@ axum = [
     "better-auth-api/axum",
 ]
 seaorm2 = ["dep:better-auth-seaorm"]
-redis-cache = ["dep:redis"]
+redis-cache = ["better-auth-core/redis-cache"]
 
 [dependencies]
 # Core crates
@@ -135,7 +135,6 @@ tower = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 
 # Cache (optional)
-redis = { workspace = true, optional = true }
 tracing.workspace = true
 http-body-util = { version = "0.1", optional = true }
 

@@ -1,6 +1,12 @@
 import { test } from "bun:test";
-import diff from "microdiff";
+import { recordCoverage } from "./coverage";
+import { compareValues, type Difference } from "./compare";
 import { createAuthClient } from "better-auth/client";
+import { usernameClient, adminClient } from "better-auth/client/plugins";
+
+function configuredClient(baseURL: string, fetchImpl: (input: string | URL | Request, init?: RequestInit) => Promise<Response>) {
+  return createAuthClient({ baseURL, plugins: [usernameClient(), adminClient()], fetchOptions: { customFetchImpl: fetchImpl } });
+}
 import { RAW_DIFF_ALLOWLIST } from "./allowlist";
 import { RUST_BASE_URL, TS_BASE_URL, requireHealthy } from "./config";
 import {
@@ -25,7 +31,7 @@ import { createTracingFetch, type TraceEntry } from "./trace";
 type ScenarioServerContext = {
   baseURL: string;
   actor(name?: string): {
-    client: ReturnType<typeof createAuthClient>;
+    client: ReturnType<typeof configuredClient>;
     fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
   };
   uniqueEmail(prefix: string): string;
@@ -102,26 +108,11 @@ type ScenarioServerContext = {
 };
 
 type ScenarioRun = {
+  oauthURL: string;
+  startedAt: number;
   observation: unknown;
   traces: TraceEntry[];
 };
-
-function formatDiffPath(path: Array<string | number>) {
-  return path.map((segment) => String(segment)).join(".");
-}
-
-function filterRawDiffs(
-  scenarioName: string,
-  diffs: ReturnType<typeof diff>,
-) {
-  return diffs.filter((entry) => {
-    const path = formatDiffPath(entry.path);
-    return !RAW_DIFF_ALLOWLIST.some(
-      (allowance) =>
-        allowance.scenario.test(scenarioName) && allowance.path.test(path),
-    );
-  });
-}
 
 async function runScenario(
   label: string,
@@ -129,14 +120,15 @@ async function runScenario(
   seed: string,
   scenario: (ctx: ScenarioServerContext) => Promise<unknown>,
 ): Promise<ScenarioRun> {
-  await requireHealthy(baseURL, label);
+  const health = await requireHealthy(baseURL, label);
   await resetServerState(baseURL);
 
+  const startedAt = Date.now();
   const traces: TraceEntry[] = [];
   const actors = new Map<
     string,
     {
-      client: ReturnType<typeof createAuthClient>;
+      client: ReturnType<typeof configuredClient>;
       fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
     }
   >();
@@ -152,12 +144,7 @@ async function runScenario(
 
       const fetchImpl = createTracingFetch(baseURL, name, traces);
       const actor = {
-        client: createAuthClient({
-          baseURL,
-          fetchOptions: {
-            customFetchImpl: fetchImpl,
-          },
-        }),
+        client: configuredClient(baseURL, fetchImpl),
         fetch(input: string | URL | Request, init?: RequestInit) {
           return fetchImpl(input, init);
         },
@@ -253,55 +240,36 @@ async function runScenario(
   };
 
   return {
+    oauthURL: health.oauthBaseURL ?? baseURL.replace("localhost", "127.0.0.1"),
+    startedAt,
     observation: normalizeClientValue(await scenario(context)),
     traces,
   };
 }
 
-function formatDiffs(title: string, diffs: ReturnType<typeof diff>) {
-  return [
-    title,
-    ...diffs.map((entry) => `- ${entry.type} ${formatDiffPath(entry.path)}`),
-  ].join("\n");
+function formatDiffs(title: string, differences: Difference[]) {
+  return [title, ...differences.map(entry => `- ${entry.path}: ${entry.reason}`)].join("\n");
 }
 
 export function compatScenario(
   scenarioName: string,
   scenario: (ctx: ScenarioServerContext) => Promise<unknown>,
+  stateTransitions: readonly string[] = [],
 ) {
   test.serial(scenarioName, async () => {
     const seed = `${Date.now()}-${crypto.randomUUID()}`;
     const ts = await runScenario("TS", TS_BASE_URL, seed, scenario);
     const rust = await runScenario("Rust", RUST_BASE_URL, seed, scenario);
-
-    const clientDiffs = diff(ts.observation, rust.observation, {
-      cyclesFix: false,
-    });
-    if (clientDiffs.length > 0) {
-      throw new Error(
-        `${formatDiffs(`Client-visible drift in scenario: ${scenarioName}`, clientDiffs)}\n\nTS:\n${JSON.stringify(
-          ts.observation,
-          null,
-          2,
-        )}\n\nRust:\n${JSON.stringify(rust.observation, null, 2)}`,
-      );
-    }
-
-    const rawDiffs = filterRawDiffs(
-      scenarioName,
-      diff(ts.traces, rust.traces, {
-        cyclesFix: false,
-      }),
-    );
-
-    if (rawDiffs.length > 0) {
-      throw new Error(
-        `${formatDiffs(`Raw trace drift in scenario: ${scenarioName}`, rawDiffs)}\n\nTS traces:\n${JSON.stringify(
-          ts.traces,
-          null,
-          2,
-        )}\n\nRust traces:\n${JSON.stringify(rust.traces, null, 2)}`,
-      );
-    }
+    const comparison = {
+      leftBaseURL: TS_BASE_URL, rightBaseURL: RUST_BASE_URL,
+      leftStartedAt: ts.startedAt, rightStartedAt: rust.startedAt,
+      leftOAuthURL: ts.oauthURL, rightOAuthURL: rust.oauthURL,
+    };
+    const clientDiffs = compareValues(ts.observation, rust.observation, comparison);
+    if (clientDiffs.length) throw new Error(formatDiffs(`Client-visible drift: ${scenarioName}`, clientDiffs));
+    const rawDiffs = compareValues(ts.traces, rust.traces, comparison).filter(entry =>
+      !RAW_DIFF_ALLOWLIST.some(allowance => allowance.scenario.test(scenarioName) && allowance.path.test(entry.path)));
+    if (rawDiffs.length) throw new Error(formatDiffs(`Raw trace drift: ${scenarioName}`, rawDiffs));
+    await recordCoverage(scenarioName, ts.traces, stateTransitions);
   });
 }

@@ -159,6 +159,10 @@ pub mod redis_adapter {
     }
 
     impl RedisAdapter {
+        #[expect(
+            clippy::unused_async,
+            reason = "preserve the public async constructor API"
+        )]
         pub async fn new(redis_url: &str) -> Result<Self, redis::RedisError> {
             let client = Client::open(redis_url)?;
             Ok(Self { client })

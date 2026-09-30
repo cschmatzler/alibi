@@ -1,166 +1,63 @@
-//! Route coverage analysis — compares spec endpoints against implementation.
-
+//! Enforced runtime route inventory. Behavioral evidence is checked by the Bun suite.
 #![allow(
-    unused_results,
     clippy::expect_used,
-    clippy::unwrap_used,
     clippy::indexing_slicing,
-    reason = "test code discards set insertion results while building coverage fixtures"
+    reason = "test fixture validation fails immediately"
 )]
-
 mod compat;
+use compat::helpers::create_test_auth;
+use serde_json::Value;
+use std::collections::BTreeSet;
 
-use std::collections::{BTreeMap, HashSet};
+fn canonical(path: &str) -> String {
+    path.split('/')
+        .map(|part| {
+            if part.starts_with(':') || part.starts_with('{') {
+                "{}"
+            } else {
+                part
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
 
-use better_auth::prelude::HttpMethod;
-
-use compat::helpers::*;
-use compat::schema::{OpenApiProfile, load_openapi_spec_with_profile};
-
-/// Analyze which endpoints from the reference spec are implemented.
 #[tokio::test]
-async fn test_route_coverage_analysis() {
-    let spec = load_openapi_spec_with_profile(OpenApiProfile::AllIn);
+async fn runtime_routes_match_capability_inventory() {
     let auth = create_test_auth().await;
-
-    // Collect reference endpoints from the typed spec
-    let paths = spec.paths.as_ref().expect("spec must have paths");
-
-    let mut ref_endpoints: BTreeMap<String, HashSet<String>> = BTreeMap::new();
-    for (path, path_item) in paths {
-        let mut method_set = HashSet::new();
-        if path_item.get.is_some() {
-            method_set.insert("get".to_string());
-        }
-        if path_item.post.is_some() {
-            method_set.insert("post".to_string());
-        }
-        if path_item.put.is_some() {
-            method_set.insert("put".to_string());
-        }
-        if path_item.delete.is_some() {
-            method_set.insert("delete".to_string());
-        }
-        if path_item.patch.is_some() {
-            method_set.insert("patch".to_string());
-        }
-        if !method_set.is_empty() {
-            ref_endpoints.insert(path.clone(), method_set);
-        }
-    }
-
-    // Collect implemented endpoints
-    let mut impl_endpoints: BTreeMap<String, HashSet<String>> = BTreeMap::new();
-
-    // Core routes
-    for (path, method) in &[
-        ("/ok", "get"),
-        ("/error", "get"),
-        ("/update-user", "post"),
-        ("/delete-user", "post"),
-        ("/change-email", "post"),
-        ("/delete-user/callback", "get"),
-    ] {
-        impl_endpoints
-            .entry(path.to_string())
-            .or_default()
-            .insert(method.to_string());
-    }
-
-    // Plugin routes
-    for plugin in auth.plugins() {
-        for route in plugin.routes() {
-            let method_str = match route.method {
-                HttpMethod::Get => "get",
-                HttpMethod::Post => "post",
-                HttpMethod::Put => "put",
-                HttpMethod::Delete => "delete",
-                HttpMethod::Patch => "patch",
-                HttpMethod::Options => "options",
-                HttpMethod::Head => "head",
-            };
-            impl_endpoints
-                .entry(route.path.clone())
-                .or_default()
-                .insert(method_str.to_string());
-        }
-    }
-
-    // Compute coverage
-    let mut covered = 0;
-    let mut missing = Vec::new();
-    let total: usize = ref_endpoints.values().map(|m| m.len()).sum();
-
-    for (path, methods) in &ref_endpoints {
-        for method in methods {
-            if impl_endpoints.get(path).is_some_and(|m| m.contains(method)) {
-                covered += 1;
-            } else {
-                missing.push(format!("{} {}", method.to_uppercase(), path));
+    let spec = auth
+        .openapi_spec()
+        .to_value()
+        .expect("runtime schema must serialize");
+    let mut actual = BTreeSet::new();
+    for (path, item) in spec["paths"].as_object().expect("paths") {
+        for method in ["get", "post", "put", "patch", "delete", "head", "options"] {
+            if item.get(method).is_some() {
+                let _ = actual.insert(format!("{} {}", method.to_uppercase(), canonical(path)));
             }
         }
     }
-
-    let coverage_pct = if total > 0 {
-        (covered as f64 / total as f64) * 100.0
-    } else {
-        0.0
-    };
-
-    // Print structured coverage report
-    eprintln!("\n╔══════════════════════════════════════════════════════╗");
-    eprintln!("║  Route Coverage Analysis                             ║");
-    eprintln!("╚══════════════════════════════════════════════════════╝\n");
-    eprintln!("Reference endpoints:  {}", total);
-    eprintln!("Implemented:          {}", covered);
-    eprintln!("Missing:              {}", missing.len());
-    eprintln!("Coverage:             {:.1}%\n", coverage_pct);
-
-    if !missing.is_empty() {
-        eprintln!("--- Missing endpoints (from reference spec) ---");
-        // Group by plugin/category
-        let mut categorized: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for m in &missing {
-            let path_part = m.split_whitespace().nth(1).unwrap_or(m);
-            let category = if path_part.contains("two-factor") {
-                "Two-Factor"
-            } else if path_part.contains("passkey") {
-                "Passkey"
-            } else if path_part.contains("organization")
-                || path_part.contains("invitation")
-                || path_part.contains("member")
-            {
-                "Organization"
-            } else if path_part.contains("admin")
-                || path_part.contains("ban")
-                || path_part.contains("impersonate")
-            {
-                "Admin"
-            } else if path_part.contains("api-key") {
-                "API Key"
-            } else if path_part.contains("sign-in")
-                || path_part.contains("sign-up")
-                || path_part.contains("callback")
-            {
-                "Auth"
-            } else if path_part.contains("session") {
-                "Session"
-            } else {
-                "Other"
-            };
-            categorized
-                .entry(category.to_string())
-                .or_default()
-                .push(m.clone());
-        }
-
-        for (category, endpoints) in &categorized {
-            eprintln!("\n  [{}]", category);
-            for ep in endpoints {
-                eprintln!("    [ ] {}", ep);
-            }
-        }
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    std::fs::create_dir_all(root.join("coverage")).expect("artifact directory");
+    std::fs::write(
+        root.join("coverage/runtime-routes.json"),
+        serde_json::to_string_pretty(&actual).expect("serialize routes"),
+    )
+    .expect("write routes");
+    if std::env::var("BETTER_AUTH_UPDATE_CAPABILITIES").as_deref() == Ok("1") {
+        return;
     }
-
-    eprintln!("\n══════════════════════════════════════════════════════\n");
+    let inventory: Value = serde_json::from_str(include_str!("../compat-tests/capabilities.json"))
+        .expect("capability inventory JSON");
+    let expected: BTreeSet<String> = inventory["capabilities"]
+        .as_array()
+        .expect("capabilities")
+        .iter()
+        .filter(|entry| entry["implemented"] == true)
+        .map(|entry| entry["route"].as_str().expect("route").to_owned())
+        .collect();
+    assert_eq!(
+        actual, expected,
+        "Runtime route inventory changed. Review and update compat-tests/capabilities.json; no route may silently appear or disappear."
+    );
 }

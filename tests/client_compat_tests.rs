@@ -92,13 +92,35 @@ fn start_reference_server(port: u16) -> ManagedChild {
     ManagedChild::new("ts-reference", child)
 }
 
-fn start_rust_compat_server(port: u16) -> ManagedChild {
-    let child = Command::new("cargo")
+fn build_rust_compat_server() -> PathBuf {
+    let output = Command::new("cargo")
         .args([
-            "run",
+            "build",
+            "--locked",
             "--manifest-path",
             "compat-tests/rust-server/Cargo.toml",
+            "--message-format=json-render-diagnostics",
         ])
+        .current_dir(project_root())
+        .stderr(Stdio::inherit())
+        .output()
+        .unwrap_or_else(|error| panic!("failed to build Rust compat server: {error}"));
+    assert!(output.status.success(), "Rust compat server build failed");
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .find_map(|message| {
+            let target = message.get("target")?.get("name")?.as_str()?;
+            (target == "compat-rust-server")
+                .then(|| message.get("executable")?.as_str().map(PathBuf::from))
+                .flatten()
+        })
+        .unwrap_or_else(|| panic!("cargo did not report the compatibility server executable"))
+}
+
+fn start_rust_compat_server(port: u16, executable: &std::path::Path) -> ManagedChild {
+    // Own the server process directly, so Drop cannot leave a cargo child behind.
+    let child = Command::new(executable)
         .current_dir(project_root())
         .env("PORT", port.to_string())
         .env("NO_PROXY", "localhost,127.0.0.1")
@@ -107,14 +129,24 @@ fn start_rust_compat_server(port: u16) -> ManagedChild {
         .stderr(Stdio::inherit())
         .spawn()
         .unwrap_or_else(|error| panic!("failed to start Rust compat server: {error}"));
-
     ManagedChild::new("rust-compat", child)
 }
 
 fn run_bun_phase_suite(paths: &[&str], ts_port: u16, rust_port: u16) {
+    if paths == ["tests"] {
+        let directory = project_root().join("compat-tests/client-tests/artifacts/evidence");
+        if directory.exists() {
+            std::fs::remove_dir_all(directory)
+                .unwrap_or_else(|error| panic!("failed to reset capability evidence: {error}"));
+        }
+    }
     let output = Command::new("bun")
         .arg("test")
         .args(paths)
+        .env(
+            "COMPAT_COVERAGE",
+            if paths == ["tests"] { "1" } else { "0" },
+        )
         .current_dir(project_root().join("compat-tests/client-tests"))
         .env("AUTH_BASE_URL_TS", format!("http://localhost:{ts_port}"))
         .env(
@@ -126,19 +158,30 @@ fn run_bun_phase_suite(paths: &[&str], ts_port: u16, rust_port: u16) {
         .output()
         .unwrap_or_else(|error| panic!("failed to run Bun phase suite: {error}"));
 
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         panic!("Bun phase suite failed.\nstdout:\n{stdout}\n\nstderr:\n{stderr}");
     }
+    if paths == ["tests"] {
+        let status = Command::new("bun")
+            .args(["run", "support/check-coverage.ts"])
+            .current_dir(project_root().join("compat-tests/client-tests"))
+            .status()
+            .unwrap_or_else(|error| panic!("failed to check capability evidence: {error}"));
+        assert!(status.success(), "capability evidence check failed");
+    }
 }
 
 async fn run_client_compat(paths: &[&str]) {
+    let executable = build_rust_compat_server();
     let ts_port = allocate_port();
     let rust_port = allocate_port();
 
     let mut ts_server = start_reference_server(ts_port);
-    let mut rust_server = start_rust_compat_server(rust_port);
+    let mut rust_server = start_rust_compat_server(rust_port, &executable);
 
     wait_for_health(ts_port, &mut ts_server, Duration::from_secs(20)).await;
     wait_for_health(rust_port, &mut rust_server, Duration::from_secs(90)).await;
@@ -227,20 +270,11 @@ async fn phase12_client_compat() {
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
 async fn full_client_compat() {
-    run_client_compat(&[
-        "tests/phase0",
-        "tests/phase1",
-        "tests/phase2",
-        "tests/phase3",
-        "tests/phase4",
-        "tests/phase5",
-        "tests/phase6",
-        "tests/phase7",
-        "tests/phase8",
-        "tests/phase9",
-        "tests/phase10",
-        "tests/phase11",
-        "tests/phase12",
-    ])
-    .await;
+    run_client_compat(&["tests"]).await;
+}
+
+#[tokio::test]
+#[ignore = "starts external TS and Rust servers and Chromium"]
+async fn browser_client_compat() {
+    run_client_compat(&["browser"]).await;
 }

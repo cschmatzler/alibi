@@ -72,7 +72,7 @@ const profiles = {
   "aligned-rs": () => [
     requiredPlugin("openAPI"),
     requiredPlugin("admin"),
-    requiredPlugin("apiKey"),
+    requiredPlugin("apiKey", { enableSessionForAPIKeys: true }),
     requiredPlugin("twoFactor"),
     requiredPlugin("organization"),
     requiredPlugin("username"),
@@ -83,7 +83,7 @@ const profiles = {
 
     pushIf(selected, optionalPlugin("admin"));
     pushIf(selected, optionalPlugin("anonymous"));
-    pushIf(selected, optionalPlugin("apiKey"));
+    pushIf(selected, optionalPlugin("apiKey", { enableSessionForAPIKeys: true }));
     pushIf(selected, optionalPlugin("bearer"));
     pushIf(
       selected,
@@ -153,7 +153,7 @@ const profiles = {
       }),
     );
     pushIf(selected, optionalPlugin("oneTimeToken"));
-    pushIf(selected, optionalPlugin("organization"));
+    pushIf(selected, optionalPlugin("organization", { teams: { enabled: true }, dynamicAccessControl: { enabled: true } }));
     pushIf(selected, optionalPlugin("phoneNumber"));
     pushIf(
       selected,
@@ -178,7 +178,7 @@ if (typeof buildPlugins !== "function") {
   );
 }
 
-const auth = betterAuth({
+const makeAuth = (selectPlugins) => betterAuth({
   secret: "better-auth-rs-openapi-alignment-script-secret-32-bytes",
   baseURL: "http://localhost:3000",
   trustedOrigins: ["http://localhost:3000"],
@@ -186,13 +186,23 @@ const auth = betterAuth({
     enabled: true,
   },
   socialProviders: {},
-  plugins: buildPlugins(),
+  plugins: selectPlugins(),
 });
+
+const auth = makeAuth(buildPlugins);
 
 if (!auth.api || typeof auth.api.generateOpenAPISchema !== "function") {
   throw new Error("generateOpenAPISchema is not available. Ensure openAPI() is enabled.");
 }
 
-const schema = await auth.api.generateOpenAPISchema();
+const schema = args.format === "routes"
+  ? // Plugins can replace endpoint metadata (for example customSession narrows
+  // get-session to GET). Union profiles so overrides cannot hide core methods.
+  [...new Set([auth, ...(profile === "all-in" ? [makeAuth(profiles.core), makeAuth(profiles["aligned-rs"])] : [])].flatMap(instance => Object.values(instance.api).flatMap(endpoint => {
+      if (!endpoint.path || endpoint.options?.metadata?.SERVER_ONLY) return [];
+      const methods = endpoint.options?.method ?? "GET";
+      return (Array.isArray(methods) ? methods : [methods]).map(method => `${method} ${endpoint.path.replace(/:[^/]+|\{[^}]+\}/g, "{}")}`);
+    })))].sort()
+  : await auth.api.generateOpenAPISchema();
 await writeFile(outputPath, JSON.stringify(schema, null, 2), "utf8");
 console.log(`[ok] ${profile} -> ${outputPath}`);
