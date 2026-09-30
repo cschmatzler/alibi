@@ -74,8 +74,15 @@ the repaired numeric and user metadata prerequisites, final focused evidence is:
 - /tmp/phone-v2-final-typecheck.log and /tmp/phone-v2-final-clippy.log:
   client TypeScript and production workspace Clippy with seaorm2.
 
-The coordinator owns independent review, integration with current master, the
-full canonical gate, route inventories and documentation generation. This slice
+Independent coordinator review traced ownership, proof consumption, credential
+writes, callback ordering and trusted-device checks against the pinned source.
+The integrated canonical gate passes: 255 SDK scenarios / 7,248 assertions,
+37 harness tests / 210 assertions, two Chromium tests / 22 assertions and
+79.00% source lines (23,531 / 29,787). Log: /tmp/phone-selected-canonical.log.
+All five routes require explicit configuration, rejection, ownership and
+persisted-state evidence in capabilities.json. The inventory enables the phone
+plugin independently; the baseline wire fixture retains its matching TypeScript
+configuration. This slice
 does not change comparators, skip tests, relax coverage, update dependency
 versions or change database schemas. Local fixtures disable rate limiting to
 exercise lifecycle cases; this evidence does not claim production SMS transport
