@@ -204,8 +204,13 @@ async fn test_inspect_trusted_device_rotates_server_state() {
 
 #[tokio::test]
 async fn test_verify_existing_session_factor_enables_two_factor_and_reissues_session() {
-    let (ctx, user, session) =
+    let (mut ctx, user, session) =
         create_test_context_with_credential_user("reissue@example.com", false).await;
+    let mut init = better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    better_auth_core::AuthPlugin::on_init(&TwoFactorPlugin::new(), &mut init)
+        .await
+        .unwrap();
+    ctx.metadata = init.into_parts().metadata;
 
     let (response, set_cookie_headers) =
         verify_existing_session_factor(user.clone(), session.clone(), true, &ctx)

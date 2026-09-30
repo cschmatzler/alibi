@@ -749,7 +749,7 @@ async fn send_otp_core(
         })
         .await?;
 
-    if let Err(error) = sender.send(&UserView::from(state.user()), &otp).await {
+    if let Err(error) = sender.send(&ctx.user_view(state.user()), &otp).await {
         tracing::warn!(error = %error, "Failed to send two-factor OTP");
     }
 
@@ -895,7 +895,7 @@ async fn verify_backup_code_core(
                 Ok((
                     SessionTokenResponse {
                         token: session.token().to_string(),
-                        user: UserView::from(&user),
+                        user: ctx.user_view(&user),
                     },
                     Vec::new(),
                 ))
@@ -1007,7 +1007,7 @@ async fn verify_existing_session_factor(
                 token: session.token().to_string(),
                 // TS keeps the verify response on the pre-update snapshot even
                 // though the re-issued session already observes 2FA as enabled.
-                user: UserView::from(&user),
+                user: ctx.user_view(&user),
             },
             vec![create_session_cookie(issued.session.token(), &ctx.config)],
         ));
@@ -1016,7 +1016,7 @@ async fn verify_existing_session_factor(
     Ok((
         SessionTokenResponse {
             token: session.token().to_string(),
-            user: UserView::from(&user),
+            user: ctx.user_view(&user),
         },
         Vec::new(),
     ))
@@ -1076,7 +1076,7 @@ async fn finalize_pending_two_factor<S: better_auth_core::AuthSchema>(
     Ok((
         SessionTokenResponse {
             token: issued.session.token().to_string(),
-            user: UserView::from(&issued.user),
+            user: ctx.user_view(&issued.user),
         },
         set_cookie_headers,
     ))
