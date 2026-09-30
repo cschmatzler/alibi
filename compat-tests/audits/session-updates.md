@@ -119,5 +119,6 @@ SQLite bindings, undefined/default/transform hook lifecycle, registered output
 privacy and authorization through the immutable persisted token. Review findings
 are resolved. The coordinator preserved replacement additional fields and
 requires both custom-schema scenarios plus default validation/auth/state proof
-in the shared inventory without removing earlier evidence. Final integrated gate
-is pending; this proves the stateful SQLite slice rather than every storage mode.
+in the shared inventory without removing earlier evidence. Final integrated gate passes: 277 SDK scenarios / 8,550 assertions, 37 harness tests /
+210 assertions, two Chromium tests / 22 assertions and 78.97% source lines
+(24,668 / 31,238). This proves the stateful SQLite slice rather than every storage mode.

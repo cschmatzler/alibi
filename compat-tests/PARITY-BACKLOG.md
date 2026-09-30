@@ -8,7 +8,7 @@ Wider pinned parity work follows these priorities. Excluded external integration
 packages will receive no implementation work. Prepared unmerged work remains
 separate from delivered capabilities.
 
-This snapshot describes merged `origin/master` at `7896892` (through PR #38), plus the reviewed factor storage prerequisite,
+This snapshot describes merged `origin/master` through PR #40 (configured session updates),
 not the older, dirty coordinator worktree. The reference remains Better Auth
 1.7.6. The [upstream audit](audits/upstream-target.md) records source locations
 and wider boundaries. An audit gap means equivalence has not been established;
@@ -24,7 +24,8 @@ it is not automatically a confirmed defect or wholly missing implementation.
 | Organization invitation listing | Verified HTTP ownership, expired/processed invitations, trusted server-only scope and configured page-limit behavior are proved. | Independent review clear; canonical gate passed with 268 SDK scenarios and 79.25% source coverage. Merged PR #36. |
 | Admin user deletion | Real enrolled-factor flow proves credential/session revocation and rejects unauthorized principals; installed-schema repair preserves two-factor rows. | Independent review clear; canonical gate passed with 265 SDK scenarios and 79.34% source coverage. Merged PR #35. |
 | Organization metadata lookup | Reviewed metadata and session lifecycle implementation passed the canonical gate: 270 SDK scenarios and 79.20% source coverage. | Merged PR #37; input validation, custom fields and callback branches remain separate work. |
-| Two-factor policy storage | Nullable verification/failure/lock fields and atomic exact-row operations passed the integrated gate: 274 SDK scenarios, 78.96% source coverage. | PR #39 ready; reviewed lockout/enrollment policy follows after its session-cancellation repair. |
+| Configured session updates | Real application columns, configured validation/defaults/transforms, current-token updates and hooks passed independent review and the full gate: 277 SDK scenarios, 78.97% source coverage. | PR #40 reviewed; secondary/stateless/cache modes, output transforms, asynchronous validators and wider adapter types remain gaps. |
+| Two-factor policy storage | Nullable verification/failure/lock fields and atomic exact-row operations passed the integrated gate: 274 SDK scenarios, 78.96% source coverage. | Merged PR #39; reviewed lockout/enrollment policy follows after its session-cancellation repair. |
 | TOTP configuration | Exact URI/issuer/default/disabled behavior and trusted UTF-8-secret generation passed independent review and the canonical gate: 274 SDK scenarios, 78.97% source coverage. | Merged PR #38; verification/lockout, passwordless, OTP storage and trust policy remain selected work. |
 | OpenAPI and reference page | Frozen generator, source metadata, reference page and complete default/custom-session documents; eleven scenarios / 494 assertions pass. | Complete dependencies, notably update-session, independent review, integration and publication. |
 | One Tap | Frozen implementation with local RSA Google JWKS, configuration and lifecycle evidence. All 14 complete-token official-client scenarios / 664 assertions pass. | Integrate the reviewed narrow comparator repair and shared OAuth prerequisites, complete review/gate and publish. |
@@ -35,12 +36,12 @@ it is not automatically a confirmed defect or wholly missing implementation.
 | Capability | What it provides | Preparation |
 | --- | --- | --- |
 | Anonymous authentication | Guest accounts, deletion and safe conversion/linking to real accounts. | Earlier prototype exists; extraction, review and integrated evidence remain. |
-| Session updates | Validated/configured extra session fields with persisted updates and hooks. | Frozen implementation passed independent review, sixteen official-client scenarios / 696 assertions and real custom-column/native privacy contracts. Integrated validation and publication remain. |
+
 | OAuth proxy | Production OAuth credentials serving preview/development hosts with encrypted, origin-bound profile transfer. | Actual pinned multi-server flow investigated; implementation remains. |
 | OAuth popup | Popup login and secure browser completion messaging. | Missing from the original route profiles; audit only. |
 | One Tap and OpenAPI | See the local work table above. | Unmerged capabilities still count as missing on master. |
 
-The merged inventory has eight missing method/path identities after multiple sessions landed. All eight originally reported implemented routes now have successful-flow
+The merged inventory has seven missing method/path identities after multiple sessions landed. All eight originally reported implemented routes now have successful-flow
 evidence, with actual ownership and persisted state checks. Wider configuration
 branches remain separate gaps.
 Multiple sessions are merged PR #31 with 262 SDK scenarios and 79.30% source coverage.
