@@ -135,14 +135,22 @@ pub(super) fn sign(
                 .to_vec())
         }
         JwtAlgorithm::Es256 => {
-            let key =
-                p256::ecdsa::SigningKey::from_slice(&field(private, "d")?).map_err(crypto_error)?;
+            let secret = ec_field(private, "d", 32)?;
+            let key = p256::ecdsa::SigningKey::from_slice(&secret).map_err(crypto_error)?;
+            validate_ec_pair(
+                private,
+                key.verifying_key().to_encoded_point(false).as_bytes(),
+            )?;
             let signature: p256::ecdsa::Signature = key.sign_with_rng(&mut OsRng, message);
             Ok(signature.to_bytes().to_vec())
         }
         JwtAlgorithm::Es512 => {
-            let key =
-                p521::ecdsa::SigningKey::from_slice(&field(private, "d")?).map_err(crypto_error)?;
+            let secret = ec_field(private, "d", 66)?;
+            let public = p521::SecretKey::from_slice(&secret)
+                .map_err(crypto_error)?
+                .public_key();
+            validate_ec_pair(private, public.to_encoded_point(false).as_bytes())?;
+            let key = p521::ecdsa::SigningKey::from_slice(&secret).map_err(crypto_error)?;
             let signature: p521::ecdsa::Signature = key.sign_with_rng(&mut OsRng, message);
             Ok(signature.to_bytes().to_vec())
         }
@@ -257,25 +265,48 @@ fn validate_key_metadata(algorithm: JwtAlgorithm, key: &Value, operation: &str) 
     {
         return Err(AuthError::config("Invalid JWK key operations"));
     }
-    let coordinate_length = match algorithm {
-        JwtAlgorithm::EdDsa | JwtAlgorithm::Es256 => Some(32),
-        JwtAlgorithm::Es512 => Some(66),
-        JwtAlgorithm::Rs256 | JwtAlgorithm::Ps256 => None,
-    };
-    if let Some(length) = coordinate_length
-        && (field(key, "x")?.len() != length
-            || (key_type == "EC" && field(key, "y")?.len() != length))
-    {
+    if algorithm == JwtAlgorithm::EdDsa && field(key, "x")?.len() != 32 {
         return Err(AuthError::config("Invalid JWK coordinate length"));
     }
     Ok(())
 }
 
 fn ec_public(key: &Value) -> AuthResult<Vec<u8>> {
+    let width = match key.get("crv").and_then(Value::as_str) {
+        Some("P-256") => 32,
+        Some("P-521") => 66,
+        _ => return Err(AuthError::config("Invalid EC curve")),
+    };
     let mut bytes = vec![4];
-    bytes.extend(field(key, "x")?);
-    bytes.extend(field(key, "y")?);
+    bytes.extend(ec_field(key, "x", width)?);
+    bytes.extend(ec_field(key, "y", width)?);
     Ok(bytes)
+}
+
+fn ec_field(key: &Value, name: &str, width: usize) -> AuthResult<Vec<u8>> {
+    let scalar = field(key, name)?
+        .into_iter()
+        .skip_while(|byte| *byte == 0)
+        .collect::<Vec<_>>();
+    if scalar.len() > width {
+        return Err(AuthError::config(format!(
+            "EC {name} exceeds the curve field width"
+        )));
+    }
+    // WebCrypto imports EC fields as unsigned integers. Omitted and extra
+    // leading zero bytes preserve their value; restore the fixed field width.
+    let mut padded = vec![0; width - scalar.len()];
+    padded.extend(scalar);
+    Ok(padded)
+}
+
+fn validate_ec_pair(private: &Value, derived_public: &[u8]) -> AuthResult<()> {
+    if ec_public(private)? != derived_public {
+        return Err(AuthError::config(
+            "EC private key does not match its public coordinates",
+        ));
+    }
+    Ok(())
 }
 
 fn field(key: &Value, field: &str) -> AuthResult<Vec<u8>> {
@@ -283,7 +314,17 @@ fn field(key: &Value, field: &str) -> AuthResult<Vec<u8>> {
         .get(field)
         .and_then(Value::as_str)
         .ok_or_else(|| AuthError::internal(format!("JWK {field} missing")))?;
-    URL_SAFE_NO_PAD.decode(value).map_err(crypto_error)
+    use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
+    // WebCrypto JWK import allows trailing padding of any length and unused
+    // trailing bits. It rejects all whitespace and the ordinary base64 alphabet.
+    GeneralPurpose::new(
+        &base64::alphabet::URL_SAFE,
+        GeneralPurposeConfig::new()
+            .with_decode_padding_mode(DecodePaddingMode::RequireNone)
+            .with_decode_allow_trailing_bits(true),
+    )
+    .decode(value.trim_end_matches('='))
+    .map_err(crypto_error)
 }
 
 fn encode(bytes: &[u8]) -> String {

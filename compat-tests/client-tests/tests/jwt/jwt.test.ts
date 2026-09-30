@@ -1,7 +1,7 @@
 import { expect } from "bun:test";
 import { createAuthClient } from "better-auth/client";
 import { jwtClient } from "better-auth/client/plugins";
-import { decodeProtectedHeader, importJWK, jwtVerify, type JWK, type JWTPayload } from "jose";
+import { decodeJwt, decodeProtectedHeader, importJWK, jwtVerify, type JWK, type JWTPayload } from "jose";
 import { z } from "zod";
 import { compatScenario } from "../../support/scenario";
 import type { FixtureProfile } from "../../support/profiles";
@@ -173,6 +173,11 @@ compatScenario("JWT trusted server operations preserve explicit claims and rejec
   const noIat = await sign({ sub: "server-subject" });
   const noIatChecked = await verify(noIat.token);
   expect(z.object({ payload: z.record(z.string(), z.unknown()) }).parse(noIatChecked.body).payload).not.toHaveProperty("iat");
+  const falseIat = await sign({ sub: "server-subject", iat: false });
+  const falseIatClaims = z.record(z.string(), z.unknown()).parse(decodeJwt(falseIat.token));
+  expect(falseIatClaims).toEqual({ sub: "server-subject", iat: false, exp: 900, iss: ctx.baseURL, aud: ctx.baseURL });
+  const falseIatRejected = await verify(falseIat.token);
+  expect(falseIatRejected).toMatchObject({ status: 200, body: { payload: null } });
   const relativeStartedAt = Math.floor(Date.now() / 1000);
   const relative = await sign({ sub: "server-subject", exp: "1m" });
   const relativeCompletedAt = Math.floor(Date.now() / 1000);
@@ -181,7 +186,7 @@ compatScenario("JWT trusted server operations preserve explicit claims and rejec
   expect(relativeClaims.payload.exp).toBeGreaterThanOrEqual(relativeStartedAt + 60);
   expect(relativeClaims.payload.exp).toBeLessThanOrEqual(relativeCompletedAt + 60);
   const invalidClaims = [];
-  for (const payload of [{ sub: "server-subject", exp: "invalid" }, { sub: "server-subject", exp: false }, { sub: 123 }, { sub: "server-subject", jti: 123 }, { sub: "server-subject", aud: [ctx.baseURL, 123] }]) {
+  for (const payload of [{ sub: "server-subject", exp: "invalid" }, { sub: "server-subject", exp: false }, { sub: 123 }, { sub: "server-subject", jti: 123 }, { sub: "server-subject", aud: [ctx.baseURL, 123] }, { sub: "server-subject", iat: "1m" }, { sub: "server-subject", iat: "" }]) {
     const response = await ctx.rawRequest({ path: "/__test/jwt", method: "POST", json: { operation: "sign", profile: "jwt-default", payload } });
     expect(response).toEqual({ status: 500, location: null, body: { message: "Internal server error" } });
     invalidClaims.push(response);
@@ -194,6 +199,26 @@ compatScenario("JWT trusted server operations preserve explicit claims and rejec
     rejected.push({ signed, result });
   }
   const parts = explicit.token.split(".");
+  if (!parts[0] || !parts[1] || !parts[2]) throw new Error("compact JWT must contain three nonempty segments");
+  const signature = parts[2];
+  const signatureEncodings = [];
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  const lastIndex = alphabet.indexOf(signature.at(-1) ?? "");
+  for (const [label, encoded, accepted] of [
+    ["proper padding", `${signature}==`, true],
+    ["wrong padding", `${signature}=`, false],
+    ["unused trailing bits", `${signature.slice(0, -1)}${alphabet[lastIndex + 1]}`, true],
+    ["ASCII whitespace", `${signature.slice(0, 20)} \t\n\r\f${signature.slice(20)}== `, true],
+    ["ordinary alphabet", `+${signature.slice(1)}`, false],
+    ["vertical tab", `${signature}\v`, false],
+    ["nonbreaking space", `${signature}\u00a0`, false],
+  ] as const) {
+    const token = `${parts[0]}.${parts[1]}.${encoded}`;
+    const result = await verify(token);
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual(accepted ? checked.body : { payload: null });
+    signatureEncodings.push({ label, token, result });
+  }
   const badSignature = `${parts[0]}.${parts[1]}.${Buffer.from("not-a-signature").toString("base64url")}`;
   const signatureRejected = await verify(badSignature);
   expect(signatureRejected).toMatchObject({ status: 200, body: { payload: null } });
@@ -207,7 +232,7 @@ compatScenario("JWT trusted server operations preserve explicit claims and rejec
     const body: unknown = responseText.length ? JSON.parse(responseText) : null;
     notPublic.push({ status: response.status, body });
   }
-  return { explicit, checked, emptyIssuer, nullish, nullishChecked, noIat, noIatChecked, relative, relativeChecked, invalidClaims, rejected, signatureRejected, issuerRejected, notPublic };
+  return { explicit, checked, emptyIssuer, nullish, nullishChecked, noIat, noIatChecked, falseIat, falseIatClaims, falseIatRejected, relative, relativeChecked, invalidClaims, rejected, signatureEncodings, signatureRejected, issuerRejected, notPublic };
 });
 
 compatScenario("JWT configured issuer audience lifetime and path header branches remain observable", async ctx => {

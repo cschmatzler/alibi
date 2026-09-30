@@ -92,10 +92,22 @@ impl Default for JwtExpiration {
     }
 }
 impl JwtExpiration {
-    fn timestamp(&self, issued_at: f64) -> Value {
+    fn timestamp(&self, issued_at: Option<&Value>) -> Value {
         let timestamp = match self {
             Self::After(duration) => {
-                issued_at + (duration.num_milliseconds() as f64 / 1000.0 + 0.5).floor()
+                let seconds = (duration.num_milliseconds() as f64 / 1000.0 + 0.5).floor();
+                let base = match issued_at {
+                    None | Some(Value::Null) => Utc::now().timestamp() as f64,
+                    Some(Value::Bool(value)) => f64::from(u8::from(*value)),
+                    Some(Value::Number(value)) => value.as_f64().unwrap_or_default(),
+                    Some(value) => {
+                        // toExpJWT uses JavaScript addition before JOSE parses a
+                        // relative NumericDate. Preserve string concatenation,
+                        // including arrays' and objects' primitive conversion.
+                        return json!(format!("{}{seconds}", js_primitive_string(value)));
+                    }
+                };
+                base + seconds
             }
             Self::At(date) => date.timestamp() as f64,
             Self::Numeric(value) => *value as f64,
@@ -309,6 +321,7 @@ impl JwtPlugin {
         };
         let now = Utc::now();
         let live = |key: &&Jwk| key.expires_at.is_none_or(|expiry| expiry > now);
+        let mut minted_unpinned_key = false;
         let mut key = if let Some(id) = &options.signing_key_id {
             let key = match &self.config.keyring {
                 Some(_) => self.keys(request, ctx).await?.into_iter().find(|key| &key.id == id),
@@ -356,10 +369,13 @@ impl JwtPlugin {
                 .cloned()
             {
                 Some(key) => key,
-                None => self.create_jwk(None, request, ctx).await?,
+                None => {
+                    minted_unpinned_key = true;
+                    self.create_jwk(None, request, ctx).await?
+                }
             }
         };
-        if key.expires_at.is_some_and(|expiry| expiry < Utc::now()) {
+        if !minted_unpinned_key && key.expires_at.is_some_and(|expiry| expiry < Utc::now()) {
             if options.signing_key_id.is_some() || options.signing_algorithm.is_some() {
                 return Err(AuthError::config(
                     "signJWT: requested signing key is expired and an explicit kid/alg was provided; not auto-minting a replacement. Rotate the key explicitly.",
@@ -410,12 +426,9 @@ impl JwtPlugin {
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<Map<String, Value>> {
         let config = override_claims.unwrap_or(&self.config.claims);
-        let iat = payload
-            .get("iat")
-            .and_then(Value::as_f64)
-            .unwrap_or_else(|| Utc::now().timestamp() as f64);
         if payload.get("exp").is_none_or(Value::is_null) {
-            let _ = payload.insert("exp".to_owned(), config.expiration.timestamp(iat));
+            let expiration = config.expiration.timestamp(payload.get("iat"));
+            let _ = payload.insert("exp".to_owned(), expiration);
         }
         if payload.get("iss").is_none_or(Value::is_null) {
             let _ = payload.insert(
@@ -497,11 +510,7 @@ impl JwtPlugin {
         let [header, payload, signature] = parts.as_slice() else {
             return Ok(None);
         };
-        let header: Value = serde_json::from_slice(
-            &URL_SAFE_NO_PAD
-                .decode(header)
-                .map_err(|_| AuthError::bad_request("Invalid JWT header"))?,
-        )?;
+        let header: Value = serde_json::from_slice(&decode_compact_part(header, false)?)?;
         let Some(header_object) = header.as_object() else {
             return Ok(None);
         };
@@ -537,17 +546,12 @@ impl JwtPlugin {
             algorithm,
             &public,
             input.as_bytes(),
-            &URL_SAFE_NO_PAD
-                .decode(signature)
-                .map_err(|_| AuthError::bad_request("Invalid JWT signature"))?,
+            &decode_compact_part(signature, true)?,
         )? {
             return Ok(None);
         }
-        let payload: Map<String, Value> = serde_json::from_slice(
-            &URL_SAFE_NO_PAD
-                .decode(payload)
-                .map_err(|_| AuthError::bad_request("Invalid JWT payload"))?,
-        )?;
+        let payload: Map<String, Value> =
+            serde_json::from_slice(&decode_compact_part(payload, true)?)?;
         let now = Utc::now().timestamp();
         for field in ["iat", "exp", "nbf"] {
             if payload.get(field).is_some_and(|value| !value.is_number()) {
@@ -666,6 +670,61 @@ fn js_truthy(value: &Value) -> bool {
         Value::String(value) => !value.is_empty(),
         Value::Array(_) | Value::Object(_) => true,
     }
+}
+
+fn js_primitive_string(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_owned(),
+        Value::String(value) => value.clone(),
+        Value::Bool(value) => value.to_string(),
+        Value::Number(value) => value.as_f64().unwrap_or_default().to_string(),
+        Value::Array(values) => values
+            .iter()
+            .map(|value| {
+                if value.is_null() {
+                    String::new()
+                } else {
+                    js_primitive_string(value)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        Value::Object(_) => "[object Object]".to_owned(),
+    }
+}
+
+fn decode_compact_part(value: &str, allow_whitespace: bool) -> AuthResult<Vec<u8>> {
+    use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
+    // Bun's JOSE decoder accepts these five ASCII whitespace characters and
+    // unused trailing bits, while requiring the exact optional padding count.
+    let bytes = value
+        .bytes()
+        .filter(|byte| !allow_whitespace || !matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0c))
+        .collect::<Vec<_>>();
+    let end = bytes
+        .iter()
+        .position(|byte| *byte == b'=')
+        .unwrap_or(bytes.len());
+    let (encoded, padded) = bytes
+        .split_at_checked(end)
+        .ok_or_else(|| AuthError::bad_request("Invalid JWT base64url encoding"))?;
+    let padding = padded.len();
+    if padding > 0
+        && (padding > 2
+            || !padded.iter().all(|byte| *byte == b'=')
+            || end % 4 == 0
+            || bytes.len() % 4 != 0)
+    {
+        return Err(AuthError::bad_request("Invalid JWT base64url encoding"));
+    }
+    GeneralPurpose::new(
+        &base64::alphabet::URL_SAFE,
+        GeneralPurposeConfig::new()
+            .with_decode_padding_mode(DecodePaddingMode::RequireNone)
+            .with_decode_allow_trailing_bits(true),
+    )
+    .decode(encoded)
+    .map_err(|_| AuthError::bad_request("Invalid JWT base64url encoding"))
 }
 
 fn normalize_signing_claims(payload: &mut Map<String, Value>) -> AuthResult<()> {
