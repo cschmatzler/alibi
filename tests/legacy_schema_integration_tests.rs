@@ -585,17 +585,31 @@ fn test_session_cookie(token: &str) -> String {
 #[tokio::test]
 async fn numeric_user_schema_cleans_team_memberships_without_a_bundled_user_foreign_key()
 -> Result<(), Box<dyn std::error::Error>> {
-    use better_auth_core::store::{MemberStore, OrganizationStore, TeamStore, UserStore};
+    use better_auth_core::store::{
+        MemberStore, OrganizationStore, TeamStore, UserStore, WalletAddressStore,
+    };
     use better_auth_core::types::{
-        AddTeamMemberResult, CreateMember, CreateOrganization, CreateTeam,
+        AddTeamMemberResult, CreateMember, CreateOrganization, CreateTeam, CreateWalletAddress,
     };
     let database = test_database().await;
     better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
-    let store = SeaOrmStore::<LegacySchema>::new(test_config(), database);
+    let store = SeaOrmStore::<LegacySchema>::new(test_config(), database.clone());
     let user = store
         .create_user(CreateUser::new().with_email("numeric-team@example.com"))
         .await?;
     assert_eq!(user.id, 1);
+    let wallet_address = "0x52908400098527886E0F7030069857D2E4169EE7";
+    let wallet = store
+        .create_wallet_address(CreateWalletAddress::new("0001", wallet_address, 1.0))
+        .await?;
+    assert_eq!(wallet.user_id, "1");
+    let other_user = store
+        .create_user(CreateUser::new().with_email("numeric-other@example.com"))
+        .await?;
+    let other_wallet = store
+        .create_wallet_address(CreateWalletAddress::new("2", wallet_address, 100.0))
+        .await?;
+    assert_eq!(other_user.id, 2);
     let first_org = store
         .create_organization(CreateOrganization::new("Numeric first", "numeric-first"))
         .await?;
@@ -640,6 +654,24 @@ async fn numeric_user_schema_cleans_team_memberships_without_a_bundled_user_fore
             .map(|team| team.member_count),
         Some(0)
     );
+    let _ = database.execute_unprepared("CREATE TRIGGER numeric_wallet_delete_abort BEFORE DELETE ON users BEGIN SELECT RAISE(ABORT,'numeric wallet deletion veto'); END").await?;
+    assert!(store.delete_user("0001").await.is_err());
+    assert!(store.get_user_by_id("1").await?.is_some());
+    assert_eq!(
+        store.get_wallet_address(wallet_address, Some(1.0)).await?,
+        Some(wallet)
+    );
+    assert!(store.get_team_member(&second.id, "1").await?.is_some());
+    assert_eq!(
+        store
+            .get_team(None, &second.id)
+            .await?
+            .map(|team| team.member_count),
+        Some(1)
+    );
+    let _ = database
+        .execute_unprepared("DROP TRIGGER numeric_wallet_delete_abort")
+        .await?;
     store.delete_user("0001").await?;
     assert!(store.get_user_by_id("1").await?.is_none());
     assert!(store.list_user_teams("1").await?.is_empty());
@@ -651,6 +683,17 @@ async fn numeric_user_schema_cleans_team_memberships_without_a_bundled_user_fore
             .map(|team| team.member_count),
         Some(0)
     );
+    assert!(
+        store
+            .get_wallet_address(wallet_address, Some(1.0))
+            .await?
+            .is_none()
+    );
+    assert_eq!(
+        store.get_wallet_address(wallet_address, None).await?,
+        Some(other_wallet)
+    );
+    assert!(store.get_user_by_id("2").await?.is_some());
     Ok(())
 }
 

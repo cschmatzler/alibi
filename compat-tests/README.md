@@ -147,3 +147,11 @@ scopes, member assignments, API-key authority, and controlled overlapping
 permission-cache reloads. See the [dynamic-role implementation audit](audits/organization-dynamic-roles.md)
 for the configuration contracts, source quirks, review evidence, and remaining
 schema and integration boundaries.
+
+SIWE checks use the official `siweClient`, independent signed EIP-191 messages,
+and a local ERC-1271 JSON-RPC provider. They compare wallet/account/session
+ownership, nonce expiry and single use, email reservation, callback context,
+ENS behavior, bans, and overlapping verification. Run
+`devenv shell -- cargo test --test client_compat_tests siwe_client_compat -- --ignored --nocapture`.
+The [SIWE implementation audit](audits/siwe.md) records the pinned runtime's
+global nonce contract and remaining storage/schema/provider boundaries.

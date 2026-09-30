@@ -65,18 +65,20 @@ pub use plugin::{
 pub use schema::AuthSchema;
 pub use session::SessionManager;
 pub use store::{
-    AuthStore, AuthTransaction, CacheAdapter, ConsumeApiKeyResult, MemoryCacheAdapter, transaction,
+    AuthStore, AuthTransaction, CacheAdapter, ConsumeApiKeyResult, MemoryCacheAdapter,
+    WalletAddressStore, transaction,
 };
 pub use types::{
     ApiKey, AuthRequest, AuthResponse, CodeMessageResponse, CreateAccount, CreateApiKey,
     CreateDeviceCode, CreateInvitation, CreateMember, CreateOrganization, CreatePasskey,
-    CreateSession, CreateTeam, CreateTwoFactor, CreateUser, CreateVerification, DeviceCode,
-    ErrorCodeMessageResponse, ErrorMessageResponse, Headers, HealthCheckResponse, HttpMethod,
-    Invitation, InvitationStatus, ListUsersParams, Member, OkResponse, Organization,
-    OrganizationPermissions, Passkey, RateLimitErrorResponse, RequestMeta, StatusMessageResponse,
-    StatusResponse, SuccessMessageResponse, SuccessResponse, Team, TeamMember, TwoFactor,
-    UpdateAccount, UpdateApiKey, UpdateDeviceCode, UpdateOrganization, UpdatePasskey, UpdateTeam,
-    UpdateUser, UpdateUserRequest, UpdateUserResponse, UpdateVerification, ValidationErrorResponse,
+    CreateSession, CreateTeam, CreateTwoFactor, CreateUser, CreateVerification,
+    CreateWalletAddress, DeviceCode, ErrorCodeMessageResponse, ErrorMessageResponse, Headers,
+    HealthCheckResponse, HttpMethod, Invitation, InvitationStatus, ListUsersParams, Member,
+    OkResponse, Organization, OrganizationPermissions, Passkey, RateLimitErrorResponse,
+    RequestMeta, StatusMessageResponse, StatusResponse, SuccessMessageResponse, SuccessResponse,
+    Team, TeamMember, TwoFactor, UpdateAccount, UpdateApiKey, UpdateDeviceCode, UpdateOrganization,
+    UpdatePasskey, UpdateTeam, UpdateUser, UpdateUserRequest, UpdateUserResponse,
+    UpdateVerification, ValidationErrorResponse, WalletAddress,
 };
 pub use utils::password::{PasswordHasher, ScryptHasher, hash_password, verify_password};
 #[doc(hidden)]

@@ -134,6 +134,24 @@ pub fn core_fields(role: EntityRole) -> &'static [FieldDef] {
 
 static PLUGINS: &[PluginSchema] = &[
     PluginSchema {
+        name: "siwe",
+        user_fields: &[],
+        session_fields: &[],
+        extra_entities: &[ExtraEntitySchema {
+            mod_name: "wallet_address",
+            table_name: "wallet_address",
+            role: None,
+            fields: &[
+                pk!("id", "String"),
+                f!("user_id", "String"),
+                f!("address", "String"),
+                f!("chain_id", "f64"),
+                f!("is_primary", "bool"),
+                f!("created_at", "DateTimeUtc"),
+            ],
+        }],
+    },
+    PluginSchema {
         name: "jwt",
         user_fields: &[],
         session_fields: &[],

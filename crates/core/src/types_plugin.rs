@@ -26,6 +26,39 @@ use std::borrow::Cow;
 
 use crate::entity::{AuthApiKey, AuthPasskey, AuthTwoFactor};
 
+/// An address linked to a SIWE identity on one chain.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WalletAddress {
+    pub id: String,
+    pub user_id: String,
+    pub address: String,
+    /// Upstream uses a JavaScript Number, which may exceed u64's range.
+    pub chain_id: f64,
+    pub is_primary: bool,
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateWalletAddress {
+    pub user_id: String,
+    pub address: String,
+    pub chain_id: f64,
+    pub is_primary: bool,
+}
+
+impl CreateWalletAddress {
+    pub fn new(user_id: impl Into<String>, address: impl Into<String>, chain_id: f64) -> Self {
+        Self {
+            user_id: user_id.into(),
+            address: address.into(),
+            chain_id,
+            is_primary: false,
+        }
+    }
+}
+
 /// Two-factor authentication response shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TwoFactor {

@@ -20,10 +20,14 @@ mod organization_roles;
 mod organizations;
 mod passkeys;
 mod sessions;
+mod siwe_wallets;
 mod teams;
 mod two_factor;
 mod users;
 mod verifications;
+#[cfg(test)]
+mod wallet_tests;
+mod wallets;
 
 #[doc(hidden)]
 pub mod __private_test_support {

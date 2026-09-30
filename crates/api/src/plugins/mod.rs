@@ -15,6 +15,7 @@ pub mod organization;
 pub mod passkey;
 pub mod password_management;
 pub mod session_management;
+pub mod siwe;
 pub(crate) mod token_crypto;
 pub mod two_factor;
 pub mod user_management;
@@ -199,6 +200,7 @@ pub use password_management::{
     PasswordManagementConfig, PasswordManagementPlugin, SendResetPassword,
 };
 pub use session_management::SessionManagementPlugin;
+pub use siwe::{SiweConfig, SiwePlugin};
 pub use two_factor::{SendTwoFactorOtp, TwoFactorConfig, TwoFactorPlugin};
 pub use user_management::{
     ChangeEmailConfig, DeleteUserConfig, UserManagementConfig, UserManagementPlugin,

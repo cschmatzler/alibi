@@ -9,6 +9,8 @@ pub(crate) mod plugin_hooks;
 pub use org_extensions::{OrganizationRoleStore, TeamStore, team_membership_key};
 mod jwks;
 pub use jwks::JwkStore;
+mod wallets;
+pub use wallets::WalletAddressStore;
 
 use crate::error::{AuthError, AuthResult};
 use crate::schema::AuthSchema;
@@ -458,6 +460,7 @@ pub trait AuthStore<S: AuthSchema>:
     + InvitationStore
     + TeamStore
     + OrganizationRoleStore
+    + WalletAddressStore
     + TwoFactorStore
     + ApiKeyStore
     + PasskeyStore
@@ -481,6 +484,7 @@ where
         + InvitationStore
         + TeamStore
         + OrganizationRoleStore
+        + WalletAddressStore
         + TwoFactorStore
         + ApiKeyStore
         + PasskeyStore

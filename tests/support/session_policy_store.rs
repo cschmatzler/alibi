@@ -140,6 +140,7 @@ impl JwkStore for PolicyStore {}
 impl TeamStore for PolicyStore {}
 #[async_trait]
 impl OrganizationRoleStore for PolicyStore {}
+impl better_auth_core::store::WalletAddressStore for PolicyStore {}
 
 #[async_trait]
 impl SessionStore<Schema> for PolicyStore {

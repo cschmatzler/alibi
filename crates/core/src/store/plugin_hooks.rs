@@ -643,3 +643,17 @@ impl<S: AuthSchema> JwkStore for PluginStore<S> {
         self.inner.create_jwk(_data).await
     }
 }
+
+#[async_trait]
+impl<S: AuthSchema> WalletAddressStore for PluginStore<S> {
+    async fn get_wallet_address(
+        &self,
+        address: &str,
+        chain_id: Option<f64>,
+    ) -> AuthResult<Option<WalletAddress>> {
+        self.inner.get_wallet_address(address, chain_id).await
+    }
+    async fn create_wallet_address(&self, data: CreateWalletAddress) -> AuthResult<WalletAddress> {
+        self.inner.create_wallet_address(data).await
+    }
+}

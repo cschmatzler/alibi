@@ -4,6 +4,7 @@ import { Database } from "bun:sqlite";
 import { passkey } from "@better-auth/passkey";
 import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
+import { createSiweFixture } from "./siwe-fixture";
 import { getMigrations } from "better-auth/db/migration";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { apiKey } from "@better-auth/api-key";
@@ -379,9 +380,11 @@ const authOptions = {
 
 const { runMigrations } = await getMigrations(authOptions);
 await runMigrations();
+const siweFixture = await createSiweFixture(database, authOptions, `http://localhost:${PORT}`);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
+for (const [path, instance] of siweFixture.profiles) verificationProfiles.set(path, instance);
 for (const name of ["email-verification-required", "email-verification-no-signup-mail", "email-verification-failing-notifications"]) {
   const path = `/__test/profiles/${name}/api/auth`;
   const instance = betterAuth({
@@ -715,6 +718,9 @@ const server = Bun.serve({
       const teamResponse = await teamFixture(request, url);
       if (teamResponse) return teamResponse;
 
+      const siweResponse = await siweFixture.handle(request);
+      if (siweResponse) return siweResponse;
+
       if (url.pathname === "/__test/lifecycle" && request.method === "GET") {
         const email = url.searchParams.get("email");
         const user = email ? await authContext.internalAdapter.findUserByEmail(email, {includeAccounts:true}) : null;
@@ -853,6 +859,7 @@ const server = Bun.serve({
         return jsonResponse({message:"unknown server operation"},{status:400});
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
+        siweFixture.reset();
         await resetDatabaseState();
         emailOtpOutbox.clear();
         magicLinkOutbox.clear();

@@ -34,7 +34,7 @@ use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_seaorm::sea_orm::{DatabaseConnection, DbErr, EntityTrait};
 use better_auth_seaorm::store::entities::{
     account, api_key, device_code, invitation, member, organization, passkey, session, two_factor,
-    user, verification,
+    user, verification, wallet_address,
 };
 use better_auth_seaorm::SeaOrmStore;
 use chrono::{DateTime, Utc};
@@ -53,6 +53,7 @@ mod organization_timestamp_fixture;
 mod otp_profiles;
 mod parity_controls;
 mod session_profiles;
+mod siwe_fixture;
 mod sqlite_fixture;
 mod verification_profiles;
 
@@ -224,6 +225,7 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
     better_auth_seaorm::store::entities::jwk::Entity::delete_many()
         .exec(database)
         .await?;
+    let _ = wallet_address::Entity::delete_many().exec(database).await?;
     device_code::Entity::delete_many().exec(database).await?;
     passkey::Entity::delete_many().exec(database).await?;
     api_key::Entity::delete_many().exec(database).await?;
@@ -627,6 +629,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         verification_profiles::router(&config, database.clone(), verification_outbox.clone())
             .await?;
     let session_profile_router = session_profiles::router(&config, database.clone()).await?;
+    let siwe_state = siwe_fixture::state();
+    let siwe_profile_router =
+        siwe_fixture::router(&config, database.clone(), siwe_state.clone()).await?;
     let store = SeaOrmStore::<TestSchema>::new(config.clone(), database);
     let two_factor_plugin =
         TwoFactorPlugin::new().custom_send_otp(Arc::new(CompatTwoFactorOtpSender {
@@ -983,6 +988,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             post(move || {
                 let otp_outbox = otp_outbox_for_reset.clone();
                 let magic_outbox = magic_outbox_for_reset.clone();
+                let siwe_state = siwe_state.clone();
                 let reset_outbox = reset_outbox_for_reset.clone();
                 let verification_outbox = verification_outbox_for_reset.clone();
                 let change_email_outbox = change_email_outbox_for_reset.clone();
@@ -994,6 +1000,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let social_id_token_valid = social_id_token_valid_for_reset.clone();
                 let database = database_for_reset.clone();
                 async move {
+                    siwe_fixture::reset(&siwe_state).await;
                     if let Err(error) = reset_database_state(&database).await {
                         return (
                             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -1558,7 +1565,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(verification_profile_router)
         .merge(session_profile_router)
         .merge(otp_router)
-        .merge(magic_router);
+        .merge(magic_router)
+        .merge(siwe_profile_router);
 
     let addr = format!("0.0.0.0:{port}");
     println!("[rust-server] Listening on http://localhost:{port}");
