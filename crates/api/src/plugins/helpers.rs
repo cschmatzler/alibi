@@ -303,6 +303,11 @@ pub async fn issue_user_session_with_overrides<S: better_auth_core::AuthSchema>(
     current_session: &impl better_auth_core::AuthSession,
 ) -> Result<IssuedSession<S>, SessionIssueError> {
     let overrides = SessionOverrides {
+        additional_fields: current_session
+            .additional_fields()
+            .into_iter()
+            .map(|(name, value)| (name, better_auth_core::utils::json::JsValue::from(value)))
+            .collect(),
         impersonated_by: current_session.impersonated_by().map(str::to_string),
         active_organization_id: current_session.active_organization_id().map(str::to_string),
         active_team_id: current_session.active_team_id().map(str::to_string),
@@ -311,6 +316,7 @@ pub async fn issue_user_session_with_overrides<S: better_auth_core::AuthSchema>(
 }
 
 struct SessionOverrides {
+    additional_fields: better_auth_core::field_policy::FieldValues,
     impersonated_by: Option<String>,
     active_organization_id: Option<String>,
     active_team_id: Option<String>,
@@ -364,6 +370,7 @@ async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
         Some(overrides) => {
             ctx.database
                 .create_session(better_auth_core::CreateSession {
+                    additional_fields: overrides.additional_fields,
                     token: None,
                     user_id: user.id().to_string(),
                     expires_at: Utc::now() + ctx.config.session.expires_in,
