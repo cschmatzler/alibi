@@ -105,7 +105,7 @@ Further capabilities remain explicit: passwordless enable/disable/URI policy;
 custom OTP/backup storage and configurable generation; OTP first-enrollment
 response/token behavior and malformed OTP counters; pending backup
 disableSession semantics; trust-cookie configuration; extreme Date values;
-custom session fields from the separately coordinated session contract. This
+wider custom-session storage modes. This
 slice does not claim those remaining 1.7.6 branches complete.
 
 Independent JWT-owner review traced the exact source counter, lock, attempt
@@ -115,5 +115,9 @@ proved repairs. Genuine same-message 403 errors remain explicit. The coordinator
 preserves the merged disable-cookie authority and trusted replacement-session
 fields, retains pending identifiers losslessly in the existing token comparison
 graph, and appends required configuration/state evidence without removing
-earlier requirements. Integrated canonical validation is pending. Factor secret
+earlier requirements. Integrated canonical validation passes: 292 SDK scenarios / 9,344 assertions,
+37 harness tests / 210 assertions, two Chromium tests / 22 assertions and 79.29%
+source lines (25,132 / 31,698). Enrollment and skip-enrollment flows additionally
+reject consumed backup-code replay with unchanged real factor rows, preserving
+both required rejection entries. Factor secret
 and backup encryption format interoperability remains a confirmed separate gap.

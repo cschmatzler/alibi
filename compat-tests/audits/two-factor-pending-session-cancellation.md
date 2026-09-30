@@ -44,7 +44,9 @@ genuine Forbidden controls pass
 pass afterward (`/tmp/two-factor-pending-cancel-sdk-after.log`). The ordinary
 SDK responses and transport remain compared without exceptions. Private
 generated challenge identifiers are used to query the real consumed rows;
-their dynamic values are not returned as cross-runtime observations.
+the coordinator retains their actual values as token identities and verifies the
+after-consumption lookup uses the same identifier. No identifier is discarded
+from the comparison graph.
 
 The existing native hook/transaction tests already own semantic cancellation,
 unchanged default 403, propagation and rollback. Per-factor copies at another
