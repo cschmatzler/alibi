@@ -1032,3 +1032,280 @@ async fn disable_preserves_persisted_extensions_and_removes_all_matching_trust_r
             .is_none()
     );
 }
+
+#[tokio::test]
+async fn otp_async_codec_failures_consume_only_their_stage_and_delivery_rejection_retains_rotation_state()
+ {
+    struct Callback {
+        fail_store: bool,
+        fail_compare: bool,
+        observations: Arc<std::sync::Mutex<Vec<String>>>,
+        delivered: Arc<std::sync::Mutex<Option<String>>>,
+    }
+    #[async_trait]
+    impl TwoFactorOtpHasher for Callback {
+        async fn hash(&self, value: &str) -> AuthResult<String> {
+            let mut observations = self.observations.lock().unwrap();
+            observations.push(format!("hash:{value}"));
+            if self.fail_store || (self.fail_compare && observations.len() > 2) {
+                return Err(AuthError::Upstream {
+                    status: 400,
+                    code: "CODEC_REJECTED",
+                    message: "Configured codec rejected",
+                });
+            }
+            Ok(format!("stored-{value}"))
+        }
+    }
+    #[async_trait]
+    impl SendTwoFactorOtp for Callback {
+        async fn send(&self, _user: &UserView, otp: &str) -> AuthResult<()> {
+            self.observations
+                .lock()
+                .unwrap()
+                .push(format!("send:{otp}"));
+            *self.delivered.lock().unwrap() = Some(otp.to_owned());
+            Err(AuthError::bad_request("Configured async delivery rejected"))
+        }
+    }
+    for (fail_store, fail_compare) in [(true, false), (false, true), (false, false)] {
+        let (mut ctx, user, original) =
+            create_test_context_with_credential_user("codec@fixture.test", false).await;
+        ctx.database.delete_session(&original.token).await.unwrap();
+        let session = ctx
+            .database
+            .create_session(better_auth_core::CreateSession {
+                additional_fields: Default::default(),
+                token: None,
+                user_id: user.id.clone(),
+                expires_at: original.expires_at,
+                ip_address: Some("127.0.0.8".into()),
+                user_agent: Some("otp-agent".into()),
+                active_organization_id: Some("otp-org".into()),
+                active_team_id: Some("otp-team".into()),
+                impersonated_by: Some("otp-admin".into()),
+            })
+            .await
+            .unwrap();
+        let observations = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let delivered = Arc::new(std::sync::Mutex::new(None));
+        let callback = Arc::new(Callback {
+            fail_store,
+            fail_compare,
+            observations: observations.clone(),
+            delivered: delivered.clone(),
+        });
+        let plugin = TwoFactorPlugin::with_config(TwoFactorConfig {
+            send_otp: Some(callback.clone()),
+            otp_storage: TwoFactorOtpStorage::CustomHash(callback),
+            ..Default::default()
+        });
+        let mut init =
+            better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+        plugin.on_init(&mut init).await.unwrap();
+        crate::plugins::OrganizationPlugin::with_config(
+            crate::plugins::organization::OrganizationConfig {
+                teams: crate::plugins::organization::TeamsConfig {
+                    enabled: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .on_init(&mut init)
+        .await
+        .unwrap();
+        crate::plugins::AdminPlugin::new()
+            .on_init(&mut init)
+            .await
+            .unwrap();
+
+        init.register_user_update_transform(|_, mut update| {
+            if update.two_factor_enabled == Some(true) {
+                update.name = Some("OTP Hook Owner".into());
+            }
+            Ok(update)
+        });
+        ctx.database = init.database_with_registered_transforms();
+        let parts = init.into_parts();
+        ctx.metadata = parts.metadata;
+        ctx.extensions = parts.extensions;
+
+        let identifier = format!("2fa-otp-{}!{}", user.id, session.id);
+        let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/send-otp");
+        request.headers.insert(
+            "cookie".into(),
+            create_session_cookie(&session.token, &ctx.config)
+                .split(';')
+                .next()
+                .unwrap()
+                .into(),
+        );
+        request.body = Some(b"{}".to_vec());
+        let result = plugin.on_request(&request, &ctx).await;
+        if fail_store {
+            assert!(matches!(
+                result,
+                Err(AuthError::Upstream {
+                    code: "CODEC_REJECTED",
+                    ..
+                })
+            ));
+            assert!(delivered.lock().unwrap().is_none());
+            assert!(
+                ctx.database
+                    .get_latest_verification_by_identifier(&identifier)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        } else {
+            assert_eq!(
+                result.unwrap().unwrap().status,
+                200,
+                "async delivery failure must retain issued state"
+            );
+            let otp = delivered
+                .lock()
+                .unwrap()
+                .clone()
+                .expect("actual callback delivery");
+            let stored = ctx
+                .database
+                .get_latest_verification_by_identifier(&identifier)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(stored.value, format!("stored-{otp}:0"));
+            request.path = "/two-factor/verify-otp".into();
+            request.body = Some(serde_json::to_vec(&serde_json::json!({"code":otp})).unwrap());
+            let result = plugin.on_request(&request, &ctx).await;
+            assert!(
+                ctx.database
+                    .get_latest_verification_by_identifier(&identifier)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            if fail_compare {
+                assert!(matches!(
+                    result,
+                    Err(AuthError::Upstream {
+                        code: "CODEC_REJECTED",
+                        ..
+                    })
+                ));
+                assert!(
+                    !ctx.database
+                        .get_user_by_id(&user.id)
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .two_factor_enabled()
+                );
+                assert!(
+                    ctx.database
+                        .get_session(&session.token)
+                        .await
+                        .unwrap()
+                        .is_some()
+                );
+            } else {
+                let response = result.unwrap().unwrap();
+                assert_eq!(response.status, 200);
+                let payload: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+                assert_eq!(payload["user"]["name"], "OTP Hook Owner");
+                assert_eq!(payload["user"]["twoFactorEnabled"], true);
+                let token = payload["token"].as_str().unwrap();
+                assert_ne!(token, session.token);
+                let new = ctx.database.get_session(token).await.unwrap().unwrap();
+                assert_eq!(new.user_id, session.user_id);
+                assert_eq!(new.ip_address, session.ip_address);
+                assert_eq!(new.user_agent, session.user_agent);
+                assert_eq!(new.active_organization_id, session.active_organization_id);
+                assert_eq!(new.active_team_id, session.active_team_id);
+                assert_eq!(new.impersonated_by, session.impersonated_by);
+                assert!(
+                    ctx.database
+                        .get_session(&session.token)
+                        .await
+                        .unwrap()
+                        .is_none()
+                );
+                let header = response.headers.get_all("Set-Cookie").next().unwrap();
+                assert_eq!(
+                    better_auth_core::utils::cookie_utils::verify_cookie_value(
+                        &cookie_value(header),
+                        &ctx.config.secret
+                    )
+                    .as_deref(),
+                    Some(token)
+                );
+            }
+            assert_eq!(
+                observations.lock().unwrap().as_slice(),
+                &[
+                    format!("hash:{otp}"),
+                    format!("send:{otp}"),
+                    format!("hash:{otp}")
+                ]
+            );
+        }
+        assert!(
+            ctx.database
+                .get_two_factor_by_user_id(&user.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+}
+
+#[tokio::test]
+async fn otp_enable_without_delivery_checks_password_then_rejects_without_mutating_the_owner() {
+    let (ctx, user, session) =
+        create_test_context_with_credential_user("disabled-otp@fixture.test", false).await;
+    let plugin = TwoFactorPlugin::new();
+    let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
+    request.headers.insert(
+        "cookie".into(),
+        create_session_cookie(&session.token, &ctx.config)
+            .split(';')
+            .next()
+            .unwrap()
+            .into(),
+    );
+    request.body = Some(br#"{"password":"wrong","method":"otp"}"#.to_vec());
+    let wrong = plugin.on_request(&request, &ctx).await.unwrap_err();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&wrong.to_auth_response().body).unwrap(),
+        serde_json::json!({"message":"Invalid password","code":"INVALID_PASSWORD"})
+    );
+    request.body = Some(br#"{"password":"password123","method":"otp"}"#.to_vec());
+    assert!(matches!(
+        plugin.on_request(&request, &ctx).await,
+        Err(AuthError::Upstream {
+            status: 400,
+            code: "OTP_NOT_CONFIGURED",
+            message: "OTP is not available"
+        })
+    ));
+    assert!(
+        !ctx.database
+            .get_user_by_id(&user.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .two_factor_enabled()
+    );
+    assert!(
+        ctx.database
+            .get_two_factor_by_user_id(&user.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let sessions = ctx.database.get_user_sessions(&user.id).await.unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].token, session.token);
+}

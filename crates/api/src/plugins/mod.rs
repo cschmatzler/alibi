@@ -204,7 +204,10 @@ pub use password_management::{
 };
 pub use session_management::SessionManagementPlugin;
 pub use siwe::{SiweConfig, SiwePlugin};
-pub use two_factor::{SendTwoFactorOtp, TwoFactorConfig, TwoFactorPlugin};
+pub use two_factor::{
+    SendTwoFactorOtp, TwoFactorConfig, TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage,
+    TwoFactorPlugin,
+};
 pub use user_management::{
     ChangeEmailConfig, DeleteUserConfig, UserManagementConfig, UserManagementPlugin,
 };

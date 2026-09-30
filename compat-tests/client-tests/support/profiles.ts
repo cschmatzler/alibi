@@ -2,6 +2,7 @@
 export type FixtureProfile =
   | "org-creation-denied" | "org-creation-limit" | "org-creation-negative" | "org-creation-infinity" | "org-creation-nan" | "org-creation-callback" | "org-creation-founder" | "org-creation-empty-role"
   | "multi-session" | "multi-session-limited"
+  | "two-factor-otp-plain" | "two-factor-otp-hashed" | "two-factor-otp-encrypted" | "two-factor-otp-custom-hash" | "two-factor-otp-custom-cipher"
   | "two-factor-pending-session-cancel" | "two-factor-pending-session-forbidden"
   | "two-factor-skip-session-cancel" | "two-factor-skip-session-forbidden"
   | "two-factor-skip-user-hook"
