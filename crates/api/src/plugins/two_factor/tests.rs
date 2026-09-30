@@ -478,6 +478,7 @@ async fn disable_preserves_persisted_extensions_and_removes_all_matching_trust_r
             user_id: user.id.clone(),
             secret: "stored-secret".to_owned(),
             backup_codes: "stored-codes".to_owned(),
+            ..Default::default()
         })
         .await
         .unwrap();
