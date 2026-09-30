@@ -1,3 +1,7 @@
+import { Database } from "bun:sqlite";
+import { betterAuth } from "better-auth";
+import { apiKey } from "@better-auth/api-key";
+import { getMigrations } from "better-auth/db/migration";
 import { createHash } from "node:crypto";
 import { expect, test } from "bun:test";
 import { generateKeyPairSync, sign } from "node:crypto";
@@ -342,4 +346,39 @@ test("computed device session TTL permits only the proved floor boundary",()=>{
   const unproved = compareValues({ metadata: left.persisted, issued: left.issued }, { metadata: right.persisted, issued: right.issued }, clocks);
   expect(unproved.some(difference => difference.path === "issued.expires_in")).toBe(true);
 
+});
+
+
+test("actual custom API-key generators preserve observational prefix relationships", async () => {
+  async function issue(baseURL: string, prefixed: boolean) {
+    const startedAt = Date.now();
+    const database = new Database(":memory:");
+    const secret = prefixed ? "raw_abcdefghijklmnop" : "😀abcdefghijklmnop";
+    const auth = betterAuth({
+      baseURL, secret: "generator-harness-application-secret32", database,
+      emailAndPassword: { enabled: true }, rateLimit: { enabled: false },
+      plugins: [apiKey({ defaultPrefix: "raw_", startingCharactersConfig: {charactersLength: 2}, rateLimit: {enabled: false}, customKeyGenerator: async () => secret })],
+    });
+    await (await getMigrations(auth.options)).runMigrations();
+    const owner = await auth.api.signUpEmail({body: {email: "generator@harness.local", name: "Owner", password: "password123"}});
+    const issued = await auth.api.createApiKey({body: {userId: owner.user.id, name: "application"}});
+    // The actual creation response is backed by its real persisted SQLite row.
+    const stored = database.query('SELECT "referenceId", prefix, start FROM apikey WHERE id = ?').get(issued.id) as {referenceId:string;prefix:string;start:string};
+    expect(stored).toEqual({referenceId: owner.user.id, prefix: "raw_", start: secret.substring(0,2)});
+    expect(issued.key).toBe(secret);expect(issued.prefix).toBe("raw_");expect(issued.start).toBe(secret.substring(0,2));
+    database.close();
+    return {issued, startedAt, finishedAt: Date.now()};
+  }
+  const left = await issue(context.leftBaseURL, false), right = await issue(context.rightBaseURL, false);
+  const clocks = {...context, leftStartedAt: left.startedAt, leftFinishedAt:left.finishedAt,rightStartedAt:right.startedAt,rightFinishedAt:right.finishedAt};
+  expect(compareValues(left.issued, right.issued, clocks)).toEqual([]);
+  const prefixedLeft = await issue(context.leftBaseURL, true), prefixedRight = await issue(context.rightBaseURL, true);
+  const prefixClocks = {...context,leftStartedAt:prefixedLeft.startedAt,leftFinishedAt:prefixedLeft.finishedAt,rightStartedAt:prefixedRight.startedAt,rightFinishedAt:prefixedRight.finishedAt};
+  expect(compareValues(prefixedLeft.issued, prefixedRight.issued, prefixClocks)).toEqual([]);
+  const missingPrefix = {...prefixedRight.issued,key: "bad_abcdefghijklmnop",start:"ba"};
+  expect(compareValues(prefixedLeft.issued,missingPrefix,prefixClocks)).toContainEqual({path:"key",reason:"API key prefix relationship differs"});
+  const wrongPrefix = {...right.issued,prefix:"other_"};
+  expect(compareValues(left.issued,wrongPrefix,clocks)).toContainEqual({path:"prefix",reason:"value or type differs"});
+  expect(compareValues(left.issued,{...right.issued,key:"raw_abcdefghijklmn",start:"ra"},clocks)).toContainEqual({path:"key",reason:"API key prefix relationship differs"});
+  expect(compareValues(left.issued,{...right.issued,start:"xx"},clocks)).toContainEqual({path:"start",reason:"API key stored-prefix relationship differs"});
 });

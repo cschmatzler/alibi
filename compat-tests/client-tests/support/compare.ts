@@ -278,9 +278,9 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
         }
         else if (apiKey && childKey === "key" && typeof a.key === "string" && typeof b.key === "string") {
           if (a.key.length !== b.key.length) fail(childPath, "API key length differs");
-          for (const row of [a,b]) {
-            if (typeof row.prefix === "string" && typeof row.key === "string" && !row.key.startsWith(row.prefix)) fail(childPath, "API key prefix relationship differs");
-          }
+          // Application generators own the full key and need not prepend prefix.
+          // Retain the relationship observed in the source, including its absence.
+          if (typeof a.prefix !== typeof b.prefix || (typeof a.prefix === "string" && typeof b.prefix === "string" && a.key.startsWith(a.prefix) !== b.key.startsWith(b.prefix))) fail(childPath, "API key prefix relationship differs");
           identity(a.key,b.key,childPath,"api-key");
         }
         else if (apiKey && childKey === "start" && typeof a.start === "string" && typeof b.start === "string" && (issuedLeft !== undefined || issuedRight !== undefined)) {
