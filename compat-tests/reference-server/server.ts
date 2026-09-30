@@ -457,7 +457,7 @@ async function oneTimeTokenControl(request:Request,url:URL):Promise<Response|und
     if (!identifier) return jsonResponse({message:"identifier is required"},{status:400});
     return jsonResponse(await authContext.adapter.findMany({model:"verification",where:[{field:"identifier",value:identifier}],sortBy:{field:"createdAt",direction:"desc"}}));
   }
-  if (request.method!=="POST" || !["/__test/verification-state","/__test/expire-session","/__test/one-time-token"].includes(url.pathname)) return;
+  if (request.method!=="POST" || !["/__test/verification-state","/__test/one-time-token"].includes(url.pathname)) return;
   const body:unknown=await readJson(request);
   if (!controlRecord(body)) return jsonResponse({message:"invalid server operation"},{status:400});
   if (url.pathname==="/__test/one-time-token") {
@@ -467,9 +467,7 @@ async function oneTimeTokenControl(request:Request,url:URL):Promise<Response|und
   }
   if (typeof body.expiresAt!=="string" || !Number.isFinite(Date.parse(body.expiresAt))) return jsonResponse({message:"valid expiresAt is required"},{status:400});
   const expiresAt=new Date(body.expiresAt);
-  if (url.pathname==="/__test/expire-session" && typeof body.token==="string") {
-    await authContext.adapter.updateMany({model:"session",where:[{field:"token",value:body.token}],update:{expiresAt}});
-  } else if (url.pathname==="/__test/verification-state" && typeof body.identifier==="string") {
+  if (url.pathname==="/__test/verification-state" && typeof body.identifier==="string") {
     if (body.action==="seed" && typeof body.value==="string") await authContext.internalAdapter.createVerificationValue({identifier:body.identifier,value:body.value,expiresAt});
     else if (body.action==="expire") await authContext.adapter.updateMany({model:"verification",where:[{field:"identifier",value:body.identifier}],update:{expiresAt}});
     else return jsonResponse({message:"unknown action"},{status:400});

@@ -23,7 +23,7 @@ use better_auth_core::{AuthContext, AuthPlugin, AuthResponse, AuthRoute};
 use better_auth_seaorm::sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set,
 };
-use better_auth_seaorm::store::entities::{session, verification};
+use better_auth_seaorm::store::entities::verification;
 use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -92,13 +92,6 @@ struct VerificationOperation {
     value: Option<String>,
     expires_at: DateTime<Utc>,
 }
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ExpireSession {
-    token: String,
-    expires_at: DateTime<Utc>,
-}
-
 fn failure(error: impl std::fmt::Display) -> axum::response::Response {
     tracing::error!(%error,"one-time-token fixture operation failed");
     (
@@ -260,26 +253,6 @@ pub(super) async fn router(
                 .await;
                 match operation {
                     Ok(value) => Json(value).into_response(),
-                    Err(error) => failure(error),
-                }
-            }
-        }),
-    );
-    router = router.route(
-        "/__test/expire-session",
-        post(move |Json(body): Json<ExpireSession>| {
-            let database = database.clone();
-            async move {
-                match session::Entity::update_many()
-                    .filter(session::Column::Token.eq(body.token))
-                    .col_expr(
-                        session::Column::ExpiresAt,
-                        better_auth_seaorm::sea_orm::sea_query::Expr::value(body.expires_at),
-                    )
-                    .exec(&database)
-                    .await
-                {
-                    Ok(_) => Json(json!({"status":true})).into_response(),
                     Err(error) => failure(error),
                 }
             }
