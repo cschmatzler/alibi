@@ -1650,10 +1650,19 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": [
+          "two-factor disable deletes factor and trust state and rotates the authoritative session",
+          "two-factor disable requires a persistent cookie session and rejects API key emulation"
+        ],
+        "rejection": [
+          "two-factor disable deletes factor and trust state and rotates the authoritative session",
+          "two-factor disable requires a persistent cookie session and rejects API key emulation"
+        ],
+        "authorization": [
+          "two-factor disable deletes factor and trust state and rotates the authoritative session",
+          "two-factor disable requires a persistent cookie session and rejects API key emulation"
+        ],
+        "state": "two-factor disable deletes factor and trust state and rotates the authoritative session"
       }
     },
     {
