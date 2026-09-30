@@ -320,3 +320,9 @@ async fn organization_dynamic_roles_client_compat() {
 async fn json_numbers_client_compat() {
     run_client_compat(&["tests/core/json-numbers.test.ts"]).await;
 }
+
+#[tokio::test]
+#[ignore = "starts external TS and Rust servers"]
+async fn phone_number_client_compat() {
+    run_client_compat(&["tests/phone-number"]).await;
+}

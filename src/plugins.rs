@@ -13,11 +13,14 @@ pub use better_auth_api::plugins::{
     PasswordManagementPlugin, RolePermissions, SessionManagementPlugin, TwoFactorConfig,
     TwoFactorPlugin, UserManagementConfig, UserManagementPlugin, account_management, admin,
     api_key, device_authorization, email_otp, email_password, email_verification, jwt, magic_link,
-    oauth, one_time_token, organization, passkey, password_management, session_management,
-    two_factor, user_management,
+    oauth, one_time_token, organization, passkey, password_management, phone_number,
+    session_management, two_factor, user_management,
 };
 
 pub use better_auth_api::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
 pub use better_auth_api::plugins::magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
 
 pub use better_auth_api::plugins::{SiweConfig, SiwePlugin, siwe};
+pub use better_auth_api::plugins::phone_number::{
+    PhoneNumberConfig, PhoneNumberPlugin, SendPhoneOtp,
+};

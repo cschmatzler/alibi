@@ -1,0 +1,255 @@
+//! Local SMS delivery and actual configured phone runtimes.
+use crate::{CompatTwoFactorOtpSender, TestSchema};
+use async_trait::async_trait;
+use axum::{
+    extract::Query,
+    response::IntoResponse,
+    routing::{get, post},
+    Json, Router,
+};
+use better_auth::plugins::phone_number::{
+    PhoneNumberConfig, PhoneNumberPlugin, PhoneNumberValidator, PhoneNumberVerification,
+    PhoneOtpDelivery, PhoneOtpVerifier, PhoneSignupIdentity, PhoneVerificationHook, SendPhoneOtp,
+};
+use better_auth::plugins::{
+    EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin,
+};
+use better_auth::{integrations::axum::AxumIntegration, middleware::RateLimitConfig};
+use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use better_auth_seaorm::{sea_orm::DatabaseConnection, SeaOrmStore};
+use serde::Deserialize;
+use serde_json::{json, Value};
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::Mutex;
+
+#[derive(Clone, Default)]
+pub(super) struct Controls {
+    outbox: Arc<Mutex<HashMap<String, String>>>,
+    challenges: Arc<Mutex<HashMap<String, String>>>,
+    callbacks: Arc<Mutex<Vec<Value>>>,
+}
+impl Controls {
+    pub(super) async fn reset(&self) {
+        self.outbox.lock().await.clear();
+        self.challenges.lock().await.clear();
+        self.callbacks.lock().await.clear();
+    }
+}
+struct Sender {
+    controls: Controls,
+    purpose: &'static str,
+    custom: bool,
+}
+#[async_trait]
+impl SendPhoneOtp for Sender {
+    async fn send(&self, delivery: &PhoneOtpDelivery) -> AuthResult<()> {
+        _ = self.controls.outbox.lock().await.insert(
+            format!("{}:{}", self.purpose, delivery.phone_number),
+            delivery.code.clone(),
+        );
+        if self.custom {
+            _ = self
+                .controls
+                .challenges
+                .lock()
+                .await
+                .insert(delivery.phone_number.clone(), delivery.code.clone());
+        }
+        Ok(())
+    }
+}
+struct Identity;
+impl PhoneSignupIdentity for Identity {
+    fn temporary_email(&self, phone: &str) -> String {
+        format!("{phone}@phone.fixture.test")
+    }
+    fn temporary_name(&self, phone: &str) -> Option<String> {
+        Some(phone.into())
+    }
+}
+struct Validator;
+#[async_trait]
+impl PhoneNumberValidator for Validator {
+    async fn is_valid(&self, phone: &str) -> AuthResult<bool> {
+        Ok(phone.starts_with('+')
+            && (9..=16).contains(&phone.len())
+            && phone[1..].bytes().all(|value| value.is_ascii_digit()))
+    }
+}
+struct Verifier(Controls);
+#[async_trait]
+impl PhoneOtpVerifier for Verifier {
+    async fn verify(&self, delivery: &PhoneOtpDelivery) -> AuthResult<bool> {
+        let mut challenges = self.0.challenges.lock().await;
+        if challenges.get(&delivery.phone_number) != Some(&delivery.code) {
+            return Ok(false);
+        }
+        _ = challenges.remove(&delivery.phone_number);
+        Ok(true)
+    }
+}
+struct Callback(Controls);
+#[async_trait]
+impl PhoneVerificationHook for Callback {
+    async fn verified(&self, result: &PhoneNumberVerification) -> AuthResult<()> {
+        self.0
+            .callbacks
+            .lock()
+            .await
+            .push(json!({"phoneNumber":result.phone_number,"userId":result.user.id}));
+        Ok(())
+    }
+}
+#[derive(Clone)]
+pub(super) struct Runtime {
+    pub auth: Arc<BetterAuth<TestSchema>>,
+    pub plugin: PhoneNumberPlugin,
+}
+pub(super) type Runtimes = Arc<HashMap<String, Runtime>>;
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeliveryQuery {
+    phone_number: String,
+    #[serde(rename = "type")]
+    purpose: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConsumeRequest {
+    profile: String,
+    phone_number: String,
+    code: String,
+}
+
+pub(super) async fn build(
+    config: &AuthConfig,
+    database: DatabaseConnection,
+    controls: Controls,
+    two_factor_outbox: Arc<Mutex<HashMap<String, String>>>,
+) -> AuthResult<(Router, Runtimes)> {
+    let mut router = Router::new();
+    let mut runtimes = HashMap::new();
+    for name in [
+        "phone-default",
+        "phone-signup",
+        "phone-proof",
+        "phone-custom",
+    ] {
+        let custom = name == "phone-custom";
+        let config = config
+            .clone()
+            .base_path(format!("/__test/profiles/{name}/api/auth"));
+        let plugin = PhoneNumberPlugin::new(PhoneNumberConfig {
+            send_otp: Some(Arc::new(Sender {
+                controls: controls.clone(),
+                purpose: "verification",
+                custom,
+            })),
+            send_password_reset_otp: Some(Arc::new(Sender {
+                controls: controls.clone(),
+                purpose: "password-reset",
+                custom: false,
+            })),
+            require_verification: name == "phone-proof",
+            sign_up_on_verification: (name != "phone-default")
+                .then(|| Arc::new(Identity) as Arc<dyn PhoneSignupIdentity>),
+            phone_number_validator: custom
+                .then(|| Arc::new(Validator) as Arc<dyn PhoneNumberValidator>),
+            verify_otp: custom
+                .then(|| Arc::new(Verifier(controls.clone())) as Arc<dyn PhoneOtpVerifier>),
+            callback_on_verification: Some(Arc::new(Callback(controls.clone()))),
+            ..Default::default()
+        });
+        let auth = Arc::new(
+            AuthBuilder::new(config.clone())
+                .store(SeaOrmStore::<TestSchema>::new(
+                    config.clone(),
+                    database.clone(),
+                ))
+                .rate_limit(RateLimitConfig::new().enabled(false))
+                .plugin(EmailPasswordPlugin::new().enable_username(false))
+                .plugin(
+                    PasswordManagementPlugin::new()
+                        .revoke_sessions_on_password_reset(name == "phone-proof"),
+                )
+                .plugin(SessionManagementPlugin::new())
+                .plugin(TwoFactorPlugin::new().custom_send_otp(Arc::new(
+                    CompatTwoFactorOtpSender {
+                        outbox: two_factor_outbox.clone(),
+                    },
+                )))
+                .plugin(plugin.clone())
+                .build()
+                .await?,
+        );
+        router = router.nest(
+            &config.base_path,
+            auth.clone().axum_router().with_state(auth.clone()),
+        );
+        _ = runtimes.insert(name.into(), Runtime { auth, plugin });
+    }
+    let callbacks = controls.clone();
+    let consume_runtimes = Arc::new(runtimes);
+    let selected_runtimes = consume_runtimes.clone();
+    router = router
+        .route(
+            "/__test/phone-callbacks",
+            get(move || {
+                let callbacks = callbacks.clone();
+                async move { Json(callbacks.callbacks.lock().await.clone()) }
+            }),
+        )
+        .route(
+            "/__test/phone-consume-otp",
+            post(move |Json(body): Json<ConsumeRequest>| {
+                let runtimes = selected_runtimes.clone();
+                async move {
+                    let result = async {
+                        let selected = runtimes.get(&body.profile).ok_or_else(|| {
+                            better_auth::AuthError::bad_request("unknown fixture profile")
+                        })?;
+                        selected
+                            .plugin
+                            .consume_otp(selected.auth.context(), &body.phone_number, &body.code)
+                            .await?;
+                        Ok::<_, better_auth::AuthError>(json!({"status":true}))
+                    }
+                    .await;
+                    match result {
+                        Ok(value) => Json(value).into_response(),
+                        Err(error) => (
+                            axum::http::StatusCode::from_u16(error.status_code()).unwrap(),
+                            Json(
+                                serde_json::from_slice::<Value>(&error.to_auth_response().body)
+                                    .unwrap(),
+                            ),
+                        )
+                            .into_response(),
+                    }
+                }
+            }),
+        );
+    router = router.route(
+        "/__test/phone-otp",
+        get(move |Query(query): Query<DeliveryQuery>| {
+            let controls = controls.clone();
+            async move {
+                Json(
+                    controls
+                        .outbox
+                        .lock()
+                        .await
+                        .get(&format!(
+                            "{}:{}",
+                            query.purpose.as_deref().unwrap_or("verification"),
+                            query.phone_number
+                        ))
+                        .map(|code| json!({"code":code}))
+                        .unwrap_or(Value::Null),
+                )
+            }
+        }),
+    );
+    Ok((router, consume_runtimes))
+}

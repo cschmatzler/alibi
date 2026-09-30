@@ -14,6 +14,7 @@ pub mod one_time_token;
 pub mod organization;
 pub mod passkey;
 pub mod password_management;
+pub mod phone_number;
 pub mod session_management;
 pub mod siwe;
 pub(crate) mod token_crypto;

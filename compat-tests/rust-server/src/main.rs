@@ -52,6 +52,7 @@ mod one_time_token_fixture;
 mod organization_timestamp_fixture;
 mod otp_profiles;
 mod parity_controls;
+mod phone_profiles;
 mod session_profiles;
 mod siwe_fixture;
 mod sqlite_fixture;
@@ -632,6 +633,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let siwe_state = siwe_fixture::state();
     let siwe_profile_router =
         siwe_fixture::router(&config, database.clone(), siwe_state.clone()).await?;
+    let phone_controls = phone_profiles::Controls::default();
+    let (phone_router, phone_runtimes) = phone_profiles::build(
+        &config,
+        database.clone(),
+        phone_controls.clone(),
+        two_factor_otp_outbox.clone(),
+    )
+    .await?;
     let store = SeaOrmStore::<TestSchema>::new(config.clone(), database);
     let two_factor_plugin =
         TwoFactorPlugin::new().custom_send_otp(Arc::new(CompatTwoFactorOtpSender {
@@ -779,7 +788,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(organization_timestamp_fixture::router(
             reset_database.clone(),
         ))
-        .merge(parity_controls::router())
+        .merge(parity_controls::router(phone_runtimes))
         .merge(device_fixture::router(reset_database.clone()))
         .route("/__health", get(health_check))
         .route(
@@ -986,6 +995,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/__test/reset-state",
             post(move || {
+                let phone_controls = phone_controls.clone();
                 let otp_outbox = otp_outbox_for_reset.clone();
                 let magic_outbox = magic_outbox_for_reset.clone();
                 let siwe_state = siwe_state.clone();
@@ -1007,6 +1017,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Json(serde_json::json!({ "message": error.to_string() })),
                         );
                     }
+                    phone_controls.reset().await;
                     otp_outbox.lock().await.clear();
                     magic_outbox.lock().await.clear();
                     reset_outbox.lock().await.clear();
@@ -1566,7 +1577,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(session_profile_router)
         .merge(otp_router)
         .merge(magic_router)
-        .merge(siwe_profile_router);
+        .merge(siwe_profile_router)
+        .merge(phone_router);
 
     let addr = format!("0.0.0.0:{port}");
     println!("[rust-server] Listening on http://localhost:{port}");
