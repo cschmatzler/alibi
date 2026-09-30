@@ -247,6 +247,59 @@ async fn http_transfer_cookie_headers_and_server_only_configuration_are_observab
         verify_cookie_value(cookie.value(), &ctx.config.secret).as_deref(),
         Some(session.session.token.as_str())
     );
+    for (preference, persistent) in [
+        (None, true),
+        (Some(""), true),
+        (Some("false"), false),
+        (Some("true"), false),
+    ] {
+        let token = plugin
+            .generate_for_session(&session, None, &ctx)
+            .await
+            .unwrap();
+        let mut verify = test_helpers::create_auth_json_request_no_query(
+            HttpMethod::Post,
+            "/one-time-token/verify",
+            None,
+            Some(json!({ "token": token })),
+        );
+        if let Some(value) = preference {
+            verify.headers.insert(
+                "cookie".to_owned(),
+                format!(
+                    "{}={}",
+                    related_cookie_name(&ctx.config, "dont_remember"),
+                    sign_cookie_value(value, &ctx.config.secret)
+                ),
+            );
+        }
+        let verified = plugin.verify(&verify, &ctx).await.unwrap();
+        assert_eq!(verified.status, 200);
+        let cookies = verified
+            .headers
+            .get_all("set-cookie")
+            .map(|header| cookie::Cookie::parse(header.clone()).unwrap())
+            .collect::<Vec<_>>();
+        let session_cookie = cookies
+            .iter()
+            .find(|cookie| cookie.name() == ctx.config.session.cookie_name)
+            .unwrap();
+        assert_eq!(
+            cookies
+                .iter()
+                .any(|cookie| cookie.name() == related_cookie_name(&ctx.config, "dont_remember")),
+            !persistent
+        );
+        assert_eq!(
+            session_cookie.max_age().map(|age| age.whole_seconds()),
+            persistent.then_some(ctx.config.session.expires_in.num_seconds()),
+            "receiving preference {preference:?}"
+        );
+        assert_eq!(
+            verify_cookie_value(session_cookie.value(), &ctx.config.secret).as_deref(),
+            Some(session.session.token.as_str())
+        );
+    }
     let mut response = response;
     response
         .headers

@@ -217,7 +217,7 @@ impl OneTimeTokenPlugin {
         if !self.config.disable_set_session_cookie {
             let dont_remember = get_cookie(req, &related_cookie_name(&ctx.config, "dont_remember"))
                 .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
-                .is_some();
+                .is_some_and(|value| !value.is_empty());
             response.headers.append(
                 "set-cookie",
                 create_session_cookie_with_max_age(
