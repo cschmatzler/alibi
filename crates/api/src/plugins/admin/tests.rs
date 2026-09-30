@@ -242,8 +242,11 @@ async fn test_impersonation_session_tracks_admin_id() {
 
 #[tokio::test]
 async fn test_stop_impersonating_restores_admin_session() {
-    let (ctx, admin, admin_session, user, _user_session) = create_admin_context().await;
+    let (mut ctx, admin, admin_session, user, _user_session) = create_admin_context().await;
     let plugin = AdminPlugin::new();
+    let mut init = better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    plugin.on_init(&mut init).await.unwrap();
+    ctx.metadata.extend(init.into_parts().metadata);
 
     let req = make_request(
         HttpMethod::Post,
