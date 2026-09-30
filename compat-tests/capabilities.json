@@ -244,9 +244,21 @@
     {
       "route": "GET /open-api/generate-schema",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
+        "success": [
+          "OpenAPI openapi-default generates the complete configured document and reference frame",
+          "OpenAPI openapi-configured generates the complete configured document and reference frame",
+          "OpenAPI openapi-jwt generates the complete configured document and reference frame",
+          "OpenAPI openapi-username generates the complete configured document and reference frame",
+          "OpenAPI openapi-custom-schema generates the complete configured document and reference frame",
+          "OpenAPI openapi-plugins generates the complete configured document and reference frame",
+          "OpenAPI openapi-plugins-teams generates the complete configured document and reference frame",
+          "OpenAPI openapi-plugins-configured generates the complete configured document and reference frame",
+          "OpenAPI disabling the reference preserves the public schema endpoint",
+          "OpenAPI session-fields documents real custom session columns with source-specific config precedence",
+          "OpenAPI session-fields-plugins documents real custom session columns with source-specific config precedence"
+        ],
         "rejection": null,
         "authorization": null,
         "state": null
@@ -481,10 +493,21 @@
     {
       "route": "GET /reference",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": [
+          "OpenAPI openapi-default generates the complete configured document and reference frame",
+          "OpenAPI openapi-jwt generates the complete configured document and reference frame",
+          "OpenAPI openapi-username generates the complete configured document and reference frame",
+          "OpenAPI openapi-custom-schema generates the complete configured document and reference frame",
+          "OpenAPI openapi-plugins generates the complete configured document and reference frame",
+          "OpenAPI openapi-plugins-teams generates the complete configured document and reference frame",
+          "OpenAPI openapi-plugins-configured generates the complete configured document and reference frame"
+        ],
+        "rejection": [
+          "OpenAPI disabling the reference preserves the public schema endpoint",
+          "OpenAPI openapi-configured generates the complete configured document and reference frame"
+        ],
         "authorization": null,
         "state": null
       }
