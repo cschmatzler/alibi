@@ -41,8 +41,31 @@ compatScenario("JWT default JWKS token and get-session header carry the complete
   expect(persistedKeys[0]?.expiresAt).toBeNull();
   expect(persistedKeys[0]?.id).toBe(jwksBefore.data.keys[0]?.kid);
   expect(persistedKeys[0]?.publicKey.x).toBe(jwksBefore.data.keys[0]?.x);
-  const signup = await client.signUp.email({ email: ctx.uniqueEmail("jwt-default"), password: "password123", name: "JWT Owner" });
+  const signupCookie: { value: string | null } = { value: null };
+  const signup = await client.signUp.email({ email: ctx.uniqueEmail("jwt-default"), password: "password123", name: "JWT Owner", fetchOptions: { onSuccess({ response }) {
+    signupCookie.value = response.headers.getSetCookie().find(cookie => cookie.startsWith("better-auth.session_token="))?.split(";")[0] ?? null;
+  } } });
   expect(signup.error).toBeNull();
+  if (!signupCookie.value || !signup.data?.token) throw new Error("signup must issue a signed persistent session cookie");
+  const invalidCookie = "better-auth.session_token=invalid";
+  const cookieAuthorizations = [];
+  for (const [name, headers, successful] of [
+    ["valid-first", { cookie: `${signupCookie.value}; ${invalidCookie}` }, true],
+    ["invalid-first", { cookie: `${invalidCookie}; ${signupCookie.value}` }, false],
+    ["unsigned", { cookie: `better-auth.session_token=${signup.data.token}` }, false],
+    ["bare-bearer", { authorization: `Bearer ${signup.data.token}` }, false],
+  ] as const) {
+    const result = await jwtActor(ctx, `cookie-${name}`).token({ fetchOptions: { headers } });
+    if (successful) {
+      expect(result.error).toBeNull();
+      if (!result.data) throw new Error("first valid signed cookie must authorize issuance");
+      const checked = await verifyWithOfficialJose(result.data.token, jwksBefore.data.keys, ctx.baseURL, ctx.baseURL);
+      expect(checked.payload.sub).toBe(signup.data.user.id);
+    } else {
+      expect(result.error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
+    }
+    cookieAuthorizations.push({ name, result });
+  }
   const responseHeaders: { token: string | null; exposed: string | null } = { token: null, exposed: null };
   const session = await client.getSession({ fetchOptions: { onSuccess({ response }) { responseHeaders.token = response.headers.get("set-auth-jwt"); responseHeaders.exposed = response.headers.get("access-control-expose-headers"); } } });
   expect(session.error).toBeNull();
@@ -69,7 +92,7 @@ compatScenario("JWT default JWKS token and get-session header carry the complete
   const serverVerified = await ctx.rawRequest({ path: "/__test/jwt", method: "POST", json: { operation: "verify", profile: "jwt-default", token: token.data.token } });
   expect(serverVerified.status).toBe(200);
   expect(z.object({ payload: z.record(z.string(), z.unknown()) }).parse(serverVerified.body).payload).toEqual(verified.payload);
-  return { anonymousToken: ctx.snapshot(anonymousToken), jwksBefore, persisted, signup: ctx.snapshot(signup), session: ctx.snapshot(session), token, verified, headerToken, verifiedHeader, exposedHeaders, again, serverVerified };
+  return { anonymousToken: ctx.snapshot(anonymousToken), jwksBefore, persisted, cookieAuthorizations, signup: ctx.snapshot(signup), session: ctx.snapshot(session), token, verified, headerToken, verifiedHeader, exposedHeaders, again, serverVerified };
 }, ["GET /jwks", "GET /token"]);
 
 for (const [profile, algorithm, keyType, curve] of [
