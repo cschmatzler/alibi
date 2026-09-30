@@ -18,9 +18,11 @@ endpoint rejection, and are visible to response hooks. Incoming requests start
 with a new accumulator, so queued caller state and earlier requests cannot
 inject response headers.
 
-Four native integration regressions exercise initialization, normalized paths,
+Seven native integration regressions exercise initialization, normalized paths,
 virtual session propagation, forged request rejection, early responses,
-endpoint/after-hook rejection, nested cookies and request isolation. The full
+endpoint/after-hook rejection, nested cookies, ordering between response hooks,
+unknown-route isolation and the initialized email provider used by both handlers
+and server-only callers. The full
 canonical gate and controlled upstream hook scenarios are still pending for
 this extracted branch. JWT and one-time-token response hooks are separate
 capabilities and require their own differential evidence.
