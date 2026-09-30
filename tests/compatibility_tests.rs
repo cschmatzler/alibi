@@ -65,7 +65,7 @@ fn load_reference_spec() -> BTreeMap<String, HashSet<String>> {
     result
 }
 
-fn completed_phase_reference_surface(
+fn reference_profile_reference_surface(
     reference: &BTreeMap<String, HashSet<String>>,
 ) -> BTreeMap<String, HashSet<String>> {
     let mut surface: BTreeMap<String, HashSet<String>> = [
@@ -114,14 +114,14 @@ fn completed_phase_reference_surface(
             path.to_string(),
             reference
                 .get(path)
-                .unwrap_or_else(|| panic!("reference spec missing completed-phase path {}", path))
+                .unwrap_or_else(|| panic!("reference spec missing reference-profile path {}", path))
                 .clone(),
         )
     })
     .collect();
 
     // The pinned TS runtime exposes `/callback/{provider}` publicly, but the
-    // generated OpenAPI profile omits it. Treat it as a completed-phase
+    // generated OpenAPI profile omits it. Treat it as a reference-profile
     // runtime route and assert it explicitly until the structural profile
     // catches up.
     let _ = surface.insert(
@@ -305,9 +305,9 @@ async fn test_route_coverage_report() {
 }
 
 #[tokio::test]
-async fn test_completed_phase_surface_matches_reference_exactly() {
+async fn test_reference_profile_surface_matches_reference_exactly() {
     let reference = load_reference_spec();
-    let expected = completed_phase_reference_surface(&reference);
+    let expected = reference_profile_reference_surface(&reference);
     let auth = create_full_auth().await;
     let implemented = collect_implemented_routes(&auth);
 
@@ -338,7 +338,7 @@ async fn test_completed_phase_surface_matches_reference_exactly() {
 
     assert!(
         missing.is_empty() && extra.is_empty(),
-        "completed phase route drift detected\nmissing:\n{}\nextra:\n{}",
+        "reference profile route drift detected\nmissing:\n{}\nextra:\n{}",
         if missing.is_empty() {
             "<none>".to_string()
         } else {
@@ -352,9 +352,9 @@ async fn test_completed_phase_surface_matches_reference_exactly() {
     );
 }
 
-/// Verify that the completed pre-stage-8 endpoints covered by the main surface test exist at all.
+/// Verify that the endpoints covered by the reference profile exist.
 #[tokio::test]
-async fn test_completed_phase_endpoints_present() {
+async fn test_reference_profile_endpoints_present() {
     let auth = create_full_auth().await;
     let implemented = collect_implemented_routes(&auth);
 

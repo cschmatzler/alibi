@@ -44,7 +44,7 @@ let config = AuthConfig::new("your-secret-key-at-least-32-characters-long")
 
 ## Key Behaviors
 
-- **Session tokens are opaque tokens for the v1 HTTP surface.** Phases 0-12 use session cookies and Bearer tokens backed by the database. `JwtConfig` is only relevant when you enable the JWT surface from phase 13.
+- **Session tokens are opaque tokens for the v1 HTTP surface.** Session endpoints use cookies and Bearer tokens backed by the database. `JwtConfig` applies to the optional JWT surface.
 - **`base_url(...)` also sets `session.cookie_secure`.** HTTPS URLs set `Secure=true`; HTTP URLs set `Secure=false`. With the default `http://localhost:3000`, the default is `false`.
 - **`update_age` and `disable_session_refresh` are separate controls.**
   - `Some(duration)` refreshes only when the session is older than that duration.

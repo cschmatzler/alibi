@@ -249,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn generate_schema_phase_zero_through_eight_plugins_emit_required_entities() {
+    fn generate_schema_builtin_plugins_emit_required_entities() {
         let schema = generate_schema(&[
             "device-authorization".to_string(),
             "api-key".to_string(),

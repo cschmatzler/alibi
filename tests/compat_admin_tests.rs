@@ -1,4 +1,4 @@
-//! Compatibility tests for a subset of Admin plugin endpoints (Phase 9).
+//! Compatibility tests for a subset of Admin plugin endpoints (Admin).
 //!
 //! Endpoints tested:
 //! - GET  /admin/get-user

@@ -54,7 +54,7 @@ fn is_behavior_marker_exempt(path: &Path) -> bool {
         || text.ends_with("tests/compatibility_tests.rs")
 }
 
-fn is_phase0_3_strict_marker_target(path: &Path) -> bool {
+fn requires_strict_behavior_markers(path: &Path) -> bool {
     let text = path.to_string_lossy();
     text.ends_with("tests/integration_tests.rs")
         || text.ends_with("tests/axum_integration_tests.rs")
@@ -127,7 +127,7 @@ fn behavior_tests_must_include_behavior_source_comments() {
 
     let mut violations = Vec::new();
     for path in files {
-        if is_behavior_marker_exempt(&path) || !is_phase0_3_strict_marker_target(&path) {
+        if is_behavior_marker_exempt(&path) || !requires_strict_behavior_markers(&path) {
             continue;
         }
 
@@ -198,7 +198,7 @@ fn upstream_markers_must_not_use_broad_bundle_patterns() {
 
     let mut violations = Vec::new();
     for path in files {
-        if is_behavior_marker_exempt(&path) || !is_phase0_3_strict_marker_target(&path) {
+        if is_behavior_marker_exempt(&path) || !requires_strict_behavior_markers(&path) {
             continue;
         }
 
