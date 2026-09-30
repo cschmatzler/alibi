@@ -350,6 +350,46 @@ impl<S: AuthSchema> InvitationStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> TwoFactorStore for PluginStore<S> {
+    async fn update_two_factor(
+        &self,
+        id: &str,
+        update: UpdateTwoFactor,
+    ) -> AuthResult<Option<TwoFactor>> {
+        self.inner.update_two_factor(id, update).await
+    }
+    async fn increment_two_factor_failure(&self, id: &str) -> AuthResult<Option<TwoFactor>> {
+        self.inner.increment_two_factor_failure(id).await
+    }
+    async fn set_two_factor_lock_if_count_at_least(
+        &self,
+        id: &str,
+        threshold: f64,
+        until: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<TwoFactor>> {
+        self.inner
+            .set_two_factor_lock_if_count_at_least(id, threshold, until)
+            .await
+    }
+    async fn clear_expired_two_factor_lock(
+        &self,
+        id: &str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<TwoFactor>> {
+        self.inner.clear_expired_two_factor_lock(id, now).await
+    }
+    async fn reset_two_factor_failures(&self, id: &str) -> AuthResult<()> {
+        self.inner.reset_two_factor_failures(id).await
+    }
+    async fn compare_and_swap_two_factor_backup_codes(
+        &self,
+        id: &str,
+        expected: &str,
+        replacement: &str,
+    ) -> AuthResult<bool> {
+        self.inner
+            .compare_and_swap_two_factor_backup_codes(id, expected, replacement)
+            .await
+    }
     async fn create_two_factor(&self, two_factor: CreateTwoFactor) -> AuthResult<TwoFactor> {
         self.inner.create_two_factor(two_factor).await
     }

@@ -77,7 +77,7 @@ pub use types::{
     OkResponse, Organization, OrganizationPermissions, Passkey, RateLimitErrorResponse,
     RequestMeta, StatusMessageResponse, StatusResponse, SuccessMessageResponse, SuccessResponse,
     Team, TeamMember, TwoFactor, UpdateAccount, UpdateApiKey, UpdateDeviceCode, UpdateOrganization,
-    UpdatePasskey, UpdateTeam, UpdateUser, UpdateUserRequest, UpdateUserResponse,
+    UpdatePasskey, UpdateTeam, UpdateTwoFactor, UpdateUser, UpdateUserRequest, UpdateUserResponse,
     UpdateVerification, ValidationErrorResponse, WalletAddress,
 };
 pub use utils::password::{PasswordHasher, ScryptHasher, hash_password, verify_password};

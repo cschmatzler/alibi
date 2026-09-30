@@ -617,6 +617,7 @@ async fn enable_core(
             user_id: user.id().to_string(),
             secret: encrypted_secret,
             backup_codes: encrypted_backup_codes,
+            ..Default::default()
         })
         .await?;
 

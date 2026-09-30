@@ -156,6 +156,16 @@ pub trait AuthTwoFactor: Clone + Send + Sync + Serialize + std::fmt::Debug + 'st
     fn user_id(&self) -> Cow<'_, str>;
     fn created_at(&self) -> DateTime<Utc>;
     fn updated_at(&self) -> DateTime<Utc>;
+    /// Legacy records without this field are not explicitly unverified.
+    fn verified(&self) -> Option<bool> {
+        None
+    }
+    fn failed_verification_count(&self) -> Option<f64> {
+        None
+    }
+    fn locked_until(&self) -> Option<DateTime<Utc>> {
+        None
+    }
 }
 
 /// Trait representing an API key entity.

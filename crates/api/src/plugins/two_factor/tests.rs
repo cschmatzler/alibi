@@ -392,6 +392,7 @@ async fn test_view_backup_codes_returns_decrypted_codes() {
             user_id: user.id.clone(),
             secret: encrypt_value(&ctx.config.secret, "totp-secret").unwrap(),
             backup_codes: encrypted,
+            ..Default::default()
         })
         .await
         .unwrap();
@@ -412,6 +413,7 @@ async fn test_view_backup_codes_rejects_invalid_stored_json() {
             user_id: user.id.clone(),
             secret: encrypt_value(&ctx.config.secret, "totp-secret").unwrap(),
             backup_codes: encrypt_value(&ctx.config.secret, "\"not-an-array\"").unwrap(),
+            ..Default::default()
         })
         .await
         .unwrap();

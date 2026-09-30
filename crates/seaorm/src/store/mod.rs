@@ -26,6 +26,9 @@ mod teams;
 mod two_factor;
 mod two_factor_user_reference;
 mod user_reference;
+#[cfg(test)]
+mod two_factor_policy_tests;
+mod two_factor_verification_policy;
 mod users;
 mod verifications;
 #[cfg(test)]
