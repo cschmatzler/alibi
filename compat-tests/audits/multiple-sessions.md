@@ -70,3 +70,23 @@ full gate, integrates current master and updates capability inventories. This
 slice changes no comparators, coverage settings, lockfiles, database schemas or
 migrations. Secondary-storage and cookie-cache integrations are not established
 by these SQLite/no-cache profiles.
+
+## Signed-empty proof review repair
+
+Independent coordinator review found that a valid signature over an empty
+payload reached selection/revocation. Upstream rejects this falsy payload
+before looking up or deleting a session and before clearing a browser proof.
+The existing raw-cookie SQLite owner test now submits that exact proof to
+both operations with a valid current session, checks `INVALID_SESSION_TOKEN`,
+no cookie retirement, and both owners' persisted tokens. On the original
+`9eb973b`, revoke returns 200 rather than 401
+(`/tmp/multiple-sessions-signed-empty-before.log`). Selection additionally
+cleared a cookie where upstream throws before doing so.
+
+Only selection filters the signed empty value. The post-issuance same-user
+cleanup loop also skips the empty token before lookup, matching its upstream
+truthiness guard; list/fallback/logout keep their separate string-valued
+semantics. Three native owner tests and three SDK scenarios / 194 assertions
+pass after repair (`/tmp/multiple-sessions-signed-empty-native-final.log`,
+`/tmp/multiple-sessions-signed-empty-sdk-final.log`). Production Clippy and
+formatting pass; no inventory or shared schema changes were made.

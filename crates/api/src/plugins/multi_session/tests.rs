@@ -139,6 +139,46 @@ async fn signed_browser_sessions_select_other_accounts_and_reject_unrelated_toke
             assert_eq!(result.unwrap_err().status_code(), 401);
         }
     }
+    for path in ["/multi-session/revoke", "/multi-session/set-active"] {
+        let empty_proof = request_with_cookies(
+            HttpMethod::Post,
+            path,
+            &[
+                pair(&create_session_cookie(&bob_session.token, &ctx.config)),
+                format!(
+                    "{}={}",
+                    plugin.cookie_name(&alice_session.token, &ctx),
+                    sign_cookie_value("", &ctx.config.secret)
+                ),
+            ],
+            Some(json!({"sessionToken":alice_session.token})),
+        );
+        let rejected = plugin
+            .on_request(&empty_proof, &ctx)
+            .await
+            .unwrap_or_else(|error| Some(error.to_auth_response()))
+            .unwrap();
+        assert_eq!(rejected.status, 401);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&rejected.body).unwrap()["code"],
+            "INVALID_SESSION_TOKEN"
+        );
+        assert!(rejected.headers.get_all("set-cookie").next().is_none());
+        assert!(
+            ctx.database
+                .get_session(&alice_session.token)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            ctx.database
+                .get_session(&bob_session.token)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
     let select = request_with_cookies(
         HttpMethod::Post,
         "/multi-session/set-active",

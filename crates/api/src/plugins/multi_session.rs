@@ -178,6 +178,7 @@ impl MultiSessionPlugin {
         let token = self
             .cookie_value(req, &name)
             .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
+            .filter(|token| !token.is_empty())
             .ok_or_else(invalid_token)?;
         if revoke {
             ctx.database.delete_session(&token).await?;
@@ -328,6 +329,9 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
         let cookies = self.signed_tokens(req, ctx);
         let mut removed = 0;
         for (old_name, token) in &cookies {
+            if token.is_empty() {
+                continue;
+            }
             if let Some(old) = ctx.database.get_session(token).await?
                 && old.user_id() == issued.user.id()
             {
