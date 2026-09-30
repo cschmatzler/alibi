@@ -72,3 +72,15 @@ Clippy with seaorm2, formatting and diff checks pass. No dependency versions,
 locks, comparator, inventory or coverage policy changes occur. The coordinator
 owns canonical gates and independent review. Account/challenge enforcement,
 verified transitions, callbacks and official-client proofs follow separately.
+
+Coordinator independent review checked the pinned nullable arithmetic and all
+exact-row mutations, parameter binding, backend guards and upgrade registration.
+The existing installed user-reference regression now seeds the actual legacy
+SQL table before both upgrades, preserving its application-view/link proof and
+asserting new defaults. That focused test passed; no new production test seam
+was introduced. Full `devenv shell -- ./scripts/check.sh` passed: 274 SDK
+scenarios / 8,168 assertions, 37 harness tests / 210 assertions, two Chromium
+tests / 22 assertions, 78.96% source lines (24,148 / 30,582). Log:
+`/tmp/two-factor-storage-reviewed-canonical.log`. Shared locks/inventory and
+comparison policy are unchanged; the default and optional configurations,
+Rustls/Redis builds, generated schema tests and documentation checks passed.
