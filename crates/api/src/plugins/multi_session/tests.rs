@@ -53,6 +53,7 @@ async fn signed_browser_sessions_select_other_accounts_and_reject_unrelated_toke
         impersonated_by: None,
         active_organization_id: None,
         active_team_id: None,
+        additional_fields: Default::default(),
     };
     let bob_session = ctx
         .database

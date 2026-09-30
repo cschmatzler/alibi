@@ -470,6 +470,7 @@ async fn disable_preserves_persisted_extensions_and_removes_all_matching_trust_r
             impersonated_by: Some("trusted-impersonator".to_owned()),
             active_organization_id: Some("trusted-organization".to_owned()),
             active_team_id: Some("trusted-team".to_owned()),
+            additional_fields: Default::default(),
         })
         .await
         .unwrap();
