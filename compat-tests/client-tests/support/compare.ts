@@ -43,13 +43,23 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   }
   const leftEntities=entityValues(normalizedLeft),rightEntities=entityValues(normalizedRight);
 
-  function jwt(value:string):{header:Record<string,unknown>;payload:Record<string,unknown>;signature:string}|undefined {
-    const parts=value.split(".");
-    if (parts.length!==3 || !parts[0] || !parts[1] || !parts[2] || !parts.every(part=>/^[A-Za-z0-9_-]+$/.test(part))) return;
+  function compactPart(value: string, whitespace: boolean): Buffer | undefined {
+    const encoded = whitespace ? value.replace(/[ \t\n\r\f]/g, "") : value;
+    if (!/^[A-Za-z0-9_-]+={0,2}$/.test(encoded)) return;
+    const unpadded = encoded.replace(/=+$/, "");
+    const padding = encoded.length - unpadded.length;
+    if (unpadded.length % 4 === 1 || (padding > 0 && (encoded.length % 4 !== 0 || unpadded.length % 4 === 0))) return;
+    return Buffer.from(unpadded, "base64url");
+  }
+  function jwt(value: string): { header: Record<string, unknown>; payload: Record<string, unknown>; signature: Buffer } | undefined {
+    const parts = value.split(".");
+    if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return;
+    const headerBytes = compactPart(parts[0], false), payloadBytes = compactPart(parts[1], true), signature = compactPart(parts[2], true);
+    if (!headerBytes || !payloadBytes || !signature) return;
     try {
-      const header:unknown=JSON.parse(Buffer.from(parts[0],"base64url").toString());
-      const payload:unknown=JSON.parse(Buffer.from(parts[1],"base64url").toString());
-      if (record(header) && typeof header.alg==="string" && record(payload)) return {header,payload,signature:parts[2]};
+      const header: unknown = JSON.parse(headerBytes.toString());
+      const payload: unknown = JSON.parse(payloadBytes.toString());
+      if (record(header) && typeof header.alg === "string" && record(payload)) return { header, payload, signature };
     } catch { return; }
   }
   function clock(a:number,b:number,path:string) {
@@ -94,7 +104,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
         identity(a,b,path,"jwt");
         visit(leftJwt.header,rightJwt.header,`${path}.header`,"");
         visit(leftJwt.payload,rightJwt.payload,`${path}.payload`,"",true);
-        if (Buffer.from(leftJwt.signature,"base64url").length!==Buffer.from(rightJwt.signature,"base64url").length) fail(path,"JWT signature length differs");
+        if (leftJwt.signature.length!==rightJwt.signature.length) fail(path,"JWT signature length differs");
         return;
       }
       if (entityKeys.has(key) && !path.endsWith(".rp.id")) { identity(a, b, path, "entity"); return; }
@@ -141,7 +151,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           if (!/^[A-Za-z0-9_-]+$/.test(leftMaterial) || !/^[A-Za-z0-9_-]+$/.test(rightMaterial) || Buffer.from(leftMaterial,"base64url").length!==Buffer.from(rightMaterial,"base64url").length) fail(childPath,"JWK key encoding or size differs");
           identity(leftMaterial,rightMaterial,childPath,`jwk:${childKey}`);
         }
-        else if (childKey === "key" && typeof a.key === "string" && typeof b.key === "string" && typeof a.configId === "string" && typeof b.configId === "string" && "enabled" in a && "enabled" in b && "remaining" in a && "remaining" in b) {
+        else if (!/^traces\.\d+\.(?:request|response)BodyShape(?:\.|$)/.test(path) && childKey === "key" && typeof a.key === "string" && typeof b.key === "string" && typeof a.configId === "string" && typeof b.configId === "string" && "enabled" in a && "enabled" in b && "remaining" in a && "remaining" in b) {
           if (a.key.length !== b.key.length) fail(childPath, "API key length differs");
           for (const item of [a,b]) {
             if (typeof item.prefix === "string" && typeof item.key === "string" && !item.key.startsWith(item.prefix)) fail(childPath, "API key prefix relationship differs");

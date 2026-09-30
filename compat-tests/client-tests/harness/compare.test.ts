@@ -41,6 +41,25 @@ test("snapshots retain fields and array shapes include every item", () => {
   expect(jsonShape([{ ok: true }, { wrong: 1 }])).toEqual([{ ok: "boolean" }, { wrong: "number" }]);
 });
 
+test("API key response shapes stay literal while actual key relationships remain checked", () => {
+  const issued = { key: "prefix-one", prefix: "prefix-", start: "prefix", configId: "default", enabled: true, remaining: null };
+  const other = { ...issued, key: "prefix-two" };
+  const leftShape = { traces: [{ responseBodyShape: jsonShape({ ...issued, prefix: null, start: null }) }] };
+  const rightShape = { traces: [{ responseBodyShape: jsonShape({ ...other, prefix: null, start: null }) }] };
+  expect(compareValues(leftShape, rightShape, context)).toEqual([]);
+  expect(compareValues(leftShape, { traces: [{ responseBodyShape: jsonShape({ ...other, prefix: null, start: null, remaining: 1 }) }] }, context).length).toBeGreaterThan(0);
+  expect(compareValues(leftShape, { traces: [{ responseBodyShape: jsonShape({ ...other, prefix: null, start: null, configId: undefined }) }] }, context).length).toBeGreaterThan(0);
+  expect(compareValues({ issued, persisted: issued }, { issued: other, persisted: other }, context)).toEqual([]);
+  expect(compareValues({ payload: { responseBodyShape: issued } }, { payload: { responseBodyShape: other } }, context)).toEqual([]);
+  expect(compareValues({ payload: { responseBodyShape: issued } }, { payload: { responseBodyShape: { ...other, prefix: "unrelated" } } }, context).length).toBeGreaterThan(0);
+  for (const wrong of [
+    { ...other, key: "wrong--two" },
+    { ...other, start: "unrelated" },
+    { ...other, key: "prefix-too-long" },
+  ]) expect(compareValues(issued, wrong, context).length).toBeGreaterThan(0);
+  expect(compareValues({ issued, persisted: issued }, { issued: other, persisted: { ...other, key: "prefix-new" } }, context).length).toBeGreaterThan(0);
+});
+
 test("no exception can swallow an entire cookie or its security attributes", () => {
   for (const allowance of RAW_DIFF_ALLOWLIST) {
     for (const field of ["", ".httpOnly", ".secure", ".path", ".domain", ".sameSite"]) {
@@ -86,4 +105,46 @@ test("JWTs and JWKS retain full claims key relationships rotation and key sizes"
   const fixed={sub:"service",iat:100,exp:4102444800,iss:"custom",aud:"custom"};
   expect(compareValues({token:encode(leftHeader,fixed)},{token:encode(rightHeader,{...fixed,iat:110,exp:4102444810})},clocks).length).toBeGreaterThan(0);
   expect(compareValues({kid:"literal"},{kid:"changed"},clocks).length).toBeGreaterThan(0);
+});
+
+test("accepted compact JWT encodings retain decoded claims key sizes and token relationships", () => {
+  const encode = (header: unknown, payload: unknown, signature: Buffer) => [Buffer.from(JSON.stringify(header)).toString("base64url"), Buffer.from(JSON.stringify(payload)).toString("base64url"), signature.toString("base64url")].join(".");
+  const claims = { sub: "service", iat: 100, exp: 4102444800, iss: "literal", aud: "literal", permission: "read" };
+  const leftHeader = { alg: "EdDSA", kid: "left-key" }, rightHeader = { alg: "EdDSA", kid: "right-key" };
+  const pad = (value: string) => value + "=".repeat((4 - value.length % 4) % 4);
+  const encodeVariants = (token: string): string[] => {
+    const parts = token.split(".");
+    if (!parts[0] || !parts[1] || !parts[2]) throw new Error("three JWT segments are required");
+    const [header, payload, signature] = parts;
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const lastIndex = alphabet.indexOf(signature.at(-1) ?? "");
+    return [
+      `${header}.${payload}.${pad(signature)}`,
+      `${pad(header)}.${payload}.${signature}`,
+      `${header}.${pad(payload)}.${signature}`,
+      `${header}.${payload}.${signature.slice(0, -1)}${alphabet[lastIndex + 1]}`,
+      `${header}.${payload}.${signature.slice(0, 20)} \t\n\r\f${signature.slice(20)}== `,
+      `${header}.${payload.slice(0, 3)} \t\n\r\f${payload.slice(3)}.${signature}`,
+    ];
+  };
+  const leftToken = encode(leftHeader, claims, Buffer.alloc(64, 1)), rightToken = encode(rightHeader, claims, Buffer.alloc(64, 2));
+  const left = { key: { kid: "left-key", alg: "EdDSA", kty: "OKP", x: Buffer.alloc(32, 1).toString("base64url") }, token: leftToken };
+  const right = { key: { ...left.key, kid: "right-key", x: Buffer.alloc(32, 2).toString("base64url") }, token: rightToken };
+  for (let index = 0; index < encodeVariants(leftToken).length; index++) {
+    const a = { ...left, token: encodeVariants(leftToken)[index] }, b = { ...right, token: encodeVariants(rightToken)[index] };
+    expect(compareValues(a, b, context)).toEqual([]);
+    for (const wrongToken of [
+      encode({ ...rightHeader, kid: "unrelated" }, claims, Buffer.alloc(64, 2)),
+      encode({ ...rightHeader, typ: "JWT" }, claims, Buffer.alloc(64, 2)),
+      encode(rightHeader, { ...claims, permission: "write" }, Buffer.alloc(64, 2)),
+      encode(rightHeader, { ...claims, exp: claims.exp + 1 }, Buffer.alloc(64, 2)),
+    ]) {
+      const wrong = encodeVariants(wrongToken)[index];
+      expect(compareValues(a, { ...b, token: wrong }, context).length).toBeGreaterThan(0);
+    }
+    const changedSignature = encodeVariants(encode(rightHeader, claims, Buffer.alloc(64, 3)))[index];
+    expect(compareValues({ ...a, again: a.token }, { ...b, again: changedSignature }, context).length).toBeGreaterThan(0);
+    const shorter = encode(rightHeader, claims, Buffer.alloc(32, 2));
+    expect(compareValues(a, { ...b, token: shorter + "=" }, context).length).toBeGreaterThan(0);
+  }
 });
