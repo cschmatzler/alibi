@@ -64,11 +64,11 @@ export function createOrganizationCreationFixture(
   }));
   return {
     profiles,
-    state(email:string, includeMetadata=false) {
+    state(email:string, includeMetadata=false, includeLogo=false) {
       const user = database.query('SELECT id FROM user WHERE email=?').get(email) as {id:string}|null;
       return {
         organizations:user ? database.query(
-          `SELECT o.id,o.name,o.slug,${includeMetadata ? 'o.metadata,' : ''}m.id AS memberId,m.userId,m.role FROM organization o JOIN member m ON m.organizationId=o.id WHERE m.userId=? ORDER BY o.createdAt,o.id`,
+          `SELECT o.id,o.name,o.slug,${includeLogo ? 'o.logo,' : ''}${includeMetadata ? 'o.metadata,' : ''}m.id AS memberId,m.userId,m.role FROM organization o JOIN member m ON m.organizationId=o.id WHERE m.userId=? ORDER BY o.createdAt,o.id`,
         ).all(user.id) : [],
         sessions:user ? database.query(
           'SELECT id,token,userId,activeOrganizationId FROM session WHERE userId=? ORDER BY createdAt,id',

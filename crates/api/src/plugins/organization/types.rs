@@ -135,7 +135,8 @@ pub struct CreateOrganizationRequest {
 pub struct UpdateOrganizationData {
     pub name: Option<String>,
     pub slug: Option<String>,
-    pub logo: Option<String>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub logo: Option<Option<String>>,
     #[serde(
         default,
         deserialize_with = "better_auth_core::utils::json::deserialize_optional_value"

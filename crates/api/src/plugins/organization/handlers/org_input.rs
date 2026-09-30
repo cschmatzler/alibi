@@ -207,14 +207,9 @@ pub(super) fn update(req: &AuthRequest) -> Result<UpdateOrganizationRequest, Aut
             false,
             &mut issues,
         );
-        fields.logo = string(
-            get("logo"),
-            "body.data.logo",
-            false,
-            false,
-            true,
-            &mut issues,
-        );
+        let logo = get("logo");
+        let parsed_logo = string(logo, "body.data.logo", false, false, true, &mut issues);
+        fields.logo = logo.map(|_| parsed_logo);
         fields.metadata = record(get("metadata"), "body.data.metadata", &mut issues);
     }
     let organization_id = string(

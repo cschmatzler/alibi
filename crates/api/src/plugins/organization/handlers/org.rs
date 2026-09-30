@@ -1,4 +1,4 @@
-use super::{require_session, resolve_organization_id};
+use super::require_session;
 use crate::plugins::organization::OrganizationConfig;
 use crate::plugins::organization::types::{
     BasicMemberResponse, CheckSlugRequest, CheckSlugResponse, CreateOrganizationRequest,
@@ -160,14 +160,21 @@ pub(crate) async fn update_organization_core(
     config: &OrganizationConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<CreatedOrganizationResponse> {
-    let org_id =
-        resolve_organization_id(body.organization_id.as_deref(), None, session, ctx).await?;
+    let org_id = body
+        .organization_id
+        .as_deref()
+        .filter(|id| !id.is_empty())
+        .or_else(|| session.active_organization_id().filter(|id| !id.is_empty()))
+        .ok_or_else(|| super::extension_common::org_error(400, "ORGANIZATION_NOT_FOUND"))?
+        .to_owned();
 
     let member = ctx
         .database
         .get_member(&org_id, &user.id())
         .await?
-        .ok_or_else(|| AuthError::forbidden("Not a member of this organization"))?;
+        .ok_or_else(|| {
+            super::extension_common::org_error(400, "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION")
+        })?;
 
     if !super::extension_common::has_action(
         member.role(),

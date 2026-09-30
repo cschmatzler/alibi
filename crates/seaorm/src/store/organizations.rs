@@ -94,7 +94,7 @@ where
             active.slug = Set(slug);
         }
         if let Some(logo) = update.logo {
-            active.logo = Set(Some(logo));
+            active.logo = Set(logo);
         }
         if let Some(metadata) = update.metadata {
             active.metadata = Set(JsonMetadata::for_backend(

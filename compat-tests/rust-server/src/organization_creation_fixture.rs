@@ -75,6 +75,8 @@ struct StateQuery {
     email: String,
     #[serde(default, rename = "includeMetadata")]
     include_metadata: bool,
+    #[serde(default, rename = "includeLogo")]
+    include_logo: bool,
 }
 #[derive(Deserialize)]
 struct ServerRequest {
@@ -205,6 +207,9 @@ pub(super) async fn router(
                                 "id": org.id, "name": org.name, "slug": org.slug,
                                 "memberId": row.id, "userId": row.user_id, "role": row.role
                             });
+                            if query.include_logo {
+                                value["logo"] = json!(org.logo);
+                            }
                             if query.include_metadata {
                                 let metadata = db
                                     .query_one_raw(Statement::from_sql_and_values(
