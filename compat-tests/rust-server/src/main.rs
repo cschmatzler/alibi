@@ -34,13 +34,16 @@ use better_auth_seaorm::store::entities::{
     account, api_key, device_code, invitation, member, organization, passkey, session, two_factor,
     user, verification,
 };
-use better_auth_seaorm::{Database, SeaOrmStore};
+use better_auth_seaorm::SeaOrmStore;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
+
+mod lifecycle_fixture;
+mod sqlite_fixture;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
@@ -576,7 +579,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .base_url(format!("http://localhost:{port}"))
         .password_min_length(8);
 
-    let database = Database::connect("sqlite::memory:").await?;
+    let database = sqlite_fixture::connect().await?;
     better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
     let reset_database = database.clone();
 
@@ -626,11 +629,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ..ApiKeyConfig::default()
                 })
             });
+    let lifecycle_fixture = lifecycle_fixture::LifecycleFixture::default();
+    let lifecycle_controls = lifecycle_fixture.router();
     let auth = Arc::new(
         AuthBuilder::<TestSchema>::new(config)
             .store(store)
             .rate_limit(RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new().enable_signup(true))
+            .plugin(lifecycle_fixture.clone())
+            .plugin(lifecycle_fixture.observer())
             .plugin(SessionManagementPlugin::new())
             .plugin(AccountManagementPlugin::new())
             .plugin(DeviceAuthorizationPlugin::new())
@@ -713,6 +720,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_key_for_update = api_key_plugin.clone();
 
     let app = Router::new()
+        .merge(lifecycle_controls)
         .route("/__health", get(health_check))
         .route(
             "/__test/password",

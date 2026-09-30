@@ -18,11 +18,15 @@ endpoint rejection, and are visible to response hooks. Incoming requests start
 with a new accumulator, so queued caller state and earlier requests cannot
 inject response headers.
 
-Seven native integration regressions exercise initialization, normalized paths,
+Eight native integration regressions exercise initialization, normalized paths,
 virtual session propagation, forged request rejection, early responses,
 endpoint/after-hook rejection, nested cookies, ordering between response hooks,
 unknown-route isolation and the initialized email provider used by both handlers
-and server-only callers. The full
-canonical gate and controlled upstream hook scenarios are still pending for
-this extracted branch. JWT and one-time-token response hooks are separate
-capabilities and require their own differential evidence.
+and server-only callers. Two controlled differential scenarios use the official client and genuine
+pinned middleware hooks. They prove persisted signup/session/account state and
+browser authentication after an after-hook rejection, wrong-password rejection,
+header visibility between hooks, before-hook write suppression, and empty
+unregistered routes/methods. The focused core suite passes 22 scenarios with 62
+assertions; no comparison exceptions or oracle behavior changes were introduced.
+The full canonical gate remains required for this extracted branch. JWT and
+one-time-token response hooks are separate capabilities.

@@ -16,9 +16,7 @@ use crate::BetterAuth;
 use better_auth_core::AuthSession;
 #[cfg(feature = "axum")]
 use better_auth_core::middleware::BodyLimitConfig;
-use better_auth_core::{
-    AuthError, AuthRequest, AuthResponse, AuthSchema, HttpMethod, OkResponse, core_paths,
-};
+use better_auth_core::{AuthError, AuthRequest, AuthResponse, AuthSchema, HttpMethod, core_paths};
 
 #[cfg(feature = "axum")]
 type AxumAuthHandlerFuture = std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>>;
@@ -64,10 +62,10 @@ impl<T: AuthSchema> AxumIntegration for Arc<BetterAuth<T>> {
 
         // Add status endpoints
         if !disabled_paths.contains(&core_paths::OK.to_string()) {
-            router = router.route(core_paths::OK, get(ok_check));
+            router = router.route(core_paths::OK, get(create_plugin_handler::<T>()));
         }
         if !disabled_paths.contains(&core_paths::ERROR.to_string()) {
-            router = router.route(core_paths::ERROR, get(error_check));
+            router = router.route(core_paths::ERROR, get(create_plugin_handler::<T>()));
         }
 
         // Add OpenAPI spec endpoint
@@ -111,25 +109,8 @@ impl<T: AuthSchema> AxumIntegration for Arc<BetterAuth<T>> {
             }
         }
 
-        router
+        router.method_not_allowed_fallback(|| async { StatusCode::NOT_FOUND })
     }
-}
-
-#[cfg(feature = "axum")]
-async fn ok_check() -> impl IntoResponse {
-    axum::Json(OkResponse { ok: true })
-}
-
-#[cfg(feature = "axum")]
-async fn error_check(
-    query: axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> impl IntoResponse {
-    let error_code = query
-        .get("error")
-        .cloned()
-        .unwrap_or_else(|| "UNKNOWN".to_string());
-    let html = core_paths::error_page_html(&error_code);
-    axum::response::Html(html)
 }
 
 #[cfg(feature = "axum")]

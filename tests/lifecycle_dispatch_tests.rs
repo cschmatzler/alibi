@@ -587,3 +587,65 @@ async fn initialized_email_provider_is_shared_with_handlers_and_server_callers()
         ]
     );
 }
+
+// Upstream runtime: api/index.ts routes known methods through endpoint hooks.
+#[cfg(feature = "axum")]
+#[tokio::test]
+async fn axum_core_routes_share_hooks_and_unregistered_methods_are_empty() {
+    use better_auth::integrations::axum::AxumIntegration;
+    use tower::ServiceExt;
+    let config = AuthConfig::new("axum-lifecycle-test-secret-minimum-32-characters");
+    let db = Database::connect("sqlite::memory:").await.unwrap();
+    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+        .await
+        .unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let configured = Arc::new(
+        AuthBuilder::new(config.clone())
+            .store(SeaOrmStore::<Schema>::new(config, db))
+            .plugin(RouteBoundaryProbe(calls.clone()))
+            .build()
+            .await
+            .unwrap(),
+    );
+    let router = configured.clone().axum_router().with_state(configured);
+    for path in ["/ok", "/error"] {
+        let response = router
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri(path)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.headers().get("x-before").unwrap(), "present");
+        assert_eq!(response.headers().get("x-after").unwrap(), "present");
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    for path in ["/ok", "/unregistered"] {
+        let response = router
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri(path)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 404);
+        assert!(response.headers().get("x-before").is_none());
+        assert!(response.headers().get("x-after").is_none());
+        assert!(
+            axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
