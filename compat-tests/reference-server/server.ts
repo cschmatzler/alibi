@@ -634,6 +634,9 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
         if (!updated) throw new Error("Member role update failed");
         return jsonResponse({memberId:updated.id,organizationId:updated.organizationId,role:updated.role});
       }
+      if (body?.operation === "list-user-invitations" && typeof body.email === "string") {
+        return jsonResponse(await selected.api.listUserInvitations({query:{email:body.email}}));
+      }
       if (body?.operation === "create-team" && typeof body.organizationId === "string" && typeof body.name === "string") {
         return jsonResponse(await selected.api.createTeam({body:{organizationId:body.organizationId,name:body.name}}));
       }
@@ -712,6 +715,12 @@ const server = Bun.serve({
         if (!controlRecord(body) || typeof body.deviceCode!=="string" || typeof body.expiresAt!=="string" || !Number.isFinite(Date.parse(body.expiresAt))) return jsonResponse({message:"deviceCode and valid expiresAt are required"},{status:400});
         await authContext.adapter.updateMany({model:"deviceCode",where:[{field:"deviceCode",value:body.deviceCode}],update:{expiresAt:new Date(body.expiresAt)}});
         return jsonResponse({status:true});
+      }
+      if (url.pathname === "/__test/expire-invitation" && request.method === "POST") {
+        const body = await readJson(request);
+        if (typeof body?.invitationId !== "string" || typeof body?.expiresAt !== "string") return jsonResponse({ message: "Invalid invitation clock" }, { status: 400 });
+        const result = database.query('UPDATE invitation SET expiresAt = ? WHERE id = ?').run(new Date(body.expiresAt).toISOString(), body.invitationId);
+        return jsonResponse({ updated: result.changes });
       }
 
       for(const [name,profile] of ottProfiles) {

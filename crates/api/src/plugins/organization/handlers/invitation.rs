@@ -310,12 +310,25 @@ pub(crate) async fn list_user_invitations_core(
         ));
     }
 
-    let user_email = user
-        .email()
-        .ok_or_else(|| AuthError::bad_request("User has no email"))?;
+    list_user_invitations_for_email_core(user.email().unwrap_or_default(), ctx).await
+}
 
-    let all_invitations = ctx.database.list_user_invitations(user_email).await?;
-    let organization_ids = all_invitations
+async fn list_user_invitations_for_email_core(
+    email: &str,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<Vec<UserInvitationResponse<InvitationView>>> {
+    if email.is_empty() {
+        return Err(AuthError::bad_request(
+            "Missing session headers, or email query parameter.",
+        ));
+    }
+    // The adapter's configured page limit applies before pending-state filtering.
+    let invitations = ctx.database.list_user_invitations(email).await?;
+    let pending = invitations
+        .iter()
+        .filter(|invitation| invitation.status() == &InvitationStatus::Pending)
+        .collect::<Vec<_>>();
+    let organization_ids = pending
         .iter()
         .map(|invitation| invitation.organization_id().into_owned())
         .collect::<Vec<_>>();
@@ -324,25 +337,32 @@ pub(crate) async fn list_user_invitations_core(
         .list_organizations_by_ids(&organization_ids)
         .await?
         .into_iter()
-        .map(|organization| {
-            let organization_id = organization.id.clone();
-            (organization_id, organization)
-        })
+        .map(|organization| (organization.id.clone(), organization))
         .collect::<HashMap<_, _>>();
-    let mut pending = Vec::with_capacity(all_invitations.len());
-
-    for invitation in all_invitations.iter() {
-        let organization = organizations_by_id
-            .get(invitation.organization_id().as_ref())
-            .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
-
-        pending.push(UserInvitationResponse {
+    Ok(pending
+        .into_iter()
+        .map(|invitation| UserInvitationResponse {
             invitation: ctx.invitation_view(invitation),
-            organization_name: organization.name().to_string(),
-        });
-    }
+            organization_name: organizations_by_id
+                .get(invitation.organization_id().as_ref())
+                .map(|organization| organization.name().to_owned()),
+        })
+        .collect())
+}
 
-    Ok(pending)
+impl crate::plugins::organization::OrganizationPlugin {
+    /// List pending invitations for an email through a trusted server-side call.
+    ///
+    /// This method accepts an application-authorized email without a session.
+    /// The HTTP endpoint instead derives the email from a verified session and
+    /// rejects client email selectors.
+    pub async fn list_user_invitations(
+        &self,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        email: &str,
+    ) -> AuthResult<Vec<UserInvitationResponse<InvitationView>>> {
+        list_user_invitations_for_email_core(email, ctx).await
+    }
 }
 
 pub(crate) async fn accept_invitation_core(
@@ -616,7 +636,31 @@ pub async fn handle_list_user_invitations(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
-    let (user, _session) = require_session(req, ctx).await?;
+    // An email selector is available only to trusted server-side callers.
+    if req
+        .query
+        .get("email")
+        .is_some_and(|email| !email.is_empty())
+    {
+        return Ok(AuthResponse::json(
+            400,
+            &serde_json::json!({
+                "message": "User email cannot be passed for client side API calls."
+            }),
+        )?);
+    }
+    let (user, _session) = match require_session(req, ctx).await {
+        Ok(session) => session,
+        Err(AuthError::Unauthenticated) | Err(AuthError::SessionNotFound) => {
+            return Ok(AuthResponse::json(
+                400,
+                &serde_json::json!({
+                    "message": "Missing session headers, or email query parameter."
+                }),
+            )?);
+        }
+        Err(error) => return Err(error),
+    };
     let invitations = list_user_invitations_core(&user, ctx).await?;
     Ok(AuthResponse::json(200, &invitations)?)
 }

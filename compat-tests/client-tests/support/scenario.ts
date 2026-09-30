@@ -21,6 +21,7 @@ import {
   readDeviceState,
   expireDevice,
   readUserState,
+  expireInvitation,
   readVerificationState,
   seedDeleteUserToken,
   seedOAuthAccount,
@@ -55,6 +56,7 @@ type ScenarioServerContext = {
     location: string | null;
     body: unknown;
   }>;
+  expireInvitation(args: { invitationId: string; expiresAt: string }): Promise<unknown>;
   readUserState(args: { userId: string }): Promise<unknown>;
   readDeviceState(args: {deviceCode: string}): Promise<unknown>;
   expireDevice(args: {deviceCode: string; expiresAt: string}): Promise<unknown>;
@@ -238,6 +240,7 @@ async function runScenario(
       return seedOAuthAccount(baseURL, args);
     },
     readUserState(args) { return readUserState(baseURL, args); },
+    expireInvitation(args) { return expireInvitation(baseURL, args); },
     readVerificationEmail(args) {
       return readVerificationEmail(baseURL, args);
     },

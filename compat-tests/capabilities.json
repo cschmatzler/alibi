@@ -389,10 +389,24 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": "organization invitation happy path covers list and accept flows",
-        "authorization": "organization invitation happy path covers list and accept flows",
-        "state": null
+        "success": [
+          "organization invitation happy path covers list and accept flows",
+          "organization user invitation listing retains expired pending invitations and excludes processed ones",
+          "organization server invitation listing scopes email and applies configured page limits before status filtering"
+        ],
+        "rejection": [
+          "organization invitation happy path covers list and accept flows",
+          "organization user invitation listing forbids selecting another email over HTTP"
+        ],
+        "authorization": [
+          "organization invitation happy path covers list and accept flows",
+          "organization user invitation listing forbids selecting another email over HTTP",
+          "organization server invitation listing scopes email and applies configured page limits before status filtering"
+        ],
+        "state": [
+          "organization invitation happy path covers list and accept flows",
+          "organization user invitation listing retains expired pending invitations and excludes processed ones"
+        ]
       }
     },
     {

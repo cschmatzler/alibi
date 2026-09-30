@@ -414,8 +414,8 @@ pub struct GetInvitationResponse<I: Serialize> {
 pub struct UserInvitationResponse<I: Serialize> {
     #[serde(flatten)]
     pub invitation: I,
-    #[serde(rename = "organizationName")]
-    pub organization_name: String,
+    #[serde(rename = "organizationName", skip_serializing_if = "Option::is_none")]
+    pub organization_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

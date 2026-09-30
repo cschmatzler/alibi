@@ -297,9 +297,7 @@ where
     async fn list_user_invitations(&self, email: &str) -> AuthResult<Vec<Invitation>> {
         Entity::find()
             .filter(Column::Email.eq(email.to_lowercase()))
-            .filter(Column::Status.eq(InvitationStatus::Pending.to_string()))
-            .filter(Column::ExpiresAt.gt(Utc::now()))
-            .order_by_desc(Column::CreatedAt)
+            .limit(self.config().advanced.database.default_find_many_limit as u64)
             .all(self.connection())
             .await
             .map(|models| models.iter().map(Invitation::from).collect())

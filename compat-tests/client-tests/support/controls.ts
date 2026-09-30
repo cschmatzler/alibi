@@ -221,3 +221,6 @@ export async function readDeviceState(baseURL: string, args: {deviceCode: string
 export async function expireDevice(baseURL: string, args: {deviceCode: string; expiresAt: string}): Promise<unknown> {
   return postControl(baseURL, "/__test/expire-device", args);
 }
+export async function expireInvitation(baseURL: string, args: { invitationId: string; expiresAt: string }): Promise<unknown> {
+  return postControl(baseURL, "/__test/expire-invitation", args);
+}
