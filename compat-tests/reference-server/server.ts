@@ -402,6 +402,44 @@ const server = Bun.serve({
         return jsonResponse({ ok: true, oauthBaseURL });
       }
 
+      if (url.pathname === "/__test/password" && request.method === "POST") {
+        const body = (await readJson(request)) as {
+          operation?: string;
+          password?: string;
+          hash?: string;
+          email?: string;
+        } | null;
+        if (body?.operation === "hash" && typeof body.password === "string") {
+          return jsonResponse({ hash: await authContext.password.hash(body.password) });
+        }
+        if (body?.operation === "verify" && typeof body.password === "string" && typeof body.hash === "string") {
+          return jsonResponse({
+            valid: await authContext.password.verify({ password: body.password, hash: body.hash }),
+          });
+        }
+        if ((body?.operation === "import" || body?.operation === "credential") && typeof body.email === "string") {
+          const user = await authContext.internalAdapter.findUserByEmail(body.email, {
+            includeAccounts: true,
+          });
+          const account = user?.accounts.find((entry) => entry.providerId === "credential");
+          if (!user?.user || !account) {
+            return jsonResponse({ message: "Credential not found" }, { status: 404 });
+          }
+          if (body.operation === "import") {
+            if (typeof body.hash !== "string") {
+              return jsonResponse({ message: "hash is required" }, { status: 400 });
+            }
+            await authContext.internalAdapter.updateAccount(account.id, { password: body.hash });
+          }
+          const persisted = await authContext.adapter.findOne<typeof account>({
+            model: "account",
+            where: [{ field: "id", value: account.id }],
+          });
+          return jsonResponse({ userId: user.user.id, accountId: account.id, hash: persisted?.password ?? null });
+        }
+        return jsonResponse({ message: "Invalid password operation" }, { status: 400 });
+      }
+
       if (url.pathname === "/__test/api-key/create" && request.method === "POST") {
         return jsonResponse(await auth.api.createApiKey({ body: await readJson(request) }));
       }

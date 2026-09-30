@@ -39,10 +39,10 @@ pub mod wire;
 // Re-export commonly used items
 pub use better_auth_macros::{AuthSchema, PluginConfig};
 pub use config::{
-    AccountConfig, AccountLinkingConfig, AdvancedConfig, AdvancedDatabaseConfig, Argon2Config,
-    AuthConfig, CookieAttributes, CookieCacheConfig, CookieCacheStrategy, CookieOverride,
-    CrossSubDomainConfig, IpAddressConfig, JwtConfig, OAuthStateStrategy, PasswordConfig, SameSite,
-    SessionConfig, core_paths, extract_origin,
+    AccountConfig, AccountLinkingConfig, AdvancedConfig, AdvancedDatabaseConfig, AuthConfig,
+    CookieAttributes, CookieCacheConfig, CookieCacheStrategy, CookieOverride, CrossSubDomainConfig,
+    IpAddressConfig, JwtConfig, OAuthStateStrategy, PasswordConfig, SameSite, SessionConfig,
+    core_paths, extract_origin,
 };
 pub use email::{ConsoleEmailProvider, EmailProvider};
 pub use entity::{
@@ -75,7 +75,7 @@ pub use types::{
     UpdateDeviceCode, UpdateOrganization, UpdatePasskey, UpdateUser, UpdateUserRequest,
     UpdateUserResponse, ValidationErrorResponse,
 };
-pub use utils::password::{PasswordHasher, hash_password, verify_password};
+pub use utils::password::{PasswordHasher, ScryptHasher, hash_password, verify_password};
 #[doc(hidden)]
 pub use uuid;
 pub use wire::{

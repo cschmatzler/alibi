@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+
+### Changed
+
+- Use the TypeScript Better Auth 1.7.6 scrypt password format and NFKC
+  normalization, so credentials can be imported between the two runtimes.
+  Password length limits now count UTF-16 code units.
+- Remove `Argon2Config` and `PasswordConfig::argon2_config`; the built-in scrypt
+  parameters are fixed. Applications with existing hashes in another format
+  need a password reset or an application-provided migration strategy.
+
 ## [1.0.0-alpha.3](https://github.com/better-auth-rs/better-auth-rs/compare/v1.0.0-alpha.2...v1.0.0-alpha.3) - 2026-09-26
 
 ### Bug Fixes

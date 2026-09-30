@@ -18,3 +18,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 async-trait = "0.1.89"
 chrono = "0.4.44"
 url = "2.5.8"
+
+# Optimize the pinned memory-hard primitive for debug compatibility fixtures.
+[profile.dev.package.scrypt]
+opt-level = 3
+
+[profile.dev.package.salsa20]
+opt-level = 3

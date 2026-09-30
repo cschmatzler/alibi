@@ -41,6 +41,10 @@ in `client-tests/` before browser checks.
 - `tough-cookie` handles expiry, deletion, domains and paths. Cookie security
   attributes are compared; the raw exception list is empty. Chromium separately
   checks real browser session persistence, HttpOnly behavior and logout.
+- Password scenarios import actual hashes produced by each runtime into both
+  fixture stores, then exercise official-client sign-in, Unicode normalization,
+  incorrect passwords, credential replacement, and persisted account ownership.
+  Test-only password controls stay outside the public authentication router.
 - A software ES256 authenticator produces valid registration and authentication
   signatures. The passkey scenario checks persisted credentials, ownership
   rejection, counter updates, replay rejection, rename and deletion.

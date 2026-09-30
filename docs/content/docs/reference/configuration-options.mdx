@@ -17,7 +17,7 @@ This page documents the public configuration types in `crates/core/src/config.rs
 | `disabled_paths` | `Vec<String>` | `[]` | Routes that should behave as disabled |
 | `session` | `SessionConfig` | see below | Session token and cookie behavior |
 | `jwt` | `JwtConfig` | see below | Optional JWT behavior |
-| `password` | `PasswordConfig` | see below | Password policy and Argon2 settings |
+| `password` | `PasswordConfig` | see below | Password validation policy |
 | `account` | `AccountConfig` | see below | OAuth/account-linking behavior |
 | `email_provider` | `Option<Arc<dyn EmailProvider>>` | `None` | Global email provider |
 | `advanced` | `AdvancedConfig` | see below | Advanced cookie, IP, and DB options |
@@ -75,15 +75,10 @@ Refresh semantics:
 | `require_lowercase` | `bool` | `false` | Require lowercase letters |
 | `require_numbers` | `bool` | `false` | Require digits |
 | `require_special` | `bool` | `false` | Require special characters |
-| `argon2_config` | `Argon2Config` | see below | Argon2 tuning |
-
-### Argon2Config
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `memory_cost` | `u32` | `4096` | Memory cost in KiB |
-| `time_cost` | `u32` | `3` | Iteration count |
-| `parallelism` | `u32` | `1` | Degree of parallelism |
+The built-in password hasher uses fixed scrypt parameters compatible with
+TypeScript Better Auth 1.7.6: `N = 16384`, `r = 16`, `p = 1`, and a 64-byte key.
+Passwords are normalized with NFKC before hashing or verification. Length limits
+count UTF-16 code units, matching the TypeScript runtime.
 
 ## AccountConfig
 

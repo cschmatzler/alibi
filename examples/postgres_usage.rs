@@ -1,8 +1,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use argon2::password_hash::SaltString;
-use argon2::{Argon2, PasswordHasher};
 use better_auth::plugins::{
     AccountManagementPlugin, EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin,
 };
@@ -21,7 +19,6 @@ use better_auth::seaorm::{
 };
 use better_auth::{AuthConfig, AuthError, AuthResult, AuthSchema, BetterAuth};
 use chrono::{DateTime, Utc};
-use rand::rngs::OsRng;
 use serde_json::json;
 
 mod user {
@@ -800,7 +797,8 @@ async fn seed_legacy_user(database: &DatabaseConnection) -> Result<(), Box<dyn s
     }
 
     let now = Utc::now();
-    let password_hash = hash_seed_password("legacy_password_123")
+    let password_hash = better_auth::hash_password(None, "legacy_password_123")
+        .await
         .map_err(|error| format!("failed to hash seeded password: {error}"))?;
     let legacy_user = user::ActiveModel {
         id: NotSet,
@@ -885,11 +883,4 @@ fn hide_password(url: &str) -> String {
         return format!("{}****{}", before_password, after_password);
     }
     url.to_string()
-}
-
-fn hash_seed_password(password: &str) -> Result<String, argon2::password_hash::Error> {
-    let salt = SaltString::generate(&mut OsRng);
-    Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
-        .map(|hash| hash.to_string())
 }

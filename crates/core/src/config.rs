@@ -598,7 +598,7 @@ pub struct JwtConfig {
     pub audience: Option<String>,
 }
 
-/// Password hashing configuration
+/// Password validation configuration. Built-in hashing uses pinned scrypt parameters.
 #[derive(Debug, Clone)]
 pub struct PasswordConfig {
     /// Minimum password length
@@ -615,17 +615,6 @@ pub struct PasswordConfig {
 
     /// Require special characters
     pub require_special: bool,
-
-    /// Argon2 configuration
-    pub argon2_config: Argon2Config,
-}
-
-/// Argon2 hashing configuration
-#[derive(Debug, Clone)]
-pub struct Argon2Config {
-    pub memory_cost: u32,
-    pub time_cost: u32,
-    pub parallelism: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -882,17 +871,6 @@ impl Default for PasswordConfig {
             require_lowercase: false,
             require_numbers: false,
             require_special: false,
-            argon2_config: Argon2Config::default(),
-        }
-    }
-}
-
-impl Default for Argon2Config {
-    fn default() -> Self {
-        Self {
-            memory_cost: 4096, // 4MB
-            time_cost: 3,      // 3 iterations
-            parallelism: 1,    // 1 thread
         }
     }
 }
