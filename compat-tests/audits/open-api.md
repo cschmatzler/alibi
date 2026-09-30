@@ -1,8 +1,9 @@
 # OpenAPI/reference parity investigation (Better Auth 1.7.6)
 
-The default and configured generator/reference behavior is implemented and proved
-with strict whole-document differential profiles. The ordinary default document
-includes the real `/update-session` endpoint and all implemented core annotations.
+The generator/reference defaults and configuration branches are implemented and
+proved with strict whole-document differential profiles on equivalent, explicitly
+core-configured instances. That ordinary fixture document includes the real
+`/update-session` endpoint and all implemented core annotations.
 The earlier temporary `/update-session` disabledPaths branch has been removed.
 Source-backed annotation tables cover selected plugin declarations; untested
 configuration branches remain explicit below rather than a full-parity claim.
@@ -54,6 +55,30 @@ sign-up/update-user request schemas, with source core keys retaining precedence.
 Chosen-schema model field overrides apply after registered plugin model fields,
 matching the upstream table policy. Documentation does not install those input
 or storage behaviors.
+
+## Minimal builder and core-module boundary
+
+The public Rust `AuthBuilder::new` starts with no installed plugins. Its
+unconditional metadata collection does not install email/password, session,
+account, or other core modules. In `src/core/auth.rs`, `AuthBuilder::build`
+registers the four routes from
+`crates/core/src/openapi/annotations.rs::core_routes`; those same four routes
+are actual unconditional `BetterAuth::handle_core_request` cases: `/ok`,
+`/error`, `/update-user`, and the native `/__test/openapi.json` embedding endpoint.
+All remaining endpoint metadata comes from each installed plugin's real routes.
+The registry snapshot retains every registration; the default document omits
+native extensions and the OpenAPI plugin's own endpoints according to the
+separate documentation policy.
+
+Consequently, `AuthBuilder` plus only `OpenApiPlugin` advertises its handled
+core routes and installed plugin routes; it does not fabricate handlers for
+omitted modules. Its document is smaller than pinned TypeScript Better Auth's
+always-present base API. Default core-module registration/API-default parity is
+an existing Rust boundary requiring separate implementation. The whole-document
+profiles explicitly install the equivalent Rust core modules, so their default
+OpenAPI-option and combined-plugin comparisons remain valid. This evidence does
+not establish that every minimal Rust builder configuration equals the upstream
+base configuration.
 
 ## Focused proof and test ownership
 
