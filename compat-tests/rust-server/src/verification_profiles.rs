@@ -10,8 +10,8 @@ use better_auth::plugins::{
 };
 use better_auth::wire::UserView;
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_seaorm::SeaOrmStore;
 use better_auth_seaorm::sea_orm::DatabaseConnection;
+use better_auth_seaorm::SeaOrmStore;
 use chrono::Duration;
 use std::collections::HashMap;
 use std::sync::Arc;

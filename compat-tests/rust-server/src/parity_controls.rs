@@ -2,17 +2,17 @@
 
 use crate::TestSchema;
 use axum::{
-    Json, Router,
     extract::{Query, State},
     http::StatusCode,
     routing::get,
+    Json, Router,
 };
 use better_auth::{
-    BetterAuth,
     prelude::{AuthAccount, AuthSession, AuthUser},
+    BetterAuth,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::Arc;
 
 type Auth = Arc<BetterAuth<TestSchema>>;

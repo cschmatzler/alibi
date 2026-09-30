@@ -1,8 +1,8 @@
 use axum::{
-    Json, Router,
     extract::Query,
     response::IntoResponse,
     routing::{get, post},
+    Json, Router,
 };
 use better_auth::__private_core::AuthContext as InternalAuthContext;
 use better_auth::integrations::axum::AxumIntegration;
@@ -12,10 +12,6 @@ use better_auth::plugins::api_key::{
     VerifyApiKey,
 };
 use better_auth::plugins::{
-    AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
-    EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, OrganizationPlugin, PasskeyPlugin,
-    PasswordManagementPlugin, SendTwoFactorOtp, SessionManagementPlugin, TwoFactorPlugin,
-    UserManagementPlugin,
     email_verification::SendVerificationEmail,
     oauth::{
         OAuthIdTokenVerifier, OAuthProvider, OAuthRefreshTokenHandler, OAuthTokenSet,
@@ -23,6 +19,10 @@ use better_auth::plugins::{
     },
     password_management::SendResetPassword,
     user_management::SendChangeEmailConfirmation,
+    AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
+    EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, OrganizationPlugin, PasskeyPlugin,
+    PasswordManagementPlugin, SendTwoFactorOtp, SessionManagementPlugin, TwoFactorPlugin,
+    UserManagementPlugin,
 };
 use better_auth::prelude::{
     AuthAccount, AuthUser, CreateAccount, CreateVerification, UpdateAccount,
