@@ -49,6 +49,7 @@ use tokio::sync::Mutex;
 
 mod admin_banned_message_fixture;
 mod admin_permission_fixture;
+mod api_key_hook_fixture;
 mod device_fixture;
 mod invitation_fixture;
 mod jwt_fixture;
@@ -64,7 +65,6 @@ mod phone_profiles;
 mod session_field_model;
 mod session_fields_fixture;
 mod session_profiles;
-mod api_key_hook_fixture;
 mod siwe_fixture;
 mod sqlite_fixture;
 mod two_factor_otp_fixture;

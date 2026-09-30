@@ -1,10 +1,10 @@
 use crate::TestSchema;
 use axum::{
-    Json, Router,
     extract::Query,
     http::HeaderMap,
     response::IntoResponse,
     routing::{get, post},
+    Json, Router,
 };
 use better_auth::__private_core::{AuthRequest, HttpMethod};
 use better_auth::integrations::axum::AxumIntegration;
@@ -16,11 +16,11 @@ use better_auth::plugins::api_key::{
 use better_auth::plugins::{ApiKeyPlugin, EmailPasswordPlugin, SessionManagementPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
 use better_auth_seaorm::{
-    SeaOrmStore,
     sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement},
+    SeaOrmStore,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 
 type Events = Arc<Mutex<Vec<Value>>>;
