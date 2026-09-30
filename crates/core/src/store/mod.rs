@@ -5,6 +5,7 @@ use std::pin::Pin;
 
 pub mod cache;
 mod org_extensions;
+pub(crate) mod plugin_hooks;
 pub use org_extensions::{OrganizationRoleStore, TeamStore, team_membership_key};
 
 use crate::error::{AuthError, AuthResult};

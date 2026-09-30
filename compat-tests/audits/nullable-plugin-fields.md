@@ -18,11 +18,16 @@ existing default when a value is absent. Applications needing an unset state
 must use nullable columns and nullable model fields.
 
 Raw storage preserves the supplied fields without initializing disabled
-plugins or applying unrelated update policy. Per-auth-instance enabled-plugin
-defaults and output projection are separate integration responsibilities.
-Those defaults must run before application database hooks, including inside a
-signup transaction. An auth instance sharing the adapter must not alter the
-other instance's defaults or update hooks.
+plugins or applying unrelated update policy. The auth builder wraps the shared
+adapter with that instance's registered plugin transforms. Admin supplies a
+missing `banned: false` and configured default role; two-factor supplies a
+missing `twoFactorEnabled: false`. Explicit values remain intact. These
+transforms run before application database hooks, including transactional
+creation, through both the public store and the auth context. A second auth
+instance sharing the adapter retains its own defaults and update policy.
+Enabled output projects an existing unset value as JSON `null`; disabled
+output omits the plugin's fields. Boolean authorization checks still treat an
+unset flag as `false`.
 
 The upgrade keeps existing true/false values. PostgreSQL drops the two columns'
 `NOT NULL` and default constraints in one `ALTER TABLE`; this slice compiles
@@ -54,8 +59,22 @@ Native evidence covers:
   ID from 40 to 1.
 - A custom boolean entity persists explicit flags and updates through the
   generated model interface without changing its field types.
+- Public builder/store and auth-context writes apply registered transforms in
+  order; a second instance on the same adapter stays unaffected. Rejected
+  transforms leave persisted data unchanged. Real transaction commit and
+  forced rollback retain those guarantees.
+- Enabled admin/two-factor defaults reach the actual application
+  `before_create_user` hook, including inside a transaction. Explicit true
+  values survive; raw and disabled creation retain nulls; existing null rows
+  stay null after initialization and project as null only when enabled.
 
 The migration was independently reviewed. View rename validation, hidden-row-ID
 alias detection and attached conflict clauses were reproduced as failing
 database operations before their repairs. No route inventory or comparison
 normalization is changed by this prerequisite.
+
+This slice does not add async endpoint-context callbacks, arbitrary schema
+mapping, or the other plugins' independent configuration and lifecycle
+branches. Additional store interfaces must be explicitly forwarded by the
+per-instance wrapper when those capabilities are introduced; JWT's keyring
+store remains in its separate prerequisite.
