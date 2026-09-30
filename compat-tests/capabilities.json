@@ -924,10 +924,10 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "username availability follows normalized persisted usernames",
+        "rejection": "username availability rejects invalid names before lookup",
         "authorization": null,
-        "state": null
+        "state": "username availability follows normalized persisted usernames"
       }
     },
     {
