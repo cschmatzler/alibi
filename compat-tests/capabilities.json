@@ -193,7 +193,7 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": null,
+        "success": "core before responses stop endpoint writes and unknown routes cannot run hooks",
         "rejection": null,
         "authorization": null,
         "state": null
