@@ -330,7 +330,7 @@ fn account_cookie_max_age(config: &better_auth_core::AuthConfig) -> Duration {
         .unwrap_or_else(|| Duration::minutes(5))
 }
 
-pub(super) fn create_account_cookie_header(
+pub(crate) fn create_account_cookie_header(
     config: &better_auth_core::AuthConfig,
     secret: &str,
     payload: &AccountCookiePayload,
@@ -449,16 +449,17 @@ fn auth_base_url(ctx: &AuthContext<impl better_auth_core::AuthSchema>) -> String
     )
 }
 
-struct ProcessOAuthUserResult {
-    session: SessionView,
-    user: UserView,
-    is_register: bool,
-    account_cookie: Option<AccountCookiePayload>,
+pub(crate) struct ProcessOAuthUserResult {
+    pub(crate) session: SessionView,
+    pub(crate) user: UserView,
+    pub(crate) is_register: bool,
+    pub(crate) account_cookie: Option<AccountCookiePayload>,
 }
 
-enum OAuthSignInError {
+pub(crate) enum OAuthSignInError {
     Generic(String),
     Banned(String),
+    EmailNotVerified,
 }
 
 impl OAuthSignInError {
@@ -466,6 +467,11 @@ impl OAuthSignInError {
         match self {
             Self::Generic(message) => AuthError::forbidden(message),
             Self::Banned(message) => AuthError::banned_user(message),
+            Self::EmailNotVerified => AuthError::Upstream {
+                status: 403,
+                code: "EMAIL_NOT_VERIFIED",
+                message: "Email not verified",
+            },
         }
     }
 
@@ -477,6 +483,7 @@ impl OAuthSignInError {
             // An APIError instead redirects with its `code` and message, so the
             // param is the constant, not a lowercased word.
             Self::Banned(message) => ("BANNED_USER".to_string(), Some(message.as_str())),
+            Self::EmailNotVerified => ("email_not_verified".to_owned(), None),
         }
     }
 }
@@ -516,9 +523,97 @@ struct FlowStartRequest<'a> {
     disable_redirect: bool,
 }
 
-async fn process_oauth_sign_in(
+/// Normalized policy shared by social callbacks and One Tap.
+#[derive(Clone, Default)]
+pub(crate) struct OAuthProcessPolicy {
+    pub(crate) override_user_info: bool,
+    pub(crate) require_email_verification: bool,
+    pub(crate) callback_url: Option<String>,
+    pub(crate) encrypt_id_token: bool,
+    pub(crate) use_updated_user: bool,
+}
+impl OAuthProcessPolicy {
+    fn for_provider(provider: &OAuthProvider, callback_url: Option<String>) -> Self {
+        Self {
+            override_user_info: provider.override_user_info_on_sign_in,
+            require_email_verification: provider.require_email_verification,
+            callback_url,
+            encrypt_id_token: true,
+            use_updated_user: true,
+        }
+    }
+}
+
+async fn finish_oauth_session<S: better_auth_core::AuthSchema>(
+    user: &S::User,
+    is_register: bool,
+    policy: &OAuthProcessPolicy,
+    meta: &better_auth_core::RequestMeta,
+    ctx: &AuthContext<S>,
+) -> Result<crate::plugins::helpers::IssuedSession<S>, OAuthSignInError> {
+    if !user.email_verified() {
+        let config = ctx
+            .extensions
+            .get::<crate::plugins::email_verification::EmailVerificationConfig>();
+        let should_send = if is_register {
+            config
+                .as_ref()
+                .and_then(|config| config.send_on_sign_up)
+                .unwrap_or(policy.require_email_verification)
+        } else {
+            policy.require_email_verification
+                && config.as_ref().is_some_and(|config| config.send_on_sign_in)
+        };
+        if should_send {
+            if let Some(config) = config {
+                // OAuth delivery completes after identity/account commit, before a session.
+                if config.send_verification_email.is_some() {
+                    if let Some(email) = user.email() {
+                        let plugin = crate::plugins::email_verification::EmailVerificationPlugin::with_config((*config).clone());
+                        plugin
+                            .send_verification_email_for_user(
+                                user,
+                                email,
+                                policy.callback_url.as_deref(),
+                                ctx,
+                            )
+                            .await
+                            .map_err(|error| error.to_string())?;
+                    }
+                } else if let Some(sender) = ctx.email_verification_override() {
+                    crate::plugins::authentication_helpers::run_notification(sender.0.send(
+                        &ctx.user_view(user),
+                        None,
+                        ctx,
+                    ))
+                    .await;
+                }
+            } else if let Some(sender) = ctx.email_verification_override() {
+                crate::plugins::authentication_helpers::run_notification(sender.0.send(
+                    &ctx.user_view(user),
+                    None,
+                    ctx,
+                ))
+                .await;
+            }
+        }
+        if policy.require_email_verification {
+            return Err(OAuthSignInError::EmailNotVerified);
+        }
+    }
+    issue_user_session(
+        ctx,
+        &user.id(),
+        meta.ip_address.clone(),
+        meta.user_agent.clone(),
+    )
+    .await
+    .map_err(OAuthSignInError::from)
+}
+
+pub(crate) async fn process_oauth_sign_in(
     provider_name: &str,
-    provider: &OAuthProvider,
+    policy: &OAuthProcessPolicy,
     user_info: &OAuthUserInfo,
     tokens: &OAuthTokenSet,
     disable_sign_up: bool,
@@ -535,13 +630,21 @@ async fn process_oauth_sign_in(
         .await
         .map_err(|error| error.to_string())?;
 
-    let token_bundle = encrypt_token_set(
+    let mut token_bundle = encrypt_token_set(
         ctx,
         tokens.access_token.clone(),
         tokens.refresh_token.clone(),
-        tokens.id_token.clone(),
+        if policy.encrypt_id_token {
+            tokens.id_token.clone()
+        } else {
+            None
+        },
     )
     .map_err(|error| error.to_string())?;
+
+    if !policy.encrypt_id_token {
+        token_bundle.id_token = tokens.id_token.clone();
+    }
 
     if let Some(existing_account) = linked_account {
         if ctx.config.account.update_account_on_sign_in {
@@ -575,7 +678,7 @@ async fn process_oauth_sign_in(
                 .email()
                 .is_some_and(|email| email.eq_ignore_ascii_case(&user_info.email))
         {
-            user = ctx
+            let updated = ctx
                 .database
                 .update_user(
                     &user.id(),
@@ -586,9 +689,12 @@ async fn process_oauth_sign_in(
                 )
                 .await
                 .map_err(|error| error.to_string())?;
+            if policy.use_updated_user {
+                user = updated;
+            }
         }
 
-        if provider.override_user_info_on_sign_in {
+        if policy.override_user_info {
             user = ctx
                 .database
                 .update_user(
@@ -609,14 +715,7 @@ async fn process_oauth_sign_in(
                 .map_err(|error| error.to_string())?;
         }
 
-        let issued = issue_user_session(
-            ctx,
-            &user.id(),
-            meta.ip_address.clone(),
-            meta.user_agent.clone(),
-        )
-        .await
-        .map_err(OAuthSignInError::from)?;
+        let issued = finish_oauth_session(&user, false, policy, meta, ctx).await?;
         let account_cookie =
             ctx.config
                 .account
@@ -646,7 +745,11 @@ async fn process_oauth_sign_in(
 
         return Ok(ProcessOAuthUserResult {
             session: ctx.session_view(&issued.session),
-            user: ctx.user_view(&issued.user),
+            user: if policy.use_updated_user {
+                ctx.user_view(&issued.user)
+            } else {
+                ctx.user_view(&user)
+            },
             is_register: false,
             account_cookie,
         });
@@ -699,7 +802,7 @@ async fn process_oauth_sign_in(
                 .email()
                 .is_some_and(|email| email.eq_ignore_ascii_case(&user_info.email))
         {
-            linked_user = ctx
+            let updated = ctx
                 .database
                 .update_user(
                     &linked_user.id(),
@@ -710,6 +813,9 @@ async fn process_oauth_sign_in(
                 )
                 .await
                 .map_err(|error| error.to_string())?;
+            if policy.use_updated_user {
+                linked_user = updated;
+            }
         }
 
         if linking.update_user_info_on_link {
@@ -730,7 +836,7 @@ async fn process_oauth_sign_in(
             }
         }
 
-        if provider.override_user_info_on_sign_in {
+        if policy.override_user_info {
             linked_user =
                 ctx.database
                     .update_user(
@@ -751,14 +857,7 @@ async fn process_oauth_sign_in(
                     .map_err(|error| error.to_string())?;
         }
 
-        let issued = issue_user_session(
-            ctx,
-            &linked_user.id(),
-            meta.ip_address.clone(),
-            meta.user_agent.clone(),
-        )
-        .await
-        .map_err(OAuthSignInError::from)?;
+        let issued = finish_oauth_session(&linked_user, false, policy, meta, ctx).await?;
         let account_cookie = ctx
             .config
             .account
@@ -767,7 +866,11 @@ async fn process_oauth_sign_in(
 
         Ok(ProcessOAuthUserResult {
             session: ctx.session_view(&issued.session),
-            user: ctx.user_view(&issued.user),
+            user: if policy.use_updated_user {
+                ctx.user_view(&issued.user)
+            } else {
+                ctx.user_view(&linked_user)
+            },
             is_register: false,
             account_cookie,
         })
@@ -809,14 +912,7 @@ async fn process_oauth_sign_in(
             .await
             .map_err(|_| "unable to create user".to_string())?;
 
-        let issued = issue_user_session(
-            ctx,
-            &created_user.id(),
-            meta.ip_address.clone(),
-            meta.user_agent.clone(),
-        )
-        .await
-        .map_err(OAuthSignInError::from)?;
+        let issued = finish_oauth_session(&created_user, true, policy, meta, ctx).await?;
         let account_cookie = ctx
             .config
             .account
@@ -825,7 +921,11 @@ async fn process_oauth_sign_in(
 
         Ok(ProcessOAuthUserResult {
             session: ctx.session_view(&issued.session),
-            user: ctx.user_view(&issued.user),
+            user: if policy.use_updated_user {
+                ctx.user_view(&issued.user)
+            } else {
+                ctx.user_view(&created_user)
+            },
             is_register: true,
             account_cookie,
         })
@@ -956,7 +1056,7 @@ async fn sign_in_with_id_token_core(
 
     let outcome = process_oauth_sign_in(
         &body.provider,
-        provider,
+        &OAuthProcessPolicy::for_provider(provider, body.callback_url.clone()),
         &user_info.user,
         &OAuthTokenSet {
             access_token: id_token.access_token.clone(),
@@ -1562,7 +1662,7 @@ pub(crate) async fn handle_callback(
         || provider.disable_sign_up;
     let outcome = match process_oauth_sign_in(
         provider_name,
-        provider,
+        &OAuthProcessPolicy::for_provider(provider, Some(payload.callback_url.clone())),
         &user_info.user,
         &tokens,
         disable_sign_up,

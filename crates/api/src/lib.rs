@@ -33,6 +33,7 @@ pub use plugins::device_authorization::DeviceAuthorizationPlugin;
 pub use plugins::email_password::EmailPasswordPlugin;
 pub use plugins::email_verification::EmailVerificationPlugin;
 pub use plugins::oauth::OAuthPlugin;
+pub use plugins::one_tap::{OneTapConfig, OneTapPlugin};
 pub use plugins::passkey::{PasskeyConfig, PasskeyPlugin};
 pub use plugins::password_management::PasswordManagementPlugin;
 pub use plugins::session_management::SessionManagementPlugin;

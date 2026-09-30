@@ -7,6 +7,9 @@ use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 mod account;
 pub mod encryption;
 mod handlers;
+pub(crate) use handlers::{
+    OAuthProcessPolicy, OAuthSignInError, create_account_cookie_header, process_oauth_sign_in,
+};
 mod providers;
 mod state;
 mod types;
@@ -60,6 +63,11 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
             AuthRoute::post("/refresh-token", "refresh_token"),
             AuthRoute::get("/account-info", "account_info"),
         ]
+    }
+
+    async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
+        ctx.extensions.insert(self.config.clone());
+        Ok(())
     }
 
     async fn on_request(

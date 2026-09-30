@@ -260,6 +260,9 @@ fn mock_oauth_plugin() -> OAuthPlugin {
         "mock",
         OAuthProvider {
             client_id: "mock-client-id".to_string(),
+            additional_client_ids: Vec::new(),
+            hosted_domain: None,
+            require_email_verification: false,
             client_secret: "mock-client-secret".to_string(),
             auth_url: format!("{MOCK_OAUTH_BASE_URL}/__test/oauth/authorize"),
             token_url: format!("{MOCK_OAUTH_BASE_URL}/__test/oauth/token"),

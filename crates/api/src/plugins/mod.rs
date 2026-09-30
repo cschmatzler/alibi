@@ -11,6 +11,7 @@ pub mod jwt;
 pub mod magic_link;
 pub mod multi_session;
 pub mod oauth;
+pub mod one_tap;
 pub mod one_time_token;
 pub mod open_api;
 pub mod organization;
