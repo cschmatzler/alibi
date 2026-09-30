@@ -409,3 +409,95 @@ async fn verified_session_authenticates_a_protected_plugin_route_without_a_datab
         1
     );
 }
+
+// The SDK uses an actual HTTP request. This guards the separate public Rust
+// contract: server-only verification without a request can use typed application
+// policy from immutable context extensions and preserves quota on rejection.
+#[tokio::test]
+async fn programmatic_validator_uses_typed_policy_without_a_request() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    struct Policy(AtomicBool);
+    struct Predicate {
+        private_policy_secret: String,
+    }
+    #[async_trait::async_trait]
+    impl ApiKeyValidator for Predicate {
+        async fn validate(&self, context: &ApiKeyCallbackContext<'_>, _key: &str) -> bool {
+            context.request.is_none()
+                && context.configuration_id == "programmatic"
+                && context.auth_config.secret == "test-secret-key-at-least-32-chars-long"
+                && self.private_policy_secret == "application-private-policy-secret"
+                && context
+                    .extensions
+                    .get::<Policy>()
+                    .is_some_and(|policy| policy.0.load(Ordering::SeqCst))
+        }
+    }
+    let (mut ctx, user, _) = create_test_context_with_user().await;
+    ctx.extensions.insert(Policy(AtomicBool::new(false)));
+    let configuration = ApiKeyConfig {
+        config_id: "programmatic".to_owned(),
+        custom_api_key_validator: Some(Arc::new(Predicate {
+            private_policy_secret: "application-private-policy-secret".to_owned(),
+        })),
+        rate_limit: RateLimitDefaults {
+            enabled: false,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert!(!format!("{configuration:?}").contains("application-private-policy-secret"));
+    let plugin = ApiKeyPlugin::with_config(configuration);
+    let created = plugin
+        .create_key(
+            &ctx,
+            &CreateKeyRequest {
+                config_id: Some("programmatic".to_owned()),
+                user_id: Some(user.id.clone()),
+                remaining: Some(2.0),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let input = VerifyApiKey {
+        key: &created.key,
+        config_id: Some("programmatic"),
+        permissions: None,
+    };
+    let rejected = plugin.verify_api_key(&input, &ctx).await.unwrap_err();
+    assert!(matches!(
+        rejected,
+        ApiKeyVerificationError::Validation(ApiKeyValidationError {
+            code: ApiKeyErrorCode::KeyNotFound,
+            ..
+        })
+    ));
+    assert_eq!(
+        ctx.database
+            .get_api_key_by_id(&created.api_key.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .remaining,
+        Some(2.0)
+    );
+    ctx.extensions
+        .get::<Policy>()
+        .unwrap()
+        .0
+        .store(true, Ordering::SeqCst);
+    let accepted = plugin.verify_api_key(&input, &ctx).await.unwrap();
+    assert_eq!(accepted.reference_id, user.id);
+    assert_eq!(accepted.id, created.api_key.id);
+    assert_eq!(accepted.remaining, Some(1.0));
+    assert_eq!(
+        ctx.database
+            .get_api_key_by_id(&created.api_key.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .remaining,
+        Some(1.0)
+    );
+}

@@ -64,6 +64,7 @@ mod phone_profiles;
 mod session_field_model;
 mod session_fields_fixture;
 mod session_profiles;
+mod api_key_hook_fixture;
 mod siwe_fixture;
 mod sqlite_fixture;
 mod two_factor_otp_fixture;
@@ -655,6 +656,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         verification_profiles::router(&config, database.clone(), verification_outbox.clone())
             .await?;
     let session_profile_router = session_profiles::router(&config, database.clone()).await?;
+    let api_key_hook_router = api_key_hook_fixture::router(&config, database.clone()).await?;
     let multiple_session_counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let multiple_session_router = multiple_session_fixture::router(
         &config,
@@ -1631,6 +1633,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_state(auth)
         .merge(verification_profile_router)
         .merge(session_profile_router)
+        .merge(api_key_hook_router)
         .merge(multiple_session_router)
         .merge(admin_permission_router)
         .merge(admin_banned_message_router)

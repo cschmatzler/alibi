@@ -6,7 +6,10 @@ use better_auth_core::{
 };
 use serde::Serialize;
 
-use super::{ApiKeyErrorCode, ApiKeyPlugin, ApiKeyReferences, config_id_matches};
+use super::{
+    ApiKeyCallbackContext, ApiKeyConfig, ApiKeyErrorCode, ApiKeyPlugin, ApiKeyReferences,
+    config_id_matches,
+};
 
 /// Inputs for server-only API key verification. Verification consumes one use.
 pub struct VerifyApiKey<'a> {
@@ -26,13 +29,32 @@ pub struct ApiKeyErrorDetails {
     pub try_again_in: f64,
 }
 
+/// Upstream verification messages can contain either text or an error-code object.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum ApiKeyErrorMessage {
+    Text(String),
+    CodeMessage {
+        code: ApiKeyErrorCode,
+        message: String,
+    },
+}
+
+impl ApiKeyErrorMessage {
+    fn text(&self) -> &str {
+        match self {
+            Self::Text(value) | Self::CodeMessage { message: value, .. } => value,
+        }
+    }
+}
+
 /// An API key rejection with the upstream error code and response fields.
 #[derive(Debug, Serialize)]
 pub struct ApiKeyValidationError {
     /// Stable upstream API key error code.
     pub code: ApiKeyErrorCode,
     /// Upstream error message.
-    pub message: String,
+    pub message: ApiKeyErrorMessage,
     /// Rate-limit timing, when the rejection is a rate limit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<ApiKeyErrorDetails>,
@@ -42,7 +64,7 @@ impl ApiKeyValidationError {
     fn new(code: ApiKeyErrorCode) -> Self {
         Self {
             code,
-            message: code.message().to_owned(),
+            message: ApiKeyErrorMessage::Text(code.message().to_owned()),
             details: None,
         }
     }
@@ -72,7 +94,7 @@ pub enum ApiKeyVerificationError {
 impl std::fmt::Display for ApiKeyVerificationError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Validation(error) => formatter.write_str(&error.message),
+            Self::Validation(error) => formatter.write_str(error.message.text()),
             Self::Internal(error) => write!(formatter, "API key verification failed: {error}"),
         }
     }
@@ -113,9 +135,50 @@ impl ApiKeyPlugin {
         input: &VerifyApiKey<'_>,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> Result<ApiKeyView, ApiKeyVerificationError> {
+        self.verify_api_key_checked(input, None, ctx, true).await
+    }
+
+    /// Verify with the actual caller request available to trusted predicates.
+    /// This performs the same server-only verification operation as `verify_api_key`.
+    pub async fn verify_api_key_with_request(
+        &self,
+        input: &VerifyApiKey<'_>,
+        request: &AuthRequest,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ) -> Result<ApiKeyView, ApiKeyVerificationError> {
+        self.verify_api_key_checked(input, Some(request), ctx, true)
+            .await
+    }
+
+    async fn verify_api_key_checked(
+        &self,
+        input: &VerifyApiKey<'_>,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        server_operation: bool,
+    ) -> Result<ApiKeyView, ApiKeyVerificationError> {
         let lookup_config = self
             .resolve_configuration(input.config_id)
             .map_err(|_| ApiKeyErrorCode::NoDefaultConfiguration)?;
+        if server_operation
+            && input.config_id.is_some()
+            && let Some(validator) = &lookup_config.custom_api_key_validator
+            && !validator
+                .validate(
+                    &ApiKeyCallbackContext::new(request, ctx, &lookup_config.config_id),
+                    input.key,
+                )
+                .await
+        {
+            return Err(ApiKeyVerificationError::Validation(ApiKeyValidationError {
+                code: ApiKeyErrorCode::KeyNotFound,
+                message: ApiKeyErrorMessage::CodeMessage {
+                    code: ApiKeyErrorCode::InvalidApiKey,
+                    message: ApiKeyErrorCode::InvalidApiKey.message().to_owned(),
+                },
+                details: None,
+            }));
+        }
         let hashed = if lookup_config.disable_key_hashing {
             input.key.to_owned()
         } else {
@@ -136,6 +199,19 @@ impl ApiKeyPlugin {
         let config = self
             .resolve_configuration(Some(&api_key.config_id))
             .map_err(|_| ApiKeyErrorCode::NoDefaultConfiguration)?;
+
+        if server_operation
+            && input.config_id.is_none()
+            && let Some(validator) = &config.custom_api_key_validator
+            && !validator
+                .validate(
+                    &ApiKeyCallbackContext::new(request, ctx, &config.config_id),
+                    input.key,
+                )
+                .await
+        {
+            return Err(ApiKeyErrorCode::KeyNotFound.into());
+        }
 
         if !api_key.enabled {
             return Err(ApiKeyErrorCode::KeyDisabled.into());
@@ -176,26 +252,44 @@ impl ApiKeyPlugin {
         Ok(ApiKeyView::from(updated.as_ref()))
     }
 
+    fn find_session_key<'a>(
+        &'a self,
+        req: &AuthRequest,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ) -> Option<(&'a ApiKeyConfig, String)> {
+        self.configurations
+            .iter()
+            .filter(|config| config.enable_session_for_api_keys)
+            .find_map(|config| {
+                let key = if let Some(getter) = &config.custom_api_key_getter {
+                    getter.get_key(&ApiKeyCallbackContext::new(
+                        Some(req),
+                        ctx,
+                        &config.config_id,
+                    ))
+                } else {
+                    config.api_key_headers.iter().find_map(|header| {
+                        req.headers
+                            .get(&header.to_ascii_lowercase())
+                            .filter(|key| !key.is_empty())
+                            .cloned()
+                    })
+                };
+                key.filter(|key| !key.is_empty()).map(|key| (config, key))
+            })
+    }
+
     pub(super) async fn api_key_session(
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<Option<BeforeRequestAction>> {
-        let Some((config, key)) = self
-            .configurations
-            .iter()
-            .filter(|config| config.enable_session_for_api_keys)
-            .find_map(|config| {
-                config.api_key_headers.iter().find_map(|header| {
-                    req.headers
-                        .get(&header.to_ascii_lowercase())
-                        .filter(|key| !key.is_empty())
-                        .map(|key| (config, key))
-                })
-            })
-        else {
+        if self.find_session_key(req, ctx).is_none() {
             return Ok(None);
-        };
+        }
+        let (config, key) = self.find_session_key(req, ctx).ok_or_else(|| {
+            AuthError::internal("API key getter did not return a key after matching")
+        })?;
 
         if key.encode_utf16().count() < config.key_length {
             return Ok(Some(BeforeRequestAction::Respond(AuthResponse::json(
@@ -203,12 +297,28 @@ impl ApiKeyPlugin {
                 &ApiKeyValidationError::new(ApiKeyErrorCode::InvalidApiKey),
             )?)));
         }
+        if let Some(validator) = &config.custom_api_key_validator
+            && !validator
+                .validate(
+                    &ApiKeyCallbackContext::new(Some(req), ctx, &config.config_id),
+                    &key,
+                )
+                .await
+        {
+            return Ok(Some(BeforeRequestAction::Respond(AuthResponse::json(
+                403,
+                &ApiKeyValidationError::new(ApiKeyErrorCode::InvalidApiKey),
+            )?)));
+        }
         let input = VerifyApiKey {
-            key,
+            key: &key,
             config_id: Some(&config.config_id),
             permissions: None,
         };
-        let view = match self.verify_api_key(&input, ctx).await {
+        let view = match self
+            .verify_api_key_checked(&input, Some(req), ctx, false)
+            .await
+        {
             Ok(view) => view,
             Err(ApiKeyVerificationError::Validation(error)) => {
                 return Ok(Some(BeforeRequestAction::Respond(error.response()?)));
