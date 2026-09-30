@@ -127,3 +127,92 @@ compatScenario("two-factor passwordless treats a retained empty credential hash 
   expect(await credentials(ctx,owner.userId)).toEqual(empty);
   return ctx.snapshot({empty,nullPassword,enrollment:redactFactor(enabled),verified,saved:redactFactor(saved),disabled,current});
 }, ["POST /two-factor/enable", "POST /two-factor/disable", "POST /two-factor/get-totp-uri", "POST /two-factor/generate-backup-codes", "POST /two-factor/verify-totp", "POST /two-factor/verify-backup-code"]);
+
+
+compatScenario("two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries", async ctx => {
+  const profile = "two-factor-passwordless";
+  let originalCookie = "";
+  const owner = createAuthClient({
+    baseURL: `${ctx.baseURL}${authProfilePath(profile)}`,
+    plugins: [twoFactorClient()],
+    fetchOptions: { customFetchImpl: async (input, init) => {
+      const response = await ctx.actor("owner", profile).fetch(input, init);
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.endsWith("/sign-up/email")) {
+        originalCookie = response.headers.getSetCookie().find(value => value.split("=")[0]?.endsWith(".session_token"))?.split(";")[0] ?? "";
+      }
+      return response;
+    } },
+  });
+  const email = ctx.uniqueEmail("passwordless-otp"), password = "password123";
+  const created = await owner.signUp.email({ email, password, name: "Social OTP Owner" });
+  expect(created.error).toBeNull();
+  if (!created.data) throw new Error("owner required");
+  const userId = created.data.user.id;
+  await ctx.seedOAuthAccount({ email, providerId: "social-fixture", accountId: "passwordless-otp-social-account" });
+  const mixed = await credentials(ctx, userId);
+  expect(mixed).toEqual([{ userId, providerId: "credential", hasPassword: true }, { userId, providerId: "social-fixture", hasPassword: false }]);
+  const initial = await owner.getSession(), before = await ctx.readUserState({ userId });
+  const wrongPassword = await owner.twoFactor.enable({ password: "wrong-password", method: "otp" });
+  expect(wrongPassword.error?.code).toBe("INVALID_PASSWORD");
+  expect(await ctx.readUserState({ userId })).toEqual(before);
+
+  await ctx.removeCredentialAccount({ email });
+  const social = await credentials(ctx, userId);
+  expect(social).toEqual([{ userId, providerId: "social-fixture", hasPassword: false }]);
+  const socialBefore = await ctx.readUserState({ userId });
+  const nullPassword = await body(ctx, profile, "/two-factor/enable", { password: null, method: "otp" });
+  expect(nullPassword).toMatchObject({ status: 400, body: { code: "VALIDATION_ERROR", message: "[body.password] Invalid input: expected string, received null" } });
+  const invalidMethod = await body(ctx, profile, "/two-factor/enable", { method: "invalid", issuer: null });
+  expect(invalidMethod.status).toBe(400);
+  expect(invalidMethod.body).toMatchObject({ code: "VALIDATION_ERROR" });
+  expect(z.object({ message: z.string() }).parse(invalidMethod.body).message).toStartWith("[body.method]");
+  const nullIssuer = await body(ctx, profile, "/two-factor/enable", { method: "otp", issuer: null });
+  expect(nullIssuer).toMatchObject({ status: 400, body: { code: "VALIDATION_ERROR", message: "[body.issuer] Invalid input: expected string, received null" } });
+  expect(await ctx.readUserState({ userId })).toEqual(socialBefore);
+
+  const enabled = await owner.twoFactor.enable({ method: "otp" });
+  expect(enabled.error).toBeNull(); expect(enabled.data).toEqual({ method: "otp" });
+  const current = await owner.getSession();
+  expect(current.data?.user.id).toBe(userId); expect(current.data?.user.twoFactorEnabled).toBe(true);
+  expect(current.data?.session.token).not.toBe(initial.data?.session.token);
+  const stateSchema = z.object({ user: z.object({ twoFactorEnabled: z.boolean() }), twoFactorExists: z.boolean(), sessions: z.array(z.object({ id: z.string(), token: z.string(), userId: z.string() })) });
+  const enabledRaw = await ctx.readUserState({ userId });
+  const enabledState = stateSchema.parse(enabledRaw);
+  expect(enabledState.user.twoFactorEnabled).toBe(true); expect(enabledState.twoFactorExists).toBe(false);
+  expect(enabledState.sessions).toHaveLength(1);
+  expect(enabledState.sessions[0]).toMatchObject({ token: current.data?.session.token, userId });
+  expect(originalCookie).not.toBe("");
+  const oldSession = await clientFor(ctx, profile, "old-session").getSession({ fetchOptions: { headers: { cookie: originalCookie } } });
+  expect(oldSession.data).toBeNull();
+
+  const foreign = await signup(ctx, profile, "foreign"), foreignBefore = await ctx.readUserState({ userId: foreign.userId });
+  const sent = await owner.twoFactor.sendOtp({}); expect(sent.error).toBeNull();
+  const delivery = await ctx.rawRequest({ path: "/__test/two-factor-policy", method: "POST", json: { deliveryEmail: email } });
+  expect(delivery.status).toBe(200);
+  const code = z.object({ otp: z.string().regex(/^\d{6}$/) }).parse(delivery.body).otp;
+  const identifier = `2fa-otp-${userId}!${current.data!.session.id}`;
+  const rows = await ctx.readVerificationState({ identifier });
+  const rowSchema = z.array(z.object({ id: z.string(), identifier: z.string(), value: z.string() }));
+  expect(rowSchema.parse(rows)).toHaveLength(1);
+  expect(rowSchema.parse(rows)[0]).toMatchObject({ identifier, value: `${code}:0` });
+  const wrongOwner = await foreign.client.twoFactor.verifyOtp({ code });
+  expect(wrongOwner.error?.code).toBe("OTP_HAS_EXPIRED");
+  expect(await ctx.readVerificationState({ identifier })).toEqual(rows);
+  expect(await ctx.readUserState({ userId })).toEqual(enabledRaw);
+  expect(await ctx.readUserState({ userId: foreign.userId })).toEqual(foreignBefore);
+  const wrongCode = await owner.twoFactor.verifyOtp({ code: "wrong-code" });
+  expect(wrongCode.error?.code).toBe("INVALID_CODE");
+  expect(rowSchema.parse(await ctx.readVerificationState({ identifier }))[0]?.value).toBe(`${code}:1`);
+  const verified = await owner.twoFactor.verifyOtp({ code });
+  expect(verified.error).toBeNull(); expect(verified.data?.user.id).toBe(userId);
+  expect(verified.data?.token).toBe(current.data?.session.token);
+  expect(await ctx.readVerificationState({ identifier })).toEqual([]);
+  const replay = await owner.twoFactor.verifyOtp({ code }); expect(replay.error?.code).toBe("OTP_HAS_EXPIRED");
+  const final = await owner.getSession(), persisted = stateSchema.parse(await ctx.readUserState({ userId }));
+  expect(persisted).toEqual(enabledState); expect(final.data?.session.token).toBe(current.data?.session.token);
+  expect(await ctx.readUserState({ userId })).toEqual(enabledRaw);
+  expect(await credentials(ctx, userId)).toEqual(social);
+  expect(await ctx.readUserState({ userId: foreign.userId })).toEqual(foreignBefore);
+  return ctx.snapshot({ created, mixed, initial, before, wrongPassword, social, nullPassword, invalidMethod, nullIssuer, enabled, current, enabledState, oldSession, sent, wrongOwner, wrongCode, verified, replay, final, persisted, foreignBefore });
+}, ["POST /two-factor/enable", "POST /two-factor/send-otp", "POST /two-factor/verify-otp"]);
