@@ -6,6 +6,7 @@ import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { createTwoFactorPolicyFixture } from "./two-factor-policy-fixture";
 import { createTwoFactorTotpFixture } from "./two-factor-totp-fixture";
+import { createOrganizationCreationFixture } from "./organization-creation-fixture";
 import { createSiweFixture } from "./siwe-fixture";
 import { createPhoneFixture } from "./phone-fixture";
 import { createMultipleSessionFixture } from "./multiple-session-fixture";
@@ -388,6 +389,7 @@ await runMigrations();
 const sessionFieldsFixture=await createSessionFieldsFixture(database,authOptions,`http://localhost:${PORT}`);
 const siweFixture = await createSiweFixture(database, authOptions, `http://localhost:${PORT}`);
 const multipleSessionFixture = createMultipleSessionFixture(authOptions);
+const organizationCreationFixture = createOrganizationCreationFixture(database, authOptions, `http://localhost:${PORT}`);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
@@ -711,6 +713,15 @@ const server = Bun.serve({
       const url = new URL(request.url);
       if(url.pathname==="/__test/session-field-state")return jsonResponse(sessionFieldsFixture.state(url.searchParams.get("email")??""));
       for(const [name,profile] of sessionFieldsFixture.profiles)if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return profile.handler(request);
+      for (const [name, profile] of organizationCreationFixture.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return profile.handler(request);
+      }
+      if (url.pathname === "/__test/organization-creation-state" && request.method === "GET") {
+        return jsonResponse(organizationCreationFixture.state(url.searchParams.get("email") ?? ""));
+      }
+      if (url.pathname === "/__test/organization-create" && request.method === "POST") {
+        return organizationCreationFixture.server(await request.json() as Record<string,unknown>);
+      }
       for (const [name,profile] of deviceProfiles) if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return profile.handler(request);
 
       if (url.pathname === "/__test/device-state" && request.method === "GET") {

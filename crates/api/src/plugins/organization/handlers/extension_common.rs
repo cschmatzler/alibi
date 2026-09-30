@@ -18,6 +18,15 @@ fn role_cache() -> &'static Mutex<HashMap<String, OrganizationRoles>> {
 pub fn org_error(status: u16, code: &'static str) -> AuthError {
     let message = match code {
         "UNAUTHORIZED" => "Unauthorized",
+        "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_ORGANIZATION" => {
+            "You are not allowed to update this organization"
+        }
+        "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION" => {
+            "You are not allowed to create a new organization"
+        }
+        "YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS" => {
+            "You have reached the maximum number of organizations"
+        }
         "NO_ACTIVE_ORGANIZATION" => "No active organization",
         "ORGANIZATION_NOT_FOUND" => "Organization not found",
         "TEAM_NOT_FOUND" => "Team not found",

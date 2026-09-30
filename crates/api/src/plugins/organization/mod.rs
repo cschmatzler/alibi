@@ -1,3 +1,5 @@
+pub mod creation_policy;
+pub use creation_policy::OrganizationCreationPolicy;
 pub mod extensions;
 pub mod handlers;
 pub mod rbac;
@@ -39,9 +41,14 @@ pub struct OrganizationConfig {
     /// Allow users to create organizations (default: true)
     #[config(default = true)]
     pub allow_user_to_create_organization: bool,
-    /// Maximum organizations per user (None = unlimited)
+    /// Maximum organization memberships per user (`None` = unlimited).
+    /// Uses JavaScript Number comparisons: fractional, negative, NaN and infinite
+    /// limits retain their upstream meanings.
     #[config(default = None)]
-    pub organization_limit: Option<usize>,
+    pub organization_limit: Option<f64>,
+    /// Optional asynchronous policy overrides, evaluated against the actual user.
+    #[config(default = None, skip)]
+    pub creation_policy: Option<std::sync::Arc<dyn OrganizationCreationPolicy>>,
     /// Maximum members per organization (None = unlimited)
     #[config(default = Some(100))]
     pub membership_limit: Option<usize>,
@@ -73,9 +80,45 @@ pub struct OrganizationConfig {
     pub access_control: Option<better_auth_core::types::OrganizationPermissions>,
 }
 
+impl OrganizationConfig {
+    /// The pinned creator-role option uses JavaScript's nonempty-string fallback.
+    pub fn effective_creator_role(&self) -> &str {
+        if self.creator_role.is_empty() {
+            "owner"
+        } else {
+            &self.creator_role
+        }
+    }
+}
+
 /// Organization plugin for multi-tenancy support
 pub struct OrganizationPlugin {
     config: OrganizationConfig,
+}
+
+impl OrganizationPlugin {
+    /// Trusted server operation. The supplied user ID is resolved from storage;
+    /// HTTP creation always uses the authenticated principal instead.
+    /// Like upstream's server-only body.userId branch, this bypasses an allow-policy
+    /// denial while still evaluating that policy and enforcing organization limits.
+    pub async fn create_organization_for_user<S: better_auth_core::AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        user_id: &str,
+        body: &types::CreateOrganizationRequest,
+    ) -> AuthResult<
+        types::CreateOrganizationResponse<
+            types::CreatedOrganizationResponse,
+            types::BasicMemberResponse,
+        >,
+    > {
+        let user = ctx
+            .database
+            .get_user_by_id(user_id)
+            .await?
+            .ok_or(better_auth_core::AuthError::Unauthenticated)?;
+        handlers::org::create_organization_core(body, &user, None, None, &self.config, ctx).await
+    }
 }
 
 #[cfg(test)]
@@ -139,7 +182,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
         );
         ctx.set_metadata(
             METADATA_CREATOR_ROLE,
-            serde_json::Value::String(self.config.creator_role.clone()),
+            serde_json::Value::String(self.config.effective_creator_role().to_owned()),
         );
         Ok(())
     }
