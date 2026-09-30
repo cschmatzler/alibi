@@ -2,10 +2,13 @@ import { z } from "zod";
 import { mkdir } from "node:fs/promises";
 import type { TraceEntry } from "./trace";
 
+/** One category can require several independent configuration or lifecycle scenarios. */
+const requirementSchema = z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]).nullable();
+
 /** Validated, committed route and scenario requirements. */
 export const inventorySchema = z.object({ upstreamVersion: z.literal("1.7.6"), capabilities: z.array(z.object({
   route: z.string(), implemented: z.boolean(), upstream: z.boolean(),
-  evidence: z.object({ success: z.string().nullable(), rejection: z.string().nullable(), authorization: z.string().nullable(), state: z.string().nullable() }),
+  evidence: z.object({ success: requirementSchema, rejection: requirementSchema, authorization: requirementSchema, state: requirementSchema }),
 })) });
 /** Independent evidence categories; none implies complete endpoint coverage. */
 export type EvidenceKind = "success" | "rejection" | "authorization" | "state";

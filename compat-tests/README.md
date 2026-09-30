@@ -66,7 +66,7 @@ normalized to `{}`. Device authorization is included in the Rust fixture.
 Server-only functions and plugins outside that profile are not HTTP inventory
 entries. The file explicitly marks routes absent from Rust and missing evidence.
 
-Evidence is recorded only after a dual-server scenario passes. Each route can
+Evidence is recorded only after a dual-server scenario passes. A category accepts a scenario name or a nonempty array of names; every named scenario is required. Regeneration preserves existing requirements and refuses missing scenarios, removed routes, and duplicate route declarations. New configuration evidence is added explicitly without replacing earlier flows. Each route can
 require named scenarios for successful responses, rejection, authorization and
 state transitions. A state entry requires an explicit scenario declaration and
 assertions of the resulting state. CI fails if a declared route or existing
