@@ -27,7 +27,8 @@ SQLite test preserves an application column/index/view/inbound reference and
 factor secret after user deletion. Existing device migration tests still prove
 rollback after destructive DDL and connection setting restoration.
 
-Independent review found no authorization or persistence issue. This slice
-requires final integrated canonical validation before publication. Other admin
+Independent review found no authorization or persistence issue. The canonical gate passed: 265 SDK scenarios / 7,604 assertions, 37 harness
+tests / 210 assertions, two Chromium tests / 22 assertions, and 79.34% source
+line coverage (23,962 / 30,202). Other admin
 configurations, remove-user string coercion/media ordering and custom adapter
 cleanup policies remain separate work; this is not a claim of every admin option.
