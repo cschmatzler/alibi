@@ -1296,45 +1296,79 @@
     {
       "route": "POST /phone-number/request-password-reset",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": [
+          "phone password reset consumes rejected proofs creates credentials and revokes configured sessions"
+        ],
+        "rejection": [
+          "phone endpoint schemas reject every malformed field before any state transition"
+        ],
         "authorization": null,
-        "state": null
+        "state": [
+          "phone password reset consumes rejected proofs creates credentials and revokes configured sessions"
+        ]
       }
     },
     {
       "route": "POST /phone-number/reset-password",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": [
+          "phone password reset consumes rejected proofs creates credentials and revokes configured sessions"
+        ],
+        "rejection": [
+          "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
+          "phone endpoint schemas reject every malformed field before any state transition"
+        ],
         "authorization": null,
-        "state": null
+        "state": [
+          "phone password reset consumes rejected proofs creates credentials and revokes configured sessions"
+        ]
       }
     },
     {
       "route": "POST /phone-number/send-otp",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": [
+          "phone verification signs up a phone owner and preserves identity across new sessions",
+          "external phone OTP verification enforces provider binding and replaces local expiry policy"
+        ],
+        "rejection": [
+          "phone endpoint schemas reject every malformed field before any state transition",
+          "external phone OTP verification enforces provider binding and replaces local expiry policy"
+        ],
         "authorization": null,
-        "state": null
+        "state": [
+          "phone verification signs up a phone owner and preserves identity across new sessions"
+        ]
       }
     },
     {
       "route": "POST /phone-number/verify",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": [
+          "phone verification signs up a phone owner and preserves identity across new sessions",
+          "phone updates bind the requester preserve its session and reject occupied numbers",
+          "external phone OTP verification enforces provider binding and replaces local expiry policy"
+        ],
+        "rejection": [
+          "phone OTP rejects foreign numbers exhausted attempts expiry and disabled signup",
+          "phone endpoint schemas reject every malformed field before any state transition"
+        ],
+        "authorization": [
+          "phone updates bind the requester preserve its session and reject occupied numbers"
+        ],
+        "state": [
+          "phone verification signs up a phone owner and preserves identity across new sessions",
+          "phone updates bind the requester preserve its session and reject occupied numbers",
+          "external phone OTP verification enforces provider binding and replaces local expiry policy"
+        ]
       }
     },
     {
@@ -1467,12 +1501,20 @@
     {
       "route": "POST /sign-in/phone-number",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": [
+          "phone password sign-in requires ownership proof before credentials and honors rememberMe",
+          "phone password sign-in enforces two-factor ownership and trusted-device rotation"
+        ],
+        "rejection": [
+          "phone password sign-in requires ownership proof before credentials and honors rememberMe",
+          "phone endpoint schemas reject every malformed field before any state transition"
+        ],
         "authorization": null,
-        "state": null
+        "state": [
+          "phone password sign-in requires ownership proof before credentials and honors rememberMe"
+        ]
       }
     },
     {

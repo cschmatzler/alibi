@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, Once, OnceLock};
 
 use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
+use better_auth::plugins::phone_number::PhoneNumberPlugin;
 use better_auth::plugins::siwe::{Eip191Verifier, RandomSiweNonce, SiweConfig, SiwePlugin};
 
 use better_auth::{
@@ -337,6 +338,7 @@ pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .plugin(SessionManagementPlugin::new())
         .plugin(OneTimeTokenPlugin::new())
+        .plugin(PhoneNumberPlugin::new(Default::default()))
         .plugin(
             PasswordManagementPlugin::new()
                 .require_current_password(true)

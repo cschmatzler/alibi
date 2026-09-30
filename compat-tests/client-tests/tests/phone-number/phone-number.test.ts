@@ -309,7 +309,7 @@ compatScenario("phone updates bind the requester preserve its session and reject
   expect(clearedState.user?.phoneNumber).toBeNull();
   expect(clearedState.user?.phoneNumberVerified).toBe(false);
   return { before, collision, updated, after, state, otherState, unauthenticated, forbidden, cleared, clearedState };
-});
+}, ["POST /phone-number/verify"]);
 
 compatScenario("phone password sign-in requires ownership proof before credentials and honors rememberMe", async (ctx) => {
   const profile = "phone-proof";
@@ -467,7 +467,7 @@ compatScenario("external phone OTP verification enforces provider binding and re
   const state = await readPhoneState(ctx, profile, user.id);
   expect(state.sessions).toHaveLength(1);
   return { invalid, foreign, wrong, verified, replay, state };
-});
+}, ["POST /phone-number/verify"]);
 
 compatScenario("phone endpoint schemas reject every malformed field before any state transition", async (ctx) => {
   const profile = "phone-signup";
