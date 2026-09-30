@@ -29,24 +29,21 @@ let auth = BetterAuth::<AppAuthSchema>::new(config)
 
 ## Opaque Session Tokens
 
-For the v1 release surface, Better Auth uses **opaque session tokens** stored in the database and transported through:
+Better Auth generates 32-character opaque session tokens. The browser sends a
+signed `better-auth.session_token` cookie; the signature is verified before the
+stored token can authenticate a request. Session endpoints do not accept a bare
+`Authorization: Bearer` header. The bearer plugin is a separate capability.
 
-```http
-Authorization: Bearer session_abc123...
-```
-
-```http
-Cookie: better-auth.session_token=session_abc123...
-```
-
-The optional JWT surface provides signed tokens separately from the opaque tokens used by session endpoints.
+The optional JWT surface provides signed tokens separately from these session
+tokens. Trusted Rust code can read persistent state through `SessionManager` and
+the configured store.
 
 ## Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/get-session` | Return the current session and user |
-| `POST` | `/get-session` | Same, without refreshing the session; requires `session.defer_session_refresh`, otherwise 405 |
+| `POST` | `/get-session` | Refresh the session and remove expired rows when deferred refresh is enabled; otherwise 405 |
 | `POST` | `/sign-out` | Revoke the current session and clear cookies |
 | `GET` | `/list-sessions` | List all active sessions for the current user |
 | `POST` | `/revoke-session` | Revoke one specific session by token |
@@ -83,11 +80,25 @@ config.session.cookie_http_only = true;
 config.session.cookie_same_site = SameSite::Lax;
 ```
 
-- `update_age = Some(duration)`: refresh only when the session is older than that duration.
+- `update_age = Some(duration)`: refresh when the persisted expiry minus `expires_in` plus `duration` is due. Updating another session field does not reset this threshold.
 - `update_age = None`: refresh on every access.
 - `disable_session_refresh = true`: never refresh automatically.
-- `defer_session_refresh = true`: additionally accept `POST /get-session`, which returns the session without touching its expiry so a prefetching client has no side effect.
-- `fresh_age`: optional window for treating a session as "fresh" for sensitive actions.
+- `defer_session_refresh = true`: `GET /get-session` leaves the row unchanged and reports `needsRefresh`. `POST /get-session` refreshes a due session or deletes an expired row. Both methods clear expired browser cookies.
+- `fresh_age`: defaults to one day and checks session creation time for session listing. `None` or zero disables the freshness restriction.
+
+Credential sign-in with `rememberMe: false` issues a one-day stored session,
+a browser-session cookie and a signed `dont_remember` preference. A nonempty
+verified preference suppresses refresh. For duplicate cookies, the first value
+is authoritative. The `disableRefresh` query uses the pinned runtime's Boolean
+coercion: even `disableRefresh=false` is a nonempty string and suppresses refresh.
+An empty query value permits refresh.
+
+Nested session middleware forwards renewal and cleanup cookies. Sensitive
+revocation endpoints read the persisted signed-cookie session even when a
+plugin has established a virtual session. Revoking another user's token returns
+`status: true` and leaves that user's session unchanged. A session deleted during
+a refresh returns `401 FAILED_TO_GET_SESSION`, rather than authenticating the old
+snapshot; store failures return `500 FAILED_TO_GET_SESSION` from `/get-session`.
 
 ## Using Sessions in Axum Handlers
 

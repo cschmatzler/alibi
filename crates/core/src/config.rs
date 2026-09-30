@@ -550,21 +550,22 @@ pub struct SessionConfig {
 
     /// How often to refresh the session expiry (as a Duration).
     ///
-    /// When set, session expiry is only updated if the session is older than
-    /// this duration since the last update. When `None`, every request
-    /// refreshes the session (equivalent to the old `update_age: true`).
+    /// A read refreshes when `expires_at - expires_in + update_age` is due.
+    /// This uses the stored expiry, including application overrides, rather
+    /// than the row's last update timestamp. `None` refreshes on every read
+    /// unless refresh is disabled or deferred.
     pub update_age: Option<Duration>,
 
     /// If `true`, sessions are never automatically refreshed on access.
     pub disable_session_refresh: bool,
 
-    /// Allow `POST /get-session`, which defers the session refresh so a
-    /// prefetching client can read the session without a `GET` side effect.
-    /// Upstream rejects the `POST` form with 405 unless this is enabled.
+    /// Defer refresh and expired-row deletion during `GET` session reads.
+    /// `POST /get-session` performs these writes when enabled; otherwise that
+    /// method is rejected with 405. Expired browser cookies are still cleared.
     pub defer_session_refresh: bool,
 
-    /// Session freshness window. A session younger than this is considered
-    /// "fresh" (useful for step-up auth or sensitive operations).
+    /// Session freshness window, defaulting to one day. `None` or zero skips
+    /// the freshness restriction; a positive window checks creation time.
     pub fresh_age: Option<Duration>,
 
     /// Cookie name for session token
@@ -822,7 +823,7 @@ impl Default for SessionConfig {
             update_age: Some(Duration::hours(24)), // refresh once per day
             disable_session_refresh: false,
             defer_session_refresh: false,
-            fresh_age: None,
+            fresh_age: Some(Duration::days(1)),
             cookie_name: "better-auth.session_token".to_string(),
             // Secure flag is derived from base_url scheme (HTTPS → true).
             // Default base_url is http://localhost:3000, so default is false.

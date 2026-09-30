@@ -395,6 +395,16 @@ for (const name of ["email-verification-required", "email-verification-no-signup
   verificationProfiles.set(path, instance);
 }
 
+for (const name of ["session-deferred", "session-no-refresh", "session-deferred-no-refresh", "session-no-freshness", "session-cookie-cleanup"]) {
+  const path = `/__test/profiles/${name}/api/auth`;
+  verificationProfiles.set(path, betterAuth({
+    ...authOptions,
+    basePath: path,
+    session: { ...authOptions.session, deferSessionRefresh: name.startsWith("session-deferred"), disableSessionRefresh: name.endsWith("no-refresh"), ...(name === "session-no-freshness" ? { freshAge: 0 } : {}) },
+    ...(name === "session-cookie-cleanup" ? { account: { ...authOptions.account, storeAccountCookie: true, storeStateStrategy: "cookie" } } : {}),
+  }));
+}
+
 const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
 const RESET_MODELS = [
@@ -516,6 +526,14 @@ const server = Bun.serve({
         const persistedOrg = await authContext.adapter.findOne<Record<string, unknown>>({ model: "organization", where: orgWhere });
         const persistedMember = await authContext.adapter.findOne<Record<string, unknown>>({ model: "member", where: memberWhere });
         return jsonResponse({ organizationId: persistedOrg!.id, memberId: persistedMember!.id, userId: persistedMember!.userId, organizationCreatedAtMillis: new Date(persistedOrg!.createdAt as Date).getTime(), memberCreatedAtMillis: new Date(persistedMember!.createdAt as Date).getTime() });
+      }
+
+      if (url.pathname === "/__test/expire-session" && request.method === "POST") {
+        const body = await readJson(request);
+        if (typeof body?.token !== "string" || typeof body?.expiresAt !== "string") return jsonResponse({ message: "Invalid session clock" }, { status: 400 });
+        const result = database.query('UPDATE session SET expiresAt = ? WHERE token = ?').run(new Date(body.expiresAt).toISOString(), body.token);
+        if (typeof body.createdAt === "string") database.query('UPDATE session SET createdAt = ? WHERE token = ?').run(new Date(body.createdAt).toISOString(), body.token);
+        return jsonResponse({ updated: result.changes });
       }
 
       if (url.pathname === "/__test/user-state" && request.method === "GET") {

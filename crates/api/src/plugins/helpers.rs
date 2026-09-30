@@ -2,7 +2,6 @@
 //!
 //! Extracted to avoid duplicating common patterns across plugins (DRY).
 
-use better_auth_core::config::OAuthStateStrategy;
 use better_auth_core::entity::{AuthAccount, AuthUser};
 use better_auth_core::{AuthContext, AuthError, AuthRequest, AuthResult, CreateUser, UpdateUser};
 use chrono::Utc;
@@ -291,34 +290,5 @@ pub fn get_cookie(req: &AuthRequest, name: &str) -> Option<String> {
 
 /// TS-style cookie clearing used by `deleteSessionCookie`.
 pub fn delete_session_cookie_headers(config: &better_auth_core::AuthConfig) -> Vec<String> {
-    let mut cookies = vec![
-        better_auth_core::utils::cookie_utils::create_clear_session_cookie(config),
-        better_auth_core::utils::cookie_utils::create_clear_cookie(
-            &better_auth_core::utils::cookie_utils::related_cookie_name(config, "session_data"),
-            config,
-        ),
-        better_auth_core::utils::cookie_utils::create_clear_cookie(
-            &better_auth_core::utils::cookie_utils::related_cookie_name(config, "dont_remember"),
-            config,
-        ),
-    ];
-
-    if config.account.store_account_cookie {
-        cookies.push(better_auth_core::utils::cookie_utils::create_clear_cookie(
-            &better_auth_core::utils::cookie_utils::related_cookie_name(config, "account_data"),
-            config,
-        ));
-    }
-
-    if matches!(
-        config.account.store_state_strategy,
-        OAuthStateStrategy::Cookie
-    ) {
-        cookies.push(better_auth_core::utils::cookie_utils::create_clear_cookie(
-            &better_auth_core::utils::cookie_utils::related_cookie_name(config, "oauth_state"),
-            config,
-        ));
-    }
-
-    cookies
+    better_auth_core::utils::cookie_utils::delete_session_cookie_headers(config)
 }

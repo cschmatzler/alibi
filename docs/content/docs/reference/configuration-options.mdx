@@ -27,10 +27,10 @@ This page documents the public configuration types in `crates/core/src/config.rs
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `expires_in` | `chrono::Duration` | `7 days` | Session lifetime |
-| `update_age` | `Option<chrono::Duration>` | `Some(1 day)` | Age threshold before refreshing a session |
+| `update_age` | `Option<chrono::Duration>` | `Some(1 day)` | Expiry-based threshold before refreshing a session |
 | `disable_session_refresh` | `bool` | `false` | Disable automatic refresh entirely |
-| `defer_session_refresh` | `bool` | `false` | Allow `POST /get-session`, which reads the session without refreshing it; the `POST` form answers 405 otherwise |
-| `fresh_age` | `Option<chrono::Duration>` | `None` | Optional freshness window for sensitive actions |
+| `defer_session_refresh` | `bool` | `false` | Make `GET` read-only and use `POST /get-session` for refresh and expired-row deletion; `POST` answers 405 otherwise |
+| `fresh_age` | `Option<chrono::Duration>` | `Some(1 day)` | Optional freshness window for sensitive actions |
 | `cookie_name` | `String` | `"better-auth.session_token"` | Cookie name used for session transport |
 | `cookie_secure` | `bool` | Derived from `base_url` | `true` for HTTPS URLs, `false` for HTTP URLs |
 | `cookie_http_only` | `bool` | `true` | Prevent JavaScript access to the cookie |
@@ -39,7 +39,7 @@ This page documents the public configuration types in `crates/core/src/config.rs
 
 Refresh semantics:
 
-- `update_age = Some(duration)`: refresh only when older than `duration`.
+- `update_age = Some(duration)`: refresh when `expires_at - expires_in + duration` is due.
 - `update_age = None`: refresh on every access.
 - `disable_session_refresh = true`: never refresh automatically.
 

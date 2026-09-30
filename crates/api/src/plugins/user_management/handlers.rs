@@ -186,7 +186,8 @@ pub(crate) async fn delete_user_core(
 
     if body.password.is_none()
         && let Some(fresh_age) = ctx.config.session.fresh_age
-        && session.created_at() + fresh_age < Utc::now()
+        && fresh_age != chrono::Duration::zero()
+        && session.created_at() + fresh_age <= Utc::now()
     {
         return Err(AuthError::bad_request(
             "Session expired. Re-authenticate to perform this action.",

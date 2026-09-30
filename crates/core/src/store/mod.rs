@@ -87,6 +87,19 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         token: &str,
         expires_at: chrono::DateTime<chrono::Utc>,
     ) -> AuthResult<()>;
+    /// Refresh the persisted expiry and return the updated snapshot. A session
+    /// removed before the update returns `None`, never its old credentials.
+    async fn refresh_session(
+        &self,
+        token: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<S::Session>> {
+        match self.update_session_expiry(token, expires_at).await {
+            Ok(()) => self.get_session(token).await,
+            Err(crate::AuthError::SessionNotFound) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
     async fn delete_session(&self, token: &str) -> AuthResult<()>;
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()>;
     async fn delete_expired_sessions(&self) -> AuthResult<usize>;

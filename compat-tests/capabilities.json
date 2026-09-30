@@ -119,7 +119,7 @@
         "success": "admin impersonation restores the original admin session and hides impersonated sessions",
         "rejection": "api-key shared headers select the first configured session",
         "authorization": "api-key shared headers select the first configured session",
-        "state": null
+        "state": "session reads refresh from persisted expiry and renew the signed cookie"
       }
     },
     {
@@ -151,8 +151,8 @@
       "evidence": {
         "success": "admin impersonation restores the original admin session and hides impersonated sessions",
         "rejection": null,
-        "authorization": null,
-        "state": null
+        "authorization": "session nested middleware clears expired cookies and rejects invalid revocation bodies",
+        "state": "session nested middleware clears expired cookies and rejects invalid revocation bodies"
       }
     },
     {
@@ -834,7 +834,7 @@
         "success": "api-key session accepts configured headers for GET and POST",
         "rejection": null,
         "authorization": null,
-        "state": null
+        "state": "deferred session GET preserves rows while POST performs refresh and expired cleanup"
       }
     },
     {
@@ -1283,9 +1283,9 @@
       "implemented": true,
       "evidence": {
         "success": "list sessions and revoke a session through the SDK",
-        "rejection": null,
+        "rejection": "session nested middleware clears expired cookies and rejects invalid revocation bodies",
         "authorization": null,
-        "state": null
+        "state": "session refresh suppression preserves expiry and foreign revocation cannot extend a session"
       }
     },
     {

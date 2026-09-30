@@ -45,6 +45,7 @@ use tokio::sync::Mutex;
 mod lifecycle_fixture;
 mod organization_timestamp_fixture;
 mod parity_controls;
+mod session_profiles;
 mod sqlite_fixture;
 mod verification_profiles;
 
@@ -599,6 +600,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let verification_profile_router =
         verification_profiles::router(&config, database.clone(), verification_outbox.clone())
             .await?;
+    let session_profile_router = session_profiles::router(&config, database.clone()).await?;
     let store = SeaOrmStore::<TestSchema>::new(config.clone(), database);
     let two_factor_plugin =
         TwoFactorPlugin::new().custom_send_otp(Arc::new(CompatTwoFactorOtpSender {
@@ -1502,7 +1504,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .nest("/api/auth", auth_router)
         .with_state(auth)
-        .merge(verification_profile_router);
+        .merge(verification_profile_router)
+        .merge(session_profile_router);
 
     let addr = format!("0.0.0.0:{port}");
     println!("[rust-server] Listening on http://localhost:{port}");

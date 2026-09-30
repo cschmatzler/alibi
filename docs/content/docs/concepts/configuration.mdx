@@ -34,7 +34,7 @@ let config = AuthConfig::new("your-secret-key-at-least-32-characters-long")
 | `disabled_path(path)` | Disable one route path |
 | `disabled_paths(paths)` | Replace the disabled path list |
 | `session_expires_in(duration)` | Set session lifetime |
-| `session_update_age(duration)` | Refresh sessions only when older than the given age |
+| `session_update_age(duration)` | Refresh when the persisted expiry minus lifetime plus update age is due |
 | `disable_session_refresh(flag)` | Disable automatic session refresh entirely |
 | `session_fresh_age(duration)` | Mark recently created sessions as "fresh" |
 | `session_cookie_cache(config)` | Enable cookie-backed session caching |
@@ -50,7 +50,7 @@ let config = AuthConfig::new("your-secret-key-at-least-32-characters-long")
   - `Some(duration)` refreshes only when the session is older than that duration.
   - `None` refreshes on every access.
   - `disable_session_refresh(true)` disables refresh entirely.
-- **`fresh_age` is optional.** Leave it `None` unless you need a freshness window for sensitive actions.
+- **`fresh_age` defaults to one day.** Set it to `None` or zero to disable freshness checks for sensitive actions.
 
 ## SessionConfig
 
@@ -61,7 +61,7 @@ Controls opaque session token handling and cookie behavior.
 | `expires_in` | `chrono::Duration` | `7 days` |
 | `update_age` | `Option<chrono::Duration>` | `Some(1 day)` |
 | `disable_session_refresh` | `bool` | `false` |
-| `fresh_age` | `Option<chrono::Duration>` | `None` |
+| `fresh_age` | `Option<chrono::Duration>` | `Some(1 day)` |
 | `cookie_name` | `String` | `"better-auth.session_token"` |
 | `cookie_secure` | `bool` | Derived from `base_url` |
 | `cookie_http_only` | `bool` | `true` |

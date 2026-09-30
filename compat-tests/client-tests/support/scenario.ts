@@ -110,6 +110,8 @@ type ScenarioServerContext = {
   }): Promise<unknown>;
 };
 
+export type ScenarioContext = ScenarioServerContext;
+
 type ScenarioRun = {
   oauthURL: string;
   startedAt: number;
