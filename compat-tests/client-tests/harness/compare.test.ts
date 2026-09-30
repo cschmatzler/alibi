@@ -102,3 +102,28 @@ test("reset-password URL entropy retains token relationships", () => {
   expect(compareValues(left, { first: { url: "/reset-password/two" }, second: { url: "/reset-password/two" } }, context)).toEqual([]);
   expect(compareValues(left, { first: { url: "/reset-password/two" }, second: { url: "/reset-password/three" } }, context).length).toBeGreaterThan(0);
 });
+
+test("scoped trace timestamp shapes remain literal while payloads cookies and arrays stay strict", () => {
+  const trace = {
+    actor: "owner", method: "GET", path: "/api/auth/get-session", responseStatus: 200,
+    requestBodyShape: null, responseHeaders: { "content-type": "application/json" },
+    responseCookies: { "session;/;/": { httpOnly: true, secure: false, maxAge: 604800, expiresAt: null } },
+    responseBodyShape: { user: { id: "string", createdAt: "string", updatedAt: "string", banExpires: "null" }, items: [{ id: "string" }, { id: "string" }] },
+  };
+  const left = { observation: { createdAt: "1970-01-01T00:00:00.000Z" }, traces: [trace] };
+  expect(compareValues(left, structuredClone(left), context)).toEqual([]);
+  expect(compareValues(left, { ...left, observation: { createdAt: "string" } }, context).length).toBeGreaterThan(0);
+  expect(compareValues(left, { ...left, traces: [{ ...trace, responseBodyShape: { ...trace.responseBodyShape, user: { ...trace.responseBodyShape.user, createdAt: "number" } } }] }, context).length).toBeGreaterThan(0);
+  expect(compareValues(left, { ...left, traces: [{ ...trace, responseBodyShape: { ...trace.responseBodyShape, user: { ...trace.responseBodyShape.user, extra: "string" } } }] }, context).length).toBeGreaterThan(0);
+  expect(compareValues(left, { ...left, traces: [{ ...trace, responseBodyShape: { ...trace.responseBodyShape, items: [{ id: "string" }] } }] }, context).length).toBeGreaterThan(0);
+  expect(compareValues(left, { ...left, traces: [{ ...trace, responseStatus: 201 }] }, context).length).toBeGreaterThan(0);
+  expect(compareValues(left, { ...left, traces: [{ ...trace, responseCookies: { "session;/;/": { ...trace.responseCookies["session;/;/"], httpOnly: false } } }] }, context).length).toBeGreaterThan(0);
+});
+
+test("one comparison graph links observed issuance and transport owner token references", () => {
+  const left = { observation: { id: "left-owner", token: "left-token" }, traces: [{ responseHeaders: { location: "/reset-password/left-token?userId=left-owner" } }] };
+  const right = { observation: { id: "right-owner", token: "right-token" }, traces: [{ responseHeaders: { location: "/reset-password/right-token?userId=right-owner" } }] };
+  expect(compareValues(left, right, context)).toEqual([]);
+  expect(compareValues(left, { ...right, traces: [{ responseHeaders: { location: "/reset-password/other-token?userId=right-owner" } }] }, context).length).toBeGreaterThan(0);
+  expect(compareValues(left, { ...right, traces: [{ responseHeaders: { location: "/reset-password/right-token?userId=other-owner" } }] }, context).length).toBeGreaterThan(0);
+});
