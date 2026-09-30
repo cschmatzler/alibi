@@ -273,3 +273,43 @@ test("one comparison graph links observed issuance and transport owner token ref
   expect(compareValues(left, { ...right, traces: [{ responseHeaders: { location: "/reset-password/other-token?userId=right-owner" } }] }, context).length).toBeGreaterThan(0);
   expect(compareValues(left, { ...right, traces: [{ responseHeaders: { location: "/reset-password/right-token?userId=other-owner" } }] }, context).length).toBeGreaterThan(0);
 });
+
+test("persisted device-code aliases preserve issued-code relationships and rotation", () => {
+  for (const field of ["deviceCode", "userCode"]) {
+    const leftClaim = { exp: 4102444800, iss: "https://issuer.fixture", aud: "https://audience.fixture", custom: { [field]: "literal-left" } };
+    const rightClaim = { ...leftClaim, custom: { [field]: "literal-right" } };
+    expect(compareValues({ payload: leftClaim }, { payload: rightClaim }, context).some(difference => difference.path === `payload.custom.${field}`)).toBe(true);
+  }
+
+  const left = { issued: { device_code: "device-a", user_code: "user-a" }, persisted: { deviceCode: "device-a", userCode: "user-a" }, rotated: { device_code: "device-b" } };
+  const right = { issued: { device_code: "device-c", user_code: "user-c" }, persisted: { deviceCode: "device-c", userCode: "user-c" }, rotated: { device_code: "device-d" } };
+  expect(compareValues(left, right, context)).toEqual([]);
+  expect(compareValues(left, { ...right, persisted: { ...right.persisted, deviceCode: "wrong" } }, context).length).toBeGreaterThan(0);
+  expect(compareValues(left, { ...right, persisted: { ...right.persisted, userCode: "wrong" } }, context).length).toBeGreaterThan(0);
+  expect(compareValues(left, { ...right, rotated: { device_code: "device-c" } }, context).length).toBeGreaterThan(0);
+});
+
+test("computed device session TTL permits only the proved floor boundary",()=>{
+  const start=Date.parse("2026-09-30T00:00:00.000Z");
+  const clocks={...context,leftStartedAt:start,rightStartedAt:start+10000,leftFinishedAt:start+1300,rightFinishedAt:start+11300};
+  const left={persisted:{id:"left-id",userId:"left-owner",token:"left",expiresAt:new Date(start+604800000).toISOString()},issued:{access_token:"left",token_type:"Bearer",expires_in:604800}};
+  const right={persisted:{id:"right-id",userId:"right-owner",token:"right",expiresAt:new Date(start+10000+604800000).toISOString()},issued:{access_token:"right",token_type:"Bearer",expires_in:604799}};
+  expect(compareValues(left,right,clocks)).toEqual([]);
+  for(const incorrect of [
+    {...right,issued:{...right.issued,expires_in:604798}},
+    {...right,issued:{...right.issued,access_token:"unrelated"}},
+    {...right,persisted:{...right.persisted,expiresAt:new Date(start+10000+604700000).toISOString()}},
+    {...right,issued:{...right.issued,expires_in:604801}},
+  ]) expect(compareValues(left,incorrect,clocks).length).toBeGreaterThan(0);
+  expect(compareValues({expires_in:10},{expires_in:9},clocks).length).toBeGreaterThan(0);
+  expect(compareValues(left,right,context).length).toBeGreaterThan(0);
+  for (const field of ["metadata", "additionalFields"]) {
+    const differences = compareValues({ ...left, [field]: left.issued }, { ...right, [field]: right.issued }, clocks);
+    expect(differences.some(difference => difference.path === `${field}.expires_in`)).toBe(true);
+  }
+  const shapeDiffs = compareValues({ ...left, traces: [{ responseBodyShape: left.issued }] }, { ...right, traces: [{ responseBodyShape: right.issued }] }, clocks);
+  expect(shapeDiffs.some(difference => difference.path === "traces.0.responseBodyShape.expires_in")).toBe(true);
+  const unproved = compareValues({ metadata: left.persisted, issued: left.issued }, { metadata: right.persisted, issued: right.issued }, clocks);
+  expect(unproved.some(difference => difference.path === "issued.expires_in")).toBe(true);
+
+});

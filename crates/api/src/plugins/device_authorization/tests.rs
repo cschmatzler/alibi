@@ -15,6 +15,158 @@ use super::*;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
+#[tokio::test]
+async fn issuance_retries_collisions_three_times_and_runs_request_hook_once() {
+    let ctx = test_helpers::create_test_context().await;
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let hooks = Arc::new(AtomicUsize::new(0));
+    let plugin = DeviceAuthorizationPlugin::new()
+        .generate_device_code_with({
+            let attempts = attempts.clone();
+            move || {
+                let attempt = attempts.fetch_add(1, Ordering::SeqCst);
+                if attempt < 2 {
+                    "duplicate-device".to_owned()
+                } else {
+                    "unique-device".to_owned()
+                }
+            }
+        })
+        .generate_user_code_async_with(|| async { Ok("custom-code".to_owned()) })
+        .on_device_auth_request({
+            let hooks = hooks.clone();
+            move |_, scope| {
+                let hooks = hooks.clone();
+                async move {
+                    assert_eq!(scope, None);
+                    hooks.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                }
+            }
+        });
+    ctx.database
+        .create_device_code(CreateDeviceCode {
+            device_code: "duplicate-device".to_owned(),
+            user_code: "existing-code".to_owned(),
+            user_id: None,
+            expires_at: Utc::now() + Duration::hours(1),
+            status: "pending".to_owned(),
+            last_polled_at: None,
+            polling_interval: Some(5000),
+            client_id: Some("client".to_owned()),
+            scope: None,
+        })
+        .await
+        .unwrap();
+    let request = test_helpers::create_auth_json_request_no_query(
+        HttpMethod::Post,
+        "/device/code",
+        None,
+        Some(serde_json::json!({ "client_id": "client", "scope": "", "user_id": "" })),
+    );
+    let response = plugin.handle_device_code(&request, &ctx).await.unwrap();
+    assert_eq!(response.status, 200);
+    assert_eq!(json_body(&response)["device_code"], "unique-device");
+    assert_eq!(attempts.load(Ordering::SeqCst), 3);
+    assert_eq!(hooks.load(Ordering::SeqCst), 1);
+    let stored = ctx
+        .database
+        .get_device_code_by_device_code("unique-device")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(stored.scope.is_none());
+    assert!(stored.user_id.is_none());
+
+    let exhausted_attempts = Arc::new(AtomicUsize::new(0));
+    let exhausted = DeviceAuthorizationPlugin::new().generate_device_code_with({
+        let attempts = exhausted_attempts.clone();
+        move || {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            "duplicate-device".to_owned()
+        }
+    });
+    let failure = exhausted.handle_device_code(&request, &ctx).await.unwrap();
+    assert_eq!(failure.status, 500);
+    assert_eq!(
+        json_body(&failure),
+        serde_json::json!({ "error": "server_error", "error_description": "Failed to generate a unique device code" })
+    );
+    assert_eq!(exhausted_attempts.load(Ordering::SeqCst), 3);
+    assert_eq!(
+        ctx.database
+            .get_device_code_by_device_code("duplicate-device")
+            .await
+            .unwrap()
+            .unwrap()
+            .user_code,
+        "existing-code"
+    );
+}
+
+#[tokio::test]
+async fn generators_enforce_unicode_character_limit_before_persistence() {
+    let ctx = test_helpers::create_test_context().await;
+    let request = test_helpers::create_auth_json_request_no_query(
+        HttpMethod::Post,
+        "/device/code",
+        None,
+        Some(serde_json::json!({ "client_id": "client" })),
+    );
+    let too_long = DeviceAuthorizationPlugin::new()
+        .generate_device_code_async_with(|| async { Ok("🦀".repeat(192)) });
+    let failure = too_long.handle_device_code(&request, &ctx).await.unwrap();
+    assert_eq!(failure.status, 400);
+    assert_eq!(
+        json_body(&failure)["error_description"],
+        "Generated device code must be at most 191 characters"
+    );
+    assert!(
+        ctx.database
+            .get_device_code_by_device_code(&"🦀".repeat(192))
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let too_long_user = DeviceAuthorizationPlugin::new()
+        .generate_device_code_with(|| "short-device".to_owned())
+        .generate_user_code_with(|| "🦀".repeat(192));
+    let failure = too_long_user
+        .handle_device_code(&request, &ctx)
+        .await
+        .unwrap();
+    assert_eq!(failure.status, 400);
+    assert_eq!(
+        json_body(&failure)["error_description"],
+        "Generated user code must be at most 191 characters"
+    );
+    assert!(
+        ctx.database
+            .get_device_code_by_device_code("short-device")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let valid = DeviceAuthorizationPlugin::new()
+        .generate_device_code_with(|| "🦀".repeat(191))
+        .generate_user_code_with(|| "🦀".repeat(191));
+    assert_eq!(
+        valid
+            .handle_device_code(&request, &ctx)
+            .await
+            .unwrap()
+            .status,
+        200
+    );
+    assert!(
+        ctx.database
+            .get_device_code_by_device_code(&"🦀".repeat(191))
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
 fn json_body(response: &AuthResponse) -> Value {
     serde_json::from_slice(&response.body).unwrap()
 }
@@ -336,7 +488,7 @@ async fn test_device_verify_strips_hyphens_and_preserves_input_shape() {
     ctx.database
         .create_device_code(CreateDeviceCode {
             device_code: "verify-device-code".to_string(),
-            user_code: "ABCD1234".to_string(),
+            user_code: "ABCD2345".to_string(),
             user_id: None,
             expires_at: Utc::now() + Duration::minutes(5),
             status: DEVICE_STATUS_PENDING.to_string(),
@@ -349,13 +501,13 @@ async fn test_device_verify_strips_hyphens_and_preserves_input_shape() {
         .unwrap();
 
     let response = plugin
-        .handle_device_verify(&device_verify_request("ABCD-1234"), &ctx)
+        .handle_device_verify(&device_verify_request("ABCD-2345"), &ctx)
         .await
         .unwrap();
     let body = json_body(&response);
 
     assert_eq!(response.status, 200);
-    assert_eq!(body["user_code"], "ABCD-1234");
+    assert_eq!(body["user_code"], "ABCD-2345");
     assert_eq!(body["status"], DEVICE_STATUS_PENDING);
 }
 
@@ -717,8 +869,7 @@ async fn test_device_token_rejects_client_id_mismatch() {
     assert_eq!(body["error_description"], CLIENT_ID_MISMATCH);
 }
 
-// Deliberate hardening divergence from the current TS runtime: exactly one
-// poller may redeem an approved device code.
+// Upstream 1.7.6 uses consumeOne to permit exactly one successful redemption.
 #[tokio::test]
 async fn test_device_token_allows_only_one_concurrent_redemption() {
     let plugin = DeviceAuthorizationPlugin::new();

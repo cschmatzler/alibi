@@ -4,12 +4,12 @@ use validator::Validate;
 #[derive(Debug, Deserialize, Validate)]
 pub(super) struct DeviceCodeRequest {
     pub client_id: String,
+    pub user_id: Option<String>,
     pub scope: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
 pub(super) struct DeviceTokenRequest {
-    pub grant_type: String,
     pub device_code: String,
     pub client_id: String,
 }
@@ -42,6 +42,10 @@ pub(super) struct DeviceTokenResponse {
 pub(super) struct DeviceVerifyResponse {
     pub user_code: String,
     pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<Option<String>>,
 }
 
 #[derive(Debug, Serialize)]

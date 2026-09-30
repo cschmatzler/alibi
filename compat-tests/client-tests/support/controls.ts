@@ -212,3 +212,12 @@ export async function seedOAuthAccount(
 export async function readVerificationState(baseURL: string, args: { identifier: string }): Promise<unknown> {
   return getControl(baseURL, "/__test/verification-state", args);
 }
+
+/** Read persisted device-code state, including expired records. */
+export async function readDeviceState(baseURL: string, args: {deviceCode: string}): Promise<unknown> {
+  return getControl(baseURL, "/__test/device-state", args);
+}
+/** Set an actual persisted device-code expiry. */
+export async function expireDevice(baseURL: string, args: {deviceCode: string; expiresAt: string}): Promise<unknown> {
+  return postControl(baseURL, "/__test/expire-device", args);
+}

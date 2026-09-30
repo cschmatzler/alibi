@@ -18,6 +18,8 @@ import {
   readVerificationEmail,
   removeCredentialAccount,
   resetServerState,
+  readDeviceState,
+  expireDevice,
   readUserState,
   readVerificationState,
   seedDeleteUserToken,
@@ -54,6 +56,8 @@ type ScenarioServerContext = {
     body: unknown;
   }>;
   readUserState(args: { userId: string }): Promise<unknown>;
+  readDeviceState(args: {deviceCode: string}): Promise<unknown>;
+  expireDevice(args: {deviceCode: string; expiresAt: string}): Promise<unknown>;
   readVerificationState(args: { identifier: string }): Promise<unknown>;
   resetServerState(): Promise<unknown>;
   setResetPasswordMode(mode: "capture" | "throw"): Promise<unknown>;
@@ -209,6 +213,8 @@ async function runScenario(
         body: parsed,
       };
     },
+    readDeviceState(args) { return readDeviceState(baseURL,args); },
+    expireDevice(args) { return expireDevice(baseURL,args); },
     readVerificationState(args) { return readVerificationState(baseURL, args); },
     resetServerState() {
       return resetServerState(baseURL);

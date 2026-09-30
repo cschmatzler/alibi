@@ -94,10 +94,17 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "device verify accepts a hyphenated user code",
+        "success": [
+          "device verify accepts a hyphenated user code",
+          "device approve flow returns a bearer token",
+          "device custom asynchronous generators preserve exact codes and reject normalized aliases"
+        ],
         "rejection": null,
         "authorization": null,
-        "state": null
+        "state": [
+          "device approve flow returns a bearer token",
+          "device custom asynchronous generators preserve exact codes and reject normalized aliases"
+        ]
       }
     },
     {
@@ -713,10 +720,20 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": "device approve blocks already-processed codes",
-        "authorization": null,
-        "state": null
+        "success": [
+          "device approve flow returns a bearer token",
+          "device custom asynchronous generators preserve exact codes and reject normalized aliases"
+        ],
+        "rejection": [
+          "device approve blocks already-processed codes",
+          "device endpoint schemas preserve OAuth validation and media type errors",
+          "device decisions require the claiming user and redact other actors"
+        ],
+        "authorization": "device decisions require the claiming user and redact other actors",
+        "state": [
+          "device approve flow returns a bearer token",
+          "device custom asynchronous generators preserve exact codes and reject normalized aliases"
+        ]
       }
     },
     {
@@ -724,10 +741,17 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "device approve blocks already-processed codes",
-        "rejection": null,
+        "success": [
+          "device approve blocks already-processed codes",
+          "device custom asynchronous generators preserve exact codes and reject normalized aliases",
+          "device configuration controls client validation lifetime polling and verification URL parameters"
+        ],
+        "rejection": [
+          "device endpoint schemas preserve OAuth validation and media type errors",
+          "device configuration controls client validation lifetime polling and verification URL parameters"
+        ],
         "authorization": null,
-        "state": null
+        "state": "device configuration controls client validation lifetime polling and verification URL parameters"
       }
     },
     {
@@ -735,10 +759,14 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": "device deny flow returns access_denied",
-        "authorization": null,
-        "state": null
+        "success": "device deny flow returns access_denied",
+        "rejection": [
+          "device deny flow returns access_denied",
+          "device endpoint schemas preserve OAuth validation and media type errors",
+          "device decisions require the claiming user and redact other actors"
+        ],
+        "authorization": "device decisions require the claiming user and redact other actors",
+        "state": "device deny flow returns access_denied"
       }
     },
     {
@@ -746,10 +774,20 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": "device approve flow returns a bearer token",
+        "success": [
+          "device approve flow returns a bearer token",
+          "device custom asynchronous generators preserve exact codes and reject normalized aliases"
+        ],
+        "rejection": [
+          "device approve flow returns a bearer token",
+          "device configuration controls client validation lifetime polling and verification URL parameters"
+        ],
         "authorization": null,
-        "state": null
+        "state": [
+          "device approve flow returns a bearer token",
+          "device custom asynchronous generators preserve exact codes and reject normalized aliases",
+          "device configuration controls client validation lifetime polling and verification URL parameters"
+        ]
       }
     },
     {
