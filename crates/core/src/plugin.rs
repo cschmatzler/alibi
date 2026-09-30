@@ -459,7 +459,10 @@ mod tests {
         let mut req = AuthRequest::new(HttpMethod::Get, "/test");
         let _ = req.headers.insert(
             "cookie".into(),
-            format!("better-auth.session_token={}", session.token()),
+            format!(
+                "better-auth.session_token={}",
+                crate::utils::cookie_utils::sign_cookie_value(session.token(), &config.secret)
+            ),
         );
 
         let (found_user, _found_session) = ctx.require_session(&req).await.unwrap();

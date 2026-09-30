@@ -12,6 +12,7 @@ import { RUST_BASE_URL, TS_BASE_URL, requireHealthy } from "./config";
 import {
   type GitHubEmailRecord,
   readChangeEmailConfirmation,
+  readUserState,
   promoteAdmin,
   readTwoFactorOtp,
   readVerificationEmail,
@@ -85,6 +86,7 @@ type ScenarioServerContext = {
     refreshTokenExpiresAt?: string | null;
     scope?: string | null;
   }): Promise<string>;
+  readUserState(args: { userId: string }): Promise<unknown>;
   readVerificationEmail(args: {
     email: string;
   }): Promise<unknown>;
@@ -219,6 +221,7 @@ async function runScenario(
     seedOAuthAccount(args) {
       return seedOAuthAccount(baseURL, args);
     },
+    readUserState(args) { return readUserState(baseURL, args); },
     readVerificationEmail(args) {
       return readVerificationEmail(baseURL, args);
     },

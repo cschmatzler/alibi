@@ -1,12 +1,22 @@
+use crate::plugins::authentication_helpers::{JsonField, JsonFieldKind, RequestBody};
 use serde::Deserialize;
-use validator::Validate;
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct SendVerificationEmailRequest {
-    #[validate(email(message = "Invalid email address"))]
     pub(crate) email: String,
     #[serde(rename = "callbackURL")]
     pub(crate) callback_url: Option<String>,
+}
+
+impl RequestBody for SendVerificationEmailRequest {
+    const FIELDS: &'static [JsonField] = &[
+        JsonField {
+            name: "email",
+            kind: JsonFieldKind::Email,
+            required: true,
+        },
+        JsonField::string("callbackURL", false),
+    ];
 }
 
 /// Query parameters for `GET /verify-email`.

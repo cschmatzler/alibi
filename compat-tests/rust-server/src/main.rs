@@ -43,6 +43,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
 mod lifecycle_fixture;
+mod parity_controls;
 mod sqlite_fixture;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
@@ -721,6 +722,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         .merge(lifecycle_controls)
+        .merge(parity_controls::router())
         .route("/__health", get(health_check))
         .route(
             "/__test/password",

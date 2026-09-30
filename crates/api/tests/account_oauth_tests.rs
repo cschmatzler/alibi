@@ -257,7 +257,8 @@ fn set_session_and_account_cookies(
         "cookie".to_string(),
         format!(
             "better-auth.session_token={}; better-auth.account_data={}",
-            session_token, account_cookie
+            better_auth_core::utils::cookie_utils::sign_cookie_value(session_token, TEST_SECRET),
+            account_cookie
         ),
     );
 }
@@ -414,7 +415,10 @@ async fn test_encrypt_oauth_tokens_stored_encrypted_in_db() {
         .insert("content-type".to_string(), "application/json".to_string());
     req.headers.insert(
         "cookie".to_string(),
-        format!("better-auth.session_token={}", session_token),
+        format!(
+            "better-auth.session_token={}",
+            better_auth_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+        ),
     );
 
     let mut oauth_config = OAuthConfig::default();
@@ -528,7 +532,10 @@ async fn test_get_access_token_rejects_plaintext_when_encryption_is_enabled() {
         .insert("content-type".to_string(), "application/json".to_string());
     req.headers.insert(
         "cookie".to_string(),
-        format!("better-auth.session_token={}", session_token),
+        format!(
+            "better-auth.session_token={}",
+            better_auth_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+        ),
     );
 
     let result = oauth_plugin.on_request(&req, &ctx).await;
@@ -565,7 +572,10 @@ async fn test_refresh_token_rejects_plaintext_when_encryption_is_enabled() {
         .insert("content-type".to_string(), "application/json".to_string());
     req.headers.insert(
         "cookie".to_string(),
-        format!("better-auth.session_token={}", session_token),
+        format!(
+            "better-auth.session_token={}",
+            better_auth_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+        ),
     );
 
     let result = oauth_plugin.on_request(&req, &ctx).await;
@@ -765,7 +775,10 @@ async fn test_account_info_returns_provider_user_info_for_local_account_id() {
         .insert("accountId".to_string(), account_id.clone());
     req.headers.insert(
         "cookie".to_string(),
-        format!("better-auth.session_token={}", session_token),
+        format!(
+            "better-auth.session_token={}",
+            better_auth_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+        ),
     );
 
     let result = oauth_plugin.on_request(&req, &ctx).await;
@@ -815,7 +828,10 @@ async fn test_get_access_token_without_cookie_returns_account_not_found() {
     let mut req = AuthRequest::new(HttpMethod::Post, "/get-access-token");
     req.headers.insert(
         "cookie".to_string(),
-        format!("better-auth.session_token={}", session_token),
+        format!(
+            "better-auth.session_token={}",
+            better_auth_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+        ),
     );
 
     req.body = Some(json!({"useAccountCookie": true}).to_string().into_bytes());
@@ -924,7 +940,10 @@ async fn test_account_info_returns_provider_not_configured_message() {
     req.query.insert("accountId".to_string(), account_id);
     req.headers.insert(
         "cookie".to_string(),
-        format!("better-auth.session_token={}", session_token),
+        format!(
+            "better-auth.session_token={}",
+            better_auth_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+        ),
     );
 
     let result = oauth_plugin.on_request(&req, &ctx).await;
@@ -973,7 +992,10 @@ async fn test_account_info_rejects_missing_access_token() {
         .insert("accountId".to_string(), account_id.clone());
     req.headers.insert(
         "cookie".to_string(),
-        format!("better-auth.session_token={}", session_token),
+        format!(
+            "better-auth.session_token={}",
+            better_auth_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+        ),
     );
 
     let result = oauth_plugin.on_request(&req, &ctx).await;
@@ -1017,7 +1039,10 @@ async fn test_unlink_last_account_blocked_by_default() {
         .insert("content-type".to_string(), "application/json".to_string());
     req.headers.insert(
         "cookie".to_string(),
-        format!("better-auth.session_token={}", session_token),
+        format!(
+            "better-auth.session_token={}",
+            better_auth_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+        ),
     );
 
     let result = plugin.on_request(&req, &ctx).await;
@@ -1068,7 +1093,10 @@ async fn test_unlink_last_account_allowed_when_configured() {
         .insert("content-type".to_string(), "application/json".to_string());
     req.headers.insert(
         "cookie".to_string(),
-        format!("better-auth.session_token={}", session_token),
+        format!(
+            "better-auth.session_token={}",
+            better_auth_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+        ),
     );
 
     let result = plugin.on_request(&req, &ctx).await;
@@ -1158,7 +1186,10 @@ async fn test_unlink_non_last_account_always_allowed() {
         .insert("content-type".to_string(), "application/json".to_string());
     req.headers.insert(
         "cookie".to_string(),
-        format!("better-auth.session_token={}", session.token()),
+        format!(
+            "better-auth.session_token={}",
+            better_auth_core::utils::cookie_utils::sign_cookie_value(session.token(), TEST_SECRET)
+        ),
     );
 
     let result = plugin.on_request(&req, &ctx).await;
@@ -1319,7 +1350,10 @@ async fn test_link_social_returns_redirect_url_with_state() {
         .insert("content-type".to_string(), "application/json".to_string());
     req.headers.insert(
         "cookie".to_string(),
-        format!("better-auth.session_token={}", session_token),
+        format!(
+            "better-auth.session_token={}",
+            better_auth_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
+        ),
     );
 
     let result = oauth_plugin.on_request(&req, &ctx).await;

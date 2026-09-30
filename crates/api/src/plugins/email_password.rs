@@ -245,6 +245,8 @@ impl EmailPasswordPlugin {
             Err(resp) => return Ok(resp),
         };
 
+        signup_req.email = signup_req.email.to_lowercase();
+
         let (username, display_username) = normalize_username_fields(
             signup_req.username.take(),
             signup_req.display_username.take(),
@@ -551,12 +553,21 @@ pub(crate) async fn sign_up_core(
     } else if let Some(ref username) = body.username {
         create_user.display_username = Some(username.clone());
     }
-    let auto_sign_in = config.auto_sign_in;
+    let auto_sign_in = config.auto_sign_in && !config.require_email_verification;
     let expires_in = ctx.config.session.expires_in;
     let ip_address = meta.ip_address.clone();
     let user_agent = meta.user_agent.clone();
     let database = ctx.database.clone();
     let transaction_database = database.clone();
+    let require_email_verification = config.require_email_verification;
+    let callback_url = body.callback_url.clone();
+    let signup_context = AuthContext {
+        config: ctx.config.clone(),
+        database: ctx.database.clone(),
+        email_provider: ctx.email_provider.clone(),
+        metadata: ctx.metadata.clone(),
+        extensions: ctx.extensions.clone(),
+    };
 
     better_auth_core::store::transaction(database.as_ref(), move |tx| {
         let _database = transaction_database.clone();
@@ -585,6 +596,14 @@ pub(crate) async fn sign_up_core(
                     password: Some(password_hash.clone()),
                 })
                 .await?;
+
+            super::email_verification::send_signup_verification(
+                &user,
+                callback_url.as_deref(),
+                require_email_verification,
+                &signup_context,
+            )
+            .await?;
 
             if auto_sign_in {
                 let session = tx
@@ -671,17 +690,7 @@ async fn finalize_sign_in_with_user_core(
         }
     }
 
-    // Send verification email on sign-in if configured
-    if let Some(ev) = email_verification
-        && let Err(e) = ev
-            .send_verification_on_sign_in(&user, callback_url, ctx)
-            .await
-    {
-        tracing::warn!(
-            error = %e,
-            "Failed to send verification email on sign-in"
-        );
-    }
+    let _ = (email_verification, callback_url);
 
     let issued = issue_user_session(
         ctx,
@@ -708,6 +717,28 @@ async fn finalize_sign_in_with_user_core(
 }
 
 /// Core sign-in by email.
+async fn send_required_sign_in_verification(
+    user: &impl AuthUser,
+    callback_url: Option<&str>,
+    email_verification: Option<&EmailVerificationPlugin>,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<()> {
+    if let Some(plugin) = email_verification {
+        plugin
+            .send_verification_on_sign_in(user, callback_url, ctx)
+            .await?;
+    } else if let Some(config) = ctx
+        .extensions
+        .get::<super::email_verification::EmailVerificationConfig>()
+        && config.send_on_sign_in
+    {
+        EmailVerificationPlugin::with_config((*config).clone())
+            .send_verification_on_sign_in(user, callback_url, ctx)
+            .await?;
+    }
+    Ok(())
+}
+
 pub(crate) async fn sign_in_core(
     req: &AuthRequest,
     body: &SignInRequest,
@@ -718,11 +749,26 @@ pub(crate) async fn sign_in_core(
 ) -> AuthResult<SignInCoreResult<UserView>> {
     let user = ctx
         .database
-        .get_user_by_email(&body.email)
+        .get_user_by_email(&body.email.to_lowercase())
         .await?
         .ok_or(AuthError::InvalidCredentials)?;
 
     verify_user_password(&user, &body.password, config, ctx).await?;
+
+    if config.require_email_verification && !user.email_verified() {
+        send_required_sign_in_verification(
+            &user,
+            body.callback_url.as_deref(),
+            email_verification,
+            ctx,
+        )
+        .await?;
+        return Err(AuthError::Upstream {
+            status: 403,
+            code: "EMAIL_NOT_VERIFIED",
+            message: "Email not verified",
+        });
+    }
 
     finalize_sign_in_with_user_core(
         req,
@@ -765,19 +811,18 @@ pub(crate) async fn sign_in_username_core(
             other => SignInUsernameFailure::Auth(other),
         })?;
 
-    if let Some(ev) = email_verification
-        && ev.is_verification_required()
-        && !user.email_verified()
+    if !user.email_verified()
+        && (config.require_email_verification
+            || email_verification.is_some_and(EmailVerificationPlugin::is_verification_required))
     {
-        if let Err(error) = ev
-            .send_verification_on_sign_in(&user, body.callback_url.as_deref(), ctx)
-            .await
-        {
-            tracing::warn!(
-                error = %error,
-                "Failed to send verification email on username sign-in"
-            );
-        }
+        send_required_sign_in_verification(
+            &user,
+            body.callback_url.as_deref(),
+            email_verification,
+            ctx,
+        )
+        .await
+        .map_err(SignInUsernameFailure::Auth)?;
         return Err(SignInUsernameFailure::EmailNotVerified);
     }
 
@@ -817,6 +862,11 @@ impl Default for EmailPasswordConfig {
 impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
     fn name(&self) -> &'static str {
         "email-password"
+    }
+
+    async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
+        ctx.extensions.insert(self.config.clone());
+        Ok(())
     }
 
     fn routes(&self) -> Vec<AuthRoute> {

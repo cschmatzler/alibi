@@ -248,11 +248,16 @@ impl<S: AuthSchema> SessionManager<S> {
         // Fall back to cookie (using the `cookie` crate for correct parsing)
         if let Some(cookie_header) = req.headers.get("cookie") {
             let cookie_name = &self.config.session.cookie_name;
-            for c in cookie::Cookie::split_parse(cookie_header).flatten() {
-                if c.name() == cookie_name && !c.value().is_empty() {
-                    return Some(c.value().to_string());
-                }
-            }
+            return cookie::Cookie::split_parse(cookie_header)
+                .flatten()
+                .filter(|cookie| cookie.name() == cookie_name)
+                .last()
+                .and_then(|cookie| {
+                    crate::utils::cookie_utils::verify_cookie_value(
+                        cookie.value(),
+                        &self.config.secret,
+                    )
+                });
         }
 
         None
@@ -316,9 +321,10 @@ mod tests {
     fn extract_from_cookie() {
         let mgr = test_manager();
         let mut req = AuthRequest::new(HttpMethod::Get, "/test");
+        let signed = crate::utils::cookie_utils::sign_cookie_value("tok123", &mgr.config.secret);
         let _ = req.headers.insert(
             "cookie".into(),
-            "better-auth.session_token=tok123; other=val".into(),
+            format!("better-auth.session_token={signed}; other=val"),
         );
         assert_eq!(mgr.extract_session_token(&req), Some("tok123".into()));
     }

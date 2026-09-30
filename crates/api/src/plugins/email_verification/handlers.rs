@@ -9,8 +9,19 @@ use super::token::{create_email_verification_token, decode_email_verification_to
 use super::types::*;
 use super::{EmailVerificationConfig, StatusResponse};
 
-fn verification_url(base_url: &str, token: &str, callback_url: Option<&str>) -> String {
-    let callback_url = callback_url.unwrap_or("/");
+pub(super) fn verification_url(
+    config: &better_auth_core::AuthConfig,
+    token: &str,
+    callback_url: Option<&str>,
+) -> String {
+    let callback_url = callback_url.filter(|url| !url.is_empty()).unwrap_or("/");
+    let origin = config.base_url.trim_end_matches('/');
+    let path = config.base_path.trim_matches('/');
+    let base_url = if path.is_empty() {
+        origin.to_owned()
+    } else {
+        format!("{origin}/{path}")
+    };
     format!(
         "{base_url}/verify-email?token={token}&callbackURL={}",
         urlencoding::encode(callback_url),
@@ -44,7 +55,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
                 config.verification_token_expiry,
                 None,
             )?;
-            let url = verification_url(&ctx.config.base_url, &token, body.callback_url.as_deref());
+            let url = verification_url(&ctx.config, &token, body.callback_url.as_deref());
             let user = UserView::from(user);
             if let Some(ref sender) = config.send_verification_email {
                 sender.send(&user, &url, &token).await?;
@@ -74,7 +85,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
                 config.verification_token_expiry,
                 None,
             )?;
-            let url = verification_url(&ctx.config.base_url, &token, body.callback_url.as_deref());
+            let url = verification_url(&ctx.config, &token, body.callback_url.as_deref());
             let user = UserView::from(&user);
             if let Some(ref sender) = config.send_verification_email {
                 sender.send(&user, &url, &token).await?;
@@ -86,10 +97,52 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
 }
 
 fn redirect_url(callback_url: &str, error: Option<&str>) -> String {
-    match error {
-        Some(error) if callback_url.contains('?') => format!("{callback_url}&error={error}"),
-        Some(error) => format!("{callback_url}?error={error}"),
-        None => callback_url.to_string(),
+    let Some(error) = error else {
+        return callback_url.to_owned();
+    };
+    let relative = callback_url.starts_with('/');
+    let parsed = if relative {
+        url::Url::parse("https://verification.invalid").and_then(|base| base.join(callback_url))
+    } else {
+        url::Url::parse(callback_url)
+    };
+    let Ok(mut parsed) = parsed else {
+        return callback_url.to_owned();
+    };
+    let existing = parsed.query().unwrap_or_default();
+    let separator = if existing.is_empty() || existing.ends_with('&') {
+        ""
+    } else {
+        "&"
+    };
+    parsed.set_query(Some(&format!("{existing}{separator}error={error}")));
+    if relative {
+        parsed
+            .as_str()
+            .strip_prefix(&parsed.origin().ascii_serialization())
+            .unwrap_or(parsed.as_str())
+            .to_owned()
+    } else {
+        parsed.to_string()
+    }
+}
+
+fn verification_error(
+    query: &VerifyEmailQuery,
+    code: &'static str,
+    message: &'static str,
+) -> AuthResult<VerifyEmailResult> {
+    if let Some(callback) = query.callback_url.as_deref().filter(|url| !url.is_empty()) {
+        Ok(VerifyEmailResult::Redirect {
+            url: redirect_url(callback, Some(code)),
+            session_token: None,
+        })
+    } else {
+        Err(AuthError::Upstream {
+            status: 401,
+            code,
+            message,
+        })
     }
 }
 
@@ -111,50 +164,28 @@ where
     let claims = match decode_email_verification_token(&ctx.config.secret, &query.token) {
         Ok(claims) => claims,
         Err(AuthError::Jwt(error)) => {
-            if matches!(
-                error.kind(),
-                ErrorKind::InvalidToken
-                    | ErrorKind::InvalidSignature
-                    | ErrorKind::InvalidAlgorithm
-                    | ErrorKind::MissingRequiredClaim(_)
-                    | ErrorKind::ExpiredSignature
-            ) {
-                if let Some(callback_url) = query.callback_url.as_deref() {
-                    let error_code = if matches!(error.kind(), ErrorKind::ExpiredSignature) {
-                        "token_expired"
-                    } else {
-                        "invalid_token"
-                    };
-                    return Ok(VerifyEmailResult::Redirect {
-                        url: redirect_url(callback_url, Some(error_code)),
-                        session_token: None,
-                    });
-                }
-
-                let error_code = if matches!(error.kind(), ErrorKind::ExpiredSignature) {
-                    "token_expired"
-                } else {
-                    "invalid_token"
-                };
-                return Err(AuthError::bad_request(error_code));
-            }
-
-            return Err(AuthError::Jwt(error));
+            return if matches!(error.kind(), ErrorKind::ExpiredSignature) {
+                verification_error(query, "TOKEN_EXPIRED", "Token expired")
+            } else {
+                verification_error(query, "INVALID_TOKEN", "Invalid token")
+            };
         }
         Err(error) => return Err(error),
     };
 
-    let user = ctx
+    let Some(user) = ctx
         .database
-        .get_user_by_email(&claims.email)
+        .get_user_by_email(&claims.email.to_lowercase())
         .await?
-        .ok_or_else(|| AuthError::not_found("User not found"))?;
+    else {
+        return verification_error(query, "USER_NOT_FOUND", "User not found");
+    };
 
     if let Some(update_to) = claims.update_to.as_deref() {
         if let Some((ref session_user, _)) = current_session
             && session_user.email().unwrap_or_default() != claims.email
         {
-            return Err(AuthError::bad_request("unauthorized"));
+            return verification_error(query, "INVALID_USER", "Invalid user");
         }
 
         match claims.request_type.as_deref() {
@@ -166,14 +197,10 @@ where
                     config.verification_token_expiry,
                     Some("change-email-verification"),
                 )?;
-                let url = verification_url(
-                    &ctx.config.base_url,
-                    &new_token,
-                    query.callback_url.as_deref(),
-                );
+                let url = verification_url(&ctx.config, &new_token, query.callback_url.as_deref());
+                let mut updated_user = UserView::from(&user);
+                updated_user.email = Some(update_to.to_string());
                 if let Some(ref sender) = config.send_verification_email {
-                    let mut updated_user = UserView::from(&user);
-                    updated_user.email = Some(update_to.to_string());
                     sender.send(&updated_user, &url, &new_token).await?;
                 }
 
@@ -252,13 +279,9 @@ where
                     config.verification_token_expiry,
                     None,
                 )?;
-                let url = verification_url(
-                    &ctx.config.base_url,
-                    &new_token,
-                    query.callback_url.as_deref(),
-                );
+                let url = verification_url(&ctx.config, &new_token, query.callback_url.as_deref());
+                let wire_user = UserView::from(&updated_user);
                 if let Some(ref sender) = config.send_verification_email {
-                    let wire_user = UserView::from(&updated_user);
                     sender.send(&wire_user, &url, &new_token).await?;
                 }
 

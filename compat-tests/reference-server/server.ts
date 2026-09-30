@@ -478,6 +478,24 @@ const server = Bun.serve({
         return jsonResponse({ status: true });
       }
 
+      if (url.pathname === "/__test/user-state" && request.method === "GET") {
+        const userId = url.searchParams.get("userId");
+        if (!userId) return jsonResponse({ message: "userId is required" }, { status: 400 });
+        const where = [{ field: "userId", value: userId }];
+        const [user, accounts, sessions, twoFactor] = await Promise.all([
+          authContext.adapter.findOne<Record<string, unknown>>({ model: "user", where: [{ field: "id", value: userId }] }),
+          authContext.adapter.findMany<Record<string, unknown>>({ model: "account", where }),
+          authContext.adapter.findMany<Record<string, unknown>>({ model: "session", where, sortBy: { field: "createdAt", direction: "asc" } }),
+          authContext.adapter.findOne({ model: "twoFactor", where }),
+        ]);
+        return jsonResponse({
+          user: user ? { id: user.id, email: user.email, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled } : null,
+          accounts: accounts.sort((left, right) => String(left.providerId).localeCompare(String(right.providerId)) || String(left.accountId).localeCompare(String(right.accountId))).map(account => ({ id: account.id, userId: account.userId, accountId: account.accountId, providerId: account.providerId })),
+          sessions: sessions.map(session => ({ id: session.id, token: session.token, userId: session.userId, expiresAt: session.expiresAt })),
+          twoFactorExists: twoFactor !== null,
+        });
+      }
+
       if (url.pathname === "/__test/verification-email" && request.method === "GET") {
         const email = url.searchParams.get("email");
         const record = email ? verificationEmailOutbox.get(email) ?? null : null;

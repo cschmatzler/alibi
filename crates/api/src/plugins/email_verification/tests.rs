@@ -20,7 +20,7 @@ use better_auth_core::{AuthPlugin, HttpMethod};
 #[test]
 fn test_default_config() {
     let config = EmailVerificationConfig::default();
-    assert_eq!(config.verification_token_expiry, Duration::hours(24));
+    assert_eq!(config.verification_token_expiry, Duration::hours(1));
     assert!(config.send_email_notifications);
     assert!(!config.require_verification_for_signin);
     assert!(!config.auto_verify_new_users);
@@ -179,6 +179,151 @@ fn jwt_token(
         request_type,
     )
     .unwrap()
+}
+
+fn external_verification_token(
+    secret: &str,
+    algorithm: jsonwebtoken::Algorithm,
+    payload: &serde_json::Value,
+) -> String {
+    let mut header = jsonwebtoken::Header::new(algorithm);
+    header.typ = None;
+    jsonwebtoken::encode(
+        &header,
+        payload,
+        &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .unwrap()
+}
+
+// Proof must fail at the signature/algorithm/date guard before touching its
+// claimed user's verification state, including the exact expiry second.
+#[tokio::test]
+async fn external_verification_proofs_enforce_signature_algorithm_and_numeric_dates() {
+    use better_auth_core::AuthUser;
+    let ctx = test_helpers::create_test_context().await;
+    let plugin = EmailVerificationPlugin::new().auto_sign_in_after_verification(true);
+    let user = ctx
+        .database
+        .create_user(CreateUser::new().with_email("proof-owner@fixture.test"))
+        .await
+        .unwrap();
+    let now = Utc::now().timestamp();
+    for (secret, algorithm, dates, code) in [
+        (
+            ctx.config.secret.as_str(),
+            jsonwebtoken::Algorithm::HS256,
+            serde_json::json!({"exp":now-30}),
+            "TOKEN_EXPIRED",
+        ),
+        (
+            ctx.config.secret.as_str(),
+            jsonwebtoken::Algorithm::HS256,
+            serde_json::json!({"exp":now}),
+            "TOKEN_EXPIRED",
+        ),
+        (
+            ctx.config.secret.as_str(),
+            jsonwebtoken::Algorithm::HS256,
+            serde_json::json!({"exp":now+300,"nbf":now+30}),
+            "INVALID_TOKEN",
+        ),
+        (
+            ctx.config.secret.as_str(),
+            jsonwebtoken::Algorithm::HS256,
+            serde_json::json!({"exp":now+300,"iat":"invalid"}),
+            "INVALID_TOKEN",
+        ),
+        (
+            ctx.config.secret.as_str(),
+            jsonwebtoken::Algorithm::HS384,
+            serde_json::json!({"exp":now+300}),
+            "INVALID_TOKEN",
+        ),
+        (
+            "different-signing-key-for-fixture-only",
+            jsonwebtoken::Algorithm::HS256,
+            serde_json::json!({"exp":now+300}),
+            "INVALID_TOKEN",
+        ),
+    ] {
+        let mut payload = dates;
+        payload["email"] = serde_json::json!("proof-owner@fixture.test");
+        let token = external_verification_token(secret, algorithm, &payload);
+        let query = HashMap::from([("token".to_owned(), token.clone())]);
+        let req =
+            test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
+        let error = plugin.handle_verify_email(&req, &ctx).await.unwrap_err();
+        assert_eq!(error.status_code(), 401);
+        assert_eq!(error.error_payload().1.as_deref(), Some(code));
+        let callback = "/verification-error?source=caller&error=existing#details";
+        let query = HashMap::from([
+            ("token".to_owned(), token),
+            ("callbackURL".to_owned(), callback.to_owned()),
+        ]);
+        let req =
+            test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
+        let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
+        assert_eq!(response.status, 302);
+        assert_eq!(
+            response.headers.get("Location"),
+            Some(&format!(
+                "/verification-error?source=caller&error=existing&error={code}#details"
+            ))
+        );
+        let persisted = ctx
+            .database
+            .get_user_by_id(&user.id())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!persisted.email_verified());
+        assert!(
+            ctx.database
+                .get_user_sessions(&user.id())
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+}
+
+// JOSE does not require iat/exp, an audience, or an issuer for this endpoint.
+// Accepting a legitimately signed proof must preserve that embedding contract.
+#[tokio::test]
+async fn externally_signed_verification_without_dates_or_matching_audience_is_accepted() {
+    use better_auth_core::AuthUser;
+    let ctx = test_helpers::create_test_context().await;
+    let plugin = EmailVerificationPlugin::new();
+    let user = ctx
+        .database
+        .create_user(CreateUser::new().with_email("legacy-proof@fixture.test"))
+        .await
+        .unwrap();
+    let token = external_verification_token(
+        &ctx.config.secret,
+        jsonwebtoken::Algorithm::HS256,
+        &serde_json::json!({"email":"legacy-proof@fixture.test","aud":"embedding-app","iss":"embedding-issuer"}),
+    );
+    let query = HashMap::from([("token".to_owned(), token)]);
+    let req =
+        test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
+    let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
+    assert_eq!(response.status, 200);
+    let persisted = ctx
+        .database
+        .get_user_by_id(&user.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(persisted.email_verified());
+    assert!(
+        ctx.database
+            .get_user_sessions(&user.id())
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 // Rust-specific surface: helper methods exposing plugin state are public Rust
@@ -924,7 +1069,8 @@ async fn test_verify_email_invalid_token() {
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
     let err = plugin.handle_verify_email(&req, &ctx).await.unwrap_err();
-    assert_eq!(err.status_code(), 400);
+    assert_eq!(err.status_code(), 401);
+    assert_eq!(err.error_payload().1.as_deref(), Some("INVALID_TOKEN"));
 }
 
 // Upstream reference: packages/better-auth/src/api/routes/email-verification.test.ts :: describe("Email Verification") and packages/better-auth/src/api/routes/email-verification.ts; adapted to the Rust email verification plugin.
