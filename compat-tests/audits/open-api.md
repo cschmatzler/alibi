@@ -3,8 +3,8 @@
 This family is **in progress**, not full parity. The first generator/configuration
 slice is implemented and proved with strict whole-document differential profiles.
 The ordinary default document still differs: `/update-session` is not implemented,
-and endpoint annotations outside the proved session family are being ported from
-source. No default-complete scenario is claimed or silently filtered.
+while the implemented core families now have source-backed endpoint annotations.
+Plugin endpoint annotations outside the proved core family are being ported from source. No default-complete scenario is claimed or silently filtered.
 
 ## Runtime contract and implementation
 
@@ -41,13 +41,13 @@ custom-field persistence. Applications must declare the policies they implement.
 ## Focused proof and test ownership
 
 Four official SDK/raw HTTP scenarios compare the complete configured document,
-including all implemented session operations, every model field/required list,
+including all implemented core sign-in/social/session/password/email/account/user operations, every model field/required list,
 security and endpoint metadata. They compare embedded reference JSON with that
 same complete document and compare the entire remaining HTML frame verbatim.
 Fixture origins use the existing narrowly scoped URL comparison. There are no
 new comparator exceptions, field exclusions, or oracle document captures.
 
-The profiles explicitly disable unrelated core endpoints in both real runtimes:
+The profiles explicitly disable only the pending `/update-session` endpoint in both real runtimes:
 this is the supported application configuration under test. They exercise default
 OpenAPI options, configured path/theme/nonce plus disabled `/error`, disabled
 reference, and an actual registered JWT plugin's Jwks model without optional
@@ -60,10 +60,15 @@ chosen application schema metadata and custom plugin definitions reach the HTTP
 schema and embedded builder, actual route dispatch keeps working, equivalent
 path/query parameter names remain independent, duplicate operation IDs receive
 a method suffix, rich nullable/union/array body schemas survive, and hidden/read
-only policies do not accidentally become required fields. The SDK scenarios own
+only policies do not accidentally become required fields. The independent actual
+route snapshot retains documentation-disabled/server-only and OpenAPI-own routes.
+The native Rust-only `/__test/openapi.json` embedding endpoint is included in that
+snapshot and is exercised through the public handler; it is not an upstream
+OpenAPI operation. Inventory consumers must use registration independently of
+OpenAPI documentation exclusions. The SDK scenarios own
 built-in schema and HTML behavior; native tests do not duplicate those flows.
 
-Focused result for this first slice: 4 SDK scenarios / 126 assertions, one native
+Focused result for this core/configuration slice: 4 SDK scenarios / 126 assertions, one native
 application extension test, API/core/root production strict Clippy and client TS
 check pass. Existing core embedded builder checks are retained. Full gates,
 shared inventory/lock finalization, and publication belong to the coordinator.
@@ -75,9 +80,12 @@ shared inventory/lock finalization, and publication belong to the coordinator.
 - `/update-session` core prerequisite, followed by strict ordinary default whole
   document evidence; it cannot be replaced by disabling that route silently.
 - OAuth's existing Rust route template uses `{provider}` while pinned source uses
-  `:id`; documentation needs an explicit canonical path annotation without
-  changing the route ABI. Parameterized disabledPaths runtime behavior also needs
-  an independent source/runtime probe before any dispatch correction.
+  `:id`; an explicit canonical document-path annotation preserves the route ABI.
+  An independent actual handler probe confirmed that upstream HTTP disabledPaths
+  matches the requested literal path, while its generator filters declared
+  endpoint templates: `/items/:id` omitted from docs still serves `/items/value`,
+  and disabling `/items/value` returns 404 before the handler. Rust's existing
+  literal dispatch policy matches upstream; no dispatch correction is required.
 - Additional application schemas must explicitly supply documentation fields;
   derive convenience is not yet installed, and arbitrary stored extra columns
   are not inferred.

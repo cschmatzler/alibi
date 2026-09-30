@@ -10,7 +10,7 @@ for (const profile of ["openapi-default","openapi-configured","openapi-jwt"] as 
   const sdk=await actor.client.$fetch("/open-api/generate-schema",{method:"GET"});
   expect(sdk.error).toBeNull();
   const schema=documentSchema.parse(sdk.data);
-  expect(Object.keys(schema.paths).sort()).toEqual([...(profile==="openapi-configured" ? [] : ["/error"]),"/get-session","/list-sessions","/ok","/revoke-other-sessions","/revoke-session","/revoke-sessions","/sign-out"]);
+  expect(Object.keys(schema.paths).sort()).toEqual([...(profile==="openapi-configured" ? [] : ["/error"]),"/sign-in/social","/sign-up/email","/sign-in/email","/link-social","/account-info","/callback/{id}","/change-email","/change-password","/delete-user","/delete-user/callback","/get-access-token","/get-session","/list-accounts","/list-sessions","/ok","/refresh-token","/request-password-reset","/reset-password","/reset-password/{token}","/revoke-other-sessions","/revoke-session","/revoke-sessions","/send-verification-email","/sign-out","/unlink-account","/update-user","/verify-email","/verify-password"].sort());
   expect(schema.servers).toEqual([{url:`${ctx.baseURL}/__test/profiles/${profile}/api/auth`}]);
   expect(schema.paths["/get-session"]).toHaveProperty("get.operationId","getSession");
   expect(schema.paths["/get-session"]).toHaveProperty("post.operationId","getSessionPost");

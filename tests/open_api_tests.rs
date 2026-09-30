@@ -45,12 +45,14 @@ impl AuthPlugin<AppSchema> for AppPlugin {
     }
     fn openapi_metadata(&self, _ctx: &AuthInitContext<AppSchema>) -> PluginOpenApiMetadata {
         let get = OpenApiEndpoint {
+            document_path: Some("/items/:itemId".into()),
             operation_id: Some("items".into()),
             description: Some("Read an application item".into()),
             parameters: vec![json!({"name":"id","in":"query","schema":{"type":"string"}})],
             ..Default::default()
         };
         let post = OpenApiEndpoint {
+            document_path: Some("/items/:itemId".into()),
             operation_id: Some("items".into()),
             tags: Some(vec!["Custom".into()]),
             request_body: Some(
@@ -124,6 +126,32 @@ async fn application_schema_and_plugin_annotations_reach_the_public_document_wit
         serde_json::from_slice::<Value>(&item.body).unwrap(),
         json!({"id":"fixture-id"})
     );
+    let registered = auth.registered_routes();
+    for path in [
+        "/items/:id",
+        "/internal",
+        "/error",
+        "/reference",
+        "/open-api/generate-schema",
+        "/__test/openapi.json",
+    ] {
+        assert!(
+            registered.iter().any(|route| route.path == path),
+            "actual registration must retain {path}"
+        );
+    }
+    let embedded = auth
+        .handle_request(AuthRequest::new(
+            HttpMethod::Get,
+            "/identity/__test/openapi.json",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(embedded.status, 200);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&embedded.body).unwrap(),
+        auth.openapi_spec().to_value().unwrap()
+    );
     let response = auth
         .handle_request(AuthRequest::new(
             HttpMethod::Get,
@@ -141,12 +169,12 @@ async fn application_schema_and_plugin_annotations_reach_the_public_document_wit
     assert!(document["paths"].get("/error").is_none());
     assert!(document["paths"].get("/internal").is_none());
     assert!(document["paths"].get("/reference").is_none());
-    let path = &document["paths"]["/items/{id}"];
+    let path = &document["paths"]["/items/{itemId}"];
     assert_eq!(path["get"]["operationId"], "items");
     assert_eq!(path["post"]["operationId"], "itemsPost");
     assert_eq!(
         path["get"]["parameters"],
-        json!([{"name":"id","in":"query","schema":{"type":"string"}},{"name":"id","in":"path","required":true,"schema":{"type":"string"}}])
+        json!([{"name":"id","in":"query","schema":{"type":"string"}},{"name":"itemId","in":"path","required":true,"schema":{"type":"string"}}])
     );
     assert_eq!(path["post"]["tags"], json!(["Custom"]));
     assert_eq!(

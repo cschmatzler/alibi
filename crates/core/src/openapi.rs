@@ -1,8 +1,14 @@
 //! OpenAPI 3.1.1 documents built from each auth instance's registered metadata.
+mod account_annotations;
 pub mod annotations;
+mod email_annotations;
 mod metadata;
 mod model_annotations;
+mod oauth_annotations;
+mod password_annotations;
 mod session_annotations;
+mod sign_in_annotations;
+mod user_annotations;
 pub use metadata::{
     OpenApiEndpoint, OpenApiField, OpenApiModel, OpenApiRegistry, PluginOpenApiMetadata,
 };
@@ -112,6 +118,11 @@ impl OpenApiBuilder {
                 if endpoint.plugin == "open-api"
                     || endpoint.metadata.server_only
                     || config.is_path_disabled(&endpoint.route.path)
+                    || endpoint
+                        .metadata
+                        .document_path
+                        .as_ref()
+                        .is_some_and(|path| config.is_path_disabled(path))
                 {
                     continue;
                 }
@@ -146,7 +157,8 @@ impl OpenApiBuilder {
             return self;
         }
         let mut parameters = metadata.parameters.clone();
-        let path=path.split('/').map(|segment| {
+        let documented_path = metadata.document_path.as_deref().unwrap_or(path);
+        let path=documented_path.split('/').map(|segment| {
             if let Some(name)=segment.strip_prefix(':') {
                 if !parameters.iter().any(|parameter|parameter["in"]=="path" && parameter["name"]==name) { parameters.push(json!({"name":name,"in":"path","required":true,"schema":{"type":"string"}})); }
                 format!("{{{name}}}")
@@ -204,7 +216,14 @@ impl OpenApiBuilder {
                 ]
             })
         };
-        let mut request_body = metadata.request_body.clone();
+        let mut request_body = if matches!(
+            method,
+            HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch
+        ) {
+            metadata.request_body.clone()
+        } else {
+            None
+        };
         if core
             && request_body.is_none()
             && matches!(

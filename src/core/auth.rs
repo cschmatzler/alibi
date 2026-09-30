@@ -5,7 +5,7 @@ use better_auth_core::utils::username::{
 };
 use better_auth_core::{
     AuthConfig, AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse,
-    AuthResult, AuthSchema, AuthStore, BeforeRequestAction, EmailProvider,
+    AuthResult, AuthRoute, AuthSchema, AuthStore, BeforeRequestAction, EmailProvider,
     ErrorCodeMessageResponse, HttpMethod, OkResponse, OpenApiBuilder, OpenApiRegistry, OpenApiSpec,
     SessionManager, UpdateUser, UpdateUserRequest, core_paths,
     entity::{AuthSession, AuthUser},
@@ -429,6 +429,14 @@ impl<S: AuthSchema> BetterAuth<S> {
                 routes.push((route.path, plugin.as_ref()));
             }
         }
+        routes
+    }
+
+    /// Snapshot of actual registered routes, independent of documentation filters.
+    /// The native embedding endpoint `/__test/openapi.json` is a Rust extension.
+    pub fn registered_routes(&self) -> Vec<AuthRoute> {
+        let mut routes = self.openapi.registered_routes();
+        routes.push(AuthRoute::get(core_paths::OPENAPI_SPEC, "openapi_spec"));
         routes
     }
 

@@ -145,11 +145,43 @@ fn response(description: &str, schema: Value) -> Value {
     json!({"description":description,"content":{"application/json":{"schema":schema}}})
 }
 fn endpoint(path: &str) -> OpenApiEndpoint {
+    if let Some(metadata) = super::sign_in_annotations::endpoint(path)
+        .or_else(|| super::oauth_annotations::endpoint(path))
+    {
+        return metadata;
+    }
+    if let Some(metadata) = super::user_annotations::endpoint(path) {
+        return metadata;
+    }
+    if let Some(metadata) = super::account_annotations::endpoint(path)
+        .or_else(|| super::password_annotations::endpoint(path))
+        .or_else(|| super::email_annotations::endpoint(path))
+    {
+        return metadata;
+    }
     if let Some(metadata) = super::session_annotations::endpoint(path) {
         return metadata;
     }
     let mut metadata = OpenApiEndpoint::default();
     match path {
+        "/callback/{provider}" | "/callback/:id" => {
+            metadata.document_path = Some("/callback/:id".into());
+            let mut properties = serde_json::Map::new();
+            for name in [
+                "code",
+                "error",
+                "device_id",
+                "error_description",
+                "state",
+                "user",
+                "iss",
+            ] {
+                let _ = properties.insert(name.into(), json!({"type":"string"}));
+            }
+            metadata.request_body = Some(
+                json!({"required":false,"content":{"application/json":{"schema":{"type":"object","properties":properties}}}}),
+            );
+        }
         "/ok" => {
             metadata.description = Some("Check if the API is working".into());
             let _ = metadata.responses.insert("200".into(), response("API is working",json!({"type":"object","properties":{"ok":{"type":"boolean","description":"Indicates if the API is working"}},"required":["ok"]})));

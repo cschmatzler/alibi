@@ -68,6 +68,8 @@ impl OpenApiModel {
 /// Rich metadata for one route; dispatch still comes exclusively from `AuthRoute`.
 #[derive(Debug, Clone, Default)]
 pub struct OpenApiEndpoint {
+    /// Canonical document template when dispatch uses equivalent parameter names.
+    pub document_path: Option<String>,
     pub operation_id: Option<String>,
     pub description: Option<String>,
     pub tags: Option<Vec<String>>,
@@ -114,6 +116,14 @@ pub struct OpenApiRegistry {
     pub(crate) models: IndexMap<String, OpenApiModel>,
 }
 impl OpenApiRegistry {
+    /// Actual dispatch routes, including routes omitted from generated documentation.
+    pub fn registered_routes(&self) -> Vec<AuthRoute> {
+        self.endpoints
+            .iter()
+            .map(|endpoint| endpoint.route.clone())
+            .collect()
+    }
+
     pub fn new(models: Vec<OpenApiModel>) -> Self {
         let mut registry = Self::default();
         for model in models {
