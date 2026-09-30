@@ -128,7 +128,7 @@ compatScenario(
     const deniedRead = await foreign.apiKey.get({
       query: { id: key.id, configId: "generated" },
     });
-    expect(deniedRead.error?.code).toBe("KEY_NOT_FOUND");
+    expect(deniedRead.error).toMatchObject({status:404,code:"KEY_NOT_FOUND"});
     expect(await events(ctx)).toEqual([]);
     const quota = object(
       await control(ctx, "create", {
