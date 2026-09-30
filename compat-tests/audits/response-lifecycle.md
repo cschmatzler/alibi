@@ -28,5 +28,14 @@ browser authentication after an after-hook rejection, wrong-password rejection,
 header visibility between hooks, before-hook write suppression, and empty
 unregistered routes/methods. The focused core suite passes 22 scenarios with 62
 assertions; no comparison exceptions or oracle behavior changes were introduced.
-The full canonical gate remains required for this extracted branch. JWT and
-one-time-token response hooks are separate capabilities.
+The canonical `devenv shell -- ./scripts/check.sh` gate passes: 142 SDK
+scenarios, 21 harness tests, two Chromium tests, default and optional Rust
+tests, Rustls and Redis builds, TypeScript checking and documentation checks.
+Source line coverage is 76.35% (15,772 / 20,657), above the unchanged 75%
+floor. JWT and one-time-token response hooks are separate capabilities.
+
+The in-memory compatibility database disables connection retirement for its
+server lifetime. A focused actual-driver regression first demonstrated lost
+migrations and rows under accelerated retirement, then passed with the lifetime
+configuration fixed. The canonical gate now also runs that excluded fixture
+crate test.
