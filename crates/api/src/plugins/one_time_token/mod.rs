@@ -18,8 +18,8 @@ use rand::{rngs::OsRng, seq::SliceRandom};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use validator::Validate;
 
+use super::authentication_helpers::{JsonField, RequestBody, parse_body};
 use super::helpers::{get_cookie, response_session};
 
 /// The authenticated account and session represented by a one-time token.
@@ -171,9 +171,12 @@ impl OneTimeTokenPlugin {
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, session) = ctx
-            .session_without_refresh(req)
-            .await?
-            .ok_or_else(unauthorized)?;
+            .require_session(req)
+            .await
+            .map_err(|error| match error {
+                AuthError::Unauthenticated => unauthorized(),
+                error => error,
+            })?;
         if self.config.disable_client_request {
             return message_response(400, "Client requests are disabled");
         }
@@ -195,7 +198,7 @@ impl OneTimeTokenPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: VerifyRequest = match better_auth_core::validate_request_body(req) {
+        let body: VerifyRequest = match parse_body(req) {
             Ok(body) => body,
             Err(response) => return Ok(response),
         };
@@ -239,9 +242,12 @@ impl OneTimeTokenPlugin {
     }
 }
 
-#[derive(Deserialize, Validate)]
+#[derive(Deserialize)]
 struct VerifyRequest {
     token: String,
+}
+impl RequestBody for VerifyRequest {
+    const FIELDS: &'static [JsonField] = &[JsonField::string("token", true)];
 }
 
 fn unauthorized() -> AuthError {

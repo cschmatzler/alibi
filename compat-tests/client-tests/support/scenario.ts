@@ -13,7 +13,6 @@ import { RUST_BASE_URL, TS_BASE_URL, requireHealthy } from "./config";
 import {
   type GitHubEmailRecord,
   readChangeEmailConfirmation,
-  readUserState,
   promoteAdmin,
   readTwoFactorOtp,
   readVerificationEmail,
@@ -210,7 +209,6 @@ async function runScenario(
         body: parsed,
       };
     },
-    readUserState(args) { return readUserState(baseURL, args); },
     readVerificationState(args) { return readVerificationState(baseURL, args); },
     resetServerState() {
       return resetServerState(baseURL);

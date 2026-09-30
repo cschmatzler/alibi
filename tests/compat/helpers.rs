@@ -315,7 +315,7 @@ pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth
         .store(store)
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .plugin(SessionManagementPlugin::new())
-            .plugin(OneTimeTokenPlugin::new())
+        .plugin(OneTimeTokenPlugin::new())
         .plugin(
             PasswordManagementPlugin::new()
                 .require_current_password(true)
