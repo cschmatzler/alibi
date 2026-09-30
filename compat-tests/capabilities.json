@@ -39,7 +39,10 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "api-key concurrent verification cannot overdraw quota",
+        "success": [
+          "api-key concurrent verification cannot overdraw quota",
+          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
+        ],
         "rejection": "api-key CRUD isolates configurations and preserves all-config listing",
         "authorization": "api-key organization ownership rejects unrelated users",
         "state": null
@@ -632,10 +635,18 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "api-key CRUD isolates configurations and preserves all-config listing",
-        "rejection": "api-key HTTP requests cannot select a different owner",
+        "success": [
+          "api-key CRUD isolates configurations and preserves all-config listing",
+          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
+        ],
+        "rejection": [
+          "api-key HTTP requests cannot select a different owner",
+          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
+        ],
         "authorization": "api-key HTTP requests cannot select a different owner",
-        "state": null
+        "state": [
+          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
+        ]
       }
     },
     {
@@ -654,10 +665,18 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "api-key update accepts keyId field and updates name",
-        "rejection": "api-key CRUD isolates configurations and preserves all-config listing",
+        "success": [
+          "api-key update accepts keyId field and updates name",
+          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
+        ],
+        "rejection": [
+          "api-key CRUD isolates configurations and preserves all-config listing",
+          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
+        ],
         "authorization": "api-key HTTP requests cannot select a different owner",
-        "state": null
+        "state": [
+          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
+        ]
       }
     },
     {
@@ -982,10 +1001,16 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies",
+        "success": [
+          "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies",
+          "raw team member ID coercion selects infinity owners before JSON normalization"
+        ],
         "rejection": "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies",
         "authorization": "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies",
-        "state": "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies"
+        "state": [
+          "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies",
+          "raw team member ID coercion selects infinity owners before JSON normalization"
+        ]
       }
     },
     {
@@ -1015,10 +1040,15 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "api-key organization ownership rejects unrelated users",
+        "success": [
+          "api-key organization ownership rejects unrelated users",
+          "organization metadata stores rounded JavaScript numbers before readback"
+        ],
         "rejection": null,
         "authorization": null,
-        "state": null
+        "state": [
+          "organization metadata stores rounded JavaScript numbers before readback"
+        ]
       }
     },
     {
@@ -1136,10 +1166,16 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies",
+        "success": [
+          "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies",
+          "raw team member ID coercion selects infinity owners before JSON normalization"
+        ],
         "rejection": "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies",
         "authorization": "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies",
-        "state": "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies"
+        "state": [
+          "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies",
+          "raw team member ID coercion selects infinity owners before JSON normalization"
+        ]
       }
     },
     {
@@ -1169,10 +1205,15 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "organization core lifecycle matches TS",
+        "success": [
+          "organization core lifecycle matches TS",
+          "organization metadata stores rounded JavaScript numbers before readback"
+        ],
         "rejection": null,
         "authorization": null,
-        "state": null
+        "state": [
+          "organization metadata stores rounded JavaScript numbers before readback"
+        ]
       }
     },
     {
@@ -1411,8 +1452,14 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "magic links deliver metadata and authenticate a new user with one-time consumption",
-        "rejection": "magic links reject malformed bodies callbacks and missing query tokens before consumption",
+        "success": [
+          "magic links deliver metadata and authenticate a new user with one-time consumption",
+          "arbitrary JSON delivery emits JavaScript rounded numbers and nullable overflow"
+        ],
+        "rejection": [
+          "magic links reject malformed bodies callbacks and missing query tokens before consumption",
+          "JSON request grammar rejects malformed numbers structures and escapes before delivery"
+        ],
         "authorization": null,
         "state": "magic links deliver metadata and authenticate a new user with one-time consumption"
       }

@@ -86,7 +86,7 @@ compatScenario("arbitrary JSON key metadata persists JavaScript rounded numbers 
   expect(denied.status).toBe(404);
   expect((await client.apiKey.get({query:{id:created.id}})).data?.metadata).toEqual(updated.metadata);
   return {created,fetched,updated,persisted,validated,invalidNumbers,denied:{status:denied.status,body:await denied.json() as unknown}};
-});
+}, ["POST /api-key/create", "POST /api-key/update"]);
 
 
 compatScenario("organization metadata stores rounded JavaScript numbers before readback", async (ctx) => {
@@ -126,7 +126,7 @@ compatScenario("organization metadata stores rounded JavaScript numbers before r
   expect(after.id).toBe(created.id);
   expect(after.metadata).toEqual(updated.metadata);
   return { created, before, updated, after };
-});
+}, ["POST /organization/create", "POST /organization/update"]);
 
 compatScenario("JSON request grammar rejects malformed numbers structures and escapes before delivery", async (ctx) => {
   const actor = ctx.actor();
@@ -187,4 +187,4 @@ compatScenario("raw team member ID coercion selects infinity owners before JSON 
     results.push({ added, stored: stored.raw, removed, after: after.raw });
   }
   return { seeded, results };
-});
+}, ["POST /organization/add-team-member", "POST /organization/remove-team-member"]);
