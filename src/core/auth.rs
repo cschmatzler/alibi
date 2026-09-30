@@ -144,7 +144,8 @@ impl<S: AuthSchema> AuthBuilder<S> {
 
         // Create context
         let context =
-            AuthContext::with_metadata(config.clone(), store.clone(), init_parts.metadata);
+            AuthContext::with_metadata(config.clone(), store.clone(), init_parts.metadata)
+                .with_extensions(init_parts.extensions);
 
         let body_limit = self.body_limit_config.unwrap_or_default();
 
@@ -200,23 +201,70 @@ impl<S: AuthSchema> BetterAuth<S> {
 
         let request_context = RequestHookContext::from_request(&req);
         with_request_hook_context_value(request_context, async {
-            match self.handle_request_inner(&mut req).await {
-                Ok(response) => {
-                    // Run after-request middleware chain
-                    middleware::run_after(&self.middlewares, &req, response).await
-                }
-                Err(err) => {
-                    // Convert error to standardized response, then run after-middleware
-                    let response = err.to_auth_response();
-                    middleware::run_after(&self.middlewares, &req, response).await
+            let mut run_after_hooks = false;
+            let mut response = match self
+                .handle_request_inner(&mut req, &mut run_after_hooks)
+                .await
+            {
+                Ok(response) => response,
+                Err(err) => err.to_auth_response(),
+            };
+            let mut nested_headers = req.take_response_headers();
+            for (name, value) in response.headers {
+                if name.eq_ignore_ascii_case("set-cookie") {
+                    nested_headers.append(name, value);
+                } else {
+                    _ = nested_headers.insert(name, value);
                 }
             }
+            response.headers = nested_headers;
+            let mut hook_request = req.clone();
+            let base_path = &self.config.base_path;
+            if !base_path.is_empty() && base_path != "/" {
+                hook_request.path = req
+                    .path()
+                    .strip_prefix(base_path)
+                    .unwrap_or(req.path())
+                    .to_string();
+            }
+            for plugin in self.plugins.iter().filter(|_| run_after_hooks) {
+                let accumulated_headers = response.headers.clone();
+                response = match plugin
+                    .after_request(&hook_request, &self.context, response)
+                    .await
+                {
+                    Ok(response) => response,
+                    Err(error) => {
+                        let mut response = error.to_auth_response();
+                        for (name, value) in accumulated_headers {
+                            if name.eq_ignore_ascii_case("set-cookie") {
+                                response.headers.append(name, value);
+                            } else if !response.headers.contains_key(&name) {
+                                _ = response.headers.insert(name, value);
+                            }
+                        }
+                        response
+                    }
+                };
+            }
+            for (name, value) in req.take_response_headers() {
+                if name.eq_ignore_ascii_case("set-cookie") {
+                    response.headers.append(name, value);
+                } else if !response.headers.contains_key(&name) {
+                    _ = response.headers.insert(name, value);
+                }
+            }
+            middleware::run_after(&self.middlewares, &req, response).await
         })
         .await
     }
 
     /// Inner request handler that may return errors.
-    async fn handle_request_inner(&self, req: &mut AuthRequest) -> AuthResult<AuthResponse> {
+    async fn handle_request_inner(
+        &self,
+        req: &mut AuthRequest,
+        run_after_hooks: &mut bool,
+    ) -> AuthResult<AuthResponse> {
         // Run before-request middleware chain
         if let Some(response) = middleware::run_before(&self.middlewares, req).await? {
             return Ok(response);
@@ -257,11 +305,18 @@ impl<S: AuthSchema> BetterAuth<S> {
                         return Ok(response);
                     }
                     BeforeRequestAction::InjectSession { session } => {
+                        // Completed-response hooks must retain the authenticated
+                        // context established by before hooks.
+                        req.set_virtual_session(session.clone());
                         internal_req.set_virtual_session(session);
                     }
                 }
             }
         }
+
+        // A before-hook response or rejection returns immediately upstream.
+        // Only endpoint dispatch reaches the completed-response hook pipeline.
+        *run_after_hooks = true;
 
         // Handle core endpoints first
         if let Some(response) = self.handle_core_request(&internal_req).await? {

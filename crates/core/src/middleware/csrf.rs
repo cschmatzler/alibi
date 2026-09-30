@@ -278,14 +278,13 @@ mod tests {
         for (name, value) in extra_headers {
             headers.insert((*name).to_string(), (*value).to_string());
         }
-        AuthRequest {
-            method: HttpMethod::Post,
-            path: path.to_string(),
+        AuthRequest::from_parts(
+            HttpMethod::Post,
+            path.to_string(),
             headers,
-            body: None,
-            query: HashMap::new(),
-            virtual_session: None,
-        }
+            None,
+            HashMap::new(),
+        )
     }
 
     fn test_auth_config(trusted_origins: Vec<String>) -> Arc<AuthConfig> {
