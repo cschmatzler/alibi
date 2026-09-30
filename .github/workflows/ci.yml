@@ -18,10 +18,16 @@ jobs:
       CARGO_TERM_COLOR: always
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Reserve disk for the complete test gate
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android
+          df -h /
       - uses: cachix/install-nix-action@v31
       - uses: cachix/cachix-action@v16
         with:
