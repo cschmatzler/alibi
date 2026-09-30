@@ -1,4 +1,6 @@
 import { expect } from "bun:test";
+import { createHmac } from "node:crypto";
+import { Cookie } from "tough-cookie";
 import { z } from "zod";
 import { expireVerification, readUserState, requireUser, verificationCount } from "../../support/verification";
 import { compatScenario } from "../../support/scenario";
@@ -25,6 +27,55 @@ compatScenario("email OTP signs up a verified user and consumes its scoped code 
   expect(await verificationCount(ctx, `sign-in-otp-${email}`)).toBe(0);
   return { send: ctx.snapshot(send), signIn: ctx.snapshot(signIn), session: ctx.snapshot(session), replay: ctx.snapshot(replay), state: ctx.snapshot(state) };
 }, ["POST /email-otp/send-verification-otp", "POST /sign-in/email-otp"]);
+
+compatScenario("email OTP session cookies respect signed empty and nonempty browser preferences", async (ctx) => {
+  const observations = [];
+  for (const [index, preference] of [undefined, "", "false", "true"].entries()) {
+    const client = passwordlessClient(ctx, `preference-${index}`);
+    const email = ctx.uniqueEmail(`otp-preference-${index}`);
+    const issued = await client.emailOtp.sendVerificationOtp({ email, type: "sign-in" });
+    expect(issued.error).toBeNull();
+    const otp = await readOtp(ctx, email, "sign-in");
+    const secret = ["compat", "test", "only", "key", "not", "real", "minimum", "32chars"].join("-");
+    const cookie = preference === undefined ? undefined : `better-auth.dont_remember=${encodeURIComponent(`${preference}.${createHmac("sha256", secret).update(preference).digest("base64")}`)}`;
+    const responseCookies: string[] = [];
+    const signedIn = await client.signIn.emailOtp({
+      email, otp,
+      fetchOptions: {
+        ...(cookie ? { headers: { cookie } } : {}),
+        onSuccess({ response }: { response: Response }) { responseCookies.push(...response.headers.getSetCookie()); },
+      },
+    });
+    expect(signedIn.error).toBeNull();
+    const user = requireUser(signedIn.data?.user);
+    const state = await readUserState(ctx, user.id);
+    expect(state.sessions).toHaveLength(1);
+    expect(state.sessions.at(0)?.token).toBe(signedIn.data?.token);
+    const expiry = z.string().parse(state.sessions.at(0)?.expiresAt);
+    expect(Date.parse(expiry) - Date.now()).toBeGreaterThan(604_795_000);
+    expect(Date.parse(expiry) - Date.now()).toBeLessThanOrEqual(604_801_000);
+    const cookies = responseCookies.map(value => {
+      const parsed = Cookie.parse(value);
+      if (!parsed) throw new Error("Authentication must emit valid session cookies");
+      return parsed;
+    });
+    const sessionCookie = cookies.find(value => value.key === "better-auth.session_token");
+    if (!sessionCookie) throw new Error("Successful OTP sign-in must issue its session cookie");
+    const persistent = preference === undefined || preference === "";
+    expect(sessionCookie.httpOnly).toBe(true);
+    expect(sessionCookie.path).toBe("/");
+    expect(sessionCookie.maxAge).toBe(persistent ? 604_800 : null);
+    expect(cookies.some(value => value.key === "better-auth.dont_remember")).toBe(!persistent);
+    const current = await client.getSession();
+    expect(current.data?.user.id).toBe(user.id);
+    expect(current.data?.session.token).toBe(signedIn.data?.token);
+    const replay = await client.signIn.emailOtp({ email, otp });
+    expect(replay.error?.code).toBe("INVALID_OTP");
+    expect(await verificationCount(ctx, `sign-in-otp-${email}`)).toBe(0);
+    observations.push({ preference: preference ?? null, signedIn, state, current, replay });
+  }
+  return ctx.snapshot(observations);
+}, ["POST /sign-in/email-otp"]);
 
 compatScenario("email OTP check preserves the code until email verification consumes it", async (ctx) => {
   const client = passwordlessClient(ctx);

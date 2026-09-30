@@ -284,55 +284,120 @@ async fn unknown_verification_and_reset_mailboxes_leave_no_code_or_delivery() {
 // Upstream: email-otp/routes.ts :: signInEmailOTP + atomicVerifyOTP.
 #[tokio::test]
 async fn sign_in_creates_verified_user_and_owned_session_then_rejects_replay() {
-    let ctx = test_helpers::create_test_context().await;
-    let (config, outbox) = configured();
-    let plugin = EmailOtpPlugin::new(config);
-    assert_eq!(
-        post(
-            &plugin,
-            &ctx,
-            "/email-otp/send-verification-otp",
-            json!({"email":"Owner@Example.com","type":"sign-in"})
-        )
-        .await
-        .status,
-        200
-    );
-    let delivery = outbox.0.lock().unwrap().last().unwrap().clone();
-    assert_eq!(delivery.email, "owner@example.com");
-    let body = json!({"email":"OWNER@example.com","otp":delivery.otp,"name":"Mailbox Owner"});
-    let response = post(&plugin, &ctx, "/sign-in/email-otp", body.clone()).await;
-    assert_eq!(response.status, 200);
-    let payload: Value = serde_json::from_slice(&response.body).unwrap();
-    let token = payload.get("token").and_then(Value::as_str).unwrap();
-    let user = ctx
-        .database
-        .get_user_by_email("owner@example.com")
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(user.email_verified());
-    assert_eq!(user.name(), Some("Mailbox Owner"));
-    assert_eq!(
-        ctx.database
-            .get_session(token)
-            .await
-            .unwrap()
-            .unwrap()
-            .user_id(),
-        user.id()
-    );
-    assert!(
-        ctx.database
-            .get_latest_verification_by_identifier("sign-in-otp-owner@example.com")
-            .await
-            .unwrap()
-            .is_none()
-    );
-    assert_eq!(
-        post(&plugin, &ctx, "/sign-in/email-otp", body).await.status,
-        400
-    );
+    use better_auth_core::utils::cookie_utils::{
+        related_cookie_name, sign_cookie_value, verify_cookie_value,
+    };
+
+    for lifetime in [604_800, 90] {
+        for (preference, persistent) in [
+            (None, true),
+            (Some(""), true),
+            (Some("false"), false),
+            (Some("true"), false),
+        ] {
+            let mut auth_config = test_helpers::create_test_config();
+            auth_config.session.expires_in = Duration::seconds(lifetime);
+            auth_config.session.cookie_name = "otp-fixture.session_token".to_owned();
+            let ctx = test_helpers::create_test_context_with_config(auth_config).await;
+            let (config, outbox) = configured();
+            let plugin = EmailOtpPlugin::new(config);
+            assert_eq!(
+                post(
+                    &plugin,
+                    &ctx,
+                    "/email-otp/send-verification-otp",
+                    json!({"email":"Owner@Example.com","type":"sign-in"})
+                )
+                .await
+                .status,
+                200
+            );
+            let delivery = outbox.0.lock().unwrap().last().unwrap().clone();
+            assert_eq!(delivery.email, "owner@example.com");
+            let body =
+                json!({"email":"OWNER@example.com","otp":delivery.otp,"name":"Mailbox Owner"});
+            let mut request = create_auth_json_request_no_query(
+                HttpMethod::Post,
+                "/sign-in/email-otp",
+                None,
+                Some(body.clone()),
+            );
+            if let Some(value) = preference {
+                let _ = request.headers.insert(
+                    "cookie".to_owned(),
+                    format!(
+                        "{}={}",
+                        related_cookie_name(&ctx.config, "dont_remember"),
+                        sign_cookie_value(value, &ctx.config.secret)
+                    ),
+                );
+            }
+            let response = plugin.on_request(&request, &ctx).await.unwrap().unwrap();
+            assert_eq!(response.status, 200);
+            let payload: Value = serde_json::from_slice(&response.body).unwrap();
+            let token = payload.get("token").and_then(Value::as_str).unwrap();
+            let user = ctx
+                .database
+                .get_user_by_email("owner@example.com")
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(user.email_verified());
+            assert_eq!(user.name(), Some("Mailbox Owner"));
+            let session = ctx.database.get_session(token).await.unwrap().unwrap();
+            assert_eq!(session.user_id(), user.id());
+            assert!(
+                ((session.expires_at() - session.created_at()).num_milliseconds()
+                    - lifetime * 1_000)
+                    .abs()
+                    < 1_000,
+                "preference {preference:?} must preserve the configured persisted session lifetime",
+            );
+            let cookies = response
+                .headers
+                .get_all("set-cookie")
+                .map(|header| cookie::Cookie::parse(header.clone()).unwrap())
+                .collect::<Vec<_>>();
+            let session_cookie = cookies
+                .iter()
+                .find(|cookie| cookie.name() == "otp-fixture.session_token")
+                .unwrap();
+            assert_eq!(
+                session_cookie.max_age().map(|age| age.whole_seconds()),
+                persistent.then_some(lifetime),
+                "signed preference {preference:?}, configured lifetime {lifetime}",
+            );
+            assert_eq!(session_cookie.http_only(), Some(true));
+            assert_eq!(session_cookie.path(), Some("/"));
+            assert_eq!(
+                verify_cookie_value(session_cookie.value(), &ctx.config.secret).as_deref(),
+                Some(token)
+            );
+            let preference_cookie = cookies
+                .iter()
+                .find(|cookie| cookie.name() == "otp-fixture.dont_remember");
+            assert_eq!(preference_cookie.is_some(), !persistent);
+            if let Some(cookie) = preference_cookie {
+                assert_eq!(
+                    verify_cookie_value(cookie.value(), &ctx.config.secret).as_deref(),
+                    Some("true")
+                );
+                assert_eq!(cookie.max_age(), None);
+                assert_eq!(cookie.http_only(), Some(true));
+            }
+            assert!(
+                ctx.database
+                    .get_latest_verification_by_identifier("sign-in-otp-owner@example.com")
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert_eq!(
+                post(&plugin, &ctx, "/sign-in/email-otp", body).await.status,
+                400
+            );
+        }
+    }
 }
 
 // Upstream: atomicVerifyOTP attempt count is enforced before code validation.

@@ -257,7 +257,7 @@ pub(crate) async fn session_response<S: AuthSchema>(
         &related_cookie_name(&ctx.config, "dont_remember"),
     )
     .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
-    .is_some();
+    .is_some_and(|value| !value.is_empty());
     let dont_remember = inherited;
     let meta = better_auth_core::RequestMeta::from_request(req);
     let issued =

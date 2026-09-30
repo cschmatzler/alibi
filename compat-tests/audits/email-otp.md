@@ -56,7 +56,7 @@ notification failure after proof issuance. An absent username schema ignores
 malformed additional username inputs and persists no username fields; the
 SQLite and official-client regressions both fail before the parsing repair.
 
-The final focused official-client run passes all 20 SDK scenarios with 614
+The final focused official-client run passes all 21 SDK scenarios with 750
 assertions, including three inherited email-verification configuration scenarios.
 The initial five raw null-versus-false failures were repaired by the shared
 nullable storage and per-auth plugin defaults prerequisite. The trusted state
@@ -70,11 +70,26 @@ the trusted server fixture's error projection; replacing the auto-added header
 with the actual JSON header repairs it without changing authentication behavior.
 
 Independent review resolved the hook-cancellation loop and global expired-row
-cleanup findings. Canonical coverage, browser checks, optional builds and
-inventory verification remain serialized coordinator responsibilities. The
-nine OTP inventory entries are activated deliberately with successful flow,
+cleanup findings. The complete canonical gate passed on
+`4f5d7318cd925d8852054bff6aecb086ff15bb98`: 163 strict SDK scenarios (1,408
+assertions), 23 harness tests, two Chromium tests, default/optional native
+configurations, Clippy, Rustls/Redis builds, TypeScript and documentation.
+Source coverage was 77.47% (17,828/23,014 lines). The native route inventory
+fixture registers the actual OTP plugin; strict inventory equality is retained.
+The nine OTP inventory entries are activated deliberately with successful flow,
 rejection, applicable authorization and real state-transition evidence; all
 other committed requirements are preserved.
+
+A later bounded repair treats a signed empty `dont_remember` cookie as false,
+while nonempty values including the string `false` retain upstream truthiness.
+The existing SQLite sign-in/replay contract now tests absent, empty, `false` and
+`true` preferences with default seven-day and configured 90-second TTLs and a
+configured cookie name. It independently checks persisted full-length expiry,
+signed-cookie identity, HTTP-only/path attributes and preference-cookie reissue.
+The pre-fix native and official-client runs fail at the wrong empty-preference
+Max-Age after the pinned runtime passes all four cases. This repair passes all 20 native OTP tests, 21 SDK scenarios (750 assertions),
+TypeScript, fixture build, production Clippy and a bounded independent review; the next complete magic-link descendant gate
+will validate the final combined ancestry before claiming a fresh full gate.
 
 ## Remaining audited boundaries
 
