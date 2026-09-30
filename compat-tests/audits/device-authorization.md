@@ -20,12 +20,12 @@ Strict harness aliases relate persisted camel-case codes to issued snake-case
 codes. TypeScript-versus-TypeScript independently reproduced the previous false
 failures. The one-second bearer TTL floor allowance requires an observed real
 session with matching token/absolute expiry and execution intervals; changed
-expiry, unobserved tokens and larger TTL differences still fail. Caller data,
-JWT claims and trace shapes remain literal. Raw exceptions remain empty.
+expiry, unobserved tokens and larger TTL differences still fail. The new device-code aliases do not apply to caller data, custom JWT
+claims or trace shapes. Existing runtime user identity checks remain intact. Raw exceptions remain empty.
 
 Independent review found and resolved pre-authentication validation ordering,
 missing media rejection, unscoped aliases in JWT claims and missing destructive
-migration rollback evidence. Focused proof: 19 SDK scenarios / 320 assertions,
+migration rollback evidence. Focused proof: 19 SDK scenarios / 326 assertions,
 production Clippy, native generator/collision/concurrency checks and installed
 SQLite upgrade/rollback. Canonical integration remains coordinator-owned.
 

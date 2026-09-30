@@ -133,6 +133,8 @@ compatScenario("device deny flow returns access_denied", async (ctx) => {
   expect(claim.error).toBeNull();
   const deny = await owner.device.deny({ userCode: code.user_code });
   expect(deny.data).toEqual({ success: true });
+  const repeatDeny = await owner.device.deny({ userCode: code.user_code });
+  expect(repeatDeny.error).toMatchObject({ status: 400, error: "invalid_request", error_description: "Device code already processed" });
   const deniedState = await owner.device({ query: { user_code: code.user_code } });
   expect(deniedState.data?.status).toBe("denied");
   const device = deviceActor(ctx, "device");
@@ -144,7 +146,7 @@ compatScenario("device deny flow returns access_denied", async (ctx) => {
   expect(sessions.data).toHaveLength(1);
   return {
     signup: ctx.snapshot(signup), code: ctx.snapshot(code), claim: ctx.snapshot(claim), deny: ctx.snapshot(deny),
-    deniedState: ctx.snapshot(deniedState), token: ctx.snapshot(token), replay: ctx.snapshot(replay), sessions: ctx.snapshot(sessions),
+    repeatDeny: ctx.snapshot(repeatDeny), deniedState: ctx.snapshot(deniedState), token: ctx.snapshot(token), replay: ctx.snapshot(replay), sessions: ctx.snapshot(sessions),
   };
 }, ["POST /device/deny", "POST /device/token"]);
 
