@@ -10,8 +10,8 @@ use better_auth::plugins::{
 };
 use better_auth::wire::UserView;
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_seaorm::sea_orm::DatabaseConnection;
 use better_auth_seaorm::SeaOrmStore;
+use better_auth_seaorm::sea_orm::DatabaseConnection;
 use chrono::Duration;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -66,7 +66,11 @@ pub(super) async fn router(
             AuthBuilder::<TestSchema>::new(config.clone())
                 .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
                 .rate_limit(RateLimitConfig::new().enabled(false))
-                .plugin(EmailPasswordPlugin::new().require_email_verification(true))
+                .plugin(
+                    EmailPasswordPlugin::new()
+                        .enable_username(false)
+                        .require_email_verification(true),
+                )
                 .plugin(plugin)
                 .plugin(SessionManagementPlugin::new())
                 .build()

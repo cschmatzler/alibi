@@ -1289,34 +1289,84 @@ async fn test_send_verification_email_already_verified_returns_error() {
 
 // Upstream reference: packages/better-auth/src/api/routes/email-verification.test.ts :: describe("Email Verification") and packages/better-auth/src/api/routes/email-verification.ts; adapted to the Rust email verification plugin.
 #[tokio::test]
-async fn test_send_verification_email_user_not_found() {
-    struct NoopSender;
+async fn unauthenticated_verification_email_has_fixed_floor_for_all_mailbox_states() {
+    struct Sender {
+        calls: Arc<AtomicU32>,
+        fail: bool,
+    }
     #[async_trait]
-    impl SendVerificationEmail for NoopSender {
-        async fn send(&self, _user: &UserView, _url: &str, _token: &str) -> AuthResult<()> {
-            Ok(())
+    impl SendVerificationEmail for Sender {
+        async fn send(&self, _: &UserView, _: &str, _: &str) -> AuthResult<()> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.fail {
+                Err(AuthError::bad_request("fixture delivery failed"))
+            } else {
+                Ok(())
+            }
         }
     }
-
-    let plugin =
-        EmailVerificationPlugin::new().custom_send_verification_email(Arc::new(NoopSender));
-    let ctx = test_helpers::create_test_context().await;
-
-    let body = serde_json::json!({ "email": "nobody@test.com" });
-    let mut headers = HashMap::new();
-    headers.insert("content-type".to_string(), "application/json".to_string());
-    let req = AuthRequest::from_parts(
-        HttpMethod::Post,
-        "/send-verification-email".to_string(),
-        headers,
-        Some(body.to_string().into_bytes()),
-        HashMap::new(),
-    );
-    let response = plugin
-        .handle_send_verification_email(&req, &ctx)
-        .await
-        .unwrap();
-    assert_eq!(response.status, 200);
+    for (existing, fail) in [
+        (None, false),
+        (Some(true), false),
+        (Some(false), false),
+        (Some(false), true),
+    ] {
+        let ctx = test_helpers::create_test_context().await;
+        let email = "enumeration@fixture.test";
+        let user = if let Some(verified) = existing {
+            Some(
+                ctx.database
+                    .create_user(
+                        CreateUser::new()
+                            .with_email(email)
+                            .with_email_verified(verified),
+                    )
+                    .await
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+        let calls = Arc::new(AtomicU32::new(0));
+        let plugin =
+            EmailVerificationPlugin::new().custom_send_verification_email(Arc::new(Sender {
+                calls: calls.clone(),
+                fail,
+            }));
+        let req = test_helpers::create_auth_json_request_no_query(
+            HttpMethod::Post,
+            "/send-verification-email",
+            None,
+            Some(serde_json::json!({"email":email})),
+        );
+        let start = std::time::Instant::now();
+        let response = plugin.handle_send_verification_email(&req, &ctx).await;
+        assert!(
+            start.elapsed() >= std::time::Duration::from_millis(500),
+            "Every unauthenticated mailbox result must retain the timing floor"
+        );
+        if fail {
+            assert_eq!(response.unwrap_err().status_code(), 400);
+        } else {
+            assert_eq!(response.unwrap().status, 200);
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            u32::from(existing == Some(false))
+        );
+        let after = ctx.database.get_user_by_email(email).await.unwrap();
+        assert_eq!(after.as_ref().map(AuthUser::email_verified), existing);
+        if let Some(user) = user {
+            assert_eq!(after.as_ref().unwrap().id(), user.id());
+            assert!(
+                ctx.database
+                    .get_user_sessions(&user.id())
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+    }
 }
 
 // ------------------------------------------------------------------

@@ -41,7 +41,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
     match current_user {
         Some(user) => {
             let session_email = user.email().unwrap_or_default();
-            if session_email != body.email {
+            if session_email.to_lowercase() != body.email.to_lowercase() {
                 return Err(AuthError::bad_request("Email mismatch"));
             }
             if user.email_verified() {
@@ -62,12 +62,30 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
             }
         }
         None => {
-            let user = match ctx.database.get_user_by_email(&body.email).await? {
-                Some(user) => user,
-                None => return Ok(StatusResponse { status: true }),
-            };
-
-            if user.email_verified() {
+            let start = tokio::time::Instant::now();
+            let user = ctx.database.get_user_by_email(&body.email).await?;
+            let result: AuthResult<()> = if let Some(user) =
+                user.filter(|user| !user.email_verified())
+            {
+                async {
+                    let token = create_email_verification_token(
+                        &ctx.config.secret,
+                        &body.email,
+                        None,
+                        config.verification_token_expiry,
+                        None,
+                    )?;
+                    let url = verification_url(&ctx.config, &token, body.callback_url.as_deref());
+                    let user = UserView::from(&user);
+                    if let Some(ref sender) = config.send_verification_email {
+                        sender.send(&user, &url, &token).await?;
+                    }
+                    Ok(())
+                }
+                .await
+            } else {
+                // Missing and already-verified mailboxes perform the same local
+                // signing work and retain the same timing floor without delivery.
                 let _ = create_email_verification_token(
                     &ctx.config.secret,
                     &body.email,
@@ -75,21 +93,13 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
                     config.verification_token_expiry,
                     None,
                 )?;
-                return Ok(StatusResponse { status: true });
+                Ok(())
+            };
+            let remaining = std::time::Duration::from_millis(500).saturating_sub(start.elapsed());
+            if !remaining.is_zero() {
+                tokio::time::sleep(remaining).await;
             }
-
-            let token = create_email_verification_token(
-                &ctx.config.secret,
-                &body.email,
-                None,
-                config.verification_token_expiry,
-                None,
-            )?;
-            let url = verification_url(&ctx.config, &token, body.callback_url.as_deref());
-            let user = UserView::from(&user);
-            if let Some(ref sender) = config.send_verification_email {
-                sender.send(&user, &url, &token).await?;
-            }
+            result?;
         }
     }
 

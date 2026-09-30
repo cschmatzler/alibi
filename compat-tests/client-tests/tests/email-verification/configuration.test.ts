@@ -12,17 +12,22 @@ const deliverySchema = z.object({ token: z.string(), url: z.string() });
 compatScenario("required email verification issues proof without a session and gates sign-in until verification", async (ctx) => {
   const actor = ctx.actor("owner", "email-verification-required");
   const email = ctx.uniqueEmail("required-verification");
-  const signup = await actor.client.signUp.email({ email, password: "password123", name: "Required Verification" });
+  const signup = await actor.client.signUp.email({ email, password: "password123", name: "Required Verification", username: "ab", displayUsername: "invalid display !" });
   expect(signup.error).toBeNull();
   if (!signup.data?.user) throw new Error("Required registration must persist its user");
   const userId = signup.data.user.id;
   expect(signup.data.token).toBeNull();
   expect(signup.data.user.emailVerified).toBe(false);
   expect(signup.data.user.createdAt).toBeInstanceOf(Date);
+  const coreUser = z.record(z.string(), z.unknown()).parse(ctx.snapshot(signup.data.user));
+  expect(Object.hasOwn(coreUser, "username")).toBe(false);
+  expect(Object.hasOwn(coreUser, "displayUsername")).toBe(false);
   const registered = stateSchema.parse(await ctx.readUserState({ userId }));
   expect(registered.user).toMatchObject({ id: userId, email, emailVerified: false });
   expect(registered.accounts).toMatchObject([{ providerId: "credential", userId, accountId: userId }]);
   expect(registered.sessions).toEqual([]);
+  const unavailableUsername = await ctx.rawRequest({path:"/__test/profiles/email-verification-required/api/auth/is-username-available", method:"POST", json:{username:"ab"}});
+  expect(unavailableUsername).toEqual({status:404,location:null,body:null});
   const anonymous = await actor.client.getSession();
   expect(anonymous.data).toBeNull();
   const delivery = deliverySchema.parse(await ctx.readVerificationEmail({ email }));
@@ -45,7 +50,7 @@ compatScenario("required email verification issues proof without a session and g
   expect(session.data?.session.token).toBe(signin.data?.token);
   const signedIn = stateSchema.parse(await ctx.readUserState({ userId }));
   expect(signedIn.sessions).toMatchObject([{ id: session.data?.session.id, token: signin.data?.token, userId }]);
-  return { signup, registered, anonymous, delivery, blocked, denied, verification, verified, signin, session, signedIn };
+  return { signup, registered, unavailableUsername, anonymous, delivery, blocked, denied, verification, verified, signin, session, signedIn };
 }, ["POST /sign-up/email", "GET /verify-email", "POST /sign-in/email"]);
 
 compatScenario("sendOnSignUp false suppresses signup mail while sign-in verification remains required", async (ctx) => {

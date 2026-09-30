@@ -61,7 +61,11 @@ async fn auth(
     });
     let auth = AuthBuilder::new(config.clone())
         .store(SeaOrmStore::<Schema>::new(config, db))
-        .plugin(EmailPasswordPlugin::new().require_email_verification(required))
+        .plugin(
+            EmailPasswordPlugin::new()
+                .enable_username(false)
+                .require_email_verification(required),
+        )
         // Registering the plugins independently exercises initialized configuration discovery.
         .plugin(EmailVerificationPlugin::with_config(
             EmailVerificationConfig {
@@ -78,11 +82,23 @@ async fn auth(
 }
 
 async fn post(auth: &BetterAuth<Schema>, path: &str, body: Value) -> (AuthResponse, Value) {
+    post_with_cookie(auth, path, body, None).await
+}
+
+async fn post_with_cookie(
+    auth: &BetterAuth<Schema>,
+    path: &str,
+    body: Value,
+    cookie: Option<&str>,
+) -> (AuthResponse, Value) {
     let mut req = AuthRequest::new(HttpMethod::Post, format!("/api/auth{path}"));
     _ = req
         .headers
         .insert("content-type".into(), "application/json".into());
     _ = req.headers.insert("origin".into(), ORIGIN.into());
+    if let Some(cookie) = cookie {
+        _ = req.headers.insert("cookie".into(), cookie.into());
+    }
     req.body = Some(serde_json::to_vec(&body).unwrap());
     let response = auth.handle_request(req).await.unwrap();
     let payload = serde_json::from_slice(&response.body).unwrap();
@@ -91,6 +107,107 @@ async fn post(auth: &BetterAuth<Schema>, path: &str, body: Value) -> (AuthRespon
 
 fn signup() -> Value {
     json!({"email":"MixedCase@verification.fixture.test","password":PASSWORD,"name":"Verification Contract"})
+}
+
+// The session's normalized mailbox matches a case-varied delivery request,
+// while a genuinely different mailbox must not receive its proof.
+#[tokio::test]
+async fn authenticated_verification_delivery_compares_normalized_mailboxes() {
+    let (auth, sender) = auth(false, Some(false), false).await;
+    let (registered, body) = post(&auth, "/sign-up/email", signup()).await;
+    assert_eq!(registered.status, 200, "{body}");
+    let cookie = registered
+        .headers
+        .get("set-cookie")
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap();
+    let (sent, sent_body) = post_with_cookie(
+        &auth,
+        "/send-verification-email",
+        json!({"email":EMAIL.to_uppercase()}),
+        Some(cookie),
+    )
+    .await;
+    assert_eq!(sent.status, 200, "{sent_body}");
+    assert_eq!(sent_body, json!({"status":true}));
+    assert_eq!(sender.calls.lock().unwrap().len(), 1);
+    let (foreign, foreign_body) = post_with_cookie(
+        &auth,
+        "/send-verification-email",
+        json!({"email":"different@verification.fixture.test"}),
+        Some(cookie),
+    )
+    .await;
+    assert_eq!(foreign.status, 400, "{foreign_body}");
+    assert_eq!(foreign_body.get("message"), Some(&json!("Email mismatch")));
+    assert_eq!(sender.calls.lock().unwrap().len(), 1);
+    let calls = sender.calls.lock().unwrap();
+    assert_eq!(calls.first().unwrap().0.email.as_deref(), Some(EMAIL));
+    assert_eq!(
+        body.pointer("/user/id").and_then(Value::as_str),
+        Some(calls.first().unwrap().0.id.as_str())
+    );
+}
+
+// Disabled username registration ignores additional username inputs as the
+// pinned core schema does, and cannot dispatch either username endpoint.
+#[tokio::test]
+async fn username_disabled_signup_ignores_additional_input_and_excludes_username_routes() {
+    let (auth, sender) = auth(false, Some(false), false).await;
+    for (email, username, display) in [
+        (
+            "username-disabled-short@verification.fixture.test",
+            json!("ab"),
+            json!("invalid display !"),
+        ),
+        (
+            "username-disabled-type@verification.fixture.test",
+            json!(7),
+            json!({"unregistered":true}),
+        ),
+    ] {
+        let (response, body) = post(&auth, "/sign-up/email", json!({"email":email,"password":PASSWORD,"name":"Core Signup","username":username,"displayUsername":display})).await;
+        assert_eq!(response.status, 200, "{body}");
+        let user = auth
+            .store()
+            .get_user_by_email(email)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(user.username().is_none());
+        assert!(user.display_username().is_none());
+        assert_eq!(
+            auth.store()
+                .get_user_accounts(&user.id())
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            auth.store()
+                .get_user_sessions(&user.id())
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+    assert!(sender.calls.lock().unwrap().is_empty());
+    for path in ["/sign-in/username", "/is-username-available"] {
+        assert!(
+            !auth
+                .routes()
+                .iter()
+                .any(|(registered, _)| registered == path)
+        );
+        let req = AuthRequest::new(HttpMethod::Post, format!("/api/auth{path}"));
+        let response = auth.handle_request(req).await.unwrap();
+        assert_eq!(response.status, 404);
+        assert!(response.body.is_empty());
+    }
 }
 
 // Pinned sign-up uses sendOnSignUp ?? requireEmailVerification. This must
