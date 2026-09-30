@@ -20,6 +20,13 @@ use std::sync::Arc;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
+fn test_session_cookie(token: &str, auth: &BetterAuth<TestSchema>) -> String {
+    format!(
+        "better-auth.session_token={}",
+        better_auth_core::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
+    )
+}
+
 /// Helper to create test BetterAuth instance with memory database
 async fn create_test_auth_memory() -> Arc<BetterAuth<TestSchema>> {
     TestHarness::minimal().await.into_arc()
@@ -116,13 +123,13 @@ async fn test_revoke_session_integration() {
 
     let create_session = CreateSession {
         token: None,
-        active_team_id: None,
         user_id: user_id.clone(),
         expires_at: Utc::now() + Duration::hours(24),
         ip_address: Some("192.168.1.1".to_string()),
         user_agent: Some("test-agent-2".to_string()),
         impersonated_by: None,
         active_organization_id: None,
+        active_team_id: None,
     };
 
     let session2 = auth.store().create_session(create_session).await.unwrap();
@@ -132,9 +139,10 @@ async fn test_revoke_session_integration() {
 
     let mut headers = HashMap::new();
     headers.insert(
-        "authorization".to_string(),
-        format!("Bearer {}", session_token1),
+        "cookie".to_string(),
+        test_session_cookie(&session_token1, &auth),
     );
+    _ = headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let revoke_data = serde_json::json!({
         "token": session2.token
@@ -395,9 +403,10 @@ async fn test_get_session_post_requires_defer_session_refresh() {
 
     let mut headers = HashMap::new();
     headers.insert(
-        "authorization".to_string(),
-        format!("Bearer {}", session_token),
+        "cookie".to_string(),
+        test_session_cookie(&session_token, &auth),
     );
+    _ = headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let request = AuthRequest::from_parts(
         better_auth::prelude::HttpMethod::Post,
@@ -425,9 +434,10 @@ async fn test_delete_user_post_method() {
 
     let mut headers = HashMap::new();
     headers.insert(
-        "authorization".to_string(),
-        format!("Bearer {}", session_token),
+        "cookie".to_string(),
+        test_session_cookie(&session_token, &auth),
     );
+    _ = headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let request = AuthRequest::from_parts(
         better_auth::prelude::HttpMethod::Post,
@@ -463,22 +473,23 @@ async fn test_set_password_public_route_absent_for_social_user() {
 
     let create_session = CreateSession {
         token: None,
-        active_team_id: None,
         user_id: user.id.clone(),
         expires_at: Utc::now() + Duration::hours(24),
         ip_address: None,
         user_agent: None,
         impersonated_by: None,
         active_organization_id: None,
+        active_team_id: None,
     };
     let session = auth.store().create_session(create_session).await.unwrap();
 
     let mut headers = HashMap::new();
     headers.insert("content-type".to_string(), "application/json".to_string());
     headers.insert(
-        "authorization".to_string(),
-        format!("Bearer {}", session.token),
+        "cookie".to_string(),
+        test_session_cookie(&session.token, &auth),
     );
+    _ = headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let set_data = serde_json::json!({
         "newPassword": "MyNewPassword123"
@@ -509,9 +520,10 @@ async fn test_set_password_already_has_password() {
     let mut headers = HashMap::new();
     headers.insert("content-type".to_string(), "application/json".to_string());
     headers.insert(
-        "authorization".to_string(),
-        format!("Bearer {}", session_token),
+        "cookie".to_string(),
+        test_session_cookie(&session_token, &auth),
     );
+    _ = headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let set_data = serde_json::json!({
         "newPassword": "AnotherPassword123"
@@ -572,21 +584,22 @@ async fn test_revoke_other_sessions_integration() {
 
     let create_session = CreateSession {
         token: None,
-        active_team_id: None,
         user_id: user_id.clone(),
         expires_at: Utc::now() + Duration::hours(24),
         ip_address: Some("192.168.1.1".to_string()),
         user_agent: Some("other-agent".to_string()),
         impersonated_by: None,
         active_organization_id: None,
+        active_team_id: None,
     };
     let session2 = auth.store().create_session(create_session).await.unwrap();
 
     let mut headers = HashMap::new();
     headers.insert(
-        "authorization".to_string(),
-        format!("Bearer {}", session_token1),
+        "cookie".to_string(),
+        test_session_cookie(&session_token1, &auth),
     );
+    _ = headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let request = AuthRequest::from_parts(
         better_auth::prelude::HttpMethod::Post,
@@ -622,7 +635,16 @@ async fn test_cookie_based_auth() {
     let mut headers = HashMap::new();
     headers.insert(
         "cookie".to_string(),
-        format!("better-auth.session_token={}; other=value", session_token),
+        format!(
+            "{}; other=value",
+            better_auth_core::utils::cookie_utils::create_session_cookie(
+                &session_token,
+                auth.config()
+            )
+            .split(';')
+            .next()
+            .unwrap()
+        ),
     );
 
     let request = AuthRequest::from_parts(
@@ -641,10 +663,10 @@ async fn test_cookie_based_auth() {
     assert_eq!(response_data["user"]["email"], "integration@test.com");
 }
 
-/// Integration test: Bearer token takes precedence over cookie
+/// A bare bearer token does not establish a core cookie session.
 // Upstream source: packages/better-auth/src/api/routes public endpoint handler matching this request path; adapted to the Rust integration endpoint case.
 #[tokio::test]
-async fn test_bearer_takes_precedence_over_cookie() {
+async fn test_bare_bearer_cannot_override_an_invalid_session_cookie() {
     let auth = create_test_auth_memory().await;
     let (_user_id, session_token) = create_test_user_and_session(auth.clone()).await;
 
@@ -671,8 +693,27 @@ async fn test_bearer_takes_precedence_over_cookie() {
     );
 
     let response = auth.handle_request(request).await.unwrap();
-    // Should succeed because Bearer token takes precedence
     assert_eq!(response.status, 200);
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(body, serde_json::Value::Null);
+    assert!(
+        auth.store()
+            .get_session(&session_token)
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    let mut request = AuthRequest::new(better_auth::prelude::HttpMethod::Get, "/get-session");
+    request
+        .headers
+        .insert("authorization".into(), format!("Bearer {session_token}"));
+    request
+        .headers
+        .insert("cookie".into(), test_session_cookie(&session_token, &auth));
+    let response = auth.handle_request(request).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(body["session"]["token"], session_token);
 }
 
 /// Integration test for unauthorized password operations
@@ -716,9 +757,10 @@ async fn test_change_email_success() {
     let mut headers = HashMap::new();
     headers.insert("content-type".to_string(), "application/json".to_string());
     headers.insert(
-        "authorization".to_string(),
-        format!("Bearer {}", session_token),
+        "cookie".to_string(),
+        test_session_cookie(&session_token, &auth),
     );
+    _ = headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let body = serde_json::json!({ "newEmail": "newemail@test.com" });
 
@@ -760,9 +802,10 @@ async fn test_change_email_duplicate() {
     let mut headers = HashMap::new();
     headers.insert("content-type".to_string(), "application/json".to_string());
     headers.insert(
-        "authorization".to_string(),
-        format!("Bearer {}", session_token),
+        "cookie".to_string(),
+        test_session_cookie(&session_token, &auth),
     );
+    _ = headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let body = serde_json::json!({ "newEmail": "existing@test.com" });
 
@@ -836,9 +879,10 @@ async fn test_delete_user_callback_success() {
         {
             let mut headers = HashMap::new();
             headers.insert(
-                "authorization".to_string(),
-                format!("Bearer {}", session_token),
+                "cookie".to_string(),
+                test_session_cookie(&session_token, &auth),
             );
+            _ = headers.insert("origin".to_string(), "http://localhost:3000".to_string());
             headers
         },
         None,
@@ -876,9 +920,10 @@ async fn test_delete_user_callback_invalid_token() {
         {
             let mut headers = HashMap::new();
             headers.insert(
-                "authorization".to_string(),
-                format!("Bearer {}", session_token),
+                "cookie".to_string(),
+                test_session_cookie(&session_token, &auth),
             );
+            _ = headers.insert("origin".to_string(), "http://localhost:3000".to_string());
             headers
         },
         None,
@@ -901,9 +946,10 @@ async fn test_list_accounts_empty() {
 
     let mut headers = HashMap::new();
     headers.insert(
-        "authorization".to_string(),
-        format!("Bearer {}", session_token),
+        "cookie".to_string(),
+        test_session_cookie(&session_token, &auth),
     );
+    _ = headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let request = AuthRequest::from_parts(
         better_auth::prelude::HttpMethod::Get,
@@ -949,9 +995,10 @@ async fn test_list_accounts_with_account() {
 
     let mut headers = HashMap::new();
     headers.insert(
-        "authorization".to_string(),
-        format!("Bearer {}", session_token),
+        "cookie".to_string(),
+        test_session_cookie(&session_token, &auth),
     );
+    _ = headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let request = AuthRequest::from_parts(
         better_auth::prelude::HttpMethod::Get,
@@ -1010,9 +1057,10 @@ async fn test_unlink_account_success() {
     let mut headers = HashMap::new();
     headers.insert("content-type".to_string(), "application/json".to_string());
     headers.insert(
-        "authorization".to_string(),
-        format!("Bearer {}", session_token),
+        "cookie".to_string(),
+        test_session_cookie(&session_token, &auth),
     );
+    _ = headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let google_account = auth
         .store()
@@ -1070,13 +1118,13 @@ async fn test_unlink_last_account_fails() {
 
     let create_session = CreateSession {
         token: None,
-        active_team_id: None,
         user_id: user.id.clone(),
         expires_at: Utc::now() + Duration::hours(24),
         ip_address: None,
         user_agent: None,
         impersonated_by: None,
         active_organization_id: None,
+        active_team_id: None,
     };
     let session = auth.store().create_session(create_session).await.unwrap();
 
@@ -1098,9 +1146,10 @@ async fn test_unlink_last_account_fails() {
     let mut headers = HashMap::new();
     headers.insert("content-type".to_string(), "application/json".to_string());
     headers.insert(
-        "authorization".to_string(),
-        format!("Bearer {}", session.token),
+        "cookie".to_string(),
+        test_session_cookie(&session.token, &auth),
     );
+    _ = headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let unlink_data = serde_json::json!({
         "accountId": account.id
@@ -1740,7 +1789,8 @@ async fn create_api_key(
 
     let mut headers = HashMap::new();
     headers.insert("content-type".to_string(), "application/json".to_string());
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("cookie".to_string(), test_session_cookie(&token, &auth));
+    headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let request = AuthRequest::from_parts(
         better_auth::prelude::HttpMethod::Post,
@@ -1793,7 +1843,8 @@ async fn test_api_key_create_with_options() {
 
     let mut headers = HashMap::new();
     headers.insert("content-type".to_string(), "application/json".to_string());
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("cookie".to_string(), test_session_cookie(&token, &auth));
+    headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let body = serde_json::json!({
         "name": "limited-key",
@@ -1832,7 +1883,8 @@ async fn test_api_key_get() {
     use std::collections::HashMap;
 
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("cookie".to_string(), test_session_cookie(&token, &auth));
+    headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let mut query = HashMap::new();
     query.insert("id".to_string(), id.clone());
@@ -1873,7 +1925,8 @@ async fn test_api_key_list() {
     use std::collections::HashMap;
 
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("cookie".to_string(), test_session_cookie(&token, &auth));
+    headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let request = AuthRequest::from_parts(
         better_auth::prelude::HttpMethod::Get,
@@ -1907,7 +1960,8 @@ async fn test_api_key_update() {
 
     let mut headers = HashMap::new();
     headers.insert("content-type".to_string(), "application/json".to_string());
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("cookie".to_string(), test_session_cookie(&token, &auth));
+    headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let update_body = serde_json::json!({
         "keyId": id,
@@ -1975,7 +2029,8 @@ async fn test_api_key_delete() {
 
     let mut headers = HashMap::new();
     headers.insert("content-type".to_string(), "application/json".to_string());
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("cookie".to_string(), test_session_cookie(&token, &auth));
+    headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let delete_body = serde_json::json!({"keyId": id});
 
@@ -1996,7 +2051,8 @@ async fn test_api_key_delete() {
 
     // Verify it's gone by listing
     let mut headers2 = HashMap::new();
-    headers2.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers2.insert("cookie".to_string(), test_session_cookie(&token, &auth));
+    headers2.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let list_request = AuthRequest::from_parts(
         better_auth::prelude::HttpMethod::Get,
@@ -2093,7 +2149,8 @@ async fn test_api_key_get_other_users_key() {
 
     // Try to get user1's key with user2's token
     let mut headers2 = HashMap::new();
-    headers2.insert("authorization".to_string(), format!("Bearer {}", token2));
+    headers2.insert("cookie".to_string(), test_session_cookie(&token2, &auth));
+    headers2.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let mut query = HashMap::new();
     query.insert("id".to_string(), id.clone());
@@ -2145,7 +2202,8 @@ async fn test_api_key_delete_other_users_key() {
     // Try to delete user1's key with user2's token
     let mut headers2 = HashMap::new();
     headers2.insert("content-type".to_string(), "application/json".to_string());
-    headers2.insert("authorization".to_string(), format!("Bearer {}", token2));
+    headers2.insert("cookie".to_string(), test_session_cookie(&token2, &auth));
+    headers2.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let delete_body = serde_json::json!({"keyId": id});
 
@@ -2196,7 +2254,8 @@ async fn test_api_key_update_other_users_key() {
     // Try to update user1's key with user2's token
     let mut headers2 = HashMap::new();
     headers2.insert("content-type".to_string(), "application/json".to_string());
-    headers2.insert("authorization".to_string(), format!("Bearer {}", token2));
+    headers2.insert("cookie".to_string(), test_session_cookie(&token2, &auth));
+    headers2.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let update_body = serde_json::json!({
         "keyId": id,
@@ -2225,7 +2284,8 @@ async fn test_api_key_list_empty() {
     use std::collections::HashMap;
 
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("cookie".to_string(), test_session_cookie(&token, &auth));
+    headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let request = AuthRequest::from_parts(
         better_auth::prelude::HttpMethod::Get,
@@ -2253,7 +2313,8 @@ async fn test_api_key_get_missing_id() {
     use std::collections::HashMap;
 
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("cookie".to_string(), test_session_cookie(&token, &auth));
+    headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let request = AuthRequest::from_parts(
         better_auth::prelude::HttpMethod::Get,
@@ -2277,7 +2338,8 @@ async fn test_api_key_get_nonexistent() {
     use std::collections::HashMap;
 
     let mut headers = HashMap::new();
-    headers.insert("authorization".to_string(), format!("Bearer {}", token));
+    headers.insert("cookie".to_string(), test_session_cookie(&token, &auth));
+    headers.insert("origin".to_string(), "http://localhost:3000".to_string());
 
     let mut query = HashMap::new();
     query.insert("id".to_string(), "nonexistent-id".to_string());
