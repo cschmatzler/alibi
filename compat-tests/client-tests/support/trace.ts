@@ -40,12 +40,16 @@ function responseCookies(response: Response) {
 }
 
 /** Fetch with an isolated standards-aware cookie jar and complete redirect traces. */
-export function createTracingFetch(baseURL: string, actor: string, traces: TraceEntry[]) {
+export function createTracingFetch(baseURL: string, actor: string, traces: TraceEntry[], authPath = "/api/auth") {
   const jar = new CookieJar();
   const origin = new URL(baseURL);
   return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const target = new URL(input instanceof Request ? input.url : input, baseURL);
-    let request = input instanceof Request ? new Request(input, init) : new Request(target, init);
+    if (authPath !== "/api/auth" && target.origin === origin.origin && target.pathname.startsWith("/api/auth/")) {
+      target.pathname = `${authPath}${target.pathname.slice("/api/auth".length)}`;
+    }
+    const supplied = input instanceof Request ? new Request(input, init) : undefined;
+    let request = supplied ? new Request(target, supplied) : new Request(target, init);
     const redirectMode = init?.redirect ?? request.redirect;
     const requestCredentials = init?.credentials ?? (input instanceof Request ? input.credentials : undefined) ?? "same-origin";
     for (let redirects = 0; redirects <= 10; redirects++) {

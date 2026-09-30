@@ -46,7 +46,16 @@ fn request(token: &str, path: &str, body: serde_json::Value) -> AuthRequest {
     AuthRequest::from_parts(
         HttpMethod::Post,
         path.to_string(),
-        HashMap::from([("authorization".to_string(), format!("Bearer {token}"))]),
+        HashMap::from([(
+            "cookie".to_string(),
+            format!(
+                "better-auth.session_token={}",
+                better_auth_core::utils::cookie_utils::sign_cookie_value(
+                    token,
+                    "a-secret-that-is-at-least-32-characters"
+                )
+            ),
+        )]),
         Some(serde_json::to_vec(&body).unwrap()),
         HashMap::new(),
     )

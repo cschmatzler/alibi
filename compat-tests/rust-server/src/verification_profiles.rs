@@ -1,0 +1,79 @@
+//! Core verification configuration fixtures, outside the public route inventory.
+
+use crate::{CompatVerificationSender, EmailOutboxRecord, TestSchema};
+use async_trait::async_trait;
+use axum::Router;
+use better_auth::integrations::axum::AxumIntegration;
+use better_auth::middleware::RateLimitConfig;
+use better_auth::plugins::{
+    EmailPasswordPlugin, EmailVerificationPlugin, SendVerificationEmail, SessionManagementPlugin,
+};
+use better_auth::wire::UserView;
+use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use better_auth_seaorm::sea_orm::DatabaseConnection;
+use better_auth_seaorm::SeaOrmStore;
+use chrono::Duration;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+struct Sender {
+    inner: CompatVerificationSender,
+    fail: bool,
+}
+
+#[async_trait]
+impl SendVerificationEmail for Sender {
+    async fn send(&self, user: &UserView, url: &str, token: &str) -> AuthResult<()> {
+        self.inner.send(user, url, token).await?;
+        if self.fail {
+            Err(AuthError::bad_request("fixture delivery failed"))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+pub(super) async fn router(
+    config: &AuthConfig,
+    database: DatabaseConnection,
+    outbox: Arc<Mutex<HashMap<String, EmailOutboxRecord>>>,
+) -> AuthResult<Router> {
+    let mut router = Router::new();
+    for name in [
+        "email-verification-required",
+        "email-verification-no-signup-mail",
+        "email-verification-failing-notifications",
+    ] {
+        let path = format!("/__test/profiles/{name}/api/auth");
+        let config = config.clone().base_path(&path);
+        let sender = Sender {
+            inner: CompatVerificationSender {
+                outbox: outbox.clone(),
+            },
+            fail: name == "email-verification-failing-notifications",
+        };
+        let plugin = EmailVerificationPlugin::new()
+            .verification_token_expiry(Duration::seconds(90))
+            .send_on_sign_in(true)
+            .custom_send_verification_email(Arc::new(sender));
+        let plugin = if name == "email-verification-no-signup-mail" {
+            plugin.send_on_sign_up(false)
+        } else {
+            plugin
+        };
+        let auth = Arc::new(
+            AuthBuilder::<TestSchema>::new(config.clone())
+                .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+                .rate_limit(RateLimitConfig::new().enabled(false))
+                .plugin(EmailPasswordPlugin::new().require_email_verification(true))
+                .plugin(plugin)
+                .plugin(SessionManagementPlugin::new())
+                .build()
+                .await?,
+        );
+        let routes = auth.clone().axum_router().with_state(auth);
+        router = router.nest(&path, routes);
+    }
+    Ok(router)
+}

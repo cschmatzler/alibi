@@ -5,6 +5,7 @@ import { passkey } from "@better-auth/passkey";
 import { betterAuth } from "better-auth";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { getMigrations } from "better-auth/db/migration";
+import { APIError } from "better-auth/api";
 import { apiKey } from "@better-auth/api-key";
 import { admin, deviceAuthorization, twoFactor, username } from "better-auth/plugins";
 import { organization } from "better-auth/plugins/organization";
@@ -369,6 +370,30 @@ const authOptions = {
 
 const { runMigrations } = await getMigrations(authOptions);
 await runMigrations();
+
+// Explicit configuration fixtures invoke the unchanged pinned runtime.
+const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
+for (const name of ["email-verification-required", "email-verification-no-signup-mail", "email-verification-failing-notifications"]) {
+  const path = `/__test/profiles/${name}/api/auth`;
+  const instance = betterAuth({
+    ...authOptions,
+    basePath: path,
+    emailAndPassword: { ...authOptions.emailAndPassword, requireEmailVerification: true },
+    emailVerification: {
+      expiresIn: 90,
+      sendOnSignUp: name === "email-verification-no-signup-mail" ? false : undefined,
+      sendOnSignIn: true,
+      async sendVerificationEmail({ user, url, token }) {
+        verificationEmailOutbox.set(user.email, { url, token });
+        if (name === "email-verification-failing-notifications") {
+          throw new APIError("BAD_REQUEST", { message: "fixture delivery failed" });
+        }
+      },
+    },
+    plugins: [],
+  });
+  verificationProfiles.set(path, instance);
+}
 
 const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
@@ -759,6 +784,9 @@ const server = Bun.serve({
         return jsonResponse({ status: true, accountId: localAccountId });
       }
 
+      for (const [path, instance] of verificationProfiles) {
+        if (url.pathname.startsWith(`${path}/`)) return instance.handler(request);
+      }
       return auth.handler(request);
     } catch (error) {
       console.error("[reference-server] Error:", error);

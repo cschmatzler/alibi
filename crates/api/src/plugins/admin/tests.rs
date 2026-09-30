@@ -270,7 +270,12 @@ async fn test_stop_impersonating_restores_admin_session() {
     );
     req.headers.insert(
         "cookie".to_string(),
-        format!("{admin_cookie_name}={admin_cookie}"),
+        format!(
+            "{}; {admin_cookie_name}={admin_cookie}",
+            req.headers
+                .get("cookie")
+                .expect("impersonated browser has a signed session cookie")
+        ),
     );
     let resp = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
     let body = json_body(&resp);

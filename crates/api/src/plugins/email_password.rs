@@ -94,7 +94,6 @@ impl std::fmt::Debug for EmailPasswordConfig {
 }
 
 #[derive(Debug, Deserialize, Validate)]
-#[expect(dead_code, reason = "fields deserialized from request body")]
 pub(crate) struct SignUpRequest {
     #[validate(length(min = 1, message = "Name is required"))]
     name: String,

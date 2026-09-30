@@ -121,7 +121,8 @@ pub(crate) async fn send_signup_verification<S: better_auth_core::AuthSchema>(
         None,
     )?;
     let url = handlers::verification_url(&ctx.config, &token, callback_url);
-    sender.send(&user, &url, &token).await
+    super::authentication_helpers::run_notification(sender.send(&user, &url, &token)).await;
+    Ok(())
 }
 
 better_auth_core::impl_auth_plugin! {
@@ -275,9 +276,12 @@ impl EmailVerificationPlugin {
         // Use custom sender if configured, otherwise fall back to EmailProvider
         if let Some(ref custom_sender) = self.config.send_verification_email {
             let user = UserView::from(user);
-            custom_sender
-                .send(&user, &verification_url, &verification_token)
-                .await?;
+            super::authentication_helpers::run_notification(custom_sender.send(
+                &user,
+                &verification_url,
+                &verification_token,
+            ))
+            .await;
         } else if self.config.send_email_notifications {
             // Gracefully skip if no email provider is configured
             if ctx.email_provider.is_some() {
@@ -289,9 +293,10 @@ impl EmailVerificationPlugin {
                 );
                 let text = format!("Verify your email address: {}", verification_url);
 
-                ctx.email_provider()?
-                    .send(email, subject, &html, &text)
-                    .await?;
+                super::authentication_helpers::run_notification(
+                    ctx.email_provider()?.send(email, subject, &html, &text),
+                )
+                .await;
             } else {
                 tracing::warn!(
                     email = %email,

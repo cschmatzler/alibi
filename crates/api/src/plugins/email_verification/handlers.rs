@@ -201,7 +201,12 @@ where
                 let mut updated_user = UserView::from(&user);
                 updated_user.email = Some(update_to.to_string());
                 if let Some(ref sender) = config.send_verification_email {
-                    sender.send(&updated_user, &url, &new_token).await?;
+                    super::super::authentication_helpers::run_notification(sender.send(
+                        &updated_user,
+                        &url,
+                        &new_token,
+                    ))
+                    .await;
                 }
 
                 if let Some(callback_url) = query.callback_url.as_deref() {
@@ -261,6 +266,16 @@ where
                 });
             }
             _ => {
+                let session = match current_session {
+                    Some((_, session)) => session,
+                    None => {
+                        let session = issue_user_session(ctx, &user.id(), ip_address, user_agent)
+                            .await
+                            .map_err(SessionIssueError::into_auth_error)?
+                            .session;
+                        SessionView::from(&session)
+                    }
+                };
                 let updated_user = ctx
                     .database
                     .update_user(
@@ -276,28 +291,31 @@ where
                     &ctx.config.secret,
                     update_to,
                     None,
-                    config.verification_token_expiry,
+                    chrono::Duration::hours(1),
                     None,
                 )?;
                 let url = verification_url(&ctx.config, &new_token, query.callback_url.as_deref());
                 let wire_user = UserView::from(&updated_user);
                 if let Some(ref sender) = config.send_verification_email {
-                    sender.send(&wire_user, &url, &new_token).await?;
+                    super::super::authentication_helpers::run_notification(
+                        sender.send(&wire_user, &url, &new_token),
+                    )
+                    .await;
                 }
 
                 if let Some(callback_url) = query.callback_url.as_deref() {
                     return Ok(VerifyEmailResult::Redirect {
                         url: redirect_url(callback_url, None),
-                        session_token: None,
+                        session_token: Some(session.token().to_string()),
                     });
                 }
 
                 return Ok(VerifyEmailResult::Json {
                     body: serde_json::json!({
                         "status": true,
-                        "user": updated_user,
+                        "user": UserView::from(&updated_user),
                     }),
-                    session_token: None,
+                    session_token: Some(session.token().to_string()),
                 });
             }
         }

@@ -3,7 +3,7 @@ use super::*;
 use crate::plugins::test_helpers;
 use async_trait::async_trait;
 use better_auth_core::wire::UserView;
-use better_auth_core::{AuthResult, CreateUser, UpdateUser};
+use better_auth_core::{AuthResult, AuthSession, CreateUser, UpdateUser};
 use chrono::{Duration, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -142,11 +142,6 @@ fn test_builder_after_email_verification_hook() {
 /// Helper to create a minimal wire user view for unit tests.
 fn make_test_user(email: &str, verified: bool) -> UserView {
     UserView {
-        is_anonymous: None,
-        phone_number: None,
-        phone_number_verified: None,
-        last_login_method: None,
-        extension_fields: Default::default(),
         id: "test-id".into(),
         name: Some("Test".into()),
         email: Some(email.into()),
@@ -162,6 +157,11 @@ fn make_test_user(email: &str, verified: bool) -> UserView {
         ban_reason: None,
         ban_expires: None,
         metadata: serde_json::Value::Null,
+        is_anonymous: None,
+        phone_number: None,
+        phone_number_verified: None,
+        last_login_method: None,
+        extension_fields: Default::default(),
     }
 }
 
@@ -179,6 +179,113 @@ fn jwt_token(
         request_type,
     )
     .unwrap()
+}
+
+// The legacy updateTo flow always sets a real session cookie and sends its
+// follow-up proof with the token helper's default lifetime, despite expiresIn.
+#[tokio::test]
+async fn legacy_email_change_reuses_or_issues_session_and_default_lifetime_followup() {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+
+    struct Sender(Arc<std::sync::Mutex<Vec<(UserView, String)>>>);
+    #[async_trait]
+    impl SendVerificationEmail for Sender {
+        async fn send(&self, user: &UserView, _: &str, token: &str) -> AuthResult<()> {
+            self.0.lock().unwrap().push((user.clone(), token.into()));
+            Err(AuthError::bad_request("fixture delivery failed"))
+        }
+    }
+
+    for authenticated in [false, true] {
+        let ctx = test_helpers::create_test_context().await;
+        let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let plugin = EmailVerificationPlugin::new()
+            .verification_token_expiry(Duration::seconds(90))
+            .custom_send_verification_email(Arc::new(Sender(calls.clone())));
+        let user = ctx
+            .database
+            .create_user(CreateUser::new().with_email("before@legacy.fixture.test"))
+            .await
+            .unwrap();
+        let current = if authenticated {
+            Some(
+                ctx.database
+                    .create_session(better_auth_core::CreateSession {
+                        token: None,
+                        user_id: user.id().to_string(),
+                        expires_at: Utc::now() + ctx.config.session.expires_in,
+                        ip_address: None,
+                        user_agent: None,
+                        impersonated_by: None,
+                        active_organization_id: None,
+                        active_team_id: None,
+                    })
+                    .await
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+        let mut query = HashMap::new();
+        query.insert(
+            "token".into(),
+            jwt_token(
+                &ctx,
+                "before@legacy.fixture.test",
+                Some("After@legacy.fixture.test"),
+                None,
+            ),
+        );
+        let req = test_helpers::create_auth_request(
+            HttpMethod::Get,
+            "/verify-email",
+            current.as_ref().map(|session| session.token.as_str()),
+            None,
+            query,
+        );
+        let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
+        assert_eq!(response.status, 200);
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(body["user"]["id"].as_str(), Some(user.id().as_ref()));
+        assert_eq!(body["user"]["email"], "after@legacy.fixture.test");
+        assert_eq!(body["user"]["emailVerified"], false);
+        let sessions = ctx.database.get_user_sessions(&user.id()).await.unwrap();
+        assert_eq!(sessions.len(), 1, "Anonymous proof must issue a session");
+        let session = sessions.first().unwrap();
+        if let Some(previous) = current {
+            assert_eq!(session.id(), previous.id());
+            assert_eq!(session.token(), previous.token());
+        }
+        assert_eq!(
+            response.headers.get("set-cookie"),
+            Some(&create_session_cookie(session.token(), &ctx.config))
+        );
+        let updated = ctx
+            .database
+            .get_user_by_email("after@legacy.fixture.test")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(updated.id(), user.id());
+        assert!(!updated.email_verified());
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        let (recipient, token) = calls.first().unwrap();
+        assert_eq!(recipient.id, user.id());
+        assert_eq!(
+            recipient.email.as_deref(),
+            Some("after@legacy.fixture.test")
+        );
+        let encoded = token.split('.').nth(1).unwrap();
+        let claims: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(encoded).unwrap()).unwrap();
+        assert_eq!(claims["email"], "after@legacy.fixture.test");
+        assert_eq!(
+            claims["exp"].as_i64().unwrap() - claims["iat"].as_i64().unwrap(),
+            3600
+        );
+        assert!(claims.get("updateTo").is_none());
+    }
 }
 
 fn external_verification_token(
@@ -374,11 +481,6 @@ async fn test_is_user_verified_or_not_required() {
 #[test]
 fn test_to_user_preserves_fields() {
     let user = UserView {
-        is_anonymous: None,
-        phone_number: None,
-        phone_number_verified: None,
-        last_login_method: None,
-        extension_fields: Default::default(),
         id: "test-id".into(),
         name: Some("Test User".into()),
         email: Some("test@example.com".into()),
@@ -394,6 +496,11 @@ fn test_to_user_preserves_fields() {
         ban_reason: Some("spam".into()),
         ban_expires: None,
         metadata: serde_json::Value::Null,
+        is_anonymous: None,
+        phone_number: None,
+        phone_number_verified: None,
+        last_login_method: None,
+        extension_fields: Default::default(),
     };
     let converted = UserView::from(&user);
     assert_eq!(converted.id, "test-id");

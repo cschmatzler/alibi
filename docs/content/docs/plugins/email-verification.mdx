@@ -1,0 +1,68 @@
+---
+title: Email verification
+description: Verify mailbox ownership with signed proofs and configurable delivery callbacks.
+---
+
+`EmailVerificationPlugin` delivers signed verification URLs and updates the
+owning user's persisted verification state. Install it with email/password
+authentication when registration or sign-in requires mailbox verification.
+
+```rust
+use better_auth::plugins::{EmailPasswordPlugin, EmailVerificationConfig, EmailVerificationPlugin};
+use std::sync::Arc;
+
+let verification = EmailVerificationPlugin::with_config(EmailVerificationConfig {
+    send_on_sign_in: true,
+    send_verification_email: Some(Arc::new(mail_sender)),
+    ..Default::default()
+});
+
+let auth = BetterAuth::<AppAuthSchema>::new(config)
+    .store(store)
+    .plugin(EmailPasswordPlugin::new().require_email_verification(true))
+    .plugin(verification)
+    .build()
+    .await?;
+```
+
+The sender implements `SendVerificationEmail::send(user, url, token)`. The
+plugins share initialized configuration when registered independently.
+
+## Client behavior
+
+Paths are relative to the authentication base path.
+
+| Endpoint | Behavior |
+|----------|----------|
+| `POST /send-verification-email` | Deliver a challenge for `email`, with optional `callbackURL` |
+| `GET /verify-email` | Verify `token`, update its owning user, and optionally redirect to `callbackURL` |
+
+Required-verification signup returns the registered user and `token: null`,
+without creating a session. Unverified password sign-in returns
+`EMAIL_NOT_VERIFIED`. After a valid proof updates the user, normal sign-in can
+issue a session.
+
+When `send_on_sign_up` is unset, required verification controls signup delivery.
+Explicit `false` suppresses signup mail while keeping verification required.
+`send_on_sign_in` requests another challenge when an unverified user attempts
+password sign-in. `auto_sign_in_after_verification` creates a session or reuses
+the matching current session and returns its signed cookie.
+
+Verification tokens use the authentication secret, HS256, normalized mailbox
+claims, and a one-hour default lifetime. Expiry is checked without a grace
+period. Altered signatures and future `nbf` claims reject before changing the
+user. Normal verification returns `{ "status": true, "user": null }`; change-email
+proofs return the updated user and preserve the flow's session behavior.
+
+## Notifications and hooks
+
+Signup, required-signin and change-email notifications await the sender and log
+delivery failures while retaining the issued authentication state. Direct
+`send-verification-email` calls propagate the sender's error. This distinction
+matches the pinned runtime's notification policy.
+
+`before_email_verification` runs before the user update;
+`after_email_verification` receives the persisted updated user. Hook errors
+propagate. A failed update does not invoke the after hook. Callback URLs must
+match the configured trusted origins; existing query parameters and fragments
+are preserved during success and error redirects.

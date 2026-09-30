@@ -1,8 +1,19 @@
 //! Shared schemas for the core email-verification HTTP boundary.
 
-use better_auth_core::{AuthRequest, AuthResponse};
+use better_auth_core::{AuthRequest, AuthResponse, AuthResult};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+
+/// The default upstream background-task policy awaits notifications, logs a
+/// rejected callback, and retains the endpoint's already issued state. Direct
+/// delivery endpoints deliberately do not use this policy.
+pub(crate) async fn run_notification(
+    notification: impl std::future::Future<Output = AuthResult<()>>,
+) {
+    if let Err(error) = notification.await {
+        tracing::error!(%error, "Failed to run background task");
+    }
+}
 
 // This is the exact practical-email grammar used by the pinned Zod runtime.
 // The HTML5/validator grammar accepts addresses such as `x@y.c` and local

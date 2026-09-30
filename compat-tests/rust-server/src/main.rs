@@ -45,6 +45,7 @@ use tokio::sync::Mutex;
 mod lifecycle_fixture;
 mod parity_controls;
 mod sqlite_fixture;
+mod verification_profiles;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
@@ -594,6 +595,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let github_profile = Arc::new(Mutex::new(default_github_profile()));
     let social_id_token_valid = Arc::new(Mutex::new(true));
 
+    let verification_profile_router =
+        verification_profiles::router(&config, database.clone(), verification_outbox.clone())
+            .await?;
     let store = SeaOrmStore::<TestSchema>::new(config.clone(), database);
     let two_factor_plugin =
         TwoFactorPlugin::new().custom_send_otp(Arc::new(CompatTwoFactorOtpSender {
@@ -1493,7 +1497,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }),
         )
         .nest("/api/auth", auth_router)
-        .with_state(auth);
+        .with_state(auth)
+        .merge(verification_profile_router);
 
     let addr = format!("0.0.0.0:{port}");
     println!("[rust-server] Listening on http://localhost:{port}");

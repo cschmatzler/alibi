@@ -38,7 +38,7 @@ async fn user_state(
         Ok::<_, better_auth::AuthError>(json!({
             "user": user.map(|user| json!({"id":user.id(),"email":user.email(),"emailVerified":user.email_verified(),"twoFactorEnabled":user.two_factor_enabled()})),
             "accounts": accounts.iter().map(|account| json!({"id":account.id(),"userId":account.user_id(),"accountId":account.account_id(),"providerId":account.provider_id()})).collect::<Vec<_>>(),
-            "sessions": sessions.iter().map(|session| json!({"id":session.id(),"token":session.token(),"userId":session.user_id(),"expiresAt":session.expires_at()})).collect::<Vec<_>>(),
+            "sessions": sessions.iter().map(|session| json!({"id":session.id(),"token":session.token(),"userId":session.user_id(),"expiresAt":session.expires_at().to_rfc3339_opts(chrono::SecondsFormat::Millis,true)})).collect::<Vec<_>>(),
             "twoFactorExists": two_factor.is_some()
         }))
     }.await;

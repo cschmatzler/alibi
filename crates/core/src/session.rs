@@ -233,34 +233,18 @@ impl<S: AuthSchema> SessionManager<S> {
         token.len() == 32 && token.bytes().all(|byte| byte.is_ascii_alphanumeric())
     }
 
-    /// Extract session token from a request.
+    /// Extract a verified session token from the configured cookie.
     ///
-    /// Tries Bearer token from Authorization header first, then falls back
-    /// to parsing the configured cookie from the Cookie header.
+    /// The core runtime does not authenticate bearer headers. The separate
+    /// bearer plugin may establish a signed cookie before this parser runs.
     pub fn extract_session_token(&self, req: &crate::types::AuthRequest) -> Option<String> {
-        // Try Bearer token first
-        if let Some(auth_header) = req.headers.get("authorization")
-            && let Some(token) = auth_header.strip_prefix("Bearer ")
-        {
-            return Some(token.to_string());
-        }
-
-        // Fall back to cookie (using the `cookie` crate for correct parsing)
-        if let Some(cookie_header) = req.headers.get("cookie") {
-            let cookie_name = &self.config.session.cookie_name;
-            return cookie::Cookie::split_parse(cookie_header)
-                .flatten()
-                .filter(|cookie| cookie.name() == cookie_name)
-                .last()
-                .and_then(|cookie| {
-                    crate::utils::cookie_utils::verify_cookie_value(
-                        cookie.value(),
-                        &self.config.secret,
-                    )
-                });
-        }
-
-        None
+        let header = req.headers.get("cookie")?;
+        cookie::Cookie::split_parse(header)
+            .flatten()
+            .find(|cookie| cookie.name() == self.config.session.cookie_name)
+            .and_then(|cookie| {
+                crate::utils::cookie_utils::verify_cookie_value(cookie.value(), &self.config.secret)
+            })
     }
 }
 
@@ -305,43 +289,60 @@ mod tests {
 
     // ── extract_session_token ───────────────────────────────────────────
 
-    // Rust-specific surface: `SessionManager` and its token/session helper APIs are public Rust APIs with no direct TS analogue.
+    // Pinned Better Call sessions require a signed cookie; bearer authentication
+    // is supplied by the separate bearer plugin, not core session parsing.
     #[test]
-    fn extract_from_bearer() {
+    fn extract_rejects_bare_bearer() {
         let mgr = test_manager();
         let mut req = AuthRequest::new(HttpMethod::Get, "/test");
         let _ = req
             .headers
             .insert("authorization".into(), "Bearer my-token".into());
-        assert_eq!(mgr.extract_session_token(&req), Some("my-token".into()));
+        assert_eq!(mgr.extract_session_token(&req), None);
     }
 
-    // Rust-specific surface: `SessionManager` and its token/session helper APIs are public Rust APIs with no direct TS analogue.
     #[test]
-    fn extract_from_cookie() {
+    fn extract_cookie_checks_signature_and_first_duplicate() {
         let mgr = test_manager();
-        let mut req = AuthRequest::new(HttpMethod::Get, "/test");
         let signed = crate::utils::cookie_utils::sign_cookie_value("tok123", &mgr.config.secret);
-        let _ = req.headers.insert(
-            "cookie".into(),
-            format!("better-auth.session_token={signed}; other=val"),
-        );
-        assert_eq!(mgr.extract_session_token(&req), Some("tok123".into()));
+        let foreign =
+            crate::utils::cookie_utils::sign_cookie_value("tok123", "another-server-secret");
+        for (cookie, expected) in [
+            (
+                format!("better-auth.session_token={signed}; other=val"),
+                Some("tok123"),
+            ),
+            ("better-auth.session_token=tok123".to_owned(), None),
+            (format!("better-auth.session_token={foreign}"), None),
+            (
+                format!("better-auth.session_token={signed}; better-auth.session_token=invalid"),
+                Some("tok123"),
+            ),
+            (
+                format!("better-auth.session_token=invalid; better-auth.session_token={signed}"),
+                None,
+            ),
+        ] {
+            let mut req = AuthRequest::new(HttpMethod::Get, "/test");
+            let _ = req.headers.insert("cookie".into(), cookie);
+            assert_eq!(mgr.extract_session_token(&req).as_deref(), expected);
+        }
     }
 
-    // Rust-specific surface: `SessionManager` and its token/session helper APIs are public Rust APIs with no direct TS analogue.
     #[test]
-    fn extract_bearer_takes_precedence_over_cookie() {
+    fn extract_ignores_bearer_when_signed_cookie_exists() {
         let mgr = test_manager();
         let mut req = AuthRequest::new(HttpMethod::Get, "/test");
         let _ = req
             .headers
             .insert("authorization".into(), "Bearer bearer-tok".into());
+        let signed =
+            crate::utils::cookie_utils::sign_cookie_value("cookie-tok", &mgr.config.secret);
         let _ = req.headers.insert(
             "cookie".into(),
-            "better-auth.session_token=cookie-tok".into(),
+            format!("better-auth.session_token={signed}"),
         );
-        assert_eq!(mgr.extract_session_token(&req), Some("bearer-tok".into()));
+        assert_eq!(mgr.extract_session_token(&req), Some("cookie-tok".into()));
     }
 
     // Rust-specific surface: `SessionManager` and its token/session helper APIs are public Rust APIs with no direct TS analogue.
