@@ -20,7 +20,7 @@ pub use better_auth_api::plugins::{
 pub use better_auth_api::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
 pub use better_auth_api::plugins::magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
 
-pub use better_auth_api::plugins::{SiweConfig, SiwePlugin, siwe};
 pub use better_auth_api::plugins::phone_number::{
     PhoneNumberConfig, PhoneNumberPlugin, SendPhoneOtp,
 };
+pub use better_auth_api::plugins::{SiweConfig, SiwePlugin, siwe};
