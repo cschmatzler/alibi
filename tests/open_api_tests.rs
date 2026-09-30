@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "Assert successful public metadata extension setup and independently specified document schemas"
+)]
 //! Public metadata extension contracts; HTTP differential evidence owns built-in schemas.
 use async_trait::async_trait;
 use better_auth::plugin::{

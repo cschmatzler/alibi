@@ -162,5 +162,4 @@ ENS behavior, bans, and overlapping verification. Run
 `devenv shell -- cargo test --test client_compat_tests siwe_client_compat -- --ignored --nocapture`.
 The [SIWE implementation audit](audits/siwe.md) records the pinned runtime's
 global nonce contract and remaining storage/schema/provider boundaries.
-
-OpenAPI/reference generator work and its unresolved default-document gap are tracked in [the OpenAPI audit](audits/open-api.md).
+OpenAPI/reference whole-document proof and remaining configuration branches are tracked in [the OpenAPI audit](audits/open-api.md).

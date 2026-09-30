@@ -30,6 +30,7 @@ pub(super) fn models(plugin: &str) -> Option<Vec<OpenApiModel>> {
                 ],
             ),
         ],
+        "multi-session" => vec![],
         "organization" => vec![
             OpenApiModel::new(
                 "Organization",

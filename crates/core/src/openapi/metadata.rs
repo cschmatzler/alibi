@@ -128,6 +128,40 @@ impl OpenApiRegistry {
             .collect()
     }
 
+    /// Apply application table policies before plugin collection. Documentation and
+    /// adapter tables use config-over-plugin precedence; input/output parsing has
+    /// its own source-distinct immutable field registry.
+    pub fn configured(mut models: Vec<OpenApiModel>, config: &crate::AuthConfig) -> Self {
+        if let Some(session) = models.iter_mut().find(|model| model.name == "Session") {
+            for (name, policy) in &config.session.additional_fields {
+                let mut schema = policy.schema.clone();
+                if let Some(object) = schema.as_object_mut() {
+                    // Function defaults are metadata only and must not be evaluated.
+                    let _ = object.remove("default");
+                    if let Some(crate::field_policy::FieldDefault::Value(value)) = &policy.default {
+                        let _ = object.insert(
+                            "default".into(),
+                            value.to_json_value().unwrap_or(Value::Null),
+                        );
+                    }
+                }
+                let field = OpenApiField {
+                    name: name.clone(),
+                    schema,
+                    required: policy.required,
+                    input: policy.input,
+                    returned: policy.returned,
+                };
+                if let Some(current) = session.fields.iter_mut().find(|field| field.name == *name) {
+                    *current = field;
+                } else {
+                    session.fields.push(field);
+                }
+            }
+        }
+        Self::new(models)
+    }
+
     pub fn new(models: Vec<OpenApiModel>) -> Self {
         let mut registry = Self::default();
         let defaults = super::annotations::core_models();

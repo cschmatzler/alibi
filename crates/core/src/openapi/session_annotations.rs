@@ -13,6 +13,24 @@ fn status(description: &str) -> Value {
 pub(super) fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
     let mut metadata = OpenApiEndpoint::default();
     match path {
+        "/update-session" => {
+            metadata.operation_id = Some("updateSession".into());
+            metadata.description = Some("Update the current session".into());
+            metadata.request_body = Some(
+                json!({"required":true,"content":{"application/json":{"schema":{
+                    "type":"object","propertyNames":{"type":"string","description":"Field name must be a string"},"additionalProperties":{}
+                }}}}),
+            );
+            let _ = metadata.responses.insert(
+                "200".into(),
+                response(
+                    "Success",
+                    json!({"type":"object","properties":{
+                        "session":{"type":"object","$ref":"#/components/schemas/Session"}
+                    }}),
+                ),
+            );
+        }
         "/list-sessions" => {
             metadata.operation_id = Some("listUserSessions".into());
             metadata.description = Some("List all active sessions for the user".into());

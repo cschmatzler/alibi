@@ -6,7 +6,9 @@ use better_auth::field_policy::{FieldConfig, FieldValues};
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::{
-    AdminPlugin, EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin,
+    AccountManagementPlugin, AdminPlugin, EmailPasswordPlugin, EmailVerificationPlugin,
+    OAuthPlugin, OpenApiPlugin, OrganizationPlugin, PasswordManagementPlugin,
+    SessionManagementPlugin, UserManagementPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
 use better_auth_seaorm::sea_orm::{
@@ -172,7 +174,17 @@ pub(super) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
             .store(SeaOrmStore::<ApplicationSchema>::new(config, db.clone()).hook(Callbacks))
             .rate_limit(RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new().enable_username(false))
-            .plugin(SessionManagementPlugin::new());
+            .plugin(SessionManagementPlugin::new())
+            .plugin(PasswordManagementPlugin::new())
+            .plugin(EmailVerificationPlugin::new())
+            .plugin(AccountManagementPlugin::new())
+            .plugin(OAuthPlugin::new())
+            .plugin(
+                UserManagementPlugin::new()
+                    .change_email_enabled(true)
+                    .delete_user_enabled(true),
+            )
+            .plugin(OpenApiPlugin::new());
         if name.ends_with("plugins") {
             builder = builder
                 .plugin(AdminPlugin::new())

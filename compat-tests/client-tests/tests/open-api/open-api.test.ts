@@ -10,10 +10,11 @@ for (const profile of ["openapi-default","openapi-configured","openapi-jwt","ope
   const sdk=await actor.client.$fetch("/open-api/generate-schema",{method:"GET"});
   expect(sdk.error).toBeNull();
   const schema=documentSchema.parse(sdk.data);
-  if(!profile.startsWith("openapi-plugins")) expect(Object.keys(schema.paths).sort()).toEqual([...(profile==="openapi-username" ? ["/sign-in/username","/is-username-available"] : []),...(profile==="openapi-configured" ? [] : ["/error"]),"/sign-in/social","/sign-up/email","/sign-in/email","/link-social","/account-info","/callback/{id}","/change-email","/change-password","/delete-user","/delete-user/callback","/get-access-token","/get-session","/list-accounts","/list-sessions","/ok","/refresh-token","/request-password-reset","/reset-password","/reset-password/{token}","/revoke-other-sessions","/revoke-session","/revoke-sessions","/send-verification-email","/sign-out","/unlink-account","/update-user","/verify-email","/verify-password"].sort());
+  if(!profile.startsWith("openapi-plugins")) expect(Object.keys(schema.paths).sort()).toEqual([...(profile==="openapi-username" ? ["/sign-in/username","/is-username-available"] : []),...(profile==="openapi-configured" ? [] : ["/error"]),"/sign-in/social","/sign-up/email","/sign-in/email","/link-social","/account-info","/callback/{id}","/change-email","/change-password","/delete-user","/delete-user/callback","/get-access-token","/get-session","/list-accounts","/list-sessions","/ok","/refresh-token","/request-password-reset","/reset-password","/reset-password/{token}","/revoke-other-sessions","/revoke-session","/revoke-sessions","/send-verification-email","/sign-out","/unlink-account","/update-user","/update-session","/verify-email","/verify-password"].sort());
   expect(schema.servers).toEqual([{url:`${ctx.baseURL}/__test/profiles/${profile}/api/auth`}]);
   expect(schema.paths["/get-session"]).toHaveProperty("get.operationId","getSession");
   expect(schema.paths["/get-session"]).toHaveProperty("post.operationId","getSessionPost");
+  expect(schema.paths["/update-session"]).toHaveProperty("post.operationId","updateSession");
   expect(schema.paths).not.toHaveProperty("/reference");
   expect(schema.paths).not.toHaveProperty("/open-api/generate-schema");
   if(!profile.startsWith("openapi-plugins")) expect(Object.keys(schema.components.schemas).sort()).toEqual(profile==="openapi-jwt" ? ["Account","Jwks","Session","User","Verification"] : ["Account","Session","User","Verification"]);
@@ -23,6 +24,11 @@ for (const profile of ["openapi-default","openapi-configured","openapi-jwt","ope
    expect(schema.paths).toHaveProperty("/organization/create");
    expect(schema.paths).toHaveProperty("/passkey/verify-registration");
    expect(schema.paths).toHaveProperty("/two-factor/enable");
+   expect(schema.paths).toHaveProperty("/multi-session/list-device-sessions");
+   expect(schema.paths).toHaveProperty("/phone-number/verify");
+   expect(schema.paths).toHaveProperty("/siwe/nonce");
+   expect(schema.components.schemas).toHaveProperty("WalletAddress");
+   expect(schema.components.schemas.User).toHaveProperty("properties.phoneNumberVerified",{type:"boolean",readOnly:true});
    expect(schema.components.schemas).toHaveProperty("Apikey");
    expect(schema.components.schemas.Apikey).toHaveProperty("properties.rateLimitMax.default",profile==="openapi-plugins-configured" ? 43 : 10);
    expect(schema.components.schemas.Apikey).toHaveProperty("properties.rateLimitTimeWindow.default",profile==="openapi-plugins-configured" ? 7654321 : 86400000);
@@ -84,4 +90,28 @@ compatScenario("OpenAPI disabling the reference preserves the public schema endp
  expect(page.status).toBe(404);
  expect(await page.text()).toBe("");
  return ctx.snapshot({document,status:page.status});
+});
+
+for(const profile of ["session-fields","session-fields-plugins"] as const)compatScenario(`OpenAPI ${profile} documents real custom session columns with source-specific config precedence`,async ctx=>{
+ const actor=ctx.actor("docs",profile);
+ const response=await actor.client.$fetch("/open-api/generate-schema",{method:"GET"});
+ expect(response.error).toBeNull();
+ const schema=documentSchema.parse(response.data);
+ const model=z.object({properties:z.record(z.string(),z.unknown()),required:z.array(z.string())}).parse(schema.components.schemas.Session);
+ expect(model.properties.label).toEqual({type:"string",default:"initial"});
+ expect(model.properties.hidden).toEqual({type:"string",default:"server-secret"});
+ expect(model.properties.serverOnly).toEqual({type:"string",default:"locked",readOnly:true});
+ expect(model.properties.callback).toEqual({type:"string"});
+ expect(model.properties.payload).toEqual({type:"json",default:{initial:true}});
+ expect(model.required).not.toContain("hidden");
+ expect(model.properties.activeOrganizationId).toEqual({type:"string",default:profile==="session-fields-plugins"?"configured-default-org":"declared-without-plugin"});
+ // The configured required/returned flags override plugin table metadata here,
+ // while the plugin's distinct output policy returns this field in session SDK tests.
+ expect(model.required).not.toContain("activeOrganizationId");
+ expect(schema.paths["/update-session"]).toHaveProperty("post.operationId","updateSession");
+ expect(schema.paths).not.toHaveProperty("/open-api/generate-schema");
+ const raw=await actor.fetch(`${ctx.baseURL}/api/auth/open-api/generate-schema`);
+ expect(raw.status).toBe(200);
+ expect(await raw.json()).toEqual(schema);
+ return ctx.snapshot({schema});
 });

@@ -6,9 +6,9 @@ use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::jwt::JwtPlugin;
 use better_auth::plugins::{
     AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
-    EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, OpenApiConfig, OpenApiPlugin,
-    OrganizationPlugin, PasskeyPlugin, PasswordManagementPlugin, SessionManagementPlugin,
-    TwoFactorPlugin, UserManagementPlugin,
+    EmailPasswordPlugin, EmailVerificationPlugin, MultiSessionPlugin, OAuthPlugin, OpenApiConfig,
+    OpenApiPlugin, OrganizationPlugin, PasskeyPlugin, PasswordManagementPlugin, PhoneNumberPlugin,
+    SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult, AuthSchema};
 use better_auth_seaorm::{sea_orm::DatabaseConnection, SeaOrmStore};
@@ -35,7 +35,6 @@ impl AuthSchema for DocumentationSchema {
     }
 }
 
-const DISABLED: &[&str] = &["/update-session"];
 pub(super) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
@@ -53,10 +52,7 @@ pub(super) async fn router(
         "openapi-plugins-configured",
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
-        let mut config = config
-            .clone()
-            .base_path(&path)
-            .disabled_paths(DISABLED.iter().map(|path| (*path).to_string()).collect());
+        let mut config = config.clone().base_path(&path);
         let options = match name {
             "openapi-configured" => {
                 config.disabled_paths.push("/error".into());
@@ -138,7 +134,16 @@ where
             .plugin(ApiKeyPlugin::with_config(api_key))
             .plugin(PasskeyPlugin::new())
             .plugin(DeviceAuthorizationPlugin::new())
-            .plugin(JwtPlugin::new());
+            .plugin(JwtPlugin::new())
+            .plugin(MultiSessionPlugin::new())
+            .plugin(PhoneNumberPlugin::new(Default::default()))
+            .plugin(better_auth::plugins::siwe::SiwePlugin::new(
+                better_auth::plugins::siwe::SiweConfig::new(
+                    "localhost",
+                    Arc::new(better_auth::plugins::siwe::RandomSiweNonce),
+                    Arc::new(better_auth::plugins::siwe::Eip191Verifier),
+                ),
+            ));
     }
     if name == "openapi-jwt" {
         builder = builder.plugin(JwtPlugin::new());

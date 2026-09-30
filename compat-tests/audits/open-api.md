@@ -1,10 +1,11 @@
 # OpenAPI/reference parity investigation (Better Auth 1.7.6)
 
-This family is **in progress**, not full parity. The first generator/configuration
-slice is implemented and proved with strict whole-document differential profiles.
-The ordinary default document still differs: `/update-session` is not implemented,
-while the implemented core families now have source-backed endpoint annotations.
-Checked-in source-backed annotation tables cover the pinned declarations of the selected plugin families. No default-complete scenario is claimed or silently filtered.
+The default and configured generator/reference behavior is implemented and proved
+with strict whole-document differential profiles. The ordinary default document
+includes the real `/update-session` endpoint and all implemented core annotations.
+The earlier temporary `/update-session` disabledPaths branch has been removed.
+Source-backed annotation tables cover selected plugin declarations; untested
+configuration branches remain explicit below rather than a full-parity claim.
 
 ## Runtime contract and implementation
 
@@ -35,8 +36,10 @@ are merged by logical field name; optional SQL columns do not activate plugins.
 Model fields preserve type/format/array/nullable/default constraints, input and
 returned policies. `returned:false` fields remain documented but are excluded
 from required lists; `input:false` adds readOnly. Dynamic defaults are omitted.
-Documentation metadata does not install input parsing, output projection, or
-custom-field persistence. Applications must declare the policies they implement.
+Documentation metadata does not itself install storage behavior. Session config
+field policies also drive the implemented input/output/storage lifecycle, whose
+actual application columns must be declared independently. Callback defaults
+remain omitted from metadata and are never evaluated during document generation.
 
 
 The author-time `port-openapi-annotations.ts` reads pinned factory endpoint
@@ -54,23 +57,32 @@ or storage behaviors.
 
 ## Focused proof and test ownership
 
-Nine official SDK/raw HTTP scenarios compare the complete configured document,
-including all implemented core sign-in/social/session/password/email/account/user operations, every model field/required list,
-security and endpoint metadata. They compare embedded reference JSON with that
-same complete document and compare the entire remaining HTML frame verbatim.
-Fixture origins use the existing narrowly scoped URL comparison. There are no
-new comparator exceptions, field exclusions, or oracle document captures.
+Eleven official SDK/raw HTTP scenarios compare complete ordinary and configured
+documents, every model field/required list, security and endpoint metadata. The
+reference profiles compare embedded JSON with the same complete document and
+compare the remaining HTML frame verbatim. Fixture origins use the existing
+narrow URL comparison. No comparator exceptions, field exclusions, or generated
+oracle captures were added.
 
-The profiles explicitly disable only the pending `/update-session` endpoint in both real runtimes:
-this is the supported application configuration under test. They exercise default
-OpenAPI options, configured path/theme/nonce plus disabled `/error`, disabled
-reference, an actual registered JWT plugin's Jwks model, username inputs, a chosen custom
-schema with returned/input policy, and combined admin/organization/two-factor/
-API-key/passkey/device/JWT registrations. Organization team and dynamic-role
-flags and API-key configured rate defaults are compared in whole documents.
-Optional bundled columns do not register plugin models. The default-document gap remains independently
-listed above. The strict default-complete scenario must be added when its core
-prerequisite and remaining annotations land.
+Profiles cover default options, configured path/theme/nonce and disabled `/error`,
+disabled reference, JWT Jwks, username inputs, chosen custom user schema policies,
+and combined admin/organization/two-factor/API-key/passkey/device/JWT/phone/SIWE/
+multiple-session registrations. Teams/dynamic-role flags and configured API-key
+rate defaults are compared in whole documents. Optional bundled columns alone
+do not activate models. All profiles include the real `/update-session` endpoint;
+its SDK persistence proof is owned by [session updates](session-updates.md).
+
+Two actual application session-schema profiles use real TEXT/REAL/JSON columns.
+Their documents derive from config field types and explicit required/input/returned
+policies, literal defaults, and callback-default omission. The config-over-plugin
+table metadata precedence is source-distinct from plugin-over-config runtime
+input/output policies: a configured required, returned:false organization field
+is documented with its raw config default and excluded from required, while
+session SDK proof confirms its adapter-transformed persisted value is returned
+and its plugin read-only input policy rejects writes. A before-fix actual SDK run failed both custom-schema profiles because Rust
+omitted the configured label field; pinned declarations already exposed it.
+The public native generator
+also proves that a stateful creation-default callback is not invoked by docs.
 
 The native application extension test owns the Rust-specific metadata contract:
 chosen application schema metadata and custom plugin definitions reach the HTTP
@@ -87,8 +99,8 @@ include it. Both choices retain actual registration and have native HTTP proof. 
 OpenAPI documentation exclusions. The SDK scenarios own
 built-in schema and HTML behavior; native tests do not duplicate those flows.
 
-Focused result for this core/configuration slice: 9 SDK scenarios / 396 assertions, one native
-application extension test, API/core/root production strict Clippy and client TS
+Focused result for this core/configuration slice: 11 SDK scenarios / 494 assertions, one native
+application extension test and one real custom-session native lifecycle test, API/core/root production strict Clippy and client TS
 check pass. Existing core embedded builder checks are retained. Full gates,
 shared inventory/lock finalization, and publication belong to the coordinator.
 
@@ -97,8 +109,6 @@ shared inventory/lock finalization, and publication belong to the coordinator.
 - Configuration branches of plugin models beyond the combined profiles require
   their own evidence. Source tables alone do not establish those branches; for
   example a future last-login-method plugin must publish its database flag.
-- `/update-session` core prerequisite, followed by strict ordinary default whole
-  document evidence; it cannot be replaced by disabling that route silently.
 - OAuth's existing Rust route template uses `{provider}` while pinned source uses
   `:id`; an explicit canonical document-path annotation preserves the route ABI.
   An independent actual handler probe confirmed that upstream HTTP disabledPaths
@@ -108,5 +118,6 @@ shared inventory/lock finalization, and publication belong to the coordinator.
   literal dispatch policy matches upstream; no dispatch correction is required.
 - Additional application schemas must explicitly supply documentation fields;
   derive convenience is not yet installed, and arbitrary stored extra columns
-  are not inferred. Dynamic default presence and arbitrary custom enum input
-  policy need explicit field-policy integration and proof.
+  are not inferred. Session fields now have explicit policy integration and proof;
+  arbitrary custom enum schemas and every plugin-specific metadata option remain
+  separate configuration branches.

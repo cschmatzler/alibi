@@ -153,8 +153,7 @@ impl<S: AuthSchema> AuthBuilder<S> {
                 Arc::new(adapter_fields),
             ));
         init_context.extensions.insert(session_fields);
-
-        let mut openapi = OpenApiRegistry::new(S::openapi_models());
+        let mut openapi = OpenApiRegistry::configured(S::openapi_models(), &config);
         let core_routes = better_auth_core::openapi::annotations::core_routes();
         let core_metadata =
             better_auth_core::openapi::annotations::plugin_metadata("core", &core_routes);
