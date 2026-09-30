@@ -28,16 +28,16 @@ Ten native role tests use the real SeaORM/SQLite adapter. They cover tenant-scop
 
 Eight official-client differential scenarios inspect returned values, raw roles/members/teams/invitations, and authenticated readback of organization-owned API keys. Configuration profiles cover disabled routes, dynamic roles, numeric quotas, missing access control, delegated static roles, and asynchronous quotas with a one-row adapter page. Six repeated cache rounds coordinate actual in-flight requests through private fixture controls for the application-owned policy; the authentication endpoints themselves use the official client and cookie jar. Legacy duplicate controls write real stored rows through the controlled typed server interface. The focused SDK run has 668 assertions.
 
-Capability evidence is added only to the five role routes; previous requirements remain intact. The comparator's narrow role-ID and API-key entropy additions retain configured prefixes, issued-key/start relationships, lengths, ownership, rotation, every field, array order, and literal application metadata. Focused negative controls reject wrong relationships and fields. Generated OpenAPI artifacts add the five operations while retaining the previous surface.
+Capability evidence is added only to the five role routes; previous requirements remain intact. The comparator's narrow role-ID and API-key entropy additions retain configured prefixes, issued-key/start relationships, lengths, ownership, rotation, every field, array order, and literal application metadata. Focused negative controls reject wrong relationships and fields. The scenario caller compares values and traces in one identity graph, keeping trace type labels scoped while checking issuance against transport owner/token references. The original raw-array caller fails 132 SDK scenarios; the corrected caller passes all 154 without comparator changes or allowances. Generated OpenAPI artifacts add the five operations while retaining the previous surface.
 
-Independent reviews traced the pinned CRUD, permission/cache, tenant predicates, persistence, and rejection tests. Confirmed validation and cache findings are repaired with pre-fix failures and real state controls. The final integrated canonical gate and measured coverage are recorded in the capability PR after completion.
+Independent reviews traced the pinned CRUD, permission/cache, tenant predicates, persistence, and rejection tests. Confirmed validation and cache findings are repaired with pre-fix failures and real state controls. The final serialized canonical gate passed on `abdf345`: 154 SDK scenarios / 1,892 assertions, 27 harness tests / 79 assertions, two Chromium tests / 22 assertions, all default/optional native tests, Clippy, Rustls/Redis builds, TypeScript and documentation checks. Source line coverage is 76.92% (17,125 / 22,264). The subsequent master synchronization changes no files.
 
 | Owner | Dependency | Evidence / status |
 | --- | --- | --- |
 | Shared-storage workstream | Storage foundation and teams | Scoped concrete role store; new member-assignment query; prerequisite migrations already gated |
 | Organization role workstream | Concrete role store and configured projections | Ten native role cases, eight differential scenarios, runtime inventory and generated docs |
 | Independent implementation reviewers | Pinned package/runtime probes | Tenant, grant, persistence, cache, transport and ordered-validation findings resolved |
-| Integration coordinator | Frozen capability tree and serialized gate slot | Final canonical gate, measured coverage and PR delivery pending |
+| Integration coordinator | Frozen capability tree and serialized gate slot | Final canonical gate passed; 76.92% measured coverage; separate capability PR |
 
 ## Remaining integration boundaries
 
