@@ -291,6 +291,38 @@ pub async fn issue_user_session<S: better_auth_core::AuthSchema>(
     ip_address: Option<String>,
     user_agent: Option<String>,
 ) -> Result<IssuedSession<S>, SessionIssueError> {
+    issue_user_session_inner(ctx, user_id, ip_address, user_agent, None).await
+}
+
+/// Issue a replacement session while preserving trusted session extension fields.
+pub async fn issue_user_session_with_overrides<S: better_auth_core::AuthSchema>(
+    ctx: &AuthContext<S>,
+    user_id: &str,
+    ip_address: Option<String>,
+    user_agent: Option<String>,
+    current_session: &impl better_auth_core::AuthSession,
+) -> Result<IssuedSession<S>, SessionIssueError> {
+    let overrides = SessionOverrides {
+        impersonated_by: current_session.impersonated_by().map(str::to_string),
+        active_organization_id: current_session.active_organization_id().map(str::to_string),
+        active_team_id: current_session.active_team_id().map(str::to_string),
+    };
+    issue_user_session_inner(ctx, user_id, ip_address, user_agent, Some(overrides)).await
+}
+
+struct SessionOverrides {
+    impersonated_by: Option<String>,
+    active_organization_id: Option<String>,
+    active_team_id: Option<String>,
+}
+
+async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
+    ctx: &AuthContext<S>,
+    user_id: &str,
+    ip_address: Option<String>,
+    user_agent: Option<String>,
+    overrides: Option<SessionOverrides>,
+) -> Result<IssuedSession<S>, SessionIssueError> {
     let mut user = ctx
         .database
         .get_user_by_id(user_id)
@@ -323,10 +355,27 @@ pub async fn issue_user_session<S: better_auth_core::AuthSchema>(
         }
     }
 
-    let session = ctx
-        .session_manager()
-        .create_session(&user, ip_address, user_agent)
-        .await?;
+    let session = match overrides {
+        None => {
+            ctx.session_manager()
+                .create_session(&user, ip_address, user_agent)
+                .await?
+        }
+        Some(overrides) => {
+            ctx.database
+                .create_session(better_auth_core::CreateSession {
+                    token: None,
+                    user_id: user.id().to_string(),
+                    expires_at: Utc::now() + ctx.config.session.expires_in,
+                    ip_address,
+                    user_agent,
+                    impersonated_by: overrides.impersonated_by,
+                    active_organization_id: overrides.active_organization_id,
+                    active_team_id: overrides.active_team_id,
+                })
+                .await?
+        }
+    };
 
     Ok(IssuedSession { user, session })
 }
