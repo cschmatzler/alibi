@@ -12,7 +12,10 @@ mod callbacks;
 pub(super) mod handlers;
 pub(super) mod types;
 mod verification;
-pub use callbacks::{ApiKeyCallbackContext, ApiKeyGetter, ApiKeyValidator};
+pub use callbacks::{
+    ApiKeyCallbackContext, ApiKeyDefaultPermissions, ApiKeyGenerationOptions, ApiKeyGenerator,
+    ApiKeyGetter, ApiKeyPermissions, ApiKeyValidator,
+};
 
 pub use verification::{
     ApiKeyErrorDetails, ApiKeyErrorMessage, ApiKeyValidationError, ApiKeyVerificationError,
@@ -27,7 +30,9 @@ mod crud_tests;
 
 use handlers::*;
 use types::*;
-pub use types::{CreateKeyRequest, CreateKeyResponse, UpdateKeyRequest};
+pub use types::{
+    CreateKeyRequest, CreateKeyResponse, DeleteExpiredApiKeysResponse, UpdateKeyRequest,
+};
 
 // ---------------------------------------------------------------------------
 // Error codes -- mirrors the TypeScript `API_KEY_ERROR_CODES`
@@ -201,7 +206,7 @@ impl ApiKeyPlugin {
     /// Upstream allows several api-key configurations side by side, each with
     /// its own `config_id`, ownership model and limits.
     pub fn configuration(mut self, config: ApiKeyConfig) -> Self {
-        self.configurations.push(config);
+        self.configurations.push(config.normalized());
         self
     }
 
@@ -256,7 +261,11 @@ pub struct ApiKeyConfig {
     pub key_length: usize,
     pub prefix: Option<String>,
     /// Permissions applied when creation does not supply explicit permissions.
-    pub default_permissions: Option<std::collections::HashMap<String, Vec<String>>>,
+    pub default_permissions: Option<ApiKeyPermissions>,
+    /// Optional application generator, receiving only length and effective prefix.
+    pub custom_key_generator: Option<Arc<dyn ApiKeyGenerator>>,
+    /// Dynamic defaults replace static default_permissions when configured.
+    pub default_permissions_callback: Option<Arc<dyn ApiKeyDefaultPermissions>>,
 
     // -- header --
     pub api_key_headers: Vec<String>,
@@ -294,6 +303,16 @@ pub struct ApiKeyConfig {
     pub enable_session_for_api_keys: bool,
 }
 
+impl ApiKeyConfig {
+    fn normalized(mut self) -> Self {
+        // Upstream resolves defaultKeyLength using JavaScript's `|| 64`.
+        if self.key_length == 0 {
+            self.key_length = 64;
+        }
+        self
+    }
+}
+
 impl std::fmt::Debug for ApiKeyConfig {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -302,6 +321,11 @@ impl std::fmt::Debug for ApiKeyConfig {
             .field("references", &self.references)
             .field("key_length", &self.key_length)
             .field("prefix", &self.prefix)
+            .field("custom_key_generator", &self.custom_key_generator.is_some())
+            .field(
+                "default_permissions_callback",
+                &self.default_permissions_callback.is_some(),
+            )
             .field("api_key_headers", &self.api_key_headers)
             .field(
                 "custom_api_key_getter",
@@ -371,6 +395,8 @@ impl Default for ApiKeyConfig {
             key_length: 64,
             prefix: None,
             default_permissions: None,
+            custom_key_generator: None,
+            default_permissions_callback: None,
             api_key_headers: vec!["x-api-key".to_string()],
             custom_api_key_getter: None,
             custom_api_key_validator: None,
@@ -413,7 +439,9 @@ impl ApiKeyPlugin {
         #[builder(default)] references: ApiKeyReferences,
         #[builder(default = 64)] key_length: usize,
         prefix: Option<String>,
-        default_permissions: Option<std::collections::HashMap<String, Vec<String>>>,
+        default_permissions: Option<ApiKeyPermissions>,
+        custom_key_generator: Option<Arc<dyn ApiKeyGenerator>>,
+        default_permissions_callback: Option<Arc<dyn ApiKeyDefaultPermissions>>,
         #[builder(default = vec!["x-api-key".to_string()])] api_key_headers: Vec<String>,
         custom_api_key_getter: Option<Arc<dyn ApiKeyGetter>>,
         custom_api_key_validator: Option<Arc<dyn ApiKeyValidator>>,
@@ -431,35 +459,40 @@ impl ApiKeyPlugin {
         #[builder(default = false)] enable_session_for_api_keys: bool,
     ) -> Self {
         Self {
-            configurations: vec![ApiKeyConfig {
-                config_id,
-                references,
-                key_length,
-                prefix,
-                default_permissions,
-                api_key_headers,
-                custom_api_key_getter,
-                custom_api_key_validator,
-                disable_key_hashing,
-                starting_characters_length,
-                store_starting_characters,
-                max_prefix_length,
-                min_prefix_length,
-                max_name_length,
-                min_name_length,
-                require_name,
-                enable_metadata,
-                key_expiration,
-                rate_limit,
-                enable_session_for_api_keys,
-            }],
+            configurations: vec![
+                ApiKeyConfig {
+                    config_id,
+                    references,
+                    key_length,
+                    prefix,
+                    default_permissions,
+                    custom_key_generator,
+                    default_permissions_callback,
+                    api_key_headers,
+                    custom_api_key_getter,
+                    custom_api_key_validator,
+                    disable_key_hashing,
+                    starting_characters_length,
+                    store_starting_characters,
+                    max_prefix_length,
+                    min_prefix_length,
+                    max_name_length,
+                    min_name_length,
+                    require_name,
+                    enable_metadata,
+                    key_expiration,
+                    rate_limit,
+                    enable_session_for_api_keys,
+                }
+                .normalized(),
+            ],
             last_expired_check: Arc::new(Mutex::new(None)),
         }
     }
 
     pub fn with_config(config: ApiKeyConfig) -> Self {
         Self {
-            configurations: vec![config],
+            configurations: vec![config.normalized()],
             last_expired_check: Arc::new(Mutex::new(None)),
         }
     }
@@ -489,7 +522,8 @@ impl ApiKeyPlugin {
         // TS computes start from the full key (including prefix):
         //   start = key.substring(0, charactersLength)
         let start_len = config.starting_characters_length;
-        let start: String = full_key.chars().take(start_len).collect();
+        let units: Vec<_> = full_key.encode_utf16().take(start_len).collect();
+        let start = String::from_utf16_lossy(&units);
 
         let hash = if config.disable_key_hashing {
             full_key.clone()
@@ -526,7 +560,31 @@ impl ApiKeyPlugin {
                 }
             }
         };
-        if should_run && let Err(error) = ctx.database.delete_expired_api_keys().await {
+        if should_run {
+            Self::delete_expired_logged(ctx).await;
+        }
+    }
+
+    /// Force cleanup across all issuing configurations and owners, bypassing the
+    /// ten-second throttle. This server-only operation has no public HTTP route.
+    /// As upstream, adapter failures are logged and the result remains successful.
+    pub async fn delete_all_expired_api_keys(
+        &self,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ) -> DeleteExpiredApiKeysResponse {
+        *self
+            .last_expired_check
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(std::time::Instant::now());
+        Self::delete_expired_logged(ctx).await;
+        DeleteExpiredApiKeysResponse {
+            success: true,
+            error: None,
+        }
+    }
+
+    async fn delete_expired_logged(ctx: &AuthContext<impl better_auth_core::AuthSchema>) {
+        if let Err(error) = ctx.database.delete_expired_api_keys().await {
             tracing::error!(%error, "Failed to delete expired API keys");
         }
     }
@@ -649,7 +707,16 @@ impl ApiKeyPlugin {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
-        let response = create_key_core(&body, user.id(), self, ctx).await?;
+        let response = match create_key_core(&body, user.id(), self, ctx, Some(req)).await {
+            Ok(response) => response,
+            Err(error)
+                if error.status_code() >= 500
+                    && !matches!(error, AuthError::Upstream { .. } | AuthError::Api { .. }) =>
+            {
+                return Ok(AuthResponse::new(500));
+            }
+            Err(error) => return Err(error),
+        };
         Ok(AuthResponse::json(200, &response)?)
     }
 

@@ -250,7 +250,7 @@ async fn trusted_creation_and_update_preserve_permissions_and_fractional_expirat
                 user_id: Some(user_id.clone()),
                 expires_in: Some(86400.25),
                 remaining: Some(3.0),
-                permissions: Some(HashMap::from([(
+                permissions: Some(super::ApiKeyPermissions::from([(
                     "device".to_string(),
                     vec!["read".to_string()],
                 )])),
@@ -312,4 +312,94 @@ async fn list_rejects_invalid_pagination_instead_of_ignoring_it() {
             "VALIDATION_ERROR"
         );
     }
+}
+
+#[tokio::test]
+async fn forced_cleanup_preserves_rows_on_store_failure_and_retries_without_throttle() {
+    use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+    let config = Arc::new(AuthConfig::new("forced-cleanup-application-secret32"));
+    let connection = better_auth_seaorm::Database::connect("sqlite::memory:")
+        .await
+        .unwrap();
+    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&connection)
+        .await
+        .unwrap();
+    let database = Arc::new(better_auth_seaorm::SeaOrmStore::<TestSchema>::new(
+        config.clone(),
+        connection.clone(),
+    ));
+    let ctx = AuthContext::new(config, database);
+    let owner = ctx
+        .database
+        .create_user(CreateUser::new().with_email("cleanup@native.local"))
+        .await
+        .unwrap();
+    let plugin = ApiKeyPlugin::with_config(ApiKeyConfig {
+        key_expiration: KeyExpirationConfig {
+            min_expires_in: 0,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    let key = plugin
+        .create_key(
+            &ctx,
+            &CreateKeyRequest {
+                user_id: Some(owner.id().to_string()),
+                name: Some("expired".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let expired = ctx
+        .database
+        .update_api_key(
+            &key.api_key.id,
+            better_auth_core::UpdateApiKey {
+                expires_at: Some(Some("1970-01-01T00:00:00.000Z".into())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    connection.execute_raw(Statement::from_string(DbBackend::Sqlite,"CREATE TRIGGER reject_api_key_cleanup BEFORE DELETE ON api_keys BEGIN SELECT RAISE(ABORT,'application cleanup rejected'); END")).await.unwrap();
+    let failed = plugin.delete_all_expired_api_keys(&ctx).await;
+    assert!(failed.success);
+    assert!(failed.error.is_none());
+    let retained = ctx
+        .database
+        .get_api_key_by_id(&key.api_key.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        better_auth_core::utils::json::to_value(&retained).unwrap(),
+        better_auth_core::utils::json::to_value(&expired).unwrap()
+    );
+    connection
+        .execute_raw(Statement::from_string(
+            DbBackend::Sqlite,
+            "DROP TRIGGER reject_api_key_cleanup",
+        ))
+        .await
+        .unwrap();
+    let retry = plugin.delete_all_expired_api_keys(&ctx).await;
+    assert!(retry.success);
+    assert!(retry.error.is_none());
+    assert!(
+        ctx.database
+            .get_api_key_by_id(&key.api_key.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        ctx.database
+            .get_user_by_id(owner.id().as_ref())
+            .await
+            .unwrap()
+            .unwrap(),
+        owner
+    );
 }

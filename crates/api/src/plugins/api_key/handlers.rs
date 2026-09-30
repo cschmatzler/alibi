@@ -111,7 +111,7 @@ impl ApiKeyPlugin {
             .as_deref()
             .filter(|id| !id.is_empty())
             .ok_or_else(|| super::api_key_error(super::ApiKeyErrorCode::UnauthorizedSession))?;
-        create_key_for_user(body, user_id, self, ctx).await
+        create_key_for_user(body, user_id, self, ctx, None).await
     }
 
     /// Update a key on behalf of `body.user_id` from trusted server code.
@@ -138,6 +138,7 @@ pub(crate) async fn create_key_core(
     user_id: impl AsRef<str>,
     plugin: &ApiKeyPlugin,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    request: Option<&better_auth_core::AuthRequest>,
 ) -> AuthResult<CreateKeyResponse> {
     let _ = plugin.resolve_configuration(body.config_id.as_deref())?;
     if body.refill_amount.is_some()
@@ -157,7 +158,7 @@ pub(crate) async fn create_key_core(
             super::ApiKeyErrorCode::UnauthorizedSession,
         ));
     }
-    create_key_for_user(body, user_id.as_ref(), plugin, ctx).await
+    create_key_for_user(body, user_id.as_ref(), plugin, ctx, request).await
 }
 
 async fn create_key_for_user(
@@ -165,6 +166,7 @@ async fn create_key_for_user(
     user_id: &str,
     plugin: &ApiKeyPlugin,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    request: Option<&better_auth_core::AuthRequest>,
 ) -> AuthResult<CreateKeyResponse> {
     let config = plugin.resolve_configuration(body.config_id.as_deref())?;
     let reference_id = match config.references {
@@ -192,7 +194,42 @@ async fn create_key_for_user(
     ApiKeyPlugin::validate_prefix(config, body.prefix.as_deref())?;
     ApiKeyPlugin::validate_name(config, body.name.as_deref(), true)?;
 
-    let (full_key, hash, start) = ApiKeyPlugin::generate_key(config, body.prefix.as_deref());
+    let (full_key, hash, start) = if let Some(generator) = &config.custom_key_generator {
+        let full_key = generator
+            .generate_key(&super::ApiKeyGenerationOptions {
+                length: config.key_length,
+                prefix: body
+                    .prefix
+                    .as_deref()
+                    .filter(|prefix| !prefix.is_empty())
+                    .or(config.prefix.as_deref()),
+            })
+            .await?;
+        let hash = if config.disable_key_hashing {
+            full_key.clone()
+        } else {
+            ApiKeyPlugin::hash_key(&full_key)
+        };
+        let units: Vec<_> = full_key
+            .encode_utf16()
+            .take(config.starting_characters_length)
+            .collect();
+        let start = String::from_utf16_lossy(&units);
+        (full_key, hash, start)
+    } else {
+        ApiKeyPlugin::generate_key(config, body.prefix.as_deref())
+    };
+    let dynamic_permissions = match &config.default_permissions_callback {
+        Some(callback) => Some(
+            callback
+                .default_permissions(
+                    &reference_id,
+                    &super::ApiKeyCallbackContext::new(request, ctx, &config.config_id),
+                )
+                .await?,
+        ),
+        None => None,
+    };
     let input = CreateApiKey {
         reference_id,
         config_id: config.config_id.clone(),
@@ -212,8 +249,9 @@ async fn create_key_for_user(
         permissions: body
             .permissions
             .as_ref()
+            .or(dynamic_permissions.as_ref())
             .or(config.default_permissions.as_ref())
-            .map(serde_json::to_string)
+            .map(better_auth_core::utils::json::to_string)
             .transpose()?,
         metadata: body
             .metadata
@@ -474,7 +512,7 @@ async fn update_key_for_user(
         permissions: body
             .permissions
             .as_ref()
-            .map(serde_json::to_string)
+            .map(better_auth_core::utils::json::to_string)
             .transpose()?,
         metadata: metadata
             .map(better_auth_core::utils::json::to_string)

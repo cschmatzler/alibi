@@ -1,8 +1,8 @@
+use super::ApiKeyPermissions;
 use better_auth_core::utils::json::JsValue;
 pub(crate) use better_auth_core::wire::ApiKeyView;
 use better_auth_core::{AuthRequest, AuthResponse};
 use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::HashMap;
 use validator::Validate;
 
 /// API key creation parameters for HTTP and trusted server callers.
@@ -46,7 +46,7 @@ pub struct CreateKeyRequest {
     pub refill_amount: Option<f64>,
     /// Resource permissions, available only to server callers.
     #[serde(default, deserialize_with = "present")]
-    pub permissions: Option<HashMap<String, Vec<String>>>,
+    pub permissions: Option<ApiKeyPermissions>,
     /// Optional metadata; preservation of null matches the upstream wire contract.
     #[serde(default, deserialize_with = "present")]
     pub metadata: Option<JsValue>,
@@ -91,7 +91,7 @@ pub struct UpdateKeyRequest {
     pub refill_amount: Option<f64>,
     /// Replacement resource permissions; null clears permissions. Server callers only.
     #[serde(default, with = "::serde_with::rust::double_option")]
-    pub permissions: Option<Option<HashMap<String, Vec<String>>>>,
+    pub permissions: Option<Option<ApiKeyPermissions>>,
     /// Replacement metadata; null clears metadata when metadata is enabled.
     #[serde(default, deserialize_with = "present")]
     pub metadata: Option<JsValue>,
@@ -421,4 +421,11 @@ pub struct CreateKeyResponse {
     /// Stored public key attributes, without the secret hash.
     #[serde(flatten)]
     pub api_key: ApiKeyView,
+}
+
+/// Result of trusted forced expiration cleanup. Store failures are logged.
+#[derive(Debug, Serialize)]
+pub struct DeleteExpiredApiKeysResponse {
+    pub success: bool,
+    pub error: Option<String>,
 }

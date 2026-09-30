@@ -730,7 +730,9 @@ impl<T: AuthApiKey> From<&T> for ApiKeyView {
             expires_at: ak.expires_at().map(str::to_owned),
             created_at: ak.created_at().to_owned(),
             updated_at: ak.updated_at().to_owned(),
-            permissions: ak.permissions().and_then(|s| serde_json::from_str(s).ok()),
+            permissions: ak
+                .permissions()
+                .and_then(|s| crate::utils::json::from_slice(s.as_bytes()).ok()),
             metadata: ak.metadata().and_then(|s| {
                 crate::utils::json::parse_value(s)
                     .ok()?

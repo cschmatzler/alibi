@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use better_auth_core::{AuthConfig, AuthContext, AuthRequest, AuthSchema, ContextExtensions};
+use better_auth_core::{
+    AuthConfig, AuthContext, AuthRequest, AuthResult, AuthSchema, ContextExtensions,
+};
 
 /// Immutable application context for trusted API-key lookup and validation.
 ///
@@ -44,4 +46,29 @@ pub trait ApiKeyGetter: Send + Sync {
 #[async_trait]
 pub trait ApiKeyValidator: Send + Sync {
     async fn validate(&self, context: &ApiKeyCallbackContext<'_>, key: &str) -> bool;
+}
+
+/// Ordered resource/action permissions, following JavaScript object insertion order.
+pub type ApiKeyPermissions = indexmap::IndexMap<String, Vec<String>>;
+
+/// Inputs passed to an application key generator; length excludes the prefix.
+pub struct ApiKeyGenerationOptions<'a> {
+    pub length: usize,
+    pub prefix: Option<&'a str>,
+}
+
+/// Trusted custom secret generation. The application owns the returned full key.
+#[async_trait]
+pub trait ApiKeyGenerator: Send + Sync {
+    async fn generate_key(&self, options: &ApiKeyGenerationOptions<'_>) -> AuthResult<String>;
+}
+
+/// Trusted dynamic defaults, evaluated even when creation supplies an override.
+#[async_trait]
+pub trait ApiKeyDefaultPermissions: Send + Sync {
+    async fn default_permissions(
+        &self,
+        reference_id: &str,
+        context: &ApiKeyCallbackContext<'_>,
+    ) -> AuthResult<ApiKeyPermissions>;
 }

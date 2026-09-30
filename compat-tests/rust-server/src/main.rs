@@ -65,6 +65,7 @@ mod phone_profiles;
 mod session_field_model;
 mod session_fields_fixture;
 mod session_profiles;
+mod api_key_generation_fixture;
 mod siwe_fixture;
 mod sqlite_fixture;
 mod two_factor_otp_fixture;
@@ -669,6 +670,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let admin_permission_router =
         admin_permission_fixture::router(&config, database.clone()).await?;
     let session_fields_router = session_fields_fixture::router(&config, database.clone()).await?;
+    let api_key_generation_router = api_key_generation_fixture::router(&config, database.clone()).await?;
     let siwe_state = siwe_fixture::state();
     let siwe_profile_router =
         siwe_fixture::router(&config, database.clone(), siwe_state.clone()).await?;
@@ -1633,10 +1635,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_state(auth)
         .merge(verification_profile_router)
         .merge(session_profile_router)
-        .merge(api_key_hook_router)
         .merge(multiple_session_router)
         .merge(admin_permission_router)
         .merge(admin_banned_message_router)
+        .merge(api_key_generation_router)
+        .merge(api_key_hook_router)
         .merge(session_fields_router)
         .merge(open_api_router)
         .merge(otp_router)
