@@ -5,6 +5,12 @@ completion claim. The full runtime target, including capabilities absent from
 selected HTTP profiles, is in [the upstream audit](audits/upstream-target.md).
 The oracle remains pinned to 1.7.6. Rust interfaces remain native.
 
+The user replaced the full-parity objective with selected capabilities on
+2026-09-30: finish and merge existing work (including SIWE), multiple sessions,
+further organization/admin/two-factor/passkey/API-key branches, and successful
+username-availability/two-factor-disable flows. OAuth authorization server, MCP,
+CIMD, SSO, SCIM, Stripe, i18n, Expo and Electron are excluded from this work.
+
 ## Integrated baseline
 
 Master `ae4aa46` includes scrypt-only password interoperability (Argon2 support
@@ -26,7 +32,7 @@ they do not establish all configuration or integration behavior.
 | JWT/session interaction | JWT owner; coordinator integration; independent SIWE-owner review | Required configuration evidence | Real SQLite refresh/refusal and hostile request-snapshot tests; three additional official client scenarios cover refresh/preferences, original completed-session headers and API-key owner isolation. Merged PR #22 after the final canonical gate: 216 SDK scenarios, 35 harness tests, two Chromium tests and 79.18% source lines. |
 | JSON and SQLite numeric semantics | Phone owner; independent JWT-owner review and repair | Common JSON parser, safe callback representation, numeric binding | Frozen prototype withheld after actual runtime review exposed reserved-key corruption and JWT numeric/date differences. Replacing unsafe global serde features with explicit `JsValue`, safe metadata persistence and JS serialization. Repaired review/gate still required. |
 | Phone authentication | Phone owner; coordinator contracts/integration | Safe numeric prerequisite, identity fields, verification/session helpers | Prepared production and deterministic SMS/server-only fixtures; completing extraction after prerequisite repair. All five routes, consumption API, proof/attempt/expiry/replay/ownership, optional signup, custom verifier and two-factor interactions require final integrated evidence. |
-| SIWE | SIWE owner; coordinator integration; independent JWT-owner review | Canonical user-ID deletion prerequisite; wallet schema/store/migration | Canonical ID prerequisite merged as PR #23. Real EIP-191/local ERC-1271 and wallet/session persistence pass eleven SDK scenarios / 724 assertions. Independent review resolved media validation before state consumption and all-digit hour-24 date validation; focused Rust/SQL/Clippy/TypeScript pass. Inventory integrated; canonical gate/publication remain. |
+| SIWE | SIWE owner; coordinator integration; independent JWT-owner review | Canonical user-ID deletion; wallet schema/store/migration | Real EIP-191/ERC-1271 signatures, ownership, replay, expiry, concurrency, bans, dates and nonce aliases. Eleven SDK scenarios / 772 assertions; native wallet upgrade and rollback proofs. Review findings resolved. Full canonical gate passed: 238 SDK / 5,836 assertions, 37 harness / 210, two Chromium / 22, 78.65% source lines (22,225 / 28,257). Ready for publication. |
 | Device authorization | Coordinator; independent JWT-owner review | Unconstrained user reference migration; strict alias/TTL harness correction | Actual baseline failed 11 of 16 scenarios; repaired 19 SDK scenarios / 326 assertions. Async generators, Unicode boundaries, validation/lifetime/polling/URL profiles, installed upgrade preservation and destructive rollback are proved. Review findings resolved; old denial evidence retained with repeated denial. Canonical gate passed: 227 SDK / 5,064 assertions, 37 harness / 210 assertions, two Chromium / 22 assertions, 79.23% source lines (21,526 / 27,170). PR #24. |
 | Reference/OpenAPI | SIWE owner | Typed route/model metadata and application schema override | Pinned generator/runtime/configuration investigation complete; generator and reference implementation underway. Default document remains incomplete until update-session lands; equivalent disabled-path profiles only prove that explicit configuration. |
 

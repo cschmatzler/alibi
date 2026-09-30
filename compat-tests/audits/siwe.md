@@ -125,7 +125,11 @@ found in those paths.
 
 ## Remaining integration boundaries
 
-These focused checks do not claim the coordinator's complete gate passed.
+The final integrated canonical gate passed: 238 SDK scenarios / 5,836
+assertions, 37 harness tests / 210 assertions, two Chromium tests / 22 assertions,
+and 78.65% source line coverage (22,225 / 28,257). The SIWE family contributes
+eleven scenarios / 772 assertions. Independent review findings are resolved.
+This evidence describes the tested standard profiles, not every upstream option.
 Secondary-storage-only verification/session integration, arbitrary model/column
 renaming, custom core `validateUserInfo` policy wiring, and arbitrary
 engine-specific legacy `Date.parse` strings remain separate boundaries.
