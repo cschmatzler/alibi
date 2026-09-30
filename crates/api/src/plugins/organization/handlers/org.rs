@@ -519,6 +519,70 @@ pub async fn handle_list_organizations(
 }
 
 /// Handle get full organization request
+/// Retrieve organization metadata without loading members, invitations or teams.
+pub async fn handle_get_organization(
+    req: &AuthRequest,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<AuthResponse> {
+    let (user, session) = match require_session(req, ctx).await {
+        Ok(session) => session,
+        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
+            return Ok(AuthResponse::json(
+                401,
+                &better_auth_core::ErrorCodeMessageResponse {
+                    code: Some("UNAUTHORIZED".into()),
+                    message: "Unauthorized".into(),
+                },
+            )?);
+        }
+        Err(error) => return Err(error),
+    };
+    let slug = req
+        .query
+        .get("organizationSlug")
+        .filter(|value| !value.is_empty());
+    let id = req
+        .query
+        .get("organizationId")
+        .filter(|value| !value.is_empty());
+    let organization = if let Some(slug) = slug {
+        ctx.database.get_organization_by_slug(slug).await?
+    } else if let Some(id) = id.map(String::as_str).or(session.active_organization_id()) {
+        ctx.database.get_organization_by_id(id).await?
+    } else {
+        return Ok(AuthResponse::json(
+            200,
+            &Option::<OrganizationResponse>::None,
+        )?);
+    }
+    .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
+    if ctx
+        .database
+        .get_member(&organization.id(), &user.id())
+        .await?
+        .is_none()
+    {
+        let _ = ctx
+            .database
+            .update_session_active_organization(session.token(), None)
+            .await?;
+        return Err(AuthError::forbidden(
+            "User is not a member of the organization",
+        ));
+    }
+    let mut response = OrganizationResponse::from_organization(&organization);
+    // The pinned metadata-only endpoint returns the raw stored string, whereas
+    // create/full-organization endpoints decode their metadata JSON.
+    response.metadata = response
+        .metadata
+        .map(|value| match value {
+            serde_json::Value::String(value) => Ok(serde_json::Value::String(value)),
+            value => serde_json::to_string(&value).map(serde_json::Value::String),
+        })
+        .transpose()?;
+    Ok(AuthResponse::json(200, &response)?)
+}
+
 pub async fn handle_get_full_organization(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,

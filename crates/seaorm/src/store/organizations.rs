@@ -24,7 +24,7 @@ where
         let now = Utc::now();
         let metadata = JsonMetadata::for_backend(
             better_auth_core::utils::json::to_value(
-                &org.metadata.unwrap_or(serde_json::json!({})),
+                &org.metadata.unwrap_or(serde_json::Value::Null),
             )?,
             self.connection().get_database_backend(),
         )?;

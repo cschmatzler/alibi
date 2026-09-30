@@ -447,7 +447,6 @@ fn normalize_metadata(metadata: Option<&serde_json::Value>) -> Option<serde_json
     match metadata {
         None => None,
         Some(serde_json::Value::Null) => None,
-        Some(serde_json::Value::Object(map)) if map.is_empty() => None,
         Some(value) => Some(value.clone()),
     }
 }
