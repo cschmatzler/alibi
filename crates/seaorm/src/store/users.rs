@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
-    IntoActiveModel, QueryFilter,
+    IntoActiveModel, QueryFilter, QuerySelect, TransactionTrait,
 };
 
 use better_auth_core::store::UserStore;
@@ -51,8 +51,10 @@ where
         let model = S::User::new_active(user_id, create_user, now);
 
         let user = model.insert(db).await.map_err(map_db_err)?;
-        for hook in self.hooks() {
-            hook.after_create_user(&user, &hook_context).await?;
+        if tx.is_none() {
+            for hook in self.hooks() {
+                hook.after_create_user(&user, &hook_context).await?;
+            }
         }
         Ok(user)
     }
@@ -124,6 +126,16 @@ where
             .map_err(map_db_err)
     }
 
+    async fn get_user_by_phone_number(&self, phone_number: &str) -> AuthResult<Option<S::User>> {
+        let column = S::User::phone_number_column()
+            .ok_or_else(|| AuthError::internal("the user schema has no phone-number field"))?;
+        <S::User as SeaOrmUserModel>::Entity::find()
+            .filter(column.eq(phone_number))
+            .one(self.connection())
+            .await
+            .map_err(map_db_err)
+    }
+
     async fn update_user(&self, id: &str, mut update: UpdateUser) -> AuthResult<S::User> {
         update.email = normalize_optional_user_email(update.email);
         let user_id = S::User::parse_id(id)?;
@@ -177,17 +189,33 @@ where
         // API keys reference their owner polymorphically, so they carry no
         // foreign key to cascade from. Without this, a deleted user's keys
         // would outlive them and start working again if the id were reused.
+        let transaction = self
+            .connection()
+            .begin_with_options(sea_orm::TransactionOptions {
+                sqlite_transaction_mode: Some(sea_orm::SqliteTransactionMode::Immediate),
+                ..Default::default()
+            })
+            .await
+            .map_err(map_db_err)?;
+        let _ = <S::User as SeaOrmUserModel>::Entity::find()
+            .filter(S::User::id_column().eq(user_id.clone()))
+            .lock_exclusive()
+            .one(&transaction)
+            .await
+            .map_err(map_db_err)?;
+        super::teams::remove_owned_team_members(&transaction, id, None).await?;
         let _ = super::entities::api_key::Entity::delete_many()
             .filter(super::entities::api_key::Column::ReferenceId.eq(id))
-            .exec(self.connection())
+            .exec(&transaction)
             .await
             .map_err(map_db_err)?;
 
         let _ = <S::User as SeaOrmUserModel>::Entity::delete_many()
             .filter(<S::User as SeaOrmUserModel>::id_column().eq(user_id))
-            .exec(self.connection())
+            .exec(&transaction)
             .await
             .map_err(map_db_err)?;
+        transaction.commit().await.map_err(map_db_err)?;
         for hook in self.hooks() {
             hook.after_delete_user(&user, &hook_context).await?;
         }

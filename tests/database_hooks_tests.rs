@@ -148,19 +148,30 @@ impl ProvisioningService {
             .values_panic([user.id().to_owned().into(), "Default Workspace".into()])
             .to_owned();
 
-        if let Some(tx) = ctx.tx {
-            self.tx_seen.store(true, Ordering::SeqCst);
-            let _ = tx
-                .execute(&statement)
+        self.tx_seen.store(ctx.tx.is_some(), Ordering::SeqCst);
+        assert!(
+            ctx.tx.is_none(),
+            "creation after hooks run only after commit"
+        );
+        let committed_user = Query::select()
+            .column(Alias::new("id"))
+            .from(Alias::new("users"))
+            .and_where(Expr::col(Alias::new("id")).eq(user.id().into_owned()))
+            .to_owned();
+        assert_eq!(
+            self.db
+                .query_all(&committed_user)
                 .await
-                .map_err(|err| DatabaseError::Query(err.to_string()))?;
-        } else {
-            let _ = self
-                .db
-                .execute(&statement)
-                .await
-                .map_err(|err| DatabaseError::Query(err.to_string()))?;
-        }
+                .map_err(|err| DatabaseError::Query(err.to_string()))?
+                .len(),
+            1
+        );
+
+        let _ = self
+            .db
+            .execute(&statement)
+            .await
+            .map_err(|err| DatabaseError::Query(err.to_string()))?;
 
         Ok(())
     }
@@ -283,7 +294,7 @@ async fn request_context_is_present_for_requests_and_absent_for_direct_store_cal
 
 // Upstream reference: packages/better-auth/src/db/db.test.ts :: describe("db") and packages/better-auth/src/plugins/organization/organization-hook.test.ts; adapted to the Rust database hook surface.
 #[tokio::test]
-async fn onboarding_hook_can_provision_app_data_with_the_shared_transaction() {
+async fn onboarding_hook_provisions_app_data_after_the_auth_transaction_commits() {
     let database = test_database().await;
     create_app_workspace_table(&database).await;
 
@@ -316,7 +327,7 @@ async fn onboarding_hook_can_provision_app_data_with_the_shared_transaction() {
         .expect("user id should be present");
 
     assert_eq!(app_workspace_rows_for_user(&database, user_id).await, 1);
-    assert!(tx_seen.load(Ordering::SeqCst));
+    assert!(!tx_seen.load(Ordering::SeqCst));
 }
 
 // Upstream reference: packages/better-auth/src/db/db.test.ts :: describe("db") and packages/better-auth/src/plugins/organization/organization-hook.test.ts; adapted to the Rust database hook surface.

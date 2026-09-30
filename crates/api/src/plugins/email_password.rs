@@ -589,6 +589,8 @@ pub(crate) async fn sign_up_core(
             if auto_sign_in {
                 let session = tx
                     .create_session(CreateSession {
+                        token: None,
+                        active_team_id: None,
                         user_id: user.id().to_string(),
                         expires_at: chrono::Utc::now() + expires_in,
                         ip_address,

@@ -458,6 +458,8 @@ mod tests {
         .await;
 
         let create_session2 = CreateSession {
+            token: None,
+            active_team_id: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
             ip_address: Some("192.168.1.1".to_string()),
@@ -495,6 +497,8 @@ mod tests {
         ctx.set_metadata("admin.enabled", serde_json::Value::Bool(true));
 
         let direct_session = CreateSession {
+            token: None,
+            active_team_id: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
             ip_address: Some("192.168.1.1".to_string()),
@@ -505,6 +509,8 @@ mod tests {
         ctx.database.create_session(direct_session).await.unwrap();
 
         let impersonated_session = CreateSession {
+            token: None,
+            active_team_id: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
             ip_address: Some("10.0.0.5".to_string()),
@@ -552,6 +558,8 @@ mod tests {
         .await;
 
         let create_session2 = CreateSession {
+            token: None,
+            active_team_id: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
             ip_address: Some("192.168.1.1".to_string()),
@@ -597,6 +605,8 @@ mod tests {
         let user2 = ctx.database.create_user(create_user2).await.unwrap();
 
         let create_session2 = CreateSession {
+            token: None,
+            active_team_id: None,
             user_id: user2.id,
             expires_at: Utc::now() + Duration::hours(24),
             ip_address: Some("192.168.1.1".to_string()),
@@ -640,6 +650,8 @@ mod tests {
         .await;
 
         let create_session2 = CreateSession {
+            token: None,
+            active_team_id: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
             ip_address: Some("192.168.1.1".to_string()),

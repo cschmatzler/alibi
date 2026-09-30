@@ -117,6 +117,8 @@ pub struct Invitation {
     pub organization_id: String,
     pub email: String,
     pub role: String,
+    #[serde(rename = "teamId")]
+    pub team_id: Option<String>,
     pub status: InvitationStatus,
     #[serde(rename = "inviterId")]
     pub inviter_id: String,
@@ -207,6 +209,8 @@ pub struct CreateInvitation {
     pub organization_id: String,
     pub email: String,
     pub role: String,
+    /// One or more comma-separated team IDs, following the upstream invitation schema.
+    pub team_id: Option<String>,
     pub inviter_id: String,
     pub expires_at: DateTime<Utc>,
 }
@@ -224,6 +228,7 @@ impl CreateInvitation {
             email: email.into(),
             role: role.into(),
             inviter_id: inviter_id.into(),
+            team_id: None,
             expires_at,
         }
     }
@@ -310,6 +315,9 @@ impl AuthInvitation for Invitation {
     fn role(&self) -> &str {
         &self.role
     }
+    fn team_id(&self) -> Option<&str> {
+        self.team_id.as_deref()
+    }
     fn status(&self) -> &InvitationStatus {
         &self.status
     }
@@ -331,10 +339,89 @@ impl<T: AuthInvitation> From<&T> for Invitation {
             organization_id: invitation.organization_id().into_owned(),
             email: invitation.email().to_owned(),
             role: invitation.role().to_owned(),
+            team_id: invitation.team_id().map(str::to_owned),
             status: invitation.status().clone(),
             inviter_id: invitation.inviter_id().into_owned(),
             expires_at: invitation.expires_at(),
             created_at: invitation.created_at(),
         }
     }
+}
+
+/// A team within one organization. The durable capacity counter is private to storage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Team {
+    pub id: String,
+    pub name: String,
+    pub organization_id: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: Option<DateTime<Utc>>,
+    #[serde(skip)]
+    pub member_count: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateTeam {
+    pub name: String,
+    pub organization_id: String,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct UpdateTeam {
+    pub name: Option<String>,
+}
+
+/// A user membership in a team. The uniqueness key is never returned on the wire.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamMember {
+    pub id: String,
+    pub team_id: String,
+    pub user_id: String,
+    pub created_at: DateTime<Utc>,
+    #[serde(skip)]
+    pub membership_key: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum AddTeamMemberResult {
+    Added(TeamMember),
+    Existing(TeamMember),
+    LimitReached,
+}
+
+/// Preserve insertion order because upstream stores permission JSON as a string.
+pub type OrganizationPermissions = indexmap::IndexMap<String, Vec<String>>;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrganizationRole {
+    pub id: String,
+    pub organization_id: String,
+    pub role: String,
+    pub permission: OrganizationPermissions,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateOrganizationRole {
+    pub organization_id: String,
+    pub role: String,
+    pub permission: OrganizationPermissions,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct UpdateOrganizationRole {
+    pub role: Option<String>,
+    pub permission: Option<OrganizationPermissions>,
+}
+
+/// Role references are always paired with an organization by store operations.
+#[derive(Debug, Clone)]
+pub enum OrganizationRoleSelector {
+    Id(String),
+    Name(String),
 }

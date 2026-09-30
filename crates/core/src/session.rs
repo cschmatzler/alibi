@@ -38,6 +38,8 @@ impl<S: AuthSchema> SessionManager<S> {
         let expires_at = Utc::now() + self.config.session.expires_in;
 
         let create_session = CreateSession {
+            token: None,
+            active_team_id: None,
             user_id: user.id().to_string(),
             expires_at,
             ip_address,
@@ -228,7 +230,7 @@ impl<S: AuthSchema> SessionManager<S> {
 
     /// Validate session token format
     pub fn validate_token_format(&self, token: &str) -> bool {
-        token.starts_with("session_") && token.len() > 40
+        token.len() == 32 && token.bytes().all(|byte| byte.is_ascii_alphanumeric())
     }
 
     /// Extract session token from a request.
@@ -278,15 +280,15 @@ mod tests {
     #[test]
     fn valid_token_format() {
         let mgr = test_manager();
-        let token = "session_abcdefghijklmnopqrstuvwxyz1234567890";
+        let token = "abcdefghijklmnopqrstuvwxyz123456";
         assert!(mgr.validate_token_format(token));
     }
 
     // Rust-specific surface: `SessionManager` and its token/session helper APIs are public Rust APIs with no direct TS analogue.
     #[test]
-    fn invalid_token_no_prefix() {
+    fn invalid_token_non_alphanumeric() {
         let mgr = test_manager();
-        assert!(!mgr.validate_token_format("abcdefghijklmnopqrstuvwxyz1234567890"));
+        assert!(!mgr.validate_token_format("abcdefghijklmnopqrstuvwxy_123456"));
     }
 
     // Rust-specific surface: `SessionManager` and its token/session helper APIs are public Rust APIs with no direct TS analogue.
@@ -367,6 +369,8 @@ mod tests {
 
         // A session created "now" is fresh within a 10-minute window.
         let session = SessionView {
+            active_team_id: None,
+            extension_fields: Default::default(),
             id: "s1".into(),
             expires_at: Utc::now() + Duration::hours(1),
             token: "tok".into(),
@@ -391,6 +395,8 @@ mod tests {
         let mgr = SessionManager::new(Arc::new(config), runtime.block_on(test_database()));
 
         let session = SessionView {
+            active_team_id: None,
+            extension_fields: Default::default(),
             id: "s1".into(),
             expires_at: Utc::now() + Duration::hours(1),
             token: "tok".into(),
@@ -411,6 +417,8 @@ mod tests {
     fn session_never_fresh_when_no_fresh_age() {
         let mgr = test_manager(); // default: fresh_age = None
         let session = SessionView {
+            active_team_id: None,
+            extension_fields: Default::default(),
             id: "s1".into(),
             expires_at: Utc::now() + Duration::hours(1),
             token: "tok".into(),

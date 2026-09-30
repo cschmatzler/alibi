@@ -18,6 +18,8 @@ impl MigratorTrait for AuthMigrator {
             Box::new(InitialAuthSchema),
             Box::new(ApiKeyReferenceOwnership),
             Box::new(super::api_key_numbers::ApiKeyNumbers),
+            Box::new(super::identity_fields::PluginIdentityFields),
+            Box::new(super::organization_extensions::OrganizationExtensions),
         ]
     }
 

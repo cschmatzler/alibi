@@ -134,6 +134,77 @@ pub fn core_fields(role: EntityRole) -> &'static [FieldDef] {
 
 static PLUGINS: &[PluginSchema] = &[
     PluginSchema {
+        name: "anonymous",
+        user_fields: &[f!("is_anonymous", "Option<bool>")],
+        session_fields: &[],
+        extra_entities: &[],
+    },
+    PluginSchema {
+        name: "phone-number",
+        user_fields: &[
+            f!("phone_number", "Option<String>"),
+            f!("phone_number_verified", "Option<bool>"),
+        ],
+        session_fields: &[],
+        extra_entities: &[],
+    },
+    PluginSchema {
+        name: "last-login-method",
+        user_fields: &[f!("last_login_method", "Option<String>")],
+        session_fields: &[],
+        extra_entities: &[],
+    },
+    PluginSchema {
+        name: "organization-teams",
+        user_fields: &[],
+        session_fields: &[f!("active_team_id", "Option<String>")],
+        extra_entities: &[
+            ExtraEntitySchema {
+                mod_name: "team",
+                table_name: "team",
+                role: None,
+                fields: &[
+                    pk!("id", "String"),
+                    f!("name", "String"),
+                    f!("organization_id", "String"),
+                    f!("member_count", "i64"),
+                    f!("created_at", "DateTimeUtc"),
+                    f!("updated_at", "Option<DateTimeUtc>"),
+                ],
+            },
+            ExtraEntitySchema {
+                mod_name: "team_member",
+                table_name: "team_member",
+                role: None,
+                fields: &[
+                    pk!("id", "String"),
+                    f!("team_id", "String"),
+                    f!("user_id", "String"),
+                    f!("membership_key", "Option<String>"),
+                    f!("created_at", "DateTimeUtc"),
+                ],
+            },
+        ],
+    },
+    PluginSchema {
+        name: "organization-dynamic-roles",
+        user_fields: &[],
+        session_fields: &[],
+        extra_entities: &[ExtraEntitySchema {
+            mod_name: "organization_role",
+            table_name: "organization_role",
+            role: None,
+            fields: &[
+                pk!("id", "String"),
+                f!("organization_id", "String"),
+                f!("role", "String"),
+                f!("permission", "String"),
+                f!("created_at", "DateTimeUtc"),
+                f!("updated_at", "Option<DateTimeUtc>"),
+            ],
+        }],
+    },
+    PluginSchema {
         name: "username",
         user_fields: &[
             f!("username", "Option<String>"),
@@ -222,6 +293,7 @@ static PLUGINS: &[PluginSchema] = &[
                     f!("organization_id", "String"),
                     f!("email", "String"),
                     f!("role", "String"),
+                    f!("team_id", "Option<String>"),
                     f!("status", "String"),
                     f!("inviter_id", "String"),
                     f!("expires_at", "DateTimeUtc"),

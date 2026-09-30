@@ -87,6 +87,8 @@ async fn test_custom_admin_role_can_use_permission_engine() {
 
     let admin_session = database
         .create_session(CreateSession {
+            token: None,
+            active_team_id: None,
             user_id: admin.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
             ip_address: None,

@@ -115,6 +115,8 @@ async fn test_revoke_session_integration() {
     use chrono::{Duration, Utc};
 
     let create_session = CreateSession {
+        token: None,
+        active_team_id: None,
         user_id: user_id.clone(),
         expires_at: Utc::now() + Duration::hours(24),
         ip_address: Some("192.168.1.1".to_string()),
@@ -460,6 +462,8 @@ async fn test_set_password_public_route_absent_for_social_user() {
     let user = auth.store().create_user(create_user).await.unwrap();
 
     let create_session = CreateSession {
+        token: None,
+        active_team_id: None,
         user_id: user.id.clone(),
         expires_at: Utc::now() + Duration::hours(24),
         ip_address: None,
@@ -567,6 +571,8 @@ async fn test_revoke_other_sessions_integration() {
     use std::collections::HashMap;
 
     let create_session = CreateSession {
+        token: None,
+        active_team_id: None,
         user_id: user_id.clone(),
         expires_at: Utc::now() + Duration::hours(24),
         ip_address: Some("192.168.1.1".to_string()),
@@ -1063,6 +1069,8 @@ async fn test_unlink_last_account_fails() {
     let user = auth.store().create_user(create_user).await.unwrap();
 
     let create_session = CreateSession {
+        token: None,
+        active_team_id: None,
         user_id: user.id.clone(),
         expires_at: Utc::now() + Duration::hours(24),
         ip_address: None,

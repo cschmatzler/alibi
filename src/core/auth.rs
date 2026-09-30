@@ -465,6 +465,10 @@ impl<S: AuthSchema> BetterAuth<S> {
         }
 
         let update_user = UpdateUser {
+            is_anonymous: None,
+            phone_number: None,
+            phone_number_verified: None,
+            last_login_method: None,
             email: None,
             name: update_req.name,
             image: update_req.image,

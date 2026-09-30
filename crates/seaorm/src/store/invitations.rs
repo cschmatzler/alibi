@@ -2,15 +2,16 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
-    QueryOrder, Set,
+    QueryOrder, QuerySelect, Set, TransactionTrait,
 };
 use uuid::Uuid;
 
 use better_auth_core::store::InvitationStore;
 
 use crate::error::AuthResult;
-use crate::schema::AuthSchema;
+use crate::schema::{AuthSchema, SeaOrmSessionModel, SeaOrmUserModel};
 use crate::types_org::{CreateInvitation, Invitation, InvitationStatus};
+use better_auth_core::entity::AuthUser;
 
 use super::entities::invitation::{ActiveModel, Column, Entity};
 use super::{SeaOrmStore, map_db_err};
@@ -19,6 +20,8 @@ use super::{SeaOrmStore, map_db_err};
 impl<S> InvitationStore for SeaOrmStore<S>
 where
     S: AuthSchema + Send + Sync,
+    S::User: SeaOrmUserModel,
+    S::Session: SeaOrmSessionModel,
 {
     async fn create_invitation(&self, invitation: CreateInvitation) -> AuthResult<Invitation> {
         ActiveModel {
@@ -26,6 +29,7 @@ where
             organization_id: Set(invitation.organization_id),
             email: Set(invitation.email),
             role: Set(invitation.role),
+            team_id: Set(invitation.team_id),
             status: Set(InvitationStatus::Pending.to_string()),
             inviter_id: Set(invitation.inviter_id),
             expires_at: Set(invitation.expires_at),
@@ -43,6 +47,186 @@ where
             .await
             .map(|model| model.map(|model| Invitation::from(&model)))
             .map_err(map_db_err)
+    }
+
+    async fn update_invitation_team_ids(
+        &self,
+        id: &str,
+        team_ids: Option<String>,
+    ) -> AuthResult<Invitation> {
+        let row = Entity::find_by_id(id.to_owned())
+            .one(self.connection())
+            .await
+            .map_err(map_db_err)?
+            .ok_or_else(|| crate::error::AuthError::not_found("Invitation not found"))?;
+        let mut active = row.into_active_model();
+        active.team_id = Set(team_ids);
+        active
+            .update(self.connection())
+            .await
+            .map(|row| Invitation::from(&row))
+            .map_err(map_db_err)
+    }
+
+    async fn accept_invitation_with_teams(
+        &self,
+        invitation_id: &str,
+        user_id: &str,
+        session_token: &str,
+        team_limits: &[(String, Option<usize>)],
+        membership_limit: Option<usize>,
+    ) -> AuthResult<Option<(Invitation, better_auth_core::types::Member)>> {
+        use super::entities::{member, organization};
+        use crate::error::AuthError;
+        let transaction = self
+            .connection()
+            .begin_with_options(sea_orm::TransactionOptions {
+                sqlite_transaction_mode: Some(sea_orm::SqliteTransactionMode::Immediate),
+                ..Default::default()
+            })
+            .await
+            .map_err(map_db_err)?;
+        let outcome = async {
+            let Some(invitation) = Entity::find_by_id(invitation_id.to_owned())
+                .lock_exclusive()
+                .one(&transaction)
+                .await
+                .map_err(map_db_err)?
+            else {
+                return Ok(None);
+            };
+            if invitation.status != "pending" || invitation.expires_at < Utc::now() {
+                return Ok(None);
+            }
+            let typed_id = S::User::parse_id(user_id)?;
+            let user = <S::User as SeaOrmUserModel>::Entity::find()
+                .filter(S::User::id_column().eq(typed_id))
+                .lock_shared()
+                .one(&transaction)
+                .await
+                .map_err(map_db_err)?
+                .ok_or(AuthError::UserNotFound)?;
+            if !user
+                .email()
+                .is_some_and(|email| email.to_lowercase() == invitation.email.to_lowercase())
+            {
+                return Err(AuthError::forbidden("This invitation is not for you"));
+            }
+            let session = <S::Session as SeaOrmSessionModel>::Entity::find()
+                .filter(S::Session::token_column().eq(session_token))
+                .filter(S::Session::user_id_column().eq(S::Session::parse_user_id(user_id)?))
+                .filter(S::Session::active_column().eq(true))
+                .lock_exclusive()
+                .one(&transaction)
+                .await
+                .map_err(map_db_err)?
+                .ok_or(AuthError::SessionNotFound)?;
+            if better_auth_core::AuthSession::expires_at(&session) < Utc::now() {
+                return Err(AuthError::SessionNotFound);
+            }
+            let _ = organization::Entity::find_by_id(invitation.organization_id.clone())
+                .lock_exclusive()
+                .one(&transaction)
+                .await
+                .map_err(map_db_err)?
+                .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
+            if let Some(limit) = membership_limit
+                && member::Entity::find()
+                    .filter(member::Column::OrganizationId.eq(&invitation.organization_id))
+                    .count(&transaction)
+                    .await
+                    .map_err(map_db_err)?
+                    >= limit as u64
+            {
+                return Err(AuthError::bad_request(
+                    "Organization membership limit reached",
+                ));
+            }
+            let requested = invitation
+                .team_id
+                .as_deref()
+                .filter(|ids| !ids.is_empty())
+                .map(|ids| ids.split(',').collect::<Vec<_>>())
+                .unwrap_or_default();
+            for team_id in &requested {
+                let room = super::entities::team::Entity::find_by_id((*team_id).to_owned())
+                    .filter(
+                        super::entities::team::Column::OrganizationId
+                            .eq(&invitation.organization_id),
+                    )
+                    .one(&transaction)
+                    .await
+                    .map_err(map_db_err)?;
+                if room.is_none() {
+                    return Err(AuthError::bad_request("Team not found"));
+                }
+                let maximum = team_limits
+                    .iter()
+                    .find(|(id, _)| id == team_id)
+                    .and_then(|(_, limit)| *limit);
+                if matches!(
+                    self.add_team_member_in_tx(&transaction, team_id, user_id, maximum)
+                        .await?,
+                    better_auth_core::types::AddTeamMemberResult::LimitReached
+                ) {
+                    return Err(AuthError::Upstream {
+                        status: 403,
+                        code: "TEAM_MEMBER_LIMIT_REACHED",
+                        message: "Team member limit reached",
+                    });
+                }
+            }
+            let created = member::ActiveModel {
+                id: Set(Uuid::new_v4().to_string()),
+                organization_id: Set(invitation.organization_id.clone()),
+                user_id: Set(user_id.to_owned()),
+                role: Set(invitation.role.clone()),
+                created_at: Set(Utc::now()),
+            }
+            .insert(&transaction)
+            .await
+            .map_err(map_db_err)?;
+            let mut active = session.into_active_model();
+            S::Session::set_active_organization_id(
+                &mut active,
+                Some(invitation.organization_id.clone()),
+            );
+            if requested.len() == 1 {
+                S::Session::set_active_team_id(
+                    &mut active,
+                    requested.first().map(|id| (*id).to_owned()),
+                )?;
+            }
+            S::Session::set_updated_at(&mut active, Utc::now());
+            let _ = active.update(&transaction).await.map_err(map_db_err)?;
+            let changed = Entity::update_many()
+                .filter(Column::Id.eq(invitation_id))
+                .filter(Column::Status.eq("pending"))
+                .col_expr(Column::Status, sea_orm::sea_query::Expr::value("accepted"))
+                .exec(&transaction)
+                .await
+                .map_err(map_db_err)?;
+            if changed.rows_affected != 1 {
+                return Err(AuthError::bad_request("Invitation not found"));
+            }
+            let mut invitation = Invitation::from(&invitation);
+            invitation.status = InvitationStatus::Accepted;
+            Ok(Some((
+                invitation,
+                better_auth_core::types::Member::from(&created),
+            )))
+        }
+        .await;
+        match outcome {
+            Ok(value) => {
+                transaction.commit().await.map_err(map_db_err)?;
+                Ok(value)
+            }
+            Err(error) => {
+                transaction.rollback().await.map_err(map_db_err)?;
+                Err(error)
+            }
+        }
     }
 
     async fn get_pending_invitation(

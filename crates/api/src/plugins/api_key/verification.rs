@@ -244,6 +244,8 @@ impl ApiKeyPlugin {
         };
         let meta = better_auth_core::RequestMeta::from_request(req);
         let session = SessionView {
+            active_team_id: None,
+            extension_fields: Default::default(),
             id: view.id,
             token: key.to_owned(),
             user_id: user.id().into_owned(),
