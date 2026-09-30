@@ -64,8 +64,9 @@ pub struct AdminConfig {
     #[config(default = "user".to_string())]
     pub default_role: String,
     /// Roles treated as "admin" for target-admin checks such as impersonation.
-    #[config(default = vec!["admin".to_string()])]
-    pub admin_roles: Vec<String>,
+    /// None uses the default admin role; explicit lists are validated at initialization.
+    #[config(default = None)]
+    pub admin_roles: Option<Vec<String>>,
     /// Users that always bypass admin permission checks.
     #[config(default = None)]
     pub admin_user_ids: Option<Vec<String>>,
@@ -118,6 +119,19 @@ better_auth_core::impl_auth_plugin! {
             &self,
             ctx: &mut better_auth_core::AuthInitContext<S>,
         ) -> better_auth_core::AuthResult<()> {
+            if let Some(admin_roles) = &self.config.admin_roles {
+                let roles = self.config.roles.clone().unwrap_or_else(access::default_roles);
+                let names: Vec<_> = roles.keys().map(|name| name.to_lowercase()).collect();
+                let invalid: Vec<_> = admin_roles.iter()
+                    .filter(|role| !names.contains(&role.to_lowercase()))
+                    .map(String::as_str).collect();
+                if !invalid.is_empty() {
+                    return Err(AuthError::config(format!(
+                        "Invalid admin roles: {}. Admin roles must be defined in the 'roles' configuration.",
+                        invalid.join(", ")
+                    )));
+                }
+            }
             let default_role = self.config.default_role.clone();
             ctx.register_user_create_transform(move |mut input| {
                 _ = input.banned.get_or_insert(false);

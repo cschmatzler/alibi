@@ -111,7 +111,7 @@ async fn test_custom_admin_role_can_use_permission_engine() {
         .unwrap();
 
     let plugin = AdminPlugin::with_config(AdminConfig {
-        admin_roles: vec!["superadmin".to_string()],
+        admin_roles: Some(vec!["superadmin".to_string()]),
         roles: Some(HashMap::from([(
             "superadmin".to_string(),
             RolePermissions::new()

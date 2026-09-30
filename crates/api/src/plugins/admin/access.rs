@@ -112,5 +112,8 @@ pub(super) fn has_permission(
 pub(super) fn is_admin_role(role: Option<&str>, config: &AdminConfig) -> bool {
     role_names(role, &config.default_role)
         .into_iter()
-        .any(|role| config.admin_roles.iter().any(|admin| admin.trim() == role))
+        .any(|role| match &config.admin_roles {
+            None => role == "admin",
+            Some(admins) => admins.iter().any(|admin| admin.trim() == role),
+        })
 }
