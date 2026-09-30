@@ -96,7 +96,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     } catch { return undefined; }
   }
 
-  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false) {
+  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false) {
     if (typeof a === "string" && typeof b === "string" && !path.includes("BodyShape")) {
       const leftJwt=jwt(a),rightJwt=jwt(b);
       if (leftJwt || rightJwt) {
@@ -126,12 +126,14 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     }
     if (Array.isArray(a) && Array.isArray(b)) {
       if (a.length !== b.length) fail(path, "array length differs");
-      a.forEach((child, index) => visit(child, b[index], `${path ? `${path}.` : ""}${index}`, key));
+      a.forEach((child, index) => visit(child, b[index], `${path ? `${path}.` : ""}${index}`, key, false, applicationData || jwtPayload));
       return;
     }
     if (record(a) && record(b)) {
-      const jwk=typeof a.kty==="string" && typeof b.kty==="string" && ["EC","OKP","RSA"].includes(a.kty) && ["EC","OKP","RSA"].includes(b.kty);
-      const jwtClaims=typeof a.exp==="number" && typeof b.exp==="number" && (jwtPayload || ("iss" in a && "iss" in b && "aud" in a && "aud" in b));
+      const jwtClaims=!applicationData && typeof a.exp==="number" && typeof b.exp==="number" && (jwtPayload || ("iss" in a && "iss" in b && "aud" in a && "aud" in b));
+      const inApplicationData=applicationData || jwtPayload || jwtClaims;
+      // User claims retain literal key-shaped content; only public key material carries key entropy.
+      const jwk=!inApplicationData && typeof a.kty==="string" && typeof b.kty==="string" && ["EC","OKP","RSA"].includes(a.kty) && ["EC","OKP","RSA"].includes(b.kty);
       const inClock=(date:unknown,start:number,end:number|undefined)=>typeof date==="number" && Number.isInteger(date) && date>=Math.floor(start/1000)-1 && date<=Math.ceil((end ?? start)/1000)+1;
       const runtimeDates=jwtClaims && (
         (inClock(a.iat,context.leftStartedAt,context.leftFinishedAt) && inClock(b.iat,context.rightStartedAt,context.rightFinishedAt))
@@ -142,7 +144,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       for (const childKey of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
         const childPath = path ? `${path}.${childKey}` : childKey;
         if (!Object.hasOwn(a, childKey) || !Object.hasOwn(b, childKey)) fail(childPath, "field presence differs");
-        else if (childKey==="kid" && (jwk || (typeof a.alg==="string" && typeof b.alg==="string")) && typeof a.kid==="string" && typeof b.kid==="string") identity(a.kid,b.kid,childPath,"entity");
+        else if (childKey==="kid" && !inApplicationData && (jwk || (typeof a.alg==="string" && typeof b.alg==="string")) && typeof a.kid==="string" && typeof b.kid==="string") identity(a.kid,b.kid,childPath,"entity");
         else if (childKey==="sub" && jwtClaims && typeof a.sub==="string" && typeof b.sub==="string" && (leftEntities.has(a.sub)||rightEntities.has(b.sub))) identity(a.sub,b.sub,childPath,"entity");
         else if (runtimeDates && ["iat","exp"].includes(childKey) && typeof a[childKey]==="number" && typeof b[childKey]==="number") clock(a[childKey],b[childKey],childPath);
         else if (jwtClaims && ["iss","aud"].includes(childKey)) visit(a[childKey],b[childKey],childPath,childKey==="iss" ? "issuerURL" : "audienceURL");
@@ -159,7 +161,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           }
           identity(a.key,b.key,childPath,"api-key");
         }
-        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey);
+        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData);
       }
       return;
     }

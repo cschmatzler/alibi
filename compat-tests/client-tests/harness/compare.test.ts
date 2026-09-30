@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { generateKeyPairSync, sign } from "node:crypto";
 import { compareValues } from "../support/compare";
 import { jsonShape, normalizeClientValue } from "../support/normalize";
 import { RAW_DIFF_ALLOWLIST } from "../support/allowlist";
@@ -146,5 +147,27 @@ test("accepted compact JWT encodings retain decoded claims key sizes and token r
     expect(compareValues({ ...a, again: a.token }, { ...b, again: changedSignature }, context).length).toBeGreaterThan(0);
     const shorter = encode(rightHeader, claims, Buffer.alloc(32, 2));
     expect(compareValues(a, { ...b, token: shorter + "=" }, context).length).toBeGreaterThan(0);
+  }
+});
+
+test("nested OKP and EC shaped application claims stay literal alongside real public JWKS", () => {
+  const leftPair = generateKeyPairSync("ed25519"), rightPair = generateKeyPairSync("ed25519");
+  const leftKey = { ...leftPair.publicKey.export({ format: "jwk" }), alg: "EdDSA", kid: "left-key" };
+  const rightKey = { ...rightPair.publicKey.export({ format: "jwk" }), alg: "EdDSA", kid: "right-key" };
+  const encode = (pair: typeof leftPair, kid: string, metadata: unknown) => {
+    const input = [Buffer.from(JSON.stringify({ alg: "EdDSA", kid })).toString("base64url"), Buffer.from(JSON.stringify({ sub: "service", iat: 100, exp: 4102444800, iss: "fixed", aud: "fixed", metadata })).toString("base64url")].join(".");
+    return `${input}.${sign(null, Buffer.from(input), pair.privateKey).toString("base64url")}`;
+  };
+  for (const metadata of [
+    { kty: "OKP", crv: "Ed25519", x: Buffer.alloc(32, 9).toString("base64url") },
+    { kty: "EC", crv: "P-256", x: Buffer.alloc(32, 9).toString("base64url"), y: Buffer.alloc(32, 10).toString("base64url") },
+    { alg: "EdDSA", kid: "application-key-label" },
+  ]) {
+    const left = { jwks: { keys: [leftKey] }, token: encode(leftPair, leftKey.kid, { nested: [metadata] }) };
+    const right = { jwks: { keys: [rightKey] }, token: encode(rightPair, rightKey.kid, { nested: [metadata] }) };
+    expect(compareValues(left, right, context)).toEqual([]);
+    const wrong = "x" in metadata ? { ...metadata, x: Buffer.alloc(32, 11).toString("base64url") } : { ...metadata, kid: "wrong-application-label" };
+    expect(compareValues(left, { ...right, token: encode(rightPair, rightKey.kid, { nested: [wrong] }) }, context).length).toBeGreaterThan(0);
+    expect(compareValues(left, { ...right, token: encode(rightPair, "unrelated-key", { nested: [metadata] }) }, context).length).toBeGreaterThan(0);
   }
 });
