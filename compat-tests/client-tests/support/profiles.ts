@@ -17,6 +17,8 @@ export type FixtureProfile =
   | "email-verification-required"
   | "email-verification-no-signup-mail"
   | "email-verification-failing-notifications"
+  | "jwt-default" | "jwt-es256" | "jwt-es512" | "jwt-rs256" | "jwt-ps256"
+  | "jwt-claims" | "jwt-path-header" | "jwt-plain-rotation"
   | "org-teams-dynamic"
   | "org-roles-limited"
   | "org-roles-no-ac"

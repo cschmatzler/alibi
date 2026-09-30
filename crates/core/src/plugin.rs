@@ -629,6 +629,46 @@ impl<S: AuthSchema> AuthContext<S> {
             req.queue_response_header("Set-Cookie", cookie);
         }
     }
+    /// Read the request's established session without extending its lifetime.
+    /// Before hooks can establish a virtual session; otherwise a signed cookie
+    /// must identify the persistent session.
+    pub async fn session_without_refresh(
+        &self,
+        req: &AuthRequest,
+    ) -> AuthResult<Option<(S::User, crate::wire::SessionView)>> {
+        if let Some(session) = req.virtual_session() {
+            return Ok(self
+                .database
+                .get_user_by_id(&session.user_id)
+                .await?
+                .map(|user| (user, session.clone())));
+        }
+        self.persistent_session(req).await
+    }
+
+    /// Inspect a signed-cookie session without treating a missing login as an error.
+    pub async fn persistent_session(
+        &self,
+        req: &AuthRequest,
+    ) -> AuthResult<Option<(S::User, crate::wire::SessionView)>> {
+        let Some(token) = self.session_manager().extract_session_token(req) else {
+            return Ok(None);
+        };
+        let Some(session) = self.database.get_session(&token).await? else {
+            return Ok(None);
+        };
+        if !session.active() || session.expires_at() <= chrono::Utc::now() {
+            return Ok(None);
+        }
+        let Some(user) = self
+            .database
+            .get_user_by_id(session.user_id().as_ref())
+            .await?
+        else {
+            return Ok(None);
+        };
+        Ok(Some((user, self.session_view(&session))))
+    }
 }
 
 #[cfg(test)]

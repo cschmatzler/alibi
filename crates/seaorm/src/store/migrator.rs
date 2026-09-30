@@ -20,6 +20,7 @@ impl MigratorTrait for AuthMigrator {
             Box::new(super::api_key_numbers::ApiKeyNumbers),
             Box::new(super::identity_fields::PluginIdentityFields),
             Box::new(super::organization_extensions::OrganizationExtensions),
+            Box::new(super::jwks::JwkKeys),
             Box::new(super::nullable_user_flags::NullableUserPluginFlags),
         ]
     }

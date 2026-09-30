@@ -17,7 +17,9 @@ feature builds, TypeScript type checking, harness negative controls, raw wire
 checks, the complete SDK scenario directory, Chromium tests, docs, and LLVM
 line coverage. Default and `axum,seaorm2,redis-cache` configurations are tested;
 `rustls,axum,seaorm2,redis-cache` is also compiled without default features.
-The excluded Rust compatibility server is built and its formatting checked.
+The excluded Rust compatibility server is built, formatted, and tested. Its
+SQLite regression verifies that connection maintenance retains migrated tables
+and persisted user identity throughout the fixture lifetime.
 Missing reference dependencies or an unavailable server fail this gate.
 
 Rust is pinned in `devenv.nix`. `devenv.lock` pins Bun and native packages.
@@ -105,6 +107,18 @@ cargo test --test client_compat_tests organization_dynamic_roles_client_compat -
 The Rust orchestrator starts and checks both servers on allocated ports and
 stops them on completion. Direct Bun scenario runs require running reference
 and Rust servers; configure `AUTH_BASE_URL_TS` and `AUTH_BASE_URL_RUST`.
+
+## Managed JWT capability
+
+`tests/jwt` uses the official `jwtClient` and pinned JOSE 6.2.12 to check public
+JWKS, all five asymmetric signing algorithms, complete authenticated user claims,
+get-session response headers, configured claims/path/header settings, encrypted
+and plain private-key persistence, signing-key rotation and public grace periods.
+Trusted signing and verification run through fixture-only server controls.
+
+Run `./compat-tests/client-tests/run-against-both.sh jwt` for this family.
+Automatic JWT-backed core session cookie caching remains a separate integration
+boundary; the managed-keyring plugin exposes no inactive cache option.
 
 Organization-team checks use dedicated teams, no-default-team, request-dependent
 limit, and removable-final-team configurations under `/__test/profiles/`. Private

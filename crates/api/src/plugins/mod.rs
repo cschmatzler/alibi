@@ -7,6 +7,7 @@ pub mod email_otp;
 pub mod email_password;
 pub mod email_verification;
 pub mod helpers;
+pub mod jwt;
 pub mod magic_link;
 pub mod oauth;
 pub mod organization;

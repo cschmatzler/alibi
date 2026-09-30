@@ -66,6 +66,10 @@ base64 = "0.22"
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
 sha2 = "0.10"
 aes-gcm = "0.10"
+ed25519-dalek = { version = "2", features = ["rand_core", "pkcs8"] }
+p256 = { version = "0.13", features = ["pkcs8"] }
+p521 = { version = "0.13", features = ["pkcs8"] }
+rsa = { version = "0.9", features = ["sha2"] }
 chacha20poly1305 = "0.10"
 hkdf = "0.12"
 hmac = "0.12"
@@ -204,3 +208,10 @@ inherits = "release"
 opt-level = 2
 lto = "thin"
 codegen-units = 16
+
+# Keep managed RSA key generation practical in debug and compatibility builds.
+[profile.dev.package.rsa]
+opt-level = 3
+
+[profile.dev.package.num-bigint-dig]
+opt-level = 3

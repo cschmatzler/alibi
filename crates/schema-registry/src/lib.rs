@@ -134,6 +134,25 @@ pub fn core_fields(role: EntityRole) -> &'static [FieldDef] {
 
 static PLUGINS: &[PluginSchema] = &[
     PluginSchema {
+        name: "jwt",
+        user_fields: &[],
+        session_fields: &[],
+        extra_entities: &[ExtraEntitySchema {
+            mod_name: "jwk",
+            table_name: "jwks",
+            role: None,
+            fields: &[
+                pk!("id", "String"),
+                f!("public_key", "String"),
+                f!("private_key", "String"),
+                f!("created_at", "DateTimeUtc"),
+                f!("expires_at", "Option<DateTimeUtc>"),
+                f!("alg", "Option<String>"),
+                f!("crv", "Option<String>"),
+            ],
+        }],
+    },
+    PluginSchema {
         name: "anonymous",
         user_fields: &[f!("is_anonymous", "Option<bool>")],
         session_fields: &[],

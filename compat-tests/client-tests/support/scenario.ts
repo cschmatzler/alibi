@@ -115,6 +115,7 @@ export type ScenarioContext = ScenarioServerContext;
 type ScenarioRun = {
   oauthURL: string;
   startedAt: number;
+  finishedAt: number;
   observation: unknown;
   traces: TraceEntry[];
 };
@@ -251,6 +252,7 @@ async function runScenario(
     oauthURL: health.oauthBaseURL ?? baseURL.replace("localhost", "127.0.0.1"),
     startedAt,
     observation: normalizeClientValue(await scenario(context)),
+    finishedAt: Date.now(),
     traces,
   };
 }
@@ -271,6 +273,7 @@ export function compatScenario(
     const comparison = {
       leftBaseURL: TS_BASE_URL, rightBaseURL: RUST_BASE_URL,
       leftStartedAt: ts.startedAt, rightStartedAt: rust.startedAt,
+      leftFinishedAt: ts.finishedAt, rightFinishedAt: rust.finishedAt,
       leftOAuthURL: ts.oauthURL, rightOAuthURL: rust.oauthURL,
     };
     // Retain one identity graph across values and transport, and give the

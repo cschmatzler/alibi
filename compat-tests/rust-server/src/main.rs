@@ -44,10 +44,11 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
+mod jwt_fixture;
 mod lifecycle_fixture;
 mod magic_profiles;
-mod otp_profiles;
 mod organization_timestamp_fixture;
+mod otp_profiles;
 mod parity_controls;
 mod session_profiles;
 mod sqlite_fixture;
@@ -218,6 +219,9 @@ fn default_github_profile() -> GitHubProfile {
 }
 
 async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr> {
+    better_auth_seaorm::store::entities::jwk::Entity::delete_many()
+        .exec(database)
+        .await?;
     device_code::Entity::delete_many().exec(database).await?;
     passkey::Entity::delete_many().exec(database).await?;
     api_key::Entity::delete_many().exec(database).await?;
@@ -720,6 +724,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     let otp_outbox_for_reset = otp_outbox.clone();
     let auth_router = auth.clone().axum_router();
+    let jwt_router = jwt_fixture::router(&config, reset_database.clone()).await?;
 
     let reset_outbox_for_token = reset_outbox.clone();
     let reset_outbox_for_reset = reset_outbox.clone();
@@ -1538,6 +1543,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }))
             }),
         )
+        .merge(jwt_router)
         .merge(team_router)
         .nest("/api/auth", auth_router)
         .with_state(auth)

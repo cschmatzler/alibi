@@ -553,12 +553,16 @@ dependencies = [
  "chacha20poly1305",
  "chrono",
  "cookie",
+ "ed25519-dalek",
  "hkdf",
  "hmac",
  "jsonwebtoken",
  "nonzero_ext",
+ "p256",
+ "p521",
  "rand 0.8.5",
  "reqwest",
+ "rsa",
  "ryu-js",
  "serde",
  "serde_cbor_2",
@@ -1312,6 +1316,7 @@ checksum = "70e796c081cee67dc755e1a36a0a172b897fab85fc3f6bc48307991f64e4eca9"
 dependencies = [
  "curve25519-dalek",
  "ed25519",
+ "rand_core 0.6.4",
  "serde",
  "sha2",
  "subtle",
@@ -2591,6 +2596,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "p521"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fc9e2161f1f215afdfce23677034ae137bbd45016a880c2eb3ba8eb95f085b2"
+dependencies = [
+ "base16ct",
+ "ecdsa",
+ "elliptic-curve",
+ "primeorder",
+ "rand_core 0.6.4",
+ "sha2",
+]
+
+[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3229,6 +3248,7 @@ dependencies = [
  "pkcs1",
  "pkcs8",
  "rand_core 0.6.4",
+ "sha2",
  "signature",
  "spki",
  "subtle",

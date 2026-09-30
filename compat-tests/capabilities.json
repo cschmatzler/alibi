@@ -125,12 +125,12 @@
     {
       "route": "GET /jwks",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "JWT default JWKS token and get-session header carry the complete authenticated user",
+        "rejection": "JWT configured issuer audience lifetime and path header branches remain observable",
         "authorization": null,
-        "state": null
+        "state": "JWT rotation persists replacement keys and retains expired public keys only through grace"
       }
     },
     {
@@ -433,12 +433,12 @@
     {
       "route": "GET /token",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "JWT default JWKS token and get-session header carry the complete authenticated user",
+        "rejection": "JWT default JWKS token and get-session header carry the complete authenticated user",
+        "authorization": "JWT default JWKS token and get-session header carry the complete authenticated user",
+        "state": "JWT rotation persists replacement keys and retains expired public keys only through grace"
       }
     },
     {

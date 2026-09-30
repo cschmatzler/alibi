@@ -630,3 +630,16 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
             .await
     }
 }
+
+#[async_trait]
+impl<S: AuthSchema> JwkStore for PluginStore<S> {
+    async fn list_jwks(&self) -> AuthResult<Vec<Jwk>> {
+        self.inner.list_jwks().await
+    }
+    async fn get_jwk_by_id(&self, _id: &str) -> AuthResult<Option<Jwk>> {
+        self.inner.get_jwk_by_id(_id).await
+    }
+    async fn create_jwk(&self, _data: CreateJwk) -> AuthResult<Jwk> {
+        self.inner.create_jwk(_data).await
+    }
+}

@@ -4,10 +4,9 @@ import { Database } from "bun:sqlite";
 import { passkey } from "@better-auth/passkey";
 import { betterAuth } from "better-auth";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
-import { APIError } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { apiKey } from "@better-auth/api-key";
-import { admin, deviceAuthorization, emailOTP, magicLink, twoFactor, username } from "better-auth/plugins";
+import { admin, deviceAuthorization, emailOTP, magicLink, twoFactor, username, jwt } from "better-auth/plugins";
 import { organization } from "better-auth/plugins/organization";
 import { createAccessControl } from "better-auth/plugins/access";
 import { defaultStatements } from "better-auth/plugins/organization/access";
@@ -452,6 +451,29 @@ for (const name of ["magic-link-hashed", "magic-link-disabled"]) {
 const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
 
+const JWT_PROFILE_NAMES = ["jwt-default", "jwt-es256", "jwt-es512", "jwt-rs256", "jwt-ps256", "jwt-claims", "jwt-path-header", "jwt-plain-rotation"] as const;
+const jwtProfiles = new Map(JWT_PROFILE_NAMES.map(name => {
+  const options = {
+    ...authOptions,
+    basePath: `/__test/profiles/${name}/api/auth`,
+    plugins: [...authOptions.plugins, jwt({
+      jwks: {
+        keyPairConfig: name === "jwt-es256" ? {alg:"ES256",crv:"P-256"} : name === "jwt-es512" ? {alg:"ES512",crv:"P-521"} : name === "jwt-rs256" ? {alg:"RS256"} : name === "jwt-ps256" ? {alg:"PS256"} : {alg:"EdDSA",crv:"Ed25519"},
+        ...(name === "jwt-path-header" ? {jwksPath:"/.well-known/jwks.json"} : {}),
+        ...(name === "jwt-plain-rotation" ? {disablePrivateKeyEncryption:true,rotationInterval:3600,gracePeriod:3600} : {}),
+      },
+      ...(name === "jwt-claims" ? {jwt:{issuer:"fixture-issuer",audience:"fixture-audience",expirationTime:"60s"}} : {}),
+      disableSettingJwtHeader:name === "jwt-path-header",
+    })],
+  };
+  return [name,{auth:betterAuth(options),options}] as const;
+}));
+await (await getMigrations(jwtProfiles.get("jwt-default")!.options)).runMigrations();
+
+function jwtRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 type RolePolicyBarrier = {entered:Promise<void>; enter:()=>void; released:Promise<void>; release:()=>void};
 const rolePolicyBarriers = new Map<string,RolePolicyBarrier>();
 async function waitForRolePolicy(promise:Promise<void>, message:string) {
@@ -613,6 +635,8 @@ async function resetDatabaseState() {
       where: [],
     });
   }
+  const context = await jwtProfiles.get("jwt-default")!.auth.$context;
+  await context.adapter.deleteMany({model:"jwks",where:[]});
 }
 
 const server = Bun.serve({
@@ -637,6 +661,32 @@ const server = Bun.serve({
 
       if (url.pathname === "/__health") {
         return jsonResponse({ ok: true, oauthBaseURL });
+      }
+
+      for (const [name,profile] of jwtProfiles) {
+        const path = `/__test/profiles/${name}/api/auth`;
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return profile.auth.handler(request);
+      }
+      if (url.pathname === "/__test/jwks-state" && request.method === "GET") {
+        const context = await jwtProfiles.get("jwt-default")!.auth.$context;
+        const keys = await context.adapter.findMany<{id:string;publicKey:string;privateKey:string;createdAt:Date;expiresAt:Date|null;alg:string|null;crv:string|null}>({model:"jwks",sortBy:{field:"createdAt",direction:"asc"}});
+        return jsonResponse(keys.map(key => ({id:key.id,publicKey:JSON.parse(key.publicKey),privateKeyEncrypted:typeof JSON.parse(key.privateKey) === "string",createdAt:key.createdAt,expiresAt:key.expiresAt,alg:key.alg,crv:key.crv})));
+      }
+      if (url.pathname === "/__test/expire-jwk" && request.method === "POST") {
+        const body: unknown = await readJson(request);
+        if (!jwtRecord(body) || typeof body.id !== "string" || typeof body.expiresAt !== "string" || !Number.isFinite(Date.parse(body.expiresAt))) return jsonResponse({message:"id and valid expiresAt are required"},{status:400});
+        const context = await jwtProfiles.get("jwt-default")!.auth.$context;
+        await context.adapter.updateMany({model:"jwks",where:[{field:"id",value:body.id}],update:{expiresAt:new Date(body.expiresAt)}});
+        return jsonResponse({status:true});
+      }
+      if (url.pathname === "/__test/jwt" && request.method === "POST") {
+        const body: unknown = await readJson(request);
+        if (!jwtRecord(body)) return jsonResponse({message:"invalid server operation"},{status:400});
+        const selected = jwtProfiles.get(typeof body.profile === "string" ? body.profile as typeof JWT_PROFILE_NAMES[number] : "jwt-default")?.auth;
+        if (!selected) return jsonResponse({message:"unknown fixture profile"},{status:400});
+        if (body.operation === "sign" && jwtRecord(body.payload)) return jsonResponse(await selected.api.signJWT({body:{payload:body.payload}}));
+        if (body.operation === "verify" && typeof body.token === "string") return jsonResponse(await selected.api.verifyJWT({body:{token:body.token,...(typeof body.issuer === "string" ? {issuer:body.issuer} : {})}}));
+        return jsonResponse({message:"invalid server operation"},{status:400});
       }
 
       if (url.pathname === "/__test/password" && request.method === "POST") {

@@ -19,14 +19,14 @@ pub(crate) fn encrypt(plain: &str, secret: &str) -> AuthResult<String> {
     let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
     let ciphertext = cipher
         .encrypt(&nonce, plain.as_bytes())
-        .map_err(|_| AuthError::internal("OTP encryption failed"))?;
+        .map_err(|_| AuthError::internal("token encryption failed"))?;
     let bytes = nonce.iter().copied().chain(ciphertext);
     Ok(bytes.map(|byte| format!("{byte:02x}")).collect())
 }
 
 pub(crate) fn decrypt(stored: &str, secret: &str) -> AuthResult<String> {
     if !stored.len().is_multiple_of(2) {
-        return Err(AuthError::internal("Invalid encrypted OTP"));
+        return Err(AuthError::internal("Invalid encrypted token"));
     }
     let bytes: Vec<u8> = stored
         .as_bytes()
@@ -35,16 +35,17 @@ pub(crate) fn decrypt(stored: &str, secret: &str) -> AuthResult<String> {
         .iter()
         .map(|chunk| {
             let value = std::str::from_utf8(chunk)
-                .map_err(|_| AuthError::internal("Invalid encrypted OTP"))?;
-            u8::from_str_radix(value, 16).map_err(|_| AuthError::internal("Invalid encrypted OTP"))
+                .map_err(|_| AuthError::internal("Invalid encrypted token"))?;
+            u8::from_str_radix(value, 16)
+                .map_err(|_| AuthError::internal("Invalid encrypted token"))
         })
         .collect::<AuthResult<_>>()?;
     let (nonce, ciphertext) = bytes
         .split_at_checked(24)
-        .ok_or_else(|| AuthError::internal("Invalid encrypted OTP"))?;
+        .ok_or_else(|| AuthError::internal("Invalid encrypted token"))?;
     let cipher = XChaCha20Poly1305::new(&Sha256::digest(secret.as_bytes()));
     let plain = cipher
         .decrypt(XNonce::from_slice(nonce), ciphertext)
-        .map_err(|_| AuthError::internal("OTP decryption failed"))?;
-    String::from_utf8(plain).map_err(|_| AuthError::internal("Invalid encrypted OTP"))
+        .map_err(|_| AuthError::internal("token decryption failed"))?;
+    String::from_utf8(plain).map_err(|_| AuthError::internal("Invalid encrypted token"))
 }

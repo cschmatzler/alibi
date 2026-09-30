@@ -135,6 +135,8 @@ forwarding!(TransactionStore<Schema> {
 });
 
 #[async_trait]
+impl JwkStore for PolicyStore {}
+
 impl TeamStore for PolicyStore {}
 #[async_trait]
 impl OrganizationRoleStore for PolicyStore {}

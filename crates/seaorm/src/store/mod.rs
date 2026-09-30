@@ -8,6 +8,7 @@ mod device_codes;
 pub mod entities;
 mod identity_fields;
 mod invitations;
+mod jwks;
 mod members;
 mod migrator;
 mod nullable_user_flags;
