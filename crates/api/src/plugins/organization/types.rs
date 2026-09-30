@@ -1,5 +1,6 @@
 use better_auth_core::entity::MemberUserView;
 use better_auth_core::entity::{AuthMember, AuthOrganization};
+use better_auth_core::utils::json::JsValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use validator::Validate;
@@ -13,30 +14,27 @@ pub(super) fn deserialize_coercible_string<'de, D>(deserializer: D) -> Result<St
 where
     D: serde::Deserializer<'de>,
 {
-    fn string(value: &serde_json::Value) -> Result<String, &'static str> {
+    fn string(value: &JsValue) -> Result<String, &'static str> {
         match value {
-            serde_json::Value::Null => Ok("null".to_owned()),
-            serde_json::Value::Bool(value) => Ok(value.to_string()),
-            serde_json::Value::String(value) => Ok(value.clone()),
-            serde_json::Value::Number(value) => value
-                .as_f64()
-                .map(|value| ryu_js::Buffer::new().format(value).to_owned())
-                .ok_or("Cannot convert number to string"),
-            serde_json::Value::Array(values) => values
+            JsValue::Null => Ok("null".to_owned()),
+            JsValue::Bool(value) => Ok(value.to_string()),
+            JsValue::String(value) => Ok(value.clone()),
+            JsValue::Number(value) => Ok(ryu_js::Buffer::new().format(*value).to_owned()),
+            JsValue::Array(values) => values
                 .iter()
                 .map(|value| match value {
-                    serde_json::Value::Null => Ok(String::new()),
+                    JsValue::Null => Ok(String::new()),
                     value => string(value),
                 })
                 .collect::<Result<Vec<_>, _>>()
                 .map(|values| values.join(",")),
-            serde_json::Value::Object(value) if value.contains_key("toString") => {
+            JsValue::Object(value) if value.contains_key("toString") => {
                 Err("Cannot convert object to primitive value")
             }
-            serde_json::Value::Object(_) => Ok("[object Object]".to_owned()),
+            JsValue::Object(_) => Ok("[object Object]".to_owned()),
         }
     }
-    let value = better_auth_core::utils::json::deserialize_value(deserializer)?;
+    let value = JsValue::deserialize(deserializer)?;
     string(&value).map_err(serde::de::Error::custom)
 }
 

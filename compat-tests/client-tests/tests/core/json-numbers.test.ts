@@ -146,3 +146,45 @@ compatScenario("JSON request grammar rejects malformed numbers structures and es
   expect((await actor.client.getSession()).data).toBeNull();
   return { rejected };
 });
+
+compatScenario("raw team member ID coercion selects infinity owners before JSON normalization", async (ctx) => {
+  const { data, state, signUp, serverOperation } = await import("../organization-extensions/helpers");
+  const owner = await signUp(ctx, "numeric-coercion-owner");
+  const actor = ctx.actor("numeric-coercion-owner", "org-teams");
+  const org = data(await owner.client.organization.create({ name: "Numeric ID Org", slug: ctx.uniqueToken("numeric-id-org") }));
+  const team = data(await owner.client.organization.createTeam({ name: "Numeric ID Team", organizationId: org.id }));
+  const ids = ["Infinity", "-Infinity", "Infinity,-Infinity,", "null", ",,", "[object Object]"];
+  const seeded = [];
+  for (const [index, id] of ids.entries()) {
+    const seed = await serverOperation(ctx, { operation: "seed-member", organizationId: org.id, id, email: ctx.uniqueEmail(`numeric-member-${index}`), name: id });
+    expect(seed.status).toBe(200);
+    expect(seed.body).toMatchObject({ userId: id });
+    seeded.push(seed);
+  }
+  const results = [];
+  for (const [literal, expected] of [["1e400", "Infinity"], ["-1e400", "-Infinity"], ["[1e400,-1e400,null]", "Infinity,-Infinity,"], ['{"$serde_json::private::RawValue":"hello"}', "[object Object]"], ['{"$serde_json::private::Number":"1e400"}', "[object Object]"]] as const) {
+    const response = await actor.fetch(new URL("/api/auth/organization/add-team-member", ctx.baseURL), {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: `{"teamId":${JSON.stringify(team.id)},"organizationId":${JSON.stringify(org.id)},"userId":${literal}}`,
+    });
+    expect(response.status).toBe(200);
+    const added = z.object({ id: z.string(), teamId: z.string(), userId: z.string() }).passthrough().parse(await response.json());
+    expect(added.userId).toBe(expected);
+    expect(added.teamId).toBe(team.id);
+    const stored = await state(ctx, org.id);
+    const selected = stored.parsed.teamMembers.filter(member => member.teamId === team.id);
+    expect(selected).toHaveLength(1);
+    expect(selected[0]?.userId).toBe(expected);
+    expect(selected.some(member => member.userId === "null" || member.userId === ",,")).toBe(false);
+    const removedResponse = await actor.fetch(new URL("/api/auth/organization/remove-team-member", ctx.baseURL), {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: `{"teamId":${JSON.stringify(team.id)},"organizationId":${JSON.stringify(org.id)},"userId":${literal}}`,
+    });
+    expect(removedResponse.status).toBe(200);
+    const removed: unknown = await removedResponse.json();
+    const after = await state(ctx, org.id);
+    expect(after.parsed.teamMembers.filter(member => member.teamId === team.id)).toHaveLength(0);
+    results.push({ added, stored: stored.raw, removed, after: after.raw });
+  }
+  return { seeded, results };
+});

@@ -76,7 +76,7 @@ Four public-builder/real SQLite native integrations protect distinct contracts:
 Before the bind repair, 1e20 persisted as 1e+20. Before float_roundtrip, tiny JSON
 readback produced 31511b97697f234d. Those meaningful failures are logged separately.
 These SQL/binary checks detect failures parsed SDK comparison cannot observe.
-Four dual-server SDK scenarios cover raw literals, paired surrogate escapes,
+Five dual-server SDK scenarios cover raw literals, paired surrogate escapes,
 duplicate keys, both private marker families, delivery/magic-link consumption,
 API-key create/get/update/verify plus denied foreign ownership, organization
 create/update/readback, and invalid JSON without delivery/session creation.
@@ -97,7 +97,7 @@ Tests cover separate callback, wire, signed-byte, persistence and adapter risks;
 no wrapper/export exists only for a test. Expected SQL/claim text and binary
 values are independently specified. No exemptions/skips/inventory/coverage
 changes occur. Focused proofs: 4 native integrations; 155 core and 301 API library
-tests; 4 numeric SDK scenarios / 120 assertions; 20 native managed JWT tests and 9
+tests; 5 numeric SDK scenarios / 290 assertions; 20 native managed JWT tests and 9
 JWT SDK scenarios / 530 assertions; TypeScript; production workspace Clippy;
 formatting/diff checks. Coordinator owns the canonical full gate and inventory.
 
@@ -119,3 +119,13 @@ embedding interface is declared audited.
 The code-execution review traced raw request bytes through the bounded JSON
 decoder into typed DTOs and parameter-bound SQLite writes. It found no eval,
 shell, template, dynamic-loading or executable-deserialization sink.
+
+Independent review also reproduced raw team userId coercion selecting the
+`null` owner for 1e400. The repaired String coercion reads JsValue before finite
+conversion. A fifth dual-server scenario seeds real Infinity/-Infinity/array
+coercion owners and separate null owners with the existing fixture, then adds
+and removes actual team members and inspects persisted ownership/counters.
+Both private marker objects retain ordinary object String coercion. The before
+SDK run selected userId null instead of Infinity; after repair 5 scenarios and
+290 assertions pass. 32 organization native tests and production API Clippy pass.
+Custom raw JWT callback claim production remains a separate JWT owner slice.
