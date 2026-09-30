@@ -14,7 +14,6 @@ use better_auth_core::store::ListOrganizationMembersParams;
 use better_auth_core::types::{
     AuthRequest, AuthResponse, CreateMember, CreateOrganization, UpdateOrganization,
 };
-use better_auth_core::utils::cookie_utils::create_session_cookie;
 use better_auth_core::wire::{InvitationView, SessionView};
 use std::collections::HashMap;
 
@@ -708,8 +707,41 @@ pub async fn handle_set_active_organization(
             .active_organization_id()
             .is_some_and(|id| !id.is_empty())
     {
-        let cookie_header = create_session_cookie(session.token(), &ctx.config);
-        response = response.with_header("Set-Cookie", cookie_header);
+        use better_auth_core::utils::cookie_utils::{
+            create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
+            sign_cookie_value, verify_cookie_value,
+        };
+        let preference = related_cookie_name(&ctx.config, "dont_remember");
+        let dont_remember = req.header("cookie").is_some_and(|header| {
+            cookie::Cookie::split_parse(header)
+                .flatten()
+                .find(|cookie| cookie.name() == preference)
+                .and_then(|cookie| verify_cookie_value(cookie.value(), &ctx.config.secret))
+                .is_some_and(|value| !value.is_empty())
+        });
+        response = response.with_appended_header(
+            "Set-Cookie",
+            create_session_cookie_with_max_age(
+                Some(session.token()),
+                if dont_remember {
+                    None
+                } else {
+                    Some(ctx.config.session.expires_in.num_seconds())
+                },
+                &ctx.config,
+            ),
+        );
+        if dont_remember {
+            response = response.with_appended_header(
+                "Set-Cookie",
+                create_session_like_cookie(
+                    &preference,
+                    &sign_cookie_value("true", &ctx.config.secret),
+                    None,
+                    &ctx.config,
+                ),
+            );
+        }
     }
     Ok(response)
 }
