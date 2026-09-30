@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 use serde_json::{Value, json};
 
 /// A model field's wire schema and input/output policy.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OpenApiField {
     pub name: String,
     pub schema: Value,
@@ -77,6 +77,8 @@ pub struct OpenApiEndpoint {
     pub request_body: Option<Value>,
     pub responses: IndexMap<String, Value>,
     pub server_only: bool,
+    /// Rust extension omitted by the pinned-equivalent document policy.
+    pub native_extension: bool,
 }
 
 /// A plugin's endpoint annotations and schema additions.
@@ -114,6 +116,8 @@ pub(crate) struct RegisteredEndpoint {
 pub struct OpenApiRegistry {
     pub(crate) endpoints: Vec<RegisteredEndpoint>,
     pub(crate) models: IndexMap<String, OpenApiModel>,
+    pub(crate) user_input_fields: IndexMap<String, OpenApiField>,
+    pub(crate) core_overrides: Vec<OpenApiModel>,
 }
 impl OpenApiRegistry {
     /// Actual dispatch routes, including routes omitted from generated documentation.
@@ -126,7 +130,28 @@ impl OpenApiRegistry {
 
     pub fn new(models: Vec<OpenApiModel>) -> Self {
         let mut registry = Self::default();
+        let defaults = super::annotations::core_models();
         for model in models {
+            if let Some(default) = defaults.iter().find(|default| default.name == model.name) {
+                let overrides = model
+                    .fields
+                    .iter()
+                    .filter(|field| !default.fields.contains(field))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if model.name == "User" {
+                    for field in &overrides {
+                        let _ = registry
+                            .user_input_fields
+                            .insert(field.name.clone(), field.clone());
+                    }
+                }
+                if !overrides.is_empty() {
+                    registry
+                        .core_overrides
+                        .push(OpenApiModel::new(model.name.clone(), overrides));
+                }
+            }
             registry.merge_model(model);
         }
         registry
@@ -144,14 +169,30 @@ impl OpenApiRegistry {
                 .find(|(method, path, _)| *method == route.method && *path == route.path)
                 .map(|(_, _, value)| value.clone())
                 .unwrap_or_default();
+            let owner = if plugin == "email-password"
+                && matches!(
+                    route.path.as_str(),
+                    "/sign-in/username" | "/is-username-available"
+                ) {
+                "username"
+            } else {
+                plugin
+            };
             self.endpoints.push(RegisteredEndpoint {
-                core: super::annotations::is_core(plugin),
-                plugin: plugin.into(),
+                core: super::annotations::is_core(owner),
+                plugin: owner.into(),
                 route,
                 metadata: annotation,
             });
         }
         for model in metadata.models {
+            if model.name == "User" {
+                for field in &model.fields {
+                    let _ = self
+                        .user_input_fields
+                        .insert(field.name.clone(), field.clone());
+                }
+            }
             self.merge_model(model);
         }
     }

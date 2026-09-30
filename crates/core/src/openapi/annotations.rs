@@ -86,8 +86,25 @@ pub fn plugin_metadata(plugin: &str, routes: &[AuthRoute]) -> PluginOpenApiMetad
         metadata.endpoints.push((
             route.method.clone(),
             route.path.clone(),
-            endpoint(&route.path),
+            super::source_endpoints::endpoint(
+                if plugin == "email-password"
+                    && matches!(
+                        route.path.as_str(),
+                        "/sign-in/username" | "/is-username-available"
+                    )
+                {
+                    "username"
+                } else {
+                    plugin
+                },
+                &route.path,
+            )
+            .unwrap_or_else(|| endpoint(&route.path)),
         ));
+    }
+    if let Some(models) = super::source_models::models(plugin) {
+        metadata.models = models;
+        return metadata;
     }
     if let Some(schema) = plugin_schemas().iter().find(|schema| schema.name == plugin) {
         for (name, definitions) in [
@@ -136,6 +153,7 @@ pub fn instance_plugin_metadata<S: crate::AuthSchema>(
 }
 pub fn core_routes() -> Vec<AuthRoute> {
     vec![
+        AuthRoute::get(crate::core_paths::OPENAPI_SPEC, "openapi_spec"),
         AuthRoute::get("/ok", "ok"),
         AuthRoute::get("/error", "error"),
         AuthRoute::post("/update-user", "update_user"),
@@ -145,6 +163,12 @@ fn response(description: &str, schema: Value) -> Value {
     json!({"description":description,"content":{"application/json":{"schema":schema}}})
 }
 fn endpoint(path: &str) -> OpenApiEndpoint {
+    if path == crate::core_paths::OPENAPI_SPEC {
+        return OpenApiEndpoint {
+            native_extension: true,
+            ..Default::default()
+        };
+    }
     if let Some(metadata) = super::sign_in_annotations::endpoint(path)
         .or_else(|| super::oauth_annotations::endpoint(path))
     {

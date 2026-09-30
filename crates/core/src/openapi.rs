@@ -2,12 +2,15 @@
 mod account_annotations;
 pub mod annotations;
 mod email_annotations;
+mod input_annotations;
 mod metadata;
 mod model_annotations;
 mod oauth_annotations;
 mod password_annotations;
 mod session_annotations;
 mod sign_in_annotations;
+mod source_endpoints;
+mod source_models;
 mod user_annotations;
 pub use metadata::{
     OpenApiEndpoint, OpenApiField, OpenApiModel, OpenApiRegistry, PluginOpenApiMetadata,
@@ -91,10 +94,36 @@ impl OpenApiBuilder {
     }
     /// Construct the upstream document defaults from an immutable instance snapshot.
     pub fn registered(config: &AuthConfig, registry: &OpenApiRegistry) -> Self {
+        Self::registered_with_native_extensions(config, registry, false)
+    }
+    /// Include documented Rust extensions while retaining upstream generator defaults.
+    pub fn registered_with_native_extensions(
+        config: &AuthConfig,
+        registry: &OpenApiRegistry,
+        include_native_extensions: bool,
+    ) -> Self {
         let mut builder = Self::new("Better Auth", "1.1.0")
             .description("API Reference for your Better Auth Instance");
         let mut schemas = serde_json::Map::new();
         for model in registry.models.values() {
+            let mut model = model.clone();
+            if let Some(overrides) = registry
+                .core_overrides
+                .iter()
+                .find(|overrides| overrides.name == model.name)
+            {
+                for field in &overrides.fields {
+                    if let Some(current) = model
+                        .fields
+                        .iter_mut()
+                        .find(|current| current.name == field.name)
+                    {
+                        *current = field.clone();
+                    } else {
+                        model.fields.push(field.clone());
+                    }
+                }
+            }
             let _ = schemas.insert(model.name.clone(), model.to_schema());
         }
         builder.spec.components = Some(json!({"schemas":schemas,"securitySchemes":{
@@ -117,6 +146,7 @@ impl OpenApiBuilder {
             {
                 if endpoint.plugin == "open-api"
                     || endpoint.metadata.server_only
+                    || (endpoint.metadata.native_extension && !include_native_extensions)
                     || config.is_path_disabled(&endpoint.route.path)
                     || endpoint
                         .metadata
@@ -126,12 +156,18 @@ impl OpenApiBuilder {
                 {
                     continue;
                 }
+                let mut metadata = endpoint.metadata.clone();
+                input_annotations::apply(
+                    &endpoint.route.path,
+                    &mut metadata,
+                    &registry.user_input_fields,
+                );
                 builder = builder.annotated(
                     &endpoint.route.method,
                     &endpoint.route.path,
                     &endpoint.plugin,
                     endpoint.core,
-                    &endpoint.metadata,
+                    &metadata,
                 );
             }
         }

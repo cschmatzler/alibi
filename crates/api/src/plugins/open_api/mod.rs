@@ -11,6 +11,8 @@ pub struct OpenApiConfig {
     pub theme: Option<String>,
     pub nonce: Option<String>,
     pub disable_default_reference: bool,
+    /// Include native Rust extensions; defaults to pinned-equivalent documentation.
+    pub include_native_extensions: bool,
 }
 impl OpenApiConfig {
     pub fn path(mut self, path: impl Into<String>) -> Self {
@@ -23,6 +25,10 @@ impl OpenApiConfig {
     }
     pub fn nonce(mut self, nonce: impl Into<String>) -> Self {
         self.nonce = Some(nonce.into());
+        self
+    }
+    pub fn include_native_extensions(mut self, included: bool) -> Self {
+        self.include_native_extensions = included;
         self
     }
     pub fn disable_default_reference(mut self, disabled: bool) -> Self {
@@ -78,7 +84,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OpenApiPlugin {
             .extensions
             .get::<OpenApiRegistry>()
             .ok_or_else(|| AuthError::internal("OpenAPI registry is not initialized"))?;
-        let spec = OpenApiBuilder::registered(&ctx.config, &registry).build();
+        let spec = OpenApiBuilder::registered_with_native_extensions(
+            &ctx.config,
+            &registry,
+            self.config.include_native_extensions,
+        )
+        .build();
         if req.path() == "/open-api/generate-schema" {
             return Ok(Some(AuthResponse::json(200, &spec)?));
         }

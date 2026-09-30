@@ -696,6 +696,18 @@ better_auth_core::impl_auth_plugin! {
         get  "/api-key/list"                      => handle_list,               "api_key_list";
     }
     extra {
+        fn openapi_metadata(&self,ctx:&better_auth_core::AuthInitContext<S>)->better_auth_core::PluginOpenApiMetadata {
+            let mut metadata=better_auth_core::openapi::annotations::instance_plugin_metadata("api-key",&<Self as better_auth_core::AuthPlugin<S>>::routes(self),ctx);
+            let defaults=self.configurations.first().filter(|_|self.configurations.len()==1).map(|config|config.rate_limit.clone()).unwrap_or_default();
+            for model in &mut metadata.models {
+                if model.name!="Apikey" {continue;}
+                for field in &mut model.fields {
+                    let value=match field.name.as_str() {"rateLimitTimeWindow"=>defaults.time_window,"rateLimitMax"=>defaults.max_requests,_=>continue};
+                    if let Some(schema)=field.schema.as_object_mut() {let _=schema.insert("default".into(),serde_json::json!(value));}
+                }
+            }
+            metadata
+        }
         async fn on_init(&self, _ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
             if self.configurations.len() > 1 {
                 let mut ids = std::collections::HashSet::new();

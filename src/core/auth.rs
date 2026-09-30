@@ -435,9 +435,7 @@ impl<S: AuthSchema> BetterAuth<S> {
     /// Snapshot of actual registered routes, independent of documentation filters.
     /// The native embedding endpoint `/__test/openapi.json` is a Rust extension.
     pub fn registered_routes(&self) -> Vec<AuthRoute> {
-        let mut routes = self.openapi.registered_routes();
-        routes.push(AuthRoute::get(core_paths::OPENAPI_SPEC, "openapi_spec"));
-        routes
+        self.openapi.registered_routes()
     }
 
     /// Get all plugins.
@@ -461,6 +459,11 @@ impl<S: AuthSchema> BetterAuth<S> {
     /// Generate the OpenAPI spec for all registered routes.
     pub fn openapi_spec(&self) -> OpenApiSpec {
         OpenApiBuilder::registered(&self.config, &self.openapi).build()
+    }
+
+    /// Generate documentation including registered Rust extension endpoints.
+    pub fn openapi_spec_with_native_extensions(&self) -> OpenApiSpec {
+        OpenApiBuilder::registered_with_native_extensions(&self.config, &self.openapi, true).build()
     }
 
     /// Handle core authentication requests.

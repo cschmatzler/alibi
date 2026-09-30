@@ -14,7 +14,7 @@ export type FixtureProfile =
   | "siwe" | "siwe-email" | "siwe-contract"
   | "phone-default" | "phone-signup" | "phone-proof" | "phone-custom"
 
-  | "openapi-default" | "openapi-configured" | "openapi-disabled" | "openapi-jwt"
+  | "openapi-default" | "openapi-configured" | "openapi-disabled" | "openapi-jwt" | "openapi-username" | "openapi-custom-schema" | "openapi-plugins" | "openapi-plugins-teams" | "openapi-plugins-configured"
   | "session-deferred"
   | "session-no-refresh"
   | "session-deferred-no-refresh"
