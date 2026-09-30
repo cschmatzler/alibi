@@ -9,9 +9,9 @@
 //! Ported from SQLite 3.53.2 (source d6e03d8c777cfa2d35e3b60d8ec3e018), src/util.c (powerOfTen, sqlite3Fp2Convert10,
 //! sqlite3Fp10Convert2, sqlite3FpDecode) and src/printf.c (%!.17g).
 //! SQLite dedicates this source to the public domain:
-//! https://www.sqlite.org/copyright.html
-//! https://sqlite.org/src/file/src/util.c?ci=version-3.53.2
-//! https://sqlite.org/src/file/src/printf.c?ci=version-3.53.2
+//! <https://www.sqlite.org/copyright.html>
+//! <https://sqlite.org/src/file/src/util.c?ci=version-3.53.2>
+//! <https://sqlite.org/src/file/src/printf.c?ci=version-3.53.2>
 
 #![allow(
     clippy::indexing_slicing,
