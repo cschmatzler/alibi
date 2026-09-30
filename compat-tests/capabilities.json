@@ -279,10 +279,23 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "organization core lifecycle matches TS",
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": [
+          "organization core lifecycle matches TS",
+          "organization metadata lookup default scopes selectors and clears only the denied session",
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+        ],
+        "rejection": [
+          "organization metadata lookup default scopes selectors and clears only the denied session",
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+        ],
+        "authorization": [
+          "organization metadata lookup default scopes selectors and clears only the denied session",
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+        ],
+        "state": [
+          "organization metadata lookup default scopes selectors and clears only the denied session",
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+        ]
       }
     },
     {
@@ -299,12 +312,24 @@
     {
       "route": "GET /organization/get-organization",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": [
+          "organization metadata lookup default scopes selectors and clears only the denied session",
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+        ],
+        "rejection": [
+          "organization metadata lookup default scopes selectors and clears only the denied session",
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+        ],
+        "authorization": [
+          "organization metadata lookup default scopes selectors and clears only the denied session",
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+        ],
+        "state": [
+          "organization metadata lookup default scopes selectors and clears only the denied session",
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+        ]
       }
     },
     {
@@ -1255,12 +1280,16 @@
       "evidence": {
         "success": [
           "organization core lifecycle matches TS",
-          "organization metadata stores rounded JavaScript numbers before readback"
+          "organization metadata stores rounded JavaScript numbers before readback",
+          "organization metadata lookup default scopes selectors and clears only the denied session",
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
         ],
         "rejection": null,
         "authorization": null,
         "state": [
-          "organization metadata stores rounded JavaScript numbers before readback"
+          "organization metadata stores rounded JavaScript numbers before readback",
+          "organization metadata lookup default scopes selectors and clears only the denied session",
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
         ]
       }
     },

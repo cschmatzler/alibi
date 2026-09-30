@@ -133,6 +133,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
             AuthRoute::post("/organization/update", "update_organization"),
             AuthRoute::post("/organization/delete", "delete_organization"),
             AuthRoute::get("/organization/list", "list_organizations"),
+            AuthRoute::get("/organization/get-organization", "get_organization"),
             AuthRoute::get(
                 "/organization/get-full-organization",
                 "get_full_organization",
@@ -206,6 +207,9 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
             )),
             (HttpMethod::Get, "/organization/list") => Ok(Some(
                 handlers::org::handle_list_organizations(req, ctx).await?,
+            )),
+            (HttpMethod::Get, "/organization/get-organization") => Ok(Some(
+                handlers::org::handle_get_organization(req, ctx).await?,
             )),
             (HttpMethod::Get, "/organization/get-full-organization") => Ok(Some(
                 handlers::org::handle_get_full_organization(req, ctx, &self.config).await?,

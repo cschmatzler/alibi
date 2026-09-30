@@ -936,7 +936,7 @@ const server = Bun.serve({
         return jsonResponse({
           user: user ? { id: user.id, email: user.email, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, ...(profileName ? { phoneNumber: user.phoneNumber, phoneNumberVerified: user.phoneNumberVerified } : {}) } : null,
           accounts: accounts.sort((left, right) => String(left.providerId).localeCompare(String(right.providerId)) || String(left.accountId).localeCompare(String(right.accountId))).map(account => ({ id: account.id, userId: account.userId, accountId: account.accountId, providerId: account.providerId })),
-          sessions: sessions.map(session => ({ id: session.id, token: session.token, userId: session.userId, expiresAt: session.expiresAt })),
+          sessions: sessions.map(session => ({ id: session.id, token: session.token, userId: session.userId, expiresAt: session.expiresAt, activeOrganizationId: session.activeOrganizationId ?? null })),
           twoFactorExists: twoFactor !== null,
         });
       }

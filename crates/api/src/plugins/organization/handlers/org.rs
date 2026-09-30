@@ -136,7 +136,7 @@ pub(crate) async fn update_organization_core(
     session: &impl AuthSession,
     config: &OrganizationConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<OrganizationResponse> {
+) -> AuthResult<CreatedOrganizationResponse> {
     let org_id =
         resolve_organization_id(body.organization_id.as_deref(), None, session, ctx).await?;
 
@@ -180,7 +180,7 @@ pub(crate) async fn update_organization_core(
         .update_organization(&org_id, update_data)
         .await?;
 
-    Ok(OrganizationResponse::from_organization(&updated))
+    Ok(CreatedOrganizationResponse::from_organization(&updated))
 }
 
 pub(crate) async fn delete_organization_core(
@@ -245,14 +245,18 @@ pub(crate) async fn get_full_organization_core(
     config: &OrganizationConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<Option<FullOrganizationResponse<OrganizationResponse, InvitationView>>> {
-    let org_id = if let Some(slug) = query.organization_slug.as_deref() {
+    let org_id = if let Some(slug) = query
+        .organization_slug
+        .as_deref()
+        .filter(|slug| !slug.is_empty())
+    {
         let organization = ctx
             .database
             .get_organization_by_slug(slug)
             .await?
             .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
         organization.id().to_string()
-    } else if let Some(id) = query.organization_id.as_deref() {
+    } else if let Some(id) = query.organization_id.as_deref().filter(|id| !id.is_empty()) {
         id.to_string()
     } else if let Some(active_org_id) = session.active_organization_id() {
         active_org_id.to_string()
@@ -260,17 +264,26 @@ pub(crate) async fn get_full_organization_core(
         return Ok(None);
     };
 
-    let _ = ctx
-        .database
-        .get_member(&org_id, &user.id())
-        .await?
-        .ok_or_else(|| AuthError::forbidden("User is not a member of the organization"))?;
-
     let organization = ctx
         .database
         .get_organization_by_id(&org_id)
         .await?
         .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
+
+    if ctx
+        .database
+        .get_member(&org_id, &user.id())
+        .await?
+        .is_none()
+    {
+        let _ = ctx
+            .database
+            .update_session_active_organization(session.token(), None)
+            .await?;
+        return Err(AuthError::forbidden(
+            "User is not a member of the organization",
+        ));
+    }
 
     let members_limit = query.members_limit.or(config.membership_limit);
     let member_params = ListOrganizationMembersParams {
@@ -304,7 +317,7 @@ pub(crate) async fn get_full_organization_core(
     let invitations = ctx.database.list_organization_invitations(&org_id).await?;
 
     Ok(Some(FullOrganizationResponse {
-        organization: OrganizationResponse::from_organization(&organization),
+        organization: OrganizationResponse::from_stored_organization(&organization)?,
         members,
         invitations: invitations
             .iter()
@@ -518,7 +531,62 @@ pub async fn handle_list_organizations(
     Ok(AuthResponse::json(200, &organizations)?)
 }
 
-/// Handle get full organization request
+/// Retrieve organization metadata without loading members, invitations or teams.
+pub async fn handle_get_organization(
+    req: &AuthRequest,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<AuthResponse> {
+    let (user, session) = match require_session(req, ctx).await {
+        Ok(session) => session,
+        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
+            return Ok(AuthResponse::json(
+                401,
+                &better_auth_core::ErrorCodeMessageResponse {
+                    code: Some("UNAUTHORIZED".into()),
+                    message: "Unauthorized".into(),
+                },
+            )?);
+        }
+        Err(error) => return Err(error),
+    };
+    let slug = req
+        .query
+        .get("organizationSlug")
+        .filter(|value| !value.is_empty());
+    let id = req
+        .query
+        .get("organizationId")
+        .filter(|value| !value.is_empty());
+    let organization = if let Some(slug) = slug {
+        ctx.database.get_organization_by_slug(slug).await?
+    } else if let Some(id) = id.map(String::as_str).or(session.active_organization_id()) {
+        ctx.database.get_organization_by_id(id).await?
+    } else {
+        return Ok(AuthResponse::json(
+            200,
+            &Option::<OrganizationResponse>::None,
+        )?);
+    }
+    .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
+    if ctx
+        .database
+        .get_member(&organization.id(), &user.id())
+        .await?
+        .is_none()
+    {
+        let _ = ctx
+            .database
+            .update_session_active_organization(session.token(), None)
+            .await?;
+        return Err(AuthError::forbidden(
+            "User is not a member of the organization",
+        ));
+    }
+    // Metadata reads expose the stored JSON text; create/update responses parse it.
+    let response = OrganizationResponse::from_stored_organization(&organization)?;
+    Ok(AuthResponse::json(200, &response)?)
+}
+
 pub async fn handle_get_full_organization(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
