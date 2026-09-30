@@ -215,7 +215,7 @@ static PLUGINS: &[PluginSchema] = &[
     },
     PluginSchema {
         name: "two-factor",
-        user_fields: &[f!("two_factor_enabled", "bool")],
+        user_fields: &[f!("two_factor_enabled", "Option<bool>")],
         session_fields: &[],
         extra_entities: &[],
     },
@@ -245,7 +245,7 @@ static PLUGINS: &[PluginSchema] = &[
         name: "admin",
         user_fields: &[
             f!("role", "Option<String>"),
-            f!("banned", "bool"),
+            f!("banned", "Option<bool>"),
             f!("ban_reason", "Option<String>"),
             f!("ban_expires", "Option<DateTimeUtc>"),
             f!("metadata", "Json"),

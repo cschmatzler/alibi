@@ -158,12 +158,12 @@
     {
       "route": "GET /magic-link/verify",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "magic links deliver metadata and authenticate a new user with one-time consumption",
+        "rejection": "magic links reject malformed bodies callbacks and missing query tokens before consumption",
+        "authorization": "magic-link redirect validates origin before consuming and chooses the new-user callback",
+        "state": "magic links deliver metadata and authenticate a new user with one-time consumption"
       }
     },
     {
@@ -279,12 +279,12 @@
     {
       "route": "GET /organization/get-role",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization dynamic roles persist ordered permissions and revoke assigned authority on update",
+        "rejection": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "authorization": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "state": "organization dynamic roles persist ordered permissions and revoke assigned authority on update"
       }
     },
     {
@@ -323,34 +323,34 @@
     {
       "route": "GET /organization/list-roles",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization dynamic roles persist ordered permissions and revoke assigned authority on update",
+        "rejection": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "authorization": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "state": "organization dynamic roles persist ordered permissions and revoke assigned authority on update"
       }
     },
     {
       "route": "GET /organization/list-team-members",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization teams persist membership identity and active-team session changes",
+        "rejection": "organization teams persist membership identity and active-team session changes",
+        "authorization": "organization teams persist membership identity and active-team session changes",
+        "state": "organization teams persist membership identity and active-team session changes"
       }
     },
     {
       "route": "GET /organization/list-teams",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization teams persist membership identity and active-team session changes",
+        "rejection": "organization teams persist membership identity and active-team session changes",
+        "authorization": "organization teams persist membership identity and active-team session changes",
+        "state": "organization teams persist membership identity and active-team session changes"
       }
     },
     {
@@ -367,12 +367,12 @@
     {
       "route": "GET /organization/list-user-teams",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization teams persist membership identity and active-team session changes",
+        "rejection": "organization teams persist membership identity and active-team session changes",
+        "authorization": "organization teams persist membership identity and active-team session changes",
+        "state": "organization teams persist membership identity and active-team session changes"
       }
     },
     {
@@ -730,89 +730,89 @@
     {
       "route": "POST /email-otp/change-email",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "email OTP email change binds the requesting user and preserves its session identity",
+        "rejection": "email OTP email change binds the requesting user and preserves its session identity",
+        "authorization": "email OTP email change binds the requesting user and preserves its session identity",
+        "state": "email OTP email change binds the requesting user and preserves its session identity"
       }
     },
     {
       "route": "POST /email-otp/check-verification-otp",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "email OTP check preserves the code until email verification consumes it",
+        "rejection": "email OTP check preserves the code until email verification consumes it",
         "authorization": null,
-        "state": null
+        "state": "email OTP check preserves the code until email verification consumes it"
       }
     },
     {
       "route": "POST /email-otp/request-email-change",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "email OTP email change binds the requesting user and preserves its session identity",
+        "rejection": "email OTP email change binds the requesting user and preserves its session identity",
+        "authorization": "email OTP email change binds the requesting user and preserves its session identity",
+        "state": "email OTP email change binds the requesting user and preserves its session identity"
       }
     },
     {
       "route": "POST /email-otp/request-password-reset",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "email OTP password reset and deprecated request alias update credentials and verification",
+        "rejection": "email OTP validates all body fields before issuing or consuming authentication state",
         "authorization": null,
-        "state": null
+        "state": "email OTP password reset and deprecated request alias update credentials and verification"
       }
     },
     {
       "route": "POST /email-otp/reset-password",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "email OTP password reset and deprecated request alias update credentials and verification",
+        "rejection": "email OTP password reset and deprecated request alias update credentials and verification",
         "authorization": null,
-        "state": null
+        "state": "email OTP password reset and deprecated request alias update credentials and verification"
       }
     },
     {
       "route": "POST /email-otp/send-verification-otp",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "email OTP signs up a verified user and consumes its scoped code once",
+        "rejection": "email OTP validates all body fields before issuing or consuming authentication state",
         "authorization": null,
-        "state": null
+        "state": "email OTP signs up a verified user and consumes its scoped code once"
       }
     },
     {
       "route": "POST /email-otp/verify-email",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "email OTP check preserves the code until email verification consumes it",
+        "rejection": "email OTP check preserves the code until email verification consumes it",
         "authorization": null,
-        "state": null
+        "state": "email OTP check preserves the code until email verification consumes it"
       }
     },
     {
       "route": "POST /forget-password/email-otp",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "email OTP password reset and deprecated request alias update credentials and verification",
+        "rejection": "email OTP validates all body fields before issuing or consuming authentication state",
         "authorization": null,
-        "state": null
+        "state": "email OTP password reset and deprecated request alias update credentials and verification"
       }
     },
     {
@@ -917,12 +917,12 @@
     {
       "route": "POST /organization/add-team-member",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies",
+        "rejection": "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies",
+        "authorization": "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies",
+        "state": "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies"
       }
     },
     {
@@ -961,23 +961,23 @@
     {
       "route": "POST /organization/create-role",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization dynamic roles persist ordered permissions and revoke assigned authority on update",
+        "rejection": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "authorization": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "state": "organization dynamic roles persist ordered permissions and revoke assigned authority on update"
       }
     },
     {
       "route": "POST /organization/create-team",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization teams persist membership identity and active-team session changes",
+        "rejection": "organization teams persist membership identity and active-team session changes",
+        "authorization": "organization teams persist membership identity and active-team session changes",
+        "state": "organization teams persist membership identity and active-team session changes"
       }
     },
     {
@@ -994,12 +994,12 @@
     {
       "route": "POST /organization/delete-role",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization dynamic roles persist ordered permissions and revoke assigned authority on update",
+        "rejection": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "authorization": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "state": "organization dynamic roles persist ordered permissions and revoke assigned authority on update"
       }
     },
     {
@@ -1060,23 +1060,23 @@
     {
       "route": "POST /organization/remove-team",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization teams persist membership identity and active-team session changes",
+        "rejection": "organization teams persist membership identity and active-team session changes",
+        "authorization": "organization teams persist membership identity and active-team session changes",
+        "state": "organization teams persist membership identity and active-team session changes"
       }
     },
     {
       "route": "POST /organization/remove-team-member",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies",
+        "rejection": "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies",
+        "authorization": "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies",
+        "state": "organization server-only teams persist numeric-ID membership and enforce tenant and final-team policies"
       }
     },
     {
@@ -1093,12 +1093,12 @@
     {
       "route": "POST /organization/set-active-team",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization teams persist membership identity and active-team session changes",
+        "rejection": "organization teams persist membership identity and active-team session changes",
+        "authorization": "organization teams persist membership identity and active-team session changes",
+        "state": "organization teams persist membership identity and active-team session changes"
       }
     },
     {
@@ -1126,23 +1126,23 @@
     {
       "route": "POST /organization/update-role",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization dynamic roles persist ordered permissions and revoke assigned authority on update",
+        "rejection": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "authorization": "organization role validation and permission request unions retain authentication precedence and persisted state",
+        "state": "organization dynamic roles persist ordered permissions and revoke assigned authority on update"
       }
     },
     {
       "route": "POST /organization/update-team",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "organization teams persist membership identity and active-team session changes",
+        "rejection": "organization teams persist membership identity and active-team session changes",
+        "authorization": "organization teams persist membership identity and active-team session changes",
+        "state": "organization teams persist membership identity and active-team session changes"
       }
     },
     {
@@ -1335,23 +1335,23 @@
     {
       "route": "POST /sign-in/email-otp",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "email OTP signs up a verified user and consumes its scoped code once",
+        "rejection": "email OTP signs up a verified user and consumes its scoped code once",
         "authorization": null,
-        "state": null
+        "state": "email OTP signs up a verified user and consumes its scoped code once"
       }
     },
     {
       "route": "POST /sign-in/magic-link",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
+        "success": "magic links deliver metadata and authenticate a new user with one-time consumption",
+        "rejection": "magic links reject malformed bodies callbacks and missing query tokens before consumption",
         "authorization": null,
-        "state": null
+        "state": "magic links deliver metadata and authenticate a new user with one-time consumption"
       }
     },
     {

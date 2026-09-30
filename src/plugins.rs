@@ -12,6 +12,10 @@ pub use better_auth_api::plugins::{
     OrganizationConfig, OrganizationPlugin, PasskeyConfig, PasskeyPlugin, PasswordManagementConfig,
     PasswordManagementPlugin, RolePermissions, SessionManagementPlugin, TwoFactorConfig,
     TwoFactorPlugin, UserManagementConfig, UserManagementPlugin, account_management, admin,
-    api_key, device_authorization, email_password, email_verification, oauth, organization,
-    passkey, password_management, session_management, two_factor, user_management,
+    api_key, device_authorization, email_otp, email_password, email_verification, magic_link,
+    oauth, organization, passkey, password_management, session_management, two_factor,
+    user_management,
 };
+
+pub use better_auth_api::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
+pub use better_auth_api::plugins::magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};

@@ -114,6 +114,12 @@ better_auth_core::impl_auth_plugin! {
             &self,
             ctx: &mut better_auth_core::AuthInitContext<S>,
         ) -> better_auth_core::AuthResult<()> {
+            let default_role = self.config.default_role.clone();
+            ctx.register_user_create_transform(move |mut input| {
+                _ = input.banned.get_or_insert(false);
+                _ = input.role.get_or_insert_with(|| default_role.clone());
+                Ok(input)
+            });
             ctx.set_metadata("admin.enabled", serde_json::Value::Bool(true));
             ctx.set_metadata(
                 "admin.default_role",

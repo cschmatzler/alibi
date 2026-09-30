@@ -38,6 +38,31 @@ pub struct AuthInitParts {
     pub extensions: ContextExtensions,
 }
 
+/// A plugin override for delivery of the core email-verification challenge.
+#[async_trait]
+pub trait VerificationEmailOverride<S: AuthSchema>: Send + Sync {
+    async fn send(
+        &self,
+        user: &crate::wire::UserView,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<()>;
+
+    async fn send_in_transaction(
+        &self,
+        user: &crate::wire::UserView,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<S>,
+        _transaction: &dyn crate::store::AuthTransaction<S>,
+    ) -> AuthResult<()> {
+        self.send(user, request, ctx).await
+    }
+}
+
+pub struct VerificationEmailOverrideHandle<S: AuthSchema>(
+    pub Arc<dyn VerificationEmailOverride<S>>,
+);
+
 /// Action returned by [`AuthPlugin::before_request`].
 #[derive(Debug)]
 pub enum BeforeRequestAction {
@@ -270,6 +295,62 @@ impl<S: AuthSchema> AuthInitContext<S> {
         self.metadata.get(key)
     }
 
+    /// Register a transform for user creation, including transactional creation.
+    pub fn register_user_create_transform<F>(&mut self, transform: F)
+    where
+        F: Fn(crate::types::CreateUser) -> AuthResult<crate::types::CreateUser>
+            + Send
+            + Sync
+            + 'static,
+    {
+        let mut transforms = self
+            .extensions
+            .get::<crate::store::plugin_hooks::UserTransforms>()
+            .map(|value| (*value).clone())
+            .unwrap_or_default();
+        transforms.creates.push(Arc::new(transform));
+        self.extensions.insert(transforms);
+    }
+
+    /// Register a transform applied to every user update through this auth instance.
+    pub fn register_user_update_transform<F>(&mut self, transform: F)
+    where
+        F: Fn(&str, crate::types::UpdateUser) -> AuthResult<crate::types::UpdateUser>
+            + Send
+            + Sync
+            + 'static,
+    {
+        let mut transforms = self
+            .extensions
+            .get::<crate::store::plugin_hooks::UserTransforms>()
+            .map(|value| (*value).clone())
+            .unwrap_or_default();
+        transforms.updates.push(Arc::new(transform));
+        self.extensions.insert(transforms);
+    }
+
+    /// Finalize the instance's store without mutating a shared underlying adapter.
+    pub fn database_with_registered_transforms(&self) -> Arc<dyn AuthStore<S>> {
+        match self
+            .extensions
+            .get::<crate::store::plugin_hooks::UserTransforms>()
+        {
+            Some(transforms) => Arc::new(crate::store::plugin_hooks::PluginStore::new(
+                self.database.clone(),
+                (*transforms).clone(),
+            )),
+            None => self.database.clone(),
+        }
+    }
+
+    pub fn set_email_verification_override(
+        &mut self,
+        sender: Arc<dyn VerificationEmailOverride<S>>,
+    ) {
+        self.extensions
+            .insert(VerificationEmailOverrideHandle(sender));
+    }
+
     pub fn into_parts(self) -> AuthInitParts {
         AuthInitParts {
             metadata: self.metadata,
@@ -319,6 +400,10 @@ impl<S: AuthSchema> AuthContext<S> {
         self
     }
 
+    pub fn email_verification_override(&self) -> Option<Arc<VerificationEmailOverrideHandle<S>>> {
+        self.extensions.get()
+    }
+
     pub fn user_view(&self, user: &impl crate::entity::AuthUser) -> crate::wire::UserView {
         let mut view = crate::wire::UserView::from(user);
         if self.feature_enabled("username.enabled") {
@@ -336,13 +421,21 @@ impl<S: AuthSchema> AuthContext<S> {
             view.username = None;
             view.display_username = None;
         }
-        view.two_factor_enabled = self
-            .feature_enabled("two_factor.enabled")
-            .then(|| user.two_factor_enabled());
+        if self.feature_enabled("two_factor.enabled") {
+            view.two_factor_enabled = user.two_factor_enabled_value();
+            if view.two_factor_enabled.is_none() {
+                _ = view
+                    .extension_fields
+                    .insert("twoFactorEnabled".into(), serde_json::Value::Null);
+            }
+        } else {
+            view.two_factor_enabled = None;
+        }
         if self.feature_enabled("admin.enabled") {
-            view.banned = Some(user.banned());
+            view.banned = user.banned_value();
             for (key, absent) in [
                 ("role", view.role.is_none()),
+                ("banned", view.banned.is_none()),
                 ("banReason", view.ban_reason.is_none()),
                 ("banExpires", view.ban_expires.is_none()),
             ] {
@@ -420,6 +513,23 @@ impl<S: AuthSchema> AuthContext<S> {
             }
         } else {
             view.active_team_id = None;
+        }
+        view
+    }
+
+    pub fn invitation_view(
+        &self,
+        invitation: &impl crate::entity::AuthInvitation,
+    ) -> crate::wire::InvitationView {
+        let mut view = crate::wire::InvitationView::from(invitation);
+        if self.feature_enabled("organization.teams.enabled") {
+            if view.team_id.is_none() {
+                _ = view
+                    .extension_fields
+                    .insert("teamId".into(), serde_json::Value::Null);
+            }
+        } else {
+            view.team_id = None;
         }
         view
     }

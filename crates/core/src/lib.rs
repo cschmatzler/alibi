@@ -60,6 +60,7 @@ pub use middleware::{
 pub use openapi::{OpenApiBuilder, OpenApiInfo, OpenApiOperation, OpenApiResponse, OpenApiSpec};
 pub use plugin::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRoute, BeforeRequestAction, ContextExtensions,
+    VerificationEmailOverride, VerificationEmailOverrideHandle,
 };
 pub use schema::AuthSchema;
 pub use session::SessionManager;
@@ -69,13 +70,13 @@ pub use store::{
 pub use types::{
     ApiKey, AuthRequest, AuthResponse, CodeMessageResponse, CreateAccount, CreateApiKey,
     CreateDeviceCode, CreateInvitation, CreateMember, CreateOrganization, CreatePasskey,
-    CreateSession, CreateTwoFactor, CreateUser, CreateVerification, DeviceCode,
+    CreateSession, CreateTeam, CreateTwoFactor, CreateUser, CreateVerification, DeviceCode,
     ErrorCodeMessageResponse, ErrorMessageResponse, Headers, HealthCheckResponse, HttpMethod,
-    Invitation, InvitationStatus, ListUsersParams, Member, OkResponse, Organization, Passkey,
-    RateLimitErrorResponse, RequestMeta, StatusMessageResponse, StatusResponse,
-    SuccessMessageResponse, SuccessResponse, TwoFactor, UpdateAccount, UpdateApiKey,
-    UpdateDeviceCode, UpdateOrganization, UpdatePasskey, UpdateUser, UpdateUserRequest,
-    UpdateUserResponse, UpdateVerification, ValidationErrorResponse,
+    Invitation, InvitationStatus, ListUsersParams, Member, OkResponse, Organization,
+    OrganizationPermissions, Passkey, RateLimitErrorResponse, RequestMeta, StatusMessageResponse,
+    StatusResponse, SuccessMessageResponse, SuccessResponse, Team, TeamMember, TwoFactor,
+    UpdateAccount, UpdateApiKey, UpdateDeviceCode, UpdateOrganization, UpdatePasskey, UpdateTeam,
+    UpdateUser, UpdateUserRequest, UpdateUserResponse, UpdateVerification, ValidationErrorResponse,
 };
 pub use utils::password::{PasswordHasher, ScryptHasher, hash_password, verify_password};
 #[doc(hidden)]

@@ -1,3 +1,5 @@
+mod team_fixture;
+
 use axum::{
     extract::Query,
     response::IntoResponse,
@@ -43,6 +45,8 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
 mod lifecycle_fixture;
+mod magic_profiles;
+mod otp_profiles;
 mod organization_timestamp_fixture;
 mod parity_controls;
 mod session_profiles;
@@ -218,6 +222,12 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
     passkey::Entity::delete_many().exec(database).await?;
     api_key::Entity::delete_many().exec(database).await?;
     two_factor::Entity::delete_many().exec(database).await?;
+    better_auth_seaorm::store::entities::team_member::Entity::delete_many()
+        .exec(database)
+        .await?;
+    better_auth_seaorm::store::entities::team::Entity::delete_many()
+        .exec(database)
+        .await?;
     invitation::Entity::delete_many().exec(database).await?;
     member::Entity::delete_many().exec(database).await?;
     organization::Entity::delete_many().exec(database).await?;
@@ -586,7 +596,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let database = sqlite_fixture::connect().await?;
     better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
     let reset_database = database.clone();
+    let team_profiles = team_fixture::profiles(&config, &database).await?;
+    let team_router = team_fixture::router(database.clone(), team_profiles);
 
+    let magic_outbox = Arc::new(Mutex::new(HashMap::new()));
+    let magic_link = magic_profiles::plugin(magic_outbox.clone());
+    let magic_router =
+        magic_profiles::router(&config, database.clone(), magic_outbox.clone()).await?;
+    let magic_outbox_for_reset = magic_outbox;
+    let otp_outbox = Arc::new(Mutex::new(HashMap::new()));
+    let email_otp = otp_profiles::plugin(otp_outbox.clone());
+    let otp_database = database.clone();
     let reset_outbox = Arc::new(Mutex::new(HashMap::new()));
     let verification_outbox = Arc::new(Mutex::new(HashMap::new()));
     let change_email_outbox = Arc::new(Mutex::new(HashMap::new()));
@@ -640,7 +660,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let lifecycle_fixture = lifecycle_fixture::LifecycleFixture::default();
     let lifecycle_controls = lifecycle_fixture.router();
     let auth = Arc::new(
-        AuthBuilder::<TestSchema>::new(config)
+        AuthBuilder::<TestSchema>::new(config.clone())
             .store(store)
             .rate_limit(RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new().enable_signup(true))
@@ -676,6 +696,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .delete_user_enabled(true)
                     .require_delete_verification(false),
             )
+            .plugin(email_otp.clone())
+            .plugin(magic_link)
             .plugin(two_factor_plugin.clone())
             .plugin(mock_oauth_plugin(
                 port,
@@ -687,6 +709,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?,
     );
 
+    let otp_router = otp_profiles::router(
+        &config,
+        otp_database,
+        otp_outbox.clone(),
+        verification_outbox.clone(),
+        auth.clone(),
+        email_otp.clone(),
+    )
+    .await?;
+    let otp_outbox_for_reset = otp_outbox.clone();
     let auth_router = auth.clone().axum_router();
 
     let reset_outbox_for_token = reset_outbox.clone();
@@ -938,6 +970,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/__test/reset-state",
             post(move || {
+                let otp_outbox = otp_outbox_for_reset.clone();
+                let magic_outbox = magic_outbox_for_reset.clone();
                 let reset_outbox = reset_outbox_for_reset.clone();
                 let verification_outbox = verification_outbox_for_reset.clone();
                 let change_email_outbox = change_email_outbox_for_reset.clone();
@@ -955,6 +989,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Json(serde_json::json!({ "message": error.to_string() })),
                         );
                     }
+                    otp_outbox.lock().await.clear();
+                    magic_outbox.lock().await.clear();
                     reset_outbox.lock().await.clear();
                     verification_outbox.lock().await.clear();
                     change_email_outbox.lock().await.clear();
@@ -1362,7 +1398,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             return (
                                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                                 Json(serde_json::json!({ "message": error.to_string() })),
-                            )
+                            );
                         }
                     };
 
@@ -1502,10 +1538,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }))
             }),
         )
+        .merge(team_router)
         .nest("/api/auth", auth_router)
         .with_state(auth)
         .merge(verification_profile_router)
-        .merge(session_profile_router);
+        .merge(session_profile_router)
+        .merge(otp_router)
+        .merge(magic_router);
 
     let addr = format!("0.0.0.0:{port}");
     println!("[rust-server] Listening on http://localhost:{port}");
