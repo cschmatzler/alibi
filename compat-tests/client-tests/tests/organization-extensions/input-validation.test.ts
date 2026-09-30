@@ -7,7 +7,7 @@ const storedSchema = z.object({
   sessions:z.array(z.object({id:z.string(),token:z.string(),userId:z.string(),activeOrganizationId:z.string().nullable()})),
   orphanOrganizations:z.array(z.object({id:z.string(),name:z.string(),slug:z.string()})),
   receipts:z.array(z.object({operation:z.string(),userId:z.string(),email:z.string(),name:z.string()})),
-}, ["POST /organization/create", "POST /organization/update"]);
+});
 async function state(ctx:ScenarioContext,email:string) {
   const response=await ctx.rawRequest({path:`/__test/organization-creation-state?email=${encodeURIComponent(email)}&includeMetadata=true`});
   expect(response.status).toBe(200);
@@ -144,7 +144,7 @@ compatScenario("organization JSON media checks reject before parsing or policies
   const longAfter=await state(ctx,email);
   expect(longAfter.organizations[0]?.slug).toBe(slug);
   return {before,observations,retried,afterRetry,longCreated:ctx.snapshot(longCreated),longAfter};
-});
+}, ["POST /organization/create", "POST /organization/update"]);
 
 compatScenario("trusted organization creation validates typed input before user lookup and allow-policy evaluation", async ctx => {
   const actor=ctx.actor("trusted-owner","org-creation-denied");
