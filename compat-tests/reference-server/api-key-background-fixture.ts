@@ -140,11 +140,12 @@ export async function apiKeyBackgroundFixture(
       const url = new URL(request.url);
       if (url.pathname === "/__test/api-key-background/state") {
         const usage = url.searchParams.get('usage') === 'true';
-        const rows = database.query(`SELECT id,name,referenceId,configId,key,remaining,requestCount,expiresAt,createdAt,updatedAt,lastRequest${usage ? ',lastRefillAt,refillAmount,refillInterval,rateLimitEnabled,rateLimitTimeWindow,rateLimitMax' : ''} FROM apikey ORDER BY name`).all();
+        const rows = database.query(`SELECT id,name,referenceId,configId,key,remaining,requestCount,expiresAt,createdAt,updatedAt,lastRequest,lastRefillAt${usage ? ',refillAmount,refillInterval,rateLimitEnabled,rateLimitTimeWindow,rateLimitMax' : ''} FROM apikey ORDER BY name`).all();
+        if(url.searchParams.get("rawDates")==="true")return Response.json(rows);
         return Response.json(rows.map((row: any) => ({
           ...row,
           ...(usage ? {rateLimitEnabled: !!row.rateLimitEnabled} : {}),
-          ...Object.fromEntries(["expiresAt", "createdAt", "updatedAt", "lastRequest", ...(usage ? ["lastRefillAt"] : [])].map(key => [key, row[key] === null ? null : new Date(row[key]).toISOString()])),
+          ...Object.fromEntries(["expiresAt", "createdAt", "updatedAt", "lastRequest", "lastRefillAt"].map(key => [key, row[key] === null ? null : new Date(row[key]).toISOString()])),
         })));
       }
       if (url.pathname === "/__test/api-key-background/control" && request.method === "POST") {
@@ -166,6 +167,13 @@ export async function apiKeyBackgroundFixture(
           case "remaining": database.query('UPDATE apikey SET remaining=11 WHERE id=?').run(input.keyId); break;
           case "quota": database.query('UPDATE apikey SET remaining=? WHERE id=?').run(input.remaining, input.keyId); break;
           case "refill": database.query('UPDATE apikey SET remaining=0,refillAmount=3,refillInterval=60000,lastRefillAt=? WHERE id=?').run(new Date(0).toISOString(), input.keyId); break;
+          case "timestamps": {
+            if (!database.query('SELECT id FROM apikey WHERE id=?').get(input.keyId)) throw new Error("actual API key required");
+            const values=["createdAt","updatedAt","lastRequest","lastRefillAt","expiresAt"].map(field=>input.dates[field]);
+            if(values.some(value=>typeof value!=="string"||!Number.isFinite(Date.parse(value))))throw new Error("valid stored dates required");
+            database.query('UPDATE apikey SET createdAt=?,updatedAt=?,lastRequest=?,lastRefillAt=?,expiresAt=? WHERE id=?').run(...values,input.keyId);
+            break;
+          }
           case "expire": database.query('UPDATE apikey SET expiresAt=? WHERE id=?').run(new Date(0).toISOString(), input.keyId); break;
           case "veto": database.exec("CREATE TRIGGER automatic_cleanup_veto BEFORE DELETE ON apikey BEGIN SELECT RAISE(ABORT,'actual cleanup storage veto'); END"); break;
           case "restore": database.exec("DROP TRIGGER IF EXISTS automatic_cleanup_veto"); break;
