@@ -87,14 +87,14 @@ fn validate_role_input(role: &RoleInput, config: &AdminConfig) -> AuthResult<()>
         return Err(AuthError::bad_request("role is required"));
     }
 
-    if config.roles.is_empty() {
+    let Some(roles) = &config.roles else {
         return Ok(());
-    }
+    };
 
     let unknown_roles: Vec<_> = role
         .roles()
         .into_iter()
-        .filter(|item| !config.roles.contains_key(*item))
+        .filter(|item| !roles.contains_key(*item))
         .collect();
 
     if unknown_roles.is_empty() {

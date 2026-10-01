@@ -70,9 +70,9 @@ pub struct AdminConfig {
     #[config(default = None)]
     pub admin_user_ids: Option<Vec<String>>,
     /// Custom role definitions. When provided, these replace the built-in
-    /// `admin` and `user` role permissions.
-    #[config(default = HashMap::new())]
-    pub roles: HashMap<String, access::RolePermissions>,
+    /// `admin` and `user` role permissions. None uses builtins; Some(empty) grants none.
+    #[config(default = None)]
+    pub roles: Option<HashMap<String, access::RolePermissions>>,
     /// Default reason applied when banning a user without an explicit reason.
     #[config(default = None)]
     pub default_ban_reason: Option<String>,

@@ -112,7 +112,7 @@ async fn test_custom_admin_role_can_use_permission_engine() {
 
     let plugin = AdminPlugin::with_config(AdminConfig {
         admin_roles: vec!["superadmin".to_string()],
-        roles: HashMap::from([(
+        roles: Some(HashMap::from([(
             "superadmin".to_string(),
             RolePermissions::new()
                 .allow(
@@ -130,7 +130,7 @@ async fn test_custom_admin_role_can_use_permission_engine() {
                     ],
                 )
                 .allow("session", ["list", "revoke", "delete"]),
-        )]),
+        )])),
         ..Default::default()
     });
 

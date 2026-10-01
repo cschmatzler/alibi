@@ -11,6 +11,7 @@ import { createTwoFactorTotpFixture } from "./two-factor-totp-fixture";
 import { createOrganizationCreationFixture } from "./organization-creation-fixture";
 import { createSiweFixture } from "./siwe-fixture";
 import { createPhoneFixture } from "./phone-fixture";
+import { createAdminPermissionFixture } from "./admin-permission-fixture";
 import { createMultipleSessionFixture } from "./multiple-session-fixture";
 import { createSessionFieldsFixture } from "./session-fields-fixture";
 import { getMigrations } from "better-auth/db/migration";
@@ -390,12 +391,14 @@ const { runMigrations } = await getMigrations(authOptions);
 await runMigrations();
 const sessionFieldsFixture=await createSessionFieldsFixture(database,authOptions,`http://localhost:${PORT}`);
 const siweFixture = await createSiweFixture(database, authOptions, `http://localhost:${PORT}`);
+const adminPermissionFixture = createAdminPermissionFixture(authOptions);
 const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 const organizationCreationFixture = createOrganizationCreationFixture(database, authOptions, `http://localhost:${PORT}`);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
 for (const [path, instance] of siweFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of adminPermissionFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of multipleSessionFixture.profiles) verificationProfiles.set(path, instance);
 for (const name of ["email-verification-required", "email-verification-no-signup-mail", "email-verification-failing-notifications"]) {
   const path = `/__test/profiles/${name}/api/auth`;
