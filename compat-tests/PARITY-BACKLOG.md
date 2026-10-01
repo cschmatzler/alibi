@@ -8,7 +8,7 @@ Wider pinned parity work follows these priorities. Excluded external integration
 packages will receive no implementation work. Prepared unmerged work remains
 separate from delivered capabilities.
 
-This snapshot describes merged `origin/master` through PR #89 (including encrypted cookies, admin/trust validation, organization update/member hooks and passkey snapshots),
+This snapshot describes merged `origin/master` through PR #95 (including encrypted cookies, organization/member hooks, observed API-key cleanup and Source passkey authentication policies),
 not the older, dirty coordinator worktree. The reference remains Better Auth
 1.7.6. The [upstream audit](audits/upstream-target.md) records source locations
 and wider boundaries. An audit gap means equivalence has not been established;
@@ -73,11 +73,11 @@ and configuration branches that have not been fully implemented or proved.
   enforcement across new login methods and impersonation variants.
 - **Passkeys:** freshness, single-use/overlapping ceremonies and callback-controlled
   registration ownership/name/session behavior are merged PRs #72–73. A reviewed snapshot repair advances verified counters without changing public registration facts. Remaining
-  work includes authentication callbacks, a measured backup-eligibility upgrade policy difference, extensions, origin/RP configurations
+  work includes registration UV/attestation policy (reviewed integration pending), callback-deleted credential handling, advertised EdDSA, extensions, origin/RP configurations
   and custom challenge cookies.
 - **API keys:** custom getter/validator/generator/default-permission callbacks and
   trusted forced expired-key cleanup are merged PRs #70–71. Automatic background
-  cleanup timing/global throttle, secondary storage/fallback/deferred updates and
+  individual-row deferral (reviewed integration pending), secondary storage/fallback/deferred updates and
   further quota/organization interactions remain work.
 - **Email OTP, magic links, JWT and one-time tokens:** remaining custom schema,
   callback, rate-limit, remote signing, cache/storage and secret/configuration
@@ -150,3 +150,16 @@ and genuine typed WebAuthn authentication policy against current physical counte
 state. Member removal, single-row deferred deletion, UV-absent registration and
 accepted admin filter arrays remain priority follow-ups. Historical measurements
 above belong to their stated trees and do not describe current master.
+
+
+PRs #93–95 are merged and equal the passing 475-scenario integrated tree:
+25,648 SDK assertions, 41 harness / 317, two Chromium / 22, and 78.8992%
+source lines (28,986 / 36,738). The next reviewed wave includes member removal
+persistence/authority and callbacks, API-key non-mutating quota exhaustion and
+individual deferred deletion, registration fixture reset and typed Source
+registration policy. Accepted array filters are being repaired and reviewed.
+The implementation ledger records each owner, dependency, focused evidence and
+pending canonical integration; prepared work is not described as merged.
+Confirmed remaining differences include staged database API-key failure writes,
+concurrent successful returned-row snapshots, advertised EdDSA registration,
+JSON/custom numeric filter coercion and removal SQL-error wire responses.
