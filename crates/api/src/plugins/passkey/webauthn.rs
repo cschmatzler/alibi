@@ -22,7 +22,7 @@ use webauthn_rs_core::{
     error::WebauthnError,
     internals::AuthenticatorData,
     proto::{
-        Authentication, AuthenticationResult, AuthenticationState, Credential,
+        Authentication, AuthenticationResult, AuthenticationState, Credential, RegistrationState,
         UserVerificationPolicy,
     },
 };
@@ -63,7 +63,21 @@ pub(crate) struct StoredRegistrationState {
     pub user: Option<super::PasskeyRegistrationUser>,
     #[serde(default)]
     pub context: Option<String>,
-    pub state: webauthn_rs::prelude::PasskeyRegistration,
+    pub state: StoredRegistrationVerifier,
+}
+
+/// The legacy state shape stays readable for already-issued challenges.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum StoredRegistrationVerifier {
+    Source(StoredCoreRegistrationState),
+    Legacy(webauthn_rs::prelude::PasskeyRegistration),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub(crate) enum StoredCoreRegistrationState {
+    Core { state: RegistrationState },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,9 +145,9 @@ pub(super) fn resolve_rp_id(
     }
 }
 
-/// Source checks the exact configured origin and has no historical UV/backup
-/// requirement. Use typed core policy while retaining all crypto validation.
-pub(super) fn build_authentication_core(
+/// Core verification for newly issued ceremonies, retaining RP configuration
+/// checks and requiring the exact configured origin in the original client data.
+pub(super) fn build_verification_core(
     config: &PasskeyConfig,
     auth_config: &AuthConfig,
     origin: &str,
@@ -151,6 +165,23 @@ pub(super) fn build_authentication_core(
         Some(false),
         Some(false),
     ))
+}
+
+pub(super) fn finish_core_registration(
+    core: &WebauthnCore,
+    registration: &RegisterPublicKeyCredential,
+    state: &RegistrationState,
+    origin: &str,
+) -> Result<WebauthnPasskey, WebauthnError> {
+    let client_data = better_auth_core::utils::json::from_slice::<
+        better_auth_core::utils::json::JsValue,
+    >(registration.response.client_data_json.as_ref())?;
+    if client_data.get("origin").and_then(|origin| origin.as_str()) != Some(origin) {
+        return Err(WebauthnError::InvalidRPOrigin);
+    }
+    // The original attestation bytes are verified once, without weaker retries.
+    core.register_credential(registration, state, None)
+        .map(WebauthnPasskey::from)
 }
 
 pub(super) fn finish_core_authentication(

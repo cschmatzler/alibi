@@ -7,6 +7,13 @@ use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use uuid::Uuid;
 use webauthn_rs::prelude::{DiscoverableKey, PublicKeyCredential, RegisterPublicKeyCredential};
+use webauthn_rs_core::{
+    error::WebauthnError,
+    proto::{
+        AttestationConveyancePreference, COSEAlgorithm, RequestRegistrationExtensions,
+        UserVerificationPolicy,
+    },
+};
 
 use crate::plugins::StatusResponse;
 use crate::plugins::helpers::{SessionIssueError, issue_user_session};
@@ -16,12 +23,13 @@ use super::types::{
     VerifyAuthenticationRequest, VerifyRegistrationRequest,
 };
 use super::webauthn::{
-    StoredAuthenticationState, StoredRegistrationState, authentication_options_json,
-    build_authentication_core, build_webauthn, challenge_cookie_name, create_challenge_cookie,
+    StoredAuthenticationState, StoredCoreRegistrationState, StoredRegistrationState,
+    StoredRegistrationVerifier, authentication_options_json, build_verification_core,
+    build_webauthn, challenge_cookie_name, create_challenge_cookie,
     credential_id_from_authentication, decode_challenge_cookie, decode_credential_id,
-    extract_registration_metadata, finish_core_authentication, generate_ts_user_handle,
-    get_cookie_value, parse_stored_passkey, parse_transports_csv, registration_options_json,
-    resolve_origin, snapshot_passkey, transports_to_csv,
+    extract_registration_metadata, finish_core_authentication, finish_core_registration,
+    generate_ts_user_handle, get_cookie_value, parse_stored_passkey, parse_transports_csv,
+    registration_options_json, resolve_origin, snapshot_passkey, transports_to_csv,
 };
 use super::{PasskeyConfig, PasskeyRegistrationUser};
 
@@ -95,7 +103,7 @@ pub(super) async fn generate_register_options_core(
     config: &PasskeyConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<(Value, String)> {
-    let webauthn = build_webauthn(config, &ctx.config, &generation_origin(config, ctx))?;
+    let core = build_verification_core(config, &ctx.config, &generation_origin(config, ctx))?;
     let existing_passkeys = ctx.database.list_passkeys_by_user(&user.id).await?;
     let exclude_credentials = existing_passkeys
         .iter()
@@ -127,16 +135,25 @@ pub(super) async fn generate_register_options_core(
         .filter(|name| !name.is_empty())
         .unwrap_or(&user.name)
         .to_owned();
-    let (options, state) = webauthn
-        .start_passkey_registration(
-            Uuid::new_v4(),
-            &user_name,
-            &user_display_name,
-            Some(exclude_credentials),
-        )
+    let user_uuid = Uuid::new_v4();
+    let builder = core
+        .new_challenge_register_builder(user_uuid.as_bytes(), &user_name, &user_display_name)
         .map_err(|error| {
             AuthError::internal(format!("Failed to generate register options: {error}"))
-        })?;
+        })?
+        .attestation(AttestationConveyancePreference::None)
+        .credential_algorithms(COSEAlgorithm::secure_algs())
+        .require_resident_key(false)
+        .user_verification_policy(UserVerificationPolicy::Preferred)
+        .reject_synchronised_authenticators(false)
+        .exclude_credentials(Some(exclude_credentials))
+        .extensions(Some(RequestRegistrationExtensions {
+            cred_props: Some(true),
+            ..Default::default()
+        }));
+    let (options, state) = core.generate_challenge_register(builder).map_err(|error| {
+        AuthError::internal(format!("Failed to generate register options: {error}"))
+    })?;
 
     let token = Uuid::new_v4().to_string();
     let expires_at = Utc::now() + Duration::seconds(config.challenge_ttl_secs);
@@ -144,7 +161,7 @@ pub(super) async fn generate_register_options_core(
         user_id: user.id.clone(),
         user: Some(user.clone()),
         context: requested_context.map(str::to_owned),
-        state,
+        state: StoredRegistrationVerifier::Source(StoredCoreRegistrationState::Core { state }),
     })?;
     let _ = ctx
         .database
@@ -175,7 +192,7 @@ pub(super) async fn generate_authenticate_options_core<U: AuthUser>(
     config: &PasskeyConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<(Value, String)> {
-    let core = build_authentication_core(config, &ctx.config, &generation_origin(config, ctx))?;
+    let core = build_verification_core(config, &ctx.config, &generation_origin(config, ctx))?;
 
     let stored_passkeys = if let Some(user) = maybe_user {
         ctx.database.list_passkeys_by_user(&user.id()).await?
@@ -302,15 +319,37 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
             Err(_) => return passkey_registration_failure(),
         };
 
-    let webauthn = match build_webauthn(config, &ctx.config, &origin) {
-        Ok(webauthn) => webauthn,
-        Err(_) => return passkey_registration_failure(),
+    let verified_passkey = match &stored_state.state {
+        StoredRegistrationVerifier::Legacy(state) => {
+            let webauthn = match build_webauthn(config, &ctx.config, &origin) {
+                Ok(webauthn) => webauthn,
+                Err(_) => return passkey_registration_failure(),
+            };
+            match webauthn.finish_passkey_registration(&registration, state) {
+                Ok(passkey) => passkey,
+                Err(_) => return passkey_registration_failure(),
+            }
+        }
+        StoredRegistrationVerifier::Source(StoredCoreRegistrationState::Core { state }) => {
+            let core = match build_verification_core(config, &ctx.config, &origin) {
+                Ok(core) => core,
+                Err(_) => return passkey_registration_failure(),
+            };
+            match finish_core_registration(&core, &registration, state, &origin) {
+                Ok(passkey) => passkey,
+                // A validly encoded, cryptographically false signature makes
+                // Source's verifier return false; malformed proofs throw instead.
+                Err(WebauthnError::AttestationStatementSigInvalid) => {
+                    return response_code(
+                        400,
+                        "FAILED_TO_VERIFY_REGISTRATION",
+                        "Failed to verify registration",
+                    );
+                }
+                Err(_) => return passkey_registration_failure(),
+            }
+        }
     };
-    let verified_passkey =
-        match webauthn.finish_passkey_registration(&registration, &stored_state.state) {
-            Ok(passkey) => passkey,
-            Err(_) => return passkey_registration_failure(),
-        };
     let snapshot = match snapshot_passkey(&verified_passkey) {
         Ok(snapshot) => snapshot,
         Err(_) => return passkey_registration_failure(),
@@ -575,7 +614,7 @@ pub(super) async fn verify_authentication_core(
             let mut current = webauthn_rs_core::proto::Credential::from(stored_passkey.clone());
             current.counter = counter;
             stored_passkey = current.into();
-            let core = match build_authentication_core(config, &ctx.config, &origin) {
+            let core = match build_verification_core(config, &ctx.config, &origin) {
                 Ok(core) => core,
                 Err(_) => return passkey_authentication_failure(),
             };

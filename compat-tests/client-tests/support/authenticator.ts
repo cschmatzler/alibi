@@ -14,7 +14,7 @@ const registrationOptions = z.object({ challenge: z.string().min(1), rp: z.objec
 const authenticationOptions = z.object({ challenge: z.string().min(1), rpId: z.string() });
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest();
 
-type BackupFlags = { backupEligible?: boolean; backedUp?: boolean; userVerified?: boolean; userPresent?: boolean; counter?: number; rpId?: string };
+type BackupFlags = { backupEligible?: boolean; backedUp?: boolean; userVerified?: boolean; userPresent?: boolean; counter?: number; rpId?: string; attestation?: "none" | "packed"; badSignature?: boolean; malformedSignature?: boolean; malformedKey?: boolean };
 const flags = (base: number, state: BackupFlags) => (state.userVerified === false ? base & ~0x04 : base) & (state.userPresent === false ? ~0x01 : 0xff) | (state.backupEligible ? 0x08 : 0) | (state.backedUp ? 0x10 : 0);
 
 /** Synthetic ES256 WebAuthn device for deterministic credential round trips. */
@@ -22,14 +22,16 @@ export class Authenticator {
   private counter = 0;
   private userHandle = "";
 
-  /** Produce a signed-key registration attestation for the supplied challenge. */
+  /** Produce a none or genuinely signed packed self-attestation for the supplied challenge. */
   register(options: unknown, origin: string, backup: BackupFlags = {}) {
     const parsed = registrationOptions.parse(options);
     this.userHandle = parsed.user.id;
     const clientDataJSON = Buffer.from(JSON.stringify({ type: "webauthn.create", challenge: parsed.challenge, origin, crossOrigin: false }));
     const length = Buffer.alloc(2); length.writeUInt16BE(credential.length);
-    const authData = Buffer.concat([hash(parsed.rp.id), Buffer.from([flags(0x45, backup)]), Buffer.alloc(4), Buffer.alloc(16), length, credential, publicKey]);
-    const attestation = encodeCBOR(new Map<string, CBORType>([["fmt", "none"], ["attStmt", new Map()], ["authData", authData]]));
+    const authData = Buffer.concat([hash(backup.rpId ?? parsed.rp.id), Buffer.from([flags(0x45, backup)]), Buffer.alloc(4), Buffer.alloc(16), length, credential, backup.malformedKey ? Buffer.from([0xa0]) : publicKey]);
+    const signature = backup.malformedSignature ? Buffer.from([0x01]) : sign("sha256", Buffer.concat([authData, hash(clientDataJSON)]), key.privateKey);
+    if (backup.badSignature) signature[signature.length - 1] = signature[signature.length - 1]! ^ 1;
+    const attestation = encodeCBOR(new Map<string, CBORType>([["fmt", backup.attestation ?? "none"], ["attStmt", backup.attestation === "packed" ? new Map<string, CBORType>([["alg", -7], ["sig", signature]]) : new Map()], ["authData", authData]]));
     return {
       id: credential.toString("base64url"), rawId: credential.toString("base64url"), type: "public-key",
       response: { clientDataJSON: clientDataJSON.toString("base64url"), attestationObject: Buffer.from(attestation).toString("base64url"), transports: ["internal"] },
