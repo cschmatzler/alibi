@@ -94,6 +94,7 @@ mod device_fixture;
 mod google_id_token_fixture;
 mod invitation_fixture;
 mod jwt_fixture;
+mod jwt_remote_fixture;
 mod last_login_method_fixture;
 mod lifecycle_fixture;
 mod magic_profiles;
@@ -921,6 +922,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let otp_outbox_for_reset = otp_outbox.clone();
     let auth_router = auth.clone().axum_router();
     let jwt_router = jwt_fixture::router(&config, reset_database.clone()).await?;
+    let jwt_remote_router = jwt_remote_fixture::router(&config, reset_database.clone()).await?;
     let device_profiles = device_fixture::profiles(&config, reset_database.clone()).await?;
 
     let reset_outbox_for_token = reset_outbox.clone();
@@ -1844,6 +1846,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(google_id_router)
         .merge(otp_router)
         .merge(last_login_router)
+        .merge(jwt_remote_router)
         .merge(magic_router)
         .merge(siwe_profile_router)
         .merge(phone_router);

@@ -101,6 +101,38 @@ impl Default for JwtExpiration {
 impl JwtExpiration {
     #[expect(
         clippy::as_conversions,
+        clippy::cast_precision_loss,
+        reason = "Remote callbacks observe JavaScript IEEE754 arithmetic"
+    )]
+    fn timestamp_raw(
+        &self,
+        issued_at: Option<&better_auth_core::utils::json::JsValue>,
+    ) -> better_auth_core::utils::json::JsValue {
+        use better_auth_core::utils::json::JsValue;
+        let timestamp = match self {
+            Self::After(duration) => {
+                let seconds = (duration.num_milliseconds() as f64 / 1000.0 + 0.5).floor();
+                let base = match issued_at {
+                    None | Some(JsValue::Null) => Utc::now().timestamp() as f64,
+                    Some(JsValue::Bool(value)) => f64::from(u8::from(*value)),
+                    Some(JsValue::Number(value)) => *value,
+                    Some(value) => {
+                        return JsValue::String(format!(
+                            "{}{seconds}",
+                            js_raw_primitive_string(value)
+                        ));
+                    }
+                };
+                base + seconds
+            }
+            Self::At(date) => date.timestamp() as f64,
+            Self::Numeric(value) => *value as f64,
+        };
+        JsValue::Number(timestamp)
+    }
+
+    #[expect(
+        clippy::as_conversions,
         clippy::cast_possible_truncation,
         clippy::cast_precision_loss,
         reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
@@ -190,11 +222,58 @@ pub trait JwtKeyring: Send + Sync {
     async fn create_key(&self, key: CreateJwk, request: Option<&AuthRequest>) -> AuthResult<Jwk>;
 }
 
+/// One property in an application-owned remote signing payload.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RemoteJwtClaim<'a> {
+    Absent,
+    Undefined,
+    Value(&'a better_auth_core::utils::json::JsValue),
+}
+
+/// Claims passed to a configured remote signer, before managed JOSE validation.
+///
+/// `raw_claims` preserves IEEE754 numbers and all supplied JSON values. The
+/// added `iat` and `nbf` properties can be own properties with an undefined
+/// value; use `claim` to distinguish these from absent or null properties.
+/// Undefined properties are omitted from `raw_claims`, matching JSON.stringify.
+#[derive(Clone, Debug)]
+pub struct RemoteJwtPayload {
+    raw_claims: better_auth_core::utils::json::JsValue,
+    own_keys: Vec<String>,
+    undefined_claims: Vec<String>,
+}
+
+impl RemoteJwtPayload {
+    #[must_use]
+    pub const fn raw_claims(&self) -> &better_auth_core::utils::json::JsValue {
+        &self.raw_claims
+    }
+
+    /// Property names in the order observed by the application signer.
+    #[must_use]
+    pub fn own_keys(&self) -> &[String] {
+        &self.own_keys
+    }
+
+    #[must_use]
+    pub fn claim(&self, name: &str) -> RemoteJwtClaim<'_> {
+        if self.undefined_claims.iter().any(|key| key == name) {
+            RemoteJwtClaim::Undefined
+        } else if let Some(value) = self.raw_claims.get(name) {
+            RemoteJwtClaim::Value(value)
+        } else {
+            RemoteJwtClaim::Absent
+        }
+    }
+}
+
+/// An application-owned signer controls serialization, claim validation and
+/// its returned token. Managed local signing rules are not applied beforehand.
 #[async_trait]
 pub trait SignRemoteJwt: Send + Sync {
     async fn sign(
         &self,
-        payload: &Map<String, Value>,
+        payload: &RemoteJwtPayload,
         options: &JwtSignOptions,
     ) -> AuthResult<String>;
 }
@@ -244,7 +323,8 @@ impl Default for JwtPluginConfig {
 
 #[derive(Clone, Debug, Default)]
 pub struct JwtSignOptions {
-    pub header: Map<String, Value>,
+    /// None omits the header argument; Some(empty) supplies an empty object.
+    pub header: Option<Map<String, Value>>,
     pub signing_key_id: Option<String>,
     pub signing_algorithm: Option<JwtAlgorithm>,
     pub claims: Option<JwtClaimsConfig>,
@@ -465,6 +545,11 @@ impl JwtPlugin {
         request: Option<&AuthRequest>,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<String> {
+        if self.config.remote_signer.is_some() {
+            return self
+                .sign_remote_jwt(Value::Object(payload).into(), options, ctx)
+                .await;
+        }
         self.sign_jwt_checked(payload, options, request, ctx, Ok(()))
             .await
     }
@@ -472,8 +557,10 @@ impl JwtPlugin {
     /// Sign decoded JavaScript JSON through the trusted server API.
     ///
     /// The decoded representation retains nonfinite numbers until claim
-    /// validation. Registered `NumericDates` must be finite; ordinary claims
-    /// follow JSON.stringify, including rounding and null for nonfinite values.
+    /// validation in managed local signing. Remote signers instead receive
+    /// the raw values and own-property metadata without JOSE claim validation.
+    /// Local ordinary claims follow JSON.stringify, including rounding and
+    /// null for nonfinite values.
     ///
     /// # Errors
     ///
@@ -488,6 +575,9 @@ impl JwtPlugin {
         let object = payload
             .as_object()
             .ok_or_else(|| AuthError::bad_request("JWT payload must be an object"))?;
+        if self.config.remote_signer.is_some() {
+            return self.sign_remote_jwt(payload.clone(), options, ctx).await;
+        }
         let validation = (|| {
             for field in ["exp", "iat", "nbf"] {
                 validate_numeric_date(
@@ -530,10 +620,6 @@ impl JwtPlugin {
         validation: AuthResult<()>,
     ) -> AuthResult<String> {
         let payload = self.default_claims(payload, options.claims.as_ref(), ctx)?;
-        if let Some(remote) = &self.config.remote_signer {
-            validation?;
-            return remote.sign(&payload, options).await;
-        }
         let key = self
             .resolve_signing_key(options, request, ctx)
             .await?
@@ -541,6 +627,75 @@ impl JwtPlugin {
         // Upstream resolves/mints the local key before JOSE validates claims.
         validation?;
         Self::sign_resolved(payload, options, &key)
+    }
+
+    async fn sign_remote_jwt(
+        &self,
+        mut raw_claims: better_auth_core::utils::json::JsValue,
+        options: &JwtSignOptions,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<String> {
+        use better_auth_core::utils::json::JsValue;
+        let JsValue::Object(payload) = &mut raw_claims else {
+            return Err(AuthError::bad_request("JWT payload must be an object"));
+        };
+        let config = options.claims.as_ref().unwrap_or(&self.config.claims);
+        let mut own_keys: Vec<String> = payload.keys().cloned().collect();
+        // JavaScript enumerates canonical array-index property names first.
+        own_keys.sort_by_key(|key| {
+            key.parse::<u32>()
+                .ok()
+                .filter(|index| *index != u32::MAX && index.to_string() == *key)
+                .map_or(u64::MAX, u64::from)
+        });
+        let mut undefined_claims = Vec::new();
+        // Source spreads the original object, then assigns these properties in
+        // this order. Undefined dates are still observable own properties.
+        for name in ["iat", "exp", "nbf", "iss", "aud"] {
+            if !payload.contains_key(name) {
+                own_keys.push(name.to_owned());
+                if name == "iat" || name == "nbf" {
+                    undefined_claims.push(name.to_owned());
+                }
+            }
+            if payload.get(name).is_none_or(JsValue::is_null) {
+                let value = match name {
+                    "exp" => config.expiration.timestamp_raw(payload.get("iat")),
+                    "iss" => JsValue::String(
+                        config
+                            .issuer
+                            .clone()
+                            .unwrap_or_else(|| ctx.config.base_url.clone()),
+                    ),
+                    "aud" => serde_json::to_value(
+                        config
+                            .audience
+                            .clone()
+                            .unwrap_or_else(|| JwtAudience::One(ctx.config.base_url.clone())),
+                    )?
+                    .into(),
+                    _ => continue,
+                };
+                drop(payload.insert(name.to_owned(), value));
+            }
+        }
+        let payload = RemoteJwtPayload {
+            raw_claims,
+            own_keys,
+            undefined_claims,
+        };
+        let remote = self
+            .config
+            .remote_signer
+            .as_ref()
+            .ok_or_else(|| AuthError::internal("No remote JWT signer"))?;
+        remote
+            .sign(&payload, options)
+            .await
+            .map_err(|error| match error {
+                AuthError::Internal(_) => AuthError::CallbackFailure(Box::new(error)),
+                error => error,
+            })
     }
 
     fn default_claims(
@@ -581,7 +736,7 @@ impl JwtPlugin {
         options: &JwtSignOptions,
         key: &ResolvedJwtSigningKey,
     ) -> AuthResult<String> {
-        let mut header = options.header.clone();
+        let mut header = options.header.clone().unwrap_or_default();
         drop(header.insert("alg".to_owned(), json!(key.algorithm.as_str())));
         drop(header.insert("kid".to_owned(), json!(key.key_id)));
         validate_critical_header(&header, true)?;
@@ -737,16 +892,18 @@ impl JwtPlugin {
         ctx: &AuthContext<impl AuthSchema>,
         session: &JwtSession,
     ) -> AuthResult<String> {
-        let mut payload = match &self.config.define_payload {
+        let application_payload = match &self.config.define_payload {
             Some(define) => define.define_payload(session).await?,
             None => serde_json::to_value(&session.user)?
                 .as_object()
                 .cloned()
                 .ok_or_else(|| AuthError::internal("User payload was not an object"))?,
         };
-        let _ignored_timestamp = payload
-            .entry("iat".to_owned())
-            .or_insert_with(|| json!(Utc::now().timestamp()));
+        // getJwtToken starts with iat before spreading the application payload;
+        // an explicit application iat replaces the value in that position.
+        let mut payload = Map::new();
+        drop(payload.insert("iat".to_owned(), json!(Utc::now().timestamp())));
+        payload.extend(application_payload);
         let subject = match &self.config.define_subject {
             Some(define) => define
                 .subject(session)
@@ -907,6 +1064,33 @@ fn js_truthy(value: &Value) -> bool {
             .is_some_and(|value| value != 0.0 && !value.is_nan()),
         Value::String(value) => !value.is_empty(),
         Value::Array(_) | Value::Object(_) => true,
+    }
+}
+
+fn js_raw_primitive_string(value: &better_auth_core::utils::json::JsValue) -> String {
+    use better_auth_core::utils::json::JsValue;
+    match value {
+        JsValue::Null => "null".to_owned(),
+        JsValue::String(value) => value.clone(),
+        JsValue::Bool(value) => value.to_string(),
+        JsValue::Number(value) if value.is_nan() => "NaN".to_owned(),
+        JsValue::Number(value) if *value == f64::INFINITY => "Infinity".to_owned(),
+        JsValue::Number(value) if *value == f64::NEG_INFINITY => "-Infinity".to_owned(),
+        JsValue::Number(value) => serde_json::Number::from_f64(*value)
+            .and_then(|number| better_auth_core::utils::json::number_to_string(&number).ok())
+            .unwrap_or_default(),
+        JsValue::Array(values) => values
+            .iter()
+            .map(|value| {
+                if value.is_null() {
+                    String::new()
+                } else {
+                    js_raw_primitive_string(value)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        JsValue::Object(_) => "[object Object]".to_owned(),
     }
 }
 

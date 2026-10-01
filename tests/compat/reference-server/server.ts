@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { createRemoteJwtFixture } from "./jwt-remote-fixture";
 import { createLastLoginMethodFixture } from "./last-login-method-fixture";
 import { createTwoFactorPendingLookupFixture } from "./two-factor-pending-lookup-fixture";
 import { createBearerFixture } from "./bearer-fixture";
@@ -438,6 +439,7 @@ const organizationAdditionFixture = organizationMemberAdditionFixture(database, 
 const organizationMemberRemovalFixture = organizationMemberRemovalHooksFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationMemberRoleFixture = organizationMemberRoleHooksFixture(database, authOptions, `http://localhost:${PORT}`);
 const lastLoginMethodFixture = await createLastLoginMethodFixture(authOptions, database);
+const remoteJwtFixture = createRemoteJwtFixture(authOptions);
 const twoFactorPendingLookupFixture = await createTwoFactorPendingLookupFixture(authOptions, database);
 const organizationUpdateFixture = organizationUpdateHooksFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationDeletionFixture = organizationDeletionHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
@@ -938,6 +940,9 @@ const server = Bun.serve({
         const path=`/__test/profiles/${name}/api/auth`;
         if(url.pathname===path||url.pathname.startsWith(`${path}/`))return auth.handler(request);
       }
+      for(const [name,auth] of remoteJwtFixture.profiles){const path=`/__test/profiles/${name}/api/auth`;if(url.pathname===path||url.pathname.startsWith(`${path}/`))return auth.handler(request);}
+      const remoteJwtControl=await remoteJwtFixture.handle(request);
+      if(remoteJwtControl)return remoteJwtControl;
       const lastLoginControl=await lastLoginMethodFixture.handle(request);
       if(lastLoginControl)return lastLoginControl;
       for (const [name,profile] of jwtProfiles) {
