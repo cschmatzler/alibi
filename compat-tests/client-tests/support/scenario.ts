@@ -282,6 +282,7 @@ export function compatScenario(
   scenario: (ctx: ScenarioServerContext) => Promise<unknown>,
   stateTransitions: readonly string[] = [],
   timeoutMs?: number,
+  comparisonOptions: { readonly oauthProxyProfileSecret?: string } = {},
 ) {
   test.serial(scenarioName, async () => {
     const seed = `${Date.now()}-${crypto.randomUUID()}`;
@@ -289,6 +290,7 @@ export function compatScenario(
     const rust = await runScenario("Rust", RUST_BASE_URL, seed, scenario);
     const comparison = {
       compactSessionCacheSecret: "compat-test-only-key-not-real-minimum-32chars",
+      ...comparisonOptions,
       leftBaseURL: TS_BASE_URL, rightBaseURL: RUST_BASE_URL,
       leftStartedAt: ts.startedAt, rightStartedAt: rust.startedAt,
       leftFinishedAt: ts.finishedAt, rightFinishedAt: rust.finishedAt,
