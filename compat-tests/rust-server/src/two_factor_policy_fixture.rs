@@ -4,7 +4,10 @@ use better_auth::{
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{
-        two_factor::{AccountLockoutConfig, SendTwoFactorOtp, TwoFactorConfig},
+        two_factor::{
+            AccountLockoutConfig, SendTwoFactorOtp, TwoFactorBackupCipher, TwoFactorBackupStorage,
+            TwoFactorConfig,
+        },
         EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin,
     },
     wire::UserView,
@@ -85,11 +88,89 @@ impl SendTwoFactorOtp for Delivery {
     }
 }
 
+#[derive(Clone, Default)]
+struct BackupReceipts(Arc<std::sync::Mutex<HashMap<String, Vec<serde_json::Value>>>>);
+impl BackupReceipts {
+    fn record(&self, profile: &str, phase: &str, input: &str) {
+        self.0
+            .lock()
+            .unwrap()
+            .entry(profile.into())
+            .or_default()
+            .push(json!({"phase":phase,"input":input}));
+    }
+}
+struct BackupCipher {
+    profile: String,
+    receipts: BackupReceipts,
+}
+#[async_trait::async_trait]
+impl TwoFactorBackupCipher for BackupCipher {
+    async fn encrypt(&self, input: &str) -> AuthResult<String> {
+        self.receipts.record(&self.profile, "encrypt", input);
+        Ok(format!("backup-{input}"))
+    }
+    async fn decrypt(&self, input: &str) -> AuthResult<String> {
+        self.receipts.record(&self.profile, "decrypt", input);
+        Ok(input.strip_prefix("backup-").unwrap_or("").into())
+    }
+}
+fn backup_config(name: &str, receipts: &BackupReceipts) -> TwoFactorConfig {
+    let (amount, length, storage) = match name {
+        "two-factor-backup-plain" => (2.5, 3.5, TwoFactorBackupStorage::Plain),
+        "two-factor-backup-zero" => (0.0, 0.0, TwoFactorBackupStorage::Plain),
+        "two-factor-backup-negative" => (-1.0, -2.0, TwoFactorBackupStorage::Plain),
+        "two-factor-backup-invalid-length" => (2.0, 0.0, TwoFactorBackupStorage::Plain),
+        "two-factor-backup-encrypted" => (3.0, 6.0, TwoFactorBackupStorage::Encrypted),
+        "two-factor-backup-custom" => (
+            10.0,
+            10.0,
+            TwoFactorBackupStorage::CustomCipher(Arc::new(BackupCipher {
+                profile: name.into(),
+                receipts: receipts.clone(),
+            })),
+        ),
+        _ => (10.0, 10.0, TwoFactorBackupStorage::Encrypted),
+    };
+    let generator = if name == "two-factor-backup-custom" {
+        let receipts = receipts.clone();
+        let name = name.to_owned();
+        Some(Arc::new(move || {
+            let mut guard = receipts.0.lock().unwrap();
+            let rows = guard.entry(name.clone()).or_default();
+            rows.push(json!({"phase":"generate","input":""}));
+            let count = rows
+                .iter()
+                .filter(|row| {
+                    row.get("phase").and_then(serde_json::Value::as_str) == Some("generate")
+                })
+                .count();
+            Ok(vec![
+                format!("same-{count}"),
+                format!("same-{count}"),
+                format!("other-{count}"),
+            ])
+        })
+            as Arc<dyn Fn() -> AuthResult<Vec<String>> + Send + Sync>)
+    } else {
+        None
+    };
+    TwoFactorConfig {
+        backup_code_amount: amount,
+        backup_code_length: length,
+        backup_storage: storage,
+        custom_backup_codes_generate: generator,
+        ..Default::default()
+    }
+}
+
 pub(super) async fn router(
     base: &AuthConfig,
     database: DatabaseConnection,
 ) -> AuthResult<Router<Auth>> {
     let delivery = Delivery::default();
+    let backup_receipts = BackupReceipts::default();
+    let mut backup_configs = HashMap::new();
     let mut router = Router::new();
     for name in [
         "two-factor-lockout-fractional",
@@ -104,6 +185,12 @@ pub(super) async fn router(
         "two-factor-passwordless",
         "two-factor-passwordless-child-required",
         "two-factor-passwordless-child-optional",
+        "two-factor-backup-plain",
+        "two-factor-backup-zero",
+        "two-factor-backup-negative",
+        "two-factor-backup-encrypted",
+        "two-factor-backup-invalid-length",
+        "two-factor-backup-custom",
     ] {
         let lockout = match name {
             "two-factor-lockout-fractional" => AccountLockoutConfig {
@@ -122,6 +209,8 @@ pub(super) async fn router(
             },
             _ => AccountLockoutConfig::default(),
         };
+        let backup = backup_config(name, &backup_receipts);
+        backup_configs.insert(name.to_owned(), backup.clone());
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = base.clone().base_path(&path);
         config.app_name = "Fixture Auth".to_owned();
@@ -163,9 +252,10 @@ pub(super) async fn router(
                     },
                     account_lockout: lockout,
                     skip_verification_on_enable: name.starts_with("two-factor-skip-")
-                        || name.starts_with("two-factor-pending-"),
+                        || name.starts_with("two-factor-pending-")
+                        || name.starts_with("two-factor-backup-"),
                     send_otp: Some(Arc::new(delivery.clone())),
-                    ..Default::default()
+                    ..backup
                 }))
                 .build()
                 .await?,
@@ -176,9 +266,21 @@ pub(super) async fn router(
         base.clone(),
         database.clone(),
     ));
+    let backup_configs = Arc::new(backup_configs);
+    let control_config = Arc::new(base.clone());
     Ok(router.route(
         "/__test/two-factor-policy",
-        post(move |body: Bytes| control(body, store.clone(), database.clone(), delivery.clone())),
+        post(move |body: Bytes| {
+            control(
+                body,
+                store.clone(),
+                database.clone(),
+                delivery.clone(),
+                backup_configs.clone(),
+                backup_receipts.clone(),
+                control_config.clone(),
+            )
+        }),
     ))
 }
 
@@ -187,6 +289,9 @@ async fn control(
     store: Arc<SeaOrmStore<TestSchema>>,
     database: DatabaseConnection,
     delivery: Delivery,
+    backup_configs: Arc<HashMap<String, TwoFactorConfig>>,
+    backup_receipts: BackupReceipts,
+    config: Arc<AuthConfig>,
 ) -> axum::response::Response {
     let value = json::from_slice::<JsValue>(&body).ok();
     if let Some(email) = value
@@ -216,6 +321,31 @@ async fn control(
             .into_response();
     };
     let value = value.as_ref().unwrap();
+    if value.get("viewBackupCodes").and_then(JsValue::as_bool) == Some(true) {
+        let Some(profile) = value.get("backupProfile").and_then(JsValue::as_str) else {
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+        let Some(options) = backup_configs.get(profile) else {
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+        let ctx = better_auth_core::AuthContext::new(config, store);
+        return match TwoFactorPlugin::with_config(options.clone())
+            .view_backup_codes(user_id, &ctx)
+            .await
+        {
+            Ok(codes) => {
+                let receipts = backup_receipts
+                    .0
+                    .lock()
+                    .unwrap()
+                    .get(profile)
+                    .cloned()
+                    .unwrap_or_default();
+                Json(json!({"status":true,"backupCodes":codes,"receipts":receipts})).into_response()
+            }
+            Err(error) => error.into_response(),
+        };
+    }
     if value.get("pendingState").and_then(JsValue::as_bool) == Some(true) {
         let read=async {
         let key = if let Some(key) = value.get("pendingKey").and_then(JsValue::as_str) {
