@@ -121,7 +121,7 @@ forwarding!(PasskeyStore {
     fn get_passkey_by_id(id: &str) -> AuthResult<Option<Passkey>>;
     fn get_passkey_by_credential_id(credential_id: &str) -> AuthResult<Option<Passkey>>;
     fn list_passkeys_by_user(user_id: &str) -> AuthResult<Vec<Passkey>>;
-    fn update_passkey_authentication(id: &str, update: UpdatePasskeyAuthentication) -> AuthResult<Passkey>;
+    fn update_passkey_authentication(id: &str, update: UpdatePasskeyAuthentication) -> AuthResult<Option<Passkey>>;
     fn update_passkey_name(id: &str, name: &str) -> AuthResult<Passkey>;
     fn delete_passkey(id: &str) -> AuthResult<()>;
 });

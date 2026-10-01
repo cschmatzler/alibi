@@ -778,7 +778,8 @@ pub(super) async fn verify_authentication_core(
         }
         // Source's counter-only update preserves application writes made by the
         // callback. Refresh the public metadata the store update must carry.
-        // An absent row still follows the existing update failure path below.
+        // A callback may remove the row; a successful no-row counter update
+        // still completes authentication for the original verified owner.
         match ctx.database.get_passkey_by_id(passkey.id().as_ref()).await {
             Ok(Some(current)) => {
                 public_backed_up = current.backed_up();

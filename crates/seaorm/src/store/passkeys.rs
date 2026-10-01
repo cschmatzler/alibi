@@ -87,13 +87,13 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
         &self,
         id: &str,
         update: UpdatePasskeyAuthentication,
-    ) -> AuthResult<Passkey> {
+    ) -> AuthResult<Option<Passkey>> {
         let Some(model) = Entity::find_by_id(id.to_owned())
             .one(self.connection())
             .await
             .map_err(map_db_err)?
         else {
-            return Err(AuthError::not_found("Passkey not found"));
+            return Ok(None);
         };
 
         let mut active = model.into_active_model();
@@ -106,7 +106,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
         active
             .update(self.connection())
             .await
-            .map(|model_2| Passkey::from(&model_2))
+            .map(|model_2| Some(Passkey::from(&model_2)))
             .map_err(map_db_err)
     }
 
