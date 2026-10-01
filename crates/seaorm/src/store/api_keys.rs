@@ -185,14 +185,6 @@ where
             let mut update = UpdateApiKey::default();
 
             if let Some(remaining) = model.remaining {
-                if remaining == 0.0 && model.refill_amount.is_none() {
-                    let _ = Entity::delete_by_id(id)
-                        .exec(txn)
-                        .await
-                        .map_err(map_db_err)?;
-                    return Ok(ConsumeApiKeyResult::UsageExhausted);
-                }
-
                 if let (Some(interval), Some(amount)) = (model.refill_interval, model.refill_amount)
                     && interval != 0.0
                     && amount != 0.0
