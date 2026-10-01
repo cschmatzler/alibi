@@ -85,6 +85,17 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
     /// Implementations may return rows in any order. Callers must remap by id
     /// when response order matters.
     async fn list_users_by_ids(&self, ids: &[String]) -> AuthResult<Vec<S::User>>;
+    /// Apply the adapter's raw numeric page to actual matching users. Unsupported
+    /// stores fail closed rather than rounding, capping, or delegating to an unpaged read.
+    async fn list_users_by_ids_page(
+        &self,
+        _ids: &[String],
+        _limit: f64,
+    ) -> AuthResult<Vec<S::User>> {
+        Err(AuthError::NotImplemented(
+            "Raw numeric user pages are not supported by this store".into(),
+        ))
+    }
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>>;
     async fn get_user_by_username(&self, username: &str) -> AuthResult<Option<S::User>>;
     async fn get_user_by_phone_number(&self, phone_number: &str) -> AuthResult<Option<S::User>> {
@@ -286,6 +297,20 @@ pub struct ListOrganizationMembersParams {
     pub filter_operator: Option<String>,
 }
 
+/// Adapter page with JavaScript numeric limits retained through SQL binding.
+/// Unlike the legacy usize query, an absent sort does not impose an order.
+#[derive(Debug, Clone, Default)]
+pub struct MemberPageQuery {
+    pub organization_id: String,
+    pub limit: Option<f64>,
+    pub offset: Option<f64>,
+    pub sort_by: Option<String>,
+    pub sort_direction: Option<String>,
+    pub filter_field: Option<String>,
+    pub filter_value: Option<String>,
+    pub filter_operator: Option<String>,
+}
+
 #[async_trait]
 pub trait OrganizationStore: Send + Sync {
     async fn create_organization(&self, org: CreateOrganization) -> AuthResult<Organization>;
@@ -371,6 +396,15 @@ pub trait MemberStore: Send + Sync {
         &self,
         params: &ListOrganizationMembersParams,
     ) -> AuthResult<(Vec<Member>, usize)>;
+    /// Apply raw numeric pagination without converting it into the legacy usize API.
+    async fn query_organization_members_page(
+        &self,
+        _params: &MemberPageQuery,
+    ) -> AuthResult<(Vec<Member>, usize)> {
+        Err(AuthError::NotImplemented(
+            "Raw numeric member pages are not supported by this store".into(),
+        ))
+    }
     async fn count_organization_members(&self, org_id: &str) -> AuthResult<i64>;
     async fn count_organization_owners(&self, org_id: &str) -> AuthResult<i64>;
 }

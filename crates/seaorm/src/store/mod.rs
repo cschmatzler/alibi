@@ -26,6 +26,9 @@ mod nullable_organization_tests;
 mod nullable_user_flags;
 #[cfg(test)]
 mod nullable_user_tests;
+mod numeric_page;
+#[cfg(test)]
+mod numeric_page_tests;
 #[cfg(test)]
 mod organization_deletion_tests;
 mod organization_extensions;

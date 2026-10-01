@@ -30,12 +30,43 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, Notify};
 async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
     let mut value = base_snapshot(database).await?;
-    for (name,sql,columns) in [
- ("teams","SELECT id,organization_id AS organizationId,name,member_count AS memberCount FROM team ORDER BY name,id",&["id","organizationId","name","memberCount"][..]),
- ("teamMembers","SELECT m.id,m.team_id AS teamId,m.user_id AS userId FROM team_member m JOIN team t ON t.id=m.team_id JOIN users u ON u.id=m.user_id ORDER BY t.name,u.email,m.id",&["id","teamId","userId"][..])]{
-  let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,sql)).await.map_err(|error|AuthError::internal(error.to_string()))?;
-  let mut values=Vec::new();for row in rows{let mut object=serde_json::Map::new();for column in columns{let field=if *column=="memberCount"{json!(row.try_get::<i64>("",column).map_err(|error|AuthError::internal(error.to_string()))?)}else{json!(row.try_get::<Option<String>>("",column).map_err(|error|AuthError::internal(error.to_string()))?)};let _=object.insert((*column).into(),field);}values.push(Value::Object(object));}value[name]=Value::Array(values);
- }
+    for (name, sql, columns) in [
+        (
+            "teams",
+            "SELECT id,organization_id AS organizationId,name,member_count AS memberCount FROM team ORDER BY name,id",
+            &["id", "organizationId", "name", "memberCount"][..],
+        ),
+        (
+            "teamMembers",
+            "SELECT m.id,m.team_id AS teamId,m.user_id AS userId FROM team_member m JOIN team t ON t.id=m.team_id JOIN users u ON u.id=m.user_id ORDER BY t.name,u.email,m.id",
+            &["id", "teamId", "userId"][..],
+        ),
+    ] {
+        let rows = database
+            .query_all_raw(Statement::from_string(DbBackend::Sqlite, sql))
+            .await
+            .map_err(|error| AuthError::internal(error.to_string()))?;
+        let mut values = Vec::new();
+        for row in rows {
+            let mut object = serde_json::Map::new();
+            for column in columns {
+                let field = if *column == "memberCount" {
+                    json!(
+                        row.try_get::<i64>("", column)
+                            .map_err(|error| AuthError::internal(error.to_string()))?
+                    )
+                } else {
+                    json!(
+                        row.try_get::<Option<String>>("", column)
+                            .map_err(|error| AuthError::internal(error.to_string()))?
+                    )
+                };
+                let _ = object.insert((*column).into(), field);
+            }
+            values.push(Value::Object(object));
+        }
+        value[name] = Value::Array(values);
+    }
     Ok(value)
 }
 struct Hooks {
@@ -69,17 +100,35 @@ impl Hooks {
         } else {
             None
         };
-        for sql in ["DROP TRIGGER IF EXISTS member_removal_guard_member","DROP TRIGGER IF EXISTS member_removal_guard_team","DROP TRIGGER IF EXISTS member_removal_guard_user","CREATE TABLE IF NOT EXISTS __test_member_removal_guard (memberId TEXT,userId TEXT,organizationId TEXT)","DELETE FROM __test_member_removal_guard"] {
-            let _ = self.database.execute_unprepared(sql).await.map_err(|error|AuthError::internal(error.to_string()))?;
+        for sql in [
+            "DROP TRIGGER IF EXISTS member_removal_guard_member",
+            "DROP TRIGGER IF EXISTS member_removal_guard_team",
+            "DROP TRIGGER IF EXISTS member_removal_guard_user",
+            "CREATE TABLE IF NOT EXISTS __test_member_removal_guard (memberId TEXT,userId TEXT,organizationId TEXT)",
+            "DELETE FROM __test_member_removal_guard",
+        ] {
+            let _ = self
+                .database
+                .execute_unprepared(sql)
+                .await
+                .map_err(|error| AuthError::internal(error.to_string()))?;
         }
         if let Some(target) = target {
             let _ = self.database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"INSERT INTO __test_member_removal_guard (memberId,userId,organizationId) VALUES (?,?,?)",[target.id.into(),target.user_id.into(),target.organization_id.into()])).await.map_err(|error|AuthError::internal(error.to_string()))?;
         }
         let trigger = match mode {
-            "sql-member-abort" => Some("CREATE TRIGGER member_removal_guard_member BEFORE DELETE ON member WHEN OLD.id=(SELECT memberId FROM __test_member_removal_guard) BEGIN SELECT RAISE(ABORT,'member removal member veto'); END"),
-            "sql-member-ignore" => Some("CREATE TRIGGER member_removal_guard_member BEFORE DELETE ON member WHEN OLD.id=(SELECT memberId FROM __test_member_removal_guard) BEGIN SELECT RAISE(IGNORE); END"),
-            "sql-team-abort" => Some("CREATE TRIGGER member_removal_guard_team BEFORE DELETE ON team_member WHEN OLD.user_id=(SELECT userId FROM __test_member_removal_guard) AND OLD.team_id IN (SELECT id FROM team WHERE organization_id=(SELECT organizationId FROM __test_member_removal_guard)) BEGIN SELECT RAISE(ABORT,'member removal team veto'); END"),
-            "sql-before-error" | "sql-after-error" => Some("CREATE TRIGGER member_removal_guard_user BEFORE UPDATE ON users WHEN OLD.id=(SELECT userId FROM __test_member_removal_guard) BEGIN SELECT RAISE(ABORT,'member removal user veto'); END"),
+            "sql-member-abort" => Some(
+                "CREATE TRIGGER member_removal_guard_member BEFORE DELETE ON member WHEN OLD.id=(SELECT memberId FROM __test_member_removal_guard) BEGIN SELECT RAISE(ABORT,'member removal member veto'); END",
+            ),
+            "sql-member-ignore" => Some(
+                "CREATE TRIGGER member_removal_guard_member BEFORE DELETE ON member WHEN OLD.id=(SELECT memberId FROM __test_member_removal_guard) BEGIN SELECT RAISE(IGNORE); END",
+            ),
+            "sql-team-abort" => Some(
+                "CREATE TRIGGER member_removal_guard_team BEFORE DELETE ON team_member WHEN OLD.user_id=(SELECT userId FROM __test_member_removal_guard) AND OLD.team_id IN (SELECT id FROM team WHERE organization_id=(SELECT organizationId FROM __test_member_removal_guard)) BEGIN SELECT RAISE(ABORT,'member removal team veto'); END",
+            ),
+            "sql-before-error" | "sql-after-error" => Some(
+                "CREATE TRIGGER member_removal_guard_user BEFORE UPDATE ON users WHEN OLD.id=(SELECT userId FROM __test_member_removal_guard) BEGIN SELECT RAISE(ABORT,'member removal user veto'); END",
+            ),
             _ => None,
         };
         if let Some(trigger) = trigger {
@@ -217,11 +266,13 @@ pub(super) async fn router(
             } else {
                 Some(hooks.clone())
             },
-            membership_limit: Some(if name == "org-member-removal-hooks-page-one" {
-                1
-            } else {
-                100
-            }),
+            membership_limit: Some(better_auth::plugins::organization::MembershipLimit::Fixed(
+                if name == "org-member-removal-hooks-page-one" {
+                    1.0
+                } else {
+                    100.0
+                },
+            )),
             teams: TeamsConfig {
                 enabled: !name.ends_with("teams-disabled"),
                 create_default_team: false,

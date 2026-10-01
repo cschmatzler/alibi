@@ -2,11 +2,11 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DbErr, EntityTrait, IntoActiveModel, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, Select, Set, TransactionTrait,
+    QueryFilter, QueryOrder, QuerySelect, QueryTrait, Select, Set, TransactionTrait,
 };
 use uuid::Uuid;
 
-use better_auth_core::store::{ListOrganizationMembersParams, MemberStore};
+use better_auth_core::store::{ListOrganizationMembersParams, MemberPageQuery, MemberStore};
 
 use crate::error::AuthResult;
 use crate::schema::AuthSchema;
@@ -271,6 +271,40 @@ where
         }
 
         query
+            .all(self.connection())
+            .await
+            .map(|models| (models.iter().map(Member::from).collect(), total))
+            .map_err(map_db_err)
+    }
+
+    async fn query_organization_members_page(
+        &self,
+        params: &MemberPageQuery,
+    ) -> AuthResult<(Vec<Member>, usize)> {
+        let legacy_filter = ListOrganizationMembersParams {
+            organization_id: params.organization_id.clone(),
+            sort_by: params.sort_by.clone(),
+            sort_direction: params.sort_direction.clone(),
+            filter_field: params.filter_field.clone(),
+            filter_value: params.filter_value.clone(),
+            filter_operator: params.filter_operator.clone(),
+            ..Default::default()
+        };
+        let base = Entity::find().filter(Column::OrganizationId.eq(&params.organization_id));
+        let mut query = apply_member_filter(base, &legacy_filter)?;
+        let total = query
+            .clone()
+            .count(self.connection())
+            .await
+            .map_err(map_db_err)? as usize;
+        if params.sort_by.as_deref().and_then(member_column).is_some() {
+            query = apply_member_sort(query, &legacy_filter);
+        }
+        let backend = self.connection().get_database_backend();
+        let statement =
+            super::numeric_page::bind_page(query.build(backend), params.limit, params.offset)?;
+        Entity::find()
+            .from_raw_sql(statement)
             .all(self.connection())
             .await
             .map(|models| (models.iter().map(Member::from).collect(), total))

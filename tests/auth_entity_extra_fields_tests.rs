@@ -127,7 +127,9 @@ async fn custom_user_array_filters_bind_declared_physical_columns()
     use better_auth::prelude::{AuthSchema, UserFilterValue};
     use better_auth::seaorm::{
         SeaOrmStore,
-        sea_orm::{ActiveModelTrait, ActiveValue::Set, ConnectionTrait, Database, Schema},
+        sea_orm::{
+            ActiveModelTrait, ActiveValue::Set, ConnectionTrait, Database, EntityTrait, Schema,
+        },
     };
     use better_auth_core::{CreateUser, ListUsersParams, store::UserStore};
     type Bundled = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
@@ -166,6 +168,19 @@ async fn custom_user_array_filters_bind_declared_physical_columns()
     let store = SeaOrmStore::<ApplicationSchema>::new(
         better_auth::AuthConfig::new("custom-array-filter-application-secret32"),
         database.clone(),
+    );
+    // This raw-page operation must read the chosen physical table and preserve
+    // actual application columns that the organization SDK cannot represent.
+    let expected = user_with_extras::Entity::find_by_id("german")
+        .one(&database)
+        .await?
+        .ok_or("custom user missing")?;
+    let page = store
+        .list_users_by_ids_page(&["german".into()], 1.0)
+        .await?;
+    assert_eq!(
+        serde_json::to_value(page)?,
+        serde_json::to_value(vec![expected])?
     );
     let (users, total) = store
         .list_users(ListUsersParams {

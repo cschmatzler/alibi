@@ -1,7 +1,9 @@
+use super::page::OrganizationPageError;
+use crate::plugins::organization::membership_policy::{read_page_limit, truthy_number};
 use better_auth_core::entity::{AuthMember, AuthOrganization, AuthSession, AuthUser};
 use better_auth_core::error::{AuthError, AuthResult};
 use better_auth_core::plugin::AuthContext;
-use better_auth_core::store::ListOrganizationMembersParams;
+use better_auth_core::store::MemberPageQuery;
 use better_auth_core::types::{AuthRequest, AuthResponse};
 use std::collections::HashMap;
 
@@ -71,8 +73,9 @@ pub(crate) async fn list_members_core(
     query: &ListMembersQuery,
     user: &impl AuthUser,
     session: &impl AuthSession,
+    config: &OrganizationConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<ListMembersResponse> {
+) -> Result<ListMembersResponse, OrganizationPageError> {
     let org_id = if let Some(slug) = query.organization_slug.as_deref() {
         let organization = ctx
             .database
@@ -90,10 +93,20 @@ pub(crate) async fn list_members_core(
         .await?
         .ok_or_else(|| AuthError::forbidden("You are not a member of this organization"))?;
 
-    let member_params = ListOrganizationMembersParams {
+    let member_params = MemberPageQuery {
         organization_id: org_id,
-        limit: query.limit.map(|limit| limit.min(100)).or(Some(50)),
-        offset: query.offset,
+        limit: Some(
+            query
+                .limit
+                .filter(|limit| truthy_number(*limit))
+                .unwrap_or_else(|| read_page_limit(config.membership_limit.as_ref())),
+        ),
+        offset: Some(
+            query
+                .offset
+                .filter(|offset| truthy_number(*offset))
+                .unwrap_or(0.0),
+        ),
         sort_by: query.sort_by.clone(),
         sort_direction: query.sort_direction.clone(),
         filter_field: query.filter_field.clone(),
@@ -102,7 +115,7 @@ pub(crate) async fn list_members_core(
     };
     let (members_raw, total) = ctx
         .database
-        .query_organization_members(&member_params)
+        .query_organization_members_page(&member_params)
         .await?;
     let user_ids = members_raw
         .iter()
@@ -110,16 +123,17 @@ pub(crate) async fn list_members_core(
         .collect::<Vec<_>>();
     let users_by_id = ctx
         .database
-        .list_users_by_ids(&user_ids)
+        .list_users_by_ids_page(&user_ids, members_raw.len() as f64)
         .await?
         .into_iter()
         .map(|user| (user.id().to_string(), user))
         .collect::<HashMap<_, _>>();
     let mut members = Vec::with_capacity(members_raw.len());
     for member in &members_raw {
-        if let Some(user_info) = users_by_id.get(&member.user_id) {
-            members.push(MemberResponse::from_member_and_user(member, user_info));
-        }
+        let user_info = users_by_id
+            .get(&member.user_id)
+            .ok_or(OrganizationPageError::MissingUser)?;
+        members.push(MemberResponse::from_member_and_user(member, user_info));
     }
 
     Ok(ListMembersResponse { members, total })
@@ -225,14 +239,13 @@ pub(crate) async fn remove_member_core(
         }
         let page = ctx
             .database
-            .list_organization_members_page(
-                org_id,
-                config
-                    .membership_limit
-                    .filter(|limit| *limit != 0)
-                    .unwrap_or(100),
-            )
-            .await?;
+            .query_organization_members_page(&MemberPageQuery {
+                organization_id: org_id.into(),
+                limit: Some(read_page_limit(config.membership_limit.as_ref())),
+                ..Default::default()
+            })
+            .await?
+            .0;
         if page
             .iter()
             .filter(|candidate| candidate.role().split(',').any(|role| role == creator_role))
@@ -489,10 +502,14 @@ pub async fn handle_get_active_member(
 pub async fn handle_list_members(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
     let (user, session) = require_session(req, ctx).await?;
     let query = parse_query::<ListMembersQuery>(&req.query);
-    let response = list_members_core(&query, &user, &session, ctx).await?;
+    let response = match list_members_core(&query, &user, &session, config, ctx).await {
+        Ok(response) => response,
+        Err(error) => return error.response(),
+    };
     Ok(AuthResponse::json(200, &response)?)
 }
 

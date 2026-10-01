@@ -8,6 +8,8 @@ pub use lifecycle::{
     OrganizationDeleteContext, OrganizationDeletionHooks, OrganizationDraftContext,
     OrganizationMemberCreatePatch, OrganizationMemberDraftContext,
 };
+pub mod membership_policy;
+pub use membership_policy::{MembershipLimit, OrganizationMembershipLimitResolver};
 pub mod member_addition_lifecycle;
 pub use member_addition_lifecycle::{
     OrganizationMemberAddedContext, OrganizationMemberAdditionContext,
@@ -92,10 +94,11 @@ pub struct OrganizationConfig {
     /// Awaited server-only addition callbacks over the target and raw organization.
     #[config(default = None, skip)]
     pub member_addition_hooks: Option<std::sync::Arc<dyn OrganizationMemberAdditionHooks>>,
-    /// Maximum members per organization (legacy HTTP consumers treat None as unlimited).
-    /// Server-only addition follows the pinned fallback: None or zero means 100.
-    #[config(default = Some(100))]
-    pub membership_limit: Option<usize>,
+    /// Admission policy. Absent or falsy fixed numbers use 100; resolver results
+    /// retain JavaScript Number comparison semantics without a second fallback.
+    /// Read pages use only a fixed number, and never call an admission resolver.
+    #[config(default = Some(MembershipLimit::Fixed(100.0)), skip)]
+    pub membership_limit: Option<MembershipLimit>,
     /// Role assigned to organization creator (default: "owner")
     #[config(default = "owner".to_string())]
     pub creator_role: String,
@@ -405,9 +408,9 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
             (HttpMethod::Get, "/organization/get-active-member-role") => Ok(Some(
                 handlers::member::handle_get_active_member_role(req, ctx).await?,
             )),
-            (HttpMethod::Get, "/organization/list-members") => {
-                Ok(Some(handlers::member::handle_list_members(req, ctx).await?))
-            }
+            (HttpMethod::Get, "/organization/list-members") => Ok(Some(
+                handlers::member::handle_list_members(req, ctx, &self.config).await?,
+            )),
             (HttpMethod::Post, "/organization/remove-member") => Ok(Some(
                 handlers::member::handle_remove_member(req, ctx, &self.config).await?,
             )),
