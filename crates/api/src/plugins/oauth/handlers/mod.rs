@@ -157,6 +157,16 @@ fn build_authorization_url(
     code_challenge: &str,
     login_hint: Option<&str>,
 ) -> AuthResult<String> {
+    if provider
+        .authorization
+        .as_ref()
+        .is_some_and(|policy| policy.require_client_secret)
+        && (provider.client_id.is_empty() || provider.client_secret.is_empty())
+    {
+        return Err(AuthError::config(
+            "Client ID and client secret are required",
+        ));
+    }
     let effective_scopes: Vec<&str> = provider.authorization.as_ref().map_or_else(
         || {
             scopes.map_or_else(
@@ -248,7 +258,12 @@ fn build_authorization_url(
             _ = url.query_pairs_mut().append_pair("permissions", &value);
         }
     }
-    if let Some(login_hint) = login_hint {
+    if let Some(login_hint) = login_hint.filter(|_| {
+        provider
+            .authorization
+            .as_ref()
+            .is_none_or(|policy| policy.login_hint)
+    }) {
         _ = url.query_pairs_mut().append_pair("login_hint", login_hint);
     }
     for (key, value) in &provider.authorization_params {
@@ -877,7 +892,8 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
                 id_token: token_bundle.id_token,
                 access_token_expires_at: tokens.access_token_expires_at,
                 refresh_token_expires_at: tokens.refresh_token_expires_at,
-                scope: (!tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
+                scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
+                    .then(|| tokens.scopes.join(",")),
                 password: None,
             })
             .await
@@ -982,7 +998,8 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
             id_token: token_bundle.id_token,
             access_token_expires_at: tokens.access_token_expires_at,
             refresh_token_expires_at: tokens.refresh_token_expires_at,
-            scope: (!tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
+            scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
+                .then(|| tokens.scopes.join(",")),
             password: None,
         };
         // OAuth registration commits its identity and provider binding together.
@@ -1071,7 +1088,8 @@ pub(in crate::plugins) async fn complete_link_social(
                         id_token: token_bundle.id_token,
                         access_token_expires_at: tokens.access_token_expires_at,
                         refresh_token_expires_at: tokens.refresh_token_expires_at,
-                        scope: (!tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
+                        scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
+                            .then(|| tokens.scopes.join(",")),
                         ..Default::default()
                     },
                 )
@@ -1101,7 +1119,8 @@ pub(in crate::plugins) async fn complete_link_social(
                 id_token: token_bundle.id_token,
                 access_token_expires_at: tokens.access_token_expires_at,
                 refresh_token_expires_at: tokens.refresh_token_expires_at,
-                scope: (!tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
+                scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
+                    .then(|| tokens.scopes.join(",")),
                 password: None,
             })
             .await
