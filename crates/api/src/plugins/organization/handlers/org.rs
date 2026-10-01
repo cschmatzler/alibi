@@ -392,7 +392,11 @@ pub(crate) async fn set_active_organization_core(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<Option<OrganizationResponse>> {
     if matches!(body.organization_id, NullableStringField::Null) {
-        if session.active_organization_id().is_none() {
+        if session
+            .active_organization_id()
+            .filter(|id| !id.is_empty())
+            .is_none()
+        {
             return Ok(None);
         }
 
@@ -403,37 +407,56 @@ pub(crate) async fn set_active_organization_core(
         return Ok(None);
     }
 
-    let org_id = if let NullableStringField::Value(id) = &body.organization_id {
-        id.clone()
-    } else if let Some(slug) = body.organization_slug.as_deref() {
+    let explicit_id = match &body.organization_id {
+        NullableStringField::Value(id) if !id.is_empty() => Some(id.as_str()),
+        _ => None,
+    };
+    let org_id = if let Some(id) = explicit_id {
+        id.to_owned()
+    } else if let Some(slug) = body
+        .organization_slug
+        .as_deref()
+        .filter(|slug| !slug.is_empty())
+    {
         let organization = ctx
             .database
             .get_organization_by_slug(slug)
             .await?
             .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
         organization.id().to_string()
-    } else if let Some(active_org_id) = session.active_organization_id() {
+    } else if let Some(active_org_id) = session.active_organization_id().filter(|id| !id.is_empty())
+    {
         active_org_id.to_string()
     } else {
         return Ok(None);
     };
 
-    let _ = ctx
+    if ctx
         .database
         .get_member(&org_id, &user.id())
         .await?
-        .ok_or_else(|| AuthError::forbidden("User is not a member of the organization"))?;
-
-    let _ = ctx
-        .database
-        .update_session_active_organization(session.token(), Some(&org_id))
-        .await?;
+        .is_none()
+    {
+        let _ = ctx
+            .database
+            .update_session_active_organization(session.token(), None)
+            .await?;
+        return Err(super::extension_common::org_error(
+            403,
+            "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
+        ));
+    }
 
     let organization = ctx
         .database
         .get_organization_by_id(&org_id)
         .await?
         .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
+
+    let _ = ctx
+        .database
+        .update_session_active_organization(session.token(), Some(organization.id().as_ref()))
+        .await?;
 
     Ok(Some(OrganizationResponse::from_stored_organization(
         &organization,
@@ -665,14 +688,30 @@ pub async fn handle_set_active_organization(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
-    let (user, session) = require_session(req, ctx).await?;
-    let body: SetActiveOrganizationRequest = match better_auth_core::validate_request_body(req) {
+    let body = match super::org_input::set_active(req) {
         Ok(v) => v,
         Err(resp) => return Ok(resp),
     };
+    let (user, session) = match require_session(req, ctx).await {
+        Ok(session) => session,
+        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
+            return Err(super::extension_common::org_error(401, "UNAUTHORIZED"));
+        }
+        Err(error) => return Err(error),
+    };
     let organization = set_active_organization_core(&body, &user, &session, ctx).await?;
-    let cookie_header = create_session_cookie(session.token(), &ctx.config);
-    Ok(AuthResponse::json(200, &organization)?.with_header("Set-Cookie", cookie_header))
+    let mut response = AuthResponse::json(200, &organization)?;
+    // The source only writes a cookie after a selection/clear update. Its null
+    // and omitted-selector early returns on an unselected session do not.
+    if organization.is_some()
+        || session
+            .active_organization_id()
+            .is_some_and(|id| !id.is_empty())
+    {
+        let cookie_header = create_session_cookie(session.token(), &ctx.config);
+        response = response.with_header("Set-Cookie", cookie_header);
+    }
+    Ok(response)
 }
 
 /// Handle leave organization request

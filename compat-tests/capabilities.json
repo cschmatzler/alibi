@@ -1439,13 +1439,20 @@
         "success": [
           "organization core lifecycle matches TS",
           "organization set-active returns exact stored metadata text and changes only the current token selection",
-          "organization set-active emits null for absent metadata and retains real membership and session scope"
+          "organization set-active emits null for absent metadata and retains real membership and session scope",
+          "organization set-active respects blank selector precedence and writes cookies only for actual selection updates",
+          "organization set-active clears only the denied current token and validates guest bodies before authentication"
         ],
-        "rejection": null,
-        "authorization": null,
+        "rejection": [
+          "organization set-active respects blank selector precedence and writes cookies only for actual selection updates",
+          "organization set-active clears only the denied current token and validates guest bodies before authentication"
+        ],
+        "authorization": "organization set-active clears only the denied current token and validates guest bodies before authentication",
         "state": [
           "organization set-active returns exact stored metadata text and changes only the current token selection",
-          "organization set-active emits null for absent metadata and retains real membership and session scope"
+          "organization set-active emits null for absent metadata and retains real membership and session scope",
+          "organization set-active respects blank selector precedence and writes cookies only for actual selection updates",
+          "organization set-active clears only the denied current token and validates guest bodies before authentication"
         ]
       }
     },
