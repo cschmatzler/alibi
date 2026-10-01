@@ -30,7 +30,8 @@
       "requiredEvidence": {
         "success": [
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
-          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban"
+          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
+          "admin stored timestamp precision survives official read, update and list without shifting dates"
         ],
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -45,7 +46,8 @@
         "state": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin stored timestamp precision survives official read, update and list without shifting dates"
         ]
       }
     },
@@ -73,7 +75,11 @@
         "state": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin stored timestamp precision survives official read, update and list without shifting dates"
+        ],
+        "success": [
+          "admin stored timestamp precision survives official read, update and list without shifting dates"
         ]
       }
     },
@@ -966,13 +972,15 @@
           "admin configured role values retain literal strings and array elements before any target mutation",
           "admin unconfigured role table accepts empty role strings and arrays without inventing validation",
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin stored timestamp precision survives official read, update and list without shifting dates"
         ],
         "rejection": [
           "admin configured role values retain literal strings and array elements before any target mutation",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin stored timestamp precision survives official read, update and list without shifting dates"
         ],
         "state": [
           "admin configured role values retain literal strings and array elements before any target mutation",
@@ -981,12 +989,14 @@
           "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin stored timestamp precision survives official read, update and list without shifting dates"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin stored timestamp precision survives official read, update and list without shifting dates"
         ]
       }
     },

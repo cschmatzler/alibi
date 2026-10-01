@@ -156,4 +156,5 @@ compatScenario(
       ownerSession: ctx.snapshot(ownerSession),
     };
   },
+  ["GET /admin/get-user", "GET /admin/list-users", "POST /admin/set-role"],
 );
