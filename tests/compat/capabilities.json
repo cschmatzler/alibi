@@ -3151,7 +3151,8 @@
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
-          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
+          "server-only setPassword creates a genuine credential for only its physical passwordless owner"
         ],
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -3176,7 +3177,8 @@
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
-          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
+          "server-only setPassword creates a genuine credential for only its physical passwordless owner"
         ],
         "authorization": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -3198,7 +3200,8 @@
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
-          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
+          "server-only setPassword creates a genuine credential for only its physical passwordless owner"
         ],
         "state": [
           "official client signs in with imported TypeScript scrypt credentials",
@@ -3240,7 +3243,8 @@
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
-          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
+          "server-only setPassword creates a genuine credential for only its physical passwordless owner"
         ]
       }
     },
