@@ -1848,3 +1848,216 @@ async fn pending_backup_cipher_errors_restore_only_decode_stage_attempts() {
         );
     }
 }
+
+#[tokio::test]
+async fn authenticated_otp_maps_only_session_creation_cancellation_and_preserves_hook_inputs() {
+    use better_auth_core::{AuthConfig, CreateSession};
+    use better_auth_seaorm::{Database, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore};
+
+    struct Hook {
+        mode: u8,
+        observed: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+    #[async_trait]
+    impl SeaOrmHooks<TestSchema> for Hook {
+        async fn before_update_user(
+            &self,
+            _id: &str,
+            update: &mut UpdateUser,
+            _context: &SeaOrmHookContext<'_>,
+        ) -> AuthResult<HookControl> {
+            if update.two_factor_enabled == Some(true) {
+                self.observed.lock().unwrap().push("user".into());
+                if self.mode == 3 {
+                    return Err(AuthError::SessionCreationCancelled);
+                }
+            }
+            Ok(HookControl::Continue)
+        }
+        async fn before_create_session(
+            &self,
+            session: &mut CreateSession,
+            context: &SeaOrmHookContext<'_>,
+        ) -> AuthResult<HookControl> {
+            if context
+                .request
+                .as_ref()
+                .is_some_and(|request| request.path.ends_with("/two-factor/verify-otp"))
+            {
+                self.observed.lock().unwrap().push("session".into());
+                assert_eq!(session.ip_address.as_deref(), Some("127.0.0.7"));
+                assert_eq!(session.user_agent.as_deref(), Some("original-otp-agent"));
+                return match self.mode {
+                    0 => Ok(HookControl::Cancel),
+                    1 => Err(AuthError::forbidden(
+                        "session creation cancelled by database hook",
+                    )),
+                    _ => Err(AuthError::bad_request(
+                        "session creation cancelled by database hook",
+                    )),
+                };
+            }
+            Ok(HookControl::Continue)
+        }
+    }
+    struct Sender(Arc<std::sync::Mutex<Option<String>>>);
+    #[async_trait]
+    impl SendTwoFactorOtp for Sender {
+        async fn send(&self, _user: &UserView, otp: &str) -> AuthResult<()> {
+            *self.0.lock().unwrap() = Some(otp.into());
+            Ok(())
+        }
+    }
+    for mode in 0..4 {
+        let database = Database::connect("sqlite::memory:").await.unwrap();
+        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+            .await
+            .unwrap();
+        let config = Arc::new(AuthConfig::new("authenticated-otp-hook-secret-at-least-32"));
+        let mut ctx = AuthContext::new(
+            config.clone(),
+            Arc::new(SeaOrmStore::<TestSchema>::new(
+                config.clone(),
+                database.clone(),
+            )),
+        );
+        let user = ctx
+            .database
+            .create_user(
+                CreateUser::new()
+                    .with_name("Native OTP Owner")
+                    .with_email("native-otp@fixture.test"),
+            )
+            .await
+            .unwrap();
+        let session = ctx
+            .database
+            .create_session(CreateSession {
+                token: None,
+                user_id: user.id.clone(),
+                expires_at: Utc::now() + Duration::hours(1),
+                ip_address: Some("127.0.0.7".into()),
+                user_agent: Some("original-otp-agent".into()),
+                active_organization_id: None,
+                active_team_id: None,
+                impersonated_by: None,
+                additional_fields: Default::default(),
+            })
+            .await
+            .unwrap();
+        let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
+        ctx.database = Arc::new(
+            SeaOrmStore::<TestSchema>::new(config, database).with_hooks(vec![Arc::new(Hook {
+                mode,
+                observed: observed.clone(),
+            })]),
+        );
+        let delivered = Arc::new(std::sync::Mutex::new(None));
+        let plugin = TwoFactorPlugin::with_config(TwoFactorConfig {
+            send_otp: Some(Arc::new(Sender(delivered.clone()))),
+            ..Default::default()
+        });
+        let mut init =
+            better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+        plugin.on_init(&mut init).await.unwrap();
+        ctx.database = init.database_with_registered_transforms();
+        let parts = init.into_parts();
+        ctx.metadata = parts.metadata;
+        ctx.extensions = parts.extensions;
+        let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/send-otp");
+        request.headers.insert(
+            "cookie".into(),
+            create_session_cookie(&session.token, &ctx.config)
+                .split(';')
+                .next()
+                .unwrap()
+                .into(),
+        );
+        request.body = Some(b"{}".to_vec());
+        assert_eq!(
+            plugin
+                .on_request(&request, &ctx)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            200
+        );
+        let before = ctx.database.get_user_sessions(&user.id).await.unwrap();
+        assert_eq!(before.len(), 1);
+        assert_eq!(before[0].id, session.id);
+        assert_eq!(before[0].token, session.token);
+        let code = delivered
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("real delivery required");
+        request.path = "/two-factor/verify-otp".into();
+        request.body =
+            Some(serde_json::to_vec(&serde_json::json!({"code":code,"trustDevice":true})).unwrap());
+        let result = better_auth_core::with_request_hook_context(
+            &request,
+            plugin.on_request(&request, &ctx),
+        )
+        .await;
+        match mode {
+            0 => {
+                let response = result.unwrap().unwrap();
+                assert_eq!(response.status, 500);
+                assert!(response.body.is_empty());
+                assert_eq!(response.headers.get_all("Set-Cookie").count(), 0);
+            }
+            1 => assert!(matches!(result, Err(AuthError::Forbidden(_)))),
+            2 => assert!(matches!(result, Err(AuthError::BadRequest(_)))),
+            _ => assert!(matches!(result, Err(AuthError::SessionCreationCancelled))),
+        }
+        assert_eq!(
+            *observed.lock().unwrap(),
+            if mode == 3 {
+                vec!["user"]
+            } else {
+                vec!["user", "session"]
+            }
+        );
+        let stored_user = ctx
+            .database
+            .get_user_by_id(&user.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored_user.two_factor_enabled(), mode != 3);
+        let sessions = ctx.database.get_user_sessions(&user.id).await.unwrap();
+        assert_eq!(
+            serde_json::to_value(sessions).unwrap(),
+            serde_json::to_value(&before).unwrap()
+        );
+        assert!(
+            ctx.database
+                .get_two_factor_by_user_id(&user.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let key = format!("2fa-otp-{}!{}", user.id, session.id);
+        assert!(
+            ctx.database
+                .get_verification_by_identifier(&key)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let retry = plugin.on_request(&request, &ctx).await.unwrap_err();
+        assert!(
+            matches!(retry, AuthError::BadRequest(ref message) if message == "OTP has expired")
+        );
+        assert_eq!(
+            ctx.database
+                .get_user_by_id(&user.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .two_factor_enabled(),
+            mode != 3
+        );
+    }
+}

@@ -720,14 +720,19 @@ impl TwoFactorPlugin {
         let (response, set_cookie_headers) =
             match verify_otp_core(req, &body, &self.config, ctx).await {
                 Ok(result) => result,
+                Err(ExistingSessionFactorError::SessionCreationCancelled) => {
+                    return Ok(AuthResponse::new(500));
+                }
                 // OTP's own code budget does not expire the pending-factor cookie.
-                Err(
+                Err(ExistingSessionFactorError::Auth(
                     error @ AuthError::Upstream {
                         code: "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE",
                         ..
                     },
-                ) => return Err(error),
-                Err(error) => return verification_error_response(error, ctx),
+                )) => return Err(error),
+                Err(ExistingSessionFactorError::Auth(error)) => {
+                    return verification_error_response(error, ctx);
+                }
             };
         let mut auth_response = AuthResponse::json(200, &response)?;
         for cookie in set_cookie_headers {
@@ -1091,7 +1096,8 @@ async fn verify_totp_core(
                 false,
                 ctx,
             )
-            .await?;
+            .await
+            .map_err(ExistingSessionFactorError::into_auth_error)?;
             mark_factor_verified(&two_factor, ctx).await?;
             Ok(result)
         }
@@ -1191,7 +1197,7 @@ async fn verify_otp_core(
     body: &VerifyOtpRequest,
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<(SessionTokenResponse<UserView>, Vec<String>)> {
+) -> Result<(SessionTokenResponse<UserView>, Vec<String>), ExistingSessionFactorError> {
     let state = resolve_two_factor_state(req, ctx).await?;
     let factor = if matches!(state, ResolvedTwoFactorState::Pending(_)) {
         let factor = ctx
@@ -1211,7 +1217,7 @@ async fn verify_otp_core(
         .consume_verification_by_identifier(&identifier)
         .await?
     else {
-        return Err(AuthError::bad_request("OTP has expired"));
+        return Err(AuthError::bad_request("OTP has expired").into());
     };
 
     let mut parts = verification.value().split(':');
@@ -1248,7 +1254,8 @@ async fn verify_otp_core(
             status: 400,
             code: "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE",
             message: "Too many attempts. Please request a new code.",
-        });
+        }
+        .into());
     }
 
     let is_valid = config
@@ -1268,7 +1275,8 @@ async fn verify_otp_core(
             better_auth_core::utils::json::number_to_string(
                 &serde_json::Number::from_f64(next_count)
                     .ok_or_else(|| AuthError::internal("Invalid OTP counter"))?,
-            )?
+            )
+            .map_err(AuthError::from)?
         };
         let next_value = format!("{stored_otp}:{next_counter}");
         let expires_at = verification.expires_at();
@@ -1284,7 +1292,7 @@ async fn verify_otp_core(
         if let Some(factor) = &factor {
             record_account_failure(config, factor, ctx).await?;
         }
-        return Err(AuthError::authentication_failed("Invalid code"));
+        return Err(AuthError::authentication_failed("Invalid code").into());
     }
 
     if let Some(factor) = &factor {
@@ -1298,6 +1306,7 @@ async fn verify_otp_core(
         ResolvedTwoFactorState::Pending(pending) => {
             finalize_pending_two_factor(pending, req, body.trust_device.unwrap_or(false), true, ctx)
                 .await
+                .map_err(ExistingSessionFactorError::Auth)
         }
     }
 }
@@ -1418,6 +1427,7 @@ async fn verify_backup_code_core(
                 verify_existing_session_factor(user, *session, false, false, ctx)
                     .await
                     .map(|(response, headers)| (response.into(), headers))
+                    .map_err(ExistingSessionFactorError::into_auth_error)
             }
         }
         ResolvedTwoFactorState::Pending(pending) => {
@@ -1704,13 +1714,35 @@ fn verification_error_response(
     }
 }
 
+// Only an explicitly cancelled session creation is distinguished. The same
+// AuthError from user updates or other operations retains its default response.
+enum ExistingSessionFactorError {
+    Auth(AuthError),
+    SessionCreationCancelled,
+}
+
+impl From<AuthError> for ExistingSessionFactorError {
+    fn from(error: AuthError) -> Self {
+        Self::Auth(error)
+    }
+}
+
+impl ExistingSessionFactorError {
+    fn into_auth_error(self) -> AuthError {
+        match self {
+            Self::Auth(error) => error,
+            Self::SessionCreationCancelled => AuthError::SessionCreationCancelled,
+        }
+    }
+}
+
 async fn verify_existing_session_factor(
     user: impl AuthUser,
     session: impl AuthSession,
     enable_two_factor_if_needed: bool,
     return_updated_snapshot: bool,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<(SessionTokenResponse<UserView>, Vec<String>)> {
+) -> Result<(SessionTokenResponse<UserView>, Vec<String>), ExistingSessionFactorError> {
     if enable_two_factor_if_needed && !user.two_factor_enabled() {
         let updated_user = ctx
             .database
@@ -1730,7 +1762,12 @@ async fn verify_existing_session_factor(
             &session,
         )
         .await
-        .map_err(SessionIssueError::into_auth_error)?;
+        .map_err(|error| match error.into_auth_error() {
+            AuthError::SessionCreationCancelled => {
+                ExistingSessionFactorError::SessionCreationCancelled
+            }
+            error => ExistingSessionFactorError::Auth(error),
+        })?;
         ctx.database.delete_session(session.token()).await?;
         return Ok((
             SessionTokenResponse {
