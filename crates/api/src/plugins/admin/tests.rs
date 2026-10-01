@@ -1,11 +1,19 @@
 use super::*;
+
 use crate::plugins::test_helpers;
+
 use better_auth_core::entity::{AuthAccount, AuthSession};
+
 use better_auth_core::utils::cookie_utils::related_cookie_name;
+
 use better_auth_core::wire::{SessionView, UserView};
+
 use better_auth_core::{AuthPlugin, CreateSession, CreateUser, HttpMethod};
+
 use chrono::{Duration, Utc};
+
 use std::collections::HashMap;
+
 use std::sync::Arc;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
@@ -63,7 +71,7 @@ fn set_cookie_value(resp: &AuthResponse, name: &str) -> Option<String> {
         if cookie_name != name {
             return None;
         }
-        Some(remainder.split(';').next().unwrap_or_default().to_string())
+        Some(remainder.split(';').next().unwrap_or_default().to_owned())
     })
 }
 
@@ -73,7 +81,7 @@ async fn test_custom_admin_role_can_use_permission_engine() {
         "test-secret-key-at-least-32-chars-long",
     ));
     let database = test_helpers::create_test_database().await;
-    let ctx = AuthContext::new(config, database.clone());
+    let ctx = AuthContext::new(config, Arc::clone(&database));
 
     let admin = database
         .create_user(
@@ -87,7 +95,7 @@ async fn test_custom_admin_role_can_use_permission_engine() {
 
     let admin_session = database
         .create_session(CreateSession {
-            additional_fields: Default::default(),
+            additional_fields: better_auth_core::field_policy::FieldValues::default(),
             token: None,
             active_team_id: None,
             user_id: admin.id.clone(),
@@ -111,9 +119,9 @@ async fn test_custom_admin_role_can_use_permission_engine() {
         .unwrap();
 
     let plugin = AdminPlugin::with_config(AdminConfig {
-        admin_roles: Some(vec!["superadmin".to_string()]),
+        admin_roles: Some(vec!["superadmin".to_owned()]),
         roles: Some(HashMap::from([(
-            "superadmin".to_string(),
+            "superadmin".to_owned(),
             RolePermissions::new()
                 .allow(
                     "user",
@@ -143,7 +151,12 @@ async fn test_custom_admin_role_can_use_permission_engine() {
 
     let resp = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
     assert_eq!(resp.status, 200);
-    assert_eq!(json_body(&resp)["total"], 2);
+    assert_eq!(
+        (*(json_body(&resp))
+            .get("total")
+            .unwrap_or(&serde_json::Value::Null)),
+        2
+    );
 }
 
 #[tokio::test]
@@ -167,8 +180,8 @@ async fn test_ban_revokes_user_sessions() {
     let resp = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
     assert_eq!(resp.status, 200);
 
-    let sessions = ctx.database.get_user_sessions(&user.id).await.unwrap();
-    assert!(sessions.is_empty());
+    let sessions_2 = ctx.database.get_user_sessions(&user.id).await.unwrap();
+    assert!(sessions_2.is_empty());
 }
 
 #[tokio::test]
@@ -189,7 +202,7 @@ async fn test_unban_clears_ban_reason_and_expires() {
     let resp = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
     assert_eq!(resp.status, 200);
 
-    let req = make_request(
+    let req_2 = make_request(
         HttpMethod::Post,
         "/admin/unban-user",
         &admin_session.token,
@@ -198,8 +211,8 @@ async fn test_unban_clears_ban_reason_and_expires() {
         })),
     );
 
-    let resp = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
-    assert_eq!(resp.status, 200);
+    let resp_2 = plugin.on_request(&req_2, &ctx).await.unwrap().unwrap();
+    assert_eq!(resp_2.status, 200);
 
     let updated_user = ctx
         .database
@@ -232,10 +245,14 @@ async fn test_impersonation_session_tracks_admin_id() {
         set_cookie_value(&resp, &admin_cookie_name).is_some(),
         "impersonation should emit an admin_session cookie"
     );
-    let token = json_body(&resp)["session"]["token"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let token = (*(*(json_body(&resp))
+        .get("session")
+        .unwrap_or(&serde_json::Value::Null))
+    .get("token")
+    .unwrap_or(&serde_json::Value::Null))
+    .as_str()
+    .unwrap()
+    .to_owned();
     let session = ctx.database.get_session(&token).await.unwrap().unwrap();
 
     assert_eq!(session.impersonated_by().unwrap(), admin.id);
@@ -245,7 +262,8 @@ async fn test_impersonation_session_tracks_admin_id() {
 async fn test_stop_impersonating_restores_admin_session() {
     let (mut ctx, admin, admin_session, user, _user_session) = create_admin_context().await;
     let plugin = AdminPlugin::new();
-    let mut init = better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    let mut init =
+        better_auth_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
     plugin.on_init(&mut init).await.unwrap();
     ctx.metadata.extend(init.into_parts().metadata);
 
@@ -258,33 +276,42 @@ async fn test_stop_impersonating_restores_admin_session() {
         })),
     );
     let resp = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
-    let impersonation_token = json_body(&resp)["session"]["token"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let impersonation_token = (*(*(json_body(&resp))
+        .get("session")
+        .unwrap_or(&serde_json::Value::Null))
+    .get("token")
+    .unwrap_or(&serde_json::Value::Null))
+    .as_str()
+    .unwrap()
+    .to_owned();
     let admin_cookie_name = related_cookie_name(&ctx.config, "admin_session");
     let admin_cookie = set_cookie_value(&resp, &admin_cookie_name)
         .expect("impersonation should set the admin_session cookie");
 
-    let mut req = make_request(
+    let mut req_2 = make_request(
         HttpMethod::Post,
         "/admin/stop-impersonating",
         &impersonation_token,
         None,
     );
-    req.headers.insert(
-        "cookie".to_string(),
+    req_2.headers.insert(
+        "cookie".to_owned(),
         format!(
             "{}; {admin_cookie_name}={admin_cookie}",
-            req.headers
+            req_2
+                .headers
                 .get("cookie")
                 .expect("impersonated browser has a signed session cookie")
         ),
     );
-    let resp = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
-    let body = json_body(&resp);
+    let resp_2 = plugin.on_request(&req_2, &ctx).await.unwrap().unwrap();
+    let body = json_body(&resp_2);
 
-    let restored_token = body["session"]["token"].as_str().unwrap();
+    let restored_token = (*(*(body).get("session").unwrap_or(&serde_json::Value::Null))
+        .get("token")
+        .unwrap_or(&serde_json::Value::Null))
+    .as_str()
+    .unwrap();
     assert_eq!(
         restored_token, admin_session.token,
         "stop-impersonating should restore the original admin session token"
@@ -304,7 +331,7 @@ async fn test_stop_impersonating_restores_admin_session() {
             .unwrap()
             .is_none()
     );
-    let cleared_admin_cookie = resp
+    let cleared_admin_cookie = resp_2
         .headers
         .get_all("Set-Cookie")
         .find(|header| header.starts_with(&format!("{admin_cookie_name}=")))
@@ -393,12 +420,19 @@ async fn test_remove_user_cleans_up_sessions_and_accounts() {
         })),
     );
     let resp = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
-    let user_id = json_body(&resp)["user"]["id"].as_str().unwrap().to_string();
+    let user_id = (*(*(json_body(&resp))
+        .get("user")
+        .unwrap_or(&serde_json::Value::Null))
+    .get("id")
+    .unwrap_or(&serde_json::Value::Null))
+    .as_str()
+    .unwrap()
+    .to_owned();
 
     let accounts = ctx.database.get_user_accounts(&user_id).await.unwrap();
     assert_eq!(accounts.len(), 1);
 
-    let req = make_request(
+    let req_2 = make_request(
         HttpMethod::Post,
         "/admin/remove-user",
         &admin_session.token,
@@ -406,8 +440,8 @@ async fn test_remove_user_cleans_up_sessions_and_accounts() {
             "userId": user_id,
         })),
     );
-    let resp = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
-    assert_eq!(resp.status, 200);
+    let resp_2 = plugin.on_request(&req_2, &ctx).await.unwrap().unwrap();
+    assert_eq!(resp_2.status, 200);
 
     assert!(
         ctx.database
@@ -441,12 +475,24 @@ async fn test_set_user_password_updates_credential_account() {
         })),
     );
     let resp = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
-    let user_id = json_body(&resp)["user"]["id"].as_str().unwrap().to_string();
+    let user_id = (*(*(json_body(&resp))
+        .get("user")
+        .unwrap_or(&serde_json::Value::Null))
+    .get("id")
+    .unwrap_or(&serde_json::Value::Null))
+    .as_str()
+    .unwrap()
+    .to_owned();
 
     let before = ctx.database.get_user_accounts(&user_id).await.unwrap();
-    let old_password = before[0].password().unwrap().to_string();
+    let old_password = (*(before)
+        .first()
+        .expect("persisted rows contain the requested index"))
+    .password()
+    .unwrap()
+    .to_owned();
 
-    let req = make_request(
+    let req_2 = make_request(
         HttpMethod::Post,
         "/admin/set-user-password",
         &admin_session.token,
@@ -455,11 +501,16 @@ async fn test_set_user_password_updates_credential_account() {
             "newPassword": "newpassword456"
         })),
     );
-    let resp = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
-    assert_eq!(resp.status, 200);
+    let resp_2 = plugin.on_request(&req_2, &ctx).await.unwrap().unwrap();
+    assert_eq!(resp_2.status, 200);
 
     let after = ctx.database.get_user_accounts(&user_id).await.unwrap();
-    let new_password = after[0].password().unwrap().to_string();
+    let new_password = (*(after)
+        .first()
+        .expect("persisted rows contain the requested index"))
+    .password()
+    .unwrap()
+    .to_owned();
     assert_ne!(old_password, new_password);
 }
 
@@ -478,9 +529,16 @@ async fn test_set_user_password_does_not_create_credential_account() {
         })),
     );
     let resp = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
-    let user_id = json_body(&resp)["user"]["id"].as_str().unwrap().to_string();
+    let user_id = (*(*(json_body(&resp))
+        .get("user")
+        .unwrap_or(&serde_json::Value::Null))
+    .get("id")
+    .unwrap_or(&serde_json::Value::Null))
+    .as_str()
+    .unwrap()
+    .to_owned();
 
-    let req = make_request(
+    let req_2 = make_request(
         HttpMethod::Post,
         "/admin/set-user-password",
         &admin_session.token,
@@ -489,8 +547,8 @@ async fn test_set_user_password_does_not_create_credential_account() {
             "newPassword": "newpassword456"
         })),
     );
-    let resp = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
-    assert_eq!(resp.status, 200);
+    let resp_2 = plugin.on_request(&req_2, &ctx).await.unwrap().unwrap();
+    assert_eq!(resp_2.status, 200);
 
     assert!(
         ctx.database

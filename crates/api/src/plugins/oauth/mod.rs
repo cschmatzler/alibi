@@ -1,22 +1,32 @@
+mod account;
+
+mod account_cookie;
+
+pub mod encryption;
+
+pub(in crate::plugins) mod handlers;
+
+mod providers;
+
+pub(in crate::plugins) mod state;
+
+mod types;
+
 use async_trait::async_trait;
 
 use better_auth_core::AuthResult;
+
 use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
+
 use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 
-mod account;
-mod account_cookie;
-pub mod encryption;
-pub(crate) mod handlers;
-pub(crate) use handlers::{
+pub(in crate::plugins) use handlers::{
     OAuthProcessPolicy, OAuthSignInError, create_account_cookie_header, process_oauth_sign_in,
 };
-mod providers;
-pub(crate) mod state;
-pub(crate) use state::{
+
+pub(in crate::plugins) use state::{
     CapturedOAuthServerContext, OAuthServerContext, RecoveredOAuthServerContext,
 };
-mod types;
 
 pub use providers::{
     OAuthAuthorizationPolicy, OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthConfig,
@@ -29,18 +39,21 @@ pub struct OAuthPlugin {
 }
 
 impl OAuthPlugin {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             config: OAuthConfig::default(),
         }
     }
 
-    pub fn with_config(config: OAuthConfig) -> Self {
+    #[must_use]
+    pub const fn with_config(config: OAuthConfig) -> Self {
         Self { config }
     }
 
+    #[must_use]
     pub fn add_provider(mut self, name: &str, provider: OAuthProvider) -> Self {
-        let _ = self.config.providers.insert(name.to_string(), provider);
+        drop(self.config.providers.insert(name.to_owned(), provider));
         self
     }
 }
@@ -106,6 +119,12 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
     }
 }
 
+impl std::fmt::Debug for OAuthPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuthPlugin").finish_non_exhaustive()
+    }
+}
+
 /// Check if the path matches `/callback/{provider}` (with optional query string).
 fn path_matches_callback(path: &str) -> bool {
     let path_without_query = path.split('?').next().unwrap_or(path);
@@ -117,5 +136,8 @@ fn path_matches_callback(path: &str) -> bool {
 /// Extract the provider name from `/callback/{provider}?...`.
 fn extract_provider_from_callback(path: &str) -> String {
     let path_without_query = path.split('?').next().unwrap_or(path);
-    path_without_query["/callback/".len()..].to_string()
+    path_without_query
+        .strip_prefix("/callback/")
+        .unwrap_or_default()
+        .to_owned()
 }

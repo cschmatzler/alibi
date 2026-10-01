@@ -50,7 +50,7 @@ fn check_predefined_name(name: &str, config: &OrganizationConfig) -> AuthResult<
         || config
             .roles
             .as_ref()
-            .is_some_and(|roles| roles.contains_key(name))
+            .is_some_and(|configured_roles| configured_roles.contains_key(name))
     {
         return Err(org_error(400, "ROLE_NAME_IS_ALREADY_TAKEN"));
     }
@@ -104,6 +104,14 @@ fn missing_permissions(
     Ok(missing)
 }
 
+///
+/// # Errors
+///
+/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep role endpoint dispatch and each permission check adjacent to its persistence operation"
+)]
 pub async fn handle_role_request<S: AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
@@ -128,7 +136,7 @@ pub async fn handle_role_request<S: AuthSchema>(
             Err(response) => return Ok(Some(response)),
         }
     } else {
-        Default::default()
+        serde_json::Map::default()
     };
     let mut issues = validation::Issues::default();
     let (explicit, chosen, create, updates) = match (req.method(), req.path()) {
@@ -147,7 +155,7 @@ pub async fn handle_role_request<S: AuthSchema>(
                     "body.permission",
                 )));
             if let Some(additional) = body.get("additionalFields") {
-                let _ = issues.take(validation::object(
+                let _ignored_take = issues.take(validation::object(
                     Some(additional),
                     "body.additionalFields",
                 ));
@@ -299,7 +307,7 @@ pub async fn handle_role_request<S: AuthSchema>(
     } else {
         let chosen = chosen.ok_or_else(|| org_error(400, "ROLE_NOT_FOUND"))?;
         if action == "delete"
-            && matches!(&chosen,OrganizationRoleSelector::Name(name) if (config.roles.is_none() && ["owner","admin","member"].contains(&name.as_str())) || config.roles.as_ref().is_some_and(|roles| roles.contains_key(name)))
+            && matches!(&chosen,OrganizationRoleSelector::Name(name) if (config.roles.is_none() && ["owner","admin","member"].contains(&name.as_str())) || config.roles.as_ref().is_some_and(|configured_roles| configured_roles.contains_key(name)))
         {
             return Err(org_error(400, "CANNOT_DELETE_A_PRE_DEFINED_ROLE"));
         }
@@ -316,7 +324,8 @@ pub async fn handle_role_request<S: AuthSchema>(
             {
                 return Err(org_error(400, "ROLE_IS_ASSIGNED_TO_MEMBERS"));
             }
-            let _ = ctx.database.delete_organization_role(&org, &chosen).await?;
+            let _ignored_delete_organization_role =
+                ctx.database.delete_organization_role(&org, &chosen).await?;
             AuthResponse::json(200, &serde_json::json!({"success":true}))?
         } else if let Some(updates) = updates {
             if let Some(permission) = &updates.permission {
@@ -334,17 +343,18 @@ pub async fn handle_role_request<S: AuthSchema>(
                 check_name(&name, &org, config, ctx).await?;
                 role.role = name;
             }
-            let _ = ctx
-                .database
-                .update_organization_role(
-                    &org,
-                    &chosen,
-                    UpdateOrganizationRole {
-                        role: Some(role.role.clone()),
-                        permission: Some(role.permission.clone()),
-                    },
-                )
-                .await?;
+            drop(
+                ctx.database
+                    .update_organization_role(
+                        &org,
+                        &chosen,
+                        UpdateOrganizationRole {
+                            role: Some(role.role.clone()),
+                            permission: Some(role.permission.clone()),
+                        },
+                    )
+                    .await?,
+            );
             // The upstream return value merges the pre-update row; the stored updatedAt still advances.
             AuthResponse::json(200, &serde_json::json!({"success":true,"roleData":role}))?
         } else {

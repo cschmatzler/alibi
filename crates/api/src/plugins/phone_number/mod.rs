@@ -3,18 +3,24 @@
 //! [`PhoneNumberPlugin::consume_otp`] is a server-only verification operation.
 //! It does not create users or sessions and never registers a public route.
 
-use async_trait::async_trait;
-use better_auth_core::{AuthContext, AuthRequest, AuthResult, AuthSchema};
-use chrono::Duration;
-use std::sync::Arc;
-
 mod handlers;
+
 #[cfg(test)]
 mod tests;
+
 mod types;
 
+use async_trait::async_trait;
+
+use better_auth_core::{AuthContext, AuthRequest, AuthResult, AuthSchema};
+
+use chrono::Duration;
+
+use std::sync::Arc;
+
 pub use types::{PhoneNumberVerification, PhoneOtpDelivery};
-pub(crate) use types::{parse_signup_phone, reject_verified_input};
+
+pub(in crate::plugins) use types::{parse_signup_phone, reject_verified_input};
 
 #[async_trait]
 pub trait SendPhoneOtp: Send + Sync {
@@ -59,6 +65,12 @@ pub struct PhoneNumberConfig {
     pub allowed_attempts: usize,
 }
 
+impl std::fmt::Debug for PhoneNumberConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PhoneNumberConfig").finish_non_exhaustive()
+    }
+}
+
 impl Default for PhoneNumberConfig {
     fn default() -> Self {
         Self {
@@ -81,12 +93,23 @@ pub struct PhoneNumberPlugin {
     config: PhoneNumberConfig,
 }
 
+impl std::fmt::Debug for PhoneNumberPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PhoneNumberPlugin").finish_non_exhaustive()
+    }
+}
+
 impl PhoneNumberPlugin {
-    pub fn new(config: PhoneNumberConfig) -> Self {
+    #[must_use]
+    pub const fn new(config: PhoneNumberConfig) -> Self {
         Self { config }
     }
 
     /// Consume a phone proof without mutating a user or issuing a session.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the OTP is missing, expired, invalid, or cannot be consumed from storage.
     pub async fn consume_otp(
         &self,
         ctx: &AuthContext<impl AuthSchema>,

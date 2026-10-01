@@ -1,14 +1,18 @@
-//! SeaORM model bindings for Better Auth schemas.
+//! `SeaORM` model bindings for Better Auth schemas.
 
 use chrono::{DateTime, Utc};
+
 use sea_orm::{
     ActiveModelBehavior, ActiveModelTrait, ColumnTrait, EntityTrait, FromQueryResult,
     IntoActiveModel, Value,
 };
 
 use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
+
 use better_auth_core::error::AuthResult;
+
 pub use better_auth_core::schema::AuthSchema;
+
 use better_auth_core::types::{
     CreateAccount, CreateSession, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
 };
@@ -17,24 +21,36 @@ pub trait SeaOrmUserModel:
     AuthUser + IntoActiveModel<Self::ActiveModel> + Clone + Send + Sync + 'static + FromQueryResult
 {
     type Id: Clone + Into<Value> + Send + Sync + 'static;
+
     type Entity: EntityTrait<Model = Self>;
+
     type ActiveModel: ActiveModelTrait<Entity = Self::Entity> + ActiveModelBehavior + Send;
+
     type Column: ColumnTrait;
 
     fn id_column() -> Self::Column;
+
     fn email_column() -> Self::Column;
+
     /// Returns the username column, or `None` if the username plugin is not enabled.
+    #[must_use]
     fn username_column() -> Option<Self::Column> {
         None
     }
+
+    #[must_use]
     fn phone_number_column() -> Option<Self::Column> {
         None
     }
+
     fn name_column() -> Self::Column;
+
     fn created_at_column() -> Self::Column;
+
     /// Bind an admin user-list field to its actual model column. Derived models
     /// provide all declared fields, including renamed physical columns. Manual
     /// models may add their plugin/application field bindings explicitly.
+    #[must_use]
     fn list_users_column(field: &str) -> Option<Self::Column> {
         match field {
             "id" => Some(Self::id_column()),
@@ -45,6 +61,11 @@ pub trait SeaOrmUserModel:
             _ => None,
         }
     }
+
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the identifier is invalid for this entity's ID type.
     fn parse_id(id: &str) -> AuthResult<Self::Id>;
 
     fn new_active(
@@ -52,9 +73,15 @@ pub trait SeaOrmUserModel:
         create_user: CreateUser,
         now: DateTime<Utc>,
     ) -> Self::ActiveModel;
+
     fn apply_update(active: &mut Self::ActiveModel, update: UpdateUser, now: DateTime<Utc>);
+
     /// Prepare JSON bindings after application hooks and before the atomic write.
     /// Manual model implementations may retain their existing binding behavior.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if entity metadata preparation fails.
     fn prepare_json_metadata(
         _active: &mut Self::ActiveModel,
         _backend: sea_orm::DbBackend,
@@ -67,6 +94,10 @@ pub trait SeaOrmSessionModel:
     AuthSession + IntoActiveModel<Self::ActiveModel> + Clone + Send + Sync + 'static + FromQueryResult
 {
     /// Bind configured fields to actual model columns while retaining raw numbers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if configured additional fields cannot be bound to entity columns.
     fn additional_field_bindings(
         fields: &better_auth_core::field_policy::FieldValues,
         _backend: sea_orm::DbBackend,
@@ -78,6 +109,11 @@ pub trait SeaOrmSessionModel:
             "the session schema has no additional field bindings",
         ))
     }
+
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the field value is unsupported by the entity column.
     fn set_additional_field(
         _active: &mut Self::ActiveModel,
         _column: Self::Column,
@@ -88,19 +124,39 @@ pub trait SeaOrmSessionModel:
             "the session schema cannot stage additional fields",
         ))
     }
+
     type Id: Clone + Into<Value> + Send + Sync + 'static;
+
     type UserId: Clone + Into<Value> + Send + Sync + 'static;
+
     type Entity: EntityTrait<Model = Self>;
+
     type ActiveModel: ActiveModelTrait<Entity = Self::Entity> + ActiveModelBehavior + Send;
+
     type Column: ColumnTrait;
 
     fn id_column() -> Self::Column;
+
     fn token_column() -> Self::Column;
+
     fn user_id_column() -> Self::Column;
+
     fn active_column() -> Self::Column;
+
     fn expires_at_column() -> Self::Column;
+
     fn created_at_column() -> Self::Column;
+
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the identifier is invalid for this entity's ID type.
     fn parse_id(id: &str) -> AuthResult<Self::Id>;
+
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the user identifier is invalid for this entity's ID type.
     fn parse_user_id(user_id: &str) -> AuthResult<Self::UserId>;
 
     fn new_active(
@@ -109,14 +165,22 @@ pub trait SeaOrmSessionModel:
         create_session: CreateSession,
         now: DateTime<Utc>,
     ) -> Self::ActiveModel;
+
     fn set_expires_at(active: &mut Self::ActiveModel, expires_at: DateTime<Utc>);
+
     fn set_updated_at(active: &mut Self::ActiveModel, updated_at: DateTime<Utc>);
+
     fn set_active_organization_id(active: &mut Self::ActiveModel, organization_id: Option<String>);
+
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configured entity does not support an active-team field.
     fn set_active_team_id(
         active: &mut Self::ActiveModel,
         team_id: Option<String>,
     ) -> AuthResult<()> {
-        let _ = (active, team_id);
+        drop((active, team_id));
         Err(better_auth_core::AuthError::internal(
             "the session schema has no active-team field",
         ))
@@ -137,8 +201,16 @@ pub trait SeaOrmAccountModel:
     fn account_id_column() -> Self::Column;
     fn user_id_column() -> Self::Column;
     fn created_at_column() -> Self::Column;
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the identifier is invalid for this entity's ID type.
     fn parse_id(id: &str) -> AuthResult<Self::Id>;
 
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the user identifier is invalid for this entity's ID type.
     fn parse_user_id(user_id: &str) -> AuthResult<Self::UserId>;
 
     fn new_active(
@@ -168,15 +240,24 @@ pub trait SeaOrmVerificationModel:
     fn value_column() -> Self::Column;
     fn expires_at_column() -> Self::Column;
     fn created_at_column() -> Self::Column;
+    #[must_use]
     fn updated_at_column() -> Option<Self::Column> {
         None
     }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the identifier is invalid for this entity's ID type.
     fn parse_id(id: &str) -> AuthResult<Self::Id>;
 
     /// Convert a deterministic reservation key to this schema's ID type.
     /// String schemas use the upstream key. UUID schemas can accept the UUID
     /// derived from the same digest; numeric schemas must explicitly provide
     /// a collision-resistant reservation strategy instead of truncating it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the reservation identifier is invalid for this entity's ID type.
     fn parse_reservation_id(encoded: &str, digest: [u8; 32]) -> AuthResult<Self::Id> {
         if let Ok(id) = Self::parse_id(encoded) {
             return Ok(id);
@@ -185,7 +266,7 @@ pub trait SeaOrmVerificationModel:
         for (byte, source) in bytes.iter_mut().zip(digest) {
             *byte = source;
         }
-        Self::parse_id(&uuid::Uuid::from_bytes(bytes).to_string()).map_err(|_| {
+        Self::parse_id(&uuid::Uuid::from_bytes(bytes).to_string()).map_err(|_error| {
             better_auth_core::AuthError::internal(
                 "the verification schema cannot represent deterministic reservation IDs",
             )

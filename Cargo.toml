@@ -6,6 +6,10 @@ edition = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 
+readme = { workspace = true }
+keywords = { workspace = true }
+categories = { workspace = true }
+
 [lints]
 workspace = true
 
@@ -15,6 +19,9 @@ members = ["crates/core", "crates/api", "crates/derive", "crates/seaorm", "crate
 exclude = ["compat-tests/rust-server"]
 
 [workspace.package]
+readme = "README.md"
+keywords = ["auth", "authentication", "session", "oauth", "security"]
+categories = ["authentication", "web-programming"]
 version = "1.0.0-alpha.3"
 edition = "2024"
 license = "MIT OR Apache-2.0"

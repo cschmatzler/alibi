@@ -151,8 +151,9 @@ devenv test
 ```
 
 You can also enter the environment manually with `devenv shell`.
-Rust and its components are configured in `devenv.nix`; `devenv.lock` pins the
-remaining tools. CI runs `devenv test` using the same environment.
+Rust tooling and lint rules come from the private `cschmatzler/rust` flake.
+Local development requires GitHub SSH access; CI uses the `RUST_STYLE_TOKEN`
+secret to fetch the locked revision. `devenv.lock` pins the environment.
 
 See [Compatibility testing](compat-tests/README.md) for focused checks and the
 compatibility contract.

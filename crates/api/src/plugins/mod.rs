@@ -1,48 +1,74 @@
 pub mod account_management;
+
 pub mod admin;
+
 pub mod anonymous;
+
 pub mod api_key;
-pub(crate) mod authentication_helpers;
+
+pub(in crate::plugins) mod authentication_helpers;
+
 pub mod device_authorization;
+
 pub mod email_otp;
+
 pub mod email_password;
+
 pub mod email_verification;
+
 pub mod helpers;
+
 pub mod jwt;
+
 pub mod magic_link;
+
 pub mod multi_session;
+
 pub mod oauth;
+
 pub mod oauth_proxy;
+
 pub mod one_tap;
+
 pub mod one_time_token;
+
 pub mod open_api;
+
 pub mod organization;
+
 pub mod passkey;
+
 pub mod password_management;
+
 pub mod phone_number;
+
 pub mod session_management;
+
 pub mod siwe;
-pub(crate) mod token_crypto;
+
+pub(in crate::plugins) mod token_crypto;
+
 pub mod two_factor;
+
 pub mod user_management;
 
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct StatusResponse {
-    status: bool,
-}
-
 #[cfg(test)]
-pub(crate) mod test_helpers {
+pub(in crate::plugins) mod test_helpers {
+
     use std::collections::HashMap;
+
     use std::sync::Arc;
 
     use better_auth_core::config::AuthConfig;
+
     use better_auth_core::wire::{SessionView, UserView};
+
     use better_auth_core::{AuthContext, AuthRequest, CreateSession, CreateUser, HttpMethod};
+
     use better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+
     use better_auth_seaorm::{Database, SeaOrmStore};
+
     use chrono::{Duration, Utc};
 
     pub type TestDatabase = dyn better_auth_core::store::AuthStore<BundledSchema>;
@@ -96,13 +122,13 @@ pub(crate) mod test_helpers {
         expires_in: Duration,
     ) -> SessionView {
         let create_session = CreateSession {
-            additional_fields: Default::default(),
+            additional_fields: better_auth_core::field_policy::FieldValues::default(),
             token: None,
             active_team_id: None,
             user_id,
             expires_at: Utc::now() + expires_in,
-            ip_address: Some("127.0.0.1".to_string()),
-            user_agent: Some("test-agent".to_string()),
+            ip_address: Some("127.0.0.1".to_owned()),
+            user_agent: Some("test-agent".to_owned()),
             impersonated_by: None,
             active_organization_id: None,
         };
@@ -140,7 +166,7 @@ pub(crate) mod test_helpers {
         if let Some(token) = token {
             let config = create_test_config();
             headers.insert(
-                "cookie".to_string(),
+                "cookie".to_owned(),
                 format!(
                     "{}={}",
                     config.session.cookie_name,
@@ -149,7 +175,7 @@ pub(crate) mod test_helpers {
             );
         }
 
-        AuthRequest::from_parts(method, path.to_string(), headers, body, query)
+        AuthRequest::from_parts(method, path.to_owned(), headers, body, query)
     }
 
     pub fn create_auth_request_no_query(
@@ -185,42 +211,64 @@ pub(crate) mod test_helpers {
             query,
         );
         req.headers
-            .insert("content-type".to_string(), "application/json".to_string());
+            .insert("content-type".to_owned(), "application/json".to_owned());
         req
     }
 }
 
+use serde::{Deserialize, Serialize};
+
 pub use account_management::AccountManagementPlugin;
+
 pub use admin::{
     AdminBannedUserMessage, AdminBannedUserMessageHandler, AdminConfig, AdminPlugin,
     RolePermissions,
 };
+
 pub use api_key::{ApiKeyConfig, ApiKeyPlugin};
+
 pub use better_auth_core::PasswordHasher;
+
 pub use device_authorization::DeviceAuthorizationPlugin;
+
 pub use email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
+
 pub use email_password::{EmailPasswordConfig, EmailPasswordPlugin};
+
 pub use email_verification::{
     EmailVerificationConfig, EmailVerificationHook, EmailVerificationPlugin, SendVerificationEmail,
 };
+
 pub use magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
+
 pub use organization::{
     OrganizationConfig, OrganizationCreatePatch, OrganizationCreatedContext,
     OrganizationCreationHooks, OrganizationDraftContext, OrganizationMemberCreatePatch,
     OrganizationMemberDraftContext, OrganizationPlugin,
 };
+
 pub use passkey::{PasskeyConfig, PasskeyPlugin};
+
 pub use password_management::{
     PasswordManagementConfig, PasswordManagementPlugin, SendResetPassword,
 };
+
 pub use session_management::SessionManagementPlugin;
+
 pub use siwe::{SiweConfig, SiwePlugin};
+
 pub use two_factor::{
     SendTwoFactorOtp, TwoFactorBackupCipher, TwoFactorBackupStorage, TwoFactorConfig,
     TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage, TwoFactorPlugin,
 };
+
 pub use user_management::{
     ChangeEmailConfig, DeleteUserConfig, UserManagementConfig, UserManagementPlugin,
 };
 
 pub use anonymous::{AnonymousConfig, AnonymousPlugin};
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(in crate::plugins) struct StatusResponse {
+    status: bool,
+}

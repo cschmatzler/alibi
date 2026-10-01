@@ -1,7 +1,7 @@
 //! Local magic-link delivery and explicit configuration fixtures.
 use crate::TestSchema;
 use async_trait::async_trait;
-use axum::{extract::Query, routing::get, Json, Router};
+use axum::{Json, Router, extract::Query, routing::get};
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::magic_link::{
@@ -11,8 +11,8 @@ use better_auth::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin, SessionManagementPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::{sea_orm::DatabaseConnection, SeaOrmStore};
-use serde_json::{json, Value};
+use better_auth_seaorm::{SeaOrmStore, sea_orm::DatabaseConnection};
+use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 

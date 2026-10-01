@@ -1,13 +1,10 @@
 use better_auth_core::{
     ApiKey, DeviceCode, Invitation, InvitationStatus, Member, Organization, Passkey, TwoFactor,
 };
+
 use chrono::{DateTime, Utc};
 
 use crate::store::entities;
-
-fn to_rfc3339(value: DateTime<Utc>) -> String {
-    value.to_rfc3339()
-}
 
 impl From<&entities::organization::Model> for Organization {
     fn from(model: &entities::organization::Model) -> Self {
@@ -131,4 +128,8 @@ impl From<&entities::device_code::Model> for DeviceCode {
             scope: model.scope.clone(),
         }
     }
+}
+
+fn to_rfc3339(value: DateTime<Utc>) -> String {
+    value.to_rfc3339()
 }

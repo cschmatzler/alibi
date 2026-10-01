@@ -2,10 +2,10 @@
 use crate::{CompatVerificationSender, EmailOutboxRecord, TestSchema};
 use async_trait::async_trait;
 use axum::{
+    Json, Router,
     extract::Query,
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
 };
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
@@ -18,16 +18,16 @@ use better_auth::plugins::{
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_core::{
-    wire::VerificationView, AuthRequest, CreateVerification, DatabaseError, HttpMethod,
+    AuthRequest, CreateVerification, DatabaseError, HttpMethod, wire::VerificationView,
 };
 use better_auth_seaorm::{
+    SeaOrmStore,
     sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder},
     store::entities::verification,
-    SeaOrmStore,
 };
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 

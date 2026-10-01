@@ -1,11 +1,19 @@
 use super::*;
+
 use crate::plugins::test_helpers::{create_test_config, create_user_and_session};
+
 use better_auth_core::types::{CreateMember, CreateTeam, Team, TeamMember};
+
 use better_auth_core::wire::{SessionView, UserView};
+
 use better_auth_core::{AuthError, AuthInitContext, AuthSession, CreateUser};
+
 use better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+
 use chrono::Duration;
+
 use serde::de::DeserializeOwned;
+
 use serde_json::{Value, json};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -51,7 +59,163 @@ impl OrganizationLimitResolver for RequestTeamLimits {
     }
 }
 
+#[derive(Debug)]
+struct LifecycleHooks {
+    events: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl LifecycleHooks {
+    fn record(&self, name: &str) -> AuthResult<()> {
+        self.events
+            .lock()
+            .map_err(|_error| AuthError::internal("Hook event lock poisoned"))?
+            .push(name.to_owned());
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl OrganizationTeamHooks for LifecycleHooks {
+    async fn before_create(
+        &self,
+        data: &mut CreateTeam,
+        _context: &extensions::TeamHookContext,
+    ) -> AuthResult<()> {
+        self.record("before-create")?;
+        data.name = format!("hook:{}", data.name);
+        Ok(())
+    }
+    async fn after_create(
+        &self,
+        _team: &Team,
+        _context: &extensions::TeamHookContext,
+    ) -> AuthResult<()> {
+        self.record("after-create")
+    }
+    async fn before_update(
+        &self,
+        _team: &Team,
+        update: &mut better_auth_core::types::UpdateTeam,
+        _context: &extensions::TeamHookContext,
+    ) -> AuthResult<()> {
+        self.record("before-update")?;
+        update.name = update.name.take().map(|name| format!("updated:{name}"));
+        Ok(())
+    }
+    async fn after_update(
+        &self,
+        _team: &Team,
+        _context: &extensions::TeamHookContext,
+    ) -> AuthResult<()> {
+        self.record("after-update")
+    }
+    async fn before_add_member(
+        &self,
+        _team: &Team,
+        user: &UserView,
+        _context: &extensions::TeamHookContext,
+    ) -> AuthResult<()> {
+        self.record("before-add")?;
+        if user.email.as_deref() == Some("hook-denied@example.com") {
+            return Err(AuthError::forbidden("Callback refused team membership"));
+        }
+        Ok(())
+    }
+    async fn after_add_member(
+        &self,
+        _member: &TeamMember,
+        _team: &Team,
+        _user: &UserView,
+        _context: &extensions::TeamHookContext,
+    ) -> AuthResult<()> {
+        self.record("after-add")
+    }
+    async fn before_remove_member(
+        &self,
+        _member: &TeamMember,
+        _team: &Team,
+        _user: &UserView,
+        _context: &extensions::TeamHookContext,
+    ) -> AuthResult<()> {
+        self.record("before-remove")
+    }
+    async fn after_remove_member(
+        &self,
+        _member: &TeamMember,
+        _team: &Team,
+        _user: &UserView,
+        _context: &extensions::TeamHookContext,
+    ) -> AuthResult<()> {
+        self.record("after-remove")
+    }
+    async fn before_delete(
+        &self,
+        _team: &Team,
+        _context: &extensions::TeamHookContext,
+    ) -> AuthResult<()> {
+        self.record("before-delete")
+    }
+    async fn after_delete(
+        &self,
+        _team: &Team,
+        _context: &extensions::TeamHookContext,
+    ) -> AuthResult<()> {
+        self.record("after-delete")
+    }
+}
+
+#[derive(Debug)]
+struct CustomDefaultTeam;
+
+#[async_trait]
+impl DefaultTeamFactory for CustomDefaultTeam {
+    async fn create(
+        &self,
+        organization: &better_auth_core::types::Organization,
+        context: &DefaultTeamContext,
+        store: &dyn better_auth_core::store::TeamStore,
+    ) -> AuthResult<Option<Team>> {
+        let request = context.request.as_ref().ok_or_else(|| {
+            AuthError::bad_request("Default team callback did not receive the organization request")
+        })?;
+        if context
+            .session
+            .as_ref()
+            .map(|session| session.user_id.as_str())
+            != Some(context.user.id.as_str())
+        {
+            return Err(AuthError::bad_request(
+                "Factory did not receive the authenticated principal",
+            ));
+        }
+        if context.config.base_path != "/api/auth" {
+            return Err(AuthError::bad_request(
+                "Factory did not receive the configured base path",
+            ));
+        }
+        if request.path() != "/organization/create" {
+            return Err(AuthError::bad_request("Unexpected default team request"));
+        }
+        store
+            .create_team(CreateTeam {
+                name: format!("Factory:{}", organization.name),
+                organization_id: organization.id.clone(),
+                updated_at: None,
+            })
+            .await
+            .map(Some)
+    }
+}
+
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn asynchronous_team_limits_use_the_actual_request_and_session_principal() -> TestResult {
     let plugin = OrganizationPlugin::with_config(OrganizationConfig {
         teams: TeamsConfig {
@@ -163,11 +327,25 @@ async fn asynchronous_team_limits_use_the_actual_request_and_session_principal()
     )?;
     let members = ctx.database.list_team_members(&team.id).await?;
     assert_eq!(members.len(), 1);
-    assert_eq!(members[0].user_id, first.id);
+    assert_eq!(
+        (members)
+            .first()
+            .expect("fixture contains the requested index")
+            .user_id,
+        first.id
+    );
     Ok(())
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn team_member_requests_coerce_custom_user_ids_and_keep_permission_and_tenant_guards()
 -> TestResult {
     let plugin = OrganizationPlugin::with_config(configuration());
@@ -218,7 +396,7 @@ async fn team_member_requests_coerce_custom_user_ids_and_keep_permission_and_ten
         (Some(json!(42)), "42"),
         (Some(json!(1.0)), "1"),
         (Some(json!(1e21)), "1e+21"),
-        (Some(json!(9007199254740993_u64)), "9007199254740992"),
+        (Some(json!(9_007_199_254_740_993_u64)), "9007199254740992"),
         (Some(json!(true)), "true"),
         (Some(Value::Null), "null"),
         (
@@ -250,7 +428,12 @@ async fn team_member_requests_coerce_custom_user_ids_and_keep_permission_and_ten
             .await?;
         let mut request = json!({"organizationId":organization.id,"teamId":team.id});
         if let Some(input) = input {
-            request["userId"] = input;
+            drop(
+                request
+                    .as_object_mut()
+                    .expect("request is an object")
+                    .insert("userId".to_owned(), input),
+            );
         }
         let added = call(
             &plugin,
@@ -267,8 +450,20 @@ async fn team_member_requests_coerce_custom_user_ids_and_keep_permission_and_ten
         assert_eq!(added.user_id, expected_id);
         let persisted = ctx.database.list_team_members(&team.id).await?;
         assert_eq!(persisted.len(), 1);
-        assert_eq!(persisted[0].id, added.id);
-        assert_eq!(persisted[0].user_id, expected_id);
+        assert_eq!(
+            (persisted)
+                .first()
+                .expect("fixture contains the requested index")
+                .id,
+            added.id
+        );
+        assert_eq!(
+            (persisted)
+                .first()
+                .expect("fixture contains the requested index")
+                .user_id,
+            expected_id
+        );
         if expected_id == "42" {
             assert_error(
                 &call(
@@ -299,7 +494,12 @@ async fn team_member_requests_coerce_custom_user_ids_and_keep_permission_and_ten
                 "YOU_ARE_NOT_ALLOWED_TO_REMOVE_A_TEAM_MEMBER",
             )?;
             let mut wrong_tenant = request.clone();
-            wrong_tenant["teamId"] = json!(other_team.id);
+            drop(
+                wrong_tenant
+                    .as_object_mut()
+                    .expect("request is an object")
+                    .insert("teamId".to_owned(), json!(other_team.id)),
+            );
             assert_error(
                 &call(
                     &plugin,
@@ -352,6 +552,9 @@ async fn context(plugin: &OrganizationPlugin) -> AuthResult<AuthContext<BundledS
     configured_context(plugin, create_test_config()).await
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn configured_context(
     plugin: &OrganizationPlugin,
     config: better_auth_core::AuthConfig,
@@ -376,11 +579,14 @@ async fn configured_context_with_connection(
         .map_err(|error| AuthError::internal(error.to_string()))?;
     let config = std::sync::Arc::new(config);
     let store = std::sync::Arc::new(better_auth_seaorm::SeaOrmStore::<BundledSchema>::new(
-        config.clone(),
+        std::sync::Arc::clone(&config),
         database.clone(),
     ));
     let mut ctx = AuthContext::new(config, store);
-    let mut init = AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    let mut init = AuthInitContext::new(
+        std::sync::Arc::clone(&ctx.config),
+        std::sync::Arc::clone(&ctx.database),
+    );
     plugin.on_init(&mut init).await?;
     let parts = init.into_parts();
     ctx.metadata = parts.metadata;
@@ -401,6 +607,9 @@ pub(super) async fn actor(ctx: &AuthContext<BundledSchema>, name: &str) -> (User
     .await
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn call(
     plugin: &OrganizationPlugin,
     ctx: &AuthContext<BundledSchema>,
@@ -418,16 +627,17 @@ pub(super) async fn call(
             .split(';')
             .next()
             .ok_or_else(|| AuthError::internal("Session cookie missing pair"))?;
-        let _ = req.headers.insert("cookie".to_owned(), pair.to_owned());
+        drop(req.headers.insert("cookie".to_owned(), pair.to_owned()));
     }
     for (key, value) in query {
-        let _ = req.query.insert((*key).to_owned(), (*value).to_owned());
+        drop(req.query.insert((*key).to_owned(), (*value).to_owned()));
     }
     if let Some(body) = body {
         req.body = Some(serde_json::to_vec(&body)?);
-        let _ = req
-            .headers
-            .insert("content-type".to_owned(), "application/json".to_owned());
+        drop(
+            req.headers
+                .insert("content-type".to_owned(), "application/json".to_owned()),
+        );
     }
     match plugin.on_request(&req, ctx).await {
         Ok(Some(response)) => Ok(response),
@@ -436,15 +646,30 @@ pub(super) async fn call(
     }
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn body<T: DeserializeOwned>(response: &AuthResponse) -> Result<T, serde_json::Error> {
     serde_json::from_slice(&response.body)
 }
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn id(value: &Value) -> Result<&str, std::io::Error> {
     value
         .get("id")
         .and_then(Value::as_str)
         .ok_or_else(|| std::io::Error::other("Response is missing ID"))
 }
+
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn assert_error(response: &AuthResponse, status: u16, code: &str) -> TestResult {
     assert_eq!(response.status, status);
     assert_eq!(
@@ -455,6 +680,14 @@ pub(super) fn assert_error(response: &AuthResponse, status: u16, code: &str) -> 
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn team_routes_enforce_principal_membership_scope_and_persist_session_changes() -> TestResult
 {
     let plugin = OrganizationPlugin::with_config(configuration());
@@ -495,14 +728,16 @@ async fn team_routes_enforce_principal_membership_scope_and_persist_session_chan
         .await?
         .ok_or_else(|| std::io::Error::other("Owner session missing"))?;
     assert_eq!(persisted.active_team_id(), Some(default_team.id.as_str()));
-    let _ = ctx
-        .database
-        .create_member(CreateMember::new(org_id, &member.id, "member"))
-        .await?;
-    let _ = ctx
-        .database
-        .update_session_active_organization(&member_session.token, Some(org_id))
-        .await?;
+    drop(
+        ctx.database
+            .create_member(CreateMember::new(org_id, &member.id, "member"))
+            .await?,
+    );
+    drop(
+        ctx.database
+            .update_session_active_organization(&member_session.token, Some(org_id))
+            .await?,
+    );
 
     assert_error(
         &call(
@@ -620,13 +855,13 @@ async fn team_routes_enforce_principal_membership_scope_and_persist_session_chan
     .await?;
     assert_eq!(active.status, 200);
     assert!(active.headers.get("set-cookie").is_some());
-    let persisted = ctx
+    let persisted_2 = ctx
         .database
         .get_session(&member_session.token)
         .await?
         .ok_or_else(|| std::io::Error::other("Member session missing"))?;
-    assert_eq!(persisted.active_team_id(), Some(team.id.as_str()));
-    assert_eq!(persisted.token(), member_session.token);
+    assert_eq!(persisted_2.active_team_id(), Some(team.id.as_str()));
+    assert_eq!(persisted_2.token(), member_session.token);
     let listed = call(
         &plugin,
         &ctx,
@@ -750,16 +985,18 @@ async fn team_routes_enforce_principal_membership_scope_and_persist_session_chan
         403,
         "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_TEAM",
     )?;
-    let _ = call(
-        &plugin,
-        &ctx,
-        Some(&owner_session.token),
-        HttpMethod::Post,
-        "/organization/set-active-team",
-        Some(json!({"teamId":null})),
-        &[],
-    )
-    .await?;
+    drop(
+        call(
+            &plugin,
+            &ctx,
+            Some(&owner_session.token),
+            HttpMethod::Post,
+            "/organization/set-active-team",
+            Some(json!({"teamId":null})),
+            &[],
+        )
+        .await?,
+    );
     assert_error(
         &call(
             &plugin,
@@ -777,112 +1014,15 @@ async fn team_routes_enforce_principal_membership_scope_and_persist_session_chan
     Ok(())
 }
 
-#[derive(Debug)]
-struct LifecycleHooks {
-    events: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
-}
-
-impl LifecycleHooks {
-    fn record(&self, name: &str) -> AuthResult<()> {
-        self.events
-            .lock()
-            .map_err(|_| AuthError::internal("Hook event lock poisoned"))?
-            .push(name.to_owned());
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl OrganizationTeamHooks for LifecycleHooks {
-    async fn before_create(
-        &self,
-        data: &mut CreateTeam,
-        _context: &extensions::TeamHookContext,
-    ) -> AuthResult<()> {
-        self.record("before-create")?;
-        data.name = format!("hook:{}", data.name);
-        Ok(())
-    }
-    async fn after_create(
-        &self,
-        _team: &Team,
-        _context: &extensions::TeamHookContext,
-    ) -> AuthResult<()> {
-        self.record("after-create")
-    }
-    async fn before_update(
-        &self,
-        _team: &Team,
-        update: &mut better_auth_core::types::UpdateTeam,
-        _context: &extensions::TeamHookContext,
-    ) -> AuthResult<()> {
-        self.record("before-update")?;
-        update.name = update.name.take().map(|name| format!("updated:{name}"));
-        Ok(())
-    }
-    async fn after_update(
-        &self,
-        _team: &Team,
-        _context: &extensions::TeamHookContext,
-    ) -> AuthResult<()> {
-        self.record("after-update")
-    }
-    async fn before_add_member(
-        &self,
-        _team: &Team,
-        user: &UserView,
-        _context: &extensions::TeamHookContext,
-    ) -> AuthResult<()> {
-        self.record("before-add")?;
-        if user.email.as_deref() == Some("hook-denied@example.com") {
-            return Err(AuthError::forbidden("Callback refused team membership"));
-        }
-        Ok(())
-    }
-    async fn after_add_member(
-        &self,
-        _member: &TeamMember,
-        _team: &Team,
-        _user: &UserView,
-        _context: &extensions::TeamHookContext,
-    ) -> AuthResult<()> {
-        self.record("after-add")
-    }
-    async fn before_remove_member(
-        &self,
-        _member: &TeamMember,
-        _team: &Team,
-        _user: &UserView,
-        _context: &extensions::TeamHookContext,
-    ) -> AuthResult<()> {
-        self.record("before-remove")
-    }
-    async fn after_remove_member(
-        &self,
-        _member: &TeamMember,
-        _team: &Team,
-        _user: &UserView,
-        _context: &extensions::TeamHookContext,
-    ) -> AuthResult<()> {
-        self.record("after-remove")
-    }
-    async fn before_delete(
-        &self,
-        _team: &Team,
-        _context: &extensions::TeamHookContext,
-    ) -> AuthResult<()> {
-        self.record("before-delete")
-    }
-    async fn after_delete(
-        &self,
-        _team: &Team,
-        _context: &extensions::TeamHookContext,
-    ) -> AuthResult<()> {
-        self.record("after-delete")
-    }
-}
-
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn lifecycle_hooks_change_persisted_team_data_and_veto_membership_before_writing()
 -> TestResult {
     let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -890,7 +1030,7 @@ async fn lifecycle_hooks_change_persisted_team_data_and_veto_membership_before_w
         teams: TeamsConfig {
             enabled: true,
             hooks: Some(std::sync::Arc::new(LifecycleHooks {
-                events: events.clone(),
+                events: std::sync::Arc::clone(&events),
             })),
             ..Default::default()
         },
@@ -919,11 +1059,12 @@ async fn lifecycle_hooks_change_persisted_team_data_and_veto_membership_before_w
             .map(|team| team.name.as_str()),
         Some("hook:Callbacks")
     );
-    let _ = ctx
-        .database
-        .create_member(CreateMember::new(org_id, &denied.id, "member"))
-        .await?;
-    let created = call(
+    drop(
+        ctx.database
+            .create_member(CreateMember::new(org_id, &denied.id, "member"))
+            .await?,
+    );
+    let created_2 = call(
         &plugin,
         &ctx,
         Some(&session.token),
@@ -933,7 +1074,7 @@ async fn lifecycle_hooks_change_persisted_team_data_and_veto_membership_before_w
         &[],
     )
     .await?;
-    let team: Team = body(&created)?;
+    let team: Team = body(&created_2)?;
     assert_eq!(team.name, "hook:Custom");
     let updated = call(
         &plugin,
@@ -1007,7 +1148,7 @@ async fn lifecycle_hooks_change_persisted_team_data_and_veto_membership_before_w
     assert_eq!(
         *events
             .lock()
-            .map_err(|_| std::io::Error::other("Hook event lock poisoned"))?,
+            .map_err(|_error| std::io::Error::other("Hook event lock poisoned"))?,
         vec![
             "before-create",
             "after-create",
@@ -1027,50 +1168,15 @@ async fn lifecycle_hooks_change_persisted_team_data_and_veto_membership_before_w
     Ok(())
 }
 
-#[derive(Debug)]
-struct CustomDefaultTeam;
-
-#[async_trait]
-impl DefaultTeamFactory for CustomDefaultTeam {
-    async fn create(
-        &self,
-        organization: &better_auth_core::types::Organization,
-        context: &extensions::DefaultTeamContext,
-        store: &dyn better_auth_core::store::TeamStore,
-    ) -> AuthResult<Option<Team>> {
-        let request = context.request.as_ref().ok_or_else(|| {
-            AuthError::bad_request("Default team callback did not receive the organization request")
-        })?;
-        if context
-            .session
-            .as_ref()
-            .map(|session| session.user_id.as_str())
-            != Some(context.user.id.as_str())
-        {
-            return Err(AuthError::bad_request(
-                "Factory did not receive the authenticated principal",
-            ));
-        }
-        if context.config.base_path != "/api/auth" {
-            return Err(AuthError::bad_request(
-                "Factory did not receive the configured base path",
-            ));
-        }
-        if request.path() != "/organization/create" {
-            return Err(AuthError::bad_request("Unexpected default team request"));
-        }
-        store
-            .create_team(CreateTeam {
-                name: format!("Factory:{}", organization.name),
-                organization_id: organization.id.clone(),
-                updated_at: None,
-            })
-            .await
-            .map(Some)
-    }
-}
-
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn default_team_factory_receives_request_and_its_persisted_team_becomes_active() -> TestResult
 {
     use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
@@ -1142,7 +1248,7 @@ async fn default_team_factory_receives_request_and_its_persisted_team_becomes_ac
     let kept = call(&plugin, &ctx, Some(&session.token), HttpMethod::Post, "/organization/create", Some(json!({"name":"KeptFactory","slug":"native-factory-kept","keepCurrentActiveOrganization":true})), &[]).await?;
     assert_eq!(kept.status, 200);
     let kept: Value = body(&kept)?;
-    let refreshes: i64 = database
+    let refreshes_2: i64 = database
         .query_one_raw(Statement::from_string(
             DbBackend::Sqlite,
             "SELECT refreshes FROM session_refresh_audit",
@@ -1150,13 +1256,28 @@ async fn default_team_factory_receives_request_and_its_persisted_team_becomes_ac
         .await?
         .ok_or("Refresh audit row missing")?
         .try_get("", "refreshes")?;
-    assert_eq!(refreshes, 2, "Two requests must refresh the session twice");
+    assert_eq!(
+        refreshes_2, 2,
+        "Two requests must refresh the session twice"
+    );
     let kept_teams = ctx.database.list_teams(id(&kept)?).await?;
     assert_eq!(kept_teams.len(), 1);
-    assert_eq!(kept_teams[0].name, "Factory:KeptFactory");
+    assert_eq!(
+        (kept_teams)
+            .first()
+            .expect("fixture contains the requested index")
+            .name,
+        "Factory:KeptFactory"
+    );
     assert!(
         ctx.database
-            .get_team_member(&kept_teams[0].id, &owner.id)
+            .get_team_member(
+                &(kept_teams)
+                    .first()
+                    .expect("fixture contains the requested index")
+                    .id,
+                &owner.id
+            )
             .await?
             .is_some()
     );
@@ -1172,6 +1293,10 @@ async fn default_team_factory_receives_request_and_its_persisted_team_becomes_ac
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn configured_team_limits_apply_to_server_and_http_creation() -> TestResult {
     let plugin = OrganizationPlugin::with_config(OrganizationConfig {
         teams: TeamsConfig {
@@ -1225,10 +1350,11 @@ async fn configured_team_limits_apply_to_server_and_http_creation() -> TestResul
         400,
         "YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_TEAMS",
     )?;
-    let _ = ctx
-        .database
-        .create_member(CreateMember::new(org_id, &target_session.user_id, "member"))
-        .await?;
+    drop(
+        ctx.database
+            .create_member(CreateMember::new(org_id, &target_session.user_id, "member"))
+            .await?,
+    );
     let added = call(
         &plugin,
         &ctx,
@@ -1269,6 +1395,14 @@ async fn configured_team_limits_apply_to_server_and_http_creation() -> TestResul
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn custom_role_configuration_replaces_defaults_and_whole_permission_checks_do_not_union_roles()
 -> TestResult {
     let plugin = OrganizationPlugin::with_config(OrganizationConfig {
@@ -1360,7 +1494,12 @@ async fn custom_role_configuration_replaces_defaults_and_whole_permission_checks
         &[],
     )
     .await?;
-    assert_eq!(body::<Value>(&together)?["success"], false);
+    assert_eq!(
+        (*(body::<Value>(&together)?)
+            .get("success")
+            .unwrap_or(&Value::Null)),
+        false
+    );
     let empty = OrganizationPlugin::with_config(OrganizationConfig {
         roles: Some(HashMap::new()),
         ..configuration()
@@ -1402,7 +1541,7 @@ async fn custom_role_configuration_replaces_defaults_and_whole_permission_checks
     });
     let founder_ctx = context(&founder).await?;
     let (_, founder_session) = actor(&founder_ctx, "configured-founder").await;
-    let created = call(
+    let created_2 = call(
         &founder,
         &founder_ctx,
         Some(&founder_session.token),
@@ -1412,8 +1551,8 @@ async fn custom_role_configuration_replaces_defaults_and_whole_permission_checks
         &[],
     )
     .await?;
-    let created: Value = body(&created)?;
-    let founder_org = id(&created)?;
+    let created_2_3: Value = body(&created_2)?;
+    let founder_org = id(&created_2_3)?;
     // The pinned invitation route recognizes the three built-in role names
     // even when permissions and the creator role have been replaced.
     let invited = call(
@@ -1440,11 +1579,13 @@ async fn custom_role_configuration_replaces_defaults_and_whole_permission_checks
         better_auth_core::types::InvitationStatus::Pending
     );
 
-    let (inviter, inviter_session) = actor(&founder_ctx, "configured-inviter").await;
-    let _ = founder_ctx
-        .database
-        .create_member(CreateMember::new(founder_org, &inviter.id, "inviter"))
-        .await?;
+    let (sender, inviter_session) = actor(&founder_ctx, "configured-inviter").await;
+    drop(
+        founder_ctx
+            .database
+            .create_member(CreateMember::new(founder_org, &sender.id, "inviter"))
+            .await?,
+    );
     assert_error(
         &call(
             &founder,
@@ -1470,6 +1611,14 @@ async fn custom_role_configuration_replaces_defaults_and_whole_permission_checks
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn invitation_email_policy_guards_id_actions_and_preserves_rejection_state() -> TestResult {
     let plugin = OrganizationPlugin::with_config(OrganizationConfig {
         require_email_verification_on_invitation: Some(true),
@@ -1478,16 +1627,17 @@ async fn invitation_email_policy_guards_id_actions_and_preserves_rejection_state
     let mut ctx = context(&plugin).await?;
     let (owner, owner_session) = actor(&ctx, "verified-inviter").await;
     let (recipient, recipient_session) = actor(&ctx, "unverified-recipient").await;
-    let _ = ctx
-        .database
-        .update_user(
-            &recipient.id,
-            better_auth_core::UpdateUser {
-                email_verified: Some(false),
-                ..Default::default()
-            },
-        )
-        .await?;
+    drop(
+        ctx.database
+            .update_user(
+                &recipient.id,
+                better_auth_core::UpdateUser {
+                    email_verified: Some(false),
+                    ..Default::default()
+                },
+            )
+            .await?,
+    );
     let created = call(
         &plugin,
         &ctx,
@@ -1696,16 +1846,17 @@ async fn invitation_email_policy_guards_id_actions_and_preserves_rejection_state
         400,
         "INVITATION_NOT_FOUND",
     )?;
-    let _ = ctx
-        .database
-        .update_user(
-            &recipient.id,
-            better_auth_core::UpdateUser {
-                email_verified: Some(true),
-                ..Default::default()
-            },
-        )
-        .await?;
+    drop(
+        ctx.database
+            .update_user(
+                &recipient.id,
+                better_auth_core::UpdateUser {
+                    email_verified: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await?,
+    );
     // Rejecting an expired, pending invitation remains supported upstream.
     assert_eq!(
         call(

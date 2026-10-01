@@ -1,24 +1,50 @@
+mod backup_storage;
+
+mod otp_storage;
+
+mod otp;
+
+#[cfg(test)]
+mod tests;
+
 use aes_gcm::aead::{Aead, KeyInit};
+use std::fmt::Write;
+
 use aes_gcm::{Aes256Gcm, Key, Nonce};
+
 use async_trait::async_trait;
+
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+
 use chrono::{Duration, Utc};
+
 use hkdf::Hkdf;
+
 use hmac::{Hmac, Mac};
+
 use rand::Rng;
+
 use rand::distributions::Alphanumeric;
+
 use serde::{Deserialize, Serialize};
+
 use sha2::Sha256;
+
 use std::sync::Arc;
+
 use totp_rs::{Algorithm, TOTP};
+
 use validator::Validate;
 
 use better_auth_core::entity::{AuthSession, AuthTwoFactor, AuthUser, AuthVerification};
+
 use better_auth_core::utils::cookie_utils::{
     create_clear_cookie, create_session_cookie, create_session_cookie_with_max_age,
     create_session_like_cookie, related_cookie_name,
 };
+
 use better_auth_core::wire::UserView;
+
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateTwoFactor,
     CreateVerification, RequestMeta, TwoFactor, UpdateTwoFactor, UpdateUser,
@@ -31,29 +57,30 @@ use crate::plugins::helpers::{
 
 use super::StatusResponse;
 
-mod backup_storage;
 pub use backup_storage::{TwoFactorBackupCipher, TwoFactorBackupStorage};
 
-mod otp_storage;
 pub use otp_storage::{TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage};
 
-mod otp;
-
-#[cfg(test)]
-mod tests;
-
 const TWO_FACTOR_COOKIE_SUFFIX: &str = "two_factor";
+
 const TRUST_DEVICE_COOKIE_SUFFIX: &str = "trust_device";
+
 const DONT_REMEMBER_COOKIE_SUFFIX: &str = "dont_remember";
 
 const METADATA_ENABLED: &str = "two_factor.enabled";
+
 const METADATA_OTP_ENABLED: &str = "two_factor.otp_enabled";
+
 const METADATA_TWO_FACTOR_COOKIE_MAX_AGE: &str = "two_factor.two_factor_cookie_max_age";
+
 const METADATA_TRUST_DEVICE_MAX_AGE: &str = "two_factor.trust_device_max_age";
+
 const METADATA_TOTP_DISABLED: &str = "two_factor.totp_disabled";
 
 const DEFAULT_TWO_FACTOR_COOKIE_MAX_AGE_SECS: f64 = 600.0;
+
 const DEFAULT_TRUST_DEVICE_MAX_AGE_SECS: f64 = 2_592_000.0;
+
 #[derive(Clone, Copy)]
 struct TwoFactorCookiePolicy {
     challenge_max_age: f64,
@@ -61,6 +88,7 @@ struct TwoFactorCookiePolicy {
 }
 
 const DEFAULT_TOTP_PERIOD_SECS: u64 = 30;
+
 const DEFAULT_TOTP_DIGITS: usize = 6;
 
 const ENCRYPTION_INFO: &[u8] = b"better-auth-two-factor-encryption";
@@ -200,7 +228,7 @@ impl std::fmt::Debug for TwoFactorConfig {
 }
 
 #[derive(Debug, Deserialize, Validate)]
-pub(crate) struct EnableRequest {
+pub(in crate::plugins) struct EnableRequest {
     password: Option<String>,
     #[serde(default)]
     method: EnableMethod,
@@ -216,17 +244,17 @@ enum EnableMethod {
 }
 
 #[derive(Debug, Deserialize, Validate)]
-pub(crate) struct DisableRequest {
+pub(in crate::plugins) struct DisableRequest {
     password: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
-pub(crate) struct GetTotpUriRequest {
+pub(in crate::plugins) struct GetTotpUriRequest {
     password: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
-pub(crate) struct VerifyTotpRequest {
+pub(in crate::plugins) struct VerifyTotpRequest {
     code: String,
     #[serde(rename = "trustDevice")]
     trust_device: Option<bool>,
@@ -248,19 +276,19 @@ impl crate::plugins::authentication_helpers::RequestBody for SendOtpRequest {
 }
 
 #[derive(Debug, Deserialize, Validate)]
-pub(crate) struct VerifyOtpRequest {
+pub(in crate::plugins) struct VerifyOtpRequest {
     code: String,
     #[serde(rename = "trustDevice")]
     trust_device: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
-pub(crate) struct GenerateBackupCodesRequest {
+pub(in crate::plugins) struct GenerateBackupCodesRequest {
     password: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
-pub(crate) struct VerifyBackupCodeRequest {
+pub(in crate::plugins) struct VerifyBackupCodeRequest {
     code: String,
     #[serde(rename = "disableSession")]
     disable_session: Option<bool>,
@@ -270,7 +298,7 @@ pub(crate) struct VerifyBackupCodeRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "method", rename_all = "lowercase")]
-pub(crate) enum EnableResponse {
+pub(in crate::plugins) enum EnableResponse {
     Otp,
     Totp {
         #[serde(rename = "totpURI")]
@@ -281,13 +309,13 @@ pub(crate) enum EnableResponse {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct TotpUriResponse {
+pub(in crate::plugins) struct TotpUriResponse {
     #[serde(rename = "totpURI")]
     totp_uri: String,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct SessionTokenResponse<U: Serialize> {
+pub(in crate::plugins) struct SessionTokenResponse<U> {
     token: String,
     user: U,
 }
@@ -298,6 +326,7 @@ struct BackupVerificationResponse {
     token: Option<String>,
     user: UserView,
 }
+
 impl From<SessionTokenResponse<UserView>> for BackupVerificationResponse {
     fn from(response: SessionTokenResponse<UserView>) -> Self {
         Self {
@@ -308,14 +337,14 @@ impl From<SessionTokenResponse<UserView>> for BackupVerificationResponse {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct BackupCodesResponse {
+pub(in crate::plugins) struct BackupCodesResponse {
     status: bool,
     #[serde(rename = "backupCodes")]
     backup_codes: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct TwoFactorRedirectResponse {
+pub(in crate::plugins) struct TwoFactorRedirectResponse {
     #[serde(rename = "twoFactorRedirect")]
     two_factor_redirect: bool,
     /// Second factors this user can actually complete, so the client knows
@@ -340,177 +369,19 @@ enum ResolvedTwoFactorState<S: better_auth_core::AuthSchema> {
     Pending(PendingTwoFactorState<S>),
 }
 
-pub(crate) struct SignInTwoFactorRedirect {
+pub(in crate::plugins) struct SignInTwoFactorRedirect {
     pub response: TwoFactorRedirectResponse,
     pub set_cookie_headers: Vec<String>,
 }
 
-pub(crate) struct TrustedDeviceCheck {
+pub(in crate::plugins) struct TrustedDeviceCheck {
     pub trusted: bool,
     pub set_cookie_headers: Vec<String>,
 }
 
-pub(crate) fn is_enabled(ctx: &AuthContext<impl better_auth_core::AuthSchema>) -> bool {
-    ctx.get_metadata(METADATA_ENABLED)
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false)
-}
-
-pub(crate) async fn inspect_trusted_device(
-    req: &AuthRequest,
-    user: &impl AuthUser,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<TrustedDeviceCheck> {
-    let cookie_name = related_cookie_name(&ctx.config, TRUST_DEVICE_COOKIE_SUFFIX);
-    let Some(raw_cookie) = get_cookie(req, &cookie_name) else {
-        return Ok(TrustedDeviceCheck {
-            trusted: false,
-            set_cookie_headers: Vec::new(),
-        });
-    };
-
-    let clear_header = create_clear_cookie(&cookie_name, &ctx.config);
-    let Some(signed_value) = verify_trusted_device_cookie_value(&ctx.config.secret, &raw_cookie)
-    else {
-        return Ok(TrustedDeviceCheck {
-            trusted: false,
-            set_cookie_headers: Vec::new(),
-        });
-    };
-
-    // The source tests outer payload truthiness before expiring a cookie,
-    // then destructures only the first two components and ignores the rest.
-    let mut components = signed_value.split('!');
-    let token = components.next().unwrap_or_default();
-    let trust_identifier = components.next().unwrap_or_default();
-    if token.is_empty() || trust_identifier.is_empty() {
-        return Ok(TrustedDeviceCheck {
-            trusted: false,
-            set_cookie_headers: vec![clear_header],
-        });
-    }
-
-    let expected_token = sign_value(
-        &ctx.config.secret,
-        &format!("{}!{}", user.id(), trust_identifier),
-    )?;
-    if token != expected_token {
-        return Ok(TrustedDeviceCheck {
-            trusted: false,
-            set_cookie_headers: vec![clear_header],
-        });
-    }
-
-    let Some(verification) =
-        super::authentication_helpers::find_verification(ctx, trust_identifier).await?
-    else {
-        return Ok(TrustedDeviceCheck {
-            trusted: false,
-            set_cookie_headers: vec![clear_header],
-        });
-    };
-
-    if verification.value() != user.id().as_ref() || verification.expires_at() <= Utc::now() {
-        return Ok(TrustedDeviceCheck {
-            trusted: false,
-            set_cookie_headers: vec![clear_header],
-        });
-    }
-
-    ctx.database
-        .delete_verification(verification.id().as_ref())
-        .await?;
-
-    let rotated_cookie = create_trust_device_cookie_header(user, ctx).await?;
-    Ok(TrustedDeviceCheck {
-        trusted: true,
-        set_cookie_headers: vec![rotated_cookie],
-    })
-}
-
-pub(crate) async fn begin_sign_in_challenge(
-    user: &impl AuthUser,
-    remember_me: Option<bool>,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<SignInTwoFactorRedirect> {
-    let identifier = format!("2fa-{}", uuid::Uuid::new_v4());
-    let expires_at = cookie_expiry(two_factor_cookie_max_age(ctx))?;
-    _ = ctx
-        .database
-        .create_verification(CreateVerification {
-            identifier: identifier.clone(),
-            value: user.id().to_string(),
-            expires_at,
-        })
-        .await?;
-    _ = ctx
-        .database
-        .create_verification(CreateVerification {
-            identifier: format!("2fa-attempts-{identifier}"),
-            value: "0".to_owned(),
-            expires_at,
-        })
-        .await?;
-
-    let mut headers = delete_session_cookie_headers(&ctx.config);
-    headers.retain(|cookie| {
-        !cookie.starts_with(&format!(
-            "{}=",
-            related_cookie_name(&ctx.config, DONT_REMEMBER_COOKIE_SUFFIX)
-        ))
-    });
-    headers.push(create_signed_cookie_header(
-        &ctx.config.secret,
-        &ctx.config,
-        TWO_FACTOR_COOKIE_SUFFIX,
-        &identifier,
-        Some(two_factor_cookie_max_age(ctx)),
-    )?);
-
-    if remember_me == Some(false) {
-        headers.push(create_signed_cookie_header(
-            &ctx.config.secret,
-            &ctx.config,
-            DONT_REMEMBER_COOKIE_SUFFIX,
-            "true",
-            None,
-        )?);
-    }
-
-    // TOTP is per-user: only offered once the user has a stored secret. OTP is
-    // server-level: offered whenever a sender is configured.
-    let mut two_factor_methods = Vec::new();
-    if !ctx
-        .get_metadata(METADATA_TOTP_DISABLED)
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false)
-        && ctx
-            .database
-            .get_two_factor_by_user_id(user.id().as_ref())
-            .await?
-            .is_some_and(|factor| factor.verified() != Some(false))
-    {
-        two_factor_methods.push("totp");
-    }
-    if ctx
-        .get_metadata(METADATA_OTP_ENABLED)
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false)
-    {
-        two_factor_methods.push("otp");
-    }
-
-    Ok(SignInTwoFactorRedirect {
-        response: TwoFactorRedirectResponse {
-            two_factor_redirect: true,
-            two_factor_methods,
-        },
-        set_cookie_headers: headers,
-    })
-}
-
 impl TwoFactorPlugin {
     /// Install a custom OTP sender.
+    #[must_use]
     pub fn custom_send_otp(mut self, sender: Arc<dyn SendTwoFactorOtp>) -> Self {
         self.config.send_otp = Some(sender);
         self
@@ -519,6 +390,10 @@ impl TwoFactorPlugin {
     /// Generate a current TOTP from an application-owned UTF-8 secret.
     ///
     /// This corresponds to `auth.api.generateTOTP`; it has no public HTTP route.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the secret cannot be decoded or the TOTP configuration is invalid.
     pub fn generate_totp(&self, secret: &str) -> AuthResult<String> {
         require_totp_enabled(&self.config)?;
         build_totp(&self.config, secret)?
@@ -531,6 +406,10 @@ impl TwoFactorPlugin {
     /// This is the Rust server-side equivalent of the TypeScript
     /// `auth.api.viewBackupCodes` capability. It is intentionally not exposed
     /// as a public HTTP route.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if backup codes are unavailable, cannot be decrypted, or cannot be loaded.
     pub async fn view_backup_codes<S: better_auth_core::AuthSchema>(
         &self,
         user_id: &str,
@@ -556,7 +435,7 @@ better_auth_core::impl_auth_plugin! {
         async fn on_init(
             &self,
             ctx: &mut better_auth_core::AuthInitContext<S>,
-        ) -> better_auth_core::AuthResult<()> {
+        ) -> AuthResult<()> {
             ctx.register_user_create_transform(|mut input| {
                 _ = input.two_factor_enabled.get_or_insert(false);
                 Ok(input)
@@ -606,14 +485,42 @@ impl TwoFactorPlugin {
                     code: "UNAUTHORIZED",
                     message: "Unauthorized",
                 },
-                error => error,
+                error @ (AuthError::Api { .. }
+                | AuthError::Upstream { .. }
+                | AuthError::BadRequest(_)
+                | AuthError::InvalidRequest(_)
+                | AuthError::Validation(_)
+                | AuthError::InvalidCredentials
+                | AuthError::AuthenticationFailed(_)
+                | AuthError::Forbidden(_)
+                | AuthError::UserCreationCancelled
+                | AuthError::SessionCreationCancelled
+                | AuthError::BannedUser(_)
+                | AuthError::Unauthorized
+                | AuthError::UserNotFound
+                | AuthError::NotFound(_)
+                | AuthError::Conflict(_)
+                | AuthError::MethodNotAllowed(_)
+                | AuthError::PayloadTooLarge(_)
+                | AuthError::UnprocessableEntity(_)
+                | AuthError::RateLimited
+                | AuthError::NotImplemented(_)
+                | AuthError::Config(_)
+                | AuthError::Database(_)
+                | AuthError::Serialization(_)
+                | AuthError::Plugin { .. }
+                | AuthError::Internal(_)
+                | AuthError::PasswordHash(_)
+                | AuthError::Jwt(_)) => error,
             })?;
 
         let (response, set_cookie_headers) =
             match enable_core(&body, &user, &session, &self.config, ctx).await {
                 Ok(result) => result,
-                Err(BackupOperationError::Auth(AuthError::SessionCreationCancelled))
-                | Err(BackupOperationError::InvalidGeneration) => {
+                Err(
+                    BackupOperationError::Auth(AuthError::SessionCreationCancelled)
+                    | BackupOperationError::InvalidGeneration,
+                ) => {
                     return Ok(AuthResponse::new(500));
                 }
                 Err(BackupOperationError::Auth(error)) => return Err(error),
@@ -644,7 +551,33 @@ impl TwoFactorPlugin {
                     code: "UNAUTHORIZED",
                     message: "Unauthorized",
                 },
-                other => other,
+                other @ (AuthError::Api { .. }
+                | AuthError::Upstream { .. }
+                | AuthError::BadRequest(_)
+                | AuthError::InvalidRequest(_)
+                | AuthError::Validation(_)
+                | AuthError::InvalidCredentials
+                | AuthError::AuthenticationFailed(_)
+                | AuthError::Forbidden(_)
+                | AuthError::UserCreationCancelled
+                | AuthError::SessionCreationCancelled
+                | AuthError::BannedUser(_)
+                | AuthError::Unauthorized
+                | AuthError::UserNotFound
+                | AuthError::NotFound(_)
+                | AuthError::Conflict(_)
+                | AuthError::MethodNotAllowed(_)
+                | AuthError::PayloadTooLarge(_)
+                | AuthError::UnprocessableEntity(_)
+                | AuthError::RateLimited
+                | AuthError::NotImplemented(_)
+                | AuthError::Config(_)
+                | AuthError::Database(_)
+                | AuthError::Serialization(_)
+                | AuthError::Plugin { .. }
+                | AuthError::Internal(_)
+                | AuthError::PasswordHash(_)
+                | AuthError::Jwt(_)) => other,
             })?;
 
         let (response, set_cookie_headers) =
@@ -796,6 +729,250 @@ impl TwoFactorPlugin {
     }
 }
 
+enum SendOtpError {
+    Auth(AuthError),
+    // The pinned random-string generator throws before storage or delivery.
+    NonpositiveLength,
+}
+
+impl From<AuthError> for SendOtpError {
+    fn from(error: AuthError) -> Self {
+        Self::Auth(error)
+    }
+}
+
+struct FactorAttempt {
+    identifier: String,
+    count: f64,
+    expires_at: chrono::DateTime<Utc>,
+}
+
+// Only an explicitly cancelled session creation is distinguished. The same
+// AuthError from user updates or other operations retains its default response.
+enum ExistingSessionFactorError {
+    Auth(AuthError),
+    SessionCreationCancelled,
+}
+
+impl From<AuthError> for ExistingSessionFactorError {
+    fn from(error: AuthError) -> Self {
+        Self::Auth(error)
+    }
+}
+
+impl ExistingSessionFactorError {
+    fn into_auth_error(self) -> AuthError {
+        match self {
+            Self::Auth(error) => error,
+            Self::SessionCreationCancelled => AuthError::SessionCreationCancelled,
+        }
+    }
+}
+
+enum BackupOperationError {
+    Auth(AuthError),
+    InvalidGeneration,
+}
+
+impl From<AuthError> for BackupOperationError {
+    fn from(error: AuthError) -> Self {
+        Self::Auth(error)
+    }
+}
+
+impl<S: better_auth_core::AuthSchema> ResolvedTwoFactorState<S> {
+    const fn user(&self) -> &S::User {
+        match self {
+            Self::Session { user, .. } => user,
+            Self::Pending(pending) => &pending.user,
+        }
+    }
+
+    fn key(&self) -> &str {
+        match self {
+            Self::Session { key, .. } => key,
+            Self::Pending(pending) => &pending.key,
+        }
+    }
+}
+
+impl std::fmt::Debug for TwoFactorPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TwoFactorPlugin").finish_non_exhaustive()
+    }
+}
+
+pub(in crate::plugins) fn is_enabled(ctx: &AuthContext<impl better_auth_core::AuthSchema>) -> bool {
+    ctx.get_metadata(METADATA_ENABLED)
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn inspect_trusted_device(
+    req: &AuthRequest,
+    user: &impl AuthUser,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<TrustedDeviceCheck> {
+    let cookie_name = related_cookie_name(&ctx.config, TRUST_DEVICE_COOKIE_SUFFIX);
+    let Some(raw_cookie) = get_cookie(req, &cookie_name) else {
+        return Ok(TrustedDeviceCheck {
+            trusted: false,
+            set_cookie_headers: Vec::new(),
+        });
+    };
+
+    let clear_header = create_clear_cookie(&cookie_name, &ctx.config);
+    let Some(signed_value) = verify_trusted_device_cookie_value(&ctx.config.secret, &raw_cookie)
+    else {
+        return Ok(TrustedDeviceCheck {
+            trusted: false,
+            set_cookie_headers: Vec::new(),
+        });
+    };
+
+    // The source tests outer payload truthiness before expiring a cookie,
+    // then destructures only the first two components and ignores the rest.
+    let mut components = signed_value.split('!');
+    let token = components.next().unwrap_or_default();
+    let trust_identifier = components.next().unwrap_or_default();
+    if token.is_empty() || trust_identifier.is_empty() {
+        return Ok(TrustedDeviceCheck {
+            trusted: false,
+            set_cookie_headers: vec![clear_header],
+        });
+    }
+
+    let expected_token = sign_value(
+        &ctx.config.secret,
+        &format!("{}!{}", user.id(), trust_identifier),
+    )?;
+    if token != expected_token {
+        return Ok(TrustedDeviceCheck {
+            trusted: false,
+            set_cookie_headers: vec![clear_header],
+        });
+    }
+
+    let Some(verification) =
+        super::authentication_helpers::find_verification(ctx, trust_identifier).await?
+    else {
+        return Ok(TrustedDeviceCheck {
+            trusted: false,
+            set_cookie_headers: vec![clear_header],
+        });
+    };
+
+    if verification.value() != user.id().as_ref() || verification.expires_at() <= Utc::now() {
+        return Ok(TrustedDeviceCheck {
+            trusted: false,
+            set_cookie_headers: vec![clear_header],
+        });
+    }
+
+    ctx.database
+        .delete_verification(verification.id().as_ref())
+        .await?;
+
+    let rotated_cookie = create_trust_device_cookie_header(user, ctx).await?;
+    Ok(TrustedDeviceCheck {
+        trusted: true,
+        set_cookie_headers: vec![rotated_cookie],
+    })
+}
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn begin_sign_in_challenge(
+    user: &impl AuthUser,
+    remember_me: Option<bool>,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<SignInTwoFactorRedirect> {
+    let identifier = format!("2fa-{}", uuid::Uuid::new_v4());
+    let expires_at = cookie_expiry(two_factor_cookie_max_age(ctx))?;
+    drop(
+        ctx.database
+            .create_verification(CreateVerification {
+                identifier: identifier.clone(),
+                value: user.id().to_string(),
+                expires_at,
+            })
+            .await?,
+    );
+    drop(
+        ctx.database
+            .create_verification(CreateVerification {
+                identifier: format!("2fa-attempts-{identifier}"),
+                value: "0".to_owned(),
+                expires_at,
+            })
+            .await?,
+    );
+
+    let mut headers = delete_session_cookie_headers(&ctx.config);
+    headers.retain(|cookie| {
+        !cookie.starts_with(&format!(
+            "{}=",
+            related_cookie_name(&ctx.config, DONT_REMEMBER_COOKIE_SUFFIX)
+        ))
+    });
+    headers.push(create_signed_cookie_header(
+        &ctx.config.secret,
+        &ctx.config,
+        TWO_FACTOR_COOKIE_SUFFIX,
+        &identifier,
+        Some(two_factor_cookie_max_age(ctx)),
+    )?);
+
+    if remember_me == Some(false) {
+        headers.push(create_signed_cookie_header(
+            &ctx.config.secret,
+            &ctx.config,
+            DONT_REMEMBER_COOKIE_SUFFIX,
+            "true",
+            None,
+        )?);
+    }
+
+    // TOTP is per-user: only offered once the user has a stored secret. OTP is
+    // server-level: offered whenever a sender is configured.
+    let mut two_factor_methods = Vec::new();
+    if !ctx
+        .get_metadata(METADATA_TOTP_DISABLED)
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+        && ctx
+            .database
+            .get_two_factor_by_user_id(user.id().as_ref())
+            .await?
+            .is_some_and(|factor| factor.verified() != Some(false))
+    {
+        two_factor_methods.push("totp");
+    }
+    if ctx
+        .get_metadata(METADATA_OTP_ENABLED)
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+    {
+        two_factor_methods.push("otp");
+    }
+
+    Ok(SignInTwoFactorRedirect {
+        response: TwoFactorRedirectResponse {
+            two_factor_redirect: true,
+            two_factor_methods,
+        },
+        set_cookie_headers: headers,
+    })
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep factor enrollment, backup generation, and session replacement in their callback order"
+)]
 async fn enable_core(
     body: &EnableRequest,
     user: &impl AuthUser,
@@ -900,28 +1077,30 @@ async fn enable_core(
     }
 
     if let Some(existing) = existing {
-        let _ = ctx
-            .database
-            .update_two_factor(
-                existing.id().as_ref(),
-                UpdateTwoFactor {
-                    secret: Some(encrypted_secret),
-                    backup_codes: Some(encrypted_backup_codes),
-                    verified: Some(config.skip_verification_on_enable),
-                },
-            )
-            .await?;
+        drop(
+            ctx.database
+                .update_two_factor(
+                    existing.id().as_ref(),
+                    UpdateTwoFactor {
+                        secret: Some(encrypted_secret),
+                        backup_codes: Some(encrypted_backup_codes),
+                        verified: Some(config.skip_verification_on_enable),
+                    },
+                )
+                .await?,
+        );
     } else {
-        _ = ctx
-            .database
-            .create_two_factor(CreateTwoFactor {
-                user_id: user.id().to_string(),
-                secret: encrypted_secret,
-                backup_codes: encrypted_backup_codes,
-                verified: Some(config.skip_verification_on_enable),
-                ..Default::default()
-            })
-            .await?;
+        drop(
+            ctx.database
+                .create_two_factor(CreateTwoFactor {
+                    user_id: user.id().to_string(),
+                    secret: encrypted_secret,
+                    backup_codes: encrypted_backup_codes,
+                    verified: Some(config.skip_verification_on_enable),
+                    ..Default::default()
+                })
+                .await?,
+        );
     }
 
     let issuer = body
@@ -986,7 +1165,7 @@ async fn disable_core(
     .map_err(SessionIssueError::into_auth_error)?;
     ctx.database.delete_session(current_session.token()).await?;
 
-    let dont_remember = read_signed_cookie(req, DONT_REMEMBER_COOKIE_SUFFIX, ctx)?
+    let dont_remember = read_signed_cookie(req, DONT_REMEMBER_COOKIE_SUFFIX, ctx)
         .is_some_and(|value| !value.is_empty());
     let mut set_cookie_headers = vec![create_session_cookie_for_dont_remember(
         issued.session.token(),
@@ -1003,7 +1182,7 @@ async fn disable_core(
         )?);
     }
 
-    if let Some(trust_cookie) = read_signed_cookie(req, TRUST_DEVICE_COOKIE_SUFFIX, ctx)?
+    if let Some(trust_cookie) = read_signed_cookie(req, TRUST_DEVICE_COOKIE_SUFFIX, ctx)
         && !trust_cookie.is_empty()
     {
         if let Some(trust_identifier) = trust_cookie.split('!').nth(1)
@@ -1109,10 +1288,16 @@ async fn verify_totp_core(
             mark_factor_verified(&two_factor, ctx).await?;
             Ok(result)
         }
-        ResolvedTwoFactorState::Pending(pending) => {
+        ResolvedTwoFactorState::Pending(pending_2) => {
             mark_factor_verified(&two_factor, ctx).await?;
-            finalize_pending_two_factor(pending, req, body.trust_device.unwrap_or(false), true, ctx)
-                .await
+            finalize_pending_two_factor(
+                pending_2,
+                req,
+                body.trust_device.unwrap_or(false),
+                true,
+                ctx,
+            )
+            .await
         }
     }
 }
@@ -1122,32 +1307,28 @@ async fn mark_factor_verified(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<()> {
     if two_factor.verified() != Some(true) {
-        let _ = ctx
-            .database
-            .update_two_factor(
-                two_factor.id().as_ref(),
-                UpdateTwoFactor {
-                    verified: Some(true),
-                    ..Default::default()
-                },
-            )
-            .await?;
+        drop(
+            ctx.database
+                .update_two_factor(
+                    two_factor.id().as_ref(),
+                    UpdateTwoFactor {
+                        verified: Some(true),
+                        ..Default::default()
+                    },
+                )
+                .await?,
+        );
     }
     Ok(())
 }
 
-enum SendOtpError {
-    Auth(AuthError),
-    // The pinned random-string generator throws before storage or delivery.
-    NonpositiveLength,
-}
-
-impl From<AuthError> for SendOtpError {
-    fn from(error: AuthError) -> Self {
-        Self::Auth(error)
-    }
-}
-
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
 async fn send_otp_core(
     req: &AuthRequest,
     config: &TwoFactorConfig,
@@ -1184,17 +1365,18 @@ async fn send_otp_core(
     let expires_at = chrono::DateTime::from_timestamp_millis(milliseconds.trunc() as i64)
         .ok_or_else(|| AuthError::internal("Invalid two-factor OTP expiry"))?;
 
-    _ = ctx
-        .database
-        .create_verification(CreateVerification {
-            identifier,
-            value: format!("{}:0", stored_otp),
-            expires_at,
-        })
-        .await?;
+    drop(
+        ctx.database
+            .create_verification(CreateVerification {
+                identifier,
+                value: format!("{stored_otp}:0"),
+                expires_at,
+            })
+            .await?,
+    );
 
     otp::deliver(
-        sender.clone(),
+        Arc::clone(sender),
         ctx.user_view(state.user()),
         otp,
         ctx.config.background_tasks.clone(),
@@ -1204,6 +1386,10 @@ async fn send_otp_core(
     Ok(StatusResponse { status: true })
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep OTP ownership, attempt limits, and successful factor consumption in protocol order"
+)]
 async fn verify_otp_core(
     req: &AuthRequest,
     body: &VerifyOtpRequest,
@@ -1254,7 +1440,11 @@ async fn verify_otp_core(
         .take_while(|(index, c)| c.is_ascii_digit() || (*index == 0 && (*c == '+' || *c == '-')))
         .last()
         .map_or(0, |(index, c)| index + c.len_utf8());
-    let attempts = trimmed[..prefix_length].parse::<f64>().unwrap_or(0.0);
+    let attempts = trimmed
+        .get(..prefix_length)
+        .unwrap_or_default()
+        .parse::<f64>()
+        .unwrap_or(0.0);
     let allowed_attempts =
         if config.otp_allowed_attempts == 0.0 || config.otp_allowed_attempts.is_nan() {
             5.0
@@ -1292,15 +1482,16 @@ async fn verify_otp_core(
         };
         let next_value = format!("{stored_otp}:{next_counter}");
         let expires_at = verification.expires_at();
-        let verification_identifier = verification.identifier().to_string();
-        _ = ctx
-            .database
-            .create_verification(CreateVerification {
-                identifier: verification_identifier,
-                value: next_value,
-                expires_at,
-            })
-            .await?;
+        let verification_identifier = verification.identifier().to_owned();
+        drop(
+            ctx.database
+                .create_verification(CreateVerification {
+                    identifier: verification_identifier,
+                    value: next_value,
+                    expires_at,
+                })
+                .await?,
+        );
         if let Some(factor) = &factor {
             record_account_failure(config, factor, ctx).await?;
         }
@@ -1349,16 +1540,17 @@ async fn generate_backup_codes_core(
         .ok_or_else(|| AuthError::bad_request("Two factor isn't enabled"))?;
 
     let (backup_codes, encrypted) = generate_backup_codes(config, &ctx.config.secret).await?;
-    _ = ctx
-        .database
-        .update_two_factor(
-            factor.id().as_ref(),
-            UpdateTwoFactor {
-                backup_codes: Some(encrypted),
-                ..Default::default()
-            },
-        )
-        .await?;
+    drop(
+        ctx.database
+            .update_two_factor(
+                factor.id().as_ref(),
+                UpdateTwoFactor {
+                    backup_codes: Some(encrypted),
+                    ..Default::default()
+                },
+            )
+            .await?,
+    );
 
     Ok(BackupCodesResponse {
         status: true,
@@ -1430,7 +1622,7 @@ async fn verify_backup_code_core(
             if body.disable_session.unwrap_or(false) {
                 Ok((
                     BackupVerificationResponse {
-                        token: Some(session.token().to_string()),
+                        token: Some(session.token().to_owned()),
                         user: ctx.user_view(&user),
                     },
                     Vec::new(),
@@ -1442,19 +1634,25 @@ async fn verify_backup_code_core(
                     .map_err(ExistingSessionFactorError::into_auth_error)
             }
         }
-        ResolvedTwoFactorState::Pending(pending) => {
+        ResolvedTwoFactorState::Pending(pending_2) => {
             if body.disable_session.unwrap_or(false) {
                 return Ok((
                     BackupVerificationResponse {
                         token: None,
-                        user: ctx.user_view(&pending.user),
+                        user: ctx.user_view(&pending_2.user),
                     },
                     Vec::new(),
                 ));
             }
-            finalize_pending_two_factor(pending, req, body.trust_device.unwrap_or(false), true, ctx)
-                .await
-                .map(|(response, headers)| (response.into(), headers))
+            finalize_pending_two_factor(
+                pending_2,
+                req,
+                body.trust_device.unwrap_or(false),
+                true,
+                ctx,
+            )
+            .await
+            .map(|(response, headers)| (response.into(), headers))
         }
     }
 }
@@ -1492,7 +1690,7 @@ async fn resolve_two_factor_state<S: better_auth_core::AuthSchema>(
         });
     }
 
-    let identifier = read_signed_cookie(req, TWO_FACTOR_COOKIE_SUFFIX, ctx)?
+    let identifier = read_signed_cookie(req, TWO_FACTOR_COOKIE_SUFFIX, ctx)
         .filter(|identifier| !identifier.is_empty())
         .ok_or_else(|| AuthError::authentication_failed("Invalid two factor cookie"))?;
     let verification = ctx
@@ -1514,7 +1712,7 @@ async fn resolve_two_factor_state<S: better_auth_core::AuthSchema>(
         .get_user_by_id(verification.value())
         .await?
         .ok_or_else(|| AuthError::authentication_failed("Invalid two factor cookie"))?;
-    let dont_remember = read_signed_cookie(req, DONT_REMEMBER_COOKIE_SUFFIX, ctx)?
+    let dont_remember = read_signed_cookie(req, DONT_REMEMBER_COOKIE_SUFFIX, ctx)
         .is_some_and(|value| !value.is_empty());
 
     Ok(ResolvedTwoFactorState::Pending(PendingTwoFactorState {
@@ -1523,12 +1721,6 @@ async fn resolve_two_factor_state<S: better_auth_core::AuthSchema>(
         key: identifier,
         dont_remember,
     }))
-}
-
-struct FactorAttempt {
-    identifier: String,
-    count: f64,
-    expires_at: chrono::DateTime<Utc>,
 }
 
 async fn begin_factor_attempt<S: better_auth_core::AuthSchema>(
@@ -1578,6 +1770,11 @@ async fn begin_factor_attempt<S: better_auth_core::AuthSchema>(
     }))
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
 fn attempt_number(value: &str) -> f64 {
     let value = value.trim_matches(|character| {
         matches!(
@@ -1604,9 +1801,7 @@ fn attempt_number(value: &str) -> f64 {
         ("0O", 8),
     ] {
         if let Some(value) = value.strip_prefix(prefix) {
-            return u64::from_str_radix(value, radix)
-                .map(|count| count as f64)
-                .unwrap_or(f64::NAN);
+            return u64::from_str_radix(value, radix).map_or(f64::NAN, |count| count as f64);
         }
     }
     value.parse().unwrap_or(f64::NAN)
@@ -1618,14 +1813,15 @@ async fn rearm_factor_attempt(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) {
     if let Some(attempt) = attempt {
-        let _ = ctx
-            .database
-            .create_verification(CreateVerification {
-                identifier: attempt.identifier.clone(),
-                value: (attempt.count + if failed { 1.0 } else { 0.0 }).to_string(),
-                expires_at: attempt.expires_at,
-            })
-            .await;
+        drop(
+            ctx.database
+                .create_verification(CreateVerification {
+                    identifier: attempt.identifier.clone(),
+                    value: (attempt.count + if failed { 1.0 } else { 0.0 }).to_string(),
+                    expires_at: attempt.expires_at,
+                })
+                .await,
+        );
     }
 }
 
@@ -1646,14 +1842,21 @@ async fn assert_account_not_locked(
                 message: "Too many failed verification attempts. Your account is temporarily locked. Please try again later.",
             });
         }
-        let _ = ctx
-            .database
-            .clear_expired_two_factor_lock(factor.id().as_ref(), now)
-            .await?;
+        drop(
+            ctx.database
+                .clear_expired_two_factor_lock(factor.id().as_ref(), now)
+                .await?,
+        );
     }
     Ok(())
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
 async fn record_account_failure(
     config: &TwoFactorConfig,
     factor: &TwoFactor,
@@ -1667,11 +1870,13 @@ async fn record_account_failure(
         .increment_two_factor_failure(factor.id().as_ref())
         .await?;
     let count = incremented
-        .and_then(|factor| factor.failed_verification_count())
+        .and_then(|factor_2| factor_2.failed_verification_count())
         .unwrap_or(0.0);
     if count >= config.account_lockout.max_failed_attempts {
-        let milliseconds =
-            Utc::now().timestamp_millis() as f64 + config.account_lockout.duration_seconds * 1000.0;
+        let milliseconds = config
+            .account_lockout
+            .duration_seconds
+            .mul_add(1000.0, Utc::now().timestamp_millis() as f64);
         // JavaScript Date TimeClip rejects nonfinite/out-of-range values and
         // truncates toward zero; nullable/zero settings remain supported.
         if !milliseconds.is_finite() || milliseconds.abs() > 8_640_000_000_000_000.0 {
@@ -1679,14 +1884,15 @@ async fn record_account_failure(
         }
         let until = chrono::DateTime::from_timestamp_millis(milliseconds.trunc() as i64)
             .ok_or_else(|| AuthError::internal("Invalid two-factor lock date"))?;
-        let _ = ctx
-            .database
-            .set_two_factor_lock_if_count_at_least(
-                factor.id().as_ref(),
-                config.account_lockout.max_failed_attempts,
-                until,
-            )
-            .await?;
+        drop(
+            ctx.database
+                .set_two_factor_lock_if_count_at_least(
+                    factor.id().as_ref(),
+                    config.account_lockout.max_failed_attempts,
+                    until,
+                )
+                .await?,
+        );
     }
     Ok(())
 }
@@ -1726,28 +1932,6 @@ fn verification_error_response(
     }
 }
 
-// Only an explicitly cancelled session creation is distinguished. The same
-// AuthError from user updates or other operations retains its default response.
-enum ExistingSessionFactorError {
-    Auth(AuthError),
-    SessionCreationCancelled,
-}
-
-impl From<AuthError> for ExistingSessionFactorError {
-    fn from(error: AuthError) -> Self {
-        Self::Auth(error)
-    }
-}
-
-impl ExistingSessionFactorError {
-    fn into_auth_error(self) -> AuthError {
-        match self {
-            Self::Auth(error) => error,
-            Self::SessionCreationCancelled => AuthError::SessionCreationCancelled,
-        }
-    }
-}
-
 async fn verify_existing_session_factor(
     user: impl AuthUser,
     session: impl AuthSession,
@@ -1778,15 +1962,42 @@ async fn verify_existing_session_factor(
             AuthError::SessionCreationCancelled => {
                 ExistingSessionFactorError::SessionCreationCancelled
             }
-            error => ExistingSessionFactorError::Auth(error),
+            error @ (AuthError::Api { .. }
+            | AuthError::Upstream { .. }
+            | AuthError::BadRequest(_)
+            | AuthError::InvalidRequest(_)
+            | AuthError::Validation(_)
+            | AuthError::InvalidCredentials
+            | AuthError::Unauthenticated
+            | AuthError::AuthenticationFailed(_)
+            | AuthError::SessionNotFound
+            | AuthError::Forbidden(_)
+            | AuthError::BannedUser(_)
+            | AuthError::Unauthorized
+            | AuthError::UserNotFound
+            | AuthError::NotFound(_)
+            | AuthError::Conflict(_)
+            | AuthError::MethodNotAllowed(_)
+            | AuthError::PayloadTooLarge(_)
+            | AuthError::UnprocessableEntity(_)
+            | AuthError::RateLimited
+            | AuthError::NotImplemented(_)
+            | AuthError::Config(_)
+            | AuthError::Database(_)
+            | AuthError::Serialization(_)
+            | AuthError::Plugin { .. }
+            | AuthError::Internal(_)
+            | AuthError::PasswordHash(_)
+            | AuthError::UserCreationCancelled
+            | AuthError::Jwt(_)) => ExistingSessionFactorError::Auth(error),
         })?;
         ctx.database.delete_session(session.token()).await?;
         return Ok((
             SessionTokenResponse {
                 token: if return_updated_snapshot {
-                    issued.session.token().to_string()
+                    issued.session.token().to_owned()
                 } else {
-                    session.token().to_string()
+                    session.token().to_owned()
                 },
                 // TOTP retains its original response snapshot; OTP returns the
                 // updated user and newly issued token.
@@ -1802,7 +2013,7 @@ async fn verify_existing_session_factor(
 
     Ok((
         SessionTokenResponse {
-            token: session.token().to_string(),
+            token: session.token().to_owned(),
             user: ctx.user_view(&user),
         },
         Vec::new(),
@@ -1820,7 +2031,7 @@ async fn finalize_pending_two_factor<S: better_auth_core::AuthSchema>(
         .database
         .consume_verification_by_identifier(&pending.key)
         .await?;
-    if !consumed.is_some_and(|verification| verification.value() == pending.user.id().as_ref()) {
+    if consumed.is_none_or(|verification| verification.value() != pending.user.id().as_ref()) {
         return Err(AuthError::Upstream {
             status: 401,
             code: "INVALID_TWO_FACTOR_COOKIE",
@@ -1841,7 +2052,9 @@ async fn finalize_pending_two_factor<S: better_auth_core::AuthSchema>(
             code: "FAILED_TO_CREATE_SESSION",
             message: "failed to create session",
         },
-        error => error.into_auth_error(),
+        error @ (SessionIssueError::Auth(_) | SessionIssueError::Banned { .. }) => {
+            error.into_auth_error()
+        }
     })?;
     // Upstream createSession(user, dontRememberMe) uses a one-day lifetime.
     if pending.dont_remember {
@@ -1877,7 +2090,7 @@ async fn finalize_pending_two_factor<S: better_auth_core::AuthSchema>(
 
     Ok((
         SessionTokenResponse {
-            token: issued.session.token().to_string(),
+            token: issued.session.token().to_owned(),
             user: ctx.user_view(&issued.user),
         },
         set_cookie_headers,
@@ -1894,7 +2107,7 @@ async fn load_two_factor_record(
         .ok_or_else(|| AuthError::bad_request("TOTP not enabled"))
 }
 
-fn require_totp_enabled(config: &TwoFactorConfig) -> AuthResult<()> {
+const fn require_totp_enabled(config: &TwoFactorConfig) -> AuthResult<()> {
     if config.totp_disabled {
         return Err(AuthError::Upstream {
             status: 400,
@@ -1905,7 +2118,7 @@ fn require_totp_enabled(config: &TwoFactorConfig) -> AuthResult<()> {
     Ok(())
 }
 
-fn totp_digits(config: &TwoFactorConfig) -> usize {
+const fn totp_digits(config: &TwoFactorConfig) -> usize {
     if config.totp_digits == 0 {
         DEFAULT_TOTP_DIGITS
     } else {
@@ -1913,7 +2126,7 @@ fn totp_digits(config: &TwoFactorConfig) -> usize {
     }
 }
 
-fn totp_period(config: &TwoFactorConfig) -> u64 {
+const fn totp_period(config: &TwoFactorConfig) -> u64 {
     if config.totp_period == 0 {
         DEFAULT_TOTP_PERIOD_SECS
     } else {
@@ -2048,16 +2261,12 @@ fn generate_secret() -> String {
         .collect()
 }
 
-enum BackupOperationError {
-    Auth(AuthError),
-    InvalidGeneration,
-}
-impl From<AuthError> for BackupOperationError {
-    fn from(error: AuthError) -> Self {
-        Self::Auth(error)
-    }
-}
-
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
 async fn generate_backup_codes(
     config: &TwoFactorConfig,
     secret: &str,
@@ -2090,7 +2299,10 @@ async fn generate_backup_codes(
                     .map(char::from)
                     .collect();
                 let split = code.len().min(5);
-                Ok(format!("{}-{}", &code[..split], &code[split..]))
+                let (prefix, suffix) = code
+                    .split_at_checked(split)
+                    .ok_or(BackupOperationError::InvalidGeneration)?;
+                Ok(format!("{prefix}-{suffix}"))
             })
             .collect::<Result<Vec<_>, _>>()?
     };
@@ -2099,11 +2311,17 @@ async fn generate_backup_codes(
 }
 
 fn otp_verification_identifier(key: &str) -> String {
-    format!("2fa-otp-{}", key)
+    format!("2fa-otp-{key}")
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
 fn cookie_expiry(seconds: f64) -> AuthResult<chrono::DateTime<Utc>> {
-    let milliseconds = Utc::now().timestamp_millis() as f64 + seconds * 1000.0;
+    let milliseconds = seconds.mul_add(1000.0, Utc::now().timestamp_millis() as f64);
     if !milliseconds.is_finite() || milliseconds.abs() > 8_640_000_000_000_000.0 {
         return Err(AuthError::internal("Invalid two-factor cookie expiry"));
     }
@@ -2155,16 +2373,17 @@ async fn create_trust_device_cookie_header(
 ) -> AuthResult<String> {
     let identifier = format!("trust-device-{}", uuid::Uuid::new_v4());
     let token = sign_value(&ctx.config.secret, &format!("{}!{}", user.id(), identifier))?;
-    let value = format!("{}!{}", token, identifier);
+    let value = format!("{token}!{identifier}");
     let expires_at = cookie_expiry(trust_device_max_age(ctx))?;
-    _ = ctx
-        .database
-        .create_verification(CreateVerification {
-            identifier: identifier.clone(),
-            value: user.id().to_string(),
-            expires_at,
-        })
-        .await?;
+    drop(
+        ctx.database
+            .create_verification(CreateVerification {
+                identifier: identifier.clone(),
+                value: user.id().to_string(),
+                expires_at,
+            })
+            .await?,
+    );
     create_signed_cookie_header(
         &ctx.config.secret,
         &ctx.config,
@@ -2174,6 +2393,12 @@ async fn create_trust_device_cookie_header(
     )
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
 fn create_signed_cookie_header(
     secret: &str,
     config: &better_auth_core::AuthConfig,
@@ -2182,7 +2407,7 @@ fn create_signed_cookie_header(
     max_age_seconds: Option<f64>,
 ) -> AuthResult<String> {
     let cookie_name = related_cookie_name(config, suffix);
-    let signed_value = sign_cookie_value(secret, value)?;
+    let signed_value = sign_cookie_value(secret, value);
     // The pinned cookie serializer floors nonnegative Max-Age, omits negative
     // values and does not synthesize an Expires attribute from Max-Age.
     let mut header = create_session_like_cookie(&cookie_name, &signed_value, None, config);
@@ -2192,7 +2417,7 @@ fn create_signed_cookie_header(
                 "Two-factor cookie lifetime exceeds 400 days",
             ));
         }
-        header.push_str(&format!("; Max-Age={}", seconds.floor() as u32));
+        _ = write!(header, "; Max-Age={}", seconds.floor() as u32);
     }
     Ok(header)
 }
@@ -2201,11 +2426,9 @@ fn read_signed_cookie<S: better_auth_core::AuthSchema>(
     req: &AuthRequest,
     suffix: &str,
     ctx: &AuthContext<S>,
-) -> AuthResult<Option<String>> {
+) -> Option<String> {
     let cookie_name = related_cookie_name(&ctx.config, suffix);
-    let Some(raw_cookie) = get_cookie(req, &cookie_name) else {
-        return Ok(None);
-    };
+    let raw_cookie = get_cookie(req, &cookie_name)?;
     verify_signed_cookie_value(&ctx.config.secret, &raw_cookie)
 }
 
@@ -2233,22 +2456,17 @@ fn verify_trusted_device_cookie_value(secret: &str, signed_value: &str) -> Optio
     Some(payload.to_owned())
 }
 
-fn sign_cookie_value(secret: &str, value: &str) -> AuthResult<String> {
-    Ok(better_auth_core::utils::cookie_utils::sign_cookie_value(
-        value, secret,
-    ))
+fn sign_cookie_value(secret: &str, value: &str) -> String {
+    better_auth_core::utils::cookie_utils::sign_cookie_value(value, secret)
 }
 
-fn verify_signed_cookie_value(secret: &str, signed_value: &str) -> AuthResult<Option<String>> {
-    Ok(better_auth_core::utils::cookie_utils::verify_cookie_value(
-        signed_value,
-        secret,
-    ))
+fn verify_signed_cookie_value(secret: &str, signed_value: &str) -> Option<String> {
+    better_auth_core::utils::cookie_utils::verify_cookie_value(signed_value, secret)
 }
 
 fn sign_value(secret: &str, value: &str) -> AuthResult<String> {
     let mut mac = <HmacSha256 as Mac>::new_from_slice(secret.as_bytes())
-        .map_err(|error| AuthError::internal(format!("Failed to initialize HMAC: {}", error)))?;
+        .map_err(|error| AuthError::internal(format!("Failed to initialize HMAC: {error}")))?;
     mac.update(value.as_bytes());
     Ok(URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes()))
 }
@@ -2257,7 +2475,7 @@ fn derive_encryption_key(secret: &str) -> AuthResult<Key<Aes256Gcm>> {
     let hkdf = Hkdf::<Sha256>::new(None, secret.as_bytes());
     let mut okm = [0u8; 32];
     hkdf.expand(ENCRYPTION_INFO, &mut okm).map_err(|error| {
-        AuthError::internal(format!("Failed to derive encryption key: {}", error))
+        AuthError::internal(format!("Failed to derive encryption key: {error}"))
     })?;
     Ok(*Key::<Aes256Gcm>::from_slice(&okm))
 }
@@ -2277,8 +2495,7 @@ fn decrypt_legacy_value(secret: &str, encrypted: &str) -> AuthResult<String> {
     let cipher = Aes256Gcm::new(&derive_encryption_key(secret)?);
     let bytes = URL_SAFE_NO_PAD.decode(encrypted).map_err(|error| {
         AuthError::internal(format!(
-            "Failed to decode encrypted two-factor data: {}",
-            error
+            "Failed to decode encrypted two-factor data: {error}"
         ))
     })?;
     if bytes.len() < 12 {
@@ -2290,28 +2507,9 @@ fn decrypt_legacy_value(secret: &str, encrypted: &str) -> AuthResult<String> {
     let plaintext = cipher
         .decrypt(Nonce::from_slice(nonce_bytes), ciphertext)
         .map_err(|error| {
-            AuthError::internal(format!("Failed to decrypt two-factor data: {}", error))
+            AuthError::internal(format!("Failed to decrypt two-factor data: {error}"))
         })?;
     String::from_utf8(plaintext).map_err(|error| {
-        AuthError::internal(format!(
-            "Two-factor plaintext is not valid UTF-8: {}",
-            error
-        ))
+        AuthError::internal(format!("Two-factor plaintext is not valid UTF-8: {error}"))
     })
-}
-
-impl<S: better_auth_core::AuthSchema> ResolvedTwoFactorState<S> {
-    fn user(&self) -> &S::User {
-        match self {
-            Self::Session { user, .. } => user,
-            Self::Pending(pending) => &pending.user,
-        }
-    }
-
-    fn key(&self) -> &str {
-        match self {
-            Self::Session { key, .. } => key,
-            Self::Pending(pending) => &pending.key,
-        }
-    }
 }

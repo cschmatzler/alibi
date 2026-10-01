@@ -43,18 +43,22 @@ impl<U: AuthUser, H: AdminBannedUserMessage<U>> ErasedMessage for TypedMessage<U
 #[derive(Clone)]
 pub struct AdminBannedUserMessageHandler(Arc<dyn ErasedMessage>);
 impl fmt::Debug for AdminBannedUserMessageHandler {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("AdminBannedUserMessageHandler(..)")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("AdminBannedUserMessageHandler(..)")
     }
 }
 impl AdminBannedUserMessageHandler {
     /// Stores a callback for the exact user entity of the application's schema.
+    #[must_use]
     pub fn new<U: AuthUser, H: AdminBannedUserMessage<U>>(handler: H) -> Self {
         Self(Arc::new(TypedMessage::<U, H> {
             handler,
             marker: std::marker::PhantomData,
         }))
     }
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn validate<U: AuthUser>(&self) -> AuthResult<()> {
         if self.0.user_type() != TypeId::of::<U>() {
             return Err(AuthError::config(
@@ -63,15 +67,21 @@ impl AdminBannedUserMessageHandler {
         }
         Ok(())
     }
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn message<U: AuthUser>(&self, user: &U) -> AuthResult<String> {
         self.0.message(user).await
     }
 }
 
 #[derive(Clone)]
-pub(crate) struct BannedUserMessagePolicy(pub(super) AdminBannedUserMessageHandler);
+pub(in crate::plugins) struct BannedUserMessagePolicy(pub(super) AdminBannedUserMessageHandler);
 impl BannedUserMessagePolicy {
-    pub(crate) async fn message<U: AuthUser>(&self, user: &U) -> AuthResult<String> {
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
+    pub(in crate::plugins) async fn message<U: AuthUser>(&self, user: &U) -> AuthResult<String> {
         self.0.message(user).await
     }
 }

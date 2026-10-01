@@ -4,10 +4,36 @@
 )]
 
 use super::*;
+
 use crate::plugins::test_helpers;
+
 use better_auth_core::CreateUser;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+
+struct CustomHasher;
+
+#[async_trait]
+impl HashOneTimeToken for CustomHasher {
+    async fn hash(&self, token: &str) -> AuthResult<String> {
+        Ok(format!("custom:{token}"))
+    }
+}
+
+struct CustomGenerator;
+
+#[async_trait]
+impl GenerateOneTimeToken for CustomGenerator {
+    async fn generate(
+        &self,
+        session: &OneTimeTokenSession,
+        request: Option<&AuthRequest>,
+    ) -> AuthResult<String> {
+        assert_eq!(request.map(AuthRequest::path), None);
+        assert!(!session.user.id.is_empty());
+        Ok("custom-generated-token".to_owned())
+    }
+}
 
 async fn setup() -> (AuthContext<TestSchema>, OneTimeTokenSession) {
     let ctx = test_helpers::create_test_context().await;
@@ -17,7 +43,7 @@ async fn setup() -> (AuthContext<TestSchema>, OneTimeTokenSession) {
         Duration::days(1),
     )
     .await;
-    (ctx, OneTimeTokenSession { user, session })
+    (ctx, OneTimeTokenSession { session, user })
 }
 
 fn signed_request(
@@ -154,27 +180,6 @@ async fn concurrent_token_redemption_has_exactly_one_winner() {
     );
 }
 
-struct CustomHasher;
-#[async_trait]
-impl HashOneTimeToken for CustomHasher {
-    async fn hash(&self, token: &str) -> AuthResult<String> {
-        Ok(format!("custom:{token}"))
-    }
-}
-struct CustomGenerator;
-#[async_trait]
-impl GenerateOneTimeToken for CustomGenerator {
-    async fn generate(
-        &self,
-        session: &OneTimeTokenSession,
-        request: Option<&AuthRequest>,
-    ) -> AuthResult<String> {
-        assert_eq!(request.map(AuthRequest::path), None);
-        assert!(!session.user.id.is_empty());
-        Ok("custom-generated-token".to_owned())
-    }
-}
-
 #[tokio::test]
 async fn hashed_and_custom_storage_share_consistent_issue_and_consume_paths() {
     let (ctx, session) = setup().await;
@@ -220,6 +225,10 @@ async fn hashed_and_custom_storage_share_consistent_issue_and_consume_paths() {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn http_transfer_cookie_headers_and_server_only_configuration_are_observable() {
     let (ctx, session) = setup().await;
     let plugin = OneTimeTokenPlugin::with_config(OneTimeTokenConfig {
@@ -253,18 +262,18 @@ async fn http_transfer_cookie_headers_and_server_only_configuration_are_observab
         (Some("false"), false),
         (Some("true"), false),
     ] {
-        let token = plugin
+        let token_2 = plugin
             .generate_for_session(&session, None, &ctx)
             .await
             .unwrap();
-        let mut verify = test_helpers::create_auth_json_request_no_query(
+        let mut verify_2 = test_helpers::create_auth_json_request_no_query(
             HttpMethod::Post,
             "/one-time-token/verify",
             None,
-            Some(json!({ "token": token })),
+            Some(json!({ "token": token_2 })),
         );
         if let Some(value) = preference {
-            verify.headers.insert(
+            verify_2.headers.insert(
                 "cookie".to_owned(),
                 format!(
                     "{}={}",
@@ -273,7 +282,7 @@ async fn http_transfer_cookie_headers_and_server_only_configuration_are_observab
                 ),
             );
         }
-        let verified = plugin.verify(&verify, &ctx).await.unwrap();
+        let verified = plugin.verify(&verify_2, &ctx).await.unwrap();
         assert_eq!(verified.status, 200);
         let cookies = verified
             .headers
@@ -282,16 +291,19 @@ async fn http_transfer_cookie_headers_and_server_only_configuration_are_observab
             .collect::<Vec<_>>();
         let session_cookie = cookies
             .iter()
-            .find(|cookie| cookie.name() == ctx.config.session.cookie_name)
+            .find(|cookie_2| cookie_2.name() == ctx.config.session.cookie_name)
             .unwrap();
         assert_eq!(
             cookies
                 .iter()
-                .any(|cookie| cookie.name() == related_cookie_name(&ctx.config, "dont_remember")),
+                .any(|candidate| candidate.name()
+                    == related_cookie_name(&ctx.config, "dont_remember")),
             !persistent
         );
         assert_eq!(
-            session_cookie.max_age().map(|age| age.whole_seconds()),
+            session_cookie
+                .max_age()
+                .map(cookie::time::Duration::whole_seconds),
             persistent.then_some(ctx.config.session.expires_in.num_seconds()),
             "receiving preference {preference:?}"
         );
@@ -320,19 +332,19 @@ async fn http_transfer_cookie_headers_and_server_only_configuration_are_observab
         disable_set_session_cookie: true,
         ..Default::default()
     });
-    let token = no_cookie
+    let token_3 = no_cookie
         .generate_for_session(&session, None, &ctx)
         .await
         .unwrap();
-    let verify = test_helpers::create_auth_json_request_no_query(
+    let verify_3 = test_helpers::create_auth_json_request_no_query(
         HttpMethod::Post,
         "/one-time-token/verify",
         None,
-        Some(json!({ "token": token })),
+        Some(json!({ "token": token_3 })),
     );
     assert!(
         no_cookie
-            .verify(&verify, &ctx)
+            .verify(&verify_3, &ctx)
             .await
             .unwrap()
             .headers

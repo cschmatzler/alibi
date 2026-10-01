@@ -1,11 +1,23 @@
+#![expect(
+    unused_crate_dependencies,
+    reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
+)]
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as FmtWrite;
+
 use std::fs;
+
 use std::path::PathBuf;
 
 use chrono::Utc;
+
 use clap::Parser;
+
 use serde::Serialize;
+
 use serde_json::{Map, Value};
+
+use std::io::Write;
 
 type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -105,6 +117,10 @@ struct PluginAccumulator {
     schema_mismatch: Vec<OperationKey>,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep alignment report assembly and output gates in one command execution flow"
+)]
 fn main() -> Result<(), DynError> {
     let cli = Cli::parse();
 
@@ -141,19 +157,16 @@ fn main() -> Result<(), DynError> {
         let entry = plugin_acc.entry(plugin_name).or_default();
         entry.reference_operations += 1;
 
-        match target_ops.get(key) {
-            Some(target_info) => {
-                entry.matched_operations += 1;
+        if let Some(target_info) = target_ops.get(key) {
+            entry.matched_operations += 1;
 
-                if !schema_compatible(reference_info, target_info) {
-                    schema_mismatches.push(key.clone());
-                    entry.schema_mismatch.push(key.clone());
-                }
+            if !schema_compatible(reference_info, target_info) {
+                schema_mismatches.push(key.clone());
+                entry.schema_mismatch.push(key.clone());
             }
-            None => {
-                missing.push(key.clone());
-                entry.missing.push(key.clone());
-            }
+        } else {
+            missing.push(key.clone());
+            entry.missing.push(key.clone());
         }
     }
 
@@ -166,8 +179,7 @@ fn main() -> Result<(), DynError> {
 
         let target_plugin = target_ops
             .get(key)
-            .map(|v| v.plugin.clone())
-            .unwrap_or_else(|| "Unknown".to_string());
+            .map_or_else(|| "Unknown".to_owned(), |v| v.plugin.clone());
         let entry = plugin_acc.entry(target_plugin).or_default();
         entry.extra.push(key.clone());
     }
@@ -205,8 +217,7 @@ fn main() -> Result<(), DynError> {
     let default_missing = plugin_reports
         .iter()
         .find(|r| r.plugin == "Default")
-        .map(|r| r.missing_operations)
-        .unwrap_or(0);
+        .map_or(0, |r| r.missing_operations);
 
     let report = Report {
         timestamp: Utc::now().to_rfc3339(),
@@ -240,7 +251,11 @@ fn main() -> Result<(), DynError> {
             fs::create_dir_all(parent)?;
         }
         fs::write(path, serde_json::to_string_pretty(&report)?)?;
-        eprintln!("[ok] wrote json report: {}", path.display());
+        drop(writeln!(
+            std::io::stderr().lock(),
+            "[ok] wrote json report: {}",
+            path.display()
+        ));
     }
 
     let markdown = render_markdown(&report);
@@ -249,11 +264,15 @@ fn main() -> Result<(), DynError> {
             fs::create_dir_all(parent)?;
         }
         fs::write(path, markdown.as_bytes())?;
-        eprintln!("[ok] wrote markdown report: {}", path.display());
+        drop(writeln!(
+            std::io::stderr().lock(),
+            "[ok] wrote markdown report: {}",
+            path.display()
+        ));
     }
 
     if cli.output_md.is_none() {
-        println!("{markdown}");
+        writeln!(std::io::stdout().lock(), "{markdown}")?;
     }
 
     if cli.fail_on_default_missing && !report.gates.default_plugin_complete {
@@ -305,19 +324,19 @@ fn extract_operations(spec: &Value) -> Result<BTreeMap<OperationKey, OperationIn
                 .and_then(Value::as_array)
                 .and_then(|tags| tags.iter().find_map(Value::as_str))
                 .unwrap_or("Default")
-                .to_string();
+                .to_owned();
 
             let request_schema = extract_request_schema(operation);
             let response_schema = extract_response_schema(operation);
 
-            _ = ops.insert(
+            drop(ops.insert(
                 key,
                 OperationInfo {
                     plugin,
                     request_schema,
                     response_schema,
                 },
-            );
+            ));
         }
     }
 
@@ -399,15 +418,20 @@ fn canonicalize(value: &Value) -> Value {
 
             let mut out = Map::new();
             for (key, val) in entries {
-                _ = out.insert(key.clone(), canonicalize(val));
+                drop(out.insert(key.clone(), canonicalize(val)));
             }
             Value::Object(out)
         }
         Value::Array(arr) => Value::Array(arr.iter().map(canonicalize).collect()),
-        _ => value.clone(),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => value.clone(),
     }
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
 fn pct(numerator: usize, denominator: usize) -> f64 {
     if denominator == 0 {
         100.0
@@ -427,37 +451,39 @@ fn render_markdown(report: &Report) -> String {
     let mut out = String::new();
 
     out.push_str("# OpenAPI Alignment Report\n\n");
-    out.push_str(&format!("- Timestamp: `{}`\n", report.timestamp));
-    out.push_str(&format!("- Reference: `{}`\n", report.reference.path));
-    out.push_str(&format!("- Target: `{}`\n\n", report.target.path));
+    _ = writeln!(out, "- Timestamp: `{}`", report.timestamp);
+    _ = writeln!(out, "- Reference: `{}`", report.reference.path);
+    _ = write!(out, "- Target: `{}`\n\n", report.target.path);
 
     out.push_str("## Summary\n\n");
-    out.push_str(&format!(
-        "- Reference operations: {}\n",
+    _ = writeln!(
+        out,
+        "- Reference operations: {}",
         report.reference.operations
-    ));
-    out.push_str(&format!(
-        "- Target operations: {}\n",
-        report.target.operations
-    ));
-    out.push_str(&format!(
-        "- Matched / Missing / Extra: {} / {} / {}\n",
+    );
+    _ = writeln!(out, "- Target operations: {}", report.target.operations);
+    _ = writeln!(
+        out,
+        "- Matched / Missing / Extra: {} / {} / {}",
         report.summary.matched_operations,
         report.summary.missing_operations,
         report.summary.extra_operations
-    ));
-    out.push_str(&format!(
-        "- Route coverage: `{:.2}%`\n",
+    );
+    _ = writeln!(
+        out,
+        "- Route coverage: `{:.2}%`",
         report.summary.route_coverage_pct
-    ));
-    out.push_str(&format!(
-        "- Schema compatibility: `{:.2}%` (mismatches: {})\n",
+    );
+    _ = writeln!(
+        out,
+        "- Schema compatibility: `{:.2}%` (mismatches: {})",
         report.summary.schema_compatibility_pct, report.summary.schema_mismatch_operations
-    ));
-    out.push_str(&format!(
+    );
+    _ = write!(
+        out,
         "- Gate `Default complete`: `{}`\n\n",
         report.gates.default_plugin_complete
-    ));
+    );
 
     out.push_str("## Plugin Breakdown\n\n");
     out.push_str(
@@ -465,8 +491,9 @@ fn render_markdown(report: &Report) -> String {
     );
     out.push_str("|---|---:|---:|---:|---:|---:|---:|---:|\n");
     for p in &report.plugins {
-        out.push_str(&format!(
-            "| {} | {} | {} | {} | {} | {} | {:.2}% | {:.2}% |\n",
+        _ = writeln!(
+            out,
+            "| {} | {} | {} | {} | {} | {} | {:.2}% | {:.2}% |",
             p.plugin,
             p.reference_operations,
             p.matched_operations,
@@ -475,7 +502,7 @@ fn render_markdown(report: &Report) -> String {
             p.schema_mismatch_operations,
             p.route_coverage_pct,
             p.schema_compatibility_pct
-        ));
+        );
     }
     out.push('\n');
 
@@ -484,7 +511,7 @@ fn render_markdown(report: &Report) -> String {
         out.push_str("- None\n\n");
     } else {
         for item in &report.top_missing {
-            out.push_str(&format!("- {}\n", item));
+            _ = writeln!(out, "- {item}");
         }
         out.push('\n');
     }
@@ -494,7 +521,7 @@ fn render_markdown(report: &Report) -> String {
         out.push_str("- None\n\n");
     } else {
         for item in &report.top_extra {
-            out.push_str(&format!("- {}\n", item));
+            _ = writeln!(out, "- {item}");
         }
         out.push('\n');
     }
@@ -504,7 +531,7 @@ fn render_markdown(report: &Report) -> String {
         out.push_str("- None\n");
     } else {
         for item in &report.top_schema_mismatch {
-            out.push_str(&format!("- {}\n", item));
+            _ = writeln!(out, "- {item}");
         }
     }
 

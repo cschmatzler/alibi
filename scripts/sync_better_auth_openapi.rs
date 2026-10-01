@@ -1,15 +1,27 @@
+#![expect(
+    unused_crate_dependencies,
+    reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
+)]
 use std::fs;
+
 use std::path::{Path, PathBuf};
+
 use std::process::{Command, Stdio};
 
 use chrono::Utc;
+
 use clap::{Parser, ValueEnum};
+
 use serde::Serialize;
+
 use serde_json::Value;
+
+use std::io::Write;
 
 type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 const DEFAULT_REPO_URL: &str = "https://github.com/better-auth/better-auth.git";
+
 const GENERATOR_TEMPLATE_REL_PATH: &str = "scripts/generate-openapi-matrix.mjs";
 
 #[derive(Debug, Parser)]
@@ -59,7 +71,7 @@ enum Profile {
 }
 
 impl Profile {
-    fn as_str(self) -> &'static str {
+    const fn as_str(self) -> &'static str {
         match self {
             Self::Core => "core",
             Self::AlignedRs => "aligned-rs",
@@ -139,7 +151,7 @@ fn main() -> Result<(), DynError> {
         convert_json_to_yaml(&json_path, &yaml_path)?;
 
         manifest_profiles.push(ManifestProfile {
-            name: profile.as_str().to_string(),
+            name: profile.as_str().to_owned(),
             json: json_path.to_string_lossy().into_owned(),
             yaml: yaml_path.to_string_lossy().into_owned(),
         });
@@ -158,14 +170,19 @@ fn main() -> Result<(), DynError> {
     fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)?;
 
     if !options.keep_generator {
-        let _ = fs::remove_file(&generator_path);
+        drop(fs::remove_file(&generator_path));
     }
 
-    eprintln!(
+    drop(writeln!(
+        std::io::stderr().lock(),
         "[done] OpenAPI matrix generated in {}",
         output_dir.display()
-    );
-    eprintln!("[done] Manifest: {}", manifest_path.display());
+    ));
+    drop(writeln!(
+        std::io::stderr().lock(),
+        "[done] Manifest: {}",
+        manifest_path.display()
+    ));
     Ok(())
 }
 
@@ -229,7 +246,7 @@ fn git_rev_parse_head(repo_dir: &Path) -> Result<String, DynError> {
         return Err("Failed to resolve HEAD commit".into());
     }
 
-    Ok(String::from_utf8(output.stdout)?.trim().to_string())
+    Ok(String::from_utf8(output.stdout)?.trim().to_owned())
 }
 
 fn write_generator_script(js_workdir: &Path) -> Result<PathBuf, DynError> {
@@ -263,7 +280,12 @@ fn convert_json_to_yaml(json_path: &Path, yaml_path: &Path) -> Result<(), DynErr
 }
 
 fn run_checked(program: &str, args: &[&str], cwd: Option<&Path>) -> Result<(), DynError> {
-    eprintln!("$ {} {}", program, display_args(args));
+    drop(writeln!(
+        std::io::stderr().lock(),
+        "$ {} {}",
+        program,
+        display_args(args)
+    ));
 
     let mut command = Command::new(program);
     _ = command.args(args);
@@ -295,6 +317,6 @@ fn quote_if_needed(value: &&str) -> String {
     if value.contains(' ') {
         format!("\"{value}\"")
     } else {
-        (*value).to_string()
+        (*value).to_owned()
     }
 }

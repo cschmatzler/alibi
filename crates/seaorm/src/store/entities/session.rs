@@ -1,7 +1,7 @@
 use sea_orm::entity::prelude::*;
 use serde::Serialize;
 
-#[derive(crate::AuthEntity, Clone, Debug, PartialEq, Serialize, DeriveEntityModel)]
+#[derive(crate::AuthEntity, Clone, Debug, PartialEq, Eq, Serialize, DeriveEntityModel)]
 #[auth(role = "session")]
 #[sea_orm(table_name = "sessions")]
 pub struct Model {

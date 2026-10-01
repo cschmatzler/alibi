@@ -15,6 +15,10 @@ async fn snapshot(db: &DatabaseConnection) -> Result<String, sea_orm::DbErr> {
         .await?.ok_or_else(|| sea_orm::DbErr::Custom("missing snapshot".into()))?.try_get("", "snapshot")
 }
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn public_numeric_pages_bind_raw_limits_and_keep_insertion_order_filtered_count_and_full_state()
 -> TestResult {
     let db = Database::connect("sqlite::memory:").await?;
@@ -51,7 +55,7 @@ async fn public_numeric_pages_bind_raw_limits_and_keep_insertion_order_filtered_
         (&first.id, "2021-01-01 00:00:00+00:00"),
         (&second.id, "2020-01-01 00:00:00+00:00"),
     ] {
-        let _ = db
+        _ = db
             .execute_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
                 "UPDATE member SET created_at=? WHERE id=?",

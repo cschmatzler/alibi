@@ -545,7 +545,6 @@ version = "1.0.0-alpha.3"
 dependencies = [
  "aes-gcm",
  "async-trait",
- "axum",
  "base64 0.22.1",
  "better-auth-core",
  "better-auth-seaorm",
@@ -559,7 +558,6 @@ dependencies = [
  "indexmap 2.13.0",
  "jsonwebtoken",
  "k256",
- "nonzero_ext",
  "p256",
  "p521",
  "rand 0.8.5",
@@ -654,7 +652,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "tracing",
  "uuid",
 ]
 
@@ -2391,12 +2388,6 @@ dependencies = [
  "memchr",
  "minimal-lexical",
 ]
-
-[[package]]
-name = "nonzero_ext"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38bf9645c8b145698bb0b18a4637dcacbc421ea49bef2317e4fd8065a387cf21"
 
 [[package]]
 name = "nu-ansi-term"

@@ -1,4 +1,4 @@
-//! SeaORM integration re-exports, gated behind the `seaorm2` feature.
+//! `SeaORM` integration re-exports, gated behind the `seaorm2` feature.
 
 pub use better_auth_seaorm::json_metadata;
 pub use better_auth_seaorm::schema::{

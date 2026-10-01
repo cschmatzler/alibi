@@ -1,8 +1,8 @@
 //! Application-owned authentication callbacks and callback-time persisted state.
 use crate::TestSchema;
 use async_trait::async_trait;
-use axum::{routing::get, Json, Router};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use axum::{Json, Router, routing::get};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::{
@@ -11,12 +11,12 @@ use better_auth::plugins::{
     VerifiedPasskeyAuthentication,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_core::{store::PasskeyStore, utils::json::JsValue, wire::PasskeyView, AuthPasskey};
+use better_auth_core::{AuthPasskey, store::PasskeyStore, utils::json::JsValue, wire::PasskeyView};
 use better_auth_seaorm::{
-    sea_orm::{ConnectionTrait, DbBackend, Statement},
     DatabaseConnection, SeaOrmStore,
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
 pub(super) type Events = Arc<Mutex<Vec<Value>>>;

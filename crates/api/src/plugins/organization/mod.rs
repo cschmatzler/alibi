@@ -1,41 +1,67 @@
 pub mod creation_policy;
-pub use creation_policy::OrganizationCreationPolicy;
+
 pub mod extensions;
+
 pub mod handlers;
+
 pub mod lifecycle;
+
+pub mod invitation_acceptance_lifecycle;
+
+pub mod membership_policy;
+
+pub mod member_addition_lifecycle;
+
+pub mod member_removal_lifecycle;
+
+pub mod member_role_lifecycle;
+
+pub mod rbac;
+
+pub mod types;
+
+pub mod update_lifecycle;
+
+#[cfg(test)]
+mod extension_tests;
+
+#[cfg(test)]
+mod dynamic_role_tests;
+
+pub use creation_policy::OrganizationCreationPolicy;
+
 pub use lifecycle::{
     OrganizationCreatePatch, OrganizationCreatedContext, OrganizationCreationHooks,
     OrganizationDeleteContext, OrganizationDeletionHooks, OrganizationDraftContext,
     OrganizationMemberCreatePatch, OrganizationMemberDraftContext,
 };
-pub mod invitation_acceptance_lifecycle;
+
 pub use invitation_acceptance_lifecycle::{
     OrganizationInvitationAcceptanceContext, OrganizationInvitationAcceptanceHooks,
     OrganizationInvitationAcceptedContext,
 };
-pub mod membership_policy;
+
 pub use membership_policy::{MembershipLimit, OrganizationMembershipLimitResolver};
-pub mod member_addition_lifecycle;
+
 pub use member_addition_lifecycle::{
     OrganizationMemberAddedContext, OrganizationMemberAdditionContext,
     OrganizationMemberAdditionDraft, OrganizationMemberAdditionHooks,
 };
-pub mod member_removal_lifecycle;
-pub mod member_role_lifecycle;
+
 pub use member_removal_lifecycle::{
     OrganizationMemberRemovalContext, OrganizationMemberRemovalHooks,
 };
+
 pub use member_role_lifecycle::{
     OrganizationMemberRoleContext, OrganizationMemberRoleHooks, OrganizationMemberRolePatch,
     OrganizationMemberRoleUpdatedContext,
 };
-pub mod rbac;
-pub mod types;
-pub mod update_lifecycle;
+
 pub use extensions::{
     DefaultTeamContext, DefaultTeamFactory, DynamicAccessControlConfig, OrganizationLimitResolver,
     OrganizationTeamHooks, TeamsConfig, default_organization_statements,
 };
+
 pub use update_lifecycle::{
     OrganizationUpdateContext, OrganizationUpdateHooks, OrganizationUpdateInput,
     OrganizationUpdatePatch, OrganizationUpdatedContext,
@@ -44,8 +70,11 @@ pub use update_lifecycle::{
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+
 use better_auth_core::error::AuthResult;
+
 use better_auth_core::plugin::{AuthContext, AuthPlugin, AuthRoute};
+
 use better_auth_core::types::{AuthRequest, AuthResponse, HttpMethod};
 
 /// Permission definitions for a role
@@ -109,7 +138,7 @@ pub struct OrganizationConfig {
     #[config(default = Some(MembershipLimit::Fixed(100.0)), skip)]
     pub membership_limit: Option<MembershipLimit>,
     /// Role assigned to organization creator (default: "owner")
-    #[config(default = "owner".to_string())]
+    #[config(default = "owner".to_owned())]
     pub creator_role: String,
     /// Invitation expiration in seconds (default: 48 hours)
     #[config(default = 60 * 60 * 48)]
@@ -138,6 +167,7 @@ pub struct OrganizationConfig {
 
 impl OrganizationConfig {
     /// The pinned creator-role option uses JavaScript's nonempty-string fallback.
+    #[must_use]
     pub fn effective_creator_role(&self) -> &str {
         if self.creator_role.is_empty() {
             "owner"
@@ -158,6 +188,10 @@ impl OrganizationPlugin {
     /// organization fallback and authority for a functional team-limit callback.
     /// This helper never registers a public authentication route and does not run
     /// builder-wide dispatch hooks or API-key virtual-session injection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if membership validation, permission checks, admission hooks, or persistence fail.
     pub async fn add_member_with_headers<S: better_auth_core::AuthSchema>(
         &self,
         ctx: &AuthContext<S>,
@@ -170,6 +204,10 @@ impl OrganizationPlugin {
     /// Remove through a real signed-cookie session supplied by the application.
     /// This low-level helper shares HTTP business logic but does not execute
     /// builder-wide before/after dispatch hooks or API-key session injection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if membership authorization, removal hooks, or persistence fail.
     pub async fn remove_member_with_headers<S: better_auth_core::AuthSchema>(
         &self,
         ctx: &AuthContext<S>,
@@ -190,6 +228,10 @@ impl OrganizationPlugin {
     /// plugin helper does not execute builder-wide before/after dispatch hooks;
     /// API-key-only session injection requires normal authenticated dispatch.
     /// None represents a missing organization after its membership was resolved.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if organization authorization, deletion hooks, or persistence fail.
     pub async fn delete_organization_with_headers<S: better_auth_core::AuthSchema>(
         &self,
         ctx: &AuthContext<S>,
@@ -226,6 +268,10 @@ impl OrganizationPlugin {
     /// HTTP creation always uses the authenticated principal instead.
     /// Like upstream's server-only body.userId branch, this bypasses an allow-policy
     /// denial while still evaluating that policy and enforcing organization limits.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if creation policies, organization hooks, or persistence reject the operation.
     pub async fn create_organization_for_user<S: better_auth_core::AuthSchema>(
         &self,
         ctx: &AuthContext<S>,
@@ -247,48 +293,48 @@ impl OrganizationPlugin {
     }
 }
 
-#[cfg(test)]
-mod extension_tests;
-
-#[cfg(test)]
-mod dynamic_role_tests;
-
 /// Metadata key announcing that the organization plugin is installed.
-pub(crate) const METADATA_ENABLED: &str = "organization.enabled";
+pub(in crate::plugins) const METADATA_ENABLED: &str = "organization.enabled";
+
 /// Metadata key carrying the configured custom roles, so other plugins can run
 /// the organization's access control without depending on this plugin's config.
-pub(crate) const METADATA_ROLES: &str = "organization.roles";
+pub(in crate::plugins) const METADATA_ROLES: &str = "organization.roles";
+
 /// Metadata key carrying the creator role, which is allowed every action.
-pub(crate) const METADATA_CREATOR_ROLE: &str = "organization.creator_role";
+pub(in crate::plugins) const METADATA_CREATOR_ROLE: &str = "organization.creator_role";
 
 #[async_trait]
 impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
     fn name(&self) -> &'static str {
         "organization"
     }
+
     fn session_fields(&self) -> better_auth_core::field_policy::FieldConfigs {
         let mut fields = better_auth_core::field_policy::FieldConfigs::new();
-        let _ = fields.insert(
-            "activeOrganizationId".into(),
-            better_auth_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"}))
-                .read_only(),
-        );
-        if self.config.teams.enabled {
-            let _ = fields.insert(
-                "activeTeamId".into(),
+        drop(
+            fields.insert(
+                "activeOrganizationId".into(),
                 better_auth_core::field_policy::FieldConfig::new(
                     serde_json::json!({"type":"string"}),
                 )
                 .read_only(),
+            ),
+        );
+        if self.config.teams.enabled {
+            drop(
+                fields.insert(
+                    "activeTeamId".into(),
+                    better_auth_core::field_policy::FieldConfig::new(
+                        serde_json::json!({"type":"string"}),
+                    )
+                    .read_only(),
+                ),
             );
         }
         fields
     }
 
-    async fn on_init(
-        &self,
-        ctx: &mut better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::AuthResult<()> {
+    async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
         ctx.set_metadata(METADATA_ENABLED, serde_json::Value::Bool(true));
         ctx.set_metadata(
             "organization.teams.enabled",
@@ -461,5 +507,11 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
                 handlers::role::handle_role_request(req, ctx, &self.config).await
             }
         }
+    }
+}
+
+impl std::fmt::Debug for OrganizationPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OrganizationPlugin").finish_non_exhaustive()
     }
 }

@@ -1,13 +1,21 @@
 use super::super::extensions::{TeamHookContext, TeamLimitContext};
+
 use super::super::{OrganizationConfig, OrganizationPlugin};
+
 use super::extension_common::{has_action, org_error, session};
+
 use better_auth_core::entity::AuthUser;
+
 use better_auth_core::types::{AddTeamMemberResult, CreateTeam, Team, UpdateTeam};
+
 use better_auth_core::wire::{SessionView, UserView};
+
 use better_auth_core::{
     AuthContext, AuthRequest, AuthResponse, AuthResult, AuthSchema, HttpMethod,
 };
+
 use serde::Deserialize;
+
 use validator::Validate;
 
 #[derive(Debug, Deserialize, Validate)]
@@ -16,18 +24,21 @@ pub struct CreateTeamRequest {
     pub name: String,
     pub organization_id: Option<String>,
 }
+
 #[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoveTeamRequest {
     pub team_id: String,
     pub organization_id: Option<String>,
 }
+
 #[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 struct UpdateTeamRequest {
     team_id: String,
     data: UpdateTeamData,
 }
+
 #[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 struct UpdateTeamData {
@@ -35,8 +46,13 @@ struct UpdateTeamData {
     name: Option<String>,
     organization_id: Option<String>,
 }
+
 #[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
+#[expect(
+    clippy::struct_field_names,
+    reason = "Wire fields identify distinct team, user, and organization IDs"
+)]
 struct TeamMemberRequest {
     team_id: String,
     #[serde(
@@ -46,6 +62,7 @@ struct TeamMemberRequest {
     user_id: String,
     organization_id: Option<String>,
 }
+
 #[derive(Debug, Deserialize, Validate)]
 struct SetActiveRequest {
     #[serde(
@@ -56,10 +73,50 @@ struct SetActiveRequest {
     team_id: super::super::types::NullableStringField,
 }
 
+impl OrganizationPlugin {
+    /// Controlled server-side creation; the organization is explicit and no request principal is fabricated.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
+    pub async fn create_team<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        data: CreateTeam,
+    ) -> AuthResult<Team> {
+        if !self.config.teams.enabled {
+            return Err(better_auth_core::AuthError::NotImplemented(
+                "Teams are disabled".to_owned(),
+            ));
+        }
+        create_team_core(data, None, None, ctx, &self.config).await
+    }
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
+    pub async fn remove_team<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        organization_id: &str,
+        team_id: &str,
+    ) -> AuthResult<()> {
+        if !self.config.teams.enabled {
+            return Err(better_auth_core::AuthError::NotImplemented(
+                "Teams are disabled".to_owned(),
+            ));
+        }
+        remove_team_core(organization_id, team_id, None, ctx, &self.config).await
+    }
+}
+
 fn org_id(explicit: Option<&str>, session: Option<&SessionView>) -> AuthResult<String> {
     explicit
         .filter(|id| !id.is_empty())
-        .or_else(|| session.and_then(|s| s.active_organization_id.as_deref()))
+        .or_else(|| {
+            let s = session?;
+            s.active_organization_id.as_deref()
+        })
         .map(str::to_owned)
         .ok_or_else(|| org_error(400, "NO_ACTIVE_ORGANIZATION"))
 }
@@ -77,6 +134,10 @@ async fn hook_context<S: AuthSchema>(
     Ok(TeamHookContext { organization, user })
 }
 
+///
+/// # Errors
+///
+/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn create_team_core<S: AuthSchema>(
     mut data: CreateTeam,
     actor: Option<(&UserView, &SessionView)>,
@@ -146,6 +207,10 @@ pub async fn create_team_core<S: AuthSchema>(
     Ok(team)
 }
 
+///
+/// # Errors
+///
+/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn remove_team_core<S: AuthSchema>(
     organization_id: &str,
     team_id: &str,
@@ -183,42 +248,21 @@ pub async fn remove_team_core<S: AuthSchema>(
     if let Some(callback) = &config.teams.hooks {
         callback.before_delete(&team, &hooks).await?;
     }
-    let _ = ctx.database.delete_team(organization_id, team_id).await?;
+    let _ignored_delete_team = ctx.database.delete_team(organization_id, team_id).await?;
     if let Some(callback) = &config.teams.hooks {
         callback.after_delete(&team, &hooks).await?;
     }
     Ok(())
 }
 
-impl OrganizationPlugin {
-    /// Controlled server-side creation; the organization is explicit and no request principal is fabricated.
-    pub async fn create_team<S: AuthSchema>(
-        &self,
-        ctx: &AuthContext<S>,
-        data: CreateTeam,
-    ) -> AuthResult<Team> {
-        if !self.config.teams.enabled {
-            return Err(better_auth_core::AuthError::NotImplemented(
-                "Teams are disabled".to_owned(),
-            ));
-        }
-        create_team_core(data, None, None, ctx, &self.config).await
-    }
-    pub async fn remove_team<S: AuthSchema>(
-        &self,
-        ctx: &AuthContext<S>,
-        organization_id: &str,
-        team_id: &str,
-    ) -> AuthResult<()> {
-        if !self.config.teams.enabled {
-            return Err(better_auth_core::AuthError::NotImplemented(
-                "Teams are disabled".to_owned(),
-            ));
-        }
-        remove_team_core(organization_id, team_id, None, ctx, &self.config).await
-    }
-}
-
+///
+/// # Errors
+///
+/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep team endpoint dispatch and each organization ownership check adjacent to its writes"
+)]
 pub async fn handle_team_request<S: AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
@@ -317,14 +361,14 @@ pub async fn handle_team_request<S: AuthSchema>(
             if let Some(callback) = &config.teams.hooks {
                 callback.before_update(&team, &mut updates, &hooks).await?;
             }
-            let team = ctx
+            let team_2 = ctx
                 .database
                 .update_team(&org, &body.team_id, updates)
                 .await?;
             if let Some(callback) = &config.teams.hooks {
-                callback.after_update(&team, &hooks).await?;
+                callback.after_update(&team_2, &hooks).await?;
             }
-            AuthResponse::json(200, &team)?
+            AuthResponse::json(200, &team_2)?
         }
         (HttpMethod::Get, "/organization/list-teams") => {
             let org = org_id(
@@ -349,17 +393,16 @@ pub async fn handle_team_request<S: AuthSchema>(
                 .query
                 .get("userId")
                 .filter(|id| !id.is_empty())
-                .map(String::as_str)
-                .unwrap_or(user_view.id.as_str());
+                .map_or(user_view.id.as_str(), String::as_str);
             let explicit = req
                 .query
                 .get("organizationId")
                 .filter(|id| !id.is_empty())
                 .map(String::as_str);
-            let scope = if target != user_view.id {
-                Some(org_id(explicit, Some(&current))?)
-            } else {
+            let scope = if target == user_view.id {
                 explicit.map(str::to_owned)
+            } else {
+                Some(org_id(explicit, Some(&current))?)
             };
             if let Some(org) = &scope {
                 let requester = ctx
@@ -571,7 +614,7 @@ pub async fn handle_team_request<S: AuthSchema>(
                         .before_remove_member(&member, &team, &target, &hooks)
                         .await?;
                 }
-                let _ = ctx
+                let _ignored_remove_team_member = ctx
                     .database
                     .remove_team_member(&team.id, &body.user_id)
                     .await?;

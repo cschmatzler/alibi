@@ -40,9 +40,8 @@ fn matches_search(user: &impl AuthUser, params: &ListUsersParams) -> bool {
 
     let field = params.search_field.as_deref().unwrap_or("email");
     let operator = params.search_operator.as_deref().unwrap_or("contains");
-    let haystack = match string_field(user, field) {
-        Some(value) => value,
-        None => return false,
+    let Some(haystack) = string_field(user, field) else {
+        return false;
     };
 
     match operator {
@@ -70,7 +69,7 @@ fn parse_date(value: &str) -> Option<DateTime<Utc>> {
 fn compare_string(lhs: &str, rhs: &str, operator: &str) -> bool {
     match operator {
         "eq" => lhs == rhs,
-        "ne" => lhs != rhs,
+        "ne" | "not_in" => lhs != rhs,
         "lt" => lhs < rhs,
         "lte" => lhs <= rhs,
         "gt" => lhs > rhs,
@@ -78,7 +77,6 @@ fn compare_string(lhs: &str, rhs: &str, operator: &str) -> bool {
         "contains" => lhs.contains(rhs),
         "starts_with" => lhs.starts_with(rhs),
         "ends_with" => lhs.ends_with(rhs),
-        "not_in" => lhs != rhs,
         _ => false,
     }
 }
@@ -145,7 +143,7 @@ fn matches_filter(user: &impl AuthUser, params: &ListUsersParams) -> bool {
     false
 }
 
-fn compare_option_strings(lhs: Option<String>, rhs: Option<String>, direction: &str) -> Ordering {
+fn compare_option_strings(lhs: Option<&str>, rhs: Option<&str>, direction: &str) -> Ordering {
     match direction {
         "asc" => lhs.cmp(&rhs),
         _ => rhs.cmp(&lhs),
@@ -164,6 +162,7 @@ fn compare_option_dates(
 }
 
 /// Apply Better Auth admin list-users semantics to a user collection.
+#[must_use]
 pub fn apply_list_users<T: AuthUser + Clone>(
     mut users: Vec<T>,
     params: &ListUsersParams,
@@ -175,8 +174,8 @@ pub fn apply_list_users<T: AuthUser + Clone>(
 
     users.sort_by(|lhs, rhs| match sort_by {
         "id" | "_id" | "email" | "name" | "username" | "role" => compare_option_strings(
-            string_field(lhs, sort_by),
-            string_field(rhs, sort_by),
+            string_field(lhs, sort_by).as_deref(),
+            string_field(rhs, sort_by).as_deref(),
             sort_direction,
         ),
         "createdAt" | "updatedAt" | "banExpires" => compare_option_dates(

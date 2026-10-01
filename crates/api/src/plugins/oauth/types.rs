@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 #[derive(Debug, Deserialize, Validate)]
-pub(crate) struct SocialSignInRequest {
+pub(super) struct SocialSignInRequest {
     #[validate(length(min = 1, message = "Provider is required"))]
     pub provider: String,
     #[serde(rename = "callbackURL")]
@@ -30,7 +30,7 @@ pub(crate) struct SocialSignInRequest {
 }
 
 #[derive(Debug, Deserialize, Validate)]
-pub(crate) struct LinkSocialRequest {
+pub(super) struct LinkSocialRequest {
     #[validate(length(min = 1, message = "Provider is required"))]
     pub provider: String,
     #[serde(rename = "callbackURL")]
@@ -53,7 +53,7 @@ pub(crate) struct LinkSocialRequest {
 }
 
 #[derive(Debug, Deserialize, Validate)]
-pub(crate) struct OAuthIdTokenRequest {
+pub(super) struct OAuthIdTokenRequest {
     #[validate(length(min = 1, message = "Token is required"))]
     pub token: String,
     pub nonce: Option<String>,
@@ -67,7 +67,7 @@ pub(crate) struct OAuthIdTokenRequest {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct SocialSignInResponse {
+pub(super) struct SocialSignInResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     pub redirect: bool,
@@ -80,7 +80,7 @@ pub(crate) struct SocialSignInResponse {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct AccessTokenResponse {
+pub(super) struct AccessTokenResponse {
     #[serde(rename = "accessToken")]
     pub access_token: Option<String>,
     #[serde(rename = "accessTokenExpiresAt")]
@@ -91,7 +91,7 @@ pub(crate) struct AccessTokenResponse {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct RefreshTokenResponse {
+pub(super) struct RefreshTokenResponse {
     #[serde(rename = "accessToken")]
     pub access_token: Option<String>,
     #[serde(rename = "accessTokenExpiresAt")]
@@ -110,7 +110,7 @@ pub(crate) struct RefreshTokenResponse {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct AccountInfoUser {
+pub(super) struct AccountInfoUser {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     pub email: String,
@@ -122,7 +122,7 @@ pub(crate) struct AccountInfoUser {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AccountInfoAccount {
+pub(super) struct AccountInfoAccount {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     pub provider_id: String,
@@ -130,7 +130,7 @@ pub(crate) struct AccountInfoAccount {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct AccountInfoResponse {
+pub(super) struct AccountInfoResponse {
     pub user: AccountInfoUser,
     pub data: serde_json::Value,
     pub account: AccountInfoAccount,

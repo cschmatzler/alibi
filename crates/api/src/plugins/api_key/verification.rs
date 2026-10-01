@@ -1,9 +1,13 @@
 use better_auth_core::entity::AuthUser;
+
 use better_auth_core::store::ConsumeApiKeyResult;
+
 use better_auth_core::wire::{ApiKeyView, SessionView};
+
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, BeforeRequestAction,
 };
+
 use serde::Serialize;
 
 use super::{
@@ -69,11 +73,35 @@ impl ApiKeyValidationError {
         }
     }
 
-    fn status(&self) -> u16 {
+    const fn status(&self) -> u16 {
         match self.code {
             ApiKeyErrorCode::NoDefaultConfiguration => 400,
             ApiKeyErrorCode::RateLimited | ApiKeyErrorCode::UsageExceeded => 429,
-            _ => 401,
+            ApiKeyErrorCode::InvalidApiKey
+            | ApiKeyErrorCode::KeyDisabled
+            | ApiKeyErrorCode::KeyExpired
+            | ApiKeyErrorCode::KeyNotFound
+            | ApiKeyErrorCode::UnauthorizedSession
+            | ApiKeyErrorCode::InvalidPrefixLength
+            | ApiKeyErrorCode::InvalidNameLength
+            | ApiKeyErrorCode::MetadataDisabled
+            | ApiKeyErrorCode::NoValuesToUpdate
+            | ApiKeyErrorCode::KeyDisabledExpiration
+            | ApiKeyErrorCode::ExpiresInTooSmall
+            | ApiKeyErrorCode::ExpiresInTooLarge
+            | ApiKeyErrorCode::InvalidRemaining
+            | ApiKeyErrorCode::RefillAmountAndIntervalRequired
+            | ApiKeyErrorCode::RefillIntervalAndAmountRequired
+            | ApiKeyErrorCode::NameRequired
+            | ApiKeyErrorCode::InvalidUserIdFromApiKey
+            | ApiKeyErrorCode::InvalidReferenceIdFromApiKey
+            | ApiKeyErrorCode::OrganizationIdRequired
+            | ApiKeyErrorCode::OrganizationPluginRequired
+            | ApiKeyErrorCode::UserNotMemberOfOrganization
+            | ApiKeyErrorCode::InsufficientApiKeyPermissions
+            | ApiKeyErrorCode::ServerOnlyProperty
+            | ApiKeyErrorCode::FailedToUpdateApiKey
+            | ApiKeyErrorCode::InvalidMetadataType => 401,
         }
     }
 
@@ -92,10 +120,10 @@ pub enum ApiKeyVerificationError {
 }
 
 impl std::fmt::Display for ApiKeyVerificationError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Validation(error) => formatter.write_str(error.message.text()),
-            Self::Internal(error) => write!(formatter, "API key verification failed: {error}"),
+            Self::Validation(error) => f.write_str(error.message.text()),
+            Self::Internal(error) => write!(f, "API key verification failed: {error}"),
         }
     }
 }
@@ -130,6 +158,10 @@ impl ApiKeyPlugin {
     ///
     /// Without `config_id`, lookup uses the default configuration's hashing
     /// setting. Validation then uses the configuration that issued the key.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if verification hooks or storage operations fail.
     pub async fn verify_api_key(
         &self,
         input: &VerifyApiKey<'_>,
@@ -141,6 +173,10 @@ impl ApiKeyPlugin {
 
     /// Verify with the actual caller request available to trusted predicates.
     /// This performs the same server-only verification operation as `verify_api_key`.
+    ///
+    /// # Errors
+    ///
+    /// Propagates verification-hook or storage errors for the supplied request.
     pub async fn verify_api_key_with_request(
         &self,
         input: &VerifyApiKey<'_>,
@@ -178,7 +214,7 @@ impl ApiKeyPlugin {
     ) -> Result<ApiKeyView, ApiKeyVerificationError> {
         let lookup_config = self
             .resolve_configuration(input.config_id)
-            .map_err(|_| ApiKeyErrorCode::NoDefaultConfiguration)?;
+            .map_err(|_error| ApiKeyErrorCode::NoDefaultConfiguration)?;
         if server_operation
             && input.config_id.is_some()
             && let Some(validator) = &lookup_config.custom_api_key_validator
@@ -217,7 +253,7 @@ impl ApiKeyPlugin {
         }
         let config = self
             .resolve_configuration(Some(&api_key.config_id))
-            .map_err(|_| ApiKeyErrorCode::NoDefaultConfiguration)?;
+            .map_err(|_error| ApiKeyErrorCode::NoDefaultConfiguration)?;
 
         if server_operation
             && input.config_id.is_none()
@@ -286,7 +322,7 @@ impl ApiKeyPlugin {
         if !config.defer_updates {
             return ctx.database.delete_api_key(id).await;
         }
-        let database = ctx.database.clone();
+        let database = std::sync::Arc::clone(&ctx.database);
         let id = id.to_owned();
         let completion = Self::start_background_work(async move {
             if let Err(error) = database.delete_api_key(&id).await {
@@ -312,24 +348,34 @@ impl ApiKeyPlugin {
             .iter()
             .filter(|config| config.enable_session_for_api_keys)
             .find_map(|config| {
-                let key = if let Some(getter) = &config.custom_api_key_getter {
-                    getter.get_key(&ApiKeyCallbackContext::new(
-                        Some(req),
-                        ctx,
-                        &config.config_id,
-                    ))
-                } else {
-                    config.api_key_headers.iter().find_map(|header| {
-                        req.headers
-                            .get(&header.to_ascii_lowercase())
-                            .filter(|key| !key.is_empty())
-                            .cloned()
-                    })
-                };
+                let key = config.custom_api_key_getter.as_ref().map_or_else(
+                    || {
+                        config.api_key_headers.iter().find_map(|header| {
+                            req.headers
+                                .get(&header.to_ascii_lowercase())
+                                .filter(|key| !key.is_empty())
+                                .cloned()
+                        })
+                    },
+                    |getter| {
+                        getter.get_key(&ApiKeyCallbackContext::new(
+                            Some(req),
+                            ctx,
+                            &config.config_id,
+                        ))
+                    },
+                );
                 key.filter(|key| !key.is_empty()).map(|key| (config, key))
             })
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep API key validation and session substitution in one ordered middleware decision"
+    )]
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn api_key_session(
         &self,
         req: &AuthRequest,
@@ -430,11 +476,11 @@ impl ApiKeyPlugin {
         };
         let meta = better_auth_core::RequestMeta::from_request(req);
         let session = SessionView {
-            omitted_fields: Default::default(),
+            omitted_fields: std::collections::BTreeSet::default(),
             active_team_id: None,
-            extension_fields: Default::default(),
+            extension_fields: std::collections::BTreeMap::default(),
             id: view.id,
-            token: key.to_owned(),
+            token: key.clone(),
             user_id: user.id().into_owned(),
             created_at: now,
             updated_at: now,
@@ -456,5 +502,11 @@ impl ApiKeyPlugin {
             )?)));
         }
         Ok(Some(BeforeRequestAction::InjectSession { session }))
+    }
+}
+
+impl std::fmt::Debug for VerifyApiKey<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VerifyApiKey").finish_non_exhaustive()
     }
 }

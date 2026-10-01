@@ -1,17 +1,18 @@
-//! JSON metadata storage for bundled and application-owned SeaORM entities.
+//! JSON metadata storage for bundled and application-owned `SeaORM` entities.
 //!
 //! Use `JsonMetadata` for metadata fields which must retain arbitrary object
-//! keys on SQLx reads. Existing Value fields remain source-compatible but use
-//! serde_json's ordinary SQLx decoder. `AuthEntity` prepares Set metadata after
+//! keys on `SQLx` reads. Existing Value fields remain source-compatible but use
+//! `serde_json`'s ordinary `SQLx` decoder. `AuthEntity` prepares Set metadata after
 //! application hooks and before the store write; manual models can override
 //! `SeaOrmUserModel::prepare_json_metadata` to choose their binding policy.
 
-/// JSON storage preserving every application object key. Convert through `From`;
-/// the SQL column remains JSON. SQLite writes bind JavaScript JSON text directly
-/// because SeaORM's intermediate Value cannot preserve every numeric spelling.
-/// Convert to `Value` to edit and construct a new wrapper before preparation.
-/// The prepared value has no mutable access, so its SQLite binding cannot become
-/// stale relative to its public JSON serialization.
+/// JSON storage preserving every application object key.
+///
+/// Convert through `From`; the SQL column remains JSON. SQLite writes bind JavaScript JSON text
+/// directly because `SeaORM`'s intermediate Value cannot preserve every numeric spelling. Convert
+/// to `Value` to edit and construct a new wrapper before preparation. The prepared value has no
+/// mutable access, so its SQLite binding cannot become stale relative to its public JSON
+/// serialization.
 ///
 /// ```compile_fail
 /// use better_auth_seaorm::JsonMetadata;
@@ -65,15 +66,42 @@ impl From<JsonMetadata> for sea_orm::Value {
     }
 }
 impl sea_orm::sea_query::ValueType for JsonMetadata {
-    fn try_from(value: sea_orm::Value) -> Result<Self, sea_orm::sea_query::ValueTypeErr> {
-        match value {
-            sea_orm::Value::Json(Some(value)) => Ok(Self::from(*value)),
+    fn try_from(v: sea_orm::Value) -> Result<Self, sea_orm::sea_query::ValueTypeErr> {
+        match v {
+            sea_orm::Value::Json(Some(v)) => Ok(Self::from(*v)),
             sea_orm::Value::String(Some(text)) => {
                 better_auth_core::utils::json::from_slice::<serde_json::Value>(text.as_bytes())
                     .map(Self::from)
-                    .map_err(|_| sea_orm::sea_query::ValueTypeErr)
+                    .map_err(|_error| sea_orm::sea_query::ValueTypeErr)
             }
-            _ => Err(sea_orm::sea_query::ValueTypeErr),
+            sea_orm::Value::Bool(_)
+            | sea_orm::Value::TinyInt(_)
+            | sea_orm::Value::SmallInt(_)
+            | sea_orm::Value::Int(_)
+            | sea_orm::Value::BigInt(_)
+            | sea_orm::Value::TinyUnsigned(_)
+            | sea_orm::Value::SmallUnsigned(_)
+            | sea_orm::Value::Unsigned(_)
+            | sea_orm::Value::BigUnsigned(_)
+            | sea_orm::Value::Float(_)
+            | sea_orm::Value::Double(_)
+            | sea_orm::Value::String(_)
+            | sea_orm::Value::Char(_)
+            | sea_orm::Value::Bytes(_)
+            | sea_orm::Value::Json(_)
+            | sea_orm::Value::ChronoDate(_)
+            | sea_orm::Value::ChronoTime(_)
+            | sea_orm::Value::ChronoDateTime(_)
+            | sea_orm::Value::ChronoDateTimeUtc(_)
+            | sea_orm::Value::ChronoDateTimeLocal(_)
+            | sea_orm::Value::ChronoDateTimeWithTimeZone(_)
+            | sea_orm::Value::TimeDate(_)
+            | sea_orm::Value::TimeTime(_)
+            | sea_orm::Value::TimeDateTime(_)
+            | sea_orm::Value::TimeDateTimeWithTimeZone(_)
+            | sea_orm::Value::Uuid(_)
+            | sea_orm::Value::Decimal(_)
+            | sea_orm::Value::Array(..) => Err(sea_orm::sea_query::ValueTypeErr),
         }
     }
     fn type_name() -> String {
@@ -91,7 +119,7 @@ impl sea_orm::sea_query::Nullable for JsonMetadata {
         sea_orm::Value::Json(None)
     }
 }
-impl sea_orm::IntoActiveValue<JsonMetadata> for JsonMetadata {
+impl sea_orm::IntoActiveValue<Self> for JsonMetadata {
     fn into_active_value(self) -> sea_orm::ActiveValue<Self> {
         sea_orm::ActiveValue::set(self)
     }
@@ -104,9 +132,14 @@ impl std::ops::Deref for JsonMetadata {
     }
 }
 
-/// Prepare a native metadata field for its configured database binding. Existing
-/// Value fields remain supported; JsonMetadata additionally preserves arbitrary
-/// keys on SQLx reads and exact JavaScript JSON text on SQLite writes.
+/// Prepare a native metadata field for its configured database binding.
+///
+/// Existing Value fields remain supported; `JsonMetadata` additionally preserves arbitrary keys on
+/// `SQLx` reads and exact JavaScript JSON text on SQLite writes.
+///
+/// # Errors
+///
+/// Returns an error if metadata cannot be serialized for the selected backend.
 pub fn prepare_metadata_value<T>(
     value: T,
     backend: sea_orm::DbBackend,
@@ -119,8 +152,8 @@ where
         let prepared: Box<dyn std::any::Any> = Box::new(JsonMetadata::for_backend(value, backend)?);
         prepared
             .downcast::<T>()
-            .map(|value| *value)
-            .map_err(|_| better_auth_core::AuthError::internal("Invalid JSON metadata type"))
+            .map(|value_2| *value_2)
+            .map_err(|_error| better_auth_core::AuthError::internal("Invalid JSON metadata type"))
     } else {
         Ok(T::from(value))
     }

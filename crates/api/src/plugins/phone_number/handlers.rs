@@ -3,31 +3,31 @@ use better_auth_core::{
     AuthUser, AuthVerification, CreateAccount, CreateUser, CreateVerification, UpdateAccount,
     UpdateUser,
 };
+
 use chrono::Utc;
+
 use rand::{Rng, rngs::OsRng};
+
 use serde_json::json;
+
 use std::sync::Arc;
 
-use super::{PhoneNumberPlugin, PhoneNumberVerification, PhoneOtpDelivery, types::*};
+use super::{
+    PhoneNumberPlugin, PhoneNumberVerification, PhoneOtpDelivery,
+    types::{
+        ResetRequest, SendRequest, SignInRequest, VerifyRequest, phone_error, reject_verified_input,
+    },
+};
+
 use crate::plugins::authentication_helpers::{
     find_verification, parse_body, prepare_additional_user_fields, session_response,
     session_response_with_remember,
 };
+
 use crate::plugins::{
     email_password::EmailPasswordConfig,
     password_management::{OnPasswordResetCallback, PasswordManagementConfig},
 };
-
-fn invalid_otp() -> AuthError {
-    phone_error(400, "INVALID_OTP", "Invalid OTP")
-}
-fn invalid_credentials() -> AuthError {
-    phone_error(
-        401,
-        "INVALID_PHONE_NUMBER_OR_PASSWORD",
-        "Invalid phone number or password",
-    )
-}
 
 struct PasswordSettings {
     minimum: usize,
@@ -35,34 +35,6 @@ struct PasswordSettings {
     hasher: Option<Arc<dyn better_auth_core::PasswordHasher>>,
     on_reset: Option<Arc<OnPasswordResetCallback>>,
     revoke: bool,
-}
-fn password_settings(ctx: &AuthContext<impl AuthSchema>) -> PasswordSettings {
-    let passwords = ctx.extensions.get::<EmailPasswordConfig>();
-    let resets = ctx.extensions.get::<PasswordManagementConfig>();
-    PasswordSettings {
-        minimum: passwords
-            .as_ref()
-            .map_or(ctx.config.password.min_length, |config| {
-                config.password_min_length
-            }),
-        maximum: passwords
-            .as_ref()
-            .map_or(128, |config| config.password_max_length),
-        hasher: resets
-            .as_ref()
-            .and_then(|config| config.password_hasher.clone())
-            .or_else(|| {
-                passwords
-                    .as_ref()
-                    .and_then(|config| config.password_hasher.clone())
-            }),
-        on_reset: resets
-            .as_ref()
-            .and_then(|config| config.on_password_reset.clone()),
-        revoke: resets
-            .as_ref()
-            .is_some_and(|config| config.revoke_sessions_on_password_reset),
-    }
 }
 
 impl PhoneNumberPlugin {
@@ -91,18 +63,19 @@ impl PhoneNumberPlugin {
         count_attempts: bool,
     ) -> AuthResult<String> {
         let code = self.generate_code();
-        let _ = ctx
-            .database
-            .create_verification(CreateVerification {
-                identifier: identifier.into(),
-                value: if count_attempts {
-                    format!("{code}:0")
-                } else {
-                    code.clone()
-                },
-                expires_at: Utc::now() + self.config.expires_in,
-            })
-            .await?;
+        drop(
+            ctx.database
+                .create_verification(CreateVerification {
+                    identifier: identifier.into(),
+                    value: if count_attempts {
+                        format!("{code}:0")
+                    } else {
+                        code.clone()
+                    },
+                    expires_at: Utc::now() + self.config.expires_in,
+                })
+                .await?,
+        );
         Ok(code)
     }
     async fn callback(
@@ -121,6 +94,9 @@ impl PhoneNumberPlugin {
         }
         Ok(())
     }
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn verify_and_consume(
         &self,
         ctx: &AuthContext<impl AuthSchema>,
@@ -171,23 +147,27 @@ impl PhoneNumberPlugin {
             .consume_verification_by_identifier(identifier)
             .await?
             .ok_or_else(invalid_otp)?;
-        let (code, attempts) = split_code(consumed.value());
-        if attempts >= self.config.allowed_attempts {
+        let (code, attempts_2) = split_code(consumed.value());
+        if attempts_2 >= self.config.allowed_attempts {
             return Err(phone_error(403, "TOO_MANY_ATTEMPTS", "Too many attempts"));
         }
         if code != provided_code {
-            let _ = ctx
-                .database
-                .create_verification(CreateVerification {
-                    identifier: identifier.into(),
-                    value: format!("{code}:{}", attempts + 1),
-                    expires_at: consumed.expires_at(),
-                })
-                .await?;
+            drop(
+                ctx.database
+                    .create_verification(CreateVerification {
+                        identifier: identifier.into(),
+                        value: format!("{code}:{}", attempts_2 + 1),
+                        expires_at: consumed.expires_at(),
+                    })
+                    .await?,
+            );
             return Err(invalid_otp());
         }
         Ok(())
     }
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn send_otp(
         &self,
         req: &AuthRequest,
@@ -210,6 +190,13 @@ impl PhoneNumberPlugin {
             .await?;
         AuthResponse::json(200, &json!({"message":"code sent"})).map_err(AuthError::from)
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep phone proof validation, verification policy, and session issuance in request order"
+    )]
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn sign_in(
         &self,
         req: &AuthRequest,
@@ -263,7 +250,34 @@ impl PhoneNumberPlugin {
         .await
         .map_err(|error| match error {
             AuthError::InvalidCredentials => invalid_credentials(),
-            error => error,
+            error @ (AuthError::Api { .. }
+            | AuthError::Upstream { .. }
+            | AuthError::BadRequest(_)
+            | AuthError::InvalidRequest(_)
+            | AuthError::Validation(_)
+            | AuthError::Unauthenticated
+            | AuthError::AuthenticationFailed(_)
+            | AuthError::SessionNotFound
+            | AuthError::Forbidden(_)
+            | AuthError::UserCreationCancelled
+            | AuthError::SessionCreationCancelled
+            | AuthError::BannedUser(_)
+            | AuthError::Unauthorized
+            | AuthError::UserNotFound
+            | AuthError::NotFound(_)
+            | AuthError::Conflict(_)
+            | AuthError::MethodNotAllowed(_)
+            | AuthError::PayloadTooLarge(_)
+            | AuthError::UnprocessableEntity(_)
+            | AuthError::RateLimited
+            | AuthError::NotImplemented(_)
+            | AuthError::Config(_)
+            | AuthError::Database(_)
+            | AuthError::Serialization(_)
+            | AuthError::Plugin { .. }
+            | AuthError::Internal(_)
+            | AuthError::PasswordHash(_)
+            | AuthError::Jwt(_)) => error,
         })?;
         let (issued, mut response) = session_response_with_remember(
             ctx,
@@ -305,6 +319,13 @@ impl PhoneNumberPlugin {
         }
         Ok(response)
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep proof validation, identity updates, and session callbacks in their protocol order"
+    )]
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn verify(
         &self,
         req: &AuthRequest,
@@ -324,7 +345,33 @@ impl PhoneNumberPlugin {
                     AuthError::Unauthenticated | AuthError::SessionNotFound => {
                         phone_error(401, "USER_NOT_FOUND", "User not found")
                     }
-                    error => error,
+                    error @ (AuthError::Api { .. }
+                    | AuthError::Upstream { .. }
+                    | AuthError::BadRequest(_)
+                    | AuthError::InvalidRequest(_)
+                    | AuthError::Validation(_)
+                    | AuthError::InvalidCredentials
+                    | AuthError::AuthenticationFailed(_)
+                    | AuthError::Forbidden(_)
+                    | AuthError::UserCreationCancelled
+                    | AuthError::SessionCreationCancelled
+                    | AuthError::BannedUser(_)
+                    | AuthError::Unauthorized
+                    | AuthError::UserNotFound
+                    | AuthError::NotFound(_)
+                    | AuthError::Conflict(_)
+                    | AuthError::MethodNotAllowed(_)
+                    | AuthError::PayloadTooLarge(_)
+                    | AuthError::UnprocessableEntity(_)
+                    | AuthError::RateLimited
+                    | AuthError::NotImplemented(_)
+                    | AuthError::Config(_)
+                    | AuthError::Database(_)
+                    | AuthError::Serialization(_)
+                    | AuthError::Plugin { .. }
+                    | AuthError::Internal(_)
+                    | AuthError::PasswordHash(_)
+                    | AuthError::Jwt(_)) => error,
                 })?;
             if ctx
                 .database
@@ -356,47 +403,44 @@ impl PhoneNumberPlugin {
             )
             .map_err(AuthError::from);
         }
-        let user = match ctx
+        let user = if let Some(user) = ctx
             .database
             .get_user_by_phone_number(&body.phone_number)
             .await?
         {
-            Some(user) => {
-                ctx.database
-                    .update_user(
-                        &user.id(),
-                        UpdateUser {
-                            phone_number_verified: Some(true),
-                            ..Default::default()
-                        },
-                    )
-                    .await?
-            }
-            None => {
-                let identity = self
-                    .config
-                    .sign_up_on_verification
-                    .as_ref()
-                    .ok_or_else(|| {
-                        phone_error(500, "FAILED_TO_UPDATE_USER", "Failed to update user")
-                    })?;
-                reject_verified_input(body.phone_number_verified.as_ref())?;
-                let mut user = CreateUser::new()
-                    .with_email(identity.temporary_email(&body.phone_number))
-                    .with_name(
-                        identity
-                            .temporary_name(&body.phone_number)
-                            .unwrap_or_else(|| body.phone_number.clone()),
-                    );
-                user.phone_number = Some(body.phone_number.clone());
-                user.phone_number_verified = Some(true);
-                user.username = body.username;
-                user.display_username = body.display_username;
-                user.image = body.image;
-                crate::plugins::helpers::apply_default_role(ctx, &mut user);
-                prepare_additional_user_fields(ctx, &mut user).await?;
-                ctx.database.create_user(user).await?
-            }
+            ctx.database
+                .update_user(
+                    &user.id(),
+                    UpdateUser {
+                        phone_number_verified: Some(true),
+                        ..Default::default()
+                    },
+                )
+                .await?
+        } else {
+            let identity = self
+                .config
+                .sign_up_on_verification
+                .as_ref()
+                .ok_or_else(|| {
+                    phone_error(500, "FAILED_TO_UPDATE_USER", "Failed to update user")
+                })?;
+            reject_verified_input(body.phone_number_verified.as_ref())?;
+            let mut user = CreateUser::new()
+                .with_email(identity.temporary_email(&body.phone_number))
+                .with_name(
+                    identity
+                        .temporary_name(&body.phone_number)
+                        .unwrap_or_else(|| body.phone_number.clone()),
+                );
+            user.phone_number = Some(body.phone_number.clone());
+            user.phone_number_verified = Some(true);
+            user.username = body.username;
+            user.display_username = body.display_username;
+            user.image = body.image;
+            crate::plugins::helpers::apply_default_role(ctx, &mut user);
+            prepare_additional_user_fields(ctx, &mut user).await?;
+            ctx.database.create_user(user).await?
         };
         self.callback(ctx, &body.phone_number, &user).await?;
         if body.disable_session == Some(true) {
@@ -412,6 +456,9 @@ impl PhoneNumberPlugin {
         )?;
         Ok(response)
     }
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn request_password_reset(
         &self,
         req: &AuthRequest,
@@ -447,6 +494,9 @@ impl PhoneNumberPlugin {
         }
         AuthResponse::json(200, &json!({"status":true})).map_err(AuthError::from)
     }
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn reset_password(
         &self,
         req: &AuthRequest,
@@ -484,32 +534,34 @@ impl PhoneNumberPlugin {
         if let Some(account) =
             crate::plugins::helpers::get_credential_account(ctx, user.id()).await?
         {
-            let _ = ctx
-                .database
-                .update_account(
-                    &account.id(),
-                    UpdateAccount {
-                        password: Some(hash),
-                        ..Default::default()
-                    },
-                )
-                .await?;
+            drop(
+                ctx.database
+                    .update_account(
+                        &account.id(),
+                        UpdateAccount {
+                            password: Some(hash),
+                            ..Default::default()
+                        },
+                    )
+                    .await?,
+            );
         } else {
-            let _ = ctx
-                .database
-                .create_account(CreateAccount {
-                    user_id: user.id().to_string(),
-                    account_id: user.id().to_string(),
-                    provider_id: "credential".into(),
-                    access_token: None,
-                    refresh_token: None,
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: None,
-                    password: Some(hash),
-                })
-                .await?;
+            drop(
+                ctx.database
+                    .create_account(CreateAccount {
+                        user_id: user.id().to_string(),
+                        account_id: user.id().to_string(),
+                        provider_id: "credential".into(),
+                        access_token: None,
+                        refresh_token: None,
+                        id_token: None,
+                        access_token_expires_at: None,
+                        refresh_token_expires_at: None,
+                        scope: None,
+                        password: Some(hash),
+                    })
+                    .await?,
+            );
         }
         if let Some(callback) = settings.on_reset {
             callback(serde_json::to_value(&user)?).await?;
@@ -521,6 +573,46 @@ impl PhoneNumberPlugin {
     }
 }
 
+const fn invalid_otp() -> AuthError {
+    phone_error(400, "INVALID_OTP", "Invalid OTP")
+}
+
+const fn invalid_credentials() -> AuthError {
+    phone_error(
+        401,
+        "INVALID_PHONE_NUMBER_OR_PASSWORD",
+        "Invalid phone number or password",
+    )
+}
+
+fn password_settings(ctx: &AuthContext<impl AuthSchema>) -> PasswordSettings {
+    let passwords = ctx.extensions.get::<EmailPasswordConfig>();
+    let resets = ctx.extensions.get::<PasswordManagementConfig>();
+    PasswordSettings {
+        minimum: passwords
+            .as_ref()
+            .map_or(ctx.config.password.min_length, |config| {
+                config.password_min_length
+            }),
+        maximum: passwords
+            .as_ref()
+            .map_or(128, |config| config.password_max_length),
+        hasher: resets
+            .as_ref()
+            .and_then(|config| config.password_hasher.clone())
+            .or_else(|| {
+                let config = passwords.as_ref()?;
+                config.password_hasher.clone()
+            }),
+        on_reset: resets
+            .as_ref()
+            .and_then(|config| config.on_password_reset.clone()),
+        revoke: resets
+            .as_ref()
+            .is_some_and(|config| config.revoke_sessions_on_password_reset),
+    }
+}
+
 fn split_code(value: &str) -> (&str, usize) {
     let mut pieces = value.split(':');
     let code = pieces.next().unwrap_or_default();
@@ -528,6 +620,13 @@ fn split_code(value: &str) -> (&str, usize) {
     (code, attempts)
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
 fn parse_attempts(value: &str) -> Option<usize> {
     let value =
         value.trim_matches(|character: char| character.is_whitespace() || character == '\u{feff}');

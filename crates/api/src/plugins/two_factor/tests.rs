@@ -1,14 +1,24 @@
 use super::*;
+
 use crate::plugins::test_helpers;
+
 use better_auth_core::AuthPlugin;
+
 use better_auth_core::wire::{SessionView, UserView};
+
 use better_auth_core::{CreateAccount, CreateUser, HttpMethod};
+
 use chrono::Duration;
+
 use cookie::Cookie;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rejection() {
     use better_auth_core::{AuthConfig, CreateSession};
     use better_auth_seaorm::{Database, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore};
@@ -89,8 +99,11 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
                 .unwrap();
             let config = Arc::new(AuthConfig::new("skip-hook-secret-at-least-32-characters"));
             let mut ctx = AuthContext::new(
-                config.clone(),
-                Arc::new(SeaOrmStore::<TestSchema>::new(config.clone(), db.clone())),
+                Arc::clone(&config),
+                Arc::new(SeaOrmStore::<TestSchema>::new(
+                    Arc::clone(&config),
+                    db.clone(),
+                )),
             );
             let user = ctx
                 .database
@@ -101,22 +114,23 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
                 )
                 .await
                 .unwrap();
-            _ = ctx
-                .database
-                .create_account(CreateAccount {
-                    user_id: user.id.clone(),
-                    account_id: user.id.clone(),
-                    provider_id: "credential".into(),
-                    password: Some(password_hash.clone()),
-                    access_token: None,
-                    refresh_token: None,
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: None,
-                })
-                .await
-                .unwrap();
+            drop(
+                ctx.database
+                    .create_account(CreateAccount {
+                        user_id: user.id.clone(),
+                        account_id: user.id.clone(),
+                        provider_id: "credential".into(),
+                        password: Some(password_hash.clone()),
+                        access_token: None,
+                        refresh_token: None,
+                        id_token: None,
+                        access_token_expires_at: None,
+                        refresh_token_expires_at: None,
+                        scope: None,
+                    })
+                    .await
+                    .unwrap(),
+            );
             let session = ctx
                 .database
                 .create_session(CreateSession {
@@ -128,7 +142,7 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
                     impersonated_by: Some("retained-admin".into()),
                     ip_address: Some("127.0.0.9".into()),
                     user_agent: Some("retained-agent".into()),
-                    additional_fields: Default::default(),
+                    additional_fields: better_auth_core::field_policy::FieldValues::default(),
                 })
                 .await
                 .unwrap();
@@ -159,7 +173,7 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
                     PolicyHook {
                         cancel_session,
                         session_forbidden,
-                        observed: observed.clone(),
+                        observed: Arc::clone(&observed),
                     },
                 )]),
             );
@@ -167,8 +181,10 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
                 skip_verification_on_enable: true,
                 ..Default::default()
             });
-            let mut init =
-                better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+            let mut init = better_auth_core::AuthInitContext::new(
+                Arc::clone(&ctx.config),
+                Arc::clone(&ctx.database),
+            );
             plugin.on_init(&mut init).await.unwrap();
             crate::plugins::OrganizationPlugin::with_config(
                 crate::plugins::organization::OrganizationConfig {
@@ -192,9 +208,11 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
             ctx.extensions = parts.extensions;
             let cookie = create_session_cookie(&session.token, &ctx.config);
             let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
-            _ = request
-                .headers
-                .insert("cookie".into(), cookie.split(';').next().unwrap().into());
+            drop(
+                request
+                    .headers
+                    .insert("cookie".into(), cookie.split(';').next().unwrap().into()),
+            );
             request.body = Some(br#"{"password":"password123"}"#.to_vec());
             let result = better_auth_core::with_request_hook_context(
                 &request,
@@ -241,7 +259,12 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
             let sessions = ctx.database.get_user_sessions(&user.id).await.unwrap();
             assert_eq!(sessions.len(), 1);
             assert_eq!(
-                serde_json::to_value(&sessions[0]).unwrap(),
+                serde_json::to_value(
+                    (sessions)
+                        .first()
+                        .expect("fixture contains the requested index")
+                )
+                .unwrap(),
                 serde_json::to_value(&session).unwrap()
             );
             let (current_user, current_session) = ctx.require_session(&request).await.unwrap();
@@ -253,6 +276,10 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn two_factor_password_checks_use_configured_native_hasher_and_utf16_maximum() {
     use better_auth_core::{PasswordHasher, ScryptHasher, UpdateAccount};
     struct PrefixedHasher {
@@ -289,22 +316,24 @@ async fn two_factor_password_checks_use_configured_native_hasher_and_utf16_maxim
         .into_iter()
         .find(|account| account.provider_id == "credential")
         .unwrap();
-    _ = ctx
-        .database
-        .update_account(
-            &account.id,
-            UpdateAccount {
-                password: Some(hash.clone()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
+    drop(
+        ctx.database
+            .update_account(
+                &account.id,
+                UpdateAccount {
+                    password: Some(hash.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap(),
+    );
     let plugin = TwoFactorPlugin::new();
-    let mut init = better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    let mut init =
+        better_auth_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
     crate::plugins::EmailPasswordPlugin::new()
         .password_max_length(13)
-        .password_hasher(provider.clone())
+        .password_hasher(Arc::<PrefixedHasher>::clone(&provider))
         .on_init(&mut init)
         .await
         .unwrap();
@@ -314,9 +343,11 @@ async fn two_factor_password_checks_use_configured_native_hasher_and_utf16_maxim
     ctx.metadata = parts.metadata;
     let cookie = create_session_cookie(&session.token, &ctx.config);
     let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
-    _ = request
-        .headers
-        .insert("cookie".into(), cookie.split(';').next().unwrap().into());
+    drop(
+        request
+            .headers
+            .insert("cookie".into(), cookie.split(';').next().unwrap().into()),
+    );
     request.body = Some(br#"{"password":"password123"}"#.to_vec());
     let response = plugin.on_request(&request, &ctx).await.unwrap().unwrap();
     assert_eq!(response.status, 200);
@@ -335,8 +366,11 @@ async fn two_factor_password_checks_use_configured_native_hasher_and_utf16_maxim
     );
     // A different valid-length password must reach the configured real verifier.
     request.body = Some(br#"{"password":"wrong-pass"}"#.to_vec());
-    let wrong = plugin.on_request(&request, &ctx).await.unwrap_err();
-    assert_eq!(wrong.error_payload().1.as_deref(), Some("INVALID_PASSWORD"));
+    let wrong_2 = plugin.on_request(&request, &ctx).await.unwrap_err();
+    assert_eq!(
+        wrong_2.error_payload().1.as_deref(),
+        Some("INVALID_PASSWORD")
+    );
     request.body =
         Some(serde_json::to_vec(&serde_json::json!({"password":"🍵".repeat(7)})).unwrap());
     let long = plugin.on_request(&request, &ctx).await.unwrap_err();
@@ -387,13 +421,13 @@ async fn signed_empty_factor_challenge_cannot_read_a_seeded_empty_identifier() {
         Some(String::new())
     );
     let mut req = AuthRequest::new(HttpMethod::Post, "/two-factor/verify-otp");
-    _ = req.headers.insert(
+    drop(req.headers.insert(
         "cookie".into(),
         format!(
             "{}={signed}",
             related_cookie_name(&ctx.config, TWO_FACTOR_COOKIE_SUFFIX)
         ),
-    );
+    ));
     let error = resolve_two_factor_state(&req, &ctx)
         .await
         .err()
@@ -451,10 +485,10 @@ async fn pending_factor_preferences_authenticate_the_first_cookie_and_preserve_i
             .next()
             .unwrap();
         let mut req = AuthRequest::new(HttpMethod::Post, "/two-factor/verify-otp");
-        _ = req.headers.insert(
+        drop(req.headers.insert(
             "cookie".into(),
             format!("{challenge_cookie}; {preference_name}={preference}"),
-        );
+        ));
         let ResolvedTwoFactorState::Pending(pending) =
             resolve_two_factor_state(&req, &ctx).await.unwrap()
         else {
@@ -484,7 +518,7 @@ async fn pending_factor_preferences_authenticate_the_first_cookie_and_preserve_i
             .map(|header| header.split(';').next().unwrap())
             .collect::<Vec<_>>()
             .join("; ");
-        _ = read.headers.insert("cookie".into(), cookies);
+        drop(read.headers.insert("cookie".into(), cookies));
         let (authenticated_user, authenticated_session) = ctx.require_session(&read).await.unwrap();
         assert_eq!(authenticated_user.id(), user.id);
         assert_eq!(authenticated_session.token, completed.token);
@@ -505,7 +539,8 @@ async fn create_test_context_with_credential_user(
     two_factor_enabled: bool,
 ) -> (AuthContext<TestSchema>, UserView, SessionView) {
     let mut ctx = test_helpers::create_test_context().await;
-    let mut init = better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    let mut init =
+        better_auth_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
     TwoFactorPlugin::new().on_init(&mut init).await.unwrap();
     ctx.database = init.database_with_registered_transforms();
     let parts = init.into_parts();
@@ -522,29 +557,30 @@ async fn create_test_context_with_credential_user(
     let password_hash = better_auth_core::hash_password(None, "password123")
         .await
         .unwrap();
-    _ = ctx
-        .database
-        .create_account(CreateAccount {
-            user_id: user.id.clone(),
-            account_id: user.id.clone(),
-            provider_id: "credential".to_string(),
-            access_token: None,
-            refresh_token: None,
-            id_token: None,
-            access_token_expires_at: None,
-            refresh_token_expires_at: None,
-            scope: None,
-            password: Some(password_hash),
-        })
-        .await
-        .unwrap();
+    drop(
+        ctx.database
+            .create_account(CreateAccount {
+                user_id: user.id.clone(),
+                account_id: user.id.clone(),
+                provider_id: "credential".to_owned(),
+                access_token: None,
+                refresh_token: None,
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: None,
+                password: Some(password_hash),
+            })
+            .await
+            .unwrap(),
+    );
 
     let user = if two_factor_enabled {
         UserView::from(
             &ctx.database
                 .update_user(
                     &user.id,
-                    better_auth_core::UpdateUser {
+                    UpdateUser {
                         two_factor_enabled: Some(true),
                         ..Default::default()
                     },
@@ -564,17 +600,17 @@ fn cookie_value(header: &str) -> String {
     Cookie::parse(header)
         .expect("Set-Cookie header should parse")
         .value()
-        .to_string()
+        .to_owned()
 }
 
 #[test]
 fn test_signed_cookie_round_trip_and_tamper_rejection() {
-    let signed = sign_cookie_value("secret-value", "payload-value").unwrap();
-    let verified = verify_signed_cookie_value("secret-value", &signed).unwrap();
+    let signed = sign_cookie_value("secret-value", "payload-value");
+    let verified = verify_signed_cookie_value("secret-value", &signed);
     assert_eq!(verified.as_deref(), Some("payload-value"));
 
     let tampered = signed.replacen("payload-value", "other-value", 1);
-    let tampered_verified = verify_signed_cookie_value("secret-value", &tampered).unwrap();
+    let tampered_verified = verify_signed_cookie_value("secret-value", &tampered);
     assert!(tampered_verified.is_none());
 }
 
@@ -602,14 +638,14 @@ async fn test_begin_sign_in_challenge_sets_pending_cookie_and_remember_choice() 
         .expect("challenge should set the remember-choice cookie");
 
     let two_factor_req = test_helpers::create_auth_request_no_query(
-        better_auth_core::HttpMethod::Post,
+        HttpMethod::Post,
         "/two-factor/verify-otp",
         None,
         None,
     );
     let mut req = two_factor_req;
     req.headers.insert(
-        "cookie".to_string(),
+        "cookie".to_owned(),
         format!(
             "better-auth.two_factor={}; better-auth.dont_remember={}",
             cookie_value(&two_factor_cookie),
@@ -618,7 +654,6 @@ async fn test_begin_sign_in_challenge_sets_pending_cookie_and_remember_choice() 
     );
 
     let identifier = read_signed_cookie(&req, TWO_FACTOR_COOKIE_SUFFIX, &ctx)
-        .unwrap()
         .expect("signed cookie should verify");
     let verification = ctx
         .database
@@ -637,49 +672,42 @@ async fn test_inspect_trusted_device_rotates_server_state() {
     let trust_cookie = create_trust_device_cookie_header(&user, &ctx)
         .await
         .unwrap();
-    let mut req = test_helpers::create_auth_request_no_query(
-        better_auth_core::HttpMethod::Post,
-        "/sign-in/email",
-        None,
-        None,
-    );
+    let mut req =
+        test_helpers::create_auth_request_no_query(HttpMethod::Post, "/sign-in/email", None, None);
     req.headers.insert(
-        "cookie".to_string(),
+        "cookie".to_owned(),
         format!("better-auth.trust_device={}", cookie_value(&trust_cookie)),
     );
 
     let original_cookie = read_signed_cookie(&req, TRUST_DEVICE_COOKIE_SUFFIX, &ctx)
-        .unwrap()
         .expect("trust cookie should verify");
     let original_identifier = original_cookie
         .split_once('!')
         .expect("trust cookie should include the identifier")
         .1
-        .to_string();
+        .to_owned();
 
     let result = inspect_trusted_device(&req, &user, &ctx).await.unwrap();
     assert!(result.trusted);
     assert_eq!(result.set_cookie_headers.len(), 1);
 
-    let rotated_cookie = result.set_cookie_headers[0].clone();
-    let mut rotated_req = test_helpers::create_auth_request_no_query(
-        better_auth_core::HttpMethod::Post,
-        "/sign-in/email",
-        None,
-        None,
-    );
+    let rotated_cookie = (*(result.set_cookie_headers)
+        .first()
+        .expect("fixture contains the requested index"))
+    .clone();
+    let mut rotated_req =
+        test_helpers::create_auth_request_no_query(HttpMethod::Post, "/sign-in/email", None, None);
     rotated_req.headers.insert(
-        "cookie".to_string(),
+        "cookie".to_owned(),
         format!("better-auth.trust_device={}", cookie_value(&rotated_cookie)),
     );
     let rotated_value = read_signed_cookie(&rotated_req, TRUST_DEVICE_COOKIE_SUFFIX, &ctx)
-        .unwrap()
         .expect("rotated trust cookie should verify");
     let rotated_identifier = rotated_value
         .split_once('!')
         .expect("rotated cookie should include the identifier")
         .1
-        .to_string();
+        .to_owned();
 
     assert_ne!(original_identifier, rotated_identifier);
     assert!(
@@ -701,6 +729,10 @@ async fn test_inspect_trusted_device_rotates_server_state() {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn totp_enrollment_and_real_verification_apply_user_hooks_and_preserve_rotation_owner() {
     let (mut ctx, user, session) =
         create_test_context_with_credential_user("reissue@example.com", false).await;
@@ -716,13 +748,13 @@ async fn totp_enrollment_and_real_verification_apply_user_hooks_and_preserve_rot
             active_organization_id: Some("configured-organization".into()),
             active_team_id: Some("configured-team".into()),
             impersonated_by: Some("configured-admin".into()),
-            additional_fields: Default::default(),
+            additional_fields: better_auth_core::field_policy::FieldValues::default(),
         })
         .await
         .unwrap();
     let plugin = TwoFactorPlugin::new();
     let mut configured =
-        better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+        better_auth_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
     plugin.on_init(&mut configured).await.unwrap();
     crate::plugins::OrganizationPlugin::with_config(
         crate::plugins::organization::OrganizationConfig {
@@ -743,9 +775,11 @@ async fn totp_enrollment_and_real_verification_apply_user_hooks_and_preserve_rot
     ctx.metadata = configured.into_parts().metadata;
     let cookie = create_session_cookie(&session.token, &ctx.config);
     let mut enrollment = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
-    _ = enrollment
-        .headers
-        .insert("cookie".into(), cookie.split(';').next().unwrap().into());
+    drop(
+        enrollment
+            .headers
+            .insert("cookie".into(), cookie.split(';').next().unwrap().into()),
+    );
     enrollment.body = Some(br#"{"password":"password123"}"#.to_vec());
     let enabled = plugin.on_request(&enrollment, &ctx).await.unwrap().unwrap();
     assert_eq!(enabled.status, 200);
@@ -758,8 +792,9 @@ async fn totp_enrollment_and_real_verification_apply_user_hooks_and_preserve_rot
     assert_eq!(factor.verified, Some(false));
 
     let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let observed = captured.clone();
-    let mut init = better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    let observed = Arc::clone(&captured);
+    let mut init =
+        better_auth_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
     init.register_user_update_transform(move |id, mut update| {
         observed
             .lock()
@@ -783,12 +818,24 @@ async fn totp_enrollment_and_real_verification_apply_user_hooks_and_preserve_rot
         .unwrap();
     assert_eq!(response.status, 200);
     let payload: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert_eq!(payload["user"]["twoFactorEnabled"], false);
+    assert_eq!(
+        (*(*(payload).get("user").unwrap_or(&serde_json::Value::Null))
+            .get("twoFactorEnabled")
+            .unwrap_or(&serde_json::Value::Null)),
+        false
+    );
     // Upstream returns the old snapshot while rotating the browser cookie.
-    assert_eq!(payload["token"], session.token);
+    assert_eq!(
+        (*(payload).get("token").unwrap_or(&serde_json::Value::Null)),
+        session.token
+    );
     let set_cookie_headers = response.headers.get_all("Set-Cookie").collect::<Vec<_>>();
     let rotated = better_auth_core::utils::cookie_utils::verify_cookie_value(
-        &cookie_value(set_cookie_headers[0]),
+        &cookie_value(
+            (set_cookie_headers)
+                .first()
+                .expect("fixture contains the requested index"),
+        ),
         &ctx.config.secret,
     )
     .expect("the session cookie must authenticate its token");
@@ -829,9 +876,17 @@ async fn totp_enrollment_and_real_verification_apply_user_hooks_and_preserve_rot
     assert_eq!(verified_factor.backup_codes, factor.backup_codes);
     assert_eq!(verified_factor.verified, Some(true));
     let mut browser = AuthRequest::new(HttpMethod::Get, "/get-session");
-    _ = browser.headers.insert(
-        "cookie".into(),
-        set_cookie_headers[0].split(';').next().unwrap().into(),
+    drop(
+        browser.headers.insert(
+            "cookie".into(),
+            (*(set_cookie_headers)
+                .first()
+                .expect("fixture contains the requested index"))
+            .split(';')
+            .next()
+            .unwrap()
+            .into(),
+        ),
     );
     let (current_user, current_session) = ctx.require_session(&browser).await.unwrap();
     assert_eq!(current_user.id, user.id);
@@ -853,22 +908,23 @@ async fn test_view_backup_codes_returns_decrypted_codes() {
     let (ctx, user, _session) =
         create_test_context_with_credential_user("view-codes@example.com", true).await;
 
-    let expected_codes = vec!["ABCDE-12345".to_string(), "FGHIJ-67890".to_string()];
+    let expected_codes = vec!["ABCDE-12345".to_owned(), "FGHIJ-67890".to_owned()];
     let encrypted = encrypt_value(
         &ctx.config.secret,
         &serde_json::to_string(&expected_codes).unwrap(),
     )
     .unwrap();
-    _ = ctx
-        .database
-        .create_two_factor(better_auth_core::CreateTwoFactor {
-            user_id: user.id.clone(),
-            secret: encrypt_value(&ctx.config.secret, "totp-secret").unwrap(),
-            backup_codes: encrypted,
-            ..Default::default()
-        })
-        .await
-        .unwrap();
+    drop(
+        ctx.database
+            .create_two_factor(CreateTwoFactor {
+                user_id: user.id.clone(),
+                secret: encrypt_value(&ctx.config.secret, "totp-secret").unwrap(),
+                backup_codes: encrypted,
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+    );
 
     let backup_codes = plugin.view_backup_codes(&user.id, &ctx).await.unwrap();
     assert_eq!(backup_codes, expected_codes);
@@ -880,16 +936,17 @@ async fn test_view_backup_codes_rejects_invalid_stored_json() {
     let (ctx, user, _session) =
         create_test_context_with_credential_user("invalid-view-codes@example.com", true).await;
 
-    _ = ctx
-        .database
-        .create_two_factor(better_auth_core::CreateTwoFactor {
-            user_id: user.id.clone(),
-            secret: encrypt_value(&ctx.config.secret, "totp-secret").unwrap(),
-            backup_codes: encrypt_value(&ctx.config.secret, "\"not-an-array\"").unwrap(),
-            ..Default::default()
-        })
-        .await
-        .unwrap();
+    drop(
+        ctx.database
+            .create_two_factor(CreateTwoFactor {
+                user_id: user.id.clone(),
+                secret: encrypt_value(&ctx.config.secret, "totp-secret").unwrap(),
+                backup_codes: encrypt_value(&ctx.config.secret, "\"not-an-array\"").unwrap(),
+                ..Default::default()
+            })
+            .await
+            .unwrap(),
+    );
 
     let err = plugin.view_backup_codes(&user.id, &ctx).await.unwrap_err();
     assert_eq!(err.to_string(), "Invalid backup code");
@@ -907,10 +964,15 @@ fn test_routes_do_not_expose_view_backup_codes() {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn disable_preserves_persisted_extensions_and_removes_all_matching_trust_records() {
     let (mut ctx, user, first_session) =
         create_test_context_with_credential_user("disable-extensions@fixture.test", true).await;
-    let mut init = better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    let mut init =
+        better_auth_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
     crate::plugins::admin::AdminPlugin::new()
         .on_init(&mut init)
         .await
@@ -943,7 +1005,7 @@ async fn disable_preserves_persisted_extensions_and_removes_all_matching_trust_r
             impersonated_by: Some("trusted-impersonator".to_owned()),
             active_organization_id: Some("trusted-organization".to_owned()),
             active_team_id: Some("trusted-team".to_owned()),
-            additional_fields: Default::default(),
+            additional_fields: better_auth_core::field_policy::FieldValues::default(),
         })
         .await
         .unwrap();
@@ -976,14 +1038,14 @@ async fn disable_preserves_persisted_extensions_and_removes_all_matching_trust_r
     );
     let mut req = AuthRequest::new(HttpMethod::Post, "/two-factor/disable");
     req.body = Some(serde_json::to_vec(&serde_json::json!({"password":"password123"})).unwrap());
-    _ = req.headers.insert(
+    drop(req.headers.insert(
         "cookie".to_owned(),
         format!(
             "{}={session_cookie}; {}={trust_cookie}",
             ctx.config.session.cookie_name,
             related_cookie_name(&ctx.config, TRUST_DEVICE_COOKIE_SUFFIX)
         ),
-    );
+    ));
     let response = TwoFactorPlugin::new()
         .on_request(&req, &ctx)
         .await
@@ -992,7 +1054,9 @@ async fn disable_preserves_persisted_extensions_and_removes_all_matching_trust_r
     assert_eq!(response.status, 200);
     let stored = ctx.database.get_user_sessions(&user.id).await.unwrap();
     assert_eq!(stored.len(), 1);
-    let replacement = &stored[0];
+    let replacement = (stored)
+        .first()
+        .expect("fixture contains the requested index");
     assert_ne!(replacement.token(), current.token());
     assert_eq!(
         replacement.active_organization_id(),
@@ -1034,6 +1098,10 @@ async fn disable_preserves_persisted_extensions_and_removes_all_matching_trust_r
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn otp_async_codec_failures_consume_only_their_stage_and_delivery_rejection_retains_rotation_state()
  {
     struct Callback {
@@ -1044,9 +1112,9 @@ async fn otp_async_codec_failures_consume_only_their_stage_and_delivery_rejectio
     }
     #[async_trait]
     impl TwoFactorOtpHasher for Callback {
-        async fn hash(&self, value: &str) -> AuthResult<String> {
+        async fn hash(&self, otp: &str) -> AuthResult<String> {
             let mut observations = self.observations.lock().unwrap();
-            observations.push(format!("hash:{value}"));
+            observations.push(format!("hash:{otp}"));
             if self.fail_store || (self.fail_compare && observations.len() > 2) {
                 return Err(AuthError::Upstream {
                     status: 400,
@@ -1054,7 +1122,9 @@ async fn otp_async_codec_failures_consume_only_their_stage_and_delivery_rejectio
                     message: "Configured codec rejected",
                 });
             }
-            Ok(format!("stored-{value}"))
+            drop(observations);
+
+            Ok(format!("stored-{otp}"))
         }
     }
     #[async_trait]
@@ -1075,7 +1145,7 @@ async fn otp_async_codec_failures_consume_only_their_stage_and_delivery_rejectio
         let session = ctx
             .database
             .create_session(better_auth_core::CreateSession {
-                additional_fields: Default::default(),
+                additional_fields: better_auth_core::field_policy::FieldValues::default(),
                 token: None,
                 user_id: user.id.clone(),
                 expires_at: original.expires_at,
@@ -1092,16 +1162,18 @@ async fn otp_async_codec_failures_consume_only_their_stage_and_delivery_rejectio
         let callback = Arc::new(Callback {
             fail_store,
             fail_compare,
-            observations: observations.clone(),
-            delivered: delivered.clone(),
+            observations: Arc::clone(&observations),
+            delivered: Arc::clone(&delivered),
         });
         let plugin = TwoFactorPlugin::with_config(TwoFactorConfig {
-            send_otp: Some(callback.clone()),
+            send_otp: Some(Arc::<Callback>::clone(&callback)),
             otp_storage: TwoFactorOtpStorage::CustomHash(callback),
             ..Default::default()
         });
-        let mut init =
-            better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+        let mut init = better_auth_core::AuthInitContext::new(
+            Arc::clone(&ctx.config),
+            Arc::clone(&ctx.database),
+        );
         plugin.on_init(&mut init).await.unwrap();
         crate::plugins::OrganizationPlugin::with_config(
             crate::plugins::organization::OrganizationConfig {
@@ -1179,7 +1251,7 @@ async fn otp_async_codec_failures_consume_only_their_stage_and_delivery_rejectio
             assert_eq!(stored.value, format!("stored-{otp}:0"));
             request.path = "/two-factor/verify-otp".into();
             request.body = Some(serde_json::to_vec(&serde_json::json!({"code":otp})).unwrap());
-            let result = plugin.on_request(&request, &ctx).await;
+            let result_2 = plugin.on_request(&request, &ctx).await;
             assert!(
                 ctx.database
                     .get_latest_verification_by_identifier(&identifier)
@@ -1189,7 +1261,7 @@ async fn otp_async_codec_failures_consume_only_their_stage_and_delivery_rejectio
             );
             if fail_compare {
                 assert!(matches!(
-                    result,
+                    result_2,
                     Err(AuthError::Upstream {
                         code: "CODEC_REJECTED",
                         ..
@@ -1211,12 +1283,24 @@ async fn otp_async_codec_failures_consume_only_their_stage_and_delivery_rejectio
                         .is_some()
                 );
             } else {
-                let response = result.unwrap().unwrap();
+                let response = result_2.unwrap().unwrap();
                 assert_eq!(response.status, 200);
                 let payload: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-                assert_eq!(payload["user"]["name"], "OTP Hook Owner");
-                assert_eq!(payload["user"]["twoFactorEnabled"], true);
-                let token = payload["token"].as_str().unwrap();
+                assert_eq!(
+                    (*(*(payload).get("user").unwrap_or(&serde_json::Value::Null))
+                        .get("name")
+                        .unwrap_or(&serde_json::Value::Null)),
+                    "OTP Hook Owner"
+                );
+                assert_eq!(
+                    (*(*(payload).get("user").unwrap_or(&serde_json::Value::Null))
+                        .get("twoFactorEnabled")
+                        .unwrap_or(&serde_json::Value::Null)),
+                    true
+                );
+                let token = (*(payload).get("token").unwrap_or(&serde_json::Value::Null))
+                    .as_str()
+                    .unwrap();
                 assert_ne!(token, session.token);
                 let new = ctx.database.get_session(token).await.unwrap().unwrap();
                 assert_eq!(new.user_id, session.user_id);
@@ -1307,10 +1391,20 @@ async fn otp_enable_without_delivery_checks_password_then_rejects_without_mutati
     );
     let sessions = ctx.database.get_user_sessions(&user.id).await.unwrap();
     assert_eq!(sessions.len(), 1);
-    assert_eq!(sessions[0].token, session.token);
+    assert_eq!(
+        (sessions)
+            .first()
+            .expect("fixture contains the requested index")
+            .token,
+        session.token
+    );
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn installed_legacy_factor_reads_authenticates_and_consumes_backups_without_rewriting_secret()
 {
     // Fixed independent WebCrypto HKDF/AES-GCM vectors for the previous Rust
@@ -1432,7 +1526,12 @@ async fn installed_legacy_factor_reads_authenticates_and_consumes_backups_withou
             .user_id,
         user.id
     );
-    let tampered = format!("{}A", &legacy_secret[..legacy_secret.len() - 1]);
+    let tampered = format!(
+        "{}A",
+        (legacy_secret)
+            .get(..legacy_secret.len() - 1)
+            .expect("fixture range is on a UTF-8 boundary")
+    );
     ctx.database
         .update_two_factor(
             &installed.id,
@@ -1472,6 +1571,10 @@ async fn installed_legacy_factor_reads_authenticates_and_consumes_backups_withou
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn configured_backup_callback_errors_preserve_factor_user_and_current_session() {
     // This guards Rust callback error identity, which the cross-runtime happy-path
     // cipher fixture cannot exercise. Pinned runtime independently preserves both
@@ -1490,11 +1593,11 @@ async fn configured_backup_callback_errors_preserve_factor_user_and_current_sess
     }
     #[async_trait]
     impl TwoFactorBackupCipher for RejectingCipher {
-        async fn encrypt(&self, input: &str) -> AuthResult<String> {
+        async fn encrypt(&self, json: &str) -> AuthResult<String> {
             self.observed
                 .lock()
                 .unwrap()
-                .push(("encrypt".into(), input.into()));
+                .push(("encrypt".into(), json.into()));
             Err(denied(self.status))
         }
         async fn decrypt(&self, _stored: &str) -> AuthResult<String> {
@@ -1506,8 +1609,8 @@ async fn configured_backup_callback_errors_preserve_factor_user_and_current_sess
             let (ctx, user, session) =
                 create_test_context_with_credential_user("backup-callback@fixture.test", false)
                     .await;
-            let observed: Observed = Default::default();
-            let generator_observed = observed.clone();
+            let observed: Observed = Arc::default();
+            let generator_observed = Arc::clone(&observed);
             let plugin = TwoFactorPlugin::with_config(TwoFactorConfig {
                 skip_verification_on_enable: true,
                 custom_backup_codes_generate: Some(Arc::new(move || {
@@ -1523,19 +1626,21 @@ async fn configured_backup_callback_errors_preserve_factor_user_and_current_sess
                 })),
                 backup_storage: TwoFactorBackupStorage::CustomCipher(Arc::new(RejectingCipher {
                     status,
-                    observed: observed.clone(),
+                    observed: Arc::clone(&observed),
                 })),
                 ..Default::default()
             });
             let cookie = create_session_cookie(&session.token, &ctx.config);
             let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
-            _ = request
-                .headers
-                .insert("cookie".into(), cookie.split(';').next().unwrap().into());
+            drop(
+                request
+                    .headers
+                    .insert("cookie".into(), cookie.split(';').next().unwrap().into()),
+            );
             request.body = Some(br#"{"password":"password123"}"#.to_vec());
             // Resolve the short-lived native fixture session before observing
             // callback effects; this performs the ordinary expiry refresh.
-            _ = ctx.require_session(&request).await.unwrap();
+            drop(ctx.require_session(&request).await.unwrap());
             let before_sessions =
                 serde_json::to_value(ctx.database.get_user_sessions(&user.id).await.unwrap())
                     .unwrap();
@@ -1576,17 +1681,18 @@ async fn configured_backup_callback_errors_preserve_factor_user_and_current_sess
             };
             assert_eq!(*observed.lock().unwrap(), expected);
 
-            _ = ctx
-                .database
-                .update_user(
-                    &user.id,
-                    UpdateUser {
-                        two_factor_enabled: Some(true),
-                        ..Default::default()
-                    },
-                )
-                .await
-                .unwrap();
+            drop(
+                ctx.database
+                    .update_user(
+                        &user.id,
+                        UpdateUser {
+                            two_factor_enabled: Some(true),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap(),
+            );
             let factor = ctx
                 .database
                 .create_two_factor(CreateTwoFactor {
@@ -1603,9 +1709,9 @@ async fn configured_backup_callback_errors_preserve_factor_user_and_current_sess
                 serde_json::to_value(ctx.database.get_user_by_id(&user.id).await.unwrap()).unwrap();
             observed.lock().unwrap().clear();
             request.path = "/two-factor/generate-backup-codes".into();
-            let error = plugin.on_request(&request, &ctx).await.unwrap_err();
+            let error_2 = plugin.on_request(&request, &ctx).await.unwrap_err();
             assert!(
-                matches!(error, AuthError::Upstream { status: actual, code: "BACKUP_CALLBACK_DENIED", .. } if actual == status)
+                matches!(error_2, AuthError::Upstream { status: actual, code: "BACKUP_CALLBACK_DENIED", .. } if actual == status)
             );
             assert_eq!(*observed.lock().unwrap(), expected);
             assert_eq!(
@@ -1636,6 +1742,10 @@ async fn configured_backup_callback_errors_preserve_factor_user_and_current_sess
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn pending_backup_cipher_errors_restore_only_decode_stage_attempts() {
     type Observed = Arc<std::sync::Mutex<Vec<(String, String)>>>;
     struct Cipher {
@@ -1645,11 +1755,11 @@ async fn pending_backup_cipher_errors_restore_only_decode_stage_attempts() {
     }
     #[async_trait]
     impl TwoFactorBackupCipher for Cipher {
-        async fn encrypt(&self, input: &str) -> AuthResult<String> {
+        async fn encrypt(&self, json: &str) -> AuthResult<String> {
             self.observed
                 .lock()
                 .unwrap()
-                .push(("encrypt".into(), input.into()));
+                .push(("encrypt".into(), json.into()));
             if self.phase == "encrypt" && self.rejected.load(std::sync::atomic::Ordering::SeqCst) {
                 return Err(AuthError::Upstream {
                     status: 400,
@@ -1657,13 +1767,13 @@ async fn pending_backup_cipher_errors_restore_only_decode_stage_attempts() {
                     message: "Callback denied",
                 });
             }
-            Ok(format!("backup-{input}"))
+            Ok(format!("backup-{json}"))
         }
-        async fn decrypt(&self, input: &str) -> AuthResult<String> {
+        async fn decrypt(&self, stored: &str) -> AuthResult<String> {
             self.observed
                 .lock()
                 .unwrap()
-                .push(("decrypt".into(), input.into()));
+                .push(("decrypt".into(), stored.into()));
             if self.phase == "decrypt" && self.rejected.load(std::sync::atomic::Ordering::SeqCst) {
                 return Err(AuthError::Upstream {
                     status: 400,
@@ -1671,7 +1781,7 @@ async fn pending_backup_cipher_errors_restore_only_decode_stage_attempts() {
                     message: "Callback denied",
                 });
             }
-            Ok(input.strip_prefix("backup-").unwrap().into())
+            Ok(stored.strip_prefix("backup-").unwrap().into())
         }
     }
     for phase in ["decrypt", "encrypt"] {
@@ -1704,9 +1814,7 @@ async fn pending_backup_cipher_errors_restore_only_decode_stage_attempts() {
             .insert("cookie".into(), cookie.split(';').next().unwrap().into());
         request.body =
             Some(br#"{"code":"same","disableSession":true,"trustDevice":true}"#.to_vec());
-        let key = read_signed_cookie(&request, TWO_FACTOR_COOKIE_SUFFIX, &ctx)
-            .unwrap()
-            .unwrap();
+        let key = read_signed_cookie(&request, TWO_FACTOR_COOKIE_SUFFIX, &ctx).unwrap();
         let attempt_id = format!("2fa-attempts-{key}");
         let before_challenge = serde_json::to_value(
             ctx.database
@@ -1718,12 +1826,12 @@ async fn pending_backup_cipher_errors_restore_only_decode_stage_attempts() {
         let before_user =
             serde_json::to_value(ctx.database.get_user_by_id(&user.id).await.unwrap()).unwrap();
         let rejected = Arc::new(std::sync::atomic::AtomicBool::new(true));
-        let observed: Observed = Default::default();
+        let observed: Observed = Arc::default();
         let plugin = TwoFactorPlugin::with_config(TwoFactorConfig {
             backup_storage: TwoFactorBackupStorage::CustomCipher(Arc::new(Cipher {
                 phase,
-                rejected: rejected.clone(),
-                observed: observed.clone(),
+                rejected: Arc::clone(&rejected),
+                observed: Arc::clone(&observed),
             })),
             ..Default::default()
         });
@@ -1795,7 +1903,12 @@ async fn pending_backup_cipher_errors_restore_only_decode_stage_attempts() {
             assert_eq!(response.status, 200);
             let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
             assert!(body.get("token").is_none());
-            assert_eq!(body["user"]["id"], user.id);
+            assert_eq!(
+                (*(*(body).get("user").unwrap_or(&serde_json::Value::Null))
+                    .get("id")
+                    .unwrap_or(&serde_json::Value::Null)),
+                user.id
+            );
             assert!(response.headers.get("set-cookie").is_none());
             let updated = ctx
                 .database
@@ -1808,9 +1921,9 @@ async fn pending_backup_cipher_errors_restore_only_decode_stage_attempts() {
             assert_eq!(updated.backup_codes, "backup-[\"remaining\"]");
             assert_eq!(updated.failed_verification_count, Some(0.0));
         } else {
-            let error = retry.unwrap_err();
-            assert_eq!(error.status_code(), 401);
-            assert_eq!(error.to_string(), "Invalid two factor cookie");
+            let error_2 = retry.unwrap_err();
+            assert_eq!(error_2.status_code(), 401);
+            assert_eq!(error_2.to_string(), "Invalid two factor cookie");
             assert_eq!(
                 serde_json::to_value(
                     ctx.database
@@ -1850,6 +1963,10 @@ async fn pending_backup_cipher_errors_restore_only_decode_stage_attempts() {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn authenticated_otp_maps_only_session_creation_cancellation_and_preserves_hook_inputs() {
     use better_auth_core::{AuthConfig, CreateSession};
     use better_auth_seaorm::{Database, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore};
@@ -1915,9 +2032,9 @@ async fn authenticated_otp_maps_only_session_creation_cancellation_and_preserves
             .unwrap();
         let config = Arc::new(AuthConfig::new("authenticated-otp-hook-secret-at-least-32"));
         let mut ctx = AuthContext::new(
-            config.clone(),
+            Arc::clone(&config),
             Arc::new(SeaOrmStore::<TestSchema>::new(
-                config.clone(),
+                Arc::clone(&config),
                 database.clone(),
             )),
         );
@@ -1941,7 +2058,7 @@ async fn authenticated_otp_maps_only_session_creation_cancellation_and_preserves
                 active_organization_id: None,
                 active_team_id: None,
                 impersonated_by: None,
-                additional_fields: Default::default(),
+                additional_fields: better_auth_core::field_policy::FieldValues::default(),
             })
             .await
             .unwrap();
@@ -1949,16 +2066,18 @@ async fn authenticated_otp_maps_only_session_creation_cancellation_and_preserves
         ctx.database = Arc::new(
             SeaOrmStore::<TestSchema>::new(config, database).with_hooks(vec![Arc::new(Hook {
                 mode,
-                observed: observed.clone(),
+                observed: Arc::clone(&observed),
             })]),
         );
         let delivered = Arc::new(std::sync::Mutex::new(None));
         let plugin = TwoFactorPlugin::with_config(TwoFactorConfig {
-            send_otp: Some(Arc::new(Sender(delivered.clone()))),
+            send_otp: Some(Arc::new(Sender(Arc::clone(&delivered)))),
             ..Default::default()
         });
-        let mut init =
-            better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+        let mut init = better_auth_core::AuthInitContext::new(
+            Arc::clone(&ctx.config),
+            Arc::clone(&ctx.database),
+        );
         plugin.on_init(&mut init).await.unwrap();
         ctx.database = init.database_with_registered_transforms();
         let parts = init.into_parts();
@@ -1985,8 +2104,20 @@ async fn authenticated_otp_maps_only_session_creation_cancellation_and_preserves
         );
         let before = ctx.database.get_user_sessions(&user.id).await.unwrap();
         assert_eq!(before.len(), 1);
-        assert_eq!(before[0].id, session.id);
-        assert_eq!(before[0].token, session.token);
+        assert_eq!(
+            (before)
+                .first()
+                .expect("fixture contains the requested session")
+                .id,
+            session.id
+        );
+        assert_eq!(
+            (before)
+                .first()
+                .expect("fixture contains the requested session")
+                .token,
+            session.token
+        );
         let code = delivered
             .lock()
             .unwrap()
@@ -2063,6 +2194,10 @@ async fn authenticated_otp_maps_only_session_creation_cancellation_and_preserves
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn otp_delivery_keeps_owned_request_context_after_dropped_rejecting_observer_and_rotation() {
     use better_auth_core::{BackgroundTaskCompletion, BackgroundTaskHandler};
     use tokio::sync::oneshot;
@@ -2079,8 +2214,14 @@ async fn otp_delivery_keeps_owned_request_context_after_dropped_rejecting_observ
                 .expect("real delivery must retain initiating request context");
             self.observed.lock().unwrap().push((
                 request.path,
-                request.headers["x-delivery-origin"].clone(),
-                request.query["delivery"].clone(),
+                (*(request.headers)
+                    .get("x-delivery-origin")
+                    .expect("fixture contains the requested index"))
+                .clone(),
+                (*(request.query)
+                    .get("delivery")
+                    .expect("fixture contains the requested index"))
+                .clone(),
                 user.two_factor_enabled.unwrap_or(false),
             ));
         }
@@ -2089,17 +2230,18 @@ async fn otp_delivery_keeps_owned_request_context_after_dropped_rejecting_observ
     impl SendTwoFactorOtp for Sender {
         async fn send(&self, user: &UserView, otp: &str) -> AuthResult<()> {
             self.record(user);
-            let _ = self
-                .entered
-                .lock()
-                .unwrap()
-                .take()
-                .unwrap()
-                .send(otp.into());
+            drop(
+                self.entered
+                    .lock()
+                    .unwrap()
+                    .take()
+                    .unwrap()
+                    .send(otp.into()),
+            );
             let release = self.release.lock().unwrap().take().unwrap();
             release.await.unwrap();
             self.record(user);
-            let _ = self.finished.lock().unwrap().take().unwrap().send(());
+            _ = self.finished.lock().unwrap().take().unwrap().send(());
             Err(AuthError::forbidden(
                 "actual asynchronous delivery rejected",
             ))
@@ -2123,11 +2265,12 @@ async fn otp_delivery_keeps_owned_request_context_after_dropped_rejecting_observ
             entered: std::sync::Mutex::new(Some(entered)),
             release: std::sync::Mutex::new(Some(gate)),
             finished: std::sync::Mutex::new(Some(finished)),
-            observed: observed.clone(),
+            observed: Arc::clone(&observed),
         })),
         ..Default::default()
     }));
-    let mut init = better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    let mut init =
+        better_auth_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
     plugin.on_init(&mut init).await.unwrap();
     ctx.database = init.database_with_registered_transforms();
     let parts = init.into_parts();
@@ -2143,23 +2286,29 @@ async fn otp_delivery_keeps_owned_request_context_after_dropped_rejecting_observ
     let session = test_helpers::create_session(&ctx, user.id.clone(), Duration::hours(1)).await;
     let ctx = Arc::new(ctx);
     let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/send-otp");
-    let _ = request.headers.insert(
-        "cookie".into(),
-        create_session_cookie(&session.token, &ctx.config)
-            .split(';')
-            .next()
-            .unwrap()
-            .into(),
+    drop(
+        request.headers.insert(
+            "cookie".into(),
+            create_session_cookie(&session.token, &ctx.config)
+                .split(';')
+                .next()
+                .unwrap()
+                .into(),
+        ),
     );
-    let _ = request
-        .headers
-        .insert("x-delivery-origin".into(), "original-sender".into());
-    let _ = request
-        .query
-        .insert("delivery".into(), "original-marker".into());
+    drop(
+        request
+            .headers
+            .insert("x-delivery-origin".into(), "original-sender".into()),
+    );
+    drop(
+        request
+            .query
+            .insert("delivery".into(), "original-marker".into()),
+    );
     request.body = Some(b"{}".to_vec());
-    let running_ctx = ctx.clone();
-    let running_plugin = plugin.clone();
+    let running_ctx = Arc::clone(&ctx);
+    let running_plugin = Arc::clone(&plugin);
     let running_request = request.clone();
     let mut running = tokio::spawn(async move {
         better_auth_core::with_request_hook_context(
@@ -2192,12 +2341,16 @@ async fn otp_delivery_keeps_owned_request_context_after_dropped_rejecting_observ
             .is_some()
     );
     request.path = "/two-factor/verify-otp".into();
-    let _ = request
-        .headers
-        .insert("x-delivery-origin".into(), "different-verifier".into());
-    let _ = request
-        .query
-        .insert("delivery".into(), "different-marker".into());
+    drop(
+        request
+            .headers
+            .insert("x-delivery-origin".into(), "different-verifier".into()),
+    );
+    drop(
+        request
+            .query
+            .insert("delivery".into(), "different-marker".into()),
+    );
     request.body = Some(serde_json::to_vec(&serde_json::json!({"code":code})).unwrap());
     let verified =
         better_auth_core::with_request_hook_context(&request, plugin.on_request(&request, &ctx))
@@ -2234,7 +2387,7 @@ async fn otp_delivery_keeps_owned_request_context_after_dropped_rejecting_observ
             .unwrap()
             .is_none()
     );
-    let _ = release.send(());
+    let _ignored_send = release.send(());
     tokio::time::timeout(std::time::Duration::from_secs(1), done)
         .await
         .expect("owned delivery must finish after its actual release")

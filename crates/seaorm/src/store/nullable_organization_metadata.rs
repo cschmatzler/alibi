@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 pub(super) struct NullableOrganizationMetadata;
 
 impl MigrationName for NullableOrganizationMetadata {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "m20260930_000013_nullable_organization_metadata"
     }
 }
@@ -23,12 +23,16 @@ impl MigrationTrait for NullableOrganizationMetadata {
         Some(false)
     }
 
+    #[expect(
+        elided_lifetimes_in_paths,
+        reason = "SeaORM MigrationTrait requires its implicit manager lifetime to remain late-bound"
+    )]
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         match manager.get_database_backend() {
             DatabaseBackend::Sqlite => rebuild_sqlite_organization(manager).await,
             DatabaseBackend::Postgres => {
                 if manager.has_column("organization", "metadata").await? {
-                    let _ = manager
+                    let _ignored_execute_unprepared = manager
                         .get_connection()
                         .execute_unprepared(
                             "ALTER TABLE \"organization\" ALTER COLUMN \"metadata\" DROP NOT NULL",
@@ -37,13 +41,17 @@ impl MigrationTrait for NullableOrganizationMetadata {
                 }
                 Ok(())
             }
-            _ => Err(DbErr::Migration(
+            DatabaseBackend::MySql | _ => Err(DbErr::Migration(
                 "Nullable organization metadata requires SQLite or PostgreSQL".to_owned(),
             )),
         }
     }
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Result::map_err transfers ownership to this error-boundary adapter"
+)]
 fn sqlx_error(error: sea_orm::sqlx::Error) -> DbErr {
     DbErr::Migration(format!("Nullable organization metadata: {error}"))
 }
@@ -82,26 +90,27 @@ async fn rebuild_sqlite_organization(manager: &SchemaManager<'_>) -> Result<(), 
     // Cancellation/error must never return a connection with foreign keys
     // disabled to the pool. Successful restoration returns it explicitly.
     connection.close_on_drop();
-    let _ = sea_orm::sqlx::query("PRAGMA foreign_keys = OFF")
+    let _ignored_map_err = sea_orm::sqlx::query("PRAGMA foreign_keys = OFF")
         .execute(&mut *connection)
         .await
         .map_err(sqlx_error)?;
     // Existing views temporarily refer to the dropped name inside this
     // transaction. Legacy rename validation leaves those definitions intact
     // until the replacement restores that same name.
-    let _ = sea_orm::sqlx::query("PRAGMA legacy_alter_table = ON")
+    let _ignored_map_err_2 = sea_orm::sqlx::query("PRAGMA legacy_alter_table = ON")
         .execute(&mut *connection)
         .await
         .map_err(sqlx_error)?;
     let result = rebuild_organization_transaction(&mut connection).await;
-    let _ = sea_orm::sqlx::query(&format!("PRAGMA foreign_keys = {foreign_keys}"))
+    let _ignored_map_err_3 = sea_orm::sqlx::query(&format!("PRAGMA foreign_keys = {foreign_keys}"))
         .execute(&mut *connection)
         .await
         .map_err(sqlx_error)?;
-    let _ = sea_orm::sqlx::query(&format!("PRAGMA legacy_alter_table = {legacy_alter_table}"))
-        .execute(&mut *connection)
-        .await
-        .map_err(sqlx_error)?;
+    let _ignored_map_err_4 =
+        sea_orm::sqlx::query(&format!("PRAGMA legacy_alter_table = {legacy_alter_table}"))
+            .execute(&mut *connection)
+            .await
+            .map_err(sqlx_error)?;
     let restored: i64 = sea_orm::sqlx::query_scalar("PRAGMA foreign_keys")
         .fetch_one(&mut *connection)
         .await
@@ -119,6 +128,14 @@ async fn rebuild_sqlite_organization(manager: &SchemaManager<'_>) -> Result<(), 
     result
 }
 
+#[expect(
+    clippy::string_slice,
+    reason = "SQL lexer ranges end at ASCII delimiters or input boundaries and retain UTF-8 token boundaries"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep SQLite table replacement and preservation of indexes and triggers in one transaction"
+)]
 async fn rebuild_organization_transaction(connection: &mut SqliteConnection) -> Result<(), DbErr> {
     let mut transaction = connection.begin().await.map_err(sqlx_error)?;
     let result = async {
@@ -182,21 +199,21 @@ async fn rebuild_organization_transaction(connection: &mut SqliteConnection) -> 
                 copied_columns.insert(0, quote_identifier(alias));
         }
         let copied_columns = copied_columns.join(", ");
-        let _ = sea_orm::sqlx::query(&rewritten)
+        let _ignored_map_err_5 = sea_orm::sqlx::query(&rewritten)
             .execute(&mut *transaction)
             .await
             .map_err(sqlx_error)?;
-        let _ = sea_orm::sqlx::query(&format!(
+        let _ignored_map_err_6 = sea_orm::sqlx::query(&format!(
             "INSERT INTO \"organization__nullable_metadata\" ({copied_columns}) SELECT {copied_columns} FROM \"organization\""
         ))
         .execute(&mut *transaction)
         .await
         .map_err(sqlx_error)?;
-        let _ = sea_orm::sqlx::query("DROP TABLE \"organization\"")
+        let _ignored_map_err_7 = sea_orm::sqlx::query("DROP TABLE \"organization\"")
             .execute(&mut *transaction)
             .await
             .map_err(sqlx_error)?;
-        let _ = sea_orm::sqlx::query(
+        let _ignored_map_err_8 = sea_orm::sqlx::query(
             "ALTER TABLE \"organization__nullable_metadata\" RENAME TO \"organization\"",
         )
         .execute(&mut *transaction)
@@ -211,7 +228,7 @@ async fn rebuild_organization_transaction(connection: &mut SqliteConnection) -> 
             .await
             .map_err(sqlx_error)?;
             if updated.rows_affected() == 0 {
-                let _ = sea_orm::sqlx::query(
+                let _ignored_map_err_9 = sea_orm::sqlx::query(
                     "INSERT INTO sqlite_sequence (name, seq) VALUES ('organization', ?)",
                 )
                 .bind(previous_sequence)
@@ -220,8 +237,8 @@ async fn rebuild_organization_transaction(connection: &mut SqliteConnection) -> 
                 .map_err(sqlx_error)?;
             }
         }
-        for sql in statements {
-            let _ = sea_orm::sqlx::query(&sql)
+        for sql_2 in statements {
+            let _ignored_map_err_10 = sea_orm::sqlx::query(&sql_2)
                 .execute(&mut *transaction)
                 .await
                 .map_err(sqlx_error)?;
@@ -252,6 +269,10 @@ fn quote_identifier(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
 }
 
+#[expect(
+    clippy::string_slice,
+    reason = "SQL lexer ranges end at ASCII delimiters or input boundaries and retain UTF-8 token boundaries"
+)]
 fn nullable_organization_ddl(sql: &str) -> Result<String, DbErr> {
     let tokens = sql_tokens(sql)?;
     let body = tokens
@@ -277,6 +298,10 @@ fn nullable_organization_ddl(sql: &str) -> Result<String, DbErr> {
     ))
 }
 
+#[expect(
+    clippy::string_slice,
+    reason = "SQL lexer ranges end at ASCII delimiters or input boundaries and retain UTF-8 token boundaries"
+)]
 fn nullable_column(definition: &str) -> Result<String, DbErr> {
     let tokens = sql_tokens(definition)?;
     let Some(name) = tokens.first() else {
@@ -291,31 +316,31 @@ fn nullable_column(definition: &str) -> Result<String, DbErr> {
         if definition[span.clone()].eq_ignore_ascii_case("NOT")
             && tokens
                 .get(index + 1)
-                .is_some_and(|span| definition[span.clone()].eq_ignore_ascii_case("NULL"))
+                .is_some_and(|span_2| definition[span_2.clone()].eq_ignore_ascii_case("NULL"))
         {
-            let _ = removed.insert(index);
-            let _ = removed.insert(index + 1);
+            let _ignored_insert = removed.insert(index);
+            let _ignored_insert_2 = removed.insert(index + 1);
             if tokens
                 .get(index + 2)
-                .is_some_and(|span| definition[span.clone()].eq_ignore_ascii_case("ON"))
-                && tokens
-                    .get(index + 3)
-                    .is_some_and(|span| definition[span.clone()].eq_ignore_ascii_case("CONFLICT"))
+                .is_some_and(|span_3| definition[span_3.clone()].eq_ignore_ascii_case("ON"))
+                && tokens.get(index + 3).is_some_and(|span_4| {
+                    definition[span_4.clone()].eq_ignore_ascii_case("CONFLICT")
+                })
             {
                 if tokens.get(index + 4).is_none() {
                     return Err(DbErr::Migration(
                         "Incomplete metadata NOT NULL conflict rule".to_owned(),
                     ));
                 }
-                let _ = removed.insert(index + 2);
-                let _ = removed.insert(index + 3);
-                let _ = removed.insert(index + 4);
+                let _ignored_insert_3 = removed.insert(index + 2);
+                let _ignored_insert_4 = removed.insert(index + 3);
+                let _ignored_insert_5 = removed.insert(index + 4);
             }
             if let Some(constraint) = index.checked_sub(2).and_then(|index| tokens.get(index))
                 && definition[constraint.clone()].eq_ignore_ascii_case("CONSTRAINT")
             {
-                let _ = removed.insert(index - 2);
-                let _ = removed.insert(index - 1);
+                let _ignored_insert_6 = removed.insert(index - 2);
+                let _ignored_insert_7 = removed.insert(index - 1);
             }
         }
     }

@@ -1,6 +1,7 @@
 //! Preserve numeric pagination until the actual database validates its binding.
-use crate::error::AuthResult;
+use better_auth_core::error::AuthResult;
 use sea_orm::{DbBackend, Statement, Value, Values};
+use std::fmt::Write;
 pub(super) fn bind_page(
     mut statement: Statement,
     limit: Option<f64>,
@@ -13,12 +14,12 @@ pub(super) fn bind_page(
                 DbBackend::Postgres => format!("${}", values.0.len() + 1),
                 DbBackend::Sqlite | DbBackend::MySql => "?".into(),
                 _ => {
-                    return Err(crate::error::AuthError::not_implemented(
+                    return Err(better_auth_core::error::AuthError::not_implemented(
                         "Raw numeric pages are not supported by this database backend",
                     ));
                 }
             };
-            statement.sql.push_str(&format!(" {clause} {placeholder}"));
+            _ = write!(statement.sql, " {clause} {placeholder}");
             values.0.push(Value::Double(Some(number)));
         }
     }

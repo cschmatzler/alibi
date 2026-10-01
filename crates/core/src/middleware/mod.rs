@@ -1,11 +1,24 @@
 pub mod body_limit;
+
 pub mod cors;
+
 pub mod csrf;
+
 pub mod rate_limit;
 
 use crate::error::AuthResult;
+
 use crate::types::{AuthRequest, AuthResponse};
+
 use async_trait::async_trait;
+
+pub use body_limit::{BodyLimitConfig, BodyLimitMiddleware};
+
+pub use cors::{CorsConfig, CorsMiddleware};
+
+pub use csrf::{CsrfConfig, CsrfMiddleware};
+
+pub use rate_limit::{EndpointRateLimit, RateLimitConfig, RateLimitMiddleware};
 
 /// Middleware trait for request/response processing.
 ///
@@ -38,6 +51,10 @@ pub trait Middleware: Send + Sync {
 /// Run a middleware chain on a request.
 ///
 /// Returns `Ok(Some(response))` if any middleware short-circuits, otherwise `Ok(None)`.
+///
+/// # Errors
+///
+/// Propagates errors returned by a before-request middleware.
 pub async fn run_before(
     middlewares: &[Box<dyn Middleware>],
     req: &AuthRequest,
@@ -51,6 +68,10 @@ pub async fn run_before(
 }
 
 /// Run the after-request middleware chain, applying each middleware in reverse order.
+///
+/// # Errors
+///
+/// Propagates errors returned by an after-response middleware.
 pub async fn run_after(
     middlewares: &[Box<dyn Middleware>],
     req: &AuthRequest,
@@ -61,8 +82,3 @@ pub async fn run_after(
     }
     Ok(response)
 }
-
-pub use body_limit::{BodyLimitConfig, BodyLimitMiddleware};
-pub use cors::{CorsConfig, CorsMiddleware};
-pub use csrf::{CsrfConfig, CsrfMiddleware};
-pub use rate_limit::{EndpointRateLimit, RateLimitConfig, RateLimitMiddleware};

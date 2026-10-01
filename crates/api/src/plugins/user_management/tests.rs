@@ -247,7 +247,7 @@ async fn test_delete_user_with_verification() {
     let token = "delete-token-123";
     ctx.database
         .create_verification(better_auth_core::CreateVerification {
-            identifier: format!("delete-account-{}", token),
+            identifier: format!("delete-account-{token}"),
             value: user.id.clone(),
             expires_at: chrono::Utc::now() + Duration::hours(24),
         })
@@ -255,19 +255,19 @@ async fn test_delete_user_with_verification() {
         .unwrap();
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), token.to_string());
-    let req = test_helpers::create_auth_request(
+    query.insert("token".to_owned(), token.to_owned());
+    let req_2 = test_helpers::create_auth_request(
         HttpMethod::Get,
         "/delete-user/callback",
         Some(&session.token),
         None,
         query,
     );
-    let response = plugin
-        .handle_delete_user_callback(&req, &ctx)
+    let response_2 = plugin
+        .handle_delete_user_callback(&req_2, &ctx)
         .await
         .unwrap();
-    assert_eq!(response.status, 200);
+    assert_eq!(response_2.status, 200);
 
     // User should now be gone
     let deleted = ctx.database.get_user_by_id(&user.id).await.unwrap();
@@ -306,10 +306,10 @@ async fn test_delete_user_callback_clears_account_cookie_when_enabled() {
         .unwrap();
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), token.to_string());
+    query.insert("token".to_owned(), token.to_owned());
     query.insert(
-        "callbackURL".to_string(),
-        "https://example.com/goodbye".to_string(),
+        "callbackURL".to_owned(),
+        "https://example.com/goodbye".to_owned(),
     );
     let req = test_helpers::create_auth_request(
         HttpMethod::Get,
@@ -365,7 +365,7 @@ async fn test_delete_user_unauthenticated() {
 #[tokio::test]
 async fn test_delete_user_verify_invalid_token() {
     let plugin = UserManagementPlugin::new().delete_user_enabled(true);
-    let (ctx, _user, _session) = test_helpers::create_test_context_with_user(
+    let (ctx, _user, fixture_session) = test_helpers::create_test_context_with_user(
         CreateUser::new()
             .with_email("test@example.com")
             .with_name("Test User")
@@ -375,11 +375,11 @@ async fn test_delete_user_verify_invalid_token() {
     .await;
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), "invalid-token".to_string());
+    query.insert("token".to_owned(), "invalid-token".to_owned());
     let req = test_helpers::create_auth_request(
         HttpMethod::Get,
         "/delete-user/callback",
-        Some(&_session.token),
+        Some(&fixture_session.token),
         None,
         query,
     );
@@ -397,6 +397,7 @@ async fn test_delete_user_before_hook_abort() {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     struct AbortHook;
+
     #[async_trait]
     impl BeforeDeleteUser for AbortHook {
         async fn before_delete(&self, _user: &UserInfo) -> AuthResult<()> {
@@ -404,10 +405,8 @@ async fn test_delete_user_before_hook_abort() {
         }
     }
 
-    let called = Arc::new(AtomicBool::new(false));
-    let called_clone = called.clone();
-
     struct AfterHook(Arc<AtomicBool>);
+
     #[async_trait]
     impl AfterDeleteUser for AfterHook {
         async fn after_delete(&self, _user: &UserInfo) -> AuthResult<()> {
@@ -415,6 +414,9 @@ async fn test_delete_user_before_hook_abort() {
             Ok(())
         }
     }
+
+    let called = Arc::new(AtomicBool::new(false));
+    let called_clone = std::sync::Arc::clone(&called);
 
     let plugin = UserManagementPlugin::new()
         .delete_user_enabled(true)
@@ -457,24 +459,24 @@ async fn test_plugin_routes_conditional() {
     assert!(<UserManagementPlugin as AuthPlugin<TestSchema>>::routes(&plugin).is_empty());
 
     // Only change-email enabled
-    let plugin = UserManagementPlugin::new().change_email_enabled(true);
-    let routes = <UserManagementPlugin as AuthPlugin<TestSchema>>::routes(&plugin);
+    let plugin_2 = UserManagementPlugin::new().change_email_enabled(true);
+    let routes = <UserManagementPlugin as AuthPlugin<TestSchema>>::routes(&plugin_2);
     assert_eq!(routes.len(), 1);
     assert!(routes.iter().any(|r| r.path == "/change-email"));
 
     // Only delete-user enabled
-    let plugin = UserManagementPlugin::new().delete_user_enabled(true);
-    let routes = <UserManagementPlugin as AuthPlugin<TestSchema>>::routes(&plugin);
-    assert_eq!(routes.len(), 2);
-    assert!(routes.iter().any(|r| r.path == "/delete-user"));
-    assert!(routes.iter().any(|r| r.path == "/delete-user/callback"));
+    let plugin_3 = UserManagementPlugin::new().delete_user_enabled(true);
+    let routes_2 = <UserManagementPlugin as AuthPlugin<TestSchema>>::routes(&plugin_3);
+    assert_eq!(routes_2.len(), 2);
+    assert!(routes_2.iter().any(|r| r.path == "/delete-user"));
+    assert!(routes_2.iter().any(|r| r.path == "/delete-user/callback"));
 
     // Both enabled
-    let plugin = UserManagementPlugin::new()
+    let plugin_4 = UserManagementPlugin::new()
         .change_email_enabled(true)
         .delete_user_enabled(true);
     assert_eq!(
-        <UserManagementPlugin as AuthPlugin<TestSchema>>::routes(&plugin).len(),
+        <UserManagementPlugin as AuthPlugin<TestSchema>>::routes(&plugin_4).len(),
         3
     );
 }

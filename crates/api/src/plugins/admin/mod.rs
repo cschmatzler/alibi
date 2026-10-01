@@ -1,58 +1,88 @@
-use std::collections::HashMap;
-
-use better_auth_core::entity::AuthUser;
-use better_auth_core::utils::cookie_utils::{
-    create_clear_cookie, create_session_cookie_with_max_age, create_session_like_cookie,
-    related_cookie_name,
-};
-use better_auth_core::utils::username::{UsernameValidationError, validate_username};
-use better_auth_core::wire::{SessionView, UserView};
-use better_auth_core::{
-    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, ErrorCodeMessageResponse,
-};
-
 pub mod access;
+
 mod callbacks;
-pub(crate) use callbacks::BannedUserMessagePolicy;
-pub use callbacks::{AdminBannedUserMessage, AdminBannedUserMessageHandler};
+
 pub(super) mod handlers;
+
 pub(super) mod types;
+
 mod validation;
 
 #[cfg(test)]
 mod tests;
 
+use std::collections::HashMap;
+
+use better_auth_core::entity::AuthUser;
+
+use better_auth_core::utils::cookie_utils::{
+    create_clear_cookie, create_session_cookie_with_max_age, create_session_like_cookie,
+    related_cookie_name,
+};
+
+use better_auth_core::utils::username::{UsernameValidationError, validate_username};
+
+use better_auth_core::wire::{SessionView, UserView};
+
+use better_auth_core::{
+    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, ErrorCodeMessageResponse,
+};
+
+pub(in crate::plugins) use callbacks::BannedUserMessagePolicy;
+
+pub use callbacks::{AdminBannedUserMessage, AdminBannedUserMessageHandler};
+
 use crate::plugins::helpers::{delete_session_cookie_headers, get_cookie};
+
 use access::{has_permission, is_admin_role, is_admin_user_id};
-use handlers::*;
-use types::*;
+
+use handlers::{
+    AdminSessionCookiePayload, ban_user_core, create_admin_session_cookie_value, create_user_core,
+    decode_admin_session_cookie_value, get_user_core, has_permission_core, impersonate_user_core,
+    list_user_sessions_core, list_users_core, remove_user_core, revoke_user_session_core,
+    revoke_user_sessions_core, set_role_core, set_user_password_core, stop_impersonating_core,
+    unban_user_core, update_user_core,
+};
+
+use types::{
+    AdminUpdateUserRequest, BanUserRequest, CreateUserRequest, HasPermissionRequest,
+    ListUsersQueryParams, RevokeSessionRequest, SetRoleRequest, SetUserPasswordRequest,
+    UserIdRequest,
+};
+
+pub use access::RolePermissions;
+
+use handlers::AdminDateOperationError;
 
 const MESSAGE_CHANGE_ROLE: &str = "You are not allowed to change users role";
-const MESSAGE_CREATE_USERS: &str = "You are not allowed to create users";
-const MESSAGE_LIST_USERS: &str = "You are not allowed to list users";
-const MESSAGE_LIST_USER_SESSIONS: &str = "You are not allowed to list users sessions";
-const MESSAGE_BAN_USERS: &str = "You are not allowed to ban users";
-const MESSAGE_IMPERSONATE_USERS: &str = "You are not allowed to impersonate users";
-const MESSAGE_REVOKE_USER_SESSIONS: &str = "You are not allowed to revoke users sessions";
-const MESSAGE_DELETE_USERS: &str = "You are not allowed to delete users";
-const MESSAGE_SET_USER_PASSWORD: &str = "You are not allowed to set users password";
-const MESSAGE_GET_USER: &str = "You are not allowed to get user";
-const MESSAGE_UPDATE_USERS: &str = "You are not allowed to update users";
-const MESSAGE_USERNAME_IS_ALREADY_TAKEN: &str = "Username is already taken. Please try another.";
-const MESSAGE_USERNAME_TOO_SHORT: &str = "Username is too short";
-const MESSAGE_USERNAME_TOO_LONG: &str = "Username is too long";
-const MESSAGE_INVALID_USERNAME: &str = "Username is invalid";
 
-fn username_error_response(status: u16, code: &str, message: &str) -> AuthResult<AuthResponse> {
-    AuthResponse::json(
-        status,
-        &ErrorCodeMessageResponse {
-            code: Some(code.to_string()),
-            message: message.to_string(),
-        },
-    )
-    .map_err(AuthError::from)
-}
+const MESSAGE_CREATE_USERS: &str = "You are not allowed to create users";
+
+const MESSAGE_LIST_USERS: &str = "You are not allowed to list users";
+
+const MESSAGE_LIST_USER_SESSIONS: &str = "You are not allowed to list users sessions";
+
+const MESSAGE_BAN_USERS: &str = "You are not allowed to ban users";
+
+const MESSAGE_IMPERSONATE_USERS: &str = "You are not allowed to impersonate users";
+
+const MESSAGE_REVOKE_USER_SESSIONS: &str = "You are not allowed to revoke users sessions";
+
+const MESSAGE_DELETE_USERS: &str = "You are not allowed to delete users";
+
+const MESSAGE_SET_USER_PASSWORD: &str = "You are not allowed to set users password";
+
+const MESSAGE_GET_USER: &str = "You are not allowed to get user";
+
+const MESSAGE_UPDATE_USERS: &str = "You are not allowed to update users";
+
+const MESSAGE_USERNAME_IS_ALREADY_TAKEN: &str = "Username is already taken. Please try another.";
+
+const MESSAGE_USERNAME_TOO_SHORT: &str = "Username is too short";
+
+const MESSAGE_USERNAME_TOO_LONG: &str = "Username is too long";
+
+const MESSAGE_INVALID_USERNAME: &str = "Username is invalid";
 
 /// Admin plugin for user management operations.
 pub struct AdminPlugin {
@@ -64,7 +94,7 @@ pub struct AdminPlugin {
 #[plugin(name = "AdminPlugin")]
 pub struct AdminConfig {
     /// Default role assigned to new users and role-less permission checks.
-    #[config(default = "user".to_string())]
+    #[config(default = "user".to_owned())]
     pub default_role: String,
     /// Roles treated as "admin" for target-admin checks such as impersonation.
     /// None uses the default admin role; explicit lists are validated at initialization.
@@ -76,7 +106,7 @@ pub struct AdminConfig {
     /// Custom role definitions. When provided, these replace the built-in
     /// `admin` and `user` role permissions. None uses builtins; Some(empty) grants none.
     #[config(default = None)]
-    pub roles: Option<HashMap<String, access::RolePermissions>>,
+    pub roles: Option<HashMap<String, RolePermissions>>,
     /// Default reason applied when banning a user without an explicit reason.
     #[config(default = None)]
     pub default_ban_reason: Option<String>,
@@ -87,7 +117,7 @@ pub struct AdminConfig {
     #[config(default = None)]
     pub impersonation_session_duration: Option<f64>,
     /// Message surfaced to banned users.
-    #[config(default = "You have been banned from this application. Please contact support if you believe this is an error.".to_string())]
+    #[config(default = "You have been banned from this application. Please contact support if you believe this is an error.".to_owned())]
     pub banned_user_message: String,
     /// Optional asynchronous message callback over the stored application user.
     /// When configured, this takes precedence over `banned_user_message`.
@@ -119,13 +149,13 @@ better_auth_core::impl_auth_plugin! {
     }
     extra {
         fn session_fields(&self) -> better_auth_core::field_policy::FieldConfigs {
-            [("impersonatedBy".into(), better_auth_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"})).read_only())].into_iter().collect()
+            std::iter::once(("impersonatedBy".into(), better_auth_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"})).read_only())).collect()
         }
 
         async fn on_init(
             &self,
             ctx: &mut better_auth_core::AuthInitContext<S>,
-        ) -> better_auth_core::AuthResult<()> {
+        ) -> AuthResult<()> {
             if let Some(admin_roles) = &self.config.admin_roles {
                 let roles = self.config.roles.clone().unwrap_or_else(access::default_roles);
                 let names: Vec<_> = roles.keys().map(|name| name.to_lowercase()).collect();
@@ -198,7 +228,7 @@ impl AdminPlugin {
         action: &str,
         message: &str,
     ) -> AuthResult<()> {
-        let permissions = HashMap::from([(resource.to_string(), vec![action.to_string()])]);
+        let permissions = HashMap::from([(resource.to_owned(), vec![action.to_owned()])]);
         if has_permission(
             Some(user.id.as_str()),
             user.role.as_deref(),
@@ -333,15 +363,16 @@ impl AdminPlugin {
         }
 
         if let Some(username) = username {
-            _ = body
-                .data
-                .insert("username".to_string(), serde_json::Value::String(username));
+            drop(
+                body.data
+                    .insert("username".to_owned(), serde_json::Value::String(username)),
+            );
         }
         if let Some(display_username) = display_username {
-            _ = body.data.insert(
-                "displayUsername".to_string(),
+            drop(body.data.insert(
+                "displayUsername".to_owned(),
                 serde_json::Value::String(display_username),
-            );
+            ));
         }
 
         let response = update_user_core(&body, &user, &self.config, ctx).await?;
@@ -451,10 +482,8 @@ impl AdminPlugin {
             &body,
             user.id.as_str(),
             user.role.as_deref(),
-            req.headers
-                .get("x-forwarded-for")
-                .map(|value| value.as_str()),
-            req.headers.get("user-agent").map(|value| value.as_str()),
+            req.headers.get("x-forwarded-for").map(String::as_str),
+            req.headers.get("user-agent").map(String::as_str),
             &self.config,
             ctx,
         )
@@ -534,7 +563,7 @@ impl AdminPlugin {
             .ok_or_else(|| AuthError::internal("Failed to find admin session"))?;
         let admin_cookie =
             decode_admin_session_cookie_value(&ctx.config.secret, &admin_cookie_value)
-                .map_err(|_| AuthError::internal("Failed to find admin session"))?;
+                .map_err(|_error| AuthError::internal("Failed to find admin session"))?;
 
         let (response, new_token) = stop_impersonating_core(&session, &admin_cookie, ctx).await?;
 
@@ -660,6 +689,23 @@ impl AdminPlugin {
     }
 }
 
+impl std::fmt::Debug for AdminPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AdminPlugin").finish_non_exhaustive()
+    }
+}
+
+fn username_error_response(status: u16, code: &str, message: &str) -> AuthResult<AuthResponse> {
+    AuthResponse::json(
+        status,
+        &ErrorCodeMessageResponse {
+            code: Some(code.to_owned()),
+            message: message.to_owned(),
+        },
+    )
+    .map_err(AuthError::from)
+}
+
 pub(super) fn target_is_admin(
     user_id: Option<&str>,
     role: Option<&str>,
@@ -667,5 +713,3 @@ pub(super) fn target_is_admin(
 ) -> bool {
     is_admin_user_id(user_id, config) || is_admin_role(role, config)
 }
-
-pub use access::RolePermissions;

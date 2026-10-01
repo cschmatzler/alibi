@@ -5,34 +5,35 @@ use super::oauth::handlers::{
     fetch_user_info_from_provider, parse_callback_user_payload, process_oauth_sign_in,
     validate_authorization_code_via_provider,
 };
+
 use super::oauth::state::{
     OAuthStatePayload, RecoveredOAuthServerContext, state_cookie_name, verified_server_context,
 };
+
 use super::oauth::{
     OAuthConfig, OAuthProcessPolicy, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoRequest,
 };
+
 use async_trait::async_trait;
+
 use better_auth_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, AuthSession, AuthVerification, BeforeRequestAction, HttpMethod, OAuthStateStrategy,
 };
+
 use chrono::{DateTime, Utc};
+
 use serde::{Deserialize, Serialize};
+
 use serde_json::{Value, json};
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
 struct OAuthProxyUnhandledError(AtomicBool);
 
-/// Internal dispatch bridge for an ordinary unhandled proxy session error.
-/// The marker is private and public dispatch resets request extensions.
-#[doc(hidden)]
-pub fn take_unhandled_error(req: &AuthRequest) -> bool {
-    req.extensions()
-        .get::<OAuthProxyUnhandledError>()
-        .is_some_and(|marker| marker.0.swap(false, Ordering::Relaxed))
-}
-
-/// Immutable application configuration. URLs are application origins; the auth
+/// Immutable application configuration.
+///
+/// URLs are application origins; the auth
 /// base path is appended to the production URL. A dedicated secret can be shared
 /// between hosts independently of their ordinary authentication secrets.
 #[derive(Clone)]
@@ -42,6 +43,7 @@ pub struct OAuthProxyConfig {
     pub max_age_seconds: f64,
     pub secret: Option<String>,
 }
+
 impl std::fmt::Debug for OAuthProxyConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OAuthProxyConfig")
@@ -52,6 +54,7 @@ impl std::fmt::Debug for OAuthProxyConfig {
             .finish()
     }
 }
+
 impl Default for OAuthProxyConfig {
     fn default() -> Self {
         Self {
@@ -62,20 +65,24 @@ impl Default for OAuthProxyConfig {
         }
     }
 }
+
 #[derive(Clone, Default)]
 pub struct OAuthProxyPlugin {
     config: OAuthProxyConfig,
 }
+
 #[derive(Clone)]
-pub(crate) struct OAuthProxyFlow {
-    pub(crate) effective_auth_base_url: String,
-    pub(crate) callback_url: String,
+pub(in crate::plugins) struct OAuthProxyFlow {
+    pub(in crate::plugins) effective_auth_base_url: String,
+    pub(in crate::plugins) callback_url: String,
 }
+
 #[derive(Clone)]
-pub(crate) struct IssuedProxyState {
-    pub(crate) state: String,
-    pub(crate) payload: OAuthStatePayload,
+pub(in crate::plugins) struct IssuedProxyState {
+    pub(in crate::plugins) state: String,
+    pub(in crate::plugins) payload: OAuthStatePayload,
 }
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StatePackage {
@@ -84,6 +91,7 @@ struct StatePackage {
     #[serde(rename = "isOAuthProxy")]
     is_oauth_proxy: bool,
 }
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProxyUser {
@@ -95,6 +103,7 @@ struct ProxyUser {
     #[serde(default)]
     email_verified: bool,
 }
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProxyAccount {
@@ -119,6 +128,7 @@ struct ProxyAccount {
     #[serde(skip_serializing_if = "Option::is_none")]
     scope: Option<String>,
 }
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProxyPayload {
@@ -140,43 +150,14 @@ struct ProxyPayload {
     disable_sign_up: Option<bool>,
     timestamp: f64,
 }
-fn auth_base<S: AuthSchema>(ctx: &AuthContext<S>) -> String {
-    format!(
-        "{}{}",
-        ctx.config.base_url.trim_end_matches('/'),
-        ctx.config.base_path
-    )
-}
-fn redirect(target: &str) -> AuthResponse {
-    AuthResponse::new(302)
-        .with_header("content-type", "application/json")
-        .with_header("Location", target)
-}
-fn error_redirect(base: &str, code: &str, description: Option<&str>) -> AuthResult<AuthResponse> {
-    let mut url =
-        url::Url::parse(base).map_err(|_| AuthError::internal("Invalid OAuth error URL"))?;
-    let _ = url.query_pairs_mut().append_pair("error", code);
-    if let Some(message) = description {
-        let _ = url
-            .query_pairs_mut()
-            .append_pair("error_description", message);
-    }
-    Ok(redirect(url.as_str()))
-}
-fn regular_provider(path: &str) -> Option<&str> {
-    path.strip_prefix("/callback/")
-        .filter(|id| !id.is_empty() && !id.contains('/'))
-}
-fn completion_provider(path: &str) -> Option<&str> {
-    path.strip_prefix("/callback/")?
-        .strip_suffix("/oauth-proxy")
-        .filter(|id| !id.is_empty() && !id.contains('/'))
-}
+
 impl OAuthProxyPlugin {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn with_config(config: OAuthProxyConfig) -> Self {
+    #[must_use]
+    pub const fn with_config(config: OAuthProxyConfig) -> Self {
         Self { config }
     }
     fn secret<'a, S: AuthSchema>(&'a self, ctx: &'a AuthContext<S>) -> &'a str {
@@ -206,6 +187,15 @@ impl OAuthProxyPlugin {
         }
         ctx.config.base_url.clone()
     }
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        reason = "Preserve JavaScript Number rounding at the compatibility boundary"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep proxy state verification, persistence, and redirect construction in protocol order"
+    )]
     async fn forward<S: AuthSchema>(
         &self,
         provider_id: &str,
@@ -226,12 +216,12 @@ impl OAuthProxyPlugin {
         if !package.is_oauth_proxy || package.state.is_empty() || package.state_cookie.is_empty() {
             return Ok(None);
         }
-        let Ok(plain) = super::token_crypto::decrypt(&package.state_cookie, self.secret(ctx))
+        let Ok(plain_2) = super::token_crypto::decrypt(&package.state_cookie, self.secret(ctx))
         else {
             return Ok(None);
         };
         let Ok(state) =
-            better_auth_core::utils::json::from_slice::<OAuthStatePayload>(plain.as_bytes())
+            better_auth_core::utils::json::from_slice::<OAuthStatePayload>(plain_2.as_bytes())
         else {
             return Ok(None);
         };
@@ -268,7 +258,7 @@ impl OAuthProxyPlugin {
                 None,
             )?));
         };
-        let tokens = match validate_authorization_code_via_provider(
+        let Ok(tokens) = validate_authorization_code_via_provider(
             provider,
             code,
             &format!("{}/callback/{provider_id}", auth_base(ctx)),
@@ -280,9 +270,8 @@ impl OAuthProxyPlugin {
             req.query.get("device_id").map(String::as_str),
         )
         .await
-        {
-            Ok(tokens) => tokens,
-            Err(_) => return Ok(Some(error_redirect(&error_url, "invalid_code", None)?)),
+        else {
+            return Ok(Some(error_redirect(&error_url, "invalid_code", None)?));
         };
         // Like the source proxy middleware, application/profile lookup errors
         // propagate; only an absent profile is a redirect-level failure.
@@ -305,12 +294,14 @@ impl OAuthProxyPlugin {
             return Ok(Some(error_redirect(&error_url, "email_not_found", None)?));
         }
         let mut callback = url::Url::parse(&state.callback_url)
-            .map_err(|_| AuthError::internal("Invalid proxy callback URL"))?;
+            .map_err(|_error| AuthError::internal("Invalid proxy callback URL"))?;
         let callback_url = callback
             .query_pairs()
             .find(|(key, _)| key == "callbackURL")
-            .map(|(_, value)| value.into_owned())
-            .unwrap_or_else(|| state.callback_url.clone());
+            .map_or_else(
+                || state.callback_url.clone(),
+                |(_, value)| value.into_owned(),
+            );
         let payload = ProxyPayload {
             user_info: ProxyUser {
                 id: info.user.id.clone(),
@@ -341,7 +332,7 @@ impl OAuthProxyPlugin {
             ),
             timestamp: Utc::now().timestamp_millis() as f64,
         };
-        let _ = callback.query_pairs_mut().append_pair(
+        _ = callback.query_pairs_mut().append_pair(
             "profile",
             &super::token_crypto::encrypt(
                 &better_auth_core::utils::json::to_string(&payload)?,
@@ -350,6 +341,15 @@ impl OAuthProxyPlugin {
         );
         Ok(Some(redirect(callback.as_str())))
     }
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        reason = "Preserve JavaScript Number rounding at the compatibility boundary"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep proxy state consumption, identity linking, and session issuance in protocol order"
+    )]
     async fn complete<S: AuthSchema>(
         &self,
         provider_id: Option<&str>,
@@ -405,7 +405,7 @@ impl OAuthProxyPlugin {
         if payload
             .profile
             .as_ref()
-            .is_some_and(|profile| !profile.is_object())
+            .is_some_and(|profile_2| !profile_2.is_object())
             || !payload.timestamp.is_finite()
             || payload.state.is_empty()
             || payload.callback_url.is_empty()
@@ -523,17 +523,69 @@ impl OAuthProxyPlugin {
                         AuthError::Upstream { code, message, .. } => {
                             error_redirect(error_url, code, Some(message))
                         }
-                        error
+                        error @ (AuthError::Api { .. }
+                        | AuthError::BadRequest(_)
+                        | AuthError::InvalidRequest(_)
+                        | AuthError::Validation(_)
+                        | AuthError::InvalidCredentials
+                        | AuthError::Unauthenticated
+                        | AuthError::AuthenticationFailed(_)
+                        | AuthError::SessionNotFound
+                        | AuthError::Forbidden(_)
+                        | AuthError::UserCreationCancelled
+                        | AuthError::BannedUser(_)
+                        | AuthError::Unauthorized
+                        | AuthError::UserNotFound
+                        | AuthError::NotFound(_)
+                        | AuthError::Conflict(_)
+                        | AuthError::MethodNotAllowed(_)
+                        | AuthError::PayloadTooLarge(_)
+                        | AuthError::UnprocessableEntity(_)
+                        | AuthError::RateLimited
+                        | AuthError::NotImplemented(_)
+                        | AuthError::Config(_)
+                        | AuthError::Database(_)
+                        | AuthError::Serialization(_)
+                        | AuthError::Plugin { .. }
+                        | AuthError::Internal(_)
+                        | AuthError::PasswordHash(_)
+                        | AuthError::Jwt(_))
                             if error.status_code() < 500
                                 || matches!(error, AuthError::Api { .. }) =>
                         {
                             Err(error)
                         }
-                        _ => {
+                        _error @ (AuthError::Api { .. }
+                        | AuthError::BadRequest(_)
+                        | AuthError::InvalidRequest(_)
+                        | AuthError::Validation(_)
+                        | AuthError::InvalidCredentials
+                        | AuthError::Unauthenticated
+                        | AuthError::AuthenticationFailed(_)
+                        | AuthError::SessionNotFound
+                        | AuthError::Forbidden(_)
+                        | AuthError::UserCreationCancelled
+                        | AuthError::BannedUser(_)
+                        | AuthError::Unauthorized
+                        | AuthError::UserNotFound
+                        | AuthError::NotFound(_)
+                        | AuthError::Conflict(_)
+                        | AuthError::MethodNotAllowed(_)
+                        | AuthError::PayloadTooLarge(_)
+                        | AuthError::UnprocessableEntity(_)
+                        | AuthError::RateLimited
+                        | AuthError::NotImplemented(_)
+                        | AuthError::Config(_)
+                        | AuthError::Database(_)
+                        | AuthError::Serialization(_)
+                        | AuthError::Plugin { .. }
+                        | AuthError::Internal(_)
+                        | AuthError::PasswordHash(_)
+                        | AuthError::Jwt(_)) => {
                             // Source's ordinary exception response discards the
                             // accumulated endpoint headers; APIError redirects
                             // above retain the state-cookie cleanup instead.
-                            let _ = req.take_response_headers();
+                            drop(req.take_response_headers());
                             req.extensions()
                                 .insert(OAuthProxyUnhandledError(AtomicBool::new(true)));
                             Ok(AuthResponse::new(500))
@@ -569,6 +621,7 @@ impl OAuthProxyPlugin {
         Ok(response)
     }
 }
+
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
     fn name(&self) -> &'static str {
@@ -619,9 +672,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
             .unwrap_or(&ctx.config.base_url);
         let current = self.current(req, ctx);
         let current = url::Url::parse(&current)
-            .map_err(|_| AuthError::config("Invalid OAuth proxy current URL"))?;
+            .map_err(|_error| AuthError::config("Invalid OAuth proxy current URL"))?;
         let production_origin = url::Url::parse(production)
-            .map_err(|_| AuthError::config("Invalid OAuth proxy production URL"))?;
+            .map_err(|_error| AuthError::config("Invalid OAuth proxy production URL"))?;
         if current.origin() == production_origin.origin() {
             return Ok(None);
         }
@@ -645,8 +698,8 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
             current.origin().ascii_serialization(),
             ctx.config.base_path
         ))
-        .map_err(|_| AuthError::config("Invalid OAuth proxy callback URL"))?;
-        let _ = callback
+        .map_err(|_error| AuthError::config("Invalid OAuth proxy callback URL"))?;
+        _ = callback
             .query_pairs_mut()
             .append_pair("callbackURL", &original);
         req.extensions().insert(OAuthProxyFlow {
@@ -718,7 +771,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
             .filter(|(key, _)| key != "state")
             .map(|(key, value)| (key.into_owned(), value.into_owned()))
             .collect();
-        let _ = url
+        _ = url
             .query_pairs_mut()
             .clear()
             .extend_pairs(pairs)
@@ -728,8 +781,61 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
         }
         response.body = better_auth_core::utils::json::to_vec(&body)?;
         if response.headers.get("location").is_some() {
-            let _ = response.headers.insert("Location", url.as_str());
+            drop(response.headers.insert("Location", url.as_str()));
         }
         Ok(response)
     }
+}
+
+impl std::fmt::Debug for OAuthProxyPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuthProxyPlugin").finish_non_exhaustive()
+    }
+}
+
+/// Internal dispatch bridge for an ordinary unhandled proxy session error.
+/// The marker is private and public dispatch resets request extensions.
+#[doc(hidden)]
+#[must_use]
+pub fn take_unhandled_error(req: &AuthRequest) -> bool {
+    req.extensions()
+        .get::<OAuthProxyUnhandledError>()
+        .is_some_and(|marker| marker.0.swap(false, Ordering::Relaxed))
+}
+
+fn auth_base<S: AuthSchema>(ctx: &AuthContext<S>) -> String {
+    format!(
+        "{}{}",
+        ctx.config.base_url.trim_end_matches('/'),
+        ctx.config.base_path
+    )
+}
+
+fn redirect(target: &str) -> AuthResponse {
+    AuthResponse::new(302)
+        .with_header("content-type", "application/json")
+        .with_header("Location", target)
+}
+
+fn error_redirect(base: &str, code: &str, description: Option<&str>) -> AuthResult<AuthResponse> {
+    let mut url =
+        url::Url::parse(base).map_err(|_error| AuthError::internal("Invalid OAuth error URL"))?;
+    _ = url.query_pairs_mut().append_pair("error", code);
+    if let Some(message) = description {
+        _ = url
+            .query_pairs_mut()
+            .append_pair("error_description", message);
+    }
+    Ok(redirect(url.as_str()))
+}
+
+fn regular_provider(path: &str) -> Option<&str> {
+    path.strip_prefix("/callback/")
+        .filter(|id| !id.is_empty() && !id.contains('/'))
+}
+
+fn completion_provider(path: &str) -> Option<&str> {
+    path.strip_prefix("/callback/")?
+        .strip_suffix("/oauth-proxy")
+        .filter(|id| !id.is_empty() && !id.contains('/'))
 }

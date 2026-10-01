@@ -15,7 +15,7 @@ pub enum EntityRole {
 #[derive(Clone, Copy, Debug)]
 pub struct FieldDef {
     pub name: &'static str,
-    /// Rust type as it appears in a SeaORM `Model` struct,
+    /// Rust type as it appears in a `SeaORM` `Model` struct,
     /// e.g. `"Option<String>"`, `"bool"`, `"DateTimeUtc"`, `"Json"`.
     pub ty: &'static str,
     pub is_primary_key: bool,
@@ -119,16 +119,6 @@ static VERIFICATION_CORE: &[FieldDef] = &[
     f!("created_at", "DateTimeUtc"),
     f!("updated_at", "DateTimeUtc"),
 ];
-
-/// Core fields that are always required for a given entity role.
-pub fn core_fields(role: EntityRole) -> &'static [FieldDef] {
-    match role {
-        EntityRole::User => USER_CORE,
-        EntityRole::Session => SESSION_CORE,
-        EntityRole::Account => ACCOUNT_CORE,
-        EntityRole::Verification => VERIFICATION_CORE,
-    }
-}
 
 // ── Plugin schemas ───────────────────────────────────────────────────
 
@@ -414,12 +404,25 @@ static PLUGINS: &[PluginSchema] = &[
     },
 ];
 
+/// Core fields that are always required for a given entity role.
+#[must_use]
+pub fn core_fields(role: EntityRole) -> &'static [FieldDef] {
+    match role {
+        EntityRole::User => USER_CORE,
+        EntityRole::Session => SESSION_CORE,
+        EntityRole::Account => ACCOUNT_CORE,
+        EntityRole::Verification => VERIFICATION_CORE,
+    }
+}
+
 /// Plugin schemas — each plugin can add fields to user and/or session entities.
+#[must_use]
 pub fn plugin_schemas() -> &'static [PluginSchema] {
     PLUGINS
 }
 
 /// All plugin field names for a given role (convenience for the macro).
+#[must_use]
 pub fn plugin_field_names(role: EntityRole) -> Vec<&'static str> {
     plugin_schemas()
         .iter()
@@ -433,6 +436,7 @@ pub fn plugin_field_names(role: EntityRole) -> Vec<&'static str> {
 }
 
 /// Core field names only (convenience for the macro).
+#[must_use]
 pub fn core_field_names(role: EntityRole) -> Vec<&'static str> {
     core_fields(role).iter().map(|f| f.name).collect()
 }

@@ -1,4 +1,4 @@
-//! Generated upstream OpenAPI loading, `$ref` resolution, and schema types.
+//! Generated upstream `OpenAPI` loading, `$ref` resolution, and schema types.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -11,7 +11,7 @@ use oas3::spec::{ObjectOrReference, ObjectSchema, SchemaType, SchemaTypeSet};
 // Types
 // ---------------------------------------------------------------------------
 
-/// Parsed representation of a response schema from the OpenAPI spec.
+/// Parsed representation of a response schema from the `OpenAPI` spec.
 #[derive(Debug, Clone)]
 pub struct SchemaExpectation {
     /// Expected field name -> field type (e.g. "string", "boolean", "object", "array")
@@ -29,14 +29,14 @@ pub struct FieldExpectation {
     /// Nested schema (for objects)
     pub nested: Option<SchemaExpectation>,
     /// Item schema (for arrays)
-    pub items: Option<Box<FieldExpectation>>,
+    pub items: Option<Box<Self>>,
 }
 
 // ---------------------------------------------------------------------------
 // Spec loading
 // ---------------------------------------------------------------------------
 
-/// Upstream OpenAPI profile to generate from the pinned published TS package.
+/// Upstream `OpenAPI` profile to generate from the pinned published TS package.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenApiProfile {
     /// Default blocking structural contract.
@@ -48,7 +48,7 @@ pub enum OpenApiProfile {
 }
 
 impl OpenApiProfile {
-    fn as_str(self) -> &'static str {
+    const fn as_str(self) -> &'static str {
         match self {
             Self::Core => "core",
             Self::AlignedRs => "aligned-rs",
@@ -61,7 +61,7 @@ static CORE_OPENAPI: OnceLock<Result<String, String>> = OnceLock::new();
 static ALIGNED_RS_OPENAPI: OnceLock<Result<String, String>> = OnceLock::new();
 static ALL_IN_OPENAPI: OnceLock<Result<String, String>> = OnceLock::new();
 
-/// Load and parse the default upstream OpenAPI contract.
+/// Load and parse the default upstream `OpenAPI` contract.
 ///
 /// The default blocking contract is the generated `core` profile from the
 /// pinned published `better-auth` package in `compat-tests/reference-server`.
@@ -69,7 +69,7 @@ pub fn load_openapi_spec() -> oas3::spec::Spec {
     load_openapi_spec_with_profile(OpenApiProfile::Core)
 }
 
-/// Load and parse a generated upstream OpenAPI contract for the given profile.
+/// Load and parse a generated upstream `OpenAPI` contract for the given profile.
 pub fn load_openapi_spec_with_profile(profile: OpenApiProfile) -> oas3::spec::Spec {
     let raw = cached_openapi_spec(profile)
         .as_ref()
@@ -139,7 +139,7 @@ fn generate_openapi_spec(profile: OpenApiProfile) -> Result<String, String> {
             output_path.display()
         )
     })?;
-    let _ = std::fs::remove_file(&output_path);
+    drop(std::fs::remove_file(&output_path));
     Ok(raw)
 }
 
@@ -256,10 +256,10 @@ pub fn extract_error_schemas(
         if (status.starts_with('4') || status.starts_with('5'))
             && let Some(obj_schema) = schema_from_response(spec, response)
         {
-            let _ = result.insert(
+            drop(result.insert(
                 status.clone(),
                 object_schema_to_expectation(spec, &obj_schema),
-            );
+            ));
         }
     }
     result
@@ -279,18 +279,18 @@ pub fn object_schema_to_expectation(
 
     for (name, prop_ref) in &obj.properties {
         if let Some(prop_schema) = resolve_object_schema(spec, prop_ref) {
-            let _ = fields.insert(name.clone(), object_schema_to_field(spec, &prop_schema));
+            drop(fields.insert(name.clone(), object_schema_to_field(spec, &prop_schema)));
         } else {
             // Unresolvable ref -- treat as unknown string
-            let _ = fields.insert(
+            drop(fields.insert(
                 name.clone(),
                 FieldExpectation {
-                    field_type: "string".to_string(),
+                    field_type: "string".to_owned(),
                     nullable: false,
                     nested: None,
                     items: None,
                 },
-            );
+            ));
         }
     }
 
@@ -304,11 +304,8 @@ pub fn object_schema_to_expectation(
 pub fn object_schema_to_field(spec: &oas3::spec::Spec, obj: &ObjectSchema) -> FieldExpectation {
     let (field_type, nullable) = schema_type_info(obj);
 
-    let nested = if field_type == "object" && !obj.properties.is_empty() {
-        Some(object_schema_to_expectation(spec, obj))
-    } else {
-        None
-    };
+    let nested = (field_type == "object" && !obj.properties.is_empty())
+        .then(|| object_schema_to_expectation(spec, obj));
 
     let items = if field_type == "array" {
         obj.items
@@ -345,10 +342,10 @@ pub fn schema_type_info(obj: &ObjectSchema) -> (String, bool) {
         }
         None => {
             // No explicit type -- if it has properties, it's an object; otherwise "string"
-            if !obj.properties.is_empty() {
-                ("object".to_string(), false)
+            if obj.properties.is_empty() {
+                ("string".to_owned(), false)
             } else {
-                ("string".to_string(), false)
+                ("object".to_owned(), false)
             }
         }
     }
@@ -364,5 +361,5 @@ pub fn schema_type_to_string(t: SchemaType) -> String {
         SchemaType::Object => "object",
         SchemaType::Null => "null",
     }
-    .to_string()
+    .to_owned()
 }

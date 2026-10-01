@@ -2,10 +2,10 @@ use crate::plugins::authentication_helpers::{JsonField, JsonFieldKind, RequestBo
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct SendVerificationEmailRequest {
-    pub(crate) email: String,
+pub(in crate::plugins) struct SendVerificationEmailRequest {
+    pub(in crate::plugins) email: String,
     #[serde(rename = "callbackURL")]
-    pub(crate) callback_url: Option<String>,
+    pub(in crate::plugins) callback_url: Option<String>,
 }
 
 impl RequestBody for SendVerificationEmailRequest {
@@ -21,14 +21,14 @@ impl RequestBody for SendVerificationEmailRequest {
 
 /// Query parameters for `GET /verify-email`.
 #[derive(Debug, Deserialize)]
-pub(crate) struct VerifyEmailQuery {
-    pub(crate) token: String,
+pub(in crate::plugins) struct VerifyEmailQuery {
+    pub(in crate::plugins) token: String,
     #[serde(rename = "callbackURL")]
-    pub(crate) callback_url: Option<String>,
+    pub(in crate::plugins) callback_url: Option<String>,
 }
 
 /// Result of the verify-email core function.
-pub(crate) enum VerifyEmailResult {
+pub(in crate::plugins) enum VerifyEmailResult {
     Redirect {
         url: String,
         session_token: Option<String>,

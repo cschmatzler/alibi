@@ -13,20 +13,22 @@ pub struct RolePermissions {
 
 impl RolePermissions {
     /// Create an empty role definition.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Allow a set of actions for one resource.
+    #[must_use]
     pub fn allow<I, S>(mut self, resource: impl Into<String>, actions: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        let _ = self.permissions.insert(
+        drop(self.permissions.insert(
             resource.into(),
             actions.into_iter().map(Into::into).collect(),
-        );
+        ));
         self
     }
 
@@ -49,7 +51,7 @@ impl RolePermissions {
 pub(super) fn default_roles() -> HashMap<String, RolePermissions> {
     HashMap::from([
         (
-            "admin".to_string(),
+            "admin".to_owned(),
             RolePermissions::new()
                 .allow(
                     "user",
@@ -67,7 +69,7 @@ pub(super) fn default_roles() -> HashMap<String, RolePermissions> {
                 )
                 .allow("session", ["list", "revoke", "delete"]),
         ),
-        ("user".to_string(), RolePermissions::new()),
+        ("user".to_owned(), RolePermissions::new()),
     ])
 }
 
@@ -112,8 +114,10 @@ pub(super) fn has_permission(
 pub(super) fn is_admin_role(role: Option<&str>, config: &AdminConfig) -> bool {
     role_names(role, &config.default_role)
         .into_iter()
-        .any(|role| match &config.admin_roles {
-            None => role == "admin",
-            Some(admins) => admins.iter().any(|admin| admin.trim() == role),
+        .any(|role| {
+            config.admin_roles.as_ref().map_or_else(
+                || role == "admin",
+                |admins| admins.iter().any(|admin| admin.trim() == role),
+            )
         })
 }

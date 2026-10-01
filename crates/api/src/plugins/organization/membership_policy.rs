@@ -22,18 +22,21 @@ pub trait OrganizationMembershipLimitResolver: std::fmt::Debug + Send + Sync {
     ) -> AuthResult<f64>;
 }
 
-pub(crate) fn truthy_number(value: f64) -> bool {
+pub(in crate::plugins) fn truthy_number(value: f64) -> bool {
     value != 0.0 && !value.is_nan()
 }
 
-pub(crate) fn read_page_limit(policy: Option<&MembershipLimit>) -> f64 {
+pub(in crate::plugins) fn read_page_limit(policy: Option<&MembershipLimit>) -> f64 {
     match policy {
         Some(MembershipLimit::Fixed(value)) if truthy_number(*value) => *value,
         _ => 100.0,
     }
 }
 
-pub(crate) async fn admission_limit(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn admission_limit(
     policy: Option<&MembershipLimit>,
     user: &UserView,
     organization: &OrganizationResponse,

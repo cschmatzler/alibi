@@ -13,80 +13,113 @@
 //! <https://sqlite.org/src/file/src/util.c?ci=version-3.53.2>
 //! <https://sqlite.org/src/file/src/printf.c?ci=version-3.53.2>
 
-#![allow(
+#![expect(
     clippy::indexing_slicing,
     reason = "finite IEEE754 exponent bounds keep power tables in range; normalized decimal mantissas have 17-18 ASCII digits before guarded shortening"
 )]
 
+use std::fmt::Write;
 const BASE: [u64; 27] = [
-    0x8000000000000000,
-    0xa000000000000000,
-    0xc800000000000000,
-    0xfa00000000000000,
-    0x9c40000000000000,
-    0xc350000000000000,
-    0xf424000000000000,
-    0x9896800000000000,
-    0xbebc200000000000,
-    0xee6b280000000000,
-    0x9502f90000000000,
-    0xba43b74000000000,
-    0xe8d4a51000000000,
-    0x9184e72a00000000,
-    0xb5e620f480000000,
-    0xe35fa931a0000000,
-    0x8e1bc9bf04000000,
-    0xb1a2bc2ec5000000,
-    0xde0b6b3a76400000,
-    0x8ac7230489e80000,
-    0xad78ebc5ac620000,
-    0xd8d726b7177a8000,
-    0x878678326eac9000,
-    0xa968163f0a57b400,
-    0xd3c21bcecceda100,
-    0x84595161401484a0,
-    0xa56fa5b99019a5c8,
+    0x8000_0000_0000_0000,
+    0xa000_0000_0000_0000,
+    0xc800_0000_0000_0000,
+    0xfa00_0000_0000_0000,
+    0x9c40_0000_0000_0000,
+    0xc350_0000_0000_0000,
+    0xf424_0000_0000_0000,
+    0x9896_8000_0000_0000,
+    0xbebc_2000_0000_0000,
+    0xee6b_2800_0000_0000,
+    0x9502_f900_0000_0000,
+    0xba43_b740_0000_0000,
+    0xe8d4_a510_0000_0000,
+    0x9184_e72a_0000_0000,
+    0xb5e6_20f4_8000_0000,
+    0xe35f_a931_a000_0000,
+    0x8e1b_c9bf_0400_0000,
+    0xb1a2_bc2e_c500_0000,
+    0xde0b_6b3a_7640_0000,
+    0x8ac7_2304_89e8_0000,
+    0xad78_ebc5_ac62_0000,
+    0xd8d7_26b7_177a_8000,
+    0x8786_7832_6eac_9000,
+    0xa968_163f_0a57_b400,
+    0xd3c2_1bce_cced_a100,
+    0x8459_5161_4014_84a0,
+    0xa56f_a5b9_9019_a5c8,
 ];
 const SCALE: [u64; 26] = [
-    0x8049a4ac0c5811ae,
-    0xcf42894a5dce35ea,
-    0xa76c582338ed2621,
-    0x873e4f75e2224e68,
-    0xda7f5bf590966848,
-    0xb080392cc4349dec,
-    0x8e938662882af53e,
-    0xe65829b3046b0afa,
-    0xba121a4650e4ddeb,
-    0x964e858c91ba2655,
-    0xf2d56790ab41c2a2,
-    0xc428d05aa4751e4c,
-    0x9e74d1b791e07e48,
-    0xcccccccccccccccc,
-    0xcecb8f27f4200f3a,
-    0xa70c3c40a64e6c51,
-    0x86f0ac99b4e8dafd,
-    0xda01ee641a708de9,
-    0xb01ae745b101e9e4,
-    0x8e41ade9fbebc27d,
-    0xe5d3ef282a242e81,
-    0xb9a74a0637ce2ee1,
-    0x95f83d0a1fb69cd9,
-    0xf24a01a73cf2dccf,
-    0xc3b8358109e84f07,
-    0x9e19db92b4e31ba9,
+    0x8049_a4ac_0c58_11ae,
+    0xcf42_894a_5dce_35ea,
+    0xa76c_5823_38ed_2621,
+    0x873e_4f75_e222_4e68,
+    0xda7f_5bf5_9096_6848,
+    0xb080_392c_c434_9dec,
+    0x8e93_8662_882a_f53e,
+    0xe658_29b3_046b_0afa,
+    0xba12_1a46_50e4_ddeb,
+    0x964e_858c_91ba_2655,
+    0xf2d5_6790_ab41_c2a2,
+    0xc428_d05a_a475_1e4c,
+    0x9e74_d1b7_91e0_7e48,
+    0xcccc_cccc_cccc_cccc,
+    0xcecb_8f27_f420_0f3a,
+    0xa70c_3c40_a64e_6c51,
+    0x86f0_ac99_b4e8_dafd,
+    0xda01_ee64_1a70_8de9,
+    0xb01a_e745_b101_e9e4,
+    0x8e41_ade9_fbeb_c27d,
+    0xe5d3_ef28_2a24_2e81,
+    0xb9a7_4a06_37ce_2ee1,
+    0x95f8_3d0a_1fb6_9cd9,
+    0xf24a_01a7_3cf2_dccf,
+    0xc3b8_3581_09e8_4f07,
+    0x9e19_db92_b4e3_1ba9,
 ];
 const SCALE_LOW: [u32; 26] = [
-    0x205b896d, 0x52064cad, 0xaf2af2b8, 0x5a7744a7, 0xaf39a475, 0xbd8d794e, 0x547eb47b, 0x0cb4a5a3,
-    0x92f34d62, 0x3a6a07f9, 0xfae27299, 0xaa97e14c, 0x775ea265, 0xcccccccc, 0x00000000, 0x999090b6,
-    0x69a028bb, 0xe80e6f48, 0x5ec05dd0, 0x14588f14, 0x8f1668c9, 0x6d953e2c, 0x4abdaf10, 0xbc633b39,
-    0x0a862f81, 0x6c07a2c2,
+    0x205b_896d,
+    0x5206_4cad,
+    0xaf2a_f2b8,
+    0x5a77_44a7,
+    0xaf39_a475,
+    0xbd8d_794e,
+    0x547e_b47b,
+    0x0cb4_a5a3,
+    0x92f3_4d62,
+    0x3a6a_07f9,
+    0xfae2_7299,
+    0xaa97_e14c,
+    0x775e_a265,
+    0xcccc_cccc,
+    0x0000_0000,
+    0x9990_90b6,
+    0x69a0_28bb,
+    0xe80e_6f48,
+    0x5ec0_5dd0,
+    0x1458_8f14,
+    0x8f16_68c9,
+    0x6d95_3e2c,
+    0x4abd_af10,
+    0xbc63_3b39,
+    0x0a86_2f81,
+    0x6c07_a2c2,
 ];
 // Keep the high 96 bits of the same 160-bit product as SQLite.
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    reason = "This SQLite numeric port deliberately extracts fixed-width words and preserves upstream IEEE754 rounding"
+)]
 fn multiply160(a: u64, alo: u32, b: u64) -> (u64, u32) {
     let r = (u128::from(a) * u128::from(b)).wrapping_add((u128::from(alo) * u128::from(b)) >> 32);
     ((r >> 64) as u64, (r >> 32) as u32)
 }
 // Normalized high 96 bits of 10^p, with the implicit binary exponent.
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_sign_loss,
+    reason = "This SQLite numeric port deliberately extracts fixed-width words and preserves upstream IEEE754 rounding"
+)]
 fn power_ten(p: i32) -> (u64, u32) {
     if p == -1 {
         return (SCALE[13], SCALE_LOW[13]);
@@ -107,21 +140,36 @@ fn power_ten(p: i32) -> (u64, u32) {
     }
     (x, lo)
 }
-fn power_10_to_2(p: i32) -> i32 {
-    (p * 108853) >> 15
+const fn power_10_to_2(p: i32) -> i32 {
+    (p * 108_853) >> 15
 }
-fn power_2_to_10(p: i32) -> i32 {
+const fn power_2_to_10(p: i32) -> i32 {
     (p * 78913) >> 18
 }
 // Extract the 18-digit decimal mantissa used before the final 17-digit round.
+#[expect(
+    clippy::as_conversions,
+    reason = "This SQLite numeric port deliberately extracts fixed-width words and preserves upstream IEEE754 rounding"
+)]
 fn binary_to_decimal(m: u64, e: i32) -> (u64, i32) {
     let p = 17 - power_2_to_10(e + 63);
     let h = ((u128::from(m) * u128::from(power_ten(p).0)) >> 64) as u64;
     let h = h >> (-(e + power_10_to_2(p) + 2));
-    ((h + ((h << 1) & 2)) >> 1, -p)
+    (u64::midpoint(h, (h << 1) & 2), -p)
 }
 // SQLite tests whether shorter trailing-zero/nine forms recover the same f64.
 // Its reverse conversion uses round-to-even with a sticky discarded bit.
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "This SQLite numeric port deliberately extracts fixed-width words and preserves upstream IEEE754 rounding"
+)]
+#[expect(
+    clippy::many_single_char_names,
+    reason = "Retain variable names from the SQLite decimal conversion algorithm for source comparison"
+)]
 fn decimal_to_binary(d: u64, p: i32) -> f64 {
     if p < -348 {
         return 0.0;
@@ -171,8 +219,30 @@ fn decimal_to_binary(d: u64, p: i32) -> f64 {
     }
     f64::from_bits(m)
 }
-pub(crate) fn real_text(input: f64) -> String {
-    debug_assert!(input.is_finite());
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "This SQLite numeric port deliberately extracts fixed-width words and preserves upstream IEEE754 rounding"
+)]
+#[expect(
+    clippy::string_slice,
+    reason = "Normalized decimal mantissas contain ASCII digits and each shortening index is bounded by their length"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the SQLite decimal conversion port aligned with its upstream algorithm"
+)]
+#[expect(
+    clippy::many_single_char_names,
+    reason = "Retain variable names from the SQLite decimal conversion algorithm for source comparison"
+)]
+pub(super) fn real_text(input: f64) -> String {
+    debug_assert!(
+        input.is_finite(),
+        "SQLite REAL text conversion requires a finite value"
+    );
     if input == 0.0 {
         return "0.0".to_owned();
     }
@@ -207,7 +277,7 @@ pub(crate) fn real_text(input: f64) -> String {
                     .fold(0_u64, |value, digit| value * 10 + u64::from(digit - b'0'))
                     + 1
             };
-            if r == decimal_to_binary(v2, exp + n as i32 - jj as i32) {
+            if r.to_bits() == decimal_to_binary(v2, exp + n as i32 - jj as i32).to_bits() {
                 round = jj + 1;
             }
         } else if dp >= n as i32 || (digits[15] == b'0' && digits[14] == b'0' && digits[13] == b'0')
@@ -219,7 +289,7 @@ pub(crate) fn real_text(input: f64) -> String {
             let v2 = digits[..jj]
                 .iter()
                 .fold(0_u64, |value, digit| value * 10 + u64::from(digit - b'0'));
-            if r == decimal_to_binary(v2, exp + n as i32 - jj as i32) {
+            if r.to_bits() == decimal_to_binary(v2, exp + n as i32 - jj as i32).to_bits() {
                 round = jj + 1;
             }
         }
@@ -258,7 +328,7 @@ pub(crate) fn real_text(input: f64) -> String {
         out.push_str(if text.len() == 1 { "0" } else { &text[1..] });
         out.push('e');
         out.push(if exponent < 0 { '-' } else { '+' });
-        out.push_str(&format!("{:02}", exponent.unsigned_abs()));
+        _ = write!(out, "{:02}", exponent.unsigned_abs());
     } else if dp <= 0 {
         out.push_str("0.");
         out.push_str(&"0".repeat((-dp) as usize));

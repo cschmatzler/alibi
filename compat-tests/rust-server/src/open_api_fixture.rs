@@ -11,7 +11,7 @@ use better_auth::plugins::{
     SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult, AuthSchema};
-use better_auth_seaorm::{sea_orm::DatabaseConnection, SeaOrmStore};
+use better_auth_seaorm::{SeaOrmStore, sea_orm::DatabaseConnection};
 use std::sync::Arc;
 
 struct DocumentationSchema;
@@ -87,11 +87,11 @@ async fn instance<S>(
 ) -> AuthResult<Router>
 where
     S: AuthSchema<
-        User = <TestSchema as AuthSchema>::User,
-        Session = <TestSchema as AuthSchema>::Session,
-        Account = <TestSchema as AuthSchema>::Account,
-        Verification = <TestSchema as AuthSchema>::Verification,
-    >,
+            User = <TestSchema as AuthSchema>::User,
+            Session = <TestSchema as AuthSchema>::Session,
+            Account = <TestSchema as AuthSchema>::Account,
+            Verification = <TestSchema as AuthSchema>::Verification,
+        >,
 {
     let mut builder = AuthBuilder::<S>::new(config.clone())
         .store(SeaOrmStore::<S>::new(config, database.clone()))

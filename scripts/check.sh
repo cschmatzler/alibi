@@ -8,8 +8,8 @@ bun install --cwd compat-tests/reference-server --frozen-lockfile
 bun install --cwd compat-tests/client-tests --frozen-lockfile
 cargo fmt --all -- --check
 cargo fmt --manifest-path compat-tests/rust-server/Cargo.toml -- --check
-cargo clippy --workspace --locked -- -D warnings
-cargo clippy --workspace --locked --features axum,seaorm2,redis-cache -- -D warnings
+lint --locked
+lint --locked --features axum,seaorm2,redis-cache
 cargo check -p better-auth --locked --no-default-features --features rustls,axum,seaorm2,redis-cache
 mkdir -p coverage
 bun compat-tests/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json

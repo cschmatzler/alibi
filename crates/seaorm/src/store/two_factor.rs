@@ -1,20 +1,27 @@
 use async_trait::async_trait;
+
 use chrono::{DateTime, Utc};
+
 use sea_orm::sea_query::{Alias, Expr, ExprTrait, Query};
+
 use sea_orm::{
     ColumnTrait, EntityTrait, Iterable, QueryFilter, QuerySelect, QueryTrait, Select, Set,
     UpdateMany,
 };
+
 use uuid::Uuid;
 
 use better_auth_core::store::TwoFactorStore;
 
-use crate::error::AuthResult;
 use crate::schema::AuthSchema;
-use crate::types::{CreateTwoFactor, TwoFactor, UpdateTwoFactor};
+
+use better_auth_core::types::{CreateTwoFactor, TwoFactor, UpdateTwoFactor};
 
 use super::entities::two_factor::{ActiveModel, Column, Entity};
+
 use super::{SeaOrmStore, map_db_err};
+
+use better_auth_core::error::AuthResult;
 
 #[async_trait]
 impl<S> TwoFactorStore for SeaOrmStore<S>
@@ -39,19 +46,21 @@ where
             backend,
             sea_orm::DatabaseBackend::Sqlite | sea_orm::DatabaseBackend::Postgres
         ) {
-            return Err(crate::error::AuthError::not_implemented(
+            return Err(better_auth_core::error::AuthError::not_implemented(
                 "Atomic factor insertion requires SQLite or PostgreSQL",
             ));
         }
         let mut query = Entity::insert(active);
-        let _ = QueryTrait::query(&mut query).returning(factor_returning(backend));
+        let _ignored_returning = QueryTrait::query(&mut query).returning(factor_returning(backend));
         Entity::find()
             .from_raw_sql(query.build(backend))
             .one(self.connection())
             .await
             .map_err(map_db_err)?
             .map(|model| TwoFactor::from(&model))
-            .ok_or_else(|| crate::error::AuthError::internal("Factor insertion returned no row"))
+            .ok_or_else(|| {
+                better_auth_core::error::AuthError::internal("Factor insertion returned no row")
+            })
     }
 
     async fn get_two_factor_by_user_id(&self, user_id: &str) -> AuthResult<Option<TwoFactor>> {
@@ -90,6 +99,7 @@ where
         }
         self.apply_factor_update(query).await
     }
+
     async fn increment_two_factor_failure(&self, id: &str) -> AuthResult<Option<TwoFactor>> {
         self.apply_factor_update(Entity::update_many().filter(Column::Id.eq(id)).col_expr(
             Column::FailedVerificationCount,
@@ -97,6 +107,7 @@ where
         ))
         .await
     }
+
     async fn set_two_factor_lock_if_count_at_least(
         &self,
         id: &str,
@@ -111,6 +122,7 @@ where
         )
         .await
     }
+
     async fn clear_expired_two_factor_lock(
         &self,
         id: &str,
@@ -125,17 +137,20 @@ where
         )
         .await
     }
+
     async fn reset_two_factor_failures(&self, id: &str) -> AuthResult<()> {
-        let _ = self
-            .apply_factor_update(
+        drop(
+            self.apply_factor_update(
                 Entity::update_many()
                     .filter(Column::Id.eq(id))
                     .col_expr(Column::FailedVerificationCount, Expr::value(0.0))
                     .col_expr(Column::LockedUntil, Expr::value(None::<DateTime<Utc>>)),
             )
-            .await?;
+            .await?,
+        );
         Ok(())
     }
+
     async fn compare_and_swap_two_factor_backup_codes(
         &self,
         id: &str,
@@ -163,7 +178,7 @@ where
             .await
             .map_err(map_db_err)?
         else {
-            return Err(crate::error::AuthError::not_found(
+            return Err(better_auth_core::error::AuthError::not_found(
                 "Two-factor settings not found",
             ));
         };
@@ -175,7 +190,9 @@ where
                 .col_expr(Column::UpdatedAt, Expr::value(Utc::now())),
         )
         .await?
-        .ok_or_else(|| crate::error::AuthError::not_found("Two-factor settings not found"))
+        .ok_or_else(|| {
+            better_auth_core::error::AuthError::not_found("Two-factor settings not found")
+        })
     }
 
     async fn delete_two_factor(&self, user_id: &str) -> AuthResult<()> {
@@ -184,6 +201,33 @@ where
             .exec(self.connection())
             .await
             .map(|_| ())
+            .map_err(map_db_err)
+    }
+}
+
+impl<S: AuthSchema + Send + Sync> SeaOrmStore<S> {
+    async fn apply_factor_update(
+        &self,
+        mut query: UpdateMany<Entity>,
+    ) -> AuthResult<Option<TwoFactor>> {
+        let backend = self.connection().get_database_backend();
+        if !matches!(
+            backend,
+            sea_orm::DatabaseBackend::Sqlite | sea_orm::DatabaseBackend::Postgres
+        ) {
+            return Err(better_auth_core::error::AuthError::not_implemented(
+                "Atomic factor updates require SQLite or PostgreSQL",
+            ));
+        }
+        // RETURNING captures the row in the conditional atomic write, rather
+        // than a later read that can observe another request's reset/rotation.
+        let _ignored_returning_2 =
+            QueryTrait::query(&mut query).returning(factor_returning(backend));
+        Entity::find()
+            .from_raw_sql(query.build(backend))
+            .one(self.connection())
+            .await
+            .map(|row| row.map(|row| TwoFactor::from(&row)))
             .map_err(map_db_err)
     }
 }
@@ -197,32 +241,6 @@ fn factor_select() -> Select<Entity> {
                 .cast_as(Alias::new("DOUBLE PRECISION")),
             Column::FailedVerificationCount,
         )
-}
-
-impl<S: AuthSchema + Send + Sync> SeaOrmStore<S> {
-    async fn apply_factor_update(
-        &self,
-        mut query: UpdateMany<Entity>,
-    ) -> AuthResult<Option<TwoFactor>> {
-        let backend = self.connection().get_database_backend();
-        if !matches!(
-            backend,
-            sea_orm::DatabaseBackend::Sqlite | sea_orm::DatabaseBackend::Postgres
-        ) {
-            return Err(crate::error::AuthError::not_implemented(
-                "Atomic factor updates require SQLite or PostgreSQL",
-            ));
-        }
-        // RETURNING captures the row in the conditional atomic write, rather
-        // than a later read that can observe another request's reset/rotation.
-        let _ = QueryTrait::query(&mut query).returning(factor_returning(backend));
-        Entity::find()
-            .from_raw_sql(query.build(backend))
-            .one(self.connection())
-            .await
-            .map(|row| row.map(|row| TwoFactor::from(&row)))
-            .map_err(map_db_err)
-    }
 }
 
 fn factor_returning(backend: sea_orm::DatabaseBackend) -> sea_orm::sea_query::ReturningClause {

@@ -45,7 +45,10 @@ pub struct OrganizationUpdatePatch {
     pub metadata: Option<Option<IndexMap<String, JsValue>>>,
 }
 impl OrganizationUpdatePatch {
-    pub(crate) fn apply(self, data: &mut UpdateOrganization) -> AuthResult<()> {
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
+    pub(in crate::plugins) fn apply(self, data: &mut UpdateOrganization) -> AuthResult<()> {
         if let Some(name) = self.name {
             data.name = Some(name);
         }
@@ -58,8 +61,7 @@ impl OrganizationUpdatePatch {
         if let Some(metadata) = self.metadata {
             data.metadata = Some(
                 metadata
-                    .map(JsValue::Object)
-                    .unwrap_or(JsValue::Null)
+                    .map_or(JsValue::Null, JsValue::Object)
                     .to_json_value()?,
             );
         }
@@ -67,11 +69,12 @@ impl OrganizationUpdatePatch {
     }
 }
 
-/// Trusted application callbacks run after validation/authentication/permission
-/// and the initial slug lookup. Before errors prevent the update; after errors
-/// retain prior writes. This lifecycle is not wrapped in a transaction.
-/// Typed patches cover bundled columns, not arbitrary JavaScript properties or
-/// direct callback-argument mutation. Capture an application store for writes.
+/// Trusted application callbacks run after validation/authentication/permission and the initial
+/// slug lookup.
+///
+/// Before errors prevent the update; after errors retain prior writes. This lifecycle is not
+/// wrapped in a transaction. Typed patches cover bundled columns, not arbitrary JavaScript
+/// properties or direct callback-argument mutation. Capture an application store for writes.
 #[async_trait]
 pub trait OrganizationUpdateHooks: std::fmt::Debug + Send + Sync {
     async fn before_update(

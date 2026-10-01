@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 use serde_json::{Value, json};
 
 /// A model field's wire schema and input/output policy.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenApiField {
     pub name: String,
     pub schema: Value,
@@ -13,6 +13,7 @@ pub struct OpenApiField {
     pub returned: bool,
 }
 impl OpenApiField {
+    #[must_use]
     pub fn new(name: impl Into<String>, schema: Value, required: bool) -> Self {
         Self {
             name: name.into(),
@@ -22,11 +23,13 @@ impl OpenApiField {
             returned: true,
         }
     }
-    pub fn read_only(mut self) -> Self {
+    #[must_use]
+    pub const fn read_only(mut self) -> Self {
         self.input = false;
         self
     }
-    pub fn hidden(mut self) -> Self {
+    #[must_use]
+    pub const fn hidden(mut self) -> Self {
         self.returned = false;
         self
     }
@@ -39,6 +42,7 @@ pub struct OpenApiModel {
     pub fields: Vec<OpenApiField>,
 }
 impl OpenApiModel {
+    #[must_use]
     pub fn new(name: impl Into<String>, fields: Vec<OpenApiField>) -> Self {
         Self {
             name: name.into(),
@@ -47,16 +51,16 @@ impl OpenApiModel {
     }
     pub(crate) fn to_schema(&self) -> Value {
         let mut properties = serde_json::Map::new();
-        let _ = properties.insert("id".into(), json!({"type":"string","readOnly":true}));
-        let mut required = vec!["id".to_string()];
+        drop(properties.insert("id".into(), json!({"type":"string","readOnly":true})));
+        let mut required = vec!["id".to_owned()];
         for field in &self.fields {
             let mut schema = field.schema.clone();
             if !field.input
                 && let Some(object) = schema.as_object_mut()
             {
-                let _ = object.insert("readOnly".into(), json!(true));
+                drop(object.insert("readOnly".into(), json!(true)));
             }
-            let _ = properties.insert(field.name.clone(), schema);
+            drop(properties.insert(field.name.clone(), schema));
             if field.required && field.returned && !required.contains(&field.name) {
                 required.push(field.name.clone());
             }
@@ -88,6 +92,7 @@ pub struct PluginOpenApiMetadata {
     pub models: Vec<OpenApiModel>,
 }
 impl PluginOpenApiMetadata {
+    #[must_use]
     pub fn endpoint(
         mut self,
         method: HttpMethod,
@@ -97,6 +102,7 @@ impl PluginOpenApiMetadata {
         self.endpoints.push((method, path.into(), metadata));
         self
     }
+    #[must_use]
     pub fn model(mut self, model: OpenApiModel) -> Self {
         self.models.push(model);
         self
@@ -104,7 +110,7 @@ impl PluginOpenApiMetadata {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct RegisteredEndpoint {
+pub(super) struct RegisteredEndpoint {
     pub route: AuthRoute,
     pub plugin: String,
     pub core: bool,
@@ -114,13 +120,14 @@ pub(crate) struct RegisteredEndpoint {
 /// Immutable snapshot of the routes and model projections registered on one auth instance.
 #[derive(Debug, Clone, Default)]
 pub struct OpenApiRegistry {
-    pub(crate) endpoints: Vec<RegisteredEndpoint>,
+    pub(super) endpoints: Vec<RegisteredEndpoint>,
     pub(crate) models: IndexMap<String, OpenApiModel>,
     pub(crate) user_input_fields: IndexMap<String, OpenApiField>,
     pub(crate) core_overrides: Vec<OpenApiModel>,
 }
 impl OpenApiRegistry {
     /// Actual dispatch routes, including routes omitted from generated documentation.
+    #[must_use]
     pub fn registered_routes(&self) -> Vec<AuthRoute> {
         self.endpoints
             .iter()
@@ -131,18 +138,19 @@ impl OpenApiRegistry {
     /// Apply application table policies before plugin collection. Documentation and
     /// adapter tables use config-over-plugin precedence; input/output parsing has
     /// its own source-distinct immutable field registry.
+    #[must_use]
     pub fn configured(mut models: Vec<OpenApiModel>, config: &crate::AuthConfig) -> Self {
         if let Some(session) = models.iter_mut().find(|model| model.name == "Session") {
             for (name, policy) in &config.session.additional_fields {
                 let mut schema = policy.schema.clone();
                 if let Some(object) = schema.as_object_mut() {
                     // Function defaults are metadata only and must not be evaluated.
-                    let _ = object.remove("default");
+                    drop(object.remove("default"));
                     if let Some(crate::field_policy::FieldDefault::Value(value)) = &policy.default {
-                        let _ = object.insert(
+                        drop(object.insert(
                             "default".into(),
                             value.to_json_value().unwrap_or(Value::Null),
-                        );
+                        ));
                     }
                 }
                 let field = OpenApiField {
@@ -152,7 +160,11 @@ impl OpenApiRegistry {
                     input: policy.input,
                     returned: policy.returned,
                 };
-                if let Some(current) = session.fields.iter_mut().find(|field| field.name == *name) {
+                if let Some(current) = session
+                    .fields
+                    .iter_mut()
+                    .find(|field_2| field_2.name == *name)
+                {
                     *current = field;
                 } else {
                     session.fields.push(field);
@@ -162,6 +174,7 @@ impl OpenApiRegistry {
         Self::new(models)
     }
 
+    #[must_use]
     pub fn new(models: Vec<OpenApiModel>) -> Self {
         let mut registry = Self::default();
         let defaults = super::annotations::core_models();
@@ -175,9 +188,11 @@ impl OpenApiRegistry {
                     .collect::<Vec<_>>();
                 if model.name == "User" {
                     for field in &overrides {
-                        let _ = registry
-                            .user_input_fields
-                            .insert(field.name.clone(), field.clone());
+                        drop(
+                            registry
+                                .user_input_fields
+                                .insert(field.name.clone(), field.clone()),
+                        );
                     }
                 }
                 if !overrides.is_empty() {
@@ -222,9 +237,10 @@ impl OpenApiRegistry {
         for model in metadata.models {
             if model.name == "User" {
                 for field in &model.fields {
-                    let _ = self
-                        .user_input_fields
-                        .insert(field.name.clone(), field.clone());
+                    drop(
+                        self.user_input_fields
+                            .insert(field.name.clone(), field.clone()),
+                    );
                 }
             }
             self.merge_model(model);
@@ -244,7 +260,7 @@ impl OpenApiRegistry {
                 }
             }
         } else {
-            let _ = self.models.insert(model.name.clone(), model);
+            drop(self.models.insert(model.name.clone(), model));
         }
     }
 }

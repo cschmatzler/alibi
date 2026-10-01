@@ -1,6 +1,6 @@
 //! Explicit session configurations and trusted persisted-clock controls.
 use crate::TestSchema;
-use axum::{http::StatusCode, routing::post, Json, Router};
+use axum::{Json, Router, http::StatusCode, routing::post};
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::{
@@ -9,12 +9,12 @@ use better_auth::plugins::{
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
 use better_auth_seaorm::store::entities::session;
 use better_auth_seaorm::{
-    sea_orm::{sea_query::Expr, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter},
     SeaOrmStore,
+    sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, sea_query::Expr},
 };
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 #[derive(Deserialize)]

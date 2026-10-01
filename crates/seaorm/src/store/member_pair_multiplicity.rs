@@ -5,13 +5,17 @@ use sea_orm_migration::prelude::*;
 pub(super) struct MemberPairMultiplicity;
 
 impl MigrationName for MemberPairMultiplicity {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "m20261001_000015_member_pair_multiplicity"
     }
 }
 
 #[async_trait::async_trait]
 impl MigrationTrait for MemberPairMultiplicity {
+    #[expect(
+        elided_lifetimes_in_paths,
+        reason = "SeaORM MigrationTrait requires its implicit manager lifetime to remain late-bound"
+    )]
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         const INDEX: &str = "idx_member_org_user_unique";
         // Keep the recorded initial schema unchanged. Fresh databases and
@@ -57,10 +61,12 @@ async fn ensure_no_dependent_pair_reference(manager: &SchemaManager<'_>) -> Resu
             std::collections::BTreeMap<i64, Option<String>>,
         >::new();
         for reference in references {
-            let _ = groups
-                .entry(reference.try_get("", "id")?)
-                .or_default()
-                .insert(reference.try_get("", "seq")?, reference.try_get("", "to")?);
+            drop(
+                groups
+                    .entry(reference.try_get("", "id")?)
+                    .or_default()
+                    .insert(reference.try_get("", "seq")?, reference.try_get("", "to")?),
+            );
         }
         for columns in groups.values() {
             if columns.len() == 2

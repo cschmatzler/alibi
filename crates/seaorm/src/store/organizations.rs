@@ -1,21 +1,29 @@
 use async_trait::async_trait;
+
 use chrono::Utc;
+
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DbBackend, DbErr, EntityTrait, IntoActiveModel, QueryFilter,
     QuerySelect, Set, TransactionTrait,
 };
+
 use std::collections::HashMap;
+
 use uuid::Uuid;
 
 use better_auth_core::store::OrganizationStore;
 
-use crate::error::AuthResult;
 use crate::schema::AuthSchema;
-use crate::types_org::{CreateOrganization, Organization, UpdateOrganization};
 
 use super::entities;
+
 use super::entities::organization::{ActiveModel, Column, Entity, JsonMetadata, Model};
+
 use super::{SeaOrmStore, map_db_err};
+
+use better_auth_core::error::AuthResult;
+
+use better_auth_core::{CreateOrganization, Organization, UpdateOrganization};
 
 #[async_trait]
 impl<S> OrganizationStore for SeaOrmStore<S>
@@ -88,7 +96,9 @@ where
             .await
             .map_err(map_db_err)?
         else {
-            return Err(crate::error::AuthError::not_found("Organization not found"));
+            return Err(better_auth_core::error::AuthError::not_found(
+                "Organization not found",
+            ));
         };
 
         let active =
@@ -97,7 +107,7 @@ where
         active
             .update(self.connection())
             .await
-            .map(|model| Organization::from(&model))
+            .map(|model_2| Organization::from(&model_2))
             .map_err(map_db_err)
     }
 
@@ -116,7 +126,7 @@ where
         let active =
             apply_organization_update(model, update, self.connection().get_database_backend())?;
         match active.update(self.connection()).await {
-            Ok(model) => Ok(Some(Organization::from(&model))),
+            Ok(model_2) => Ok(Some(Organization::from(&model_2))),
             Err(DbErr::RecordNotUpdated) => Ok(None),
             Err(error) => Err(map_db_err(error)),
         }
@@ -124,17 +134,17 @@ where
 
     async fn delete_organization(&self, id: &str) -> AuthResult<()> {
         let transaction = self.connection().begin().await.map_err(map_db_err)?;
-        let _ = entities::member::Entity::delete_many()
+        let _ignored_map_err = entities::member::Entity::delete_many()
             .filter(entities::member::Column::OrganizationId.eq(id))
             .exec(&transaction)
             .await
             .map_err(map_db_err)?;
-        let _ = entities::invitation::Entity::delete_many()
+        let _ignored_map_err_2 = entities::invitation::Entity::delete_many()
             .filter(entities::invitation::Column::OrganizationId.eq(id))
             .exec(&transaction)
             .await
             .map_err(map_db_err)?;
-        let _ = Entity::delete_by_id(id.to_owned())
+        let _ignored_map_err_3 = Entity::delete_by_id(id.to_owned())
             .exec(&transaction)
             .await
             .map_err(map_db_err)?;

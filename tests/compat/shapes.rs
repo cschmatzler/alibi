@@ -45,8 +45,7 @@ fn compare_shapes_inner(
 
     if ref_type != tgt_type {
         diffs.push(format!(
-            "TYPE MISMATCH at '{}': ref={}, target={}",
-            path, ref_type, tgt_type
+            "TYPE MISMATCH at '{path}': ref={ref_type}, target={tgt_type}"
         ));
         return;
     }
@@ -58,7 +57,7 @@ fn compare_shapes_inner(
                 let child_path = if path.is_empty() {
                     key.clone()
                 } else {
-                    format!("{}.{}", path, key)
+                    format!("{path}.{key}")
                 };
                 match tgt_map.get(key) {
                     Some(tgt_val) => {
@@ -72,7 +71,7 @@ fn compare_shapes_inner(
                     }
                     None => {
                         if !ref_val.is_null() {
-                            diffs.push(format!("MISSING FIELD at '{}'", child_path));
+                            diffs.push(format!("MISSING FIELD at '{child_path}'"));
                         }
                     }
                 }
@@ -84,9 +83,9 @@ fn compare_shapes_inner(
                         let child_path = if path.is_empty() {
                             key.clone()
                         } else {
-                            format!("{}.{}", path, key)
+                            format!("{path}.{key}")
                         };
-                        diffs.push(format!("EXTRA FIELD at '{}'", child_path));
+                        diffs.push(format!("EXTRA FIELD at '{child_path}'"));
                     }
                 }
             }
@@ -94,7 +93,7 @@ fn compare_shapes_inner(
         (Value::Array(ref_arr), Value::Array(tgt_arr)) => {
             // Compare first element shapes only
             if let (Some(ref_first), Some(tgt_first)) = (ref_arr.first(), tgt_arr.first()) {
-                let elem_path = format!("{}[0]", path);
+                let elem_path = format!("{path}[0]");
                 compare_shapes_inner(ref_first, tgt_first, &elem_path, strict_extra_fields, diffs);
             }
         }
@@ -121,18 +120,18 @@ fn check_camel_case_inner(value: &Value, path: &str, violations: &mut Vec<String
             let child_path = if path.is_empty() {
                 key.clone()
             } else {
-                format!("{}.{}", path, key)
+                format!("{path}.{key}")
             };
 
             if key.contains('_') && !key.starts_with('_') {
-                violations.push(format!("{} (field: {})", child_path, key));
+                violations.push(format!("{child_path} (field: {key})"));
             }
 
             check_camel_case_inner(val, &child_path, violations);
         }
     } else if let Value::Array(arr) = value {
         for (i, item) in arr.iter().enumerate() {
-            let child_path = format!("{}[{}]", path, i);
+            let child_path = format!("{path}[{i}]");
             check_camel_case_inner(item, &child_path, violations);
         }
     }
@@ -150,34 +149,28 @@ pub fn extract_type_signature(value: &Value, indent: usize) -> String {
             let mut lines = vec![format!("{}{{", prefix)];
             for (key, val) in map {
                 let type_str = match val {
-                    Value::Null => "null".to_string(),
-                    Value::Bool(_) => "boolean".to_string(),
-                    Value::Number(_) => "number".to_string(),
-                    Value::String(_) => "string".to_string(),
-                    Value::Array(arr) => {
-                        if let Some(first) = arr.first() {
-                            format!("array<{}>", json_type_name(first))
-                        } else {
-                            "array(empty)".to_string()
-                        }
-                    }
+                    Value::Null => "null".to_owned(),
+                    Value::Bool(_) => "boolean".to_owned(),
+                    Value::Number(_) => "number".to_owned(),
+                    Value::String(_) => "string".to_owned(),
+                    Value::Array(arr) => arr.first().map_or_else(
+                        || "array(empty)".to_owned(),
+                        |first| format!("array<{}>", json_type_name(first)),
+                    ),
                     Value::Object(_) => extract_type_signature(val, indent + 1),
                 };
-                lines.push(format!("{}  {}: {}", prefix, key, type_str));
+                lines.push(format!("{prefix}  {key}: {type_str}"));
             }
-            lines.push(format!("{}}}", prefix));
+            lines.push(format!("{prefix}}}"));
             lines.join("\n")
         }
-        Value::Array(arr) => {
-            if let Some(first) = arr.first() {
-                format!("Array<{}>", extract_type_signature(first, indent))
-            } else {
-                "[]".to_string()
-            }
-        }
-        Value::Null => "null".to_string(),
-        Value::Bool(_) => "boolean".to_string(),
-        Value::Number(_) => "number".to_string(),
-        Value::String(_) => "string".to_string(),
+        Value::Array(arr) => arr.first().map_or_else(
+            || "[]".to_owned(),
+            |first| format!("Array<{}>", extract_type_signature(first, indent)),
+        ),
+        Value::Null => "null".to_owned(),
+        Value::Bool(_) => "boolean".to_owned(),
+        Value::Number(_) => "number".to_owned(),
+        Value::String(_) => "string".to_owned(),
     }
 }

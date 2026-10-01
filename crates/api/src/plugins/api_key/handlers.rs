@@ -3,8 +3,63 @@ use std::collections::HashMap;
 use better_auth_core::{AuthContext, AuthResult, CreateApiKey, UpdateApiKey};
 
 use super::ApiKeyPlugin;
-use super::types::*;
+
+use super::types::{
+    ApiKeyView, CreateKeyRequest, CreateKeyResponse, DeleteKeyRequest, ListKeysQuery,
+    ListKeysResponse, UpdateKeyRequest,
+};
+
 use crate::plugins::helpers;
+
+// ---------------------------------------------------------------------------
+// Core functions -- framework-agnostic business logic
+// ---------------------------------------------------------------------------
+
+impl ApiKeyPlugin {
+    /// Create a key on behalf of `body.user_id` from trusted server code.
+    /// Organization configurations still require the user's organization permission.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from input validation, permission checks, or API-key storage.
+    pub async fn create_key(
+        &self,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        body: &CreateKeyRequest,
+    ) -> AuthResult<CreateKeyResponse> {
+        use validator::Validate as _;
+        body.validate()
+            .map_err(|error| better_auth_core::AuthError::Validation(error.to_string()))?;
+        let user_id = body
+            .user_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| super::api_key_error(super::ApiKeyErrorCode::UnauthorizedSession))?;
+        create_key_for_user(body, user_id, self, ctx, None).await
+    }
+
+    /// Update a key on behalf of `body.user_id` from trusted server code.
+    /// The caller must authorize access before invoking this server-only method.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from input validation, permission checks, or API-key storage.
+    pub async fn update_key(
+        &self,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        body: &UpdateKeyRequest,
+    ) -> AuthResult<ApiKeyView> {
+        use validator::Validate as _;
+        body.validate()
+            .map_err(|error| better_auth_core::AuthError::Validation(error.to_string()))?;
+        let user_id = body
+            .user_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| super::api_key_error(super::ApiKeyErrorCode::UnauthorizedSession))?;
+        update_key_for_user(body, user_id, self, ctx).await
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Permissions verification helper (RBAC)
@@ -17,9 +72,8 @@ use crate::plugins::helpers;
 /// implementation. Required actions must be a subset of the API key's actions
 /// for each resource/role.
 pub(super) fn check_permissions(key_permissions_json: &str, required: &serde_json::Value) -> bool {
-    let required_map = match required.as_object() {
-        Some(m) => m,
-        None => return false,
+    let Some(required_map) = required.as_object() else {
+        return false;
     };
 
     let key_map: HashMap<String, Vec<String>> = match serde_json::from_str(key_permissions_json) {
@@ -29,10 +83,8 @@ pub(super) fn check_permissions(key_permissions_json: &str, required: &serde_jso
 
     for (resource, requested_actions) in required_map {
         // Look up the allowed actions for this resource
-        let allowed_actions = match key_map.get(resource) {
-            Some(a) => a,
-            // Resource not found in key permissions -> fail (matches TS behavior)
-            None => return false,
+        let Some(allowed_actions) = key_map.get(resource) else {
+            return false;
         };
 
         // The request value can be:
@@ -41,9 +93,8 @@ pub(super) fn check_permissions(key_permissions_json: &str, required: &serde_jso
         if let Some(actions_array) = requested_actions.as_array() {
             // Simple array -> every requested action must exist in allowed actions
             for action_val in actions_array {
-                let action = match action_val.as_str() {
-                    Some(s) => s,
-                    None => return false,
+                let Some(action) = action_val.as_str() else {
+                    return false;
                 };
                 if !allowed_actions.iter().any(|a| a == action) {
                     return false;
@@ -51,9 +102,8 @@ pub(super) fn check_permissions(key_permissions_json: &str, required: &serde_jso
             }
         } else if let Some(obj) = requested_actions.as_object() {
             // Object form: { actions: [...], connector: "OR" | "AND" }
-            let actions = match obj.get("actions").and_then(|v| v.as_array()) {
-                Some(a) => a,
-                None => return false,
+            let Some(actions) = obj.get("actions").and_then(|v| v.as_array()) else {
+                return false;
             };
             let connector = obj
                 .get("connector")
@@ -73,9 +123,8 @@ pub(super) fn check_permissions(key_permissions_json: &str, required: &serde_jso
             } else {
                 // AND (default): every requested action must be allowed
                 for action_val in actions {
-                    let action = match action_val.as_str() {
-                        Some(s) => s,
-                        None => return false,
+                    let Some(action) = action_val.as_str() else {
+                        return false;
                     };
                     if !allowed_actions.iter().any(|a| a == action) {
                         return false;
@@ -91,56 +140,17 @@ pub(super) fn check_permissions(key_permissions_json: &str, required: &serde_jso
     true
 }
 
-// ---------------------------------------------------------------------------
-// Core functions -- framework-agnostic business logic
-// ---------------------------------------------------------------------------
-
-impl ApiKeyPlugin {
-    /// Create a key on behalf of `body.user_id` from trusted server code.
-    /// Organization configurations still require the user's organization permission.
-    pub async fn create_key(
-        &self,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-        body: &CreateKeyRequest,
-    ) -> AuthResult<CreateKeyResponse> {
-        use validator::Validate as _;
-        body.validate()
-            .map_err(|error| better_auth_core::AuthError::Validation(error.to_string()))?;
-        let user_id = body
-            .user_id
-            .as_deref()
-            .filter(|id| !id.is_empty())
-            .ok_or_else(|| super::api_key_error(super::ApiKeyErrorCode::UnauthorizedSession))?;
-        create_key_for_user(body, user_id, self, ctx, None).await
-    }
-
-    /// Update a key on behalf of `body.user_id` from trusted server code.
-    /// The caller must authorize access before invoking this server-only method.
-    pub async fn update_key(
-        &self,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-        body: &UpdateKeyRequest,
-    ) -> AuthResult<ApiKeyView> {
-        use validator::Validate as _;
-        body.validate()
-            .map_err(|error| better_auth_core::AuthError::Validation(error.to_string()))?;
-        let user_id = body
-            .user_id
-            .as_deref()
-            .filter(|id| !id.is_empty())
-            .ok_or_else(|| super::api_key_error(super::ApiKeyErrorCode::UnauthorizedSession))?;
-        update_key_for_user(body, user_id, self, ctx).await
-    }
-}
-
-pub(crate) async fn create_key_core(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn create_key_core(
     body: &CreateKeyRequest,
     user_id: impl AsRef<str>,
     plugin: &ApiKeyPlugin,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     request: Option<&better_auth_core::AuthRequest>,
 ) -> AuthResult<CreateKeyResponse> {
-    let _ = plugin.resolve_configuration(body.config_id.as_deref())?;
+    let _ignored_as_deref = plugin.resolve_configuration(body.config_id.as_deref())?;
     if body.refill_amount.is_some()
         || body.refill_interval.is_some()
         || body.rate_limit_max.is_some()
@@ -161,6 +171,10 @@ pub(crate) async fn create_key_core(
     create_key_for_user(body, user_id.as_ref(), plugin, ctx, request).await
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep key policy checks, hook callbacks, and persistence in their observable request order"
+)]
 async fn create_key_for_user(
     body: &CreateKeyRequest,
     user_id: &str,
@@ -170,7 +184,7 @@ async fn create_key_for_user(
 ) -> AuthResult<CreateKeyResponse> {
     let config = plugin.resolve_configuration(body.config_id.as_deref())?;
     let reference_id = match config.references {
-        super::ApiKeyReferences::User => user_id.to_string(),
+        super::ApiKeyReferences::User => user_id.to_owned(),
         super::ApiKeyReferences::Organization => {
             let organization_id = body
                 .organization_id
@@ -181,11 +195,11 @@ async fn create_key_for_user(
                 })?;
             helpers::require_org_api_key_permission(ctx, user_id, organization_id, "create")
                 .await?;
-            organization_id.to_string()
+            organization_id.to_owned()
         }
     };
 
-    ApiKeyPlugin::validate_metadata(config, &body.metadata)?;
+    ApiKeyPlugin::validate_metadata(config, body.metadata.as_ref())?;
     ApiKeyPlugin::validate_refill(
         body.refill_interval.filter(|value| *value != 0.0),
         body.refill_amount.filter(|value| *value != 0.0),
@@ -283,10 +297,16 @@ fn json_truthy(value: &better_auth_core::utils::json::JsValue) -> bool {
         JsValue::Bool(value) => *value,
         JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
         JsValue::String(value) => !value.is_empty(),
-        _ => true,
+        JsValue::Array(_) | JsValue::Object(_) => true,
     }
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
 fn expiration_date(seconds: Option<f64>) -> AuthResult<Option<String>> {
     let Some(seconds) = seconds.filter(|seconds| *seconds != 0.0) else {
         return Ok(None);
@@ -306,7 +326,10 @@ fn expiration_date(seconds: Option<f64>) -> AuthResult<Option<String>> {
     ))
 }
 
-pub(crate) async fn get_key_core(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn get_key_core(
     id: &str,
     config_id: Option<&str>,
     user_id: impl AsRef<str>,
@@ -319,7 +342,10 @@ pub(crate) async fn get_key_core(
     Ok(ApiKeyView::from(&api_key))
 }
 
-pub(crate) async fn list_keys_core(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn list_keys_core(
     user_id: impl AsRef<str>,
     query: &ListKeysQuery,
     plugin: &ApiKeyPlugin,
@@ -330,7 +356,10 @@ pub(crate) async fn list_keys_core(
         helpers::require_org_api_key_permission(ctx, user_id.as_ref(), organization_id, "read")
             .await?;
     }
-    let reference_id = query.organization_id.as_deref().unwrap_or(user_id.as_ref());
+    let reference_id = query
+        .organization_id
+        .as_deref()
+        .unwrap_or_else(|| user_id.as_ref());
     let references = if organization_id.is_some() {
         super::ApiKeyReferences::Organization
     } else {
@@ -338,7 +367,7 @@ pub(crate) async fn list_keys_core(
     };
     let config_id = query.config_id.as_deref().filter(|id| !id.is_empty());
     if config_id.is_some() {
-        let _ = plugin.resolve_configuration(config_id)?;
+        let _ignored_resolve_configuration = plugin.resolve_configuration(config_id)?;
     }
 
     let keys = ctx
@@ -422,7 +451,10 @@ fn sort_views(views: &mut [ApiKeyView], sort_by: &str, direction: Option<&str>) 
     });
 }
 
-pub(crate) async fn update_key_core(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn update_key_core(
     body: &UpdateKeyRequest,
     user_id: impl AsRef<str>,
     plugin: &ApiKeyPlugin,
@@ -459,7 +491,7 @@ async fn update_key_for_user(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<ApiKeyView> {
     let config = plugin.resolve_configuration(body.config_id.as_deref())?;
-    let _ = helpers::get_owned_api_key(ctx, config, &body.key_id, user_id, "update").await?;
+    drop(helpers::get_owned_api_key(ctx, config, &body.key_id, user_id, "update").await?);
     ApiKeyPlugin::validate_name(config, body.name.as_deref(), false)?;
 
     let expires_at = match body.expires_in {
@@ -525,15 +557,17 @@ async fn update_key_for_user(
     Ok(ApiKeyView::from(&updated))
 }
 
-pub(crate) async fn delete_key_core(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn delete_key_core(
     body: &DeleteKeyRequest,
     user_id: impl AsRef<str>,
     plugin: &ApiKeyPlugin,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<serde_json::Value> {
     let config = plugin.resolve_configuration(body.config_id.as_deref())?;
-    let _ =
-        helpers::get_owned_api_key(ctx, config, &body.key_id, user_id.as_ref(), "delete").await?;
+    drop(helpers::get_owned_api_key(ctx, config, &body.key_id, user_id.as_ref(), "delete").await?);
     ctx.database.delete_api_key(&body.key_id).await?;
     plugin.maybe_delete_expired(ctx).await?;
     Ok(serde_json::json!({ "success": true }))

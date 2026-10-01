@@ -1,6 +1,6 @@
 use better_auth_core::AuthError;
 
-pub(super) fn invalid_otp() -> AuthError {
+pub(super) const fn invalid_otp() -> AuthError {
     AuthError::Upstream {
         status: 400,
         code: "INVALID_OTP",
@@ -8,7 +8,7 @@ pub(super) fn invalid_otp() -> AuthError {
     }
 }
 
-pub(super) fn expired_otp() -> AuthError {
+pub(super) const fn expired_otp() -> AuthError {
     AuthError::Upstream {
         status: 400,
         code: "OTP_EXPIRED",
@@ -16,7 +16,7 @@ pub(super) fn expired_otp() -> AuthError {
     }
 }
 
-pub(super) fn too_many_attempts() -> AuthError {
+pub(super) const fn too_many_attempts() -> AuthError {
     AuthError::Upstream {
         status: 403,
         code: "TOO_MANY_ATTEMPTS",
@@ -24,7 +24,7 @@ pub(super) fn too_many_attempts() -> AuthError {
     }
 }
 
-pub(super) fn user_not_found() -> AuthError {
+pub(super) const fn user_not_found() -> AuthError {
     AuthError::Upstream {
         status: 400,
         code: "USER_NOT_FOUND",

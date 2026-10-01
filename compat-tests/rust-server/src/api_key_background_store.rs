@@ -233,7 +233,7 @@ delegate_store!(DeviceCodeStore, {
         device_code: &str,
     ) -> AuthResult<Option<DeviceCode>>;
     async fn get_device_code_by_user_code(&self, user_code: &str)
-        -> AuthResult<Option<DeviceCode>>;
+    -> AuthResult<Option<DeviceCode>>;
     async fn update_device_code(
         &self,
         id: &str,

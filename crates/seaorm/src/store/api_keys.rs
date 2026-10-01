@@ -1,73 +1,29 @@
+#[cfg(test)]
+#[path = "api_key_concurrency_tests.rs"]
+mod concurrency_tests;
+
 use async_trait::async_trait;
+
 use chrono::Utc;
+
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
     QuerySelect, Set, SqliteTransactionMode, TransactionOptions, TransactionTrait,
 };
+
 use uuid::Uuid;
 
 use better_auth_core::store::{ApiKeyStore, ConsumeApiKeyResult};
 
-use crate::error::{AuthError, AuthResult};
 use crate::schema::AuthSchema;
-use crate::types::{ApiKey, CreateApiKey, UpdateApiKey};
 
 use super::entities::api_key::{ActiveModel, Column, Entity};
+
 use super::{SeaOrmStore, map_db_err, parse_optional_rfc3339};
 
-/// Apply `UpdateApiKey` fields to a SeaORM active model.
-fn apply_update_fields(mut active: ActiveModel, update: UpdateApiKey) -> AuthResult<ActiveModel> {
-    if let Some(name) = update.name {
-        active.name = Set(Some(name));
-    }
-    if let Some(enabled) = update.enabled {
-        active.enabled = Set(enabled);
-    }
-    if let Some(remaining) = update.remaining {
-        active.remaining = Set(Some(remaining));
-    }
-    if let Some(rate_limit_enabled) = update.rate_limit_enabled {
-        active.rate_limit_enabled = Set(rate_limit_enabled);
-    }
-    if let Some(rate_limit_time_window) = update.rate_limit_time_window {
-        active.rate_limit_time_window = Set(Some(rate_limit_time_window));
-    }
-    if let Some(rate_limit_max) = update.rate_limit_max {
-        active.rate_limit_max = Set(Some(rate_limit_max));
-    }
-    if let Some(refill_interval) = update.refill_interval {
-        active.refill_interval = Set(Some(refill_interval));
-    }
-    if let Some(refill_amount) = update.refill_amount {
-        active.refill_amount = Set(Some(refill_amount));
-    }
-    if let Some(permissions) = update.permissions {
-        active.permissions = Set(Some(permissions));
-    }
-    if let Some(metadata) = update.metadata {
-        active.metadata = Set(Some(metadata));
-    }
-    if let Some(expires_at) = update.expires_at {
-        active.expires_at = Set(parse_optional_rfc3339(expires_at.as_deref(), "expires_at")?);
-    }
-    if let Some(last_request) = update.last_request {
-        active.last_request = Set(parse_optional_rfc3339(
-            last_request.as_deref(),
-            "last_request",
-        )?);
-    }
-    if let Some(request_count) = update.request_count {
-        active.request_count = Set(Some(request_count));
-    }
-    if let Some(last_refill_at) = update.last_refill_at {
-        active.last_refill_at = Set(parse_optional_rfc3339(
-            last_refill_at.as_deref(),
-            "last_refill_at",
-        )?);
-    }
-    active.updated_at = Set(Utc::now());
-    Ok(active)
-}
+use better_auth_core::error::{AuthError, AuthResult};
+
+use better_auth_core::types::{ApiKey, CreateApiKey, UpdateApiKey};
 
 #[async_trait]
 impl<S> ApiKeyStore for SeaOrmStore<S>
@@ -82,6 +38,7 @@ where
         self.consume_usage_phases(observed, global_rate_limit_enabled)
             .await
     }
+
     async fn create_api_key(&self, input: CreateApiKey) -> AuthResult<ApiKey> {
         let now = Utc::now();
         ActiveModel {
@@ -159,10 +116,15 @@ where
         active
             .update(self.connection())
             .await
-            .map(|model| ApiKey::from(&model))
+            .map(|model_2| ApiKey::from(&model_2))
             .map_err(map_db_err)
     }
 
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+    )]
     async fn consume_api_key_usage(
         &self,
         id: &str,
@@ -230,7 +192,7 @@ where
                             let mut active =
                                 apply_update_fields(model.into_active_model(), update)?;
                             active.updated_at = Set(updated_at);
-                            let _ = active.update(txn).await.map_err(map_db_err)?;
+                            drop(active.update(txn).await.map_err(map_db_err)?);
                         }
                         return Ok(ConsumeApiKeyResult::RateLimited {
                             try_again_in: (window - elapsed).ceil(),
@@ -280,11 +242,64 @@ where
             .filter(Column::ExpiresAt.lt(Utc::now()))
             .exec(self.connection())
             .await
-            .map(|result| result.rows_affected as usize)
             .map_err(map_db_err)
+            .and_then(|result| {
+                usize::try_from(result.rows_affected)
+                    .map_err(|_error| AuthError::internal("Affected row count exceeds usize"))
+            })
     }
 }
 
-#[cfg(test)]
-#[path = "api_key_concurrency_tests.rs"]
-mod concurrency_tests;
+/// Apply `UpdateApiKey` fields to a `SeaORM` active model.
+fn apply_update_fields(mut active: ActiveModel, update: UpdateApiKey) -> AuthResult<ActiveModel> {
+    if let Some(name) = update.name {
+        active.name = Set(Some(name));
+    }
+    if let Some(enabled) = update.enabled {
+        active.enabled = Set(enabled);
+    }
+    if let Some(remaining) = update.remaining {
+        active.remaining = Set(Some(remaining));
+    }
+    if let Some(rate_limit_enabled) = update.rate_limit_enabled {
+        active.rate_limit_enabled = Set(rate_limit_enabled);
+    }
+    if let Some(rate_limit_time_window) = update.rate_limit_time_window {
+        active.rate_limit_time_window = Set(Some(rate_limit_time_window));
+    }
+    if let Some(rate_limit_max) = update.rate_limit_max {
+        active.rate_limit_max = Set(Some(rate_limit_max));
+    }
+    if let Some(refill_interval) = update.refill_interval {
+        active.refill_interval = Set(Some(refill_interval));
+    }
+    if let Some(refill_amount) = update.refill_amount {
+        active.refill_amount = Set(Some(refill_amount));
+    }
+    if let Some(permissions) = update.permissions {
+        active.permissions = Set(Some(permissions));
+    }
+    if let Some(metadata) = update.metadata {
+        active.metadata = Set(Some(metadata));
+    }
+    if let Some(expires_at) = update.expires_at {
+        active.expires_at = Set(parse_optional_rfc3339(expires_at.as_deref(), "expires_at")?);
+    }
+    if let Some(last_request) = update.last_request {
+        active.last_request = Set(parse_optional_rfc3339(
+            last_request.as_deref(),
+            "last_request",
+        )?);
+    }
+    if let Some(request_count) = update.request_count {
+        active.request_count = Set(Some(request_count));
+    }
+    if let Some(last_refill_at) = update.last_refill_at {
+        active.last_refill_at = Set(parse_optional_rfc3339(
+            last_refill_at.as_deref(),
+            "last_refill_at",
+        )?);
+    }
+    active.updated_at = Set(Utc::now());
+    Ok(active)
+}

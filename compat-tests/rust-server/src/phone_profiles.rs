@@ -2,10 +2,10 @@
 use crate::{CompatTwoFactorOtpSender, TestSchema};
 use async_trait::async_trait;
 use axum::{
+    Json, Router,
     extract::Query,
     response::IntoResponse,
     routing::{get, post},
-    Json, Router,
 };
 use better_auth::plugins::phone_number::{
     PhoneNumberConfig, PhoneNumberPlugin, PhoneNumberValidator, PhoneNumberVerification,
@@ -14,11 +14,11 @@ use better_auth::plugins::phone_number::{
 use better_auth::plugins::{
     EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
-use better_auth::{integrations::axum::AxumIntegration, middleware::RateLimitConfig};
 use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
-use better_auth_seaorm::{sea_orm::DatabaseConnection, SeaOrmStore};
+use better_auth::{integrations::axum::AxumIntegration, middleware::RateLimitConfig};
+use better_auth_seaorm::{SeaOrmStore, sea_orm::DatabaseConnection};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 

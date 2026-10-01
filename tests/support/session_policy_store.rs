@@ -9,10 +9,17 @@ use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
-pub(super) type Schema =
-    better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+#[expect(
+    unreachable_pub,
+    reason = "The private fixture module exposes its store and schema only to the parent integration test"
+)]
+pub type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
-pub(super) struct PolicyStore {
+#[expect(
+    unreachable_pub,
+    reason = "The private fixture module exposes its store and schema only to the parent integration test"
+)]
+pub struct PolicyStore {
     pub(super) inner: Arc<SeaOrmStore<Schema>>,
     pub(super) reject: Arc<AtomicBool>,
     pub(super) rejected_reads: Arc<AtomicUsize>,
@@ -140,7 +147,7 @@ impl JwkStore for PolicyStore {}
 impl TeamStore for PolicyStore {}
 #[async_trait]
 impl OrganizationRoleStore for PolicyStore {}
-impl better_auth_core::store::WalletAddressStore for PolicyStore {}
+impl WalletAddressStore for PolicyStore {}
 
 #[async_trait]
 impl SessionStore<Schema> for PolicyStore {

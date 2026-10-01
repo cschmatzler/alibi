@@ -30,6 +30,7 @@ pub struct OrganizationMemberRolePatch {
 }
 
 /// Trusted application callbacks execute after role authorization/validation.
+///
 /// Before errors prevent the adapter write; after errors retain it. The lifecycle
 /// is not wrapped in a transaction. Contexts contain the target user, not actor.
 #[async_trait]

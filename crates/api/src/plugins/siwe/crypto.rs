@@ -1,12 +1,87 @@
 use async_trait::async_trait;
+
 use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
+
 use sha3::{Digest, Keccak256};
 
 use super::config::{SiweCallbackResult, SiweVerification, SiweVerifier};
+
 use super::parse::valid_address;
+
+/// Secure EIP-191 verifier for externally owned Ethereum accounts. Contract
+/// wallets can use a custom [`SiweVerifier`] backed by the application's RPC.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Eip191Verifier;
+
+impl Eip191Verifier {
+    /// Recover the checksummed signer from a 65-byte `r,s,v` signature or an
+    /// EIP-2098 compact signature. Invalid encodings return `None`.
+    #[must_use]
+    pub fn recover_address(message: &str, signature: &str) -> Option<String> {
+        Self::recover_hash_address(&ethereum_message_hash(message), signature)
+    }
+
+    /// Recover a personal-sign signer from its already computed digest. This
+    /// supports application-owned contract-wallet and JSON-RPC integrations.
+    #[must_use]
+    pub fn recover_hash_address(digest: &[u8; 32], signature: &str) -> Option<String> {
+        use std::fmt::Write;
+
+        let bytes = hex_bytes(signature)?;
+        let (signature_3, recovery) = match bytes.len() {
+            65 => {
+                let signature_2 = Signature::from_slice(bytes.get(..64)?).ok()?;
+                let encoded = *bytes.get(64)?;
+                let recovery = match encoded {
+                    0 | 1 => encoded,
+                    27 | 28 => encoded - 27,
+                    _ => return None,
+                };
+                (signature_2, recovery)
+            }
+            64 => {
+                let mut compact: [u8; 64] = bytes.try_into().ok()?;
+                let recovery = *compact.get(32)? >> 7;
+                if let Some(first) = compact.get_mut(32) {
+                    *first &= 127;
+                }
+                (Signature::from_slice(&compact).ok()?, recovery)
+            }
+            _ => return None,
+        };
+        // Reject noncanonical signatures rather than allowing an alternative
+        // high-S encoding to bypass the verifier's signature policy.
+        if signature_3.normalize_s().is_some() {
+            return None;
+        }
+        let key = VerifyingKey::recover_from_prehash(
+            digest,
+            &signature_3,
+            RecoveryId::try_from(recovery).ok()?,
+        )
+        .ok()?;
+        let public_key = key.to_encoded_point(false);
+        let hash = Keccak256::digest(public_key.as_bytes().get(1..)?);
+        let mut address = String::from("0x");
+
+        for byte in hash.get(12..)? {
+            write!(address, "{byte:02x}").ok()?;
+        }
+        checksum_address(&address)
+    }
+}
+
+#[async_trait]
+impl SiweVerifier for Eip191Verifier {
+    async fn verify_message(&self, input: SiweVerification) -> SiweCallbackResult<bool> {
+        Ok(Self::recover_address(&input.message, &input.signature)
+            .is_some_and(|address| address == input.address))
+    }
+}
 
 /// EIP-191 personal-sign message digest. The prefix uses the UTF-8 byte count,
 /// including any non-ASCII statement or SIWE field in the original message.
+#[must_use]
 pub fn ethereum_message_hash(message: &str) -> [u8; 32] {
     let mut digest = Keccak256::new();
     digest.update(b"\x19Ethereum Signed Message:\n");
@@ -47,74 +122,7 @@ fn hex_bytes(value: &str) -> Option<Vec<u8>> {
         .map(|pair| {
             let upper = char::from(*pair.first()?).to_digit(16)?;
             let lower = char::from(*pair.get(1)?).to_digit(16)?;
-            Some(((upper << 4) | lower) as u8)
+            u8::try_from((upper << 4) | lower).ok()
         })
         .collect()
-}
-
-/// Secure EIP-191 verifier for externally owned Ethereum accounts. Contract
-/// wallets can use a custom [`SiweVerifier`] backed by the application's RPC.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Eip191Verifier;
-
-impl Eip191Verifier {
-    /// Recover the checksummed signer from a 65-byte `r,s,v` signature or an
-    /// EIP-2098 compact signature. Invalid encodings return `None`.
-    pub fn recover_address(message: &str, signature: &str) -> Option<String> {
-        Self::recover_hash_address(&ethereum_message_hash(message), signature)
-    }
-
-    /// Recover a personal-sign signer from its already computed digest. This
-    /// supports application-owned contract-wallet and JSON-RPC integrations.
-    pub fn recover_hash_address(digest: &[u8; 32], signature: &str) -> Option<String> {
-        let bytes = hex_bytes(signature)?;
-        let (signature, recovery) = match bytes.len() {
-            65 => {
-                let signature = Signature::from_slice(bytes.get(..64)?).ok()?;
-                let encoded = *bytes.get(64)?;
-                let recovery = match encoded {
-                    0 | 1 => encoded,
-                    27 | 28 => encoded - 27,
-                    _ => return None,
-                };
-                (signature, recovery)
-            }
-            64 => {
-                let mut compact: [u8; 64] = bytes.try_into().ok()?;
-                let recovery = *compact.get(32)? >> 7;
-                if let Some(first) = compact.get_mut(32) {
-                    *first &= 127;
-                }
-                (Signature::from_slice(&compact).ok()?, recovery)
-            }
-            _ => return None,
-        };
-        // Reject noncanonical signatures rather than allowing an alternative
-        // high-S encoding to bypass the verifier's signature policy.
-        if signature.normalize_s().is_some() {
-            return None;
-        }
-        let key = VerifyingKey::recover_from_prehash(
-            digest,
-            &signature,
-            RecoveryId::try_from(recovery).ok()?,
-        )
-        .ok()?;
-        let public_key = key.to_encoded_point(false);
-        let hash = Keccak256::digest(public_key.as_bytes().get(1..)?);
-        let mut address = String::from("0x");
-        use std::fmt::Write;
-        for byte in hash.get(12..)? {
-            write!(address, "{byte:02x}").ok()?;
-        }
-        checksum_address(&address)
-    }
-}
-
-#[async_trait]
-impl SiweVerifier for Eip191Verifier {
-    async fn verify_message(&self, input: SiweVerification) -> SiweCallbackResult<bool> {
-        Ok(Self::recover_address(&input.message, &input.signature)
-            .is_some_and(|address| address == input.address))
-    }
 }

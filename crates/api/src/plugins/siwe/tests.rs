@@ -12,6 +12,7 @@ use better_auth_seaorm::sea_orm::{EntityTrait, PaginatorTrait};
 use better_auth_seaorm::store::entities::wallet_address;
 use better_auth_seaorm::{Database, DatabaseConnection, SeaOrmStore};
 use k256::ecdsa::SigningKey;
+use std::fmt::Write;
 use std::sync::{
     Arc,
     atomic::{AtomicU32, Ordering},
@@ -61,7 +62,7 @@ async fn context() -> (AuthContext<TestSchema>, DatabaseConnection) {
         "siwe-native-context-secret-at-least-32-characters",
     ));
     let store = Arc::new(SeaOrmStore::<TestSchema>::new(
-        config.clone(),
+        Arc::clone(&config),
         database.clone(),
     ));
     (AuthContext::new(config, store), database)
@@ -72,17 +73,19 @@ fn plugin() -> (SiwePlugin, Arc<Verifier>) {
     let config = SiweConfig::new(
         "fixture.example",
         Arc::new(Nonces::default()),
-        verifier.clone(),
+        Arc::<Verifier>::clone(&verifier),
     );
     (SiwePlugin::new(config), verifier)
 }
 
-fn request(path: &str, body: serde_json::Value) -> AuthRequest {
+fn request(path: &str, body: &serde_json::Value) -> AuthRequest {
     let mut request = AuthRequest::new(HttpMethod::Post, path);
     request.body = Some(serde_json::to_vec(&body).unwrap());
-    _ = request
-        .headers
-        .insert("content-type".into(), "application/json".into());
+    drop(
+        request
+            .headers
+            .insert("content-type".into(), "application/json".into()),
+    );
     request
 }
 fn body(response: &AuthResponse) -> serde_json::Value {
@@ -91,7 +94,7 @@ fn body(response: &AuthResponse) -> serde_json::Value {
 
 async fn issue(plugin: &SiwePlugin, ctx: &AuthContext<TestSchema>, path: &str) -> String {
     let response = plugin
-        .on_request(&request(path, json!({})), ctx)
+        .on_request(&request(path, &(json!({}))), ctx)
         .await
         .unwrap()
         .unwrap();
@@ -119,10 +122,10 @@ fn sign(message: &str, scalar: u8) -> String {
     bytes.push(recovery.to_byte() + 27);
     format!(
         "0x{}",
-        bytes
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>()
+        bytes.iter().fold(String::new(), |mut output, byte| {
+            _ = write!(output, "{byte:02x}");
+            output
+        })
     )
 }
 
@@ -138,13 +141,17 @@ async fn verify(
         body["email"] = json!(email);
     }
     plugin
-        .on_request(&request("/siwe/verify", body), ctx)
+        .on_request(&request("/siwe/verify", &(body)), ctx)
         .await
         .unwrap()
         .unwrap()
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn independent_unicode_signature_creates_an_authenticated_wallet_identity_and_rotates_only_sessions()
  {
     let (ctx, database) = context().await;
@@ -152,7 +159,7 @@ async fn independent_unicode_signature_creates_an_authenticated_wallet_identity_
     let plugin = SiwePlugin::new(SiweConfig::new(
         "fixture.example",
         Arc::new(FixedNonce("GoldenNonce0001")),
-        verifier.clone(),
+        Arc::<Verifier>::clone(&verifier),
     ));
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/eip191-noble-2.0.1.json")).unwrap();
@@ -165,7 +172,7 @@ async fn independent_unicode_signature_creates_an_authenticated_wallet_identity_
         .unwrap();
     assert_eq!(proof.value(), nonce);
     assert!(((proof.expires_at() - proof.created_at()).num_milliseconds() - 900_000).abs() < 1_000);
-    let response = plugin.on_request(&request("/siwe/verify", json!({"message":fixture["message"],"signature":fixture["signature"],"email":"ignored@fixture.test"})), &ctx).await.unwrap().unwrap();
+    let response = plugin.on_request(&request("/siwe/verify", &(json!({"message":fixture["message"],"signature":fixture["signature"],"email":"ignored@fixture.test"}))), &ctx).await.unwrap().unwrap();
     assert_eq!(response.status, 200, "{}", body(&response));
     let result = body(&response);
     assert_eq!(result.as_object().unwrap().len(), 3);
@@ -202,7 +209,7 @@ async fn independent_unicode_signature_creates_an_authenticated_wallet_identity_
         .next()
         .unwrap();
     let mut read = AuthRequest::new(HttpMethod::Get, "/get-session");
-    _ = read.headers.insert("cookie".into(), cookie.to_owned());
+    drop(read.headers.insert("cookie".into(), cookie.to_owned()));
     let (_, session) = ctx.require_session(&read).await.unwrap();
     assert_eq!(session.user_id, user_id);
     assert_eq!(session.token, result["token"].as_str().unwrap());
@@ -217,7 +224,7 @@ async fn independent_unicode_signature_creates_an_authenticated_wallet_identity_
         .on_request(
             &request(
                 "/siwe/verify",
-                json!({"message":fixture["message"],"signature":fixture["signature"]}),
+                &(json!({"message":fixture["message"],"signature":fixture["signature"]})),
             ),
             &ctx,
         )
@@ -263,11 +270,11 @@ async fn independent_unicode_signature_creates_an_authenticated_wallet_identity_
         ctx.database.get_user_accounts(user_id).await.unwrap().len(),
         2
     );
-    let next = issue(&plugin, &ctx, "/siwe/nonce").await;
+    let next_2 = issue(&plugin, &ctx, "/siwe/nonce").await;
     let huge = verify(
         &plugin,
         &ctx,
-        &message(&next, "fixture.example", ADDRESS, "1e21", ""),
+        &message(&next_2, "fixture.example", ADDRESS, "1e21", ""),
         1,
         None,
     )
@@ -291,8 +298,22 @@ async fn independent_unicode_signature_creates_an_authenticated_wallet_identity_
         observed[0].cacao.s.s,
         fixture["signature"].as_str().unwrap()
     );
-    assert_eq!(observed[1].chain_id, 16.0);
-    assert_eq!(observed[2].chain_id, 1e21);
+    assert_eq!(
+        observed
+            .get(1)
+            .expect("callback receives the second fixture")
+            .chain_id
+            .to_bits(),
+        16.0_f64.to_bits()
+    );
+    assert_eq!(
+        observed
+            .get(2)
+            .expect("third observed proof")
+            .chain_id
+            .to_bits(),
+        1e21_f64.to_bits()
+    );
 }
 
 #[tokio::test]
@@ -311,16 +332,16 @@ async fn signed_preferences_change_cookie_persistence_without_shortening_siwe_se
         let signed = message(&nonce, "fixture.example", ADDRESS, "1", "");
         let mut req = request(
             "/siwe/verify",
-            json!({"message":signed,"signature":sign(&signed,1)}),
+            &(json!({"message":signed,"signature":sign(&signed,1)})),
         );
         if let Some(preference) = preference {
-            _ = req.headers.insert(
+            drop(req.headers.insert(
                 "cookie".into(),
                 format!(
                     "{preference_name}={}",
                     sign_cookie_value(preference, &ctx.config.secret)
                 ),
-            );
+            ));
         }
         let response = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
         assert_eq!(response.status, 200);
@@ -351,7 +372,7 @@ async fn signed_preferences_change_cookie_persistence_without_shortening_siwe_se
             response
                 .headers
                 .get_all("Set-Cookie")
-                .any(|cookie| cookie.starts_with(&format!("{preference_name}="))),
+                .any(|candidate| candidate.starts_with(&format!("{preference_name}="))),
             temporary
         );
     }

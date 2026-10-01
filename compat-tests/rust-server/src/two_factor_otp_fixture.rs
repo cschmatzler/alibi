@@ -1,25 +1,25 @@
 use crate::TestSchema;
-use axum::{extract::Json, routing::post, Router};
+use axum::{Router, extract::Json, routing::post};
 use better_auth::{
+    AuthBuilder, AuthConfig, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{
+        EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin,
         two_factor::{
             SendTwoFactorOtp, TwoFactorConfig, TwoFactorOtpCipher, TwoFactorOtpHasher,
             TwoFactorOtpStorage,
         },
-        EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin,
     },
     wire::UserView,
-    AuthBuilder, AuthConfig, AuthResult, BetterAuth,
 };
 use better_auth_seaorm::{
-    sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
     DatabaseConnection, SeaOrmStore,
+    sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };
 use chrono::Utc;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 type Receipts = Arc<Mutex<HashMap<String, Vec<Value>>>>;

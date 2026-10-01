@@ -2,26 +2,37 @@
 //! signature verification, including contract-wallet RPC providers.
 
 mod config;
+
 mod crypto;
+
 mod date;
+
 mod parse;
+
 mod validation;
+
+#[cfg(test)]
+mod tests;
 
 pub use config::{
     Cacao, CacaoHeader, CacaoPayload, CacaoSignature, EnsLookup, EnsProfile, RandomSiweNonce,
     SiweCallbackError, SiweCallbackResult, SiweConfig, SiweNonceProvider, SiweVerification,
     SiweVerifier,
 };
+
 pub use crypto::{Eip191Verifier, ethereum_message_hash};
 
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthSession,
     AuthUser, CreateAccount, CreateUser, CreateVerification, CreateWalletAddress, RequestMeta,
 };
+
 use chrono::{Duration, Utc};
+
 use serde_json::json;
 
 use super::helpers::{apply_default_role, issue_user_session};
+
 use validation::VerifyBody;
 
 #[derive(Debug, Clone)]
@@ -30,7 +41,8 @@ pub struct SiwePlugin {
 }
 
 impl SiwePlugin {
-    pub fn new(config: SiweConfig) -> Self {
+    #[must_use]
+    pub const fn new(config: SiweConfig) -> Self {
         Self { config }
     }
 
@@ -56,14 +68,15 @@ impl SiwePlugin {
                 }),
             )?);
         }
-        let _ = ctx
-            .database
-            .create_verification(CreateVerification {
-                identifier: format!("siwe:{nonce}"),
-                value: nonce.clone(),
-                expires_at: Utc::now() + Duration::seconds(900),
-            })
-            .await?;
+        drop(
+            ctx.database
+                .create_verification(CreateVerification {
+                    identifier: format!("siwe:{nonce}"),
+                    value: nonce.clone(),
+                    expires_at: Utc::now() + Duration::seconds(900),
+                })
+                .await?,
+        );
         Ok(AuthResponse::json(200, &json!({"nonce":nonce}))?)
     }
 
@@ -87,6 +100,10 @@ impl SiwePlugin {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep proof validation, identity updates, and session callbacks in their protocol order"
+    )]
     async fn verify<S: AuthSchema>(
         &self,
         request: &AuthRequest,
@@ -207,12 +224,12 @@ impl SiwePlugin {
             }
             user
         } else {
-            let user = self
+            let user_2 = self
                 .create_user(ctx, &address, body.email.as_deref())
                 .await?;
-            self.link_wallet(ctx, &user.id(), &address, chain_id, true)
+            self.link_wallet(ctx, &user_2.id(), &address, chain_id, true)
                 .await?;
-            user
+            user_2
         };
         let meta = RequestMeta::from_request(request);
         let issued = issue_user_session(ctx, &user.id(), meta.ip_address, meta.user_agent)
@@ -220,7 +237,7 @@ impl SiwePlugin {
             .map_err(|error| storage_error(error.into_auth_error()))?;
         let token = issued.session.token();
         let mut response = AuthResponse::json(200, &json!({"token":token,"success":true,"user":{"id":issued.user.id(),"walletAddress":address,"chainId":chain_id}})).map_err(|error| storage_error(error.into()))?;
-        self.session_cookies(request, ctx, token, &mut response);
+        Self::session_cookies(request, ctx, token, &mut response);
         Ok(response)
     }
 
@@ -231,22 +248,22 @@ impl SiwePlugin {
         email: Option<&str>,
     ) -> SiweCallbackResult<S::User> {
         let normalized_email = email.map(str::to_lowercase);
-        let wallet_email = match self
+        let wallet_email = self
             .config
             .email_domain_name
             .as_deref()
             .filter(|domain| !domain.is_empty())
-        {
-            Some(domain) => format!("{address}@{domain}"),
-            None => format!("{address}@siwe.placeholder.invalid"),
-        }
-        .to_lowercase();
+            .map_or_else(
+                || format!("{address}@siwe.placeholder.invalid"),
+                |domain| format!("{address}@{domain}"),
+            )
+            .to_lowercase();
         let mut user_email = wallet_email.clone();
         let mut claim = None;
         if !self.config.anonymous
-            && let Some(email) = &normalized_email
+            && let Some(email_2) = &normalized_email
         {
-            let identifier = format!("siwe-email-claim-{email}");
+            let identifier = format!("siwe-email-claim-{email_2}");
             let reserved = ctx
                 .database
                 .reserve_verification(CreateVerification {
@@ -260,12 +277,12 @@ impl SiwePlugin {
                 claim = Some(identifier);
                 if ctx
                     .database
-                    .get_user_by_email(email)
+                    .get_user_by_email(email_2)
                     .await
                     .map_err(storage_error)?
                     .is_none()
                 {
-                    user_email = email.clone();
+                    user_email = email_2.clone();
                 }
             }
         }
@@ -284,8 +301,8 @@ impl SiwePlugin {
         let created = match created {
             Ok(user) => Ok(user),
             Err(error) if Some(&user_email) == normalized_email.as_ref() => {
-                let email = normalized_email.as_deref().unwrap_or_default();
-                match ctx.database.get_user_by_email(email).await {
+                let email_3 = normalized_email.as_deref().unwrap_or_default();
+                match ctx.database.get_user_by_email(email_3).await {
                     Ok(Some(_)) => {
                         create.email = Some(wallet_email);
                         ctx.database
@@ -294,16 +311,17 @@ impl SiwePlugin {
                             .map_err(storage_error)
                     }
                     Ok(None) => Err(storage_error(error)),
-                    Err(error) => Err(storage_error(error)),
+                    Err(error_2) => Err(storage_error(error_2)),
                 }
             }
             Err(error) => Err(storage_error(error)),
         };
         if let Some(identifier) = claim {
-            let _ = ctx
-                .database
-                .consume_verification_by_identifier(&identifier)
-                .await;
+            drop(
+                ctx.database
+                    .consume_verification_by_identifier(&identifier)
+                    .await,
+            );
         }
         created
     }
@@ -316,38 +334,39 @@ impl SiwePlugin {
         chain_id: f64,
         primary: bool,
     ) -> SiweCallbackResult<()> {
-        let _ = ctx
-            .database
-            .create_wallet_address(CreateWalletAddress {
-                user_id: user_id.to_owned(),
-                address: address.to_owned(),
-                chain_id,
-                is_primary: primary,
-            })
-            .await
-            .map_err(storage_error)?;
+        drop(
+            ctx.database
+                .create_wallet_address(CreateWalletAddress {
+                    user_id: user_id.to_owned(),
+                    address: address.to_owned(),
+                    chain_id,
+                    is_primary: primary,
+                })
+                .await
+                .map_err(storage_error)?,
+        );
         let mut number = ryu_js::Buffer::new();
-        let _ = ctx
-            .database
-            .create_account(CreateAccount {
-                user_id: user_id.to_owned(),
-                account_id: format!("{address}:{}", number.format(chain_id)),
-                provider_id: "siwe".to_owned(),
-                access_token: None,
-                refresh_token: None,
-                id_token: None,
-                access_token_expires_at: None,
-                refresh_token_expires_at: None,
-                scope: None,
-                password: None,
-            })
-            .await
-            .map_err(storage_error)?;
+        drop(
+            ctx.database
+                .create_account(CreateAccount {
+                    user_id: user_id.to_owned(),
+                    account_id: format!("{address}:{}", number.format(chain_id)),
+                    provider_id: "siwe".to_owned(),
+                    access_token: None,
+                    refresh_token: None,
+                    id_token: None,
+                    access_token_expires_at: None,
+                    refresh_token_expires_at: None,
+                    scope: None,
+                    password: None,
+                })
+                .await
+                .map_err(storage_error)?,
+        );
         Ok(())
     }
 
     fn session_cookies<S: AuthSchema>(
-        &self,
         request: &AuthRequest,
         ctx: &AuthContext<S>,
         token: &str,
@@ -383,6 +402,15 @@ impl SiwePlugin {
     }
 }
 
+better_auth_core::impl_auth_plugin! {
+    SiwePlugin, "siwe";
+    routes {
+        post "/siwe/nonce" => handle_nonce, "get_siwe_nonce";
+        post "/siwe/get-nonce" => handle_nonce, "get_nonce";
+        post "/siwe/verify" => handle_verify, "verify_siwe_message";
+    }
+}
+
 fn mismatch() -> SiweCallbackError {
     endpoint_error(
         "Unauthorized: SIWE message does not match the expected nonce, domain, address, or chain ID",
@@ -404,15 +432,3 @@ fn storage_error(error: AuthError) -> SiweCallbackError {
         SiweCallbackError::Failed(error.to_string())
     }
 }
-
-better_auth_core::impl_auth_plugin! {
-    SiwePlugin, "siwe";
-    routes {
-        post "/siwe/nonce" => handle_nonce, "get_siwe_nonce";
-        post "/siwe/get-nonce" => handle_nonce, "get_nonce";
-        post "/siwe/verify" => handle_verify, "verify_siwe_message";
-    }
-}
-
-#[cfg(test)]
-mod tests;

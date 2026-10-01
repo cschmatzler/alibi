@@ -1,13 +1,13 @@
 //! Trusted fixture writes for exercising actual persisted timestamp precision.
 
-use axum::{http::StatusCode, routing::post, Json, Router};
+use axum::{Json, Router, http::StatusCode, routing::post};
 use better_auth_seaorm::sea_orm::{
     ActiveModelTrait, DatabaseConnection, EntityTrait, IntoActiveModel, Set,
 };
 use better_auth_seaorm::store::entities::{member, organization};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 #[derive(Deserialize)]

@@ -9,6 +9,10 @@ use sea_orm::{ConnectOptions, ConnectionTrait, Database, Statement};
 use sea_orm_migration::{MigrationTrait, MigratorTrait, SchemaManager};
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn disabled_plugin_creation_preserves_sql_null() -> Result<(), Box<dyn std::error::Error>> {
     let database = Database::connect("sqlite::memory:").await?;
     run_migrations(&database).await?;
@@ -38,6 +42,10 @@ async fn disabled_plugin_creation_preserves_sql_null() -> Result<(), Box<dyn std
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn explicit_flags_persist_without_initializing_unrelated_updates()
 -> Result<(), Box<dyn std::error::Error>> {
     let database = Database::connect("sqlite::memory:").await?;
@@ -104,12 +112,20 @@ async fn explicit_flags_persist_without_initializing_unrelated_updates()
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn upgrades_populated_users_preserving_custom_schema_and_foreign_keys()
 -> Result<(), Box<dyn std::error::Error>> {
     let database = Database::connect("sqlite::memory:").await?;
     // An installed user table predating nullable fields, extended by its
     // application. The migration must retain the entire table definition.
-    let _ = database.execute_unprepared(
+    let _ignored_execute_unprepared = database.execute_unprepared(
         "CREATE TABLE users (
             id TEXT NOT NULL PRIMARY KEY,
             name TEXT, email TEXT UNIQUE, email_verified BOOLEAN NOT NULL DEFAULT FALSE,
@@ -148,7 +164,7 @@ async fn upgrades_populated_users_preserving_custom_schema_and_foreign_keys()
         .await?;
     let session = store
         .create_session(CreateSession {
-            additional_fields: Default::default(),
+            additional_fields: better_auth_core::field_policy::FieldValues::default(),
             token: None,
             user_id: existing.id.clone(),
             expires_at: Utc::now() + Duration::hours(1),
@@ -173,26 +189,26 @@ async fn upgrades_populated_users_preserving_custom_schema_and_foreign_keys()
             scope: None,
         })
         .await?;
-    let _ = database.execute_unprepared(
+    let _ignored_execute_unprepared_2 = database.execute_unprepared(
         "CREATE TABLE custom_user_links (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE)",
     ).await?;
-    let _ = database
+    let _ignored_execute_unprepared_3 = database
         .execute_unprepared(
             "INSERT INTO custom_user_links VALUES ('retained-link', 'existing-upgrade-user')",
         )
         .await?;
-    let _ = database
+    let _ignored_execute_unprepared_4 = database
         .execute_unprepared(
             "CREATE UNIQUE INDEX idx_users_custom_email ON users(lower(email)) WHERE banned = 0",
         )
         .await?;
-    let _ = database
+    let _ignored_execute_unprepared_5 = database
         .execute_unprepared("CREATE TABLE custom_user_events (user_id TEXT, observed_name TEXT)")
         .await?;
-    let _ = database.execute_unprepared(
+    let _ignored_execute_unprepared_6 = database.execute_unprepared(
         "CREATE TRIGGER custom_user_updated AFTER UPDATE OF name ON users BEGIN INSERT INTO custom_user_events VALUES (new.id, new.name); END",
     ).await?;
-    let _ = database
+    let _ignored_execute_unprepared_7 = database
         .execute_unprepared(
             "CREATE VIEW visible_users AS SELECT id, banned, display_label FROM users",
         )
@@ -243,21 +259,23 @@ async fn upgrades_populated_users_preserving_custom_schema_and_foreign_keys()
         "SELECT id, banned, display_label FROM visible_users WHERE id = 'existing-upgrade-user'".to_owned(),
     )).await?.ok_or_else(|| std::io::Error::other("upgrade lost dependent view"))?;
     assert_eq!(visible.try_get::<String>("", "id")?, existing.id);
-    assert_eq!(visible.try_get::<bool>("", "banned")?, false);
+    assert!(!visible.try_get::<bool>("", "banned")?);
     let null_user = store
         .create_user(CreateUser::new().with_email("new-null-user@example.com"))
         .await?;
     assert_eq!(null_user.two_factor_enabled_value(), None);
     assert_eq!(null_user.banned_value(), None);
-    let _ = store
-        .update_user(
-            &existing.id,
-            UpdateUser {
-                name: Some("Trigger still works".to_owned()),
-                ..Default::default()
-            },
-        )
-        .await?;
+    drop(
+        store
+            .update_user(
+                &existing.id,
+                UpdateUser {
+                    name: Some("Trigger still works".to_owned()),
+                    ..Default::default()
+                },
+            )
+            .await?,
+    );
     let event = database
         .query_one_raw(Statement::from_string(
             database.get_database_backend(),
@@ -311,6 +329,10 @@ async fn upgrades_populated_users_preserving_custom_schema_and_foreign_keys()
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn rejected_rebuild_rolls_back_and_restores_foreign_key_enforcement()
 -> Result<(), Box<dyn std::error::Error>> {
     let database = Database::connect("sqlite::memory:").await?;
@@ -322,7 +344,7 @@ async fn rejected_rebuild_rolls_back_and_restores_foreign_key_enforcement()
         "INSERT INTO custom_user_links VALUES ('preexisting-invalid-link', 'missing-user')",
         "PRAGMA foreign_keys = ON",
     ] {
-        let _ = database.execute_unprepared(sql).await?;
+        let _ignored_execute_unprepared_8 = database.execute_unprepared(sql).await?;
     }
     let error = super::nullable_user_flags::NullableUserPluginFlags
         .up(&SchemaManager::new(&database))
@@ -341,8 +363,8 @@ async fn rejected_rebuild_rolls_back_and_restores_foreign_key_enforcement()
         ))
         .await?
         .ok_or_else(|| std::io::Error::other("rollback lost the user"))?;
-    assert_eq!(row.try_get::<bool>("", "two_factor_enabled")?, true);
-    assert_eq!(row.try_get::<bool>("", "banned")?, false);
+    assert!(row.try_get::<bool>("", "two_factor_enabled")?);
+    assert!(!row.try_get::<bool>("", "banned")?);
     assert_eq!(row.try_get::<String>("", "profile")?, "custom preserved");
     assert!(
         database
@@ -358,12 +380,13 @@ async fn rejected_rebuild_rolls_back_and_restores_foreign_key_enforcement()
             "PRAGMA table_info(users)".to_owned(),
         ))
         .await?;
-    for row in flags.iter().filter(|row| {
-        row.try_get::<String>("", "name")
+    for row_3 in flags.iter().filter(|row_2| {
+        row_2
+            .try_get::<String>("", "name")
             .is_ok_and(|name| name == "two_factor_enabled" || name == "banned")
     }) {
-        assert_eq!(row.try_get::<i64>("", "notnull")?, 1);
-        assert!(row.try_get::<Option<String>>("", "dflt_value")?.is_some());
+        assert_eq!(row_3.try_get::<i64>("", "notnull")?, 1);
+        assert!(row_3.try_get::<Option<String>>("", "dflt_value")?.is_some());
     }
     assert!(
         !SchemaManager::new(&database)
@@ -374,6 +397,10 @@ async fn rejected_rebuild_rolls_back_and_restores_foreign_key_enforcement()
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn canceled_rebuild_preserves_rows_and_does_not_reuse_a_connection_with_foreign_keys_disabled()
 -> Result<(), Box<dyn std::error::Error>> {
     use std::sync::{
@@ -391,24 +418,27 @@ async fn canceled_rebuild_preserves_rows_and_does_not_reuse_a_connection_with_fo
         let started = Arc::new(Mutex::new(Some(started)));
         let release = Arc::new((Mutex::new(false), Condvar::new()));
         let mut options = ConnectOptions::new(format!("sqlite://{}?mode=rwc", directory.join("auth.sqlite").display()));
-        let _ = options.max_connections(1).map_sqlx_sqlite_opts({
+        let _ignored_cmp = options.max_connections(1).map_sqlx_sqlite_opts({
             let enabled = Arc::clone(&enabled);
             let started = Arc::clone(&started);
             let release = Arc::clone(&release);
-            move |options| {
+            move |options_2| {
                 let enabled = Arc::clone(&enabled);
                 let started = Arc::clone(&started);
                 let release = Arc::clone(&release);
-                options.collation("nullable_copy_observer", move |left, right| {
+                options_2.collation("nullable_copy_observer", move |left, right| {
                     if enabled.swap(false, Ordering::SeqCst) {
-                        if let Some(sender) = started.lock().unwrap().take() {
-                            let _ = sender.send(());
+                        let sender = started.lock().unwrap().take();
+                        if let Some(sender) = sender {
+                            let _ignored_send = sender.send(());
                         }
                         let (lock, condition) = &*release;
                         let mut released = lock.lock().unwrap();
                         while !*released {
                             released = condition.wait(released).unwrap();
                         }
+ drop(released);
+
                     }
                     left.cmp(right)
                 })
@@ -422,7 +452,7 @@ async fn canceled_rebuild_preserves_rows_and_does_not_reuse_a_connection_with_fo
             "CREATE TABLE custom_user_links (id TEXT PRIMARY KEY, user_id TEXT REFERENCES users(id))",
             "INSERT INTO custom_user_links VALUES ('retained-link', 'first')",
         ] {
-            let _ = database.execute_unprepared(sql).await?;
+            let _ignored_execute_unprepared_9 = database.execute_unprepared(sql).await?;
         }
         enabled.store(true, Ordering::SeqCst);
         let work = {
@@ -446,10 +476,10 @@ async fn canceled_rebuild_preserves_rows_and_does_not_reuse_a_connection_with_fo
             "SELECT id, profile, two_factor_enabled, banned FROM users ORDER BY id".to_owned(),
         ))).await??;
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].try_get::<String>("", "profile")?, "first preserved");
-        assert_eq!(rows[1].try_get::<String>("", "profile")?, "second preserved");
-        assert!(rows[0].try_get::<bool>("", "two_factor_enabled")?);
-        assert!(rows[1].try_get::<bool>("", "banned")?);
+        assert_eq!((*(rows).first().expect("fixture contains the requested index")).try_get::<String>("", "profile")?, "first preserved");
+        assert_eq!((*(rows).get(1).expect("fixture contains the requested index")).try_get::<String>("", "profile")?, "second preserved");
+        assert!((*(rows).first().expect("fixture contains the requested index")).try_get::<bool>("", "two_factor_enabled")?);
+        assert!((*(rows).get(1).expect("fixture contains the requested index")).try_get::<bool>("", "banned")?);
         assert!(database.execute_unprepared(
             "INSERT INTO custom_user_links VALUES ('new-invalid-link', 'missing-user')"
         ).await.is_err());
@@ -465,6 +495,10 @@ async fn canceled_rebuild_preserves_rows_and_does_not_reuse_a_connection_with_fo
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn nullable_upgrade_preserves_numeric_id_sequence_and_hidden_row_identity()
 -> Result<(), Box<dyn std::error::Error>> {
     for (id_type, extra_key, retained_rowid, auto_increment) in [
@@ -474,7 +508,7 @@ async fn nullable_upgrade_preserves_numeric_id_sequence_and_hidden_row_identity(
         ("INTEGER", ", PRIMARY KEY(id, tenant)", 40, false),
     ] {
         let database = Database::connect("sqlite::memory:").await?;
-        let _ = database.execute_unprepared(&format!(
+        let _ignored_execute_unprepared_10 = database.execute_unprepared(&format!(
             "CREATE TABLE users (id {id_type}, tenant TEXT NOT NULL DEFAULT 'local', two_factor_enabled BOOLEAN NOT NULL DEFAULT FALSE, banned BOOLEAN NOT NULL DEFAULT FALSE{extra_key})"
         )).await?;
         for sql in [
@@ -485,7 +519,7 @@ async fn nullable_upgrade_preserves_numeric_id_sequence_and_hidden_row_identity(
             ),
             "DELETE FROM users WHERE id = 20".to_owned(),
         ] {
-            let _ = database.execute_unprepared(&sql).await?;
+            let _ignored_execute_unprepared_11 = database.execute_unprepared(&sql).await?;
         }
         super::nullable_user_flags::NullableUserPluginFlags
             .up(&SchemaManager::new(&database))
@@ -503,7 +537,7 @@ async fn nullable_upgrade_preserves_numeric_id_sequence_and_hidden_row_identity(
             "{id_type}"
         );
         if auto_increment {
-            let _ = database
+            let _ignored_execute_unprepared_12 = database
                 .execute_unprepared(
                     "INSERT INTO users (two_factor_enabled, banned) VALUES (NULL, NULL)",
                 )
@@ -522,6 +556,10 @@ async fn nullable_upgrade_preserves_numeric_id_sequence_and_hidden_row_identity(
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn installed_without_rowid_tables_and_unary_defaults_preserve_custom_values()
 -> Result<(), Box<dyn std::error::Error>> {
     let database = Database::connect("sqlite::memory:").await?;
@@ -529,12 +567,12 @@ async fn installed_without_rowid_tables_and_unary_defaults_preserve_custom_value
         "CREATE TABLE users(id TEXT PRIMARY KEY, two_factor_enabled BOOLEAN NOT /* retained */ NULL DEFAULT+0, banned BOOLEAN NOT NULL DEFAULT-0, \"profile,notes\" TEXT DEFAULT 'value,retained') WITHOUT ROWID",
         "INSERT INTO users(id) VALUES('old')",
     ] {
-        let _ = database.execute_unprepared(sql).await?;
+        let _ignored_execute_unprepared_13 = database.execute_unprepared(sql).await?;
     }
     super::nullable_user_flags::NullableUserPluginFlags
         .up(&SchemaManager::new(&database))
         .await?;
-    let _ = database
+    let _ignored_execute_unprepared_14 = database
         .execute_unprepared("INSERT INTO users(id) VALUES('new')")
         .await?;
     let rows = database
@@ -576,20 +614,24 @@ async fn installed_without_rowid_tables_and_unary_defaults_preserve_custom_value
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn upgrades_named_not_null_conflict_rules_without_dropping_checks()
 -> Result<(), Box<dyn std::error::Error>> {
     for conflict in ["ABORT", "FAIL", "IGNORE", "REPLACE", "ROLLBACK"] {
         let database = Database::connect("sqlite::memory:").await?;
-        let _ = database.execute_unprepared(&format!(
+        let _ignored_execute_unprepared_15 = database.execute_unprepared(&format!(
             "CREATE TABLE users(id TEXT PRIMARY KEY, two_factor_enabled BOOLEAN NOT NULL ON CONFLICT {conflict} DEFAULT FALSE, banned BOOLEAN CONSTRAINT ban_required NOT NULL ON CONFLICT {conflict} DEFAULT FALSE CHECK(banned IN (0,1)))"
         )).await?;
-        let _ = database
+        let _ignored_execute_unprepared_16 = database
             .execute_unprepared("INSERT INTO users(id) VALUES('old')")
             .await?;
         super::nullable_user_flags::NullableUserPluginFlags
             .up(&SchemaManager::new(&database))
             .await?;
-        let _ = database
+        let _ignored_execute_unprepared_17 = database
             .execute_unprepared("INSERT INTO users(id) VALUES('new')")
             .await?;
         let rows = database

@@ -1,7 +1,7 @@
 //! Real compact-cache profiles. Application controls never enter public auth routes.
-use crate::session_field_model::{application_session, ApplicationSchema};
+use crate::session_field_model::{ApplicationSchema, application_session};
 use async_trait::async_trait;
-use axum::{routing::post, Json, Router};
+use axum::{Json, Router, routing::post};
 use better_auth::field_policy::FieldConfig;
 use better_auth::plugins::anonymous::{
     AnonymousConfig, AnonymousIdentity, AnonymousLink, LinkAnonymousAccount,
@@ -11,8 +11,8 @@ use better_auth::plugins::{
     PasswordManagementPlugin, SessionManagementPlugin,
 };
 use better_auth::{
-    integrations::axum::AxumIntegration, middleware::RateLimitConfig, AuthBuilder, AuthConfig,
-    AuthError, AuthResult,
+    AuthBuilder, AuthConfig, AuthError, AuthResult, integrations::axum::AxumIntegration,
+    middleware::RateLimitConfig,
 };
 use better_auth_core::{
     AuthRequest, CacheVersionContext, CookieCacheConfig, CookieCacheVersion,
@@ -20,7 +20,7 @@ use better_auth_core::{
 };
 use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},

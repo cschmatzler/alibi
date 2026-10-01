@@ -22,7 +22,9 @@ pub struct OrganizationInvitationAcceptedContext {
     pub organization: OrganizationResponse,
 }
 
-/// Before errors prevent the conditional claim. After errors retain accepted
+/// Before errors prevent the conditional claim.
+///
+/// After errors retain accepted
 /// status and committed memberships/session scope. Returned JavaScript callback
 /// values do not patch acceptance; immutable snapshots express this contract.
 #[async_trait]

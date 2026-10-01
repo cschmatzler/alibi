@@ -2,56 +2,126 @@
 use crate::TestSchema;
 use async_trait::async_trait;
 use axum::{
+    Json, Router,
     extract::Query,
     http::StatusCode,
     routing::{get, post},
-    Json, Router,
 };
 use better_auth::plugins::organization::{
-    extensions::{OrganizationLimitResolver, TeamLimitContext},
     MembershipLimit, OrganizationConfig, OrganizationInvitationAcceptanceContext,
     OrganizationInvitationAcceptanceHooks, OrganizationInvitationAcceptedContext, TeamsConfig,
+    extensions::{OrganizationLimitResolver, TeamLimitContext},
 };
 use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
 use better_auth::{
-    integrations::axum::AxumIntegration, middleware::RateLimitConfig, AuthBuilder, AuthConfig,
-    AuthError, AuthResult,
+    AuthBuilder, AuthConfig, AuthError, AuthResult, integrations::axum::AxumIntegration,
+    middleware::RateLimitConfig,
 };
 use better_auth_seaorm::{
-    sea_orm::{ConnectionTrait, DbBackend, Statement},
     DatabaseConnection, SeaOrmStore,
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use chrono::{DateTime, SecondsFormat, Utc};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
 };
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{Mutex, oneshot};
 
 async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
     let mut snapshot = serde_json::Map::new();
     for (name, sql, columns) in [
-        ("invitations", "SELECT id,organization_id AS organizationId,email,role,team_id AS teamId,status,expires_at AS expiresAt,created_at AS createdAt,inviter_id AS inviterId FROM invitation ORDER BY rowid", &["id","organizationId","email","role","teamId","status","expiresAt","createdAt","inviterId"][..]),
-        ("members", "SELECT id,organization_id AS organizationId,user_id AS userId,role,created_at AS createdAt FROM member ORDER BY rowid", &["id","organizationId","userId","role","createdAt"][..]),
-        ("teams", "SELECT id,name,organization_id AS organizationId,member_count AS memberCount,created_at AS createdAt,updated_at AS updatedAt FROM team ORDER BY rowid", &["id","name","organizationId","memberCount","createdAt","updatedAt"][..]),
-        ("teamMembers", "SELECT id,team_id AS teamId,user_id AS userId,membership_key AS membershipKey,created_at AS createdAt FROM team_member ORDER BY rowid", &["id","teamId","userId","membershipKey","createdAt"][..]),
-        ("sessions", "SELECT id,user_id AS userId,token,expires_at AS expiresAt,created_at AS createdAt,updated_at AS updatedAt,ip_address AS ipAddress,user_agent AS userAgent,impersonated_by AS impersonatedBy,active_organization_id AS activeOrganizationId,active_team_id AS activeTeamId FROM sessions ORDER BY rowid", &["id","userId","token","expiresAt","createdAt","updatedAt","ipAddress","userAgent","impersonatedBy","activeOrganizationId","activeTeamId"][..]),
-        ("organizations", "SELECT id,name,slug,logo,metadata,created_at AS createdAt FROM organization ORDER BY rowid", &["id","name","slug","logo","metadata","createdAt"][..]),
+        (
+            "invitations",
+            "SELECT id,organization_id AS organizationId,email,role,team_id AS teamId,status,expires_at AS expiresAt,created_at AS createdAt,inviter_id AS inviterId FROM invitation ORDER BY rowid",
+            &[
+                "id",
+                "organizationId",
+                "email",
+                "role",
+                "teamId",
+                "status",
+                "expiresAt",
+                "createdAt",
+                "inviterId",
+            ][..],
+        ),
+        (
+            "members",
+            "SELECT id,organization_id AS organizationId,user_id AS userId,role,created_at AS createdAt FROM member ORDER BY rowid",
+            &["id", "organizationId", "userId", "role", "createdAt"][..],
+        ),
+        (
+            "teams",
+            "SELECT id,name,organization_id AS organizationId,member_count AS memberCount,created_at AS createdAt,updated_at AS updatedAt FROM team ORDER BY rowid",
+            &[
+                "id",
+                "name",
+                "organizationId",
+                "memberCount",
+                "createdAt",
+                "updatedAt",
+            ][..],
+        ),
+        (
+            "teamMembers",
+            "SELECT id,team_id AS teamId,user_id AS userId,membership_key AS membershipKey,created_at AS createdAt FROM team_member ORDER BY rowid",
+            &["id", "teamId", "userId", "membershipKey", "createdAt"][..],
+        ),
+        (
+            "sessions",
+            "SELECT id,user_id AS userId,token,expires_at AS expiresAt,created_at AS createdAt,updated_at AS updatedAt,ip_address AS ipAddress,user_agent AS userAgent,impersonated_by AS impersonatedBy,active_organization_id AS activeOrganizationId,active_team_id AS activeTeamId FROM sessions ORDER BY rowid",
+            &[
+                "id",
+                "userId",
+                "token",
+                "expiresAt",
+                "createdAt",
+                "updatedAt",
+                "ipAddress",
+                "userAgent",
+                "impersonatedBy",
+                "activeOrganizationId",
+                "activeTeamId",
+            ][..],
+        ),
+        (
+            "organizations",
+            "SELECT id,name,slug,logo,metadata,created_at AS createdAt FROM organization ORDER BY rowid",
+            &["id", "name", "slug", "logo", "metadata", "createdAt"][..],
+        ),
     ] {
-        let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,sql)).await.map_err(|e|AuthError::internal(e.to_string()))?;
-        let mut values=Vec::new();
+        let rows = database
+            .query_all_raw(Statement::from_string(DbBackend::Sqlite, sql))
+            .await
+            .map_err(|e| AuthError::internal(e.to_string()))?;
+        let mut values = Vec::new();
         for row in rows {
-            let mut object=serde_json::Map::new();
+            let mut object = serde_json::Map::new();
             for column in columns {
-                let value=if *column=="memberCount" {json!(row.try_get::<i64>("",column).map_err(|e|AuthError::internal(e.to_string()))?)}
-                else if column.ends_with("At") {json!(row.try_get::<Option<DateTime<Utc>>>("",column).map_err(|e|AuthError::internal(e.to_string()))?.map(|date|date.to_rfc3339_opts(SecondsFormat::Millis,true)))}
-                else {json!(row.try_get::<Option<String>>("",column).map_err(|e|AuthError::internal(e.to_string()))?)};
-                let _=object.insert((*column).into(),value);
+                let value = if *column == "memberCount" {
+                    json!(
+                        row.try_get::<i64>("", column)
+                            .map_err(|e| AuthError::internal(e.to_string()))?
+                    )
+                } else if column.ends_with("At") {
+                    json!(
+                        row.try_get::<Option<DateTime<Utc>>>("", column)
+                            .map_err(|e| AuthError::internal(e.to_string()))?
+                            .map(|date| date.to_rfc3339_opts(SecondsFormat::Millis, true))
+                    )
+                } else {
+                    json!(
+                        row.try_get::<Option<String>>("", column)
+                            .map_err(|e| AuthError::internal(e.to_string()))?
+                    )
+                };
+                let _ = object.insert((*column).into(), value);
             }
             values.push(Value::Object(object));
         }
-        let _=snapshot.insert(name.into(),Value::Array(values));
+        let _ = snapshot.insert(name.into(), Value::Array(values));
     }
     Ok(Value::Object(snapshot))
 }

@@ -1,22 +1,38 @@
 //! Native embedding contract: private request state is isolated per dispatch.
+#![cfg(test)]
+#![expect(
+    unused_crate_dependencies,
+    reason = "Cargo shares package dependencies across its library and integration targets"
+)]
 #![allow(
     clippy::unwrap_used,
     reason = "public boundary regressions fail on setup errors"
 )]
 
+#[cfg(test)]
+#[path = "anonymous_request_extensions_tests/tests.rs"]
+mod tests;
+
 use async_trait::async_trait;
+
 use better_auth::plugins::EmailPasswordPlugin;
+
 use better_auth::{AuthBuilder, AuthConfig};
+
 use better_auth_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, BeforeRequestAction,
     CreateUser, HttpMethod,
 };
+
 use better_auth_seaorm::{Database, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore};
+
 use serde_json::{Value, json};
+
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
 };
+
 use tokio::sync::Barrier;
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
@@ -65,7 +81,7 @@ impl AuthPlugin<Schema> for ApplicationContext {
         };
         request.extensions().insert(capture.clone());
         if request.header("x-concurrent").is_some() {
-            let _ = self.concurrent.wait().await;
+            _ = self.concurrent.wait().await;
         }
         let handler_copy = request.clone();
         let current = handler_copy
@@ -105,14 +121,17 @@ impl AuthPlugin<Schema> for ApplicationContext {
                 .sequence,
             capture.sequence
         );
-        let _ = response
-            .headers
-            .insert("x-application-sequence", capture.sequence.to_string());
+        drop(
+            response
+                .headers
+                .insert("x-application-sequence", capture.sequence.to_string()),
+        );
         Ok(response)
     }
 }
 
 struct StorageContext(Arc<Mutex<Vec<(usize, String)>>>);
+
 #[async_trait]
 impl SeaOrmHooks<Schema> for StorageContext {
     async fn before_create_user(
@@ -143,7 +162,7 @@ async fn configured() -> (
         .unwrap();
     let rows = Arc::new(Mutex::new(Vec::new()));
     let store = SeaOrmStore::<Schema>::new(config.clone(), database)
-        .with_hooks(vec![Arc::new(StorageContext(rows.clone()))]);
+        .with_hooks(vec![Arc::new(StorageContext(Arc::clone(&rows)))]);
     let auth = AuthBuilder::new(config)
         .store(store)
         .plugin(EmailPasswordPlugin::new().enable_username(false))
@@ -164,12 +183,16 @@ fn request(email: &str) -> AuthRequest {
             .to_string()
             .into_bytes(),
     );
-    let _ = request
-        .headers
-        .insert("content-type".into(), "application/json".into());
-    let _ = request
-        .headers
-        .insert("origin".into(), "http://localhost:42611".into());
+    drop(
+        request
+            .headers
+            .insert("content-type".into(), "application/json".into()),
+    );
+    drop(
+        request
+            .headers
+            .insert("origin".into(), "http://localhost:42611".into()),
+    );
     request.extensions().insert(ApplicationRequest {
         sequence: 999,
         email: "caller@example.test".into(),
@@ -184,126 +207,4 @@ fn sequence(response: &AuthResponse) -> usize {
         .unwrap()
         .parse()
         .unwrap()
-}
-
-#[tokio::test]
-async fn reused_public_request_keeps_caller_state_out_of_success_failure_and_later_signin() {
-    let (auth, rows) = configured().await;
-    let request = request("sequential-owner@example.test");
-    let created = auth.handle_request(request.clone()).await.unwrap();
-    assert_eq!(created.status, 200);
-    let duplicate = auth.handle_request(request.clone()).await.unwrap();
-    assert_eq!(duplicate.status, 422);
-    let mut signin = request.clone();
-    signin.path = "/api/auth/sign-in/email".into();
-    let signed_in = auth.handle_request(signin).await.unwrap();
-    assert_eq!(signed_in.status, 200);
-    assert_eq!(
-        [
-            sequence(&created),
-            sequence(&duplicate),
-            sequence(&signed_in)
-        ],
-        [1, 2, 3]
-    );
-    assert_eq!(
-        request
-            .extensions()
-            .get::<ApplicationRequest>()
-            .unwrap()
-            .sequence,
-        999
-    );
-    assert_eq!(
-        *rows.lock().unwrap(),
-        vec![(1, "sequential-owner@example.test".into())]
-    );
-    let user = auth
-        .store()
-        .get_user_by_email("sequential-owner@example.test")
-        .await
-        .unwrap()
-        .unwrap();
-    use better_auth_core::AuthUser;
-    assert_eq!(
-        auth.store()
-            .get_user_accounts(user.id().as_ref())
-            .await
-            .unwrap()
-            .len(),
-        1
-    );
-    assert_eq!(
-        auth.store()
-            .get_user_sessions(user.id().as_ref())
-            .await
-            .unwrap()
-            .len(),
-        2
-    );
-    let first: Value = serde_json::from_slice(&created.body).unwrap();
-    let last: Value = serde_json::from_slice(&signed_in.body).unwrap();
-    assert_eq!(
-        first.get("user").unwrap().get("id").unwrap(),
-        last.get("user").unwrap().get("id").unwrap()
-    );
-    assert_ne!(first.get("token").unwrap(), last.get("token").unwrap());
-}
-
-#[tokio::test]
-async fn concurrent_cloned_public_requests_share_only_their_own_trusted_dispatch_context() {
-    let (auth, rows) = configured().await;
-    let mut request = request("concurrent-owner@example.test");
-    let _ = request.headers.insert("x-concurrent".into(), "true".into());
-    let (left, right) = tokio::join!(
-        auth.handle_request(request.clone()),
-        auth.handle_request(request.clone())
-    );
-    let left = left.unwrap();
-    let right = right.unwrap();
-    let mut statuses = [left.status, right.status];
-    statuses.sort();
-    assert_eq!(statuses, [200, 422]);
-    let mut markers = [sequence(&left), sequence(&right)];
-    markers.sort();
-    assert_eq!(markers, [1, 2]);
-    assert_eq!(
-        request
-            .extensions()
-            .get::<ApplicationRequest>()
-            .unwrap()
-            .sequence,
-        999
-    );
-    let attempts = rows.lock().unwrap().clone();
-    assert!(!attempts.is_empty());
-    assert!(
-        attempts
-            .iter()
-            .all(|(sequence, email)| (1..=2).contains(sequence)
-                && email == "concurrent-owner@example.test")
-    );
-    use better_auth_core::AuthUser;
-    let user = auth
-        .store()
-        .get_user_by_email("concurrent-owner@example.test")
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        auth.store()
-            .get_user_accounts(user.id().as_ref())
-            .await
-            .unwrap()
-            .len(),
-        1
-    );
-    assert_eq!(
-        auth.store()
-            .get_user_sessions(user.id().as_ref())
-            .await
-            .unwrap()
-            .len(),
-        1
-    );
 }

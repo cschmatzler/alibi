@@ -1,8 +1,13 @@
 use super::*;
+
 use better_auth_core::{AuthConfig, CreateSession, CreateUser, HttpMethod};
+
 use chrono::{Duration, Utc};
+
 use serde_json::json;
+
 use std::collections::HashMap;
+
 use std::sync::Arc;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
@@ -20,7 +25,7 @@ async fn context() -> (AuthContext<TestSchema>, String, String) {
     let user_id = user.id().to_string();
     let session = database
         .create_session(CreateSession {
-            additional_fields: Default::default(),
+            additional_fields: better_auth_core::field_policy::FieldValues::default(),
             token: None,
             active_team_id: None,
             user_id: user_id.clone(),
@@ -32,7 +37,7 @@ async fn context() -> (AuthContext<TestSchema>, String, String) {
         })
         .await
         .unwrap();
-    let token = better_auth_core::entity::AuthSession::token(&session).to_string();
+    let token = better_auth_core::entity::AuthSession::token(&session).to_owned();
     (
         AuthContext::new(
             Arc::new(AuthConfig::new("a-secret-that-is-at-least-32-characters")),
@@ -43,12 +48,12 @@ async fn context() -> (AuthContext<TestSchema>, String, String) {
     )
 }
 
-fn request(token: &str, path: &str, body: serde_json::Value) -> AuthRequest {
+fn request(token: &str, path: &str, body: &serde_json::Value) -> AuthRequest {
     AuthRequest::from_parts(
         HttpMethod::Post,
-        path.to_string(),
+        path.to_owned(),
         HashMap::from([(
-            "cookie".to_string(),
+            "cookie".to_owned(),
             format!(
                 "better-auth.session_token={}",
                 better_auth_core::utils::cookie_utils::sign_cookie_value(
@@ -72,8 +77,8 @@ async fn server_key(
         .create_key(
             ctx,
             &CreateKeyRequest {
-                user_id: Some(user_id.to_string()),
-                config_id: Some(config_id.to_string()),
+                user_id: Some(user_id.to_owned()),
+                config_id: Some(config_id.to_owned()),
                 ..Default::default()
             },
         )
@@ -85,7 +90,7 @@ async fn server_key(
 async fn list_without_configuration_includes_all_user_configurations() {
     let (ctx, user_id, _) = context().await;
     let plugin = ApiKeyPlugin::builder().build().configuration(ApiKeyConfig {
-        config_id: "secondary".to_string(),
+        config_id: "secondary".to_owned(),
         ..Default::default()
     });
     server_key(&plugin, &ctx, &user_id, "default").await;
@@ -94,10 +99,10 @@ async fn list_without_configuration_includes_all_user_configurations() {
         .await
         .unwrap();
     assert_eq!(list.total, 2);
-    let list = list_keys_core(
+    let list_2 = list_keys_core(
         &user_id,
         &ListKeysQuery {
-            config_id: Some("secondary".to_string()),
+            config_id: Some("secondary".to_owned()),
             ..Default::default()
         },
         &plugin,
@@ -105,12 +110,18 @@ async fn list_without_configuration_includes_all_user_configurations() {
     )
     .await
     .unwrap();
-    assert_eq!(list.total, 1);
-    assert_eq!(list.api_keys[0].config_id, "secondary");
-    let list = list_keys_core(
+    assert_eq!(list_2.total, 1);
+    assert_eq!(
+        (list_2.api_keys)
+            .first()
+            .expect("fixture contains the requested index")
+            .config_id,
+        "secondary"
+    );
+    let list_3 = list_keys_core(
         &user_id,
         &ListKeysQuery {
-            config_id: Some("missing".to_string()),
+            config_id: Some("missing".to_owned()),
             ..Default::default()
         },
         &plugin,
@@ -118,10 +129,10 @@ async fn list_without_configuration_includes_all_user_configurations() {
     )
     .await
     .unwrap();
-    assert_eq!(list.total, 0);
+    assert_eq!(list_3.total, 0);
 
     let no_default = ApiKeyPlugin::builder()
-        .config_id("secondary".to_string())
+        .config_id("secondary".to_owned())
         .build();
     assert_eq!(
         list_keys_core(&user_id, &ListKeysQuery::default(), &no_default, &ctx)
@@ -136,7 +147,7 @@ async fn list_without_configuration_includes_all_user_configurations() {
 async fn http_requests_cannot_impersonate_users_or_change_server_permissions() {
     let (ctx, user_id, token) = context().await;
     let plugin = ApiKeyPlugin::builder().build();
-    let create = request(&token, "/api-key/create", json!({"userId":user_id}));
+    let create = request(&token, "/api-key/create", &(json!({"userId":user_id})));
     assert_eq!(
         plugin
             .handle_create(&create, &ctx)
@@ -149,7 +160,7 @@ async fn http_requests_cannot_impersonate_users_or_change_server_permissions() {
     let update = request(
         &token,
         "/api-key/update",
-        json!({"keyId":key.api_key.id,"userId":"someone-else","enabled":false}),
+        &(json!({"keyId":key.api_key.id,"userId":"someone-else","enabled":false})),
     );
     assert_eq!(
         plugin
@@ -159,23 +170,23 @@ async fn http_requests_cannot_impersonate_users_or_change_server_permissions() {
             .status_code(),
         401
     );
-    let update = request(
+    let update_2 = request(
         &token,
         "/api-key/update",
-        json!({"keyId":key.api_key.id,"permissions":null}),
+        &(json!({"keyId":key.api_key.id,"permissions":null})),
     );
     assert_eq!(
         plugin
-            .handle_update(&update, &ctx)
+            .handle_update(&update_2, &ctx)
             .await
             .unwrap_err()
             .to_string(),
         ApiKeyErrorCode::ServerOnlyProperty.message()
     );
-    let update = request(&token, "/api-key/update", json!({"keyId":"missing"}));
+    let update_3 = request(&token, "/api-key/update", &(json!({"keyId":"missing"})));
     assert_eq!(
         plugin
-            .handle_update(&update, &ctx)
+            .handle_update(&update_3, &ctx)
             .await
             .unwrap_err()
             .status_code(),
@@ -202,30 +213,36 @@ async fn metadata_can_be_cleared_and_disabled_metadata_is_ignored_on_update() {
     let update = request(
         &token,
         "/api-key/update",
-        json!({"keyId":key.api_key.id,"metadata":null}),
+        &(json!({"keyId":key.api_key.id,"metadata":null})),
     );
     let response = enabled.handle_update(&update, &ctx).await.unwrap();
     assert!(
-        serde_json::from_slice::<serde_json::Value>(&response.body).unwrap()["metadata"].is_null()
+        (*(serde_json::from_slice::<serde_json::Value>(&response.body).unwrap())
+            .get("metadata")
+            .unwrap_or(&serde_json::Value::Null))
+        .is_null()
     );
     let disabled = ApiKeyPlugin::builder().build();
-    let update = request(
+    let update_2 = request(
         &token,
         "/api-key/update",
-        json!({"keyId":key.api_key.id,"metadata":{"ignored":true},"enabled":false}),
+        &(json!({"keyId":key.api_key.id,"metadata":{"ignored":true},"enabled":false})),
     );
-    let response = disabled.handle_update(&update, &ctx).await.unwrap();
-    let result: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert!(result["metadata"].is_null());
-    assert_eq!(result["enabled"], false);
-    let update = request(
+    let response_2 = disabled.handle_update(&update_2, &ctx).await.unwrap();
+    let result: serde_json::Value = serde_json::from_slice(&response_2.body).unwrap();
+    assert!((*(result).get("metadata").unwrap_or(&serde_json::Value::Null)).is_null());
+    assert_eq!(
+        (*(result).get("enabled").unwrap_or(&serde_json::Value::Null)),
+        false
+    );
+    let update_3 = request(
         &token,
         "/api-key/update",
-        json!({"keyId":key.api_key.id,"metadata":null}),
+        &(json!({"keyId":key.api_key.id,"metadata":null})),
     );
     assert_eq!(
         disabled
-            .handle_update(&update, &ctx)
+            .handle_update(&update_3, &ctx)
             .await
             .unwrap_err()
             .to_string(),
@@ -250,9 +267,9 @@ async fn trusted_creation_and_update_preserve_permissions_and_fractional_expirat
                 user_id: Some(user_id.clone()),
                 expires_in: Some(86400.25),
                 remaining: Some(3.0),
-                permissions: Some(super::ApiKeyPermissions::from([(
-                    "device".to_string(),
-                    vec!["read".to_string()],
+                permissions: Some(ApiKeyPermissions::from([(
+                    "device".to_owned(),
+                    vec!["read".to_owned()],
                 )])),
                 ..Default::default()
             },
@@ -303,12 +320,14 @@ async fn list_rejects_invalid_pagination_instead_of_ignoring_it() {
         ("limit", "bad"),
         ("sortDirection", "sideways"),
     ] {
-        let mut req = request(&token, "/api-key/list", json!({}));
-        req.query.insert(field.to_string(), value.to_string());
+        let mut req = request(&token, "/api-key/list", &(json!({})));
+        req.query.insert(field.to_owned(), value.to_owned());
         let response = plugin.handle_list(&req, &ctx).await.unwrap();
         assert_eq!(response.status, 400);
         assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(&response.body).unwrap()["code"],
+            (*(serde_json::from_slice::<serde_json::Value>(&response.body).unwrap())
+                .get("code")
+                .unwrap_or(&serde_json::Value::Null)),
             "VALIDATION_ERROR"
         );
     }
@@ -325,7 +344,7 @@ async fn forced_cleanup_preserves_rows_on_store_failure_and_retries_without_thro
         .await
         .unwrap();
     let database = Arc::new(better_auth_seaorm::SeaOrmStore::<TestSchema>::new(
-        config.clone(),
+        std::sync::Arc::clone(&config),
         connection.clone(),
     ));
     let ctx = AuthContext::new(config, database);

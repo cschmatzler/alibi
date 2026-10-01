@@ -20,16 +20,33 @@ pub enum EmailOtpStorage {
     Custom(Arc<dyn EmailOtpCodec>),
 }
 
+impl std::fmt::Debug for EmailOtpStorage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Plain => f.write_str("EmailOtpStorage::Plain"),
+            Self::Hashed => f.write_str("EmailOtpStorage::Hashed"),
+            Self::Encrypted => f.write_str("EmailOtpStorage::Encrypted"),
+            Self::Custom(..) => f.write_str("EmailOtpStorage::Custom"),
+        }
+    }
+}
+
 impl EmailOtpStorage {
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn store(&self, otp: &str, secret: &str) -> AuthResult<String> {
         match self {
-            Self::Plain => Ok(otp.to_string()),
+            Self::Plain => Ok(otp.to_owned()),
             Self::Hashed => Ok(hash_token(otp)),
             Self::Encrypted => encrypt(otp, secret),
             Self::Custom(codec) => codec.store(otp).await,
         }
     }
 
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn verify(&self, stored: &str, otp: &str, secret: &str) -> AuthResult<bool> {
         match self {
             Self::Plain => Ok(constant_time_equal(stored, otp)),
@@ -39,9 +56,12 @@ impl EmailOtpStorage {
         }
     }
 
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn retrieve(&self, stored: &str, secret: &str) -> AuthResult<Option<String>> {
         let plain = match self {
-            Self::Plain => Some(stored.to_string()),
+            Self::Plain => Some(stored.to_owned()),
             Self::Hashed => None,
             Self::Encrypted => Some(decrypt(stored, secret)?),
             Self::Custom(codec) => codec.retrieve(stored).await?,
@@ -51,11 +71,14 @@ impl EmailOtpStorage {
         })
     }
 
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn reusable(&self, stored: &str, secret: &str) -> AuthResult<Option<String>> {
         match self {
             Self::Hashed => Ok(None),
             Self::Custom(codec) => codec.retrieve(stored).await,
-            _ => self.retrieve(stored, secret).await,
+            Self::Plain | Self::Encrypted => self.retrieve(stored, secret).await,
         }
     }
 }

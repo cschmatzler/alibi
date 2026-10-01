@@ -2,7 +2,7 @@
 use sea_orm_migration::prelude::*;
 pub(super) struct DetachOrganizationReferences;
 impl MigrationName for DetachOrganizationReferences {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "m20261001_000014_detach_organization_references"
     }
 }
@@ -11,6 +11,10 @@ impl MigrationTrait for DetachOrganizationReferences {
     fn use_transaction(&self) -> Option<bool> {
         Some(false)
     }
+    #[expect(
+        elided_lifetimes_in_paths,
+        reason = "SeaORM MigrationTrait requires its implicit manager lifetime to remain late-bound"
+    )]
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         super::user_reference::remove_auth_references(
             manager,

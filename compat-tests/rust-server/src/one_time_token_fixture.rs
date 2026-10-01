@@ -1,10 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
 use axum::{
+    Json, Router,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::post,
-    Json, Router,
 };
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;

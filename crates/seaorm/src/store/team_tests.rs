@@ -1,17 +1,26 @@
 use super::*;
+
 use crate::store::{bundled_schema::BundledSchema, migrator::run_migrations};
+
 use better_auth_core::AuthConfig;
+
 use better_auth_core::entity::{AuthSession, AuthUser};
+
 use better_auth_core::store::{
     InvitationStore, MemberStore, OrganizationRoleStore, OrganizationStore, SessionStore, UserStore,
 };
+
 use better_auth_core::types::{
     CreateInvitation, CreateMember, CreateOrganization, CreateOrganizationRole, CreateSession,
     CreateUser, InvitationStatus, OrganizationRoleSelector, UpdateOrganizationRole,
 };
+
 use chrono::Duration;
+
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
+
 use std::sync::Arc;
+
 use tokio::{sync::Barrier, task::JoinSet};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -57,7 +66,7 @@ async fn room(
 async fn session(store: &SeaOrmStore<BundledSchema>, user_id: &str) -> AuthResult<String> {
     Ok(store
         .create_session(CreateSession {
-            additional_fields: Default::default(),
+            additional_fields: better_auth_core::field_policy::FieldValues::default(),
             token: None,
             user_id: user_id.to_owned(),
             expires_at: Utc::now() + Duration::hours(1),
@@ -99,6 +108,10 @@ async fn stored_count(store: &SeaOrmStore<BundledSchema>, team_id: &str) -> Auth
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn configured_query_limit_bounds_public_lists_without_truncating_owned_deletion() -> TestResult
 {
     let store = memory_store().await?;
@@ -111,20 +124,22 @@ async fn configured_query_limit_bounds_public_lists_without_truncating_owned_del
     let second = room(&store, &org, "Second").await?;
     let third = room(&store, &org, "Third").await?;
     for team in [&third, &first, &second] {
-        let _ = store.add_team_member(&team.id, &principal, None).await?;
+        drop(store.add_team_member(&team.id, &principal, None).await?);
     }
     for prefix in ["limit-other-one", "limit-other-two"] {
         let member = user(&store, prefix).await?;
-        let _ = store.add_team_member(&first.id, &member, None).await?;
+        drop(store.add_team_member(&first.id, &member, None).await?);
     }
     for name in ["first-role", "second-role", "third-role"] {
-        let _ = store
-            .create_organization_role(CreateOrganizationRole {
-                organization_id: org.clone(),
-                role: name.to_owned(),
-                permission: Default::default(),
-            })
-            .await?;
+        drop(
+            store
+                .create_organization_role(CreateOrganizationRole {
+                    organization_id: org.clone(),
+                    role: name.to_owned(),
+                    permission: better_auth_core::OrganizationPermissions::default(),
+                })
+                .await?,
+        );
     }
     assert_eq!(
         limited
@@ -167,18 +182,26 @@ async fn configured_query_limit_bounds_public_lists_without_truncating_owned_del
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn invitation_acceptance_is_atomic_for_capacity_identity_and_tenant_failures() -> TestResult {
     let store = memory_store().await?;
     let org = organization(&store, "compound-invitation").await?;
     let other_org = organization(&store, "other-organization").await?;
     let inviter = user(&store, "inviter").await?;
-    let invitee = user(&store, "invitee").await?;
+    let recipient = user(&store, "invitee").await?;
     let wrong_user = user(&store, "wrong-user").await?;
     let blocker = user(&store, "seat-blocker").await?;
     let first = room(&store, &org, "First").await?;
     let second = room(&store, &org, "Second").await?;
     let foreign = room(&store, &other_org, "Foreign").await?;
-    let token = session(&store, &invitee).await?;
+    let token = session(&store, &recipient).await?;
     let wrong_token = session(&store, &wrong_user).await?;
     let invitation = invite(
         &store,
@@ -188,18 +211,28 @@ async fn invitation_acceptance_is_atomic_for_capacity_identity_and_tenant_failur
         &[&first.id, &second.id],
     )
     .await?;
-    let _ = store.add_team_member(&second.id, &blocker, Some(1)).await?;
+    drop(store.add_team_member(&second.id, &blocker, Some(1)).await?);
     let limits = vec![(first.id.clone(), Some(1)), (second.id.clone(), Some(1))];
 
     assert!(
         store
-            .accept_invitation_with_teams(&invitation.id, &invitee, &token, &limits, None)
+            .accept_invitation_with_teams(&invitation.id, &recipient, &token, &limits, None)
             .await
             .is_err()
     );
-    assert!(store.get_team_member(&first.id, &invitee).await?.is_none());
-    assert!(store.get_team_member(&second.id, &invitee).await?.is_none());
-    assert!(store.get_member(&org, &invitee).await?.is_none());
+    assert!(
+        store
+            .get_team_member(&first.id, &recipient)
+            .await?
+            .is_none()
+    );
+    assert!(
+        store
+            .get_team_member(&second.id, &recipient)
+            .await?
+            .is_none()
+    );
+    assert!(store.get_member(&org, &recipient).await?.is_none());
     assert_eq!(stored_count(&store, &first.id).await?, 0);
     assert_eq!(stored_count(&store, &second.id).await?, 1);
     assert_eq!(
@@ -226,14 +259,19 @@ async fn invitation_acceptance_is_atomic_for_capacity_identity_and_tenant_failur
     .await?;
     assert!(
         store
-            .accept_invitation_with_teams(&tenant_invitation.id, &invitee, &token, &[], None)
+            .accept_invitation_with_teams(&tenant_invitation.id, &recipient, &token, &[], None)
             .await
             .is_err()
     );
-    assert!(store.get_team_member(&first.id, &invitee).await?.is_none());
     assert!(
         store
-            .get_team_member(&foreign.id, &invitee)
+            .get_team_member(&first.id, &recipient)
+            .await?
+            .is_none()
+    );
+    assert!(
+        store
+            .get_team_member(&foreign.id, &recipient)
             .await?
             .is_none()
     );
@@ -254,7 +292,7 @@ async fn invitation_acceptance_is_atomic_for_capacity_identity_and_tenant_failur
     ));
     assert!(matches!(
         store
-            .accept_invitation_with_teams(&invitation.id, &invitee, &wrong_token, &limits, None)
+            .accept_invitation_with_teams(&invitation.id, &recipient, &wrong_token, &limits, None)
             .await,
         Err(AuthError::SessionNotFound)
     ));
@@ -278,8 +316,8 @@ async fn invitation_acceptance_is_atomic_for_capacity_identity_and_tenant_failur
     assert!(wrong_session.active_organization_id().is_none());
     assert!(wrong_session.active_team_id().is_none());
 
-    let expired_token = session(&store, &invitee).await?;
-    let _ = crate::store::entities::session::Entity::update_many()
+    let expired_token = session(&store, &recipient).await?;
+    let _ignored_connection = crate::store::entities::session::Entity::update_many()
         .filter(crate::store::entities::session::Column::Token.eq(&expired_token))
         .col_expr(
             crate::store::entities::session::Column::ExpiresAt,
@@ -289,15 +327,15 @@ async fn invitation_acceptance_is_atomic_for_capacity_identity_and_tenant_failur
         .await?;
     assert!(matches!(
         store
-            .accept_invitation_with_teams(&invitation.id, &invitee, &expired_token, &limits, None)
+            .accept_invitation_with_teams(&invitation.id, &recipient, &expired_token, &limits, None)
             .await,
         Err(AuthError::SessionNotFound)
     ));
     // A persisted, revoked session cannot authorize the compound transition.
     // Capacity is available here so a missing active predicate cannot hide
     // behind the team's capacity rejection.
-    let revoked_token = session(&store, &invitee).await?;
-    let _ = crate::store::entities::session::Entity::update_many()
+    let revoked_token = session(&store, &recipient).await?;
+    let _ignored_connection_2 = crate::store::entities::session::Entity::update_many()
         .filter(crate::store::entities::session::Column::Token.eq(&revoked_token))
         .col_expr(
             crate::store::entities::session::Column::Active,
@@ -307,13 +345,23 @@ async fn invitation_acceptance_is_atomic_for_capacity_identity_and_tenant_failur
         .await?;
     assert!(matches!(
         store
-            .accept_invitation_with_teams(&invitation.id, &invitee, &revoked_token, &limits, None)
+            .accept_invitation_with_teams(&invitation.id, &recipient, &revoked_token, &limits, None)
             .await,
         Err(AuthError::SessionNotFound)
     ));
-    assert!(store.get_member(&org, &invitee).await?.is_none());
-    assert!(store.get_team_member(&first.id, &invitee).await?.is_none());
-    assert!(store.get_team_member(&second.id, &invitee).await?.is_none());
+    assert!(store.get_member(&org, &recipient).await?.is_none());
+    assert!(
+        store
+            .get_team_member(&first.id, &recipient)
+            .await?
+            .is_none()
+    );
+    assert!(
+        store
+            .get_team_member(&second.id, &recipient)
+            .await?
+            .is_none()
+    );
     assert_eq!(
         store
             .get_invitation_by_id(&invitation.id)
@@ -322,16 +370,26 @@ async fn invitation_acceptance_is_atomic_for_capacity_identity_and_tenant_failur
         Some(InvitationStatus::Pending)
     );
     let accepted = store
-        .accept_invitation_with_teams(&invitation.id, &invitee, &token, &limits, None)
+        .accept_invitation_with_teams(&invitation.id, &recipient, &token, &limits, None)
         .await?
         .ok_or_else(|| std::io::Error::other("Invitation was not accepted"))?;
     assert_eq!(accepted.0.status, InvitationStatus::Accepted);
     assert_eq!(accepted.1.organization_id, org);
-    assert_eq!(accepted.1.user_id, invitee);
+    assert_eq!(accepted.1.user_id, recipient);
     assert_eq!(stored_count(&store, &first.id).await?, 1);
     assert_eq!(stored_count(&store, &second.id).await?, 1);
-    assert!(store.get_team_member(&first.id, &invitee).await?.is_some());
-    assert!(store.get_team_member(&second.id, &invitee).await?.is_some());
+    assert!(
+        store
+            .get_team_member(&first.id, &recipient)
+            .await?
+            .is_some()
+    );
+    assert!(
+        store
+            .get_team_member(&second.id, &recipient)
+            .await?
+            .is_some()
+    );
     let changed = store
         .get_session(&token)
         .await?
@@ -340,7 +398,7 @@ async fn invitation_acceptance_is_atomic_for_capacity_identity_and_tenant_failur
     assert!(changed.active_team_id().is_none());
     assert!(
         store
-            .accept_invitation_with_teams(&invitation.id, &invitee, &token, &limits, None)
+            .accept_invitation_with_teams(&invitation.id, &recipient, &token, &limits, None)
             .await?
             .is_none()
     );
@@ -349,14 +407,18 @@ async fn invitation_acceptance_is_atomic_for_capacity_identity_and_tenant_failur
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn invitation_expiry_and_membership_limit_preserve_pending_state_and_single_team_updates_session()
 -> TestResult {
     let store = memory_store().await?;
     let org = organization(&store, "single-team-invitation").await?;
     let inviter = user(&store, "single-inviter").await?;
-    let invitee = user(&store, "single-invitee").await?;
+    let recipient = user(&store, "single-invitee").await?;
     let team = room(&store, &org, "Only").await?;
-    let token = session(&store, &invitee).await?;
+    let token = session(&store, &recipient).await?;
     let expired = store
         .create_invitation(CreateInvitation::new(
             &org,
@@ -368,7 +430,7 @@ async fn invitation_expiry_and_membership_limit_preserve_pending_state_and_singl
         .await?;
     assert!(
         store
-            .accept_invitation_with_teams(&expired.id, &invitee, &token, &[], None)
+            .accept_invitation_with_teams(&expired.id, &recipient, &token, &[], None)
             .await?
             .is_none()
     );
@@ -382,7 +444,7 @@ async fn invitation_expiry_and_membership_limit_preserve_pending_state_and_singl
     .await?;
     assert!(
         store
-            .accept_invitation_with_teams(&invitation.id, &invitee, &token, &[], Some(0))
+            .accept_invitation_with_teams(&invitation.id, &recipient, &token, &[], Some(0))
             .await
             .is_err()
     );
@@ -394,10 +456,12 @@ async fn invitation_expiry_and_membership_limit_preserve_pending_state_and_singl
             .map(|row| row.status),
         Some(InvitationStatus::Pending)
     );
-    let _ = store
-        .accept_invitation_with_teams(&invitation.id, &invitee, &token, &[], Some(1))
-        .await?
-        .ok_or_else(|| std::io::Error::other("Expected accepted invitation"))?;
+    drop(
+        store
+            .accept_invitation_with_teams(&invitation.id, &recipient, &token, &[], Some(1))
+            .await?
+            .ok_or_else(|| std::io::Error::other("Expected accepted invitation"))?,
+    );
     let persisted = store
         .get_session(&token)
         .await?
@@ -408,6 +472,10 @@ async fn invitation_expiry_and_membership_limit_preserve_pending_state_and_singl
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn deleting_team_prunes_only_live_pending_invitation_links() -> TestResult {
     let store = memory_store().await?;
     let org = organization(&store, "team-delete").await?;
@@ -425,9 +493,11 @@ async fn deleting_team_prunes_only_live_pending_invitation_links() -> TestResult
     .await?;
     let only = invite(&store, &org, &inviter, "only@example.com", &[&first.id]).await?;
     let accepted = invite(&store, &org, &inviter, "accepted@example.com", &[&first.id]).await?;
-    let _ = store
-        .update_invitation_status(&accepted.id, InvitationStatus::Accepted)
-        .await?;
+    drop(
+        store
+            .update_invitation_status(&accepted.id, InvitationStatus::Accepted)
+            .await?,
+    );
     let mut expired_data = CreateInvitation::new(
         &org,
         "expired@example.com",
@@ -437,7 +507,7 @@ async fn deleting_team_prunes_only_live_pending_invitation_links() -> TestResult
     );
     expired_data.team_id = Some(first.id.clone());
     let expired = store.create_invitation(expired_data).await?;
-    let _ = store.add_team_member(&first.id, &inviter, None).await?;
+    drop(store.add_team_member(&first.id, &inviter, None).await?);
     assert!(!store.delete_team(&other_org, &first.id).await?);
     assert!(store.get_team(Some(&org), &first.id).await?.is_some());
     assert!(store.delete_team(&org, &first.id).await?);
@@ -474,6 +544,10 @@ async fn deleting_team_prunes_only_live_pending_invitation_links() -> TestResult
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn member_and_user_deletion_clean_team_links_and_release_capacity() -> TestResult {
     let store = memory_store().await?;
     let first_org = organization(&store, "cleanup-first").await?;
@@ -483,17 +557,23 @@ async fn member_and_user_deletion_clean_team_links_and_release_capacity() -> Tes
     let first_member = store
         .create_member(CreateMember::new(&first_org, &principal, "member"))
         .await?;
-    let _ = store
-        .create_member(CreateMember::new(&second_org, &principal, "member"))
-        .await?;
+    drop(
+        store
+            .create_member(CreateMember::new(&second_org, &principal, "member"))
+            .await?,
+    );
     let first = room(&store, &first_org, "First").await?;
     let second = room(&store, &second_org, "Second").await?;
-    let _ = store
-        .add_team_member(&second.id, &principal, Some(1))
-        .await?;
-    let _ = store
-        .add_team_member(&first.id, &principal, Some(1))
-        .await?;
+    drop(
+        store
+            .add_team_member(&second.id, &principal, Some(1))
+            .await?,
+    );
+    drop(
+        store
+            .add_team_member(&first.id, &principal, Some(1))
+            .await?,
+    );
     // Joined user-team lists follow membership insertion, even when team
     // creation order differs. Sorting the teams would change this contract.
     assert_eq!(
@@ -533,6 +613,10 @@ async fn member_and_user_deletion_clean_team_links_and_release_capacity() -> Tes
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn dynamic_roles_scope_reads_and_mutations_and_persist_json_permission_values() -> TestResult
 {
     let store = memory_store().await?;
@@ -610,6 +694,14 @@ async fn dynamic_roles_scope_reads_and_mutations_and_persist_json_permission_val
 // These requests use independent connection pools. The seat limit and one-use
 // invitation transition must be enforced by SQL across service instances.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_winner()
 -> TestResult {
     let directory = std::env::temp_dir().join(format!("better-auth-team-race-{}", Uuid::new_v4()));
@@ -623,7 +715,7 @@ async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_
         let mut stores = Vec::new();
         for index in 0..8 {
             let mut options = ConnectOptions::new(url.clone());
-            let _ = options.min_connections(1).max_connections(1);
+            let _ignored_max_connections = options.min_connections(1).max_connections(1);
             let database = Database::connect(options).await?;
             if index == 0 {
                 run_migrations(&database).await?;
@@ -646,14 +738,14 @@ async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_
         let barrier = Arc::new(Barrier::new(8));
         let mut tasks = JoinSet::new();
         for (store, user_id) in stores.iter().zip(&user_ids) {
-            let store = store.clone();
+            let store = Arc::clone(store);
             let user_id = user_id.clone();
             let team_id = team.id.clone();
-            let barrier = barrier.clone();
-            let _ = tasks.spawn(async move {
-                let _ = barrier.wait().await;
+            let barrier = Arc::clone(&barrier);
+            drop(tasks.spawn(async move {
+                let _ignored_wait = barrier.wait().await;
                 store.add_team_member(&team_id, &user_id, Some(2)).await
-            });
+            }));
         }
         let mut admitted = Vec::new();
         let mut rejected = 0;
@@ -711,30 +803,30 @@ async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_
             AddTeamMemberResult::Added(_)
         ));
         let invitee = user(primary, "race-invitee").await?;
-        let inviter = user_ids
+        let sender = user_ids
             .first()
             .ok_or_else(|| std::io::Error::other("Missing inviter"))?;
         let target = room(primary, &org, "Invitation").await?;
         let invitation = invite(
             primary,
             &org,
-            inviter,
+            sender,
             "race-invitee@example.com",
             &[&target.id],
         )
         .await?;
         let token = session(primary, &invitee).await?;
-        let barrier = Arc::new(Barrier::new(8));
-        let mut tasks = JoinSet::new();
+        let barrier_2 = Arc::new(Barrier::new(8));
+        let mut tasks_2 = JoinSet::new();
         for store in &stores {
-            let store = store.clone();
-            let barrier = barrier.clone();
+            let store = Arc::clone(store);
+            let barrier_2_3 = Arc::clone(&barrier_2);
             let invite_id = invitation.id.clone();
             let user_id = invitee.clone();
             let token = token.clone();
             let team_id = target.id.clone();
-            let _ = tasks.spawn(async move {
-                let _ = barrier.wait().await;
+            drop(tasks_2.spawn(async move {
+                let _ignored_wait_2 = barrier_2_3.wait().await;
                 store
                     .accept_invitation_with_teams(
                         &invite_id,
@@ -744,10 +836,10 @@ async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_
                         None,
                     )
                     .await
-            });
+            }));
         }
         let mut winners = 0;
-        while let Some(result) = tasks.join_next().await {
+        while let Some(result) = tasks_2.join_next().await {
             if result??.is_some() {
                 winners += 1;
             }

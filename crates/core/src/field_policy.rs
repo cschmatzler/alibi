@@ -1,7 +1,10 @@
 //! Application and plugin field policies at the session input boundary.
 use crate::utils::json::JsValue;
+
 use indexmap::{IndexMap, IndexSet};
+
 use serde_json::Value;
+
 use std::{fmt, sync::Arc};
 
 /// Values retain JavaScript numbers until the actual database binding.
@@ -12,17 +15,24 @@ pub struct FieldValues {
     undefined_input_keys: IndexSet<String>,
     transform_omitted: bool,
 }
+
 impl FieldValues {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
     /// Whether parsing supplied any keys, including a transform returning undefined.
     /// Unlike `is_empty`, this reflects JavaScript Object.keys before adapter omission.
+    #[must_use]
     pub fn has_input_fields(&self) -> bool {
         !self.values.is_empty() || !self.undefined_input_keys.is_empty()
     }
     /// Consume pending adapter callbacks once using current values after database hooks.
     /// Custom stores must call this immediately before binding configured session fields.
+    ///
+    /// # Errors
+    ///
+    /// Propagates errors from configured adapter field transforms.
     pub fn apply_adapter_transforms(&mut self) -> crate::AuthResult<()> {
         if let Some(fields) = self.adapter_fields.take() {
             for (name, field) in &*fields {
@@ -33,15 +43,15 @@ impl FieldValues {
                     && !self.values.contains_key(name)
                     && let Some(default) = &field.default
                 {
-                    let _ = self.values.insert(name.clone(), default.value());
+                    drop(self.values.insert(name.clone(), default.value()));
                 }
                 if let Some(transform) = &field.transform {
                     match transform(self.values.get(name))? {
                         Some(value) => {
-                            let _ = self.values.insert(name.clone(), value);
+                            drop(self.values.insert(name.clone(), value));
                         }
                         None => {
-                            let _ = self.values.shift_remove(name);
+                            drop(self.values.shift_remove(name));
                         }
                     }
                 }
@@ -59,26 +69,30 @@ impl FieldValues {
             .as_ref()
             .is_some_and(|fields| fields.contains_key(name))
         {
-            let _ = self.values.entry(name.to_owned()).or_insert(value);
+            let _ignored_or_insert = self.values.entry(name.to_owned()).or_insert(value);
         }
     }
 }
+
 impl fmt::Debug for FieldValues {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.values.fmt(f)
     }
 }
+
 impl std::ops::Deref for FieldValues {
     type Target = IndexMap<String, JsValue>;
     fn deref(&self) -> &Self::Target {
         &self.values
     }
 }
+
 impl std::ops::DerefMut for FieldValues {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.values
     }
 }
+
 impl From<IndexMap<String, JsValue>> for FieldValues {
     fn from(values: IndexMap<String, JsValue>) -> Self {
         Self {
@@ -87,11 +101,13 @@ impl From<IndexMap<String, JsValue>> for FieldValues {
         }
     }
 }
+
 impl FromIterator<(String, JsValue)> for FieldValues {
-    fn from_iter<T: IntoIterator<Item = (String, JsValue)>>(values: T) -> Self {
-        IndexMap::from_iter(values).into()
+    fn from_iter<T: IntoIterator<Item = (String, JsValue)>>(iter: T) -> Self {
+        IndexMap::from_iter(iter).into()
     }
 }
+
 impl IntoIterator for FieldValues {
     type Item = (String, JsValue);
     type IntoIter = indexmap::map::IntoIter<String, JsValue>;
@@ -99,6 +115,7 @@ impl IntoIterator for FieldValues {
         self.values.into_iter()
     }
 }
+
 impl<'a> IntoIterator for &'a FieldValues {
     type Item = (&'a String, &'a JsValue);
     type IntoIter = indexmap::map::Iter<'a, String, JsValue>;
@@ -106,6 +123,7 @@ impl<'a> IntoIterator for &'a FieldValues {
         self.values.iter()
     }
 }
+
 impl<'a> IntoIterator for &'a mut FieldValues {
     type Item = (&'a String, &'a mut JsValue);
     type IntoIter = indexmap::map::IterMut<'a, String, JsValue>;
@@ -113,19 +131,25 @@ impl<'a> IntoIterator for &'a mut FieldValues {
         self.values.iter_mut()
     }
 }
+
 impl serde::Serialize for FieldValues {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.values.serialize(serializer)
     }
 }
+
 impl<'de> serde::Deserialize<'de> for FieldValues {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         IndexMap::deserialize(deserializer).map(Self::from)
     }
 }
+
 pub type FieldOutput = serde_json::Map<String, Value>;
+
 pub type FieldConfigs = IndexMap<String, FieldConfig>;
+
 pub type FieldValidator = Arc<dyn Fn(&JsValue) -> Result<JsValue, String> + Send + Sync>;
+
 /// `None` is JavaScript undefined: absent input or omitted adapter output.
 pub type FieldTransform =
     Arc<dyn Fn(Option<&JsValue>) -> crate::AuthResult<Option<JsValue>> + Send + Sync>;
@@ -135,6 +159,7 @@ pub enum FieldDefault {
     Value(JsValue),
     Callback(Arc<dyn Fn() -> JsValue + Send + Sync>),
 }
+
 impl fmt::Debug for FieldDefault {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -143,7 +168,9 @@ impl fmt::Debug for FieldDefault {
         }
     }
 }
+
 impl FieldDefault {
+    #[must_use]
     pub fn value(&self) -> JsValue {
         match self {
             Self::Value(value) => value.clone(),
@@ -163,6 +190,7 @@ pub struct FieldConfig {
     pub validator: Option<FieldValidator>,
     pub transform: Option<FieldTransform>,
 }
+
 impl fmt::Debug for FieldConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FieldConfig")
@@ -176,7 +204,9 @@ impl fmt::Debug for FieldConfig {
             .finish()
     }
 }
+
 impl FieldConfig {
+    #[must_use]
     pub fn new(schema: Value) -> Self {
         Self {
             schema,
@@ -188,10 +218,12 @@ impl FieldConfig {
             transform: None,
         }
     }
+    #[must_use]
     pub fn default_value(mut self, value: impl Into<JsValue>) -> Self {
         self.default = Some(FieldDefault::Value(value.into()));
         self
     }
+    #[must_use]
     pub fn default_callback(
         mut self,
         callback: impl Fn() -> JsValue + Send + Sync + 'static,
@@ -199,14 +231,17 @@ impl FieldConfig {
         self.default = Some(FieldDefault::Callback(Arc::new(callback)));
         self
     }
-    pub fn read_only(mut self) -> Self {
+    #[must_use]
+    pub const fn read_only(mut self) -> Self {
         self.input = false;
         self
     }
-    pub fn hidden(mut self) -> Self {
+    #[must_use]
+    pub const fn hidden(mut self) -> Self {
         self.returned = false;
         self
     }
+    #[must_use]
     pub fn validate(
         mut self,
         validator: impl Fn(&JsValue) -> Result<JsValue, String> + Send + Sync + 'static,
@@ -214,6 +249,7 @@ impl FieldConfig {
         self.validator = Some(Arc::new(validator));
         self
     }
+    #[must_use]
     pub fn transform(
         mut self,
         transform: impl Fn(Option<&JsValue>) -> crate::AuthResult<Option<JsValue>>
@@ -235,16 +271,21 @@ pub enum FieldInputError {
 /// Immutable instance policies: configuration first, registered plugins last.
 #[derive(Debug, Clone, Default)]
 pub struct SessionFields(pub IndexMap<String, FieldConfig>);
+
 impl SessionFields {
     pub fn defaults(&self, values: &mut FieldValues) {
         for (name, field) in &self.0 {
             if let Some(default) = &field.default {
-                let _ = values
+                let _ignored_value = values
                     .entry(name.clone())
                     .or_insert_with(|| default.value());
             }
         }
     }
+    ///
+    /// # Errors
+    ///
+    /// Returns a validation error for disallowed fields or rejected field validators.
     pub fn parse_update(
         &self,
         input: &IndexMap<String, JsValue>,
@@ -281,16 +322,29 @@ impl SessionFields {
             };
             match value {
                 Some(value) => {
-                    let _ = parsed.insert(name.clone(), value);
+                    drop(parsed.insert(name.clone(), value));
                 }
                 None => {
-                    let _ = parsed.undefined_input_keys.insert(name.clone());
+                    let _ignored_clone = parsed.undefined_input_keys.insert(name.clone());
                 }
             }
         }
         Ok(parsed)
     }
 }
+
+/// Immutable adapter schema policies: plugins first, application configuration last.
+/// This differs from input/output `SessionFields`, matching getAuthTables precedence.
+#[derive(Debug, Clone, Default)]
+pub struct SessionAdapterFields(pub Arc<FieldConfigs>);
+
+impl SessionAdapterFields {
+    pub(crate) fn attach(&self, values: &mut FieldValues, creation: bool) {
+        values.transform_omitted = creation;
+        values.adapter_fields = Some(Arc::clone(&self.0));
+    }
+}
+
 fn truthy(value: &JsValue) -> bool {
     match value {
         JsValue::Null => false,
@@ -298,16 +352,5 @@ fn truthy(value: &JsValue) -> bool {
         JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
         JsValue::String(value) => !value.is_empty(),
         JsValue::Array(_) | JsValue::Object(_) => true,
-    }
-}
-
-/// Immutable adapter schema policies: plugins first, application configuration last.
-/// This differs from input/output SessionFields, matching getAuthTables precedence.
-#[derive(Debug, Clone, Default)]
-pub struct SessionAdapterFields(pub Arc<FieldConfigs>);
-impl SessionAdapterFields {
-    pub(crate) fn attach(&self, values: &mut FieldValues, creation: bool) {
-        values.transform_omitted = creation;
-        values.adapter_fields = Some(self.0.clone());
     }
 }

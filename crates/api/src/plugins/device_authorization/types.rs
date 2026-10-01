@@ -39,6 +39,10 @@ pub(super) struct DeviceTokenResponse {
 }
 
 #[derive(Debug, Serialize)]
+#[expect(
+    clippy::option_option,
+    reason = "The wire contract distinguishes an omitted field, explicit null, and a supplied value"
+)]
 pub(super) struct DeviceVerifyResponse {
     pub user_code: String,
     pub status: String,

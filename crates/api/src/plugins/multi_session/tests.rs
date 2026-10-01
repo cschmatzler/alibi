@@ -25,10 +25,14 @@ fn request_with_cookies(
 }
 
 fn pair(header: &str) -> String {
-    header.split(';').next().unwrap().to_string()
+    header.split(';').next().unwrap().to_owned()
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn signed_browser_sessions_select_other_accounts_and_reject_unrelated_tokens() {
     let ctx = create_test_context().await;
     let plugin = MultiSessionPlugin::new();
@@ -53,7 +57,7 @@ async fn signed_browser_sessions_select_other_accounts_and_reject_unrelated_toke
         impersonated_by: None,
         active_organization_id: None,
         active_team_id: None,
-        additional_fields: Default::default(),
+        additional_fields: better_auth_core::field_policy::FieldValues::default(),
     };
     let bob_session = ctx
         .database
@@ -68,7 +72,7 @@ async fn signed_browser_sessions_select_other_accounts_and_reject_unrelated_toke
     let cookie_for = |token: &str| {
         format!(
             "{}={}",
-            plugin.cookie_name(token, &ctx),
+            MultiSessionPlugin::cookie_name(token, &ctx),
             sign_cookie_value(token, &ctx.config.secret)
         )
     };
@@ -95,23 +99,23 @@ async fn signed_browser_sessions_select_other_accounts_and_reject_unrelated_toke
             cookie_for(&alice_session.token),
             format!(
                 "{}=invalid-last",
-                plugin.cookie_name(&alice_session.token, &ctx)
+                MultiSessionPlugin::cookie_name(&alice_session.token, &ctx)
             ),
             cookie_for(&bob_session.token),
         ],
         None,
     );
     let duplicate = plugin.on_request(&duplicate, &ctx).await.unwrap().unwrap();
-    let listed: serde_json::Value = serde_json::from_slice(&duplicate.body).unwrap();
-    assert_eq!(listed.as_array().unwrap().len(), 1);
-    assert_eq!(listed[0]["user"]["id"], bob.id);
+    let listed_2: serde_json::Value = serde_json::from_slice(&duplicate.body).unwrap();
+    assert_eq!(listed_2.as_array().unwrap().len(), 1);
+    assert_eq!(listed_2[0]["user"]["id"], bob.id);
     for (values, succeeds) in [
         (
             vec![
                 cookie_for(&alice_session.token),
                 format!(
                     "{}=invalid-last",
-                    plugin.cookie_name(&alice_session.token, &ctx)
+                    MultiSessionPlugin::cookie_name(&alice_session.token, &ctx)
                 ),
             ],
             false,
@@ -120,7 +124,7 @@ async fn signed_browser_sessions_select_other_accounts_and_reject_unrelated_toke
             vec![
                 format!(
                     "{}=invalid-first",
-                    plugin.cookie_name(&alice_session.token, &ctx)
+                    MultiSessionPlugin::cookie_name(&alice_session.token, &ctx)
                 ),
                 cookie_for(&alice_session.token),
             ],
@@ -148,7 +152,7 @@ async fn signed_browser_sessions_select_other_accounts_and_reject_unrelated_toke
                 pair(&create_session_cookie(&bob_session.token, &ctx.config)),
                 format!(
                     "{}={}",
-                    plugin.cookie_name(&alice_session.token, &ctx),
+                    MultiSessionPlugin::cookie_name(&alice_session.token, &ctx),
                     sign_cookie_value("", &ctx.config.secret)
                 ),
             ],
@@ -188,9 +192,9 @@ async fn signed_browser_sessions_select_other_accounts_and_reject_unrelated_toke
     );
     let selected = plugin.on_request(&select, &ctx).await.unwrap().unwrap();
     assert_eq!(selected.status, 200);
-    let body: serde_json::Value = serde_json::from_slice(&selected.body).unwrap();
-    assert_eq!(body["user"]["id"], alice.id);
-    assert_eq!(body["session"]["userId"], alice.id);
+    let body_2: serde_json::Value = serde_json::from_slice(&selected.body).unwrap();
+    assert_eq!(body_2["user"]["id"], alice.id);
+    assert_eq!(body_2["session"]["userId"], alice.id);
     let unrelated = create_auth_json_request_no_query(
         HttpMethod::Post,
         "/multi-session/set-active",
@@ -215,6 +219,10 @@ async fn signed_browser_sessions_select_other_accounts_and_reject_unrelated_toke
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn cookie_tampering_expiry_revocation_fallback_and_logout_preserve_state() {
     let ctx = create_test_context().await;
     let plugin = MultiSessionPlugin::new();
@@ -232,12 +240,12 @@ async fn cookie_tampering_expiry_revocation_fallback_and_logout_preserve_state()
     .await;
     let first = format!(
         "{}={}",
-        plugin.cookie_name(&one.token, &ctx),
+        MultiSessionPlugin::cookie_name(&one.token, &ctx),
         sign_cookie_value(&one.token, &ctx.config.secret)
     );
     let second = format!(
         "{}={}",
-        plugin.cookie_name(&two.token, &ctx),
+        MultiSessionPlugin::cookie_name(&two.token, &ctx),
         sign_cookie_value(&two.token, &ctx.config.secret)
     );
     let cookies = vec![
@@ -270,7 +278,7 @@ async fn cookie_tampering_expiry_revocation_fallback_and_logout_preserve_state()
         verify_cookie_value(new_session_cookie.value(), &ctx.config.secret),
         Some(two.token.clone())
     );
-    let tampered = vec![second.replace("=", "=tampered-")];
+    let tampered = vec![second.replace('=', "=tampered-")];
     let select = request_with_cookies(
         HttpMethod::Post,
         "/multi-session/set-active",
@@ -292,7 +300,7 @@ async fn cookie_tampering_expiry_revocation_fallback_and_logout_preserve_state()
     let expired = request_with_cookies(
         HttpMethod::Post,
         "/multi-session/set-active",
-        &[second.clone()],
+        std::slice::from_ref(&second),
         Some(json!({"sessionToken":two.token})),
     );
     let expired = plugin.on_request(&expired, &ctx).await.unwrap().unwrap();
@@ -305,14 +313,16 @@ async fn cookie_tampering_expiry_revocation_fallback_and_logout_preserve_state()
             .contains("Max-Age=0")
     );
     let signout = request_with_cookies(HttpMethod::Post, "/sign-out", &[second], None);
-    let _ = plugin
-        .after_request(
-            &signout,
-            &ctx,
-            AuthResponse::json(200, &json!({"success":true})).unwrap(),
-        )
-        .await
-        .unwrap();
+    drop(
+        plugin
+            .after_request(
+                &signout,
+                &ctx,
+                AuthResponse::json(200, &json!({"success":true})).unwrap(),
+            )
+            .await
+            .unwrap(),
+    );
     assert!(
         ctx.database
             .get_session(&two.token)
@@ -341,7 +351,7 @@ async fn new_session_hook_replaces_same_user_cookie_and_respects_browser_limit()
         .unwrap();
     let old_cookie = format!(
         "{}={}",
-        plugin.cookie_name(&old.token, &ctx),
+        MultiSessionPlugin::cookie_name(&old.token, &ctx),
         sign_cookie_value(&old.token, &ctx.config.secret)
     );
     let request = request_with_cookies(HttpMethod::Post, "/sign-in/email", &[old_cookie], None);
@@ -365,31 +375,31 @@ async fn new_session_hook_replaces_same_user_cookie_and_respects_browser_limit()
         response
             .headers
             .get_all("set-cookie")
-            .any(|value| value.starts_with(&plugin.cookie_name(new.token(), &ctx)))
+            .any(|value| value.starts_with(&MultiSessionPlugin::cookie_name(new.token(), &ctx)))
     );
     let multi_cookie = response
         .headers
         .get_all("set-cookie")
         .filter_map(|header| cookie::Cookie::parse(header.clone()).ok())
-        .find(|cookie| cookie.name() == plugin.cookie_name(new.token(), &ctx))
+        .find(|cookie| cookie.name() == MultiSessionPlugin::cookie_name(new.token(), &ctx))
         .unwrap();
-    assert_eq!(multi_cookie.max_age().unwrap().whole_seconds(), 604800);
+    assert_eq!(multi_cookie.max_age().unwrap().whole_seconds(), 604_800);
     let invalid_existing = request_with_cookies(
         HttpMethod::Post,
         "/sign-in/email",
-        &["other_multi-invalid=bad".to_string()],
+        &["other_multi-invalid=bad".to_owned()],
         None,
     );
-    let mut response = AuthResponse::json(200, &json!({"token":new.token()})).unwrap();
-    response.headers.append(
+    let mut response_2 = AuthResponse::json(200, &json!({"token":new.token()})).unwrap();
+    response_2.headers.append(
         "set-cookie",
         create_session_cookie(new.token(), &ctx.config),
     );
-    let response = plugin
-        .after_request(&invalid_existing, &ctx, response)
+    let response_2_3 = plugin
+        .after_request(&invalid_existing, &ctx, response_2)
         .await
         .unwrap();
-    assert_eq!(response.headers.get_all("set-cookie").count(), 1);
+    assert_eq!(response_2_3.headers.get_all("set-cookie").count(), 1);
     let empty = create_auth_request_no_query(
         HttpMethod::Get,
         "/multi-session/list-device-sessions",

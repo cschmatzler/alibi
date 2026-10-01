@@ -5,9 +5,9 @@ use uuid::Uuid;
 
 use better_auth_core::store::DeviceCodeStore;
 
-use crate::error::{AuthError, AuthResult};
 use crate::schema::AuthSchema;
-use crate::types::{CreateDeviceCode, DeviceCode, UpdateDeviceCode};
+use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::types::{CreateDeviceCode, DeviceCode, UpdateDeviceCode};
 
 use super::entities::device_code::{ActiveModel, Column, Entity};
 use super::{SeaOrmStore, map_db_err};
@@ -87,7 +87,7 @@ where
         active
             .update(self.connection())
             .await
-            .map(|model| DeviceCode::from(&model))
+            .map(|model_2| DeviceCode::from(&model_2))
             .map_err(map_db_err)
     }
 

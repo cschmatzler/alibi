@@ -1,18 +1,12 @@
 //! Wire validation for the organization access-control schemas.
 use better_auth_core::types::OrganizationPermissions;
-use better_auth_core::{AuthRequest, AuthResponse};
-use serde_json::{Map, Value, json};
 
-pub(super) fn error(message: impl Into<String>) -> AuthResponse {
-    response("VALIDATION_ERROR", message)
-}
+use better_auth_core::{AuthRequest, AuthResponse};
+
+use serde_json::{Map, Value, json};
 
 #[derive(Debug)]
 pub(super) struct Issue(Vec<String>);
-
-pub(super) fn issue(message: impl Into<String>) -> Issue {
-    Issue(vec![message.into()])
-}
 
 impl From<Issue> for AuthResponse {
     fn from(value: Issue) -> Self {
@@ -43,12 +37,20 @@ impl Issues {
     }
 }
 
+pub(super) fn error(message: impl Into<String>) -> AuthResponse {
+    response("VALIDATION_ERROR", message)
+}
+
+pub(super) fn issue(message: impl Into<String>) -> Issue {
+    Issue(vec![message.into()])
+}
+
 fn response(code: &str, message: impl Into<String>) -> AuthResponse {
     AuthResponse::json(400, &json!({"code":code,"message":message.into()}))
         .unwrap_or_else(|_| AuthResponse::text(400, "Validation failed"))
 }
 
-fn kind(value: Option<&Value>) -> &'static str {
+const fn kind(value: Option<&Value>) -> &'static str {
     match value {
         None => "undefined",
         Some(Value::Null) => "null",
@@ -67,6 +69,9 @@ fn expected(path: &str, expected: &str, value: Option<&Value>) -> Issue {
     ))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn body_object(req: &AuthRequest) -> Result<Map<String, Value>, AuthResponse> {
     let Some(bytes) = req.body.as_deref() else {
         // Bun's incoming empty chunked JSON stream materializes null. An absent
@@ -81,19 +86,24 @@ pub(super) fn body_object(req: &AuthRequest) -> Result<Map<String, Value>, AuthR
             value.strip_prefix("application/").is_some_and(|subtype| {
                 subtype.starts_with("json")
                     || subtype.find("+json").is_some_and(|index| {
-                        subtype[..index]
+                        subtype
+                            .get(..index)
+                            .unwrap_or_default()
                             .bytes()
-                            .all(|value| value.is_ascii_alphanumeric() || b".+-".contains(&value))
+                            .all(|byte| byte.is_ascii_alphanumeric() || b".+-".contains(&byte))
                     })
             })
         });
         return Err(expected("body", "object", (chunked && json).then_some(&Value::Null)).into());
     };
     let value = better_auth_core::utils::json::from_slice::<Value>(bytes)
-        .map_err(|_| response("BAD_REQUEST", "Invalid JSON in request body"))?;
+        .map_err(|_error| response("BAD_REQUEST", "Invalid JSON in request body"))?;
     object(Some(&value), "body").cloned().map_err(Into::into)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn object<'a>(
     value: Option<&'a Value>,
     path: &str,
@@ -103,6 +113,9 @@ pub(super) fn object<'a>(
         .ok_or_else(|| expected(path, "object", value))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn optional_string(
     input: &Map<String, Value>,
     field: &str,
@@ -119,6 +132,9 @@ pub(super) fn optional_string(
         .transpose()
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn required_string(
     input: &Map<String, Value>,
     field: &str,
@@ -131,6 +147,9 @@ pub(super) fn required_string(
         .ok_or_else(|| expected(path, "string", input.get(field)))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn permissions(
     value: Option<&Value>,
     path: &str,
@@ -165,7 +184,7 @@ pub(super) fn permissions(
                     .extend(expected(&format!("{action_path}.{index}"), "string", Some(action)).0);
             }
         }
-        let _ = permissions.insert(resource.to_owned(), granted);
+        drop(permissions.insert(resource.to_owned(), granted));
     }
     if issues.is_empty() {
         Ok(permissions)

@@ -6,11 +6,11 @@ use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::{
     EmailPasswordPlugin, MultiSessionConfig, MultiSessionPlugin, SessionManagementPlugin,
 };
-use better_auth::{prelude::CreateSession, AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::{sea_orm::DatabaseConnection, SeaOrmStore};
+use better_auth::{AuthBuilder, AuthConfig, AuthResult, prelude::CreateSession};
+use better_auth_seaorm::{SeaOrmStore, sea_orm::DatabaseConnection};
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicUsize, Ordering},
 };
 
 struct TokenHook(Arc<AtomicUsize>);

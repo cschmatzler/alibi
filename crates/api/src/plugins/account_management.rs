@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
+
 use validator::Validate;
 
 use better_auth_core::entity::{AuthAccount, AuthUser};
+
 use better_auth_core::{AuthContext, AuthError, AuthResult};
+
 use better_auth_core::{AuthRequest, AuthResponse};
 
 use super::StatusResponse;
@@ -26,7 +29,7 @@ struct UnlinkAccountRequest {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct AccountResponse {
+pub(in crate::plugins) struct AccountResponse {
     id: String,
     #[serde(rename = "accountId")]
     account_id: String,
@@ -53,60 +56,6 @@ better_auth_core::impl_auth_plugin! {
         get "/list-accounts" => handle_list_accounts, "list_accounts";
         post "/unlink-account" => handle_unlink_account, "unlink_account";
     }
-}
-
-// ---------------------------------------------------------------------------
-// Core functions — framework-agnostic business logic
-// ---------------------------------------------------------------------------
-
-pub(crate) async fn list_accounts_core(
-    user: &impl AuthUser,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<Vec<AccountResponse>> {
-    let accounts = ctx.database.get_user_accounts(&user.id()).await?;
-
-    let filtered: Vec<AccountResponse> = accounts
-        .iter()
-        .map(|acc| AccountResponse {
-            id: acc.id().to_string(),
-            account_id: acc.account_id().to_string(),
-            provider_id: acc.provider_id().to_string(),
-            user_id: acc.user_id().to_string(),
-            created_at: acc.created_at(),
-            updated_at: acc.updated_at(),
-            scopes: acc
-                .scope()
-                .map(|s| {
-                    s.split([' ', ','])
-                        .filter(|s| !s.is_empty())
-                        .map(|s| s.to_string())
-                        .collect()
-                })
-                .unwrap_or_default(),
-        })
-        .collect::<Vec<_>>();
-
-    let mut filtered = filtered;
-    filtered.sort_by_key(|account| account.created_at);
-
-    Ok(filtered)
-}
-
-pub(crate) async fn unlink_account_core(
-    user: &impl AuthUser,
-    account_id: &str,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<StatusResponse> {
-    let accounts = ctx.database.get_user_accounts(&user.id()).await?;
-    if accounts.len() == 1 && !ctx.config.account.account_linking.allow_unlinking_all {
-        return Err(AuthError::bad_request("You can't unlink your last account"));
-    }
-    let account = accounts
-        .iter()
-        .find(|account| account.id() == account_id)
-        .ok_or_else(|| AuthError::bad_request("Account not found"))?;
-    ctx.database.delete_account(&account.id()).await?;
-    Ok(StatusResponse { status: true })
 }
 
 // ---------------------------------------------------------------------------
@@ -140,4 +89,71 @@ impl AccountManagementPlugin {
         let response = unlink_account_core(&user, &unlink_req.account_id, ctx).await?;
         Ok(AuthResponse::json(200, &response)?)
     }
+}
+
+impl std::fmt::Debug for AccountManagementPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AccountManagementPlugin")
+            .finish_non_exhaustive()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Core functions — framework-agnostic business logic
+// ---------------------------------------------------------------------------
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn list_accounts_core(
+    user: &impl AuthUser,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<Vec<AccountResponse>> {
+    let accounts = ctx.database.get_user_accounts(&user.id()).await?;
+
+    let filtered: Vec<AccountResponse> = accounts
+        .iter()
+        .map(|acc| AccountResponse {
+            id: acc.id().to_string(),
+            account_id: acc.account_id().to_owned(),
+            provider_id: acc.provider_id().to_owned(),
+            user_id: acc.user_id().to_string(),
+            created_at: acc.created_at(),
+            updated_at: acc.updated_at(),
+            scopes: acc
+                .scope()
+                .map(|s| {
+                    s.split([' ', ','])
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default(),
+        })
+        .collect::<Vec<_>>();
+
+    let mut filtered = filtered;
+    filtered.sort_by_key(|account| account.created_at);
+
+    Ok(filtered)
+}
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn unlink_account_core(
+    user: &impl AuthUser,
+    account_id: &str,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<StatusResponse> {
+    let accounts = ctx.database.get_user_accounts(&user.id()).await?;
+    if accounts.len() == 1 && !ctx.config.account.account_linking.allow_unlinking_all {
+        return Err(AuthError::bad_request("You can't unlink your last account"));
+    }
+    let account = accounts
+        .iter()
+        .find(|account| account.id() == account_id)
+        .ok_or_else(|| AuthError::bad_request("Account not found"))?;
+    ctx.database.delete_account(&account.id()).await?;
+    Ok(StatusResponse { status: true })
 }

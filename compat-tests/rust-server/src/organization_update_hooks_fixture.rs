@@ -1,9 +1,9 @@
 //! Real application callbacks and observations of their SQLite effects.
 use crate::TestSchema;
 use axum::{
+    Json, Router,
     extract::Query,
     routing::{get, post},
-    Json, Router,
 };
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
@@ -14,32 +14,53 @@ use better_auth::plugins::organization::{
 use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_core::{
+    Member, UpdateUser,
     store::{MemberStore, OrganizationStore, UserStore},
     wire::UserView,
-    Member, UpdateUser,
 };
 use better_auth_seaorm::{
-    sea_orm::{ConnectionTrait, DbBackend, Statement},
     DatabaseConnection, SeaOrmStore,
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify};
 
 pub(super) async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
     let mut value = Map::new();
     for (name, sql, columns) in [
-        ("organizations", "SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id", &["id","name","slug","logo","metadata"][..]),
-        ("members", "SELECT m.id,m.organization_id AS organizationId,m.user_id AS userId,m.role FROM member m JOIN organization o ON o.id=m.organization_id JOIN users u ON u.id=m.user_id ORDER BY o.slug,u.email,m.id", &["id","organizationId","userId","role"][..]),
-        ("sessions", "SELECT s.id,s.user_id AS userId,s.active_organization_id AS activeOrganizationId,s.active_team_id AS activeTeamId FROM sessions s JOIN users u ON u.id=s.user_id ORDER BY u.email,s.created_at,s.id", &["id","userId","activeOrganizationId","activeTeamId"][..]),
-        ("users", "SELECT id,email,name FROM users ORDER BY email,id", &["id","email","name"][..]),
+        (
+            "organizations",
+            "SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id",
+            &["id", "name", "slug", "logo", "metadata"][..],
+        ),
+        (
+            "members",
+            "SELECT m.id,m.organization_id AS organizationId,m.user_id AS userId,m.role FROM member m JOIN organization o ON o.id=m.organization_id JOIN users u ON u.id=m.user_id ORDER BY o.slug,u.email,m.id",
+            &["id", "organizationId", "userId", "role"][..],
+        ),
+        (
+            "sessions",
+            "SELECT s.id,s.user_id AS userId,s.active_organization_id AS activeOrganizationId,s.active_team_id AS activeTeamId FROM sessions s JOIN users u ON u.id=s.user_id ORDER BY u.email,s.created_at,s.id",
+            &["id", "userId", "activeOrganizationId", "activeTeamId"][..],
+        ),
+        (
+            "users",
+            "SELECT id,email,name FROM users ORDER BY email,id",
+            &["id", "email", "name"][..],
+        ),
     ] {
-        let rows = database.query_all_raw(Statement::from_string(DbBackend::Sqlite, sql)).await.map_err(|error|AuthError::internal(error.to_string()))?;
+        let rows = database
+            .query_all_raw(Statement::from_string(DbBackend::Sqlite, sql))
+            .await
+            .map_err(|error| AuthError::internal(error.to_string()))?;
         let mut values = Vec::new();
         for row in rows {
             let mut object = Map::new();
             for column in columns {
-                let field = row.try_get::<Option<String>>("", column).map_err(|error|AuthError::internal(error.to_string()))?;
+                let field = row
+                    .try_get::<Option<String>>("", column)
+                    .map_err(|error| AuthError::internal(error.to_string()))?;
                 let _ = object.insert((*column).to_owned(), json!(field));
             }
             values.push(Value::Object(object));

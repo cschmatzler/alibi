@@ -1,16 +1,21 @@
 //! Source admits unrecognized OKP curves under none attestation. This validates
 //! the ceremony, not possession of a usable signing key, and stores raw facts.
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+
 use better_auth_core::utils::json::{JsValue, from_slice};
+
 use serde::{Deserialize, Serialize};
+
 use serde_cbor_2::Value as Cbor;
+
 use webauthn_rs::prelude::{Passkey, RegisterPublicKeyCredential};
+
 use webauthn_rs_core::{crypto::compute_sha256, error::WebauthnError};
 
 use super::webauthn::PasskeySnapshot;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct RawNonePolicy {
+pub(in crate::plugins) struct RawNonePolicy {
     pub challenge: String,
     pub rp_id: String,
     pub origin: String,
@@ -46,13 +51,16 @@ impl RawCredential {
         let Self::SourceRawNone { public_key, .. } = self;
         public_key
     }
-    pub(super) fn aaguid(&self) -> [u8; 16] {
+    pub(super) const fn aaguid(&self) -> [u8; 16] {
         let Self::SourceRawNone { aaguid, .. } = self;
         *aaguid
     }
     pub(super) fn has_unsupported_curve(&self) -> bool {
         decode_first(self.public_key()).is_ok_and(|(key, _)| curve_eight(&key))
     }
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn snapshot(&self) -> better_auth_core::AuthResult<PasskeySnapshot> {
         let Self::SourceRawNone {
             counter,
@@ -69,12 +77,6 @@ impl RawCredential {
     }
 }
 
-fn malformed() -> WebauthnError {
-    WebauthnError::ParseNOMFailure
-}
-fn text<'a>(map: &'a std::collections::BTreeMap<Cbor, Cbor>, key: &str) -> Option<&'a Cbor> {
-    map.get(&Cbor::Text(key.into()))
-}
 // Pinned Tiny-CBOR has a narrower value contract than serde's CBOR decoder:
 // number/string map keys, SameValueZero uniqueness, literal tags, lossy text,
 // and only three half-float values. Decode one item without inspecting its tail.
@@ -87,6 +89,11 @@ enum SourceMapKey {
 }
 
 impl SourceMapKey {
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+    )]
     fn from_value(value: &Cbor) -> Result<Self, WebauthnError> {
         let number = match value {
             Cbor::Text(value) => return Ok(Self::Text(value.clone())),
@@ -94,7 +101,13 @@ impl SourceMapKey {
             // back to a JS number is exact, including integer/float key aliases.
             Cbor::Integer(value) => *value as f64,
             Cbor::Float(value) => *value,
-            _ => return Err(malformed()),
+            Cbor::Null
+            | Cbor::Bool(_)
+            | Cbor::Bytes(_)
+            | Cbor::Array(_)
+            | Cbor::Map(_)
+            | Cbor::Tag(..)
+            | Cbor::__Hidden => return Err(malformed()),
         };
         Ok(Self::Number(if number.is_nan() {
             f64::NAN.to_bits()
@@ -103,16 +116,6 @@ impl SourceMapKey {
         } else {
             number.to_bits()
         }))
-    }
-}
-
-fn source_number(value: f64) -> Cbor {
-    if value.is_finite() && value.fract() == 0.0 && value.abs() <= MAX_SAFE_INTEGER as f64 {
-        // This bounded integral conversion gives Map.get(number) the same
-        // semantics for integer and floating CBOR encodings.
-        Cbor::Integer(value as i128)
-    } else {
-        Cbor::Float(value)
     }
 }
 
@@ -125,7 +128,7 @@ impl SourceDecoder<'_> {
     fn take<const N: usize>(&mut self) -> Result<[u8; N], WebauthnError> {
         let end = self.cursor.checked_add(N).ok_or_else(malformed)?;
         let bytes = self.bytes.get(self.cursor..end).ok_or_else(malformed)?;
-        let result = bytes.try_into().map_err(|_| malformed())?;
+        let result = bytes.try_into().map_err(|_error| malformed())?;
         self.cursor = end;
         Ok(result)
     }
@@ -145,6 +148,11 @@ impl SourceDecoder<'_> {
         Ok(value)
     }
 
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+    )]
     fn item(&mut self, depth: usize) -> Result<Cbor, WebauthnError> {
         if depth >= 128 {
             return Err(malformed());
@@ -179,7 +187,7 @@ impl SourceDecoder<'_> {
             // integer and therefore re-encodes as a float in Tiny-CBOR.
             1 => Ok(Cbor::Float(-(MAX_SAFE_INTEGER as f64) - 1.0)),
             2 | 3 => {
-                let length = usize::try_from(argument).map_err(|_| malformed())?;
+                let length = usize::try_from(argument).map_err(|_error| malformed())?;
                 let end = self.cursor.checked_add(length).ok_or_else(malformed)?;
                 // Source ArrayBuffer.slice truncates the payload, but reports
                 // the declared consumed length. A following item still fails.
@@ -198,7 +206,7 @@ impl SourceDecoder<'_> {
                 }
             }
             4 | 5 => {
-                let count = usize::try_from(argument).map_err(|_| malformed())?;
+                let count = usize::try_from(argument).map_err(|_error| malformed())?;
                 let items = count
                     .checked_mul(if major == 5 { 2 } else { 1 })
                     .ok_or_else(malformed)?;
@@ -220,7 +228,7 @@ impl SourceDecoder<'_> {
                             return Err(malformed());
                         }
                         let value = self.item(depth + 1)?;
-                        let _ = values.insert(key, value);
+                        drop(values.insert(key, value));
                     }
                     Ok(Cbor::Map(values))
                 }
@@ -231,38 +239,75 @@ impl SourceDecoder<'_> {
     }
 }
 
+const fn malformed() -> WebauthnError {
+    WebauthnError::ParseNOMFailure
+}
+
+fn text<'a>(map: &'a std::collections::BTreeMap<Cbor, Cbor>, key: &str) -> Option<&'a Cbor> {
+    map.get(&Cbor::Text(key.into()))
+}
+
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
+fn source_number(value: f64) -> Cbor {
+    if value.is_finite() && value.fract() == 0.0 && value.abs() <= MAX_SAFE_INTEGER as f64 {
+        // This bounded integral conversion gives Map.get(number) the same
+        // semantics for integer and floating CBOR encodings.
+        Cbor::Integer(value as i128)
+    } else {
+        Cbor::Float(value)
+    }
+}
+
 fn decode_first(bytes: &[u8]) -> Result<(Cbor, usize), WebauthnError> {
     let mut decoder = SourceDecoder { bytes, cursor: 0 };
     let value = decoder.item(0)?;
     Ok((value, decoder.cursor))
 }
+
 fn curve_eight(value: &Cbor) -> bool {
     let Cbor::Map(map) = value else { return false };
     [(1, 1), (3, -8), (-1, 8)]
         .iter()
         .all(|(key, expected)| map.get(&Cbor::Integer(*key)) == Some(&Cbor::Integer(*expected)))
 }
+
 // Source converts extensions with `for (const [key, value] of input)` and
 // recursively converts Map values. Strings and arrays of iterable entries are
 // consequently legal; scalar entries throw before registration can finish.
 fn extension_conversion_possible(value: &Cbor) -> bool {
     match value {
-        Cbor::Map(entries) => entries
-            .values()
-            .all(|value| !matches!(value, Cbor::Map(_)) || extension_conversion_possible(value)),
+        Cbor::Map(entries) => entries.values().all(|value_2| {
+            !matches!(value_2, Cbor::Map(_)) || extension_conversion_possible(value_2)
+        }),
         Cbor::Text(_) => true,
         Cbor::Bytes(bytes) => bytes.is_empty(),
         Cbor::Array(entries) => entries.iter().all(|entry| match entry {
-            Cbor::Array(values) => values.get(1).is_none_or(|value| {
-                !matches!(value, Cbor::Map(_)) || extension_conversion_possible(value)
+            Cbor::Array(values) => values.get(1).is_none_or(|value_3| {
+                !matches!(value_3, Cbor::Map(_)) || extension_conversion_possible(value_3)
             }),
             Cbor::Text(_) | Cbor::Bytes(_) | Cbor::Map(_) => true,
-            _ => false,
+            Cbor::Null
+            | Cbor::Bool(_)
+            | Cbor::Integer(_)
+            | Cbor::Float(_)
+            | Cbor::Tag(..)
+            | Cbor::__Hidden => false,
         }),
-        _ => false,
+        Cbor::Null
+        | Cbor::Bool(_)
+        | Cbor::Integer(_)
+        | Cbor::Float(_)
+        | Cbor::Tag(..)
+        | Cbor::__Hidden => false,
     }
 }
-fn argument_length(value: u128) -> usize {
+
+const fn argument_length(value: u128) -> usize {
     match value {
         0..=23 => 1,
         24..=255 => 2,
@@ -271,13 +316,19 @@ fn argument_length(value: u128) -> usize {
         _ => 9,
     }
 }
+
 // Tiny-CBOR re-encodes decoded values before advancing Source's cursor. In
 // particular, nonminimal integer/length encodings cannot hide leftover bytes.
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
 fn source_encoded_length(value: &Cbor) -> Result<usize, WebauthnError> {
     let sum = |initial: usize, values: Vec<&Cbor>| {
-        values.into_iter().try_fold(initial, |length, value| {
+        values.into_iter().try_fold(initial, |length, value_2| {
             length
-                .checked_add(source_encoded_length(value)?)
+                .checked_add(source_encoded_length(value_2)?)
                 .ok_or_else(malformed)
         })
     };
@@ -290,13 +341,16 @@ fn source_encoded_length(value: &Cbor) -> Result<usize, WebauthnError> {
         })),
         Cbor::Float(value) => {
             if value.is_finite() && value.fract() == 0.0 && value.abs() <= 9_007_199_254_740_991.0 {
-                let integer = value.to_string().parse::<i128>().map_err(|_| malformed())?;
+                let integer = value
+                    .to_string()
+                    .parse::<i128>()
+                    .map_err(|_error| malformed())?;
                 source_encoded_length(&Cbor::Integer(integer))
             } else {
                 // This conversion tests Source's IEEE float32 round-trip; it
                 // never supplies an identity, counter or authorization value.
                 Ok(
-                    if !value.is_finite() || f64::from(*value as f32) == *value {
+                    if !value.is_finite() || f64::from(*value as f32).to_bits() == value.to_bits() {
                         5
                     } else {
                         9
@@ -317,10 +371,7 @@ fn source_encoded_length(value: &Cbor) -> Result<usize, WebauthnError> {
         ),
         Cbor::Map(values) => sum(
             argument_length(values.len() as u128),
-            values
-                .iter()
-                .flat_map(|(key, value)| [key, value])
-                .collect(),
+            values.iter().flat_map(<[&Cbor; 2]>::from).collect(),
         ),
         Cbor::Tag(tag, value) => argument_length(u128::from(*tag))
             .checked_add(source_encoded_length(value)?)
@@ -328,6 +379,7 @@ fn source_encoded_length(value: &Cbor) -> Result<usize, WebauthnError> {
         _ => Err(malformed()),
     }
 }
+
 fn truthy(value: &JsValue) -> bool {
     match value {
         JsValue::Null => false,
@@ -340,6 +392,13 @@ fn truthy(value: &JsValue) -> bool {
 
 /// Select before Core verification. Other formats/keys continue through their
 /// existing verifier; a failed verification never falls back into this path.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the pinned WebAuthn validation sequence together for comparison with the reference runtime"
+)]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn register_raw_none(
     registration: &RegisterPublicKeyCredential,
     original: &JsValue,
@@ -364,7 +423,7 @@ pub(super) fn register_raw_none(
         return Err(malformed());
     };
     let id_length = usize::from(u16::from_be_bytes(
-        length.try_into().map_err(|_| malformed())?,
+        length.try_into().map_err(|_error| malformed())?,
     ));
     let key_start = 55 + id_length;
     let Some(key_bytes) = data.get(key_start..) else {
@@ -442,13 +501,13 @@ pub(super) fn register_raw_none(
         data.get(33..37)
             .ok_or_else(malformed)?
             .try_into()
-            .map_err(|_| malformed())?,
+            .map_err(|_error| malformed())?,
     );
     let aaguid = data
         .get(37..53)
         .ok_or_else(malformed)?
         .try_into()
-        .map_err(|_| malformed())?;
+        .map_err(|_error| malformed())?;
     Ok(Some(RawCredential::SourceRawNone {
         credential_id: data.get(55..key_start).ok_or_else(malformed)?.to_vec(),
         public_key: key_bytes.get(..key_length).ok_or_else(malformed)?.to_vec(),

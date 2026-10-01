@@ -28,8 +28,8 @@ pub enum TwoFactorOtpStorage {
 }
 
 impl std::fmt::Debug for TwoFactorOtpStorage {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(match self {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
             Self::Plain => "Plain",
             Self::Hashed => "Hashed",
             Self::Encrypted => "Encrypted",
@@ -40,6 +40,9 @@ impl std::fmt::Debug for TwoFactorOtpStorage {
 }
 
 impl TwoFactorOtpStorage {
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn store(&self, otp: &str, secret: &str) -> AuthResult<String> {
         match self {
             Self::Plain => Ok(otp.to_owned()),
@@ -50,6 +53,9 @@ impl TwoFactorOtpStorage {
         }
     }
 
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn verify(&self, stored: &str, input: &str, secret: &str) -> AuthResult<bool> {
         let (left, right) = match self {
             Self::Plain => (stored.to_owned(), input.to_owned()),

@@ -40,7 +40,10 @@ pub(super) async fn send_email_or_log(
     }
 }
 
-pub(crate) async fn change_email_core(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn change_email_core(
     body: &ChangeEmailRequest,
     user: &impl AuthUser,
     config: &UserManagementConfig,
@@ -48,17 +51,13 @@ pub(crate) async fn change_email_core(
 ) -> AuthResult<StatusResponse> {
     let new_email = body.new_email.to_lowercase();
 
-    if user
-        .email()
-        .map(|email| email == new_email)
-        .unwrap_or(false)
-    {
+    if user.email().is_some_and(|email| email == new_email) {
         return Err(AuthError::bad_request("Email is the same"));
     }
 
     if ctx.database.get_user_by_email(&new_email).await?.is_some() {
         return Err(AuthError::UnprocessableEntity(
-            "User already exists. Use another email.".to_string(),
+            "User already exists. Use another email.".to_owned(),
         ));
     }
 
@@ -67,7 +66,7 @@ pub(crate) async fn change_email_core(
             email: Some(new_email),
             ..Default::default()
         };
-        let _ = ctx.database.update_user(&user.id(), update_user).await?;
+        drop(ctx.database.update_user(&user.id(), update_user).await?);
 
         return Ok(StatusResponse { status: true });
     }
@@ -83,10 +82,10 @@ pub(crate) async fn change_email_core(
         &ctx.config.secret,
         user.email().unwrap_or_default(),
         Some(&new_email),
-        ctx.extensions
-            .get::<EmailVerificationConfig>()
-            .map(|config| config.verification_token_expiry)
-            .unwrap_or_else(|| Duration::hours(1)),
+        ctx.extensions.get::<EmailVerificationConfig>().map_or_else(
+            || Duration::hours(1),
+            |config_2| config_2.verification_token_expiry,
+        ),
         Some(request_type),
     )?;
     let verification_url = verification_url(&ctx.config, &verification_token, Some(callback_url));
@@ -104,17 +103,19 @@ pub(crate) async fn change_email_core(
         let subject = "Confirm your email change";
         let html = format!(
             "<p>Click the link below to confirm your new email address:</p>\
-             <p><a href=\"{url}\">Confirm Email Change</a></p>",
-            url = verification_url
+             <p><a href=\"{verification_url}\">Confirm Email Change</a></p>"
         );
-        let text = format!("Confirm your email change: {}", verification_url);
+        let text = format!("Confirm your email change: {verification_url}");
         send_email_or_log(ctx, &new_email, subject, &html, &text, "change-email").await;
     }
 
     Ok(StatusResponse { status: true })
 }
 
-pub(crate) async fn delete_user_core(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn delete_user_core(
     body: &DeleteUserRequest,
     user: &impl AuthUser,
     session: &impl AuthSession,
@@ -134,14 +135,14 @@ pub(crate) async fn delete_user_core(
             .ok_or_else(|| AuthError::bad_request("Credential account not found"))?;
         password_utils::verify_password(None, password, stored_hash)
             .await
-            .map_err(|_| AuthError::bad_request("Invalid password"))?;
+            .map_err(|_error| AuthError::bad_request("Invalid password"))?;
     }
 
     if let Some(token) = body.token.as_deref() {
-        let _ = delete_user_callback_core(token, user, config, ctx).await?;
+        drop(delete_user_callback_core(token, user, config, ctx).await?);
         return Ok(SuccessMessageResponse {
             success: true,
-            message: "User deleted".to_string(),
+            message: "User deleted".to_owned(),
         });
     }
 
@@ -153,14 +154,15 @@ pub(crate) async fn delete_user_core(
                 AuthError::bad_request("Cannot send verification email: user has no email address")
             })?;
         let token = uuid::Uuid::new_v4().simple().to_string();
-        let _ = ctx
-            .database
-            .create_verification(better_auth_core::CreateVerification {
-                identifier: format!("delete-account-{token}"),
-                value: user.id().to_string(),
-                expires_at: Utc::now() + config.delete_user.delete_token_expires_in,
-            })
-            .await?;
+        drop(
+            ctx.database
+                .create_verification(better_auth_core::CreateVerification {
+                    identifier: format!("delete-account-{token}"),
+                    value: user.id().to_string(),
+                    expires_at: Utc::now() + config.delete_user.delete_token_expires_in,
+                })
+                .await?,
+        );
         let verification_url = format!(
             "{}/delete-user/callback?token={}&callbackURL={}",
             ctx.config.base_url,
@@ -171,22 +173,21 @@ pub(crate) async fn delete_user_core(
         let subject = "Confirm account deletion";
         let html = format!(
             "<p>Click the link below to confirm the deletion of your account:</p>\
-             <p><a href=\"{url}\">Confirm Account Deletion</a></p>\
-             <p>If you did not request this, please ignore this email.</p>",
-            url = verification_url
+             <p><a href=\"{verification_url}\">Confirm Account Deletion</a></p>\
+             <p>If you did not request this, please ignore this email.</p>"
         );
-        let text = format!("Confirm account deletion: {}", verification_url);
+        let text = format!("Confirm account deletion: {verification_url}");
         send_email_or_log(ctx, email, subject, &html, &text, "delete-user").await;
 
         return Ok(SuccessMessageResponse {
             success: true,
-            message: "Verification email sent".to_string(),
+            message: "Verification email sent".to_owned(),
         });
     }
 
     if body.password.is_none()
         && let Some(fresh_age) = ctx.config.session.fresh_age
-        && fresh_age != chrono::Duration::zero()
+        && fresh_age != Duration::zero()
         && session.created_at() + fresh_age <= Utc::now()
     {
         return Err(AuthError::bad_request(
@@ -198,11 +199,14 @@ pub(crate) async fn delete_user_core(
 
     Ok(SuccessMessageResponse {
         success: true,
-        message: "User deleted".to_string(),
+        message: "User deleted".to_owned(),
     })
 }
 
-pub(crate) async fn delete_user_callback_core(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn delete_user_callback_core(
     token: &str,
     current_user: &impl AuthUser,
     config: &UserManagementConfig,
@@ -222,7 +226,7 @@ pub(crate) async fn delete_user_callback_core(
 
         return Ok(SuccessMessageResponse {
             success: true,
-            message: "User deleted".to_string(),
+            message: "User deleted".to_owned(),
         });
     }
 

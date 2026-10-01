@@ -1,7 +1,7 @@
 //! Local Google JWKS transport and actual persisted One Tap configuration profiles.
 use crate::{CompatVerificationSender, EmailOutboxRecord, TestSchema};
 use async_trait::async_trait;
-use axum::{routing::get, Json, Router};
+use axum::{Json, Router, routing::get};
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::oauth::{OAuthIdTokenVerifier, OAuthProvider};
@@ -13,15 +13,15 @@ use better_auth::plugins::{
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
 use better_auth_seaorm::store::entities::{account, session, user};
 use better_auth_seaorm::{
-    sea_orm::{DatabaseConnection, EntityTrait},
     SeaOrmStore,
+    sea_orm::{DatabaseConnection, EntityTrait},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 use tokio::sync::Mutex;

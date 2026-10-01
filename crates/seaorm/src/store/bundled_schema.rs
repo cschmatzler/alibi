@@ -2,6 +2,7 @@
 
 use crate::schema::AuthSchema;
 
+#[derive(Debug)]
 pub struct BundledSchema;
 
 impl AuthSchema for BundledSchema {

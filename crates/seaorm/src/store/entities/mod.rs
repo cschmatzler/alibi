@@ -1,4 +1,4 @@
-//! Internal SeaORM entity models for the built-in auth schema.
+//! Internal `SeaORM` entity models for the built-in auth schema.
 
 pub mod account;
 pub mod api_key;

@@ -9,7 +9,7 @@ that version with committed Bun lockfiles.
 ```bash
 devenv test
 # Equivalent inside the development shell, and in CI:
-./scripts/check.sh
+full-check
 ```
 
 This runs formatting, strict Clippy, all workspace unit/integration/doc tests,
@@ -22,10 +22,13 @@ SQLite regression verifies that connection maintenance retains migrated tables
 and persisted user identity throughout the fixture lifetime.
 Missing reference dependencies or an unavailable server fail this gate.
 
-Rust is pinned in `devenv.nix`. `devenv.lock` pins Bun and native packages.
-CI runs `devenv test` with the same toolchain, Chromium and gate script.
+The shared Rust style supplies nextest, Clippy, rustfmt, and Mr. Boxington.
+The style input is private and requires GitHub SSH access. `devenv test` runs
+its strict Rust gate followed by the compatibility gate. `devenv.lock` pins all
+tools, including Bun and Chromium. Update the style with `devenv update rust-style`.
 Outside devenv, run `bunx playwright install --with-deps chromium` in
 `client-tests/` before browser checks.
+
 
 ## What the tests establish
 

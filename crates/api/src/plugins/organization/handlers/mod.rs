@@ -1,28 +1,48 @@
 pub mod extension_common;
+
 pub mod invitation;
+
 pub mod member;
-pub(crate) mod member_addition;
+
+pub(in crate::plugins) mod member_addition;
+
 pub mod org;
-pub(crate) mod org_input;
+
+pub(in crate::plugins) mod org_input;
+
 mod page;
+
 pub mod role;
+
 pub mod team;
+
 mod validation;
 
+pub(in crate::plugins) mod invitation_acceptance;
+
 pub use invitation::*;
+
 pub use member::*;
+
 pub use org::*;
 
 use better_auth_core::entity::{AuthMember, AuthSession, AuthUser};
+
 use better_auth_core::error::{AuthError, AuthResult};
+
 use better_auth_core::plugin::AuthContext;
+
 use better_auth_core::types::{AuthRequest, AuthResponse};
 
 use super::OrganizationConfig;
+
 use super::types::{HasPermissionRequest, HasPermissionResponse};
 
 /// Helper function to require authenticated session
-pub(crate) async fn require_session<S: better_auth_core::AuthSchema>(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn require_session<S: better_auth_core::AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
 ) -> AuthResult<(S::User, better_auth_core::wire::SessionView)> {
@@ -30,14 +50,17 @@ pub(crate) async fn require_session<S: better_auth_core::AuthSchema>(
 }
 
 /// Helper function to get organization ID from request or session
-pub(crate) async fn resolve_organization_id(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn resolve_organization_id(
     org_id: Option<&str>,
     org_slug: Option<&str>,
     session: &impl AuthSession,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<String> {
     if let Some(id) = org_id {
-        return Ok(id.to_string());
+        return Ok(id.to_owned());
     }
 
     if let Some(slug) = org_slug {
@@ -50,7 +73,7 @@ pub(crate) async fn resolve_organization_id(
 
     session
         .active_organization_id()
-        .map(|s| s.to_string())
+        .map(ToOwned::to_owned)
         .ok_or_else(|| AuthError::bad_request("No active organization"))
 }
 
@@ -58,7 +81,10 @@ pub(crate) async fn resolve_organization_id(
 // Core function
 // ---------------------------------------------------------------------------
 
-pub(crate) async fn has_permission_core(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn has_permission_core(
     body: &HasPermissionRequest,
     user: &impl AuthUser,
     session: &impl AuthSession,
@@ -69,7 +95,7 @@ pub(crate) async fn has_permission_core(
         .organization_id
         .as_deref()
         .filter(|id| !id.is_empty())
-        .or(session.active_organization_id())
+        .or_else(|| session.active_organization_id())
         .filter(|id| !id.is_empty())
         .ok_or_else(|| extension_common::org_error(400, "NO_ACTIVE_ORGANIZATION"))?;
 
@@ -100,6 +126,10 @@ pub(crate) async fn has_permission_core(
 // ---------------------------------------------------------------------------
 
 /// Handle has-permission request
+///
+/// # Errors
+///
+/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_has_permission(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -122,16 +152,16 @@ pub async fn handle_has_permission(
     let permissions = match (canonical, legacy) {
         (Some(_), Some(_)) => {
             issues.push("[body] Invalid input: more than one option matched");
-            Default::default()
+            indexmap::IndexMap::default()
         }
         (None, None) => {
             issues.push("[body] Invalid input");
-            Default::default()
+            indexmap::IndexMap::default()
         }
         (Some(permissions), None) => permissions,
         // The pinned legacy branch validates successfully, but only the canonical
         // property is used by its handler. Retain the resulting false response.
-        (None, Some(_)) => Default::default(),
+        (None, Some(_)) => indexmap::IndexMap::default(),
     };
     if let Some(response) = issues.response() {
         return Ok(response);
@@ -144,5 +174,3 @@ pub async fn handle_has_permission(
     let response = has_permission_core(&body, &user, &session, config, ctx).await?;
     Ok(AuthResponse::json(200, &response)?)
 }
-
-pub(crate) mod invitation_acceptance;

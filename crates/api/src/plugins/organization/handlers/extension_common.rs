@@ -1,8 +1,13 @@
 use super::super::OrganizationConfig;
+
 use better_auth_core::types::OrganizationPermissions;
+
 use better_auth_core::wire::SessionView;
+
 use better_auth_core::{AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema};
+
 use std::collections::HashMap;
+
 use std::sync::{Mutex, OnceLock};
 
 type OrganizationRoles = HashMap<String, OrganizationPermissions>;
@@ -15,6 +20,7 @@ fn role_cache() -> &'static Mutex<HashMap<String, OrganizationRoles>> {
     CACHE.get_or_init(Mutex::default)
 }
 
+#[must_use]
 pub fn org_error(status: u16, code: &'static str) -> AuthError {
     let message = match code {
         "UNAUTHORIZED" => "Unauthorized",
@@ -100,6 +106,9 @@ pub fn org_error(status: u16, code: &'static str) -> AuthError {
     }
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub async fn session<S: AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
@@ -110,7 +119,33 @@ pub async fn session<S: AuthSchema>(
             AuthError::Unauthenticated | AuthError::SessionNotFound => {
                 org_error(401, "UNAUTHORIZED")
             }
-            error => error,
+            error @ (AuthError::Api { .. }
+            | AuthError::Upstream { .. }
+            | AuthError::BadRequest(_)
+            | AuthError::InvalidRequest(_)
+            | AuthError::Validation(_)
+            | AuthError::InvalidCredentials
+            | AuthError::AuthenticationFailed(_)
+            | AuthError::Forbidden(_)
+            | AuthError::SessionCreationCancelled
+            | AuthError::UserCreationCancelled
+            | AuthError::BannedUser(_)
+            | AuthError::Unauthorized
+            | AuthError::UserNotFound
+            | AuthError::NotFound(_)
+            | AuthError::Conflict(_)
+            | AuthError::MethodNotAllowed(_)
+            | AuthError::PayloadTooLarge(_)
+            | AuthError::UnprocessableEntity(_)
+            | AuthError::RateLimited
+            | AuthError::NotImplemented(_)
+            | AuthError::Config(_)
+            | AuthError::Database(_)
+            | AuthError::Serialization(_)
+            | AuthError::Plugin { .. }
+            | AuthError::Internal(_)
+            | AuthError::PasswordHash(_)
+            | AuthError::Jwt(_)) => error,
         })
 }
 
@@ -150,13 +185,17 @@ fn configured_roles(config: &OrganizationConfig) -> OrganizationRoles {
             ("team", &permission.team),
             ("ac", &permission.ac),
         ] {
-            let _ = permissions.insert(resource.to_owned(), actions.clone());
+            drop(permissions.insert(resource.to_owned(), actions.clone()));
         }
-        let _ = roles.insert(role.clone(), permissions);
+        drop(roles.insert(role.clone(), permissions));
     }
     roles
 }
 
+///
+/// # Errors
+///
+/// Returns errors from organization-role storage or the shared role cache.
 pub async fn organization_roles<S: AuthSchema>(
     config: &OrganizationConfig,
     ctx: &AuthContext<S>,
@@ -176,13 +215,18 @@ pub async fn organization_roles<S: AuthSchema>(
             }
         }
     }
-    let _ = role_cache()
-        .lock()
-        .map_err(|_| AuthError::internal("Organization role cache unavailable"))?
-        .insert(org_id.to_owned(), roles.clone());
+    drop(
+        role_cache()
+            .lock()
+            .map_err(|_error| AuthError::internal("Organization role cache unavailable"))?
+            .insert(org_id.to_owned(), roles.clone()),
+    );
     Ok(roles)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn cached_has_permissions(
     role: &str,
     required: &OrganizationPermissions,
@@ -191,13 +235,19 @@ pub(super) fn cached_has_permissions(
 ) -> AuthResult<bool> {
     let mut cache = role_cache()
         .lock()
-        .map_err(|_| AuthError::internal("Organization role cache unavailable"))?;
+        .map_err(|_error| AuthError::internal("Organization role cache unavailable"))?;
     let roles = cache
         .entry(org_id.to_owned())
         .or_insert_with(|| configured_roles(config));
-    Ok(role_has_permissions(role, required, roles))
+    let permitted = role_has_permissions(role, required, roles);
+    drop(cache);
+    Ok(permitted)
 }
 
+///
+/// # Errors
+///
+/// Propagates errors from role loading and authorization callbacks.
 pub async fn has_permissions<S: AuthSchema>(
     role: &str,
     required: &OrganizationPermissions,
@@ -209,10 +259,11 @@ pub async fn has_permissions<S: AuthSchema>(
     Ok(role_has_permissions(role, required, &roles))
 }
 
-pub fn role_has_permissions(
+#[must_use]
+pub fn role_has_permissions<H: std::hash::BuildHasher>(
     role: &str,
     required: &OrganizationPermissions,
-    roles: &HashMap<String, OrganizationPermissions>,
+    roles: &HashMap<String, OrganizationPermissions, H>,
 ) -> bool {
     !required.is_empty()
         && role.split(',').any(|name| {
@@ -229,6 +280,10 @@ pub fn role_has_permissions(
         })
 }
 
+///
+/// # Errors
+///
+/// Propagates errors from role loading and authorization callbacks.
 pub async fn has_action<S: AuthSchema>(
     role: &str,
     resource: &str,

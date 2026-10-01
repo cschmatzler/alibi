@@ -15,7 +15,15 @@ pub struct ApiKeyCallbackContext<'a> {
     pub configuration_id: &'a str,
 }
 
+impl std::fmt::Debug for ApiKeyCallbackContext<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApiKeyCallbackContext")
+            .finish_non_exhaustive()
+    }
+}
+
 impl<'a> ApiKeyCallbackContext<'a> {
+    #[must_use]
     pub(super) fn new(
         request: Option<&'a AuthRequest>,
         ctx: &'a AuthContext<impl AuthSchema>,
@@ -55,6 +63,13 @@ pub type ApiKeyPermissions = indexmap::IndexMap<String, Vec<String>>;
 pub struct ApiKeyGenerationOptions<'a> {
     pub length: usize,
     pub prefix: Option<&'a str>,
+}
+
+impl std::fmt::Debug for ApiKeyGenerationOptions<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApiKeyGenerationOptions")
+            .finish_non_exhaustive()
+    }
 }
 
 /// Trusted custom secret generation. The application owns the returned full key.

@@ -1,22 +1,16 @@
 //! Optional organization team and persisted-role storage contracts.
 use crate::error::{AuthError, AuthResult};
+
 use crate::types_org::{
     AddTeamMemberResult, CreateOrganizationRole, CreateTeam, OrganizationRole,
     OrganizationRoleSelector, Team, TeamMember, UpdateOrganizationRole, UpdateTeam,
 };
+
 use async_trait::async_trait;
+
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+
 use sha2::{Digest, Sha256};
-
-fn unsupported() -> AuthError {
-    AuthError::NotImplemented(
-        "Organization extension storage is not supported by this store".to_owned(),
-    )
-}
-
-pub fn team_membership_key(team_id: &str, user_id: &str) -> AuthResult<String> {
-    Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(serde_json::to_vec(&[team_id, user_id])?)))
-}
 
 #[async_trait]
 pub trait TeamStore: Send + Sync {
@@ -121,4 +115,18 @@ pub trait OrganizationRoleStore: Send + Sync {
     ) -> AuthResult<bool> {
         Err(unsupported())
     }
+}
+
+fn unsupported() -> AuthError {
+    AuthError::NotImplemented(
+        "Organization extension storage is not supported by this store".to_owned(),
+    )
+}
+
+///
+/// # Errors
+///
+/// Returns an error if the membership identifiers cannot be serialized.
+pub fn team_membership_key(team_id: &str, user_id: &str) -> AuthResult<String> {
+    Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(serde_json::to_vec(&[team_id, user_id])?)))
 }

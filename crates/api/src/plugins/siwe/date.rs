@@ -76,7 +76,8 @@ fn parse_iso(mut input: &str) -> Option<i64> {
             }
             fractional_nonzero = input.get(..length)?.bytes().any(|digit| digit != b'0');
             let first = input.get(..length.min(3))?;
-            milliseconds = first.parse::<i64>().ok()? * 10i64.pow((3 - first.len()) as u32);
+            milliseconds =
+                first.parse::<i64>().ok()? * 10i64.pow(u32::try_from(3 - first.len()).ok()?);
             input = input.get(length..)?;
         }
     }

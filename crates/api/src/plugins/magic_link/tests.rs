@@ -1,14 +1,13 @@
-#![expect(
-    clippy::unwrap_used,
-    reason = "test fixtures require successful setup and decoding"
-)]
-
 use super::*;
+
 use crate::plugins::test_helpers;
+
 use better_auth_core::{
     AuthPlugin, AuthSession, AuthUser, AuthVerification, CreateUser, HttpMethod,
 };
+
 use serde_json::Value;
+
 use std::sync::Mutex;
 
 #[derive(Default)]
@@ -22,11 +21,38 @@ impl SendMagicLink for Outbox {
     }
 }
 
+struct FixedToken;
+
+#[async_trait]
+impl MagicLinkTokenGenerator for FixedToken {
+    async fn generate(&self, _: &str) -> AuthResult<String> {
+        Ok("application-issued-link-token".into())
+    }
+}
+
+struct PrefixHasher;
+
+#[async_trait]
+impl MagicLinkTokenHasher for PrefixHasher {
+    async fn hash(&self, token: &str) -> AuthResult<String> {
+        Ok(format!("application-hash:{}", hash_token(token)))
+    }
+}
+
+struct FailedDelivery;
+
+#[async_trait]
+impl SendMagicLink for FailedDelivery {
+    async fn send(&self, _: &MagicLinkDelivery) -> AuthResult<()> {
+        Err(AuthError::internal("deterministic sender outage"))
+    }
+}
+
 fn configured() -> (MagicLinkPlugin, Arc<Outbox>) {
     let outbox = Arc::new(Outbox::default());
     (
         MagicLinkPlugin::new(MagicLinkConfig {
-            send_magic_link: Some(outbox.clone()),
+            send_magic_link: Some(Arc::<Outbox>::clone(&outbox)),
             ..Default::default()
         }),
         outbox,
@@ -35,7 +61,7 @@ fn configured() -> (MagicLinkPlugin, Arc<Outbox>) {
 
 fn verify_request(token: &str) -> AuthRequest {
     let mut req = AuthRequest::new(HttpMethod::Get, "/magic-link/verify");
-    let _ = req.query.insert("token".into(), token.into());
+    drop(req.query.insert("token".into(), token.into()));
     req
 }
 
@@ -80,8 +106,8 @@ async fn delivered_link_authenticates_its_mailbox_once_and_persists_session() {
             .abs()
             <= 1
     );
-    let req = verify_request(&delivery.token);
-    let response = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
+    let req_2 = verify_request(&delivery.token);
+    let response = plugin.on_request(&req_2, &ctx).await.unwrap().unwrap();
     assert_eq!(response.status, 200);
     let payload: Value = serde_json::from_slice(&response.body).unwrap();
     let token = payload.get("token").and_then(Value::as_str).unwrap();
@@ -109,7 +135,7 @@ async fn delivered_link_authenticates_its_mailbox_once_and_persists_session() {
             .unwrap()
             .is_none()
     );
-    let replay = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
+    let replay = plugin.on_request(&req_2, &ctx).await.unwrap().unwrap();
     assert_eq!(replay.status, 302);
     assert!(
         replay
@@ -132,15 +158,17 @@ async fn callback_authorization_does_not_burn_token_and_new_user_redirects() {
         None,
         Some(json!({"email":"new@example.com"})),
     );
-    let _ = plugin.on_request(&req, &ctx).await.unwrap();
+    drop(plugin.on_request(&req, &ctx).await.unwrap());
     let delivery = outbox.0.lock().unwrap().last().unwrap().clone();
-    let mut req = verify_request(&delivery.token);
-    let _ = req
-        .query
-        .insert("callbackURL".into(), "https://evil.example/steal".into());
+    let mut req_2 = verify_request(&delivery.token);
+    drop(
+        req_2
+            .query
+            .insert("callbackURL".into(), "https://evil.example/steal".into()),
+    );
     assert_eq!(
         plugin
-            .on_request(&req, &ctx)
+            .on_request(&req_2, &ctx)
             .await
             .unwrap_err()
             .status_code(),
@@ -153,11 +181,13 @@ async fn callback_authorization_does_not_burn_token_and_new_user_redirects() {
             .unwrap()
             .is_some()
     );
-    let _ = req.query.insert("callbackURL".into(), "/existing".into());
-    let _ = req
-        .query
-        .insert("newUserCallbackURL".into(), "/welcome?source=magic".into());
-    let response = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
+    drop(req_2.query.insert("callbackURL".into(), "/existing".into()));
+    drop(
+        req_2
+            .query
+            .insert("newUserCallbackURL".into(), "/welcome?source=magic".into()),
+    );
+    let response = plugin.on_request(&req_2, &ctx).await.unwrap().unwrap();
     assert_eq!(response.status, 302);
     assert_eq!(
         response.headers.get("location"),
@@ -179,7 +209,7 @@ async fn disabled_signup_consumes_token_without_creating_user() {
         None,
         Some(json!({"email":"disabled@example.com"})),
     );
-    let _ = plugin.on_request(&req, &ctx).await.unwrap();
+    drop(plugin.on_request(&req, &ctx).await.unwrap());
     let delivery = outbox.0.lock().unwrap().last().unwrap().clone();
     let response = plugin
         .on_request(&verify_request(&delivery.token), &ctx)
@@ -224,7 +254,7 @@ async fn hashed_expired_token_is_removed_and_cannot_create_session() {
         None,
         Some(json!({"email":"expired@example.com"})),
     );
-    let _ = plugin.on_request(&req, &ctx).await.unwrap();
+    drop(plugin.on_request(&req, &ctx).await.unwrap());
     let delivery = outbox.0.lock().unwrap().last().unwrap().clone();
     assert!(
         ctx.database
@@ -290,7 +320,7 @@ async fn existing_unverified_user_keeps_identity_but_loses_previous_session() {
         None,
         Some(json!({"email":"promote@example.com"})),
     );
-    let _ = plugin.on_request(&req, &ctx).await.unwrap();
+    drop(plugin.on_request(&req, &ctx).await.unwrap());
     let delivery = outbox.0.lock().unwrap().last().unwrap().clone();
     assert_eq!(
         plugin
@@ -318,21 +348,6 @@ async fn existing_unverified_user_keeps_identity_but_loses_previous_session() {
     );
 }
 
-struct FixedToken;
-#[async_trait]
-impl MagicLinkTokenGenerator for FixedToken {
-    async fn generate(&self, _: &str) -> AuthResult<String> {
-        Ok("application-issued-link-token".into())
-    }
-}
-struct PrefixHasher;
-#[async_trait]
-impl MagicLinkTokenHasher for PrefixHasher {
-    async fn hash(&self, token: &str) -> AuthResult<String> {
-        Ok(format!("application-hash:{}", hash_token(token)))
-    }
-}
-
 // Upstream: custom token generation and storage compose, and concurrent calls
 // consume a shared token once even when both callers know the actual secret.
 #[tokio::test]
@@ -347,7 +362,7 @@ async fn custom_generation_hashing_and_concurrent_consumption_preserve_owned_ses
         None,
         Some(json!({"email":"custom@example.com"})),
     );
-    let _ = plugin.on_request(&req, &ctx).await.unwrap();
+    drop(plugin.on_request(&req, &ctx).await.unwrap());
     let token = outbox.0.lock().unwrap().last().unwrap().token.clone();
     assert_eq!(token, "application-issued-link-token");
     assert!(
@@ -367,14 +382,16 @@ async fn custom_generation_hashing_and_concurrent_consumption_preserve_owned_ses
             .unwrap()
             .is_some()
     );
-    let req = verify_request(&token);
-    let (first, second) =
-        tokio::join!(plugin.on_request(&req, &ctx), plugin.on_request(&req, &ctx));
+    let req_2 = verify_request(&token);
+    let (first, second) = tokio::join!(
+        plugin.on_request(&req_2, &ctx),
+        plugin.on_request(&req_2, &ctx)
+    );
     let mut statuses = [
         first.unwrap().unwrap().status,
         second.unwrap().unwrap().status,
     ];
-    statuses.sort();
+    statuses.sort_unstable();
     assert_eq!(statuses, [200, 302]);
     let user = ctx
         .database
@@ -412,20 +429,22 @@ async fn validation_and_every_callback_guard_leave_the_challenge_untouched() {
         json!({"code":"VALIDATION_ERROR","message":"[body.name] Invalid input: expected string, received null; [body.metadata] Invalid input: expected record, received array"})
     );
     assert!(outbox.0.lock().unwrap().is_empty());
-    let req = test_helpers::create_auth_json_request_no_query(
+    let req_2 = test_helpers::create_auth_json_request_no_query(
         HttpMethod::Post,
         "/sign-in/magic-link",
         None,
         Some(json!({"email":"ok@example.com"})),
     );
-    let _ = plugin.on_request(&req, &ctx).await.unwrap();
+    drop(plugin.on_request(&req_2, &ctx).await.unwrap());
     let token = outbox.0.lock().unwrap().last().unwrap().token.clone();
     for field in ["callbackURL", "newUserCallbackURL", "errorCallbackURL"] {
-        let mut req = verify_request(&token);
-        let _ = req
-            .query
-            .insert(field.into(), "https://foreign.example/steal".into());
-        let error = plugin.on_request(&req, &ctx).await.unwrap_err();
+        let mut req_3 = verify_request(&token);
+        drop(
+            req_3
+                .query
+                .insert(field.into(), "https://foreign.example/steal".into()),
+        );
+        let error = plugin.on_request(&req_3, &ctx).await.unwrap_err();
         let (_, code, message) = error.error_payload();
         assert_eq!(code.as_deref(), Some("INVALID_CALLBACK_URL"));
         assert_eq!(message, "Invalid callbackURL");
@@ -448,14 +467,6 @@ async fn validation_and_every_callback_guard_leave_the_challenge_untouched() {
             .as_deref(),
         Some("VALIDATION_ERROR")
     );
-}
-
-struct FailedDelivery;
-#[async_trait]
-impl SendMagicLink for FailedDelivery {
-    async fn send(&self, _: &MagicLinkDelivery) -> AuthResult<()> {
-        Err(AuthError::internal("deterministic sender outage"))
-    }
 }
 
 // Upstream: delivery fails after persistence; an already issued token retains
@@ -487,16 +498,21 @@ async fn sender_failure_keeps_token_and_error_redirect_preserves_query_state() {
             .unwrap()
             .is_some()
     );
-    let req = verify_request("application-issued-link-token");
+    let req_2 = verify_request("application-issued-link-token");
     assert_eq!(
-        plugin.on_request(&req, &ctx).await.unwrap().unwrap().status,
+        plugin
+            .on_request(&req_2, &ctx)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
         200
     );
-    let mut replay = req;
-    let _ = replay.query.insert(
+    let mut replay = req_2;
+    drop(replay.query.insert(
         "errorCallbackURL".into(),
         "/error?source=magic&error=old&error_description=preserved".into(),
-    );
+    ));
     let response = plugin.on_request(&replay, &ctx).await.unwrap().unwrap();
     let url = Url::parse(response.headers.get("location").unwrap()).unwrap();
     assert_eq!(

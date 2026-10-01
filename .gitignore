@@ -17,6 +17,8 @@ AGENTS.md
 # Local devenv state
 .devenv/
 .direnv/
+/rustfmt.toml
+/clippy.toml
 
 # Test artifacts
 /coverage/

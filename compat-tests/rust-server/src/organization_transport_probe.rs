@@ -1,12 +1,12 @@
 //! Application middleware observes actual premature HTTP service-future drops.
 use axum::{
+    Json, Router,
     extract::{Query, Request, State},
     middleware::Next,
     response::Response,
     routing::{get, post},
-    Json, Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},

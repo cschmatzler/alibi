@@ -7,6 +7,7 @@ pub trait AuthSchema: Send + Sync + 'static {
     /// Wire model projections for this application schema.
     /// Add application fields here with their actual input/output policy; database
     /// column names do not change canonical accessor-backed wire field names.
+    #[must_use]
     fn openapi_models() -> Vec<crate::openapi::OpenApiModel> {
         crate::openapi::annotations::core_models()
     }

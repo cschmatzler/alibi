@@ -13,6 +13,13 @@ pub struct PasskeyAuthenticationContext<'a> {
     pub extensions: &'a ContextExtensions,
 }
 
+impl std::fmt::Debug for PasskeyAuthenticationContext<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PasskeyAuthenticationContext")
+            .finish_non_exhaustive()
+    }
+}
+
 /// Actual verifier result, supplied only after the signed assertion succeeds.
 #[derive(Debug, Clone)]
 pub struct VerifiedPasskeyAuthentication {

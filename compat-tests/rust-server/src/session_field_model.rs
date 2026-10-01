@@ -1,11 +1,9 @@
 //! A concrete application-owned session schema shared by SDK and native consumers.
-use better_auth::AuthSchema;
-use better_auth_seaorm::store::entities::{account, user, verification};
 #[expect(
     unreachable_pub,
     reason = "SeaORM public Entity requires public Model and Relation associated types"
 )]
-pub(crate) mod application_session {
+pub mod application_session {
     use better_auth::seaorm::{self, sea_orm::entity::prelude::*};
     use seaorm::sea_orm::{self, Set, Statement};
     use serde::Serialize;
@@ -45,7 +43,7 @@ pub(crate) mod application_session {
             C: ConnectionTrait,
         {
             let label = self.label.clone().unwrap();
-            let _ = db
+            _ = db
                 .execute_raw(Statement::from_sql_and_values(
                     db.get_database_backend(),
                     "INSERT INTO session_model_events (phase, label, is_insert) VALUES (?, ?, ?)",
@@ -61,7 +59,7 @@ pub(crate) mod application_session {
         where
             C: ConnectionTrait,
         {
-            let _ = db
+            _ = db
                 .execute_raw(Statement::from_sql_and_values(
                     db.get_database_backend(),
                     "INSERT INTO session_model_events (phase, label, is_insert) VALUES (?, ?, ?)",
@@ -72,7 +70,14 @@ pub(crate) mod application_session {
         }
     }
 }
-pub(crate) struct ApplicationSchema;
+use better_auth::AuthSchema;
+use better_auth_seaorm::store::entities::{account, user, verification};
+
+#[expect(
+    unreachable_pub,
+    reason = "The private fixture module shares its concrete schema with SDK and native integration consumers"
+)]
+pub struct ApplicationSchema;
 impl AuthSchema for ApplicationSchema {
     type User = user::Model;
     type Session = application_session::Model;

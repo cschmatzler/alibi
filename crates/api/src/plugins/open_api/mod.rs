@@ -1,4 +1,4 @@
-//! OpenAPI schema generation and Scalar reference page.
+//! `OpenAPI` schema generation and Scalar reference page.
 use async_trait::async_trait;
 use better_auth_core::{
     AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
@@ -15,23 +15,28 @@ pub struct OpenApiConfig {
     pub include_native_extensions: bool,
 }
 impl OpenApiConfig {
+    #[must_use]
     pub fn path(mut self, path: impl Into<String>) -> Self {
         self.path = Some(path.into());
         self
     }
+    #[must_use]
     pub fn theme(mut self, theme: impl Into<String>) -> Self {
         self.theme = Some(theme.into());
         self
     }
+    #[must_use]
     pub fn nonce(mut self, nonce: impl Into<String>) -> Self {
         self.nonce = Some(nonce.into());
         self
     }
-    pub fn include_native_extensions(mut self, included: bool) -> Self {
+    #[must_use]
+    pub const fn include_native_extensions(mut self, included: bool) -> Self {
         self.include_native_extensions = included;
         self
     }
-    pub fn disable_default_reference(mut self, disabled: bool) -> Self {
+    #[must_use]
+    pub const fn disable_default_reference(mut self, disabled: bool) -> Self {
         self.disable_default_reference = disabled;
         self
     }
@@ -41,10 +46,12 @@ pub struct OpenApiPlugin {
     config: OpenApiConfig,
 }
 impl OpenApiPlugin {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn with_config(config: OpenApiConfig) -> Self {
+    #[must_use]
+    pub const fn with_config(config: OpenApiConfig) -> Self {
         Self { config }
     }
     fn path(&self) -> &str {

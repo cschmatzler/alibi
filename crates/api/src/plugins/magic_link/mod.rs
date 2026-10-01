@@ -1,25 +1,33 @@
 //! Single-use mailbox authentication links, with native delivery callbacks.
 
+#[cfg(test)]
+mod tests;
+
 use async_trait::async_trait;
+
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthUser,
     CreateUser, CreateVerification,
 };
+
 use chrono::{Duration, Utc};
+
 use rand::{Rng, rngs::OsRng};
+
 use serde::{Deserialize, Serialize};
+
 use serde_json::json;
+
 use std::sync::Arc;
+
 use url::Url;
 
 use super::authentication_helpers::{
     JsonField, JsonFieldKind, RequestBody, parse_body, redirect, revoke_unproven_access,
     session_response,
 };
-use super::token_crypto::hash_token;
 
-#[cfg(test)]
-mod tests;
+use super::token_crypto::hash_token;
 
 /// Delivery data. Debug omits the token, URL and arbitrary delivery metadata.
 #[derive(Clone, Serialize)]
@@ -59,6 +67,16 @@ pub enum MagicLinkTokenStorage {
     Custom(Arc<dyn MagicLinkTokenHasher>),
 }
 
+impl std::fmt::Debug for MagicLinkTokenStorage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Plain => f.write_str("MagicLinkTokenStorage::Plain"),
+            Self::Hashed => f.write_str("MagicLinkTokenStorage::Hashed"),
+            Self::Custom(..) => f.write_str("MagicLinkTokenStorage::Custom"),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct MagicLinkConfig {
     pub send_magic_link: Option<Arc<dyn SendMagicLink>>,
@@ -66,6 +84,12 @@ pub struct MagicLinkConfig {
     pub storage: MagicLinkTokenStorage,
     pub expires_in: Duration,
     pub disable_sign_up: bool,
+}
+
+impl std::fmt::Debug for MagicLinkConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MagicLinkConfig").finish_non_exhaustive()
+    }
 }
 
 impl Default for MagicLinkConfig {
@@ -85,14 +109,21 @@ pub struct MagicLinkPlugin {
     config: MagicLinkConfig,
 }
 
+impl std::fmt::Debug for MagicLinkPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MagicLinkPlugin").finish_non_exhaustive()
+    }
+}
+
 impl MagicLinkPlugin {
-    pub fn new(config: MagicLinkConfig) -> Self {
+    #[must_use]
+    pub const fn new(config: MagicLinkConfig) -> Self {
         Self { config }
     }
 
     async fn store_token(&self, token: &str) -> AuthResult<String> {
         match &self.config.storage {
-            MagicLinkTokenStorage::Plain => Ok(token.to_string()),
+            MagicLinkTokenStorage::Plain => Ok(token.to_owned()),
             MagicLinkTokenStorage::Hashed => Ok(hash_token(token)),
             MagicLinkTokenStorage::Custom(hasher) => hasher.hash(token).await,
         }
@@ -107,16 +138,15 @@ impl MagicLinkPlugin {
             Ok(value) => value,
             Err(response) => return Ok(response),
         };
-        let token = match &self.config.generate_token {
-            Some(generator) => generator.generate(&body.email).await?,
-            None => {
-                let alphabet = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-                let mut rng = OsRng;
-                (0..32)
-                    .filter_map(|_| alphabet.get(rng.gen_range(0..alphabet.len())).copied())
-                    .map(char::from)
-                    .collect()
-            }
+        let token = if let Some(generator) = &self.config.generate_token {
+            generator.generate(&body.email).await?
+        } else {
+            let alphabet = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            let mut rng = OsRng;
+            (0..32)
+                .filter_map(|_| alphabet.get(rng.gen_range(0..alphabet.len())).copied())
+                .map(char::from)
+                .collect()
         };
         let stored = self.store_token(&token).await?;
         let data = LinkData {
@@ -128,16 +158,17 @@ impl MagicLinkPlugin {
         } else {
             self.config.expires_in
         };
-        let _ = ctx
-            .database
-            .create_verification(CreateVerification {
-                identifier: stored,
-                value: serde_json::to_string(&data)?,
-                expires_at: Utc::now() + expires_in,
-            })
-            .await?;
-        let mut url =
-            Url::parse(&ctx.config.base_url).map_err(|_| AuthError::config("Invalid base URL"))?;
+        drop(
+            ctx.database
+                .create_verification(CreateVerification {
+                    identifier: stored,
+                    value: serde_json::to_string(&data)?,
+                    expires_at: Utc::now() + expires_in,
+                })
+                .await?,
+        );
+        let mut url = Url::parse(&ctx.config.base_url)
+            .map_err(|_error| AuthError::config("Invalid base URL"))?;
         let path = url.path().trim_end_matches('/');
         let base_path = if path.is_empty() {
             ctx.config.base_path.as_str()
@@ -187,6 +218,8 @@ impl MagicLinkPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
+        use better_auth_core::AuthVerification;
+
         let token = req.query.get("token").ok_or(AuthError::Upstream {
             status: 400,
             code: "VALIDATION_ERROR",
@@ -210,42 +243,42 @@ impl MagicLinkPlugin {
                 });
             }
         }
-        let base =
-            Url::parse(&ctx.config.base_url).map_err(|_| AuthError::config("Invalid base URL"))?;
+        let base = Url::parse(&ctx.config.base_url)
+            .map_err(|_error| AuthError::config("Invalid base URL"))?;
         let callback_url = base
             .join(callback.as_deref().unwrap_or("/"))
-            .map_err(|_| AuthError::bad_request("Invalid callbackURL"))?;
+            .map_err(|_error| AuthError::bad_request("Invalid callbackURL"))?;
         let error_url = base
             .join(error_callback.as_deref().unwrap_or(callback_url.as_str()))
-            .map_err(|_| AuthError::bad_request("Invalid errorCallbackURL"))?;
+            .map_err(|_error| AuthError::bad_request("Invalid errorCallbackURL"))?;
         let new_user_url = base
             .join(
                 new_user_callback
                     .as_deref()
                     .unwrap_or(callback_url.as_str()),
             )
-            .map_err(|_| AuthError::bad_request("Invalid newUserCallbackURL"))?;
+            .map_err(|_error| AuthError::bad_request("Invalid newUserCallbackURL"))?;
         let stored = self.store_token(token).await?;
         let Some(verification) = ctx
             .database
             .consume_verification_by_identifier(&stored)
             .await?
         else {
-            return error_redirect(error_url, "INVALID_TOKEN", None);
+            return Ok(error_redirect(error_url, "INVALID_TOKEN", None));
         };
-        use better_auth_core::AuthVerification;
+
         let data: LinkData = serde_json::from_str(verification.value())?;
         let mut is_new_user = false;
         let user = match ctx.database.get_user_by_email(&data.email).await? {
             Some(user) if !user.email_verified() => {
                 match revoke_unproven_access(ctx, &user.id()).await? {
                     Some(user) => user,
-                    None => return error_redirect(error_url, "user_not_found", None),
+                    None => return Ok(error_redirect(error_url, "user_not_found", None)),
                 }
             }
             Some(user) => user,
             None if self.config.disable_sign_up => {
-                return error_redirect(error_url, "new_user_signup_disabled", None);
+                return Ok(error_redirect(error_url, "new_user_signup_disabled", None));
             }
             None => {
                 let mut user = CreateUser::new()
@@ -259,7 +292,7 @@ impl MagicLinkPlugin {
                     Err(error) => {
                         let (_, code, message) = error.error_payload();
                         if let Some(code) = code {
-                            return error_redirect(error_url, &code, Some(&message));
+                            return Ok(error_redirect(error_url, &code, Some(&message)));
                         }
                         return Err(error);
                     }
@@ -342,17 +375,13 @@ fn decode_callback(req: &AuthRequest, name: &str) -> AuthResult<Option<String>> 
         .filter(|value| !value.is_empty())
         .map(|value| {
             urlencoding::decode(value)
-                .map(|value| value.into_owned())
-                .map_err(|_| AuthError::bad_request("Invalid callbackURL"))
+                .map(std::borrow::Cow::into_owned)
+                .map_err(|_error| AuthError::bad_request("Invalid callbackURL"))
         })
         .transpose()
 }
 
-fn error_redirect(
-    mut url: Url,
-    error: &str,
-    description: Option<&str>,
-) -> AuthResult<AuthResponse> {
+fn error_redirect(mut url: Url, error: &str, description: Option<&str>) -> AuthResponse {
     let pairs: Vec<(String, String)> = url
         .query_pairs()
         .filter(|(key, _)| key != "error" && (description.is_none() || key != "error_description"))
@@ -368,5 +397,5 @@ fn error_redirect(
             .query_pairs_mut()
             .append_pair("error_description", description);
     }
-    Ok(redirect(url.as_str()))
+    redirect(url.as_str())
 }

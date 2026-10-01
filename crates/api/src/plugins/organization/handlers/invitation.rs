@@ -1,19 +1,45 @@
 use better_auth_core::entity::{
     AuthInvitation, AuthMember, AuthOrganization, AuthSession, AuthUser,
 };
+
 use better_auth_core::error::{AuthError, AuthResult};
+
 use better_auth_core::plugin::AuthContext;
+
 use better_auth_core::types::{AuthRequest, AuthResponse, CreateInvitation, InvitationStatus};
+
 use better_auth_core::wire::InvitationView;
+
 use std::collections::HashMap;
 
 use super::{require_session, resolve_organization_id};
+
 use crate::plugins::organization::OrganizationConfig;
+
 use crate::plugins::organization::types::{
     AcceptInvitationRequest, AcceptInvitationResponse, BasicMemberResponse,
     CancelInvitationRequest, GetInvitationQuery, GetInvitationResponse, InviteMemberRequest,
     ListInvitationsQuery, RejectInvitationRequest, UserInvitationResponse,
 };
+
+impl crate::plugins::organization::OrganizationPlugin {
+    /// List pending invitations for an email through a trusted server-side call.
+    ///
+    /// This method accepts an application-authorized email without a session.
+    /// The HTTP endpoint instead derives the email from a verified session and
+    /// rejects client email selectors.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
+    pub async fn list_user_invitations(
+        &self,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        email: &str,
+    ) -> AuthResult<Vec<UserInvitationResponse<InvitationView>>> {
+        list_user_invitations_for_email_core(email, ctx).await
+    }
+}
 
 fn normalized_roles(input: &crate::plugins::organization::types::RoleInput) -> String {
     input.joined()
@@ -23,6 +49,9 @@ fn requested_roles(input: &crate::plugins::organization::types::RoleInput) -> Ve
     input.roles()
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn require_verified_invitation_email<S: better_auth_core::AuthSchema>(
     user: &impl AuthUser,
     config: &OrganizationConfig,
@@ -42,7 +71,14 @@ pub(super) fn require_verified_invitation_email<S: better_auth_core::AuthSchema>
 // Core functions
 // ---------------------------------------------------------------------------
 
-pub(crate) async fn invite_member_core(
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep invitation authorization, quota checks, and delivery callbacks in their required order"
+)]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn invite_member_core(
     body: &InviteMemberRequest,
     user: &impl AuthUser,
     session: &impl AuthSession,
@@ -79,7 +115,12 @@ pub(crate) async fn invite_member_core(
     }
 
     let mut valid_roles = vec!["owner".to_owned(), "admin".to_owned(), "member".to_owned()];
-    valid_roles.extend(config.roles.iter().flat_map(|roles| roles.keys().cloned()));
+    valid_roles.extend(
+        config
+            .roles
+            .iter()
+            .flat_map(|roles_2| roles_2.keys().cloned()),
+    );
     if config.dynamic_access_control.enabled {
         valid_roles.extend(
             ctx.database
@@ -122,10 +163,12 @@ pub(crate) async fn invite_member_core(
     }
 
     if let Some(limit) = config.invitation_limit {
-        let pending_count = ctx
-            .database
-            .count_pending_organization_invitations(&org_id)
-            .await? as usize;
+        let pending_count = usize::try_from(
+            ctx.database
+                .count_pending_organization_invitations(&org_id)
+                .await?,
+        )
+        .map_err(|error| AuthError::Internal(error.to_string()))?;
         if pending_count >= limit {
             return Err(AuthError::Upstream {
                 status: 403,
@@ -155,8 +198,11 @@ pub(crate) async fn invite_member_core(
         return Ok(ctx.invitation_view(&existing));
     }
 
-    let expires_at =
-        chrono::Utc::now() + chrono::Duration::seconds(config.invitation_expires_in as i64);
+    let expires_at = chrono::Utc::now()
+        + chrono::Duration::seconds(
+            i64::try_from(config.invitation_expires_in)
+                .map_err(|error| AuthError::Config(error.to_string()))?,
+        );
     let requested_teams = if config.teams.enabled {
         body.team_id
             .as_ref()
@@ -212,7 +258,10 @@ pub(crate) async fn invite_member_core(
     Ok(ctx.invitation_view(&invitation))
 }
 
-pub(crate) async fn get_invitation_core(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn get_invitation_core(
     query: &GetInvitationQuery,
     user: &impl AuthUser,
     config: &OrganizationConfig,
@@ -224,9 +273,9 @@ pub(crate) async fn get_invitation_core(
         .await?
         .filter(|invitation| invitation.is_pending() && !invitation.is_expired())
         .ok_or_else(|| AuthError::bad_request("Invitation not found!"))?;
-    if !user
+    if user
         .email()
-        .is_some_and(|email| email.to_lowercase() == invitation.email().to_lowercase())
+        .is_none_or(|email| email.to_lowercase() != invitation.email().to_lowercase())
     {
         return Err(AuthError::forbidden(
             "You are not the recipient of the invitation",
@@ -261,13 +310,16 @@ pub(crate) async fn get_invitation_core(
 
     Ok(GetInvitationResponse {
         invitation: ctx.invitation_view(&invitation),
-        organization_name: organization.name().to_string(),
-        organization_slug: organization.slug().to_string(),
+        organization_name: organization.name().to_owned(),
+        organization_slug: organization.slug().to_owned(),
         inviter_email: inviter.email().map(str::to_owned),
     })
 }
 
-pub(crate) async fn list_invitations_core(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn list_invitations_core(
     query: &ListInvitationsQuery,
     user: &impl AuthUser,
     session: &impl AuthSession,
@@ -276,11 +328,12 @@ pub(crate) async fn list_invitations_core(
     let org_id =
         resolve_organization_id(query.organization_id.as_deref(), None, session, ctx).await?;
 
-    let _ = ctx
-        .database
-        .get_member(&org_id, &user.id())
-        .await?
-        .ok_or_else(|| AuthError::forbidden("Not a member of this organization"))?;
+    drop(
+        ctx.database
+            .get_member(&org_id, &user.id())
+            .await?
+            .ok_or_else(|| AuthError::forbidden("Not a member of this organization"))?,
+    );
 
     let invitations = ctx.database.list_organization_invitations(&org_id).await?;
     Ok(invitations
@@ -289,7 +342,10 @@ pub(crate) async fn list_invitations_core(
         .collect())
 }
 
-pub(crate) async fn list_user_invitations_core(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn list_user_invitations_core(
     user: &impl AuthUser,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<Vec<UserInvitationResponse<InvitationView>>> {
@@ -341,22 +397,10 @@ async fn list_user_invitations_for_email_core(
         .collect())
 }
 
-impl crate::plugins::organization::OrganizationPlugin {
-    /// List pending invitations for an email through a trusted server-side call.
-    ///
-    /// This method accepts an application-authorized email without a session.
-    /// The HTTP endpoint instead derives the email from a verified session and
-    /// rejects client email selectors.
-    pub async fn list_user_invitations(
-        &self,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-        email: &str,
-    ) -> AuthResult<Vec<UserInvitationResponse<InvitationView>>> {
-        list_user_invitations_for_email_core(email, ctx).await
-    }
-}
-
-pub(crate) async fn reject_invitation_core(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn reject_invitation_core(
     body: &RejectInvitationRequest,
     user: &impl AuthUser,
     config: &OrganizationConfig,
@@ -366,7 +410,7 @@ pub(crate) async fn reject_invitation_core(
         .database
         .get_invitation_by_id(&body.invitation_id)
         .await?
-        .filter(|invitation| invitation.is_pending())
+        .filter(better_auth_core::Invitation::is_pending)
         .ok_or(AuthError::Upstream {
             status: 400,
             code: "INVITATION_NOT_FOUND",
@@ -400,7 +444,10 @@ pub(crate) async fn reject_invitation_core(
     })
 }
 
-pub(crate) async fn cancel_invitation_core(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn cancel_invitation_core(
     body: &CancelInvitationRequest,
     user: &impl AuthUser,
     config: &OrganizationConfig,
@@ -449,6 +496,10 @@ pub(crate) async fn cancel_invitation_core(
 // Handlers
 // ---------------------------------------------------------------------------
 
+///
+/// # Errors
+///
+/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_invite_member(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -463,6 +514,10 @@ pub async fn handle_invite_member(
     Ok(AuthResponse::json(200, &invitation)?)
 }
 
+///
+/// # Errors
+///
+/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_get_invitation(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -470,7 +525,7 @@ pub async fn handle_get_invitation(
 ) -> AuthResult<AuthResponse> {
     let (user, _) = match require_session(req, ctx).await {
         Ok(session) => session,
-        Err(AuthError::Unauthenticated) | Err(AuthError::SessionNotFound) => {
+        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
             return Ok(AuthResponse::json(
                 401,
                 &serde_json::json!({ "message": "Not authenticated" }),
@@ -493,6 +548,10 @@ pub async fn handle_get_invitation(
     Ok(AuthResponse::json(200, &response)?)
 }
 
+///
+/// # Errors
+///
+/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_list_invitations(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -503,6 +562,10 @@ pub async fn handle_list_invitations(
     Ok(AuthResponse::json(200, &invitations)?)
 }
 
+///
+/// # Errors
+///
+/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_list_user_invitations(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -522,7 +585,7 @@ pub async fn handle_list_user_invitations(
     }
     let (user, _session) = match require_session(req, ctx).await {
         Ok(session) => session,
-        Err(AuthError::Unauthenticated) | Err(AuthError::SessionNotFound) => {
+        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
             return Ok(AuthResponse::json(
                 400,
                 &serde_json::json!({
@@ -536,6 +599,9 @@ pub async fn handle_list_user_invitations(
     Ok(AuthResponse::json(200, &invitations)?)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub async fn handle_accept_invitation(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -563,6 +629,10 @@ pub async fn handle_accept_invitation(
     Ok(AuthResponse::json(200, &response)?)
 }
 
+///
+/// # Errors
+///
+/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_reject_invitation(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -577,6 +647,10 @@ pub async fn handle_reject_invitation(
     Ok(AuthResponse::json(200, &response)?)
 }
 
+///
+/// # Errors
+///
+/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_cancel_invitation(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -591,10 +665,8 @@ pub async fn handle_cancel_invitation(
     Ok(AuthResponse::json(200, &response)?)
 }
 
-fn parse_query<T: Default + serde::de::DeserializeOwned>(
-    query: &std::collections::HashMap<String, String>,
-) -> T {
-    let json_value =
-        serde_json::to_value(query).unwrap_or(serde_json::Value::Object(Default::default()));
+fn parse_query<T: Default + serde::de::DeserializeOwned>(query: &HashMap<String, String>) -> T {
+    let json_value = serde_json::to_value(query)
+        .unwrap_or(serde_json::Value::Object(serde_json::Map::default()));
     serde_json::from_value(json_value).unwrap_or_default()
 }

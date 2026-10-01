@@ -3,19 +3,84 @@
 //! Extracted to avoid duplicating common patterns across plugins (DRY).
 
 use better_auth_core::entity::{AuthAccount, AuthUser};
+
 use better_auth_core::{AuthContext, AuthError, AuthRequest, AuthResult, CreateUser, UpdateUser};
+
 use chrono::Utc;
+
+/// Result of issuing a real session for a user.
+pub struct IssuedSession<S: better_auth_core::AuthSchema> {
+    pub user: S::User,
+    pub session: S::Session,
+}
+
+/// Original rows used by the handler that issued the completed session.
+/// This is a callback observation; authorization still uses a current session read.
+pub(in crate::plugins) struct CompletedSession<S: better_auth_core::AuthSchema> {
+    pub(in crate::plugins) user: S::User,
+    pub(in crate::plugins) session: S::Session,
+    pub(in crate::plugins) user_view: Option<better_auth_core::wire::UserView>,
+}
+
+/// Session issuance failures that callers may need to surface differently from
+/// a generic auth error (for example OAuth callback redirects).
+#[derive(Debug)]
+pub enum SessionIssueError {
+    Auth(AuthError),
+    Banned { message: String },
+}
+
+impl SessionIssueError {
+    #[must_use]
+    pub fn into_auth_error(self) -> AuthError {
+        match self {
+            Self::Auth(error) => error,
+            Self::Banned { message } => AuthError::banned_user(message),
+        }
+    }
+
+    #[must_use]
+    pub const fn banned_message(&self) -> Option<&str> {
+        match self {
+            Self::Banned { message } => Some(message.as_str()),
+            Self::Auth(_) => None,
+        }
+    }
+}
+
+impl From<AuthError> for SessionIssueError {
+    fn from(value: AuthError) -> Self {
+        Self::Auth(value)
+    }
+}
+
+struct SessionOverrides {
+    additional_fields: better_auth_core::field_policy::FieldValues,
+    impersonated_by: Option<String>,
+    active_organization_id: Option<String>,
+    active_team_id: Option<String>,
+}
+
+impl<S: better_auth_core::AuthSchema> std::fmt::Debug for IssuedSession<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IssuedSession").finish_non_exhaustive()
+    }
+}
 
 /// Convert an `expiresIn` value (**seconds** from now) into an RFC 3339
 /// `expires_at` timestamp string.
 ///
 /// Returns `None` when `expires_in_secs` is `None`.
+///
+/// # Errors
+///
+/// Returns an error if the duration or resulting timestamp is outside the supported range.
 pub fn expires_in_to_at(expires_in_secs: Option<i64>) -> AuthResult<Option<String>> {
     match expires_in_secs {
         Some(secs) => {
             let duration = chrono::Duration::try_seconds(secs)
                 .ok_or_else(|| AuthError::bad_request("expiresIn is out of range"))?;
-            let dt = chrono::Utc::now()
+            let dt = Utc::now()
                 .checked_add_signed(duration)
                 .ok_or_else(|| AuthError::bad_request("expiresIn is out of range"))?;
             Ok(Some(dt.to_rfc3339()))
@@ -29,6 +94,10 @@ pub fn expires_in_to_at(expires_in_secs: Option<i64>) -> AuthResult<Option<Strin
 /// Returns `AuthError::not_found` if the key does not exist or belongs to
 /// another user.  This pattern was duplicated in `handle_get`, `handle_update`,
 /// and `handle_delete`.
+///
+/// # Errors
+///
+/// Returns an error if the key is missing, belongs to another owner, or its lookup fails.
 pub async fn get_owned_api_key(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     config: &crate::plugins::api_key::ApiKeyConfig,
@@ -65,6 +134,10 @@ pub async fn get_owned_api_key(
 
 /// Authorize a user against an organization-owned API key, mirroring
 /// upstream's `checkOrgApiKeyPermission`.
+///
+/// # Errors
+///
+/// Returns an error if organization permissions cannot be loaded or do not authorize the operation.
 pub async fn require_org_api_key_permission(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     user_id: &str,
@@ -81,7 +154,7 @@ pub async fn require_org_api_key_permission(
     // which is what supplies the access control below.
     if !ctx
         .get_metadata(METADATA_ENABLED)
-        .and_then(|value| value.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false)
     {
         return Err(api_key_error(ApiKeyErrorCode::OrganizationPluginRequired));
@@ -96,8 +169,8 @@ pub async fn require_org_api_key_permission(
     // (comma-separated), so holding it alongside others still counts.
     let creator_role = ctx
         .get_metadata(METADATA_CREATOR_ROLE)
-        .and_then(|value| value.as_str().map(str::to_string))
-        .unwrap_or_else(|| "owner".to_string());
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .unwrap_or_else(|| "owner".to_owned());
     if member.role.split(',').any(|role| role == creator_role) {
         return Ok(());
     }
@@ -143,6 +216,10 @@ pub async fn require_org_api_key_permission(
 }
 
 /// Fetch the user's credential account, if present.
+///
+/// # Errors
+///
+/// Propagates errors from credential-account storage.
 pub async fn get_credential_account<S: better_auth_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: impl AsRef<str>,
@@ -156,16 +233,24 @@ pub async fn get_credential_account<S: better_auth_core::AuthSchema>(
 }
 
 /// Resolve the user's stored password hash from the credential account.
+///
+/// # Errors
+///
+/// Propagates errors from credential-account storage.
 pub async fn get_credential_password_hash(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     user: &impl AuthUser,
 ) -> AuthResult<Option<String>> {
     Ok(get_credential_account(ctx, user.id())
         .await?
-        .and_then(|account| account.password().map(str::to_string)))
+        .and_then(|account| account.password().map(str::to_owned)))
 }
 
 /// Whether the user currently has a password set.
+///
+/// # Errors
+///
+/// Propagates errors from credential-account storage.
 pub async fn user_has_password(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     user: &impl AuthUser,
@@ -187,7 +272,7 @@ pub fn apply_default_role(
         .get_metadata("admin.default_role")
         .and_then(|value| value.as_str())
     {
-        create_user.role = Some(default_role.to_string());
+        create_user.role = Some(default_role.to_owned());
     }
 }
 
@@ -195,6 +280,10 @@ pub fn apply_default_role(
 ///
 /// Cookie clearing is not a new session. The record is read from storage so
 /// hooks never trust user or session fields from a response body.
+///
+/// # Errors
+///
+/// Returns an error if the session cannot be serialized.
 pub async fn response_session<S: better_auth_core::AuthSchema>(
     ctx: &AuthContext<S>,
     response: &better_auth_core::AuthResponse,
@@ -231,21 +320,7 @@ pub async fn response_session<S: better_auth_core::AuthSchema>(
     Ok(Some(IssuedSession { user, session }))
 }
 
-/// Result of issuing a real session for a user.
-pub struct IssuedSession<S: better_auth_core::AuthSchema> {
-    pub user: S::User,
-    pub session: S::Session,
-}
-
-/// Original rows used by the handler that issued the completed session.
-/// This is a callback observation; authorization still uses a current session read.
-pub(crate) struct CompletedSession<S: better_auth_core::AuthSchema> {
-    pub(crate) user: S::User,
-    pub(crate) session: S::Session,
-    pub(crate) user_view: Option<better_auth_core::wire::UserView>,
-}
-
-pub(crate) fn record_completed_session<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins) fn record_completed_session<S: better_auth_core::AuthSchema>(
     user: &S::User,
     session: &S::Session,
 ) {
@@ -260,7 +335,7 @@ pub(crate) fn record_completed_session<S: better_auth_core::AuthSchema>(
 
 /// Retain a Source-defined callback projection after genuine session issuance.
 /// This cannot create a completion or replace its raw models/owner/token.
-pub(crate) fn record_completed_session_user_view<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins) fn record_completed_session_user_view<S: better_auth_core::AuthSchema>(
     original_user: &S::User,
     session: &S::Session,
     view: better_auth_core::wire::UserView,
@@ -280,7 +355,7 @@ pub(crate) fn record_completed_session_user_view<S: better_auth_core::AuthSchema
     }
 }
 
-pub(crate) fn response_has_session_cookie<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins) fn response_has_session_cookie<S: better_auth_core::AuthSchema>(
     ctx: &AuthContext<S>,
     response: &better_auth_core::AuthResponse,
 ) -> bool {
@@ -296,7 +371,7 @@ pub(crate) fn response_has_session_cookie<S: better_auth_core::AuthSchema>(
     })
 }
 
-pub(crate) fn completed_response_session<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins) fn completed_response_session<S: better_auth_core::AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
     response: &better_auth_core::AuthResponse,
@@ -309,39 +384,11 @@ pub(crate) fn completed_response_session<S: better_auth_core::AuthSchema>(
         .flatten()
 }
 
-/// Session issuance failures that callers may need to surface differently from
-/// a generic auth error (for example OAuth callback redirects).
-pub enum SessionIssueError {
-    Auth(AuthError),
-    Banned { message: String },
-}
-
-impl SessionIssueError {
-    pub fn into_auth_error(self) -> AuthError {
-        match self {
-            Self::Auth(error) => error,
-            Self::Banned { message } => AuthError::banned_user(message),
-        }
-    }
-
-    pub fn banned_message(&self) -> Option<&str> {
-        match self {
-            Self::Banned { message } => Some(message.as_str()),
-            Self::Auth(_) => None,
-        }
-    }
-}
-
-impl From<AuthError> for SessionIssueError {
-    fn from(value: AuthError) -> Self {
-        Self::Auth(value)
-    }
-}
-
 /// Whether the admin plugin is active for this auth instance.
+#[must_use]
 pub fn admin_plugin_enabled(ctx: &AuthContext<impl better_auth_core::AuthSchema>) -> bool {
     ctx.get_metadata("admin.enabled")
-        .and_then(|value| value.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false)
 }
 
@@ -356,7 +403,12 @@ pub fn admin_banned_user_message(
 }
 
 /// Resolve an awaited application message from the actual stored user entity.
-pub(crate) async fn resolve_admin_banned_user_message<S: better_auth_core::AuthSchema>(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn resolve_admin_banned_user_message<
+    S: better_auth_core::AuthSchema,
+>(
     ctx: &AuthContext<S>,
     user: &S::User,
 ) -> AuthResult<String> {
@@ -367,12 +419,16 @@ pub(crate) async fn resolve_admin_banned_user_message<S: better_auth_core::AuthS
         return policy.message(user).await;
     }
     Ok(admin_banned_user_message(ctx).unwrap_or_else(|| {
-        "You have been banned from this application. Please contact support if you believe this is an error.".to_string()
+        "You have been banned from this application. Please contact support if you believe this is an error.".to_owned()
     }))
 }
 
 /// Issue a session for the given user, applying admin-plugin ban semantics
 /// when the admin plugin is enabled.
+///
+/// # Errors
+///
+/// Returns an error if session hooks reject issuance, the user is banned, or storage fails.
 pub async fn issue_user_session<S: better_auth_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,
@@ -383,6 +439,10 @@ pub async fn issue_user_session<S: better_auth_core::AuthSchema>(
 }
 
 /// Issue a replacement session while preserving trusted session extension fields.
+///
+/// # Errors
+///
+/// Returns an error if session hooks reject issuance, the user is banned, or storage fails.
 pub async fn issue_user_session_with_overrides<S: better_auth_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,
@@ -396,18 +456,11 @@ pub async fn issue_user_session_with_overrides<S: better_auth_core::AuthSchema>(
             .into_iter()
             .map(|(name, value)| (name, better_auth_core::utils::json::JsValue::from(value)))
             .collect(),
-        impersonated_by: current_session.impersonated_by().map(str::to_string),
-        active_organization_id: current_session.active_organization_id().map(str::to_string),
-        active_team_id: current_session.active_team_id().map(str::to_string),
+        impersonated_by: current_session.impersonated_by().map(str::to_owned),
+        active_organization_id: current_session.active_organization_id().map(str::to_owned),
+        active_team_id: current_session.active_team_id().map(str::to_owned),
     };
     issue_user_session_inner(ctx, user_id, ip_address, user_agent, Some(overrides)).await
-}
-
-struct SessionOverrides {
-    additional_fields: better_auth_core::field_policy::FieldValues,
-    impersonated_by: Option<String>,
-    active_organization_id: Option<String>,
-    active_team_id: Option<String>,
 }
 
 async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
@@ -428,18 +481,19 @@ async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
             .ban_expires()
             .is_some_and(|expires| expires <= Utc::now())
         {
-            let _ = ctx
-                .database
-                .update_user(
-                    user_id,
-                    UpdateUser {
-                        banned: Some(false),
-                        ban_reason: None,
-                        ban_expires: None,
-                        ..Default::default()
-                    },
-                )
-                .await?;
+            drop(
+                ctx.database
+                    .update_user(
+                        user_id,
+                        UpdateUser {
+                            banned: Some(false),
+                            ban_reason: None,
+                            ban_expires: None,
+                            ..Default::default()
+                        },
+                    )
+                    .await?,
+            );
         } else {
             return Err(SessionIssueError::Banned {
                 message: resolve_admin_banned_user_message(ctx, &user).await?,
@@ -476,19 +530,18 @@ async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
 }
 
 /// Parse a cookie value from the request's `Cookie` header.
+#[must_use]
 pub fn get_cookie(req: &AuthRequest, name: &str) -> Option<String> {
     let header = req.headers.get("cookie")?;
-    header
-        .split(';')
-        .filter_map(|cookie| {
-            let trimmed = cookie.trim();
-            let (cookie_name, cookie_value) = trimmed.split_once('=')?;
-            (cookie_name == name).then_some(cookie_value.to_string())
-        })
-        .next()
+    header.split(';').find_map(|cookie| {
+        let trimmed = cookie.trim();
+        let (cookie_name, cookie_value) = trimmed.split_once('=')?;
+        (cookie_name == name).then_some(cookie_value.to_owned())
+    })
 }
 
 /// TS-style cookie clearing used by `deleteSessionCookie`.
+#[must_use]
 pub fn delete_session_cookie_headers(config: &better_auth_core::AuthConfig) -> Vec<String> {
     better_auth_core::utils::cookie_utils::delete_session_cookie_headers(config)
 }

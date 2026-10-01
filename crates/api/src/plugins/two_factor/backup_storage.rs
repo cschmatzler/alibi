@@ -29,7 +29,14 @@ impl std::fmt::Debug for TwoFactorBackupStorage {
 }
 
 impl TwoFactorBackupStorage {
-    pub(crate) async fn store_codes(&self, codes: &[String], secret: &str) -> AuthResult<String> {
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
+    pub(in crate::plugins) async fn store_codes(
+        &self,
+        codes: &[String],
+        secret: &str,
+    ) -> AuthResult<String> {
         let json = serde_json::to_string(codes)?;
         match self {
             Self::Encrypted => super::encrypt_value(secret, &json),
@@ -38,7 +45,10 @@ impl TwoFactorBackupStorage {
         }
     }
 
-    pub(crate) async fn load_codes(
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
+    pub(in crate::plugins) async fn load_codes(
         &self,
         stored: &str,
         secret: &str,

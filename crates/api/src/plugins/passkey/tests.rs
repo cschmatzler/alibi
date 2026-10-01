@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Write;
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -15,7 +16,7 @@ fn passkey_plugin() -> PasskeyPlugin {
         .origin("http://localhost:3000")
 }
 
-fn cookie_header(response: &better_auth_core::AuthResponse) -> &str {
+fn cookie_header(response: &AuthResponse) -> &str {
     response
         .headers
         .get("Set-Cookie")
@@ -35,7 +36,7 @@ fn test_extract_passkey_snapshot_fields_requires_all_expected_fields() {
         }
     });
 
-    let err = super::webauthn::extract_passkey_snapshot_fields(&value).unwrap_err();
+    let err = webauthn::extract_passkey_snapshot_fields(&value).unwrap_err();
     assert_eq!(
         err.to_string(),
         "Internal server error: Stored passkey JSON missing backup_eligible"
@@ -53,7 +54,7 @@ fn test_extract_passkey_snapshot_fields_reads_expected_values() {
     });
 
     let (counter, backed_up, backup_eligible) =
-        super::webauthn::extract_passkey_snapshot_fields(&value).unwrap();
+        webauthn::extract_passkey_snapshot_fields(&value).unwrap();
     assert_eq!(counter, 11);
     assert!(backed_up);
     assert!(!backup_eligible);
@@ -73,15 +74,15 @@ async fn test_generate_register_options_sets_cookie_and_uses_query_name() {
     ctx.database
         .create_passkey(CreatePasskey {
             user_id: user.id.clone(),
-            name: Some("Existing Key".to_string()),
+            name: Some("Existing Key".to_owned()),
             credential_id: credential_id("cred-existing"),
-            public_key: "public-key".to_string(),
+            public_key: "public-key".to_owned(),
             counter: 0,
-            device_type: "singleDevice".to_string(),
+            device_type: "singleDevice".to_owned(),
             backed_up: false,
-            transports: Some("usb,nfc".to_string()),
-            credential: "invalid-stored-passkey".to_string(),
-            aaguid: Some("00000000-0000-0000-0000-000000000000".to_string()),
+            transports: Some("usb,nfc".to_owned()),
+            credential: "invalid-stored-passkey".to_owned(),
+            aaguid: Some("00000000-0000-0000-0000-000000000000".to_owned()),
         })
         .await
         .unwrap();
@@ -92,10 +93,10 @@ async fn test_generate_register_options_sets_cookie_and_uses_query_name() {
         Some(&session.token),
         None,
         HashMap::from([
-            ("name".to_string(), "Custom Account Label".to_string()),
+            ("name".to_owned(), "Custom Account Label".to_owned()),
             (
-                "authenticatorAttachment".to_string(),
-                "cross-platform".to_string(),
+                "authenticatorAttachment".to_owned(),
+                "cross-platform".to_owned(),
             ),
         ]),
     );
@@ -108,17 +109,43 @@ async fn test_generate_register_options_sets_cookie_and_uses_query_name() {
     assert!(cookie_header(&response).contains("better-auth-passkey="));
 
     let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert!(body["challenge"].is_string());
-    assert_eq!(body["user"]["name"], "Custom Account Label");
+    assert!((*(body).get("challenge").unwrap_or(&serde_json::Value::Null)).is_string());
     assert_eq!(
-        body["authenticatorSelection"]["authenticatorAttachment"],
+        (*(*(body).get("user").unwrap_or(&serde_json::Value::Null))
+            .get("name")
+            .unwrap_or(&serde_json::Value::Null)),
+        "Custom Account Label"
+    );
+    assert_eq!(
+        (*(*(body)
+            .get("authenticatorSelection")
+            .unwrap_or(&serde_json::Value::Null))
+        .get("authenticatorAttachment")
+        .unwrap_or(&serde_json::Value::Null)),
         "cross-platform"
     );
     assert_eq!(
-        body["excludeCredentials"][0]["id"],
+        (*(*(*(body)
+            .get("excludeCredentials")
+            .unwrap_or(&serde_json::Value::Null))
+        .get(0)
+        .unwrap_or(&serde_json::Value::Null))
+        .get("id")
+        .unwrap_or(&serde_json::Value::Null)),
         credential_id("cred-existing")
     );
-    assert_eq!(body["excludeCredentials"][0]["transports"][0], "usb");
+    assert_eq!(
+        (*(*(*(*(body)
+            .get("excludeCredentials")
+            .unwrap_or(&serde_json::Value::Null))
+        .get(0)
+        .unwrap_or(&serde_json::Value::Null))
+        .get("transports")
+        .unwrap_or(&serde_json::Value::Null))
+        .get(0)
+        .unwrap_or(&serde_json::Value::Null)),
+        "usb"
+    );
 }
 
 #[tokio::test]
@@ -140,7 +167,7 @@ async fn test_generate_authenticate_options_is_get_and_sets_cookie_without_auth(
     assert!(cookie_header(&response).contains("better-auth-passkey="));
 
     let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert!(body["challenge"].is_string());
+    assert!((*(body).get("challenge").unwrap_or(&serde_json::Value::Null)).is_string());
     assert!(body.get("allowCredentials").is_none());
 }
 
@@ -158,14 +185,14 @@ async fn test_generate_authenticate_options_with_auth_lists_allow_credentials() 
     ctx.database
         .create_passkey(CreatePasskey {
             user_id: user.id.clone(),
-            name: Some("Authenticator".to_string()),
+            name: Some("Authenticator".to_owned()),
             credential_id: credential_id("cred-auth"),
-            public_key: "public-key".to_string(),
+            public_key: "public-key".to_owned(),
             counter: 0,
-            device_type: "singleDevice".to_string(),
+            device_type: "singleDevice".to_owned(),
             backed_up: false,
-            transports: Some("internal".to_string()),
-            credential: "invalid-stored-passkey".to_string(),
+            transports: Some("internal".to_owned()),
+            credential: "invalid-stored-passkey".to_owned(),
             aaguid: None,
         })
         .await
@@ -186,10 +213,27 @@ async fn test_generate_authenticate_options_with_auth_lists_allow_credentials() 
 
     let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
     assert_eq!(
-        body["allowCredentials"][0]["id"],
+        (*(*(*(body)
+            .get("allowCredentials")
+            .unwrap_or(&serde_json::Value::Null))
+        .get(0)
+        .unwrap_or(&serde_json::Value::Null))
+        .get("id")
+        .unwrap_or(&serde_json::Value::Null)),
         credential_id("cred-auth")
     );
-    assert_eq!(body["allowCredentials"][0]["transports"][0], "internal");
+    assert_eq!(
+        (*(*(*(*(body)
+            .get("allowCredentials")
+            .unwrap_or(&serde_json::Value::Null))
+        .get(0)
+        .unwrap_or(&serde_json::Value::Null))
+        .get("transports")
+        .unwrap_or(&serde_json::Value::Null))
+        .get(0)
+        .unwrap_or(&serde_json::Value::Null)),
+        "internal"
+    );
 }
 
 #[tokio::test]
@@ -221,13 +265,16 @@ async fn test_verify_registration_without_challenge_cookie_returns_challenge_not
         Some(body),
     );
     req.headers
-        .insert("origin".to_string(), "http://localhost:3000".to_string());
+        .insert("origin".to_owned(), "http://localhost:3000".to_owned());
 
     let response = plugin.handle_verify_registration(&req, &ctx).await.unwrap();
     assert_eq!(response.status, 400);
 
-    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert_eq!(body["message"], "Challenge not found");
+    let body_2: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(
+        (*(body_2).get("message").unwrap_or(&serde_json::Value::Null)),
+        "Challenge not found"
+    );
 }
 
 #[tokio::test]
@@ -254,7 +301,7 @@ async fn test_verify_authentication_without_challenge_cookie_returns_challenge_n
         Some(body),
     );
     req.headers
-        .insert("origin".to_string(), "http://localhost:3000".to_string());
+        .insert("origin".to_owned(), "http://localhost:3000".to_owned());
 
     let response = plugin
         .handle_verify_authentication(&req, &ctx)
@@ -262,8 +309,11 @@ async fn test_verify_authentication_without_challenge_cookie_returns_challenge_n
         .unwrap();
     assert_eq!(response.status, 400);
 
-    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert_eq!(body["message"], "Challenge not found");
+    let body_2: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(
+        (*(body_2).get("message").unwrap_or(&serde_json::Value::Null)),
+        "Challenge not found"
+    );
 }
 
 #[tokio::test]
@@ -282,13 +332,13 @@ async fn test_list_user_passkeys_includes_updated_at_and_optional_fields() {
             user_id: user.id.clone(),
             name: None,
             credential_id: credential_id("cred-list"),
-            public_key: "public-key".to_string(),
+            public_key: "public-key".to_owned(),
             counter: 0,
-            device_type: "singleDevice".to_string(),
+            device_type: "singleDevice".to_owned(),
             backed_up: false,
             transports: None,
-            credential: "invalid-stored-passkey".to_string(),
-            aaguid: Some("00000000-0000-0000-0000-000000000000".to_string()),
+            credential: "invalid-stored-passkey".to_owned(),
+            aaguid: Some("00000000-0000-0000-0000-000000000000".to_owned()),
         })
         .await
         .unwrap();
@@ -303,9 +353,22 @@ async fn test_list_user_passkeys_includes_updated_at_and_optional_fields() {
     assert_eq!(response.status, 200);
 
     let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert!(body[0].get("updatedAt").is_none());
-    assert_eq!(body[0]["aaguid"], "00000000-0000-0000-0000-000000000000");
-    assert!(body[0].get("name").is_none());
+    assert!(
+        (*(body).get(0).unwrap_or(&serde_json::Value::Null))
+            .get("updatedAt")
+            .is_none()
+    );
+    assert_eq!(
+        (*(*(body).get(0).unwrap_or(&serde_json::Value::Null))
+            .get("aaguid")
+            .unwrap_or(&serde_json::Value::Null)),
+        "00000000-0000-0000-0000-000000000000"
+    );
+    assert!(
+        (*(body).get(0).unwrap_or(&serde_json::Value::Null))
+            .get("name")
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -330,14 +393,14 @@ async fn test_delete_passkey_non_owner_is_unauthorized() {
         .database
         .create_passkey(CreatePasskey {
             user_id: other.id.clone(),
-            name: Some("Other Key".to_string()),
+            name: Some("Other Key".to_owned()),
             credential_id: credential_id("cred-other-delete"),
-            public_key: "public-key".to_string(),
+            public_key: "public-key".to_owned(),
             counter: 0,
-            device_type: "singleDevice".to_string(),
+            device_type: "singleDevice".to_owned(),
             backed_up: false,
             transports: None,
-            credential: "invalid-stored-passkey".to_string(),
+            credential: "invalid-stored-passkey".to_owned(),
             aaguid: None,
         })
         .await
@@ -384,14 +447,14 @@ async fn test_update_passkey_non_owner_is_unauthorized() {
         .database
         .create_passkey(CreatePasskey {
             user_id: other.id.clone(),
-            name: Some("Other Key".to_string()),
+            name: Some("Other Key".to_owned()),
             credential_id: credential_id("cred-other-update"),
-            public_key: "public-key".to_string(),
+            public_key: "public-key".to_owned(),
             counter: 0,
-            device_type: "singleDevice".to_string(),
+            device_type: "singleDevice".to_owned(),
             backed_up: false,
             transports: None,
-            credential: "invalid-stored-passkey".to_string(),
+            credential: "invalid-stored-passkey".to_owned(),
             aaguid: None,
         })
         .await
@@ -410,7 +473,10 @@ async fn test_update_passkey_non_owner_is_unauthorized() {
     let response = plugin.handle_update_passkey(&req, &ctx).await.unwrap();
     assert_eq!(response.status, 401);
     let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert_eq!(body["code"], "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY");
+    assert_eq!(
+        (*(body).get("code").unwrap_or(&serde_json::Value::Null)),
+        "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY"
+    );
     let preserved = ctx
         .database
         .get_passkey_by_id(&passkey.id)
@@ -422,6 +488,11 @@ async fn test_update_passkey_non_owner_is_unauthorized() {
 
 /// Previously persisted ceremonies keep both their codec and original Required policy.
 #[test]
+#[expect(
+    clippy::panic_in_result_fn,
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 fn pending_registration_challenges_keep_original_verification_policy()
 -> Result<(), Box<dyn std::error::Error>> {
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -431,12 +502,12 @@ fn pending_registration_challenges_keep_original_verification_policy()
     use std::collections::BTreeMap;
     use webauthn_rs::prelude::RegisterPublicKeyCredential;
 
-    let config = super::PasskeyConfig {
+    let config = PasskeyConfig {
         rp_id: "localhost".into(),
         origin: "http://localhost:3100".into(),
         ..Default::default()
     };
-    let webauthn = super::webauthn::build_webauthn(
+    let webauthn = webauthn::build_webauthn(
         &config,
         &better_auth_core::AuthConfig::default(),
         &config.origin,
@@ -451,10 +522,10 @@ fn pending_registration_challenges_keep_original_verification_policy()
     let stored = serde_json::to_string(&serde_json::json!({
         "user_id": "legacy-owner", "user": null, "context": "old-context", "state": legacy,
     }))?;
-    let decoded: super::webauthn::StoredRegistrationState = serde_json::from_str(&stored)?;
+    let decoded: webauthn::StoredRegistrationState = serde_json::from_str(&stored)?;
     assert_eq!(decoded.user_id, "legacy-owner");
     assert_eq!(decoded.context.as_deref(), Some("old-context"));
-    let super::webauthn::StoredRegistrationVerifier::Legacy(state) = decoded.state else {
+    let webauthn::StoredRegistrationVerifier::Legacy(state) = decoded.state else {
         panic!("Old challenge changed verifier policy");
     };
     let secret = p256::SecretKey::random(&mut rand::thread_rng());
@@ -472,7 +543,7 @@ fn pending_registration_challenges_keep_original_verification_policy()
             Cbor::Bytes(point.y().ok_or("missing generated Y coordinate")?.to_vec()),
         ),
     ]));
-    let core = super::webauthn::build_verification_core(
+    let core = webauthn::build_verification_core(
         &config,
         &better_auth_core::AuthConfig::default(),
         &config.origin,
@@ -485,11 +556,10 @@ fn pending_registration_challenges_keep_original_verification_policy()
         "user_id": "core-owner", "user": null, "context": "old-core-context",
         "state": {"kind": "core", "state": core_state},
     }))?;
-    let decoded_core: super::webauthn::StoredRegistrationState =
-        serde_json::from_str(&old_core_wire)?;
-    let super::webauthn::StoredRegistrationVerifier::Source(
-        super::webauthn::StoredCoreRegistrationState::Core { state: old_core },
-    ) = decoded_core.state
+    let decoded_core: webauthn::StoredRegistrationState = serde_json::from_str(&old_core_wire)?;
+    let webauthn::StoredRegistrationVerifier::Source(webauthn::StoredCoreRegistrationState::Core {
+        state: old_core,
+    }) = decoded_core.state
     else {
         panic!("Old Core protocol changed verifier");
     };
@@ -526,15 +596,11 @@ fn pending_registration_challenges_keep_original_verification_policy()
         }))?;
         let mut core_response = response.clone();
         core_response.response.client_data_json = core_client_data.into();
-        let restored_core = super::webauthn::finish_core_registration(
-            &core,
-            &core_response,
-            &old_core,
-            &config.origin,
-        )?;
+        let restored_core =
+            webauthn::finish_core_registration(&core, &core_response, &old_core, &config.origin)?;
         assert_eq!(restored_core.cred_id().as_ref(), credential_id);
         let stored_credential = serde_json::to_string(&restored_core)?;
-        let decoded_credential = super::webauthn::parse_stored_passkey(&stored_credential)?;
+        let decoded_credential = webauthn::parse_stored_passkey(&stored_credential)?;
         assert_eq!(decoded_credential.cred_id(), restored_core.cred_id());
         let result = webauthn.finish_passkey_registration(&response, &state);
         if verified {
@@ -550,6 +616,10 @@ fn pending_registration_challenges_keep_original_verification_policy()
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn raw_none_credential_sql_readback_keeps_original_key_and_hidden_codec()
 -> Result<(), Box<dyn std::error::Error>> {
     use serde_cbor_2::Value as Cbor;
@@ -594,10 +664,10 @@ async fn raw_none_credential_sql_readback_keeps_original_key_and_hidden_codec()
         (Cbor::Text("authData".into()), Cbor::Bytes(data)),
     ])))?;
     let proof = serde_json::json!({"id":URL_SAFE_NO_PAD.encode(id),"rawId":URL_SAFE_NO_PAD.encode(id),"type":"public-key","clientExtensionResults":{},"response":{
-        "clientDataJSON":URL_SAFE_NO_PAD.encode(serde_json::to_vec(&serde_json::json!({"type":"webauthn.create","challenge":issued["challenge"],"origin":"http://localhost:3000"}))?),
+        "clientDataJSON":URL_SAFE_NO_PAD.encode(serde_json::to_vec(&serde_json::json!({"type":"webauthn.create","challenge":(*(issued).get("challenge").expect("fixture contains the requested index")),"origin":"http://localhost:3000"}))?),
         "attestationObject":URL_SAFE_NO_PAD.encode(attestation),"transports":["internal"],
     }});
-    let mut request = test_helpers::create_auth_request(
+    let mut request_2 = test_helpers::create_auth_request(
         HttpMethod::Post,
         "/passkey/verify-registration",
         Some(&session.token),
@@ -608,12 +678,14 @@ async fn raw_none_credential_sql_readback_keeps_original_key_and_hidden_codec()
         .split(';')
         .next()
         .ok_or("issued challenge cookie required")?;
-    request
-        .headers
-        .get_mut("cookie")
-        .ok_or("signed owner cookie required")?
-        .push_str(&format!("; {issued_cookie}"));
-    let result = plugin.handle_verify_registration(&request, &ctx).await?;
+    _ = write!(
+        request_2
+            .headers
+            .get_mut("cookie")
+            .ok_or("signed owner cookie required")?,
+        "; {issued_cookie}"
+    );
+    let result = plugin.handle_verify_registration(&request_2, &ctx).await?;
     assert_eq!(result.status, 200);
     let wire: serde_json::Value = serde_json::from_slice(&result.body)?;
     assert!(wire.get("credential").is_none());
@@ -628,14 +700,14 @@ async fn raw_none_credential_sql_readback_keeps_original_key_and_hidden_codec()
         row.public_key,
         base64::engine::general_purpose::STANDARD.encode(&key)
     );
-    let super::raw_none::StoredCredential::Raw(raw) = serde_json::from_str(&row.credential)? else {
+    let raw_none::StoredCredential::Raw(raw) = serde_json::from_str(&row.credential)? else {
         panic!("actual raw codec required")
     };
     assert_eq!(raw.credential_id(), id);
     assert_eq!(raw.public_key(), key);
     assert_eq!(raw.snapshot()?.counter, 25);
     assert!(raw.has_unsupported_curve());
-    assert!(super::webauthn::parse_stored_passkey(&row.credential).is_err());
+    assert!(webauthn::parse_stored_passkey(&row.credential).is_err());
     assert_eq!(ctx.database.get_user_sessions(&user.id).await?.len(), 1);
     Ok(())
 }

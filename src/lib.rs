@@ -25,6 +25,10 @@
 //! }
 //! ```
 
+#![expect(
+    unused_crate_dependencies,
+    reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
+)]
 #![cfg_attr(
     test,
     allow(
@@ -37,8 +41,6 @@
 extern crate self as better_auth;
 
 mod core;
-#[cfg(feature = "axum")]
-mod handlers;
 
 pub mod config;
 pub mod email;
