@@ -195,7 +195,7 @@ impl UserStore<BundledSchema> for MemoryStore {
             user.ban_reason = Some(ban_reason);
         }
         if let Some(ban_expires) = update.ban_expires {
-            user.ban_expires = Some(ban_expires);
+            user.ban_expires = ban_expires;
         }
         if let Some(two_factor_enabled) = update.two_factor_enabled {
             user.two_factor_enabled = Some(two_factor_enabled);

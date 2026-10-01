@@ -100,7 +100,7 @@ async fn test_expired_ban_is_cleared_on_sign_in() {
             UpdateUser {
                 banned: Some(true),
                 ban_reason: Some("expired".to_string()),
-                ban_expires: Some(Utc::now() - Duration::minutes(1)),
+                ban_expires: Some(Some(Utc::now() - Duration::minutes(1))),
                 ..Default::default()
             },
         )

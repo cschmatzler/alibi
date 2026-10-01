@@ -223,7 +223,13 @@ pub struct UpdateUser {
     pub role: Option<String>,
     pub banned: Option<bool>,
     pub ban_reason: Option<String>,
-    pub ban_expires: Option<DateTime<Utc>>,
+    /// `None` leaves the expiry unchanged; `Some(None)` clears it without unbanning.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_ban_expiry_patch",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub ban_expires: Option<Option<DateTime<Utc>>>,
     pub two_factor_enabled: Option<bool>,
     #[serde(
         default,
@@ -236,6 +242,12 @@ pub struct UpdateUser {
     pub phone_number_verified: Option<bool>,
     /// `None` leaves the field unchanged; `Some(None)` clears it.
     pub last_login_method: Option<Option<String>>,
+}
+
+fn deserialize_ban_expiry_patch<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Option<DateTime<Utc>>>, D::Error> {
+    Option::<DateTime<Utc>>::deserialize(deserializer).map(Some)
 }
 
 /// Session creation data
