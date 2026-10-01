@@ -126,6 +126,7 @@ compatScenario(
       current,
     });
   },
+  ["POST /admin/set-role", "POST /admin/update-user"],
 );
 
 compatScenario(
@@ -249,6 +250,7 @@ compatScenario(
       duplicate,
     });
   },
+  ["POST /admin/create-user"],
 );
 
 compatScenario(
@@ -318,6 +320,7 @@ compatScenario(
       current,
     });
   },
+  ["POST /admin/create-user"],
 );
 
 compatScenario(
@@ -350,4 +353,5 @@ compatScenario(
       observations,
     });
   },
+  ["POST /admin/set-role"],
 );

@@ -599,6 +599,23 @@
         "rejection": "admin create-user, set-role, set-user-password, and remove-user match TS",
         "authorization": null,
         "state": null
+      },
+      "requiredEvidence": {
+        "success": [
+          "admin create validates explicit and nested roles before lookup and persists legitimate array ownership",
+          "admin create-only grant cannot select explicit or nested roles and retains default creation"
+        ],
+        "rejection": [
+          "admin create validates explicit and nested roles before lookup and persists legitimate array ownership",
+          "admin create-only grant cannot select explicit or nested roles and retains default creation"
+        ],
+        "authorization": [
+          "admin create-only grant cannot select explicit or nested roles and retains default creation"
+        ],
+        "state": [
+          "admin create validates explicit and nested roles before lookup and persists legitimate array ownership",
+          "admin create-only grant cannot select explicit or nested roles and retains default creation"
+        ]
       }
     },
     {
@@ -616,6 +633,11 @@
         "rejection": null,
         "authorization": null,
         "state": null
+      },
+      "requiredEvidence": {
+        "success": [
+          "admin create validates explicit and nested roles before lookup and persists legitimate array ownership"
+        ]
       }
     },
     {
@@ -688,6 +710,19 @@
         "rejection": null,
         "authorization": null,
         "state": null
+      },
+      "requiredEvidence": {
+        "success": [
+          "admin configured role values retain literal strings and array elements before any target mutation",
+          "admin unconfigured role table accepts empty role strings and arrays without inventing validation"
+        ],
+        "rejection": [
+          "admin configured role values retain literal strings and array elements before any target mutation"
+        ],
+        "state": [
+          "admin configured role values retain literal strings and array elements before any target mutation",
+          "admin unconfigured role table accepts empty role strings and arrays without inventing validation"
+        ]
       }
     },
     {
@@ -735,6 +770,14 @@
         "rejection": null,
         "authorization": null,
         "state": null
+      },
+      "requiredEvidence": {
+        "rejection": [
+          "admin configured role values retain literal strings and array elements before any target mutation"
+        ],
+        "state": [
+          "admin configured role values retain literal strings and array elements before any target mutation"
+        ]
       }
     },
     {
