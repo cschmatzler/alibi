@@ -8,7 +8,7 @@ Wider pinned parity work follows these priorities. Excluded external integration
 packages will receive no implementation work. Prepared unmerged work remains
 separate from delivered capabilities.
 
-This snapshot describes merged `origin/master` through PR #47 (two-factor disable validation order),
+This snapshot describes merged `origin/master` through PR #48 (nullable ban-expiry storage),
 not the older, dirty coordinator worktree. The reference remains Better Auth
 1.7.6. The [upstream audit](audits/upstream-target.md) records source locations
 and wider boundaries. An audit gap means equivalence has not been established;
@@ -72,7 +72,7 @@ and configuration branches that have not been fully implemented or proved.
 - **Two factor:** OTP configuration/storage, remaining backup-code operations,
   OTP/trusted-device variants
   and authentication-method interactions.
-- **Admin:** custom permissions/multiple roles/admin IDs, extra fields, ban
+- **Admin:** nullable ban-expiry trusted storage passed the full gate in PR #48. Custom permissions/multiple roles/admin IDs, duration defaults/fractions, extra fields, ban
   enforcement across new login methods and impersonation variants.
 - **Passkeys:** sessionless registration, callback-controlled ownership/name,
   extensions, origin/RP configurations and custom challenge cookies.

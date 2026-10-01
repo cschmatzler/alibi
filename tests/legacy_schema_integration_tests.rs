@@ -193,7 +193,7 @@ mod user {
                     active.ban_reason = Set(Some(ban_reason));
                 }
                 if let Some(ban_expires) = update.ban_expires {
-                    active.ban_expires = Set(Some(ban_expires));
+                    active.ban_expires = Set(ban_expires);
                 }
             }
             active.updated_at = Set(now);
@@ -1040,4 +1040,133 @@ async fn manual_numeric_session_schema_fails_closed_for_unbound_configured_field
     assert_eq!(after.updated_at, before.updated_at);
     assert_eq!(after.user_id, before.user_id);
     assert_eq!(after.token, before.token);
+}
+
+/// Trusted patches distinguish absent expiry from explicit SQL NULL for both
+/// generated string-ID entities and application-owned numeric-ID entities.
+#[tokio::test]
+async fn nullable_ban_expiry_patch_preserves_ban_and_other_principals()
+-> Result<(), Box<dyn std::error::Error>> {
+    async fn check<S: AuthSchema>(store: SeaOrmStore<S>) -> Result<(), Box<dyn std::error::Error>>
+    where
+        S::User: SeaOrmUserModel,
+        S::Session: SeaOrmSessionModel,
+    {
+        use better_auth_core::store::{SessionStore, UserStore};
+        use better_auth_core::wire::{SessionView, UserView};
+        use sea_orm::Statement;
+        let owner = store
+            .create_user(CreateUser::new().with_email("ban-owner@patch.fixture.test"))
+            .await?;
+        let foreign = store
+            .create_user(CreateUser::new().with_email("ban-foreign@patch.fixture.test"))
+            .await?;
+        let foreign_before = serde_json::to_value(UserView::from(&foreign))?;
+        let mut sessions = Vec::new();
+        for user in [&owner, &foreign] {
+            let session = store
+                .create_session(CreateSession {
+                    additional_fields: Default::default(),
+                    token: None,
+                    user_id: user.id().into_owned(),
+                    expires_at: Utc::now() + chrono::Duration::days(1),
+                    ip_address: None,
+                    user_agent: Some("ban-patch-storage-proof".to_owned()),
+                    impersonated_by: None,
+                    active_organization_id: None,
+                    active_team_id: None,
+                })
+                .await?;
+            sessions.push((
+                session.token().to_owned(),
+                serde_json::to_value(SessionView::from(&session))?,
+            ));
+        }
+        let expiry: DateTime<Utc> = "2030-01-02T03:04:05.125Z".parse()?;
+        let set: UpdateUser = serde_json::from_value(
+            json!({"banned":true,"ban_reason":"retained reason","ban_expires":expiry}),
+        )?;
+        let banned = store.update_user(&owner.id(), set).await?;
+        assert_eq!(banned.ban_expires(), Some(expiry));
+        let omitted: UpdateUser = serde_json::from_value(json!({"name":"unrelated rename"}))?;
+        let encoded_omitted = serde_json::to_value(&omitted)?;
+        assert!(encoded_omitted.get("ban_expires").is_none());
+        let renamed = store
+            .update_user(&owner.id(), serde_json::from_value(encoded_omitted)?)
+            .await?;
+        assert_eq!(
+            renamed.ban_expires(),
+            Some(expiry),
+            "omitting an expiry must retain the stored date"
+        );
+        for clear_input in [
+            json!({"banned":true,"ban_expires":null}),
+            json!({"ban_expires":null}),
+        ] {
+            let clear: UpdateUser = serde_json::from_value(clear_input)?;
+            let encoded_clear = serde_json::to_value(&clear)?;
+            assert_eq!(
+                encoded_clear.get("ban_expires"),
+                Some(&serde_json::Value::Null)
+            );
+            let cleared = store
+                .update_user(&owner.id(), serde_json::from_value(encoded_clear)?)
+                .await?;
+            assert_eq!(
+                cleared.ban_expires(),
+                None,
+                "an explicit null expiry must clear the date without unbanning"
+            );
+            assert!(cleared.banned());
+            assert_eq!(cleared.ban_reason(), Some("retained reason"));
+            assert_eq!(cleared.name(), Some("unrelated rename"));
+            assert_eq!(cleared.email(), owner.email());
+            let row = store
+                .connection()
+                .query_one_raw(Statement::from_sql_and_values(
+                    store.connection().get_database_backend(),
+                    "SELECT ban_expires FROM users WHERE id = ?",
+                    vec![owner.id().into_owned().into()],
+                ))
+                .await?
+                .ok_or_else(|| std::io::Error::other("ban owner disappeared"))?;
+            assert_eq!(row.try_get::<Option<String>>("", "ban_expires")?, None);
+            assert_eq!(
+                serde_json::to_value(UserView::from(
+                    &store
+                        .get_user_by_id(&foreign.id())
+                        .await?
+                        .ok_or_else(|| std::io::Error::other("foreign user disappeared"))?
+                ))?,
+                foreign_before
+            );
+            for (token, before) in &sessions {
+                assert_eq!(
+                    serde_json::to_value(SessionView::from(
+                        &store
+                            .get_session(token)
+                            .await?
+                            .ok_or_else(|| std::io::Error::other("session disappeared"))?
+                    ))?,
+                    *before
+                );
+            }
+            let reset: UpdateUser = serde_json::from_value(json!({"ban_expires":expiry}))?;
+            assert_eq!(
+                store.update_user(&owner.id(), reset).await?.ban_expires(),
+                Some(expiry)
+            );
+        }
+        Ok(())
+    }
+    type Bundled = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    let bundled = Database::connect("sqlite::memory:").await?;
+    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&bundled).await?;
+    check(SeaOrmStore::<Bundled>::new(test_config(), bundled)).await?;
+    check(SeaOrmStore::<LegacySchema>::new(
+        test_config(),
+        test_database().await,
+    ))
+    .await?;
+    Ok(())
 }

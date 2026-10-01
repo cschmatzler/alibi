@@ -265,7 +265,7 @@ pub(crate) async fn update_user_core(
         let parsed = chrono::DateTime::parse_from_rfc3339(value)
             .map_err(|_| AuthError::bad_request("Invalid banExpires"))?
             .with_timezone(&Utc);
-        update.ban_expires = Some(parsed);
+        update.ban_expires = Some(Some(parsed));
     }
     if let Some(value) = body
         .data
@@ -356,7 +356,7 @@ pub(crate) async fn ban_user_core(
                 .or_else(|| config.default_ban_reason.clone())
                 .unwrap_or_else(|| "No reason".to_string()),
         ),
-        ban_expires,
+        ban_expires: ban_expires.map(Some),
         ..Default::default()
     };
 

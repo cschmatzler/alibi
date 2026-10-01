@@ -449,7 +449,7 @@ fn plugin_update_fields_user(
                     active.ban_reason = #seaorm_root::sea_orm::ActiveValue::Set(::std::option::Option::Some(ban_reason));
                 }
                 if let ::std::option::Option::Some(ban_expires) = update.ban_expires {
-                    active.ban_expires = #seaorm_root::sea_orm::ActiveValue::Set(::std::option::Option::Some(ban_expires));
+                    active.ban_expires = #seaorm_root::sea_orm::ActiveValue::Set(ban_expires);
                 }
             }
         });
