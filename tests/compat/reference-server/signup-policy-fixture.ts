@@ -18,6 +18,14 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
     const autoSignIn = !["signup-no-auto", "signup-custom", "signup-username", "signup-background"].includes(name);
     const instance = betterAuth({
       ...shared, database, basePath,
+      databaseHooks:{user:{create:{before:async()=>{
+        if(mode==="user-forbidden") {
+          events.push({stage:"user-create-denied"});
+          throw new APIError("FORBIDDEN",{code:"USER_CREATION_DENIED",message:"Configured user creation denied"});
+        }
+        if(mode==="user-cancel") {events.push({stage:"user-create-cancelled"});return false;}
+        if(mode==="user-error") {events.push({stage:"user-create-error"});throw new Error("Actual configured user creation failed");}
+      }}}},
       plugins: [
         ...(name === "signup-username" ? [username()] : []),
         ...(name === "signup-otp" ? [emailOTP({ overrideDefaultEmailVerification: true,
@@ -31,7 +39,7 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
           if (mode === "background-error") throw new Error("Actual background observer failed");
         } },
       } : {})},
-      emailVerification: { ...shared.emailVerification,
+      emailVerification: name === "signup-otp" ? {sendOnSignUp:true,autoSignInAfterVerification:false} : { ...shared.emailVerification,
         async sendVerificationEmail({user, url, token}) {
           events.push({stage: "verification-email", user, url, token});
         },
@@ -112,7 +120,7 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
           sessions: await read("session"), verifications: await read("verification"), events});
       }
       if (url.pathname !== "/__test/signup-policy" || request.method !== "POST") return;
-      const body = await request.json() as {operation?: string; mode?: string; profile?: string; accountId?: string};
+      const body = await request.json() as {operation?: string; mode?: string; profile?: string; accountId?: string; stage?: string; password?: string};
       if (body.operation === "mode") {
         mode = body.mode ?? "normal"; events.length = 0;
         return Response.json({status: true, mode});
@@ -121,9 +129,17 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
         releaseExisting?.(); releaseExisting = undefined;
         return Response.json({status: true});
       }
+      if (body.operation === "wait-stage") {
+        const deadline = Date.now() + 4000;
+        while (!events.some(event => event.stage === body.stage)) {
+          if (Date.now() >= deadline) return Response.json({message:"application callback did not reach requested stage"},{status:408});
+          await Bun.sleep(5);
+        }
+        return Response.json({events});
+      }
       if (body.operation === "clear-password") {
         const context = await profiles.get(body.profile ?? "signup-standard")!.$context;
-        await context.internalAdapter.updateAccount(body.accountId!, {password: null});
+        await context.internalAdapter.updateAccount(body.accountId!, {password: body.password ?? null});
         return Response.json({status: true});
       }
       return Response.json({message: "unknown fixture operation"}, {status: 400});

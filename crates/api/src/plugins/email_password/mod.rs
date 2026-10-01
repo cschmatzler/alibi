@@ -1,6 +1,6 @@
+mod signup;
 #[cfg(test)]
 mod tests;
-
 use super::{email_verification::EmailVerificationPlugin, two_factor};
 use crate::plugins::authentication_helpers::{
     JsonField, JsonFieldKind, RequestBody, is_valid_email, parse_body,
@@ -25,6 +25,7 @@ use better_auth_core::{
     HttpMethod, RequestMeta,
 };
 use serde::{Deserialize, Serialize};
+pub use signup::{CustomSyntheticUserCallback, ExistingUserSignupCallback, SyntheticUserContext};
 use std::io::Write;
 use std::sync::Arc;
 use validator::Validate;
@@ -55,6 +56,8 @@ pub struct EmailPasswordPlugin {
     reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
 )]
 pub struct EmailPasswordConfig {
+    /// Whether email/password authentication is enabled. Routes remain registered.
+    pub enabled: bool,
     pub enable_signup: bool,
     /// Whether to enable the username schema, signup hooks, and endpoints.
     pub enable_username: bool,
@@ -67,11 +70,14 @@ pub struct EmailPasswordConfig {
     pub auto_sign_in: bool,
     /// Custom password hasher. When `None`, the default scrypt hasher is used.
     pub password_hasher: Option<Arc<dyn PasswordHasher>>,
+    pub on_existing_user_signup: Option<Arc<ExistingUserSignupCallback>>,
+    pub custom_synthetic_user: Option<Arc<CustomSyntheticUserCallback>>,
 }
 
 impl std::fmt::Debug for EmailPasswordConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EmailPasswordConfig")
+            .field("enabled", &self.enabled)
             .field("enable_signup", &self.enable_signup)
             .field("enable_username", &self.enable_username)
             .field(
@@ -85,11 +91,19 @@ impl std::fmt::Debug for EmailPasswordConfig {
                 "password_hasher",
                 &self.password_hasher.as_ref().map(|_| "custom"),
             )
+            .field(
+                "on_existing_user_signup",
+                &self.on_existing_user_signup.as_ref().map(|_| "custom"),
+            )
+            .field(
+                "custom_synthetic_user",
+                &self.custom_synthetic_user.as_ref().map(|_| "custom"),
+            )
             .finish()
     }
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Clone, Debug, Deserialize, Validate)]
 pub(in crate::plugins) struct SignUpRequest {
     #[serde(rename = "lastLoginMethod")]
     last_login_method: Option<better_auth_core::utils::json::JsValue>,
@@ -255,6 +269,24 @@ impl EmailPasswordPlugin {
     }
 
     #[must_use]
+    pub const fn enabled(mut self, enabled: bool) -> Self {
+        self.config.enabled = enabled;
+        self
+    }
+
+    #[must_use]
+    pub fn on_existing_user_signup(mut self, callback: Arc<ExistingUserSignupCallback>) -> Self {
+        self.config.on_existing_user_signup = Some(callback);
+        self
+    }
+
+    #[must_use]
+    pub fn custom_synthetic_user(mut self, callback: Arc<CustomSyntheticUserCallback>) -> Self {
+        self.config.custom_synthetic_user = Some(callback);
+        self
+    }
+
+    #[must_use]
     pub const fn enable_username(mut self, enable: bool) -> Self {
         self.config.enable_username = enable;
         self
@@ -387,7 +419,8 @@ impl EmailPasswordPlugin {
             signup_req.remember_me == Some(false),
         );
         let meta = RequestMeta::from_request(req);
-        let (response, session_token) = sign_up_core(&signup_req, &self.config, &meta, ctx).await?;
+        let (response, session_token) =
+            sign_up_core(req, &signup_req, &self.config, &meta, ctx).await?;
 
         if let Some(token) = session_token {
             let cookie_header =
@@ -426,13 +459,6 @@ impl EmailPasswordPlugin {
         )
         .check_form_origin(req)?;
 
-        if !is_valid_email(&signin_req.email) {
-            return Err(AuthError::Upstream {
-                status: 400,
-                code: "INVALID_EMAIL",
-                message: "Invalid email",
-            });
-        }
         better_auth_core::cache::runtime::set_issuance_preference(
             req,
             signin_req.remember_me == Some(false),
@@ -660,6 +686,7 @@ pub(in crate::plugins) enum SignInUsernameFailure {
 impl Default for EmailPasswordConfig {
     fn default() -> Self {
         Self {
+            enabled: true,
             enable_signup: true,
             enable_username: true,
             require_email_verification: false,
@@ -667,6 +694,8 @@ impl Default for EmailPasswordConfig {
             password_max_length: 128,
             auto_sign_in: true,
             password_hasher: None,
+            on_existing_user_signup: None,
+            custom_synthetic_user: None,
         }
     }
 }
@@ -697,9 +726,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
             ]);
         }
 
-        if self.config.enable_signup {
-            routes.push(AuthRoute::post("/sign-up/email", "sign_up_email"));
-        }
+        routes.push(AuthRoute::post("/sign-up/email", "sign_up_email"));
 
         routes
     }
@@ -718,9 +745,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
         match (req.method(), req.path()) {
-            (HttpMethod::Post, "/sign-up/email") if self.config.enable_signup => {
-                Ok(Some(self.handle_sign_up(req, ctx).await?))
-            }
+            (HttpMethod::Post, "/sign-up/email") => Ok(Some(self.handle_sign_up(req, ctx).await?)),
             (HttpMethod::Post, "/sign-in/email") => Ok(Some(self.handle_sign_in(req, ctx).await?)),
             (HttpMethod::Post, "/sign-in/username") if self.config.enable_username => {
                 Ok(Some(self.handle_sign_in_username(req, ctx).await?))
@@ -812,13 +837,18 @@ fn append_dont_remember_cookie(
     reason = "Keep signup validation, persistence, and provider callbacks in compatibility order"
 )]
 pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
+    request: &AuthRequest,
     body: &SignUpRequest,
     config: &EmailPasswordConfig,
     meta: &RequestMeta,
     ctx: &AuthContext<S>,
-) -> AuthResult<(SignUpResponse<UserView>, Option<String>)> {
-    if !config.enable_signup {
-        return Err(AuthError::forbidden("User registration is not enabled"));
+) -> AuthResult<(SignUpResponse<serde_json::Value>, Option<String>)> {
+    if !config.enabled || !config.enable_signup {
+        return Err(AuthError::Upstream {
+            status: 400,
+            code: "EMAIL_PASSWORD_SIGN_UP_DISABLED",
+            message: "Email and password sign up is not enabled",
+        });
     }
 
     password_utils::validate_password(
@@ -839,7 +869,15 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
     }
 
     // Check if user already exists
-    if ctx.database.get_user_by_email(&body.email).await?.is_some() {
+    if let Some(user) = ctx.database.get_user_by_email(&body.email).await? {
+        if config.require_email_verification || !config.auto_sign_in {
+            drop(
+                password_utils::hash_password(config.password_hasher.as_ref(), &body.password)
+                    .await?,
+            );
+            signup::notify_existing(ctx.user_view(&user), request, config, ctx).await?;
+            return signup::synthetic_response(body, config, ctx);
+        }
         // TS returns 422 UNPROCESSABLE_ENTITY for duplicate email
         return Err(AuthError::UnprocessableEntity(
             "User already exists. Use another email.".to_owned(),
@@ -881,6 +919,8 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
     let transaction_database = Arc::clone(&database);
     let require_email_verification = config.require_email_verification;
     let callback_url = body.callback_url.clone();
+    let duplicate_body = body.clone();
+    let duplicate_config = config.clone();
     let signup_context = AuthContext {
         config: Arc::clone(&ctx.config),
         database: Arc::clone(&ctx.database),
@@ -894,6 +934,16 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
         Box::pin(async move {
             let user = match tx.create_user(create_user).await {
                 Ok(user) => user,
+                Err(AuthError::UserCreationCancelled) => {
+                    return Err(AuthError::bad_request("Failed to create user"));
+                }
+                Err(error) if error.status_code() == 403 && !auto_sign_in => {
+                    return signup::synthetic_response(
+                        &duplicate_body,
+                        &duplicate_config,
+                        &signup_context,
+                    );
+                }
                 Err(AuthError::Database(_) | AuthError::CallbackFailure(_)) => {
                     return Err(AuthError::UnprocessableEntity(
                         "Failed to create user".to_owned(),
@@ -949,7 +999,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
                 Ok((
                     SignUpResponse {
                         token: Some(token.clone()),
-                        user: signup_context.user_view(&user),
+                        user: password_utils::serialize_to_value(&signup_context.user_view(&user))?,
                     },
                     Some(token),
                 ))
@@ -957,7 +1007,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
                 Ok((
                     SignUpResponse {
                         token: None,
-                        user: signup_context.user_view(&user),
+                        user: password_utils::serialize_to_value(&signup_context.user_view(&user))?,
                     },
                     None,
                 ))
@@ -1082,13 +1132,46 @@ pub(in crate::plugins) async fn sign_in_core(
     meta: &RequestMeta,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<SignInCoreResult<UserView>> {
+    if !config.enabled {
+        return Err(AuthError::Upstream {
+            status: 400,
+            code: "EMAIL_PASSWORD_DISABLED",
+            message: "Email and password is not enabled",
+        });
+    }
+    if !is_valid_email(&body.email) {
+        return Err(AuthError::Upstream {
+            status: 400,
+            code: "INVALID_EMAIL",
+            message: "Invalid email",
+        });
+    }
+    if body.password.encode_utf16().count() > config.password_max_length {
+        return Err(AuthError::bad_request("Password too long"));
+    }
     let user = ctx
         .database
         .get_user_by_email(&body.email.to_lowercase())
-        .await?
-        .ok_or(AuthError::InvalidCredentials)?;
-
-    verify_user_password(&user, &body.password, config, ctx).await?;
+        .await?;
+    let Some(user) = user else {
+        drop(password_utils::hash_password(config.password_hasher.as_ref(), &body.password).await?);
+        return Err(AuthError::InvalidCredentials);
+    };
+    let credential = super::helpers::get_credential_account(ctx, &user.id()).await?;
+    let Some(current_password) = credential
+        .as_ref()
+        .and_then(AuthAccount::password)
+        .filter(|password| !password.is_empty())
+    else {
+        drop(password_utils::hash_password(config.password_hasher.as_ref(), &body.password).await?);
+        return Err(AuthError::InvalidCredentials);
+    };
+    password_utils::verify_password(
+        config.password_hasher.as_ref(),
+        &body.password,
+        current_password,
+    )
+    .await?;
 
     if config.require_email_verification && !user.email_verified() {
         send_required_sign_in_verification(

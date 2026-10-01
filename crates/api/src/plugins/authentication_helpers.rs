@@ -50,6 +50,28 @@ pub(in crate::plugins) async fn run_notification(
     }
 }
 
+/// Await a notification by default, or observe already running owned work when
+/// the application supplies a background-task handler. Both callback and
+/// observer errors retain the endpoint's issued state.
+pub(in crate::plugins) async fn run_owned_notification(
+    context: &AuthContext<impl AuthSchema>,
+    notification: impl Future<Output = AuthResult<()>> + Send + 'static,
+) -> AuthResult<()> {
+    let operation = async move {
+        run_notification(notification).await;
+        Ok(())
+    };
+    if let Some(handler) = &context.config.background_tasks {
+        let completion = better_auth_core::start_background_task(operation).await?;
+        if let Err(error) = handler.handle(completion) {
+            tracing::error!(%error, "Failed to observe background task");
+        }
+    } else {
+        operation.await?;
+    }
+    Ok(())
+}
+
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.

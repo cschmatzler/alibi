@@ -20,12 +20,12 @@ use better_auth::plugins::{
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_core::{
-    PasswordHasher, ScryptHasher,
+    AuthRequest, BackgroundTaskCompletion, BackgroundTaskHandler, PasswordHasher, ScryptHasher,
     wire::{AccountView, UserView, VerificationView},
 };
 use better_auth_seaorm::{
-    DatabaseConnection, SeaOrmStore,
-    sea_orm::{EntityTrait, QueryOrder},
+    DatabaseConnection, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore,
+    sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QueryOrder, Set},
     store::entities::{account, session, user, verification},
 };
 use serde_json::{Value, json};
@@ -38,6 +38,7 @@ use std::{
 struct Application {
     mode: Mutex<String>,
     events: Mutex<Vec<Value>>,
+    release_existing: tokio::sync::Notify,
 }
 impl Application {
     fn mode(&self) -> String {
@@ -57,6 +58,8 @@ impl Application {
                 "hash" => ("HASH_REJECTED", "Configured hash rejected"),
                 "verify" => ("VERIFY_REJECTED", "Configured verifier rejected"),
                 "reset-callback" => ("RESET_REJECTED", "Configured reset callback rejected"),
+                "existing" => ("EXISTING_REJECTED", "Configured existing-user rejected"),
+                "synthetic" => ("SYNTHETIC_REJECTED", "Configured synthetic-user rejected"),
                 _ => ("APPLICATION_REJECTED", "Configured application rejected"),
             };
             return Err(AuthError::Upstream {
@@ -67,6 +70,48 @@ impl Application {
         }
         Ok(())
     }
+}
+impl BackgroundTaskHandler for Application {
+    fn handle(&self, completion: BackgroundTaskCompletion) -> AuthResult<()> {
+        self.event(json!({"stage":"background-register"}));
+        drop(completion);
+        if self.mode() == "background-error" {
+            return Err(AuthError::internal("Actual background observer failed"));
+        }
+        Ok(())
+    }
+}
+#[async_trait]
+impl SeaOrmHooks<TestSchema> for Application {
+    async fn before_create_user(
+        &self,
+        _user: &mut better_auth_core::CreateUser,
+        _context: &SeaOrmHookContext<'_>,
+    ) -> AuthResult<HookControl> {
+        if self.mode() == "user-forbidden" {
+            self.event(json!({"stage":"user-create-denied"}));
+            return Err(AuthError::Upstream {
+                status: 403,
+                code: "USER_CREATION_DENIED",
+                message: "Configured user creation denied",
+            });
+        }
+        if self.mode() == "user-cancel" {
+            self.event(json!({"stage":"user-create-cancelled"}));
+            return Ok(HookControl::Cancel);
+        }
+        if self.mode() == "user-error" {
+            self.event(json!({"stage":"user-create-error"}));
+            return Err(AuthError::CallbackFailure(Box::new(AuthError::internal(
+                "Actual configured user creation failed",
+            ))));
+        }
+        Ok(HookControl::Continue)
+    }
+}
+fn signup_request_observation(request: &AuthRequest) -> Value {
+    json!({"method":format!("{:?}",request.method()).to_uppercase(),"path":request.path(),
+        "marker":request.headers.get("x-test-policy-marker"),"contentType":request.headers.get("content-type")})
 }
 #[async_trait]
 impl PasswordHasher for Application {
@@ -134,11 +179,28 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         "signup-background",
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
-        let config = base.clone().base_path(&path);
+        let mut config = base.clone().base_path(&path);
+        if name == "signup-background" {
+            config.background_tasks = Some(app.clone());
+        }
+        let mut password_management = PasswordManagementPlugin::new()
+            .send_reset_password(app.clone())
+            .revoke_sessions_on_password_reset(name == "signup-policy")
+            .on_password_reset({let app = app.clone(); Arc::new(move |user| {
+                let app = app.clone(); Box::pin(async move {
+                    app.event(json!({"stage":"password-reset","user":user,"request":request_observation()}));
+                    app.fail("reset-callback")
+                })
+            })});
+        if name == "signup-policy" {
+            password_management =
+                password_management.reset_token_expiry(chrono::Duration::seconds(90));
+        }
         let mut builder = AuthBuilder::<TestSchema>::new(config.clone())
-            .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+            .store(SeaOrmStore::<TestSchema>::new(config, database.clone()).with_hooks(vec![app.clone()]))
             .rate_limit(RateLimitConfig { enabled: false, ..Default::default() })
             .plugin(EmailPasswordPlugin::with_config(EmailPasswordConfig {
+                enabled: name != "signup-password-disabled",
                 enable_signup: name != "signup-disabled",
                 enable_username: name == "signup-username",
                 auto_sign_in: !["signup-no-auto", "signup-custom", "signup-username", "signup-background"].contains(&name),
@@ -146,19 +208,38 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 password_min_length: if name == "signup-policy" {10} else {8},
                 password_max_length: if name == "signup-policy" {20} else {128},
                 password_hasher: Some(app.clone()),
-                ..Default::default()
+                on_existing_user_signup: Some({let app=app.clone(); Arc::new(move |user, request| {
+                    let app=app.clone(); Box::pin(async move {
+                        app.event(json!({"stage":"existing-user","user":user,"request":signup_request_observation(&request)}));
+                        if app.mode() == "existing-block" { app.release_existing.notified().await; }
+                        app.fail("existing")?;
+                        app.event(json!({"stage":"existing-complete"}));
+                        Ok(())
+                    })
+                })}),
+                custom_synthetic_user: (name == "signup-custom").then(|| {
+                    let app=app.clone(); Arc::new(move |input: better_auth::plugins::email_password::SyntheticUserContext| {
+                        app.event(json!({"stage":"synthetic-user","coreFields":input.core_fields,
+                            "additionalFields":input.additional_fields,"id":input.id}));
+                        app.fail("synthetic")?;
+                        let mut fields=input.core_fields;
+                        let requested=fields.get("name").and_then(Value::as_str).unwrap_or_default();
+                        let name=format!("Synthetic {requested}");
+                        drop(fields.insert("name".into(),json!(name)));
+                        drop(fields.insert("id".into(),json!(input.id)));
+                        drop(fields.insert("emailVerified".into(),json!(true)));
+                        drop(fields.insert("image".into(),json!("https://images.example/synthetic.png")));
+                        drop(fields.insert("role".into(),json!("admin")));
+                        drop(fields.insert("privateCredential".into(),json!("unreturned-application-data")));
+                        Ok(fields)
+                    }) as Arc<better_auth::plugins::email_password::CustomSyntheticUserCallback>
+                }),
             }))
             .plugin(SessionManagementPlugin::new())
-            .plugin(EmailVerificationPlugin::new().custom_send_verification_email(app.clone()))
-            .plugin(PasswordManagementPlugin::new().reset_token_expiry_hours(1)
-                .password_hasher(app.clone()).send_reset_password(app.clone())
-                .revoke_sessions_on_password_reset(name == "signup-policy")
-                .on_password_reset({let app = app.clone(); Arc::new(move |user| {
-                    let app = app.clone(); Box::pin(async move {
-                        app.event(json!({"stage":"password-reset","user":user,"request":request_observation()}));
-                        app.fail("reset-callback")
-                    })
-                })}));
+            .plugin(if name == "signup-otp" {EmailVerificationPlugin::new()} else {
+                EmailVerificationPlugin::new().custom_send_verification_email(app.clone())
+            })
+            .plugin(password_management);
         if name == "signup-otp" {
             builder = builder.plugin(EmailOtpPlugin::new(EmailOtpConfig {
                 send_verification_otp: Some(app.clone()),
@@ -193,11 +274,13 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             match result {Ok(value)=>Json(value).into_response(),Err(error)=>error.into_response()}
         }
     }));
+    let control_database = database.clone();
     router = router.route(
         "/__test/signup-policy",
         post(move |Json(body): Json<Value>| {
             let profiles = profiles.clone();
             let app = app.clone();
+            let database = control_database.clone();
             async move {
                 let result: AuthResult<Value> = async {
                     match body["operation"].as_str().unwrap_or_default() {
@@ -208,21 +291,43 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                             Ok(json!({"status":true,"mode":app.mode()}))
                         }
                         "clear-password" => {
-                            let auth = profiles
+                            let _auth = profiles
                                 .get(body["profile"].as_str().unwrap_or("signup-standard"))
                                 .unwrap();
-                            drop(
-                                auth.store()
-                                    .update_account(
-                                        body["accountId"].as_str().unwrap(),
-                                        better_auth_core::UpdateAccount {
-                                            password: None,
-                                            ..Default::default()
-                                        },
-                                    )
-                                    .await?,
-                            );
+                            let row =
+                                account::Entity::find_by_id(body["accountId"].as_str().unwrap())
+                                    .one(&database)
+                                    .await
+                                    .map_err(database_error)?
+                                    .unwrap();
+                            let mut row = row.into_active_model();
+                            row.password = Set(body["password"].as_str().map(str::to_owned));
+                            row.updated_at = Set(chrono::Utc::now());
+                            drop(row.update(&database).await.map_err(database_error)?);
                             Ok(json!({"status":true}))
+                        }
+                        "release-existing" => {
+                            app.release_existing.notify_waiters();
+                            Ok(json!({"status":true}))
+                        }
+                        "wait-stage" => {
+                            let deadline =
+                                tokio::time::Instant::now() + std::time::Duration::from_secs(4);
+                            while !app
+                                .events
+                                .lock()
+                                .unwrap()
+                                .iter()
+                                .any(|event| event["stage"] == body["stage"])
+                            {
+                                if tokio::time::Instant::now() >= deadline {
+                                    return Err(AuthError::internal(
+                                        "Application callback did not reach requested stage",
+                                    ));
+                                }
+                                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                            }
+                            Ok(json!({"events":*app.events.lock().unwrap()}))
                         }
                         _ => Err(AuthError::bad_request("unknown fixture operation")),
                     }

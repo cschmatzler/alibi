@@ -41,7 +41,7 @@ pub type OnPasswordResetCallback =
 pub trait SendResetPassword: Send + Sync {
     /// Send a password reset notification.
     ///
-    /// * `user` - The user as a serialized JSON value (from `serde_json::to_value`)
+    /// * `user` - The initialized user schema as a serialized JSON value
     /// * `url` - The full reset URL including the token
     /// * `token` - The raw reset token
     async fn send(&self, user: &serde_json::Value, url: &str, token: &str) -> AuthResult<()>;
@@ -62,8 +62,12 @@ impl std::fmt::Debug for PasswordManagementPlugin {
 #[derive(Clone, better_auth_core::PluginConfig)]
 #[plugin(name = "PasswordManagementPlugin")]
 pub struct PasswordManagementConfig {
-    #[config(default = 24)]
+    #[config(default = 1)]
     pub reset_token_expiry_hours: i64,
+    /// Overrides the legacy hour setting with a precise reset-token duration.
+    /// Zero retains the default expiry, matching the upstream option.
+    #[config(default = None)]
+    pub reset_token_expiry: Option<chrono::Duration>,
     #[config(default = true)]
     pub require_current_password: bool,
     #[config(default = true)]
@@ -76,10 +80,12 @@ pub struct PasswordManagementConfig {
     #[config(default = None)]
     pub send_reset_password: Option<Arc<dyn SendResetPassword>>,
     /// Callback invoked after a password is successfully reset.
-    /// The user is provided as a serialized `serde_json::Value`.
+    /// The initialized user schema is provided as a serialized JSON value.
+    /// Errors propagate after the credential write and before session revocation.
     #[config(default = None)]
     pub on_password_reset: Option<Arc<OnPasswordResetCallback>>,
     /// Custom password hasher. When `None`, the default scrypt hasher is used.
+    /// Resetting a password inherits an initialized email/password hasher first.
     #[config(default = None)]
     pub password_hasher: Option<Arc<dyn PasswordHasher>>,
 }
@@ -88,6 +94,7 @@ impl std::fmt::Debug for PasswordManagementConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PasswordManagementConfig")
             .field("reset_token_expiry_hours", &self.reset_token_expiry_hours)
+            .field("reset_token_expiry", &self.reset_token_expiry)
             .field("require_current_password", &self.require_current_password)
             .field("send_email_notifications", &self.send_email_notifications)
             .field(
@@ -184,7 +191,7 @@ impl PasswordManagementPlugin {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
-        if body.token.is_none() {
+        if body.token.as_ref().is_none_or(String::is_empty) {
             body.token = req.query.get("token").cloned();
         }
         let response = reset_password_core(&body, &self.config, ctx).await?;

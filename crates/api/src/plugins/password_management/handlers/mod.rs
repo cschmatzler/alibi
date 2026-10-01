@@ -61,7 +61,11 @@ pub(in crate::plugins) async fn request_password_reset_core(
     };
 
     let reset_token = Uuid::new_v4().simple().to_string();
-    let expires_at = Utc::now() + Duration::hours(config.reset_token_expiry_hours);
+    let expires_at = Utc::now()
+        + config
+            .reset_token_expiry
+            .filter(|duration| !duration.is_zero())
+            .unwrap_or_else(|| Duration::hours(config.reset_token_expiry_hours));
 
     drop(
         ctx.database
@@ -87,14 +91,12 @@ pub(in crate::plugins) async fn request_password_reset_core(
     };
     let reset_url = format!("{auth_url}/reset-password/{reset_token}?callbackURL={callback_url}");
 
-    let user_value = password_utils::serialize_to_value(&user)?;
-    if let Err(error) = sender.send(&user_value, &reset_url, &reset_token).await {
-        tracing::warn!(
-            email = %body.email,
-            error = %error,
-            "Custom send_reset_password callback failed"
-        );
-    }
+    let user_value = password_utils::serialize_to_value(&ctx.user_view(&user))?;
+    let sender = std::sync::Arc::clone(sender);
+    crate::plugins::authentication_helpers::run_owned_notification(ctx, async move {
+        sender.send(&user_value, &reset_url, &reset_token).await
+    })
+    .await?;
 
     Ok(success)
 }
@@ -107,28 +109,46 @@ pub(in crate::plugins) async fn reset_password_core(
     config: &PasswordManagementConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<StatusResponse> {
-    password_utils::validate_password(
-        &body.new_password,
-        ctx.config.password.min_length,
-        usize::MAX,
-        ctx,
-    )?;
-
     let token = body.token.as_deref().unwrap_or("");
     if token.is_empty() {
         return Err(AuthError::bad_request("Invalid token"));
     }
 
+    let policy = ctx.extensions.get::<crate::plugins::EmailPasswordConfig>();
+    password_utils::validate_password(
+        &body.new_password,
+        policy
+            .as_ref()
+            .map_or(ctx.config.password.min_length, |policy| {
+                policy.password_min_length
+            }),
+        policy
+            .as_ref()
+            .map_or(128, |policy| policy.password_max_length),
+        ctx,
+    )?;
+
     let verification = ctx
         .database
-        .get_verification_by_identifier(&format!("reset-password:{token}"))
+        .consume_verification_by_identifier(&format!("reset-password:{token}"))
         .await?
-        .filter(|verification| verification.expires_at() >= Utc::now())
         .ok_or_else(|| AuthError::bad_request("Invalid token"))?;
     let user_id = verification.value().to_owned();
+    let user = ctx
+        .database
+        .get_user_by_id(&user_id)
+        .await?
+        .ok_or(AuthError::Upstream {
+            status: 400,
+            code: "USER_NOT_FOUND",
+            message: "User not found",
+        })?;
 
-    let password_hash =
-        password_utils::hash_password(config.password_hasher.as_ref(), &body.new_password).await?;
+    let hasher = policy
+        .as_ref()
+        .and_then(|policy| policy.password_hasher.as_ref())
+        .or(config.password_hasher.as_ref());
+    let password_hash = password_utils::hash_password(hasher, &body.new_password).await?;
 
     if let Some(account) = get_credential_account(ctx, &user_id).await? {
         drop(
@@ -161,24 +181,8 @@ pub(in crate::plugins) async fn reset_password_core(
         );
     }
 
-    ctx.database.delete_verification(&verification.id()).await?;
-
-    if let Some(callback) = &config.on_password_reset
-        && let Some(user) = ctx.database.get_user_by_id(&user_id).await?
-    {
-        match password_utils::serialize_to_value(&user) {
-            Ok(user_value) => {
-                if let Err(error) = callback(user_value).await {
-                    tracing::warn!(error = %error, "on_password_reset callback failed");
-                }
-            }
-            Err(error) => {
-                tracing::warn!(
-                    error = %error,
-                    "Failed to serialize user for on_password_reset callback"
-                );
-            }
-        }
+    if let Some(callback) = &config.on_password_reset {
+        callback(password_utils::serialize_to_value(&ctx.user_view(&user))?).await?;
     }
 
     if config.revoke_sessions_on_password_reset {
