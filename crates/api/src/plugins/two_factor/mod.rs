@@ -37,6 +37,8 @@ pub use backup_storage::{TwoFactorBackupCipher, TwoFactorBackupStorage};
 mod otp_storage;
 pub use otp_storage::{TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage};
 
+mod otp;
+
 #[cfg(test)]
 mod tests;
 
@@ -1191,9 +1193,13 @@ async fn send_otp_core(
         })
         .await?;
 
-    if let Err(error) = sender.send(&ctx.user_view(state.user()), &otp).await {
-        tracing::warn!(error = %error, "Failed to send two-factor OTP");
-    }
+    otp::deliver(
+        sender.clone(),
+        ctx.user_view(state.user()),
+        otp,
+        ctx.config.background_tasks.clone(),
+    )
+    .await?;
 
     Ok(StatusResponse { status: true })
 }

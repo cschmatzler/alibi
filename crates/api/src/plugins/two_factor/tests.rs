@@ -2061,3 +2061,194 @@ async fn authenticated_otp_maps_only_session_creation_cancellation_and_preserves
         );
     }
 }
+
+#[tokio::test]
+async fn otp_delivery_keeps_owned_request_context_after_dropped_rejecting_observer_and_rotation() {
+    use better_auth_core::{BackgroundTaskCompletion, BackgroundTaskHandler};
+    use tokio::sync::oneshot;
+    type Observations = Arc<std::sync::Mutex<Vec<(String, String, String, bool)>>>;
+    struct Sender {
+        entered: std::sync::Mutex<Option<oneshot::Sender<String>>>,
+        release: std::sync::Mutex<Option<oneshot::Receiver<()>>>,
+        finished: std::sync::Mutex<Option<oneshot::Sender<()>>>,
+        observed: Observations,
+    }
+    impl Sender {
+        fn record(&self, user: &UserView) {
+            let request = better_auth_core::hooks::current_request_hook_context()
+                .expect("real delivery must retain initiating request context");
+            self.observed.lock().unwrap().push((
+                request.path,
+                request.headers["x-delivery-origin"].clone(),
+                request.query["delivery"].clone(),
+                user.two_factor_enabled.unwrap_or(false),
+            ));
+        }
+    }
+    #[async_trait]
+    impl SendTwoFactorOtp for Sender {
+        async fn send(&self, user: &UserView, otp: &str) -> AuthResult<()> {
+            self.record(user);
+            let _ = self
+                .entered
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap()
+                .send(otp.into());
+            let release = self.release.lock().unwrap().take().unwrap();
+            release.await.unwrap();
+            self.record(user);
+            let _ = self.finished.lock().unwrap().take().unwrap().send(());
+            Err(AuthError::forbidden(
+                "actual asynchronous delivery rejected",
+            ))
+        }
+    }
+    struct Observer;
+    impl BackgroundTaskHandler for Observer {
+        fn handle(&self, completion: BackgroundTaskCompletion) -> AuthResult<()> {
+            drop(completion);
+            Err(AuthError::forbidden("actual application observer rejected"))
+        }
+    }
+    let mut ctx = test_helpers::create_test_context().await;
+    ctx.config = Arc::new((*ctx.config).clone().background_tasks(Arc::new(Observer)));
+    let (entered, entry) = oneshot::channel();
+    let (release, gate) = oneshot::channel();
+    let (finished, done) = oneshot::channel();
+    let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let plugin = Arc::new(TwoFactorPlugin::with_config(TwoFactorConfig {
+        send_otp: Some(Arc::new(Sender {
+            entered: std::sync::Mutex::new(Some(entered)),
+            release: std::sync::Mutex::new(Some(gate)),
+            finished: std::sync::Mutex::new(Some(finished)),
+            observed: observed.clone(),
+        })),
+        ..Default::default()
+    }));
+    let mut init = better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    plugin.on_init(&mut init).await.unwrap();
+    ctx.database = init.database_with_registered_transforms();
+    let parts = init.into_parts();
+    ctx.metadata = parts.metadata;
+    ctx.extensions = parts.extensions;
+    let user = test_helpers::create_user(
+        &ctx,
+        CreateUser::new()
+            .with_name("Owned Delivery")
+            .with_email("delivery-owner@fixture.test"),
+    )
+    .await;
+    let session = test_helpers::create_session(&ctx, user.id.clone(), Duration::hours(1)).await;
+    let ctx = Arc::new(ctx);
+    let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/send-otp");
+    let _ = request.headers.insert(
+        "cookie".into(),
+        create_session_cookie(&session.token, &ctx.config)
+            .split(';')
+            .next()
+            .unwrap()
+            .into(),
+    );
+    let _ = request
+        .headers
+        .insert("x-delivery-origin".into(), "original-sender".into());
+    let _ = request
+        .query
+        .insert("delivery".into(), "original-marker".into());
+    request.body = Some(b"{}".to_vec());
+    let running_ctx = ctx.clone();
+    let running_plugin = plugin.clone();
+    let running_request = request.clone();
+    let mut running = tokio::spawn(async move {
+        better_auth_core::with_request_hook_context(
+            &running_request,
+            running_plugin.on_request(&running_request, &running_ctx),
+        )
+        .await
+    });
+    let code = entry.await.unwrap();
+    let response = tokio::time::timeout(std::time::Duration::from_secs(1), &mut running)
+        .await
+        .expect("configured response must not await held application delivery")
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(response.status, 200);
+    let identifier = format!("2fa-otp-{}!{}", user.id, session.id);
+    let row = ctx
+        .database
+        .get_verification_by_identifier(&identifier)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.value(), format!("{code}:0"));
+    assert!(
+        ctx.database
+            .get_session(&session.token)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    request.path = "/two-factor/verify-otp".into();
+    let _ = request
+        .headers
+        .insert("x-delivery-origin".into(), "different-verifier".into());
+    let _ = request
+        .query
+        .insert("delivery".into(), "different-marker".into());
+    request.body = Some(serde_json::to_vec(&serde_json::json!({"code":code})).unwrap());
+    let verified =
+        better_auth_core::with_request_hook_context(&request, plugin.on_request(&request, &ctx))
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(verified.status, 200);
+    assert!(
+        ctx.database
+            .get_user_by_id(&user.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .two_factor_enabled()
+    );
+    assert!(
+        ctx.database
+            .get_session(&session.token)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        ctx.database
+            .get_verification_by_identifier(&identifier)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        ctx.database
+            .get_two_factor_by_user_id(&user.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let _ = release.send(());
+    tokio::time::timeout(std::time::Duration::from_secs(1), done)
+        .await
+        .expect("owned delivery must finish after its actual release")
+        .unwrap();
+    assert_eq!(
+        *observed.lock().unwrap(),
+        vec![
+            (
+                "/two-factor/send-otp".into(),
+                "original-sender".into(),
+                "original-marker".into(),
+                false
+            );
+            2
+        ]
+    );
+}

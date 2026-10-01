@@ -14,6 +14,7 @@ import { passkeyRegistrationFixture } from "./passkey-registration-fixture";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { createTwoFactorPolicyFixture } from "./two-factor-policy-fixture";
 import { createTwoFactorOtpFixture } from "./two-factor-otp-fixture";
+import { createTwoFactorDeliveryFixture } from "./two-factor-delivery-fixture";
 import { createTwoFactorTotpFixture } from "./two-factor-totp-fixture";
 import { createOrganizationCreationFixture } from "./organization-creation-fixture";
 import { organizationCreationHooksFixture } from "./organization-creation-hooks-fixture";
@@ -515,6 +516,7 @@ const phoneFixture = await createPhoneFixture(authOptions, twoFactorOtpOutbox);
 const twoFactorTotpFixture = createTwoFactorTotpFixture(authOptions);
 const twoFactorPolicyFixture = createTwoFactorPolicyFixture(authOptions, database);
 const twoFactorOtpFixture = createTwoFactorOtpFixture(authOptions, database);
+const twoFactorDeliveryFixture = createTwoFactorDeliveryFixture(authOptions, database);
 const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
 const oneTapProfiles = createOneTapProfiles(authOptions);
@@ -841,6 +843,8 @@ const server = Bun.serve({
       }
       const policyControl = await twoFactorPolicyFixture(request, url);
       if (policyControl) return policyControl;
+      const deliveryControl = await twoFactorDeliveryFixture(request, url);
+      if (deliveryControl) return deliveryControl;
       const otpControl = await twoFactorOtpFixture(request, url);
       if (otpControl) return otpControl;
       const totpControl = await twoFactorTotpFixture(request, url);

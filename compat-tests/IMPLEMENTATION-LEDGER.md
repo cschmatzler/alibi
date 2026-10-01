@@ -293,3 +293,33 @@ and measured unsupported raw COSE none enrollment. Functional/fractional members
 limits require a separate single-field native policy migration; broad raw COSE
 algorithm-mismatch callback APIs remain open. Anonymous authentication investigation
 continues after these priorities. Package exclusions remain unchanged.
+
+## Validated 517-scenario tree and following priority owners
+
+The frozen 999d3bca tree passes the complete canonical gate
+(`devenv shell -- ./scripts/check.sh`): 517 SDK scenarios / 30,702 assertions,
+42 harness tests / 344 assertions, two Chromium tests / 22 assertions,
+all default/optional native configurations, strict Clippy, Rustls/Redis builds,
+locked fixtures, TypeScript and documentation. Source line coverage is
+78.618244% (29,268 / 37,228). The retained 501- and 512-scenario failures above
+are historical failures; neither is counted as a passing gate. The 1,603
+committed evidence entries are enforced, with no removed requirements or raw
+comparison exceptions. PRs #96–111 are merged. Master 36bcdbc6146c is full-tree equal to this tested
+integration; each exact-head squash and stacked rebase preserved its reviewed
+tree.
+
+| Following slice | Owner and dependencies | Evidence and status |
+| --- | --- | --- |
+| OTP background delivery | Phone owner; existing background completion interface and initiating request context | Frozen 9c7067d8: 71 SDK / 5,884; four default/observe/ignore/throw owners / 976, 19 native tests, real before-await/context failures. Coordinator and independent organization review clear. The new inventory adds 28 requirements without removing any. No next full-gate claim yet. |
+| Server-only organization member addition | Organization owner; captured addition callbacks, existing member/team operations | Nine primary differential owners / 1,562 and Source controls pass. Public trusted Rust helper and controlled private server fixture; no public add-member route. Author checks/review still pending. |
+| Unsupported-curve none enrollment | JWT owner; versioned private original-proof/pending-ceremony codec | 37 passkey SDK / 5,090 and repeated Source controls pass. Protocol parser/security review and frozen integration pending. No fake typed verifier output, proof rewriting, retry, dependency or schema changes. |
+
+The newly measured duplicate-member pair and duplicate-passkey credential
+admission differ from Native unique constraints. They are separate shared
+migration/storage boundaries, not silently claimed by the bounded helper or
+raw-proof slices. Functional/fractional membership limits still require one
+idiomatic policy field and explicit admission/list consumers. Raw COSE algorithm
+mismatch, complex CBOR representations and trusted raw-public-key-only mutation
+are explicit further passkey boundaries. Anonymous authentication and the other
+included audited families follow the selected priorities. The user's excluded
+integration packages remain excluded.

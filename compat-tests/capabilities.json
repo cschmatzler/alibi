@@ -2927,13 +2927,27 @@
           "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
           "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
           "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
-          "two-factor authenticated OTP success rotates its real owner session after code consumption"
+          "two-factor authenticated OTP success rotates its real owner session after code consumption",
+          "two-factor default OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor observe OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor ignore OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors"
         ],
         "rejection": [
           "two-factor OTP enable uses an authoritative owner, validates method before password verification and succeeds with disabled TOTP without a factor",
-          "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation"
+          "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation",
+          "two-factor default OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor observe OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor ignore OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors"
         ],
-        "authorization": "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation",
+        "authorization": [
+          "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation",
+          "two-factor default OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor observe OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor ignore OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors"
+        ],
         "state": [
           "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code",
           "two-factor two-factor-otp-plain delivers and persists its configured OTP before real enrollment, login, expiry and replay checks",
@@ -2950,7 +2964,11 @@
           "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
           "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
           "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
-          "two-factor authenticated OTP success rotates its real owner session after code consumption"
+          "two-factor authenticated OTP success rotates its real owner session after code consumption",
+          "two-factor default OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor observe OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor ignore OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors"
         ]
       }
     },
@@ -3042,7 +3060,11 @@
           "two-factor two-factor-skip-verification rotates real trust proofs accepts HMAC aliases and rejects replay",
           "two-factor two-factor-trust-cleanup-disabled checks outer and inner trust syntax before deletion and cleanup",
           "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
-          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay"
+          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay",
+          "two-factor default OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor observe OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor ignore OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors"
         ],
         "rejection": [
           "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
@@ -3060,7 +3082,11 @@
           "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries",
           "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
           "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
-          "two-factor authenticated OTP success rotates its real owner session after code consumption"
+          "two-factor authenticated OTP success rotates its real owner session after code consumption",
+          "two-factor default OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor observe OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor ignore OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors"
         ],
         "authorization": [
           "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
@@ -3096,7 +3122,11 @@
           "two-factor two-factor-skip-verification rotates real trust proofs accepts HMAC aliases and rejects replay",
           "two-factor two-factor-trust-cleanup-disabled checks outer and inner trust syntax before deletion and cleanup",
           "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
-          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay"
+          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay",
+          "two-factor default OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor observe OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor ignore OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors"
         ]
       }
     },
