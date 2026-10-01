@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { createTwoFactorPendingLookupFixture } from "./two-factor-pending-lookup-fixture";
+import { createBearerFixture } from "./bearer-fixture";
 import { sessionCookieCacheFixture } from "./session-cookie-cache-fixture";
 import { organizationMembershipPolicyFixture } from "./organization-membership-policy-fixture";
 import { organizationInvitationAcceptanceFixture } from "./organization-invitation-acceptance-fixture";
@@ -424,6 +425,7 @@ const siweFixture = await createSiweFixture(database, authOptions, `http://local
 const adminBannedMessageFixture = createAdminBannedMessageFixture(authOptions, database);
 const adminPermissionFixture = createAdminPermissionFixture(authOptions, database);
 const multipleSessionFixture = createMultipleSessionFixture(authOptions);
+const bearerFixture = createBearerFixture(authOptions);
 const organizationCreationFixture = createOrganizationCreationFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationTransport = organizationTransportProbe();
 const organizationHooksFixture = organizationCreationHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
@@ -457,6 +459,7 @@ for (const [path, instance] of siweFixture.profiles) verificationProfiles.set(pa
 for (const [path, instance] of adminBannedMessageFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of adminPermissionFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of multipleSessionFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of bearerFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of passkeyRegistration.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of passkeyAuthentication.profiles) verificationProfiles.set(path, instance);
 for (const name of ["email-verification-required", "email-verification-no-signup-mail", "email-verification-failing-notifications"]) {
@@ -1063,6 +1066,7 @@ const server = Bun.serve({
         passkeyAuthentication.reset();
         siweFixture.reset();
         multipleSessionFixture.reset();
+        bearerFixture.reset();
         twoFactorPolicyFixture.reset();
         twoFactorOtpFixture.reset();
         await resetDatabaseState();

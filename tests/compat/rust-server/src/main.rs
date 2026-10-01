@@ -1,3 +1,4 @@
+mod bearer_fixture;
 mod organization_creation_fixture;
 mod organization_creation_hooks_fixture;
 mod organization_deletion_hooks_fixture;
@@ -749,6 +750,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key_background_fixture::router(&config, database.clone()).await?;
     let api_key_hook_router = api_key_hook_fixture::router(&config, database.clone()).await?;
     let multiple_session_counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let bearer_router = bearer_fixture::router(&config, database.clone(), multiple_session_counter.clone()).await?;
     let multiple_session_router = multiple_session_fixture::router(
         &config,
         database.clone(),
@@ -1802,6 +1804,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(invitation_acceptance_router)
         .merge(verification_profile_router)
         .merge(session_profile_router)
+        .merge(bearer_router)
         .merge(multiple_session_router)
         .merge(admin_permission_router)
         .merge(admin_banned_message_router)
