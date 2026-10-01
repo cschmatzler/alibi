@@ -13,7 +13,6 @@ use webauthn_rs::prelude::{
 use crate::plugins::StatusResponse;
 use crate::plugins::helpers::{SessionIssueError, issue_user_session};
 
-use super::PasskeyConfig;
 use super::types::{
     DeletePasskeyRequest, PasskeyResponse, SessionResponse, UpdatePasskeyRequest,
     VerifyAuthenticationRequest, VerifyRegistrationRequest,
@@ -26,6 +25,7 @@ use super::webauthn::{
     parse_transports_csv, registration_options_json, resolve_origin, snapshot_passkey,
     transports_to_csv,
 };
+use super::{PasskeyConfig, PasskeyRegistrationUser};
 
 fn response_message<T>(status: u16, message: &str) -> PasskeyHandlerResult<T> {
     Ok(PasskeyHandlerOutcome::Response(
@@ -90,14 +90,15 @@ fn passkey_not_found<T>() -> PasskeyHandlerResult<T> {
 }
 
 pub(super) async fn generate_register_options_core(
-    user: &impl AuthUser,
+    user: &PasskeyRegistrationUser,
+    requested_context: Option<&str>,
     passkey_name: Option<&str>,
     authenticator_attachment: Option<&str>,
     config: &PasskeyConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<(Value, String)> {
     let webauthn = build_webauthn(config, &ctx.config, &generation_origin(config, ctx))?;
-    let existing_passkeys = ctx.database.list_passkeys_by_user(&user.id()).await?;
+    let existing_passkeys = ctx.database.list_passkeys_by_user(&user.id).await?;
     let exclude_credentials = existing_passkeys
         .iter()
         .filter_map(|passkey| decode_credential_id(passkey.credential_id()).ok())
@@ -119,13 +120,15 @@ pub(super) async fn generate_register_options_core(
         .collect::<Vec<_>>();
 
     let user_name = passkey_name
-        .map(str::to_string)
-        .or_else(|| user.email().map(str::to_string))
-        .unwrap_or_else(|| user.id().into_owned());
+        .filter(|name| !name.is_empty())
+        .unwrap_or(&user.name)
+        .to_owned();
     let user_display_name = user
-        .email()
-        .map(str::to_string)
-        .unwrap_or_else(|| user.id().into_owned());
+        .display_name
+        .as_deref()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(&user.name)
+        .to_owned();
     let (options, state) = webauthn
         .start_passkey_registration(
             Uuid::new_v4(),
@@ -140,7 +143,9 @@ pub(super) async fn generate_register_options_core(
     let token = Uuid::new_v4().to_string();
     let expires_at = Utc::now() + Duration::seconds(config.challenge_ttl_secs);
     let serialized_state = serde_json::to_string(&StoredRegistrationState {
-        user_id: user.id().to_string(),
+        user_id: user.id.clone(),
+        user: Some(user.clone()),
+        context: requested_context.map(str::to_owned),
         state,
     })?;
     let _ = ctx
@@ -241,12 +246,12 @@ pub(super) async fn generate_authenticate_options_core<U: AuthUser>(
     Ok((response, cookie))
 }
 
-pub(super) async fn verify_registration_core(
+pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
     body: &VerifyRegistrationRequest,
     req: &better_auth_core::AuthRequest,
-    user: &impl AuthUser,
+    authenticated_owner: Option<&str>,
     config: &PasskeyConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<S>,
 ) -> PasskeyHandlerResult<Value> {
     let Some(origin) = resolve_origin(config, req) else {
         return response_null(400);
@@ -277,7 +282,17 @@ pub(super) async fn verify_registration_core(
         }
         Err(_) => return passkey_registration_failure(),
     };
-    if stored_state.user_id != user.id() {
+    let optional_session_owner = if config.registration.require_session {
+        None
+    } else {
+        match ctx.require_session(req).await {
+            Ok((user, _)) => Some(user.id().into_owned()),
+            Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => None,
+            Err(error) => return Err(error),
+        }
+    };
+    let authenticated_owner = authenticated_owner.or(optional_session_owner.as_deref());
+    if authenticated_owner.is_some_and(|owner| stored_state.user_id != owner) {
         return response_code(
             401,
             "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY",
@@ -286,7 +301,7 @@ pub(super) async fn verify_registration_core(
     }
 
     let registration: RegisterPublicKeyCredential =
-        match serde_json::from_value(body.response.clone()) {
+        match better_auth_core::utils::json::from_value(body.response.clone()) {
             Ok(registration) => registration,
             Err(_) => return passkey_registration_failure(),
         };
@@ -316,30 +331,179 @@ pub(super) async fn verify_registration_core(
             .collect::<Vec<_>>()
     });
 
-    let passkey = match ctx
-        .database
-        .create_passkey(CreatePasskey {
-            user_id: user.id().to_string(),
-            name: body.name.clone(),
-            credential_id: base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .encode(verified_passkey.cred_id().as_ref()),
-            public_key: metadata.public_key,
-            counter: snapshot.counter,
-            device_type: snapshot.device_type().to_string(),
-            backed_up: snapshot.backed_up,
-            transports: transports_to_csv(&transports),
-            credential: snapshot.serialized,
-            aaguid: metadata.aaguid,
-        })
-        .await
-    {
-        Ok(passkey) => passkey,
-        Err(_) => return passkey_registration_failure(),
+    use super::registration::{PasskeyRegistrationContext, VerifiedPasskeyRegistration, trim_name};
+    let credential_id = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(verified_passkey.cred_id().as_ref());
+    let verified = VerifiedPasskeyRegistration {
+        credential_id: credential_id.clone(),
+        public_key: base64::engine::general_purpose::STANDARD
+            .decode(&metadata.public_key)
+            .map_err(|error| AuthError::internal(error.to_string()))?,
+        counter: snapshot.counter,
+        aaguid: metadata.aaguid.clone(),
+        device_type: snapshot.device_type().to_owned(),
+        backed_up: snapshot.backed_up,
     };
-
-    Ok(PasskeyHandlerOutcome::Success(serde_json::to_value(
-        PasskeyView::from(&passkey),
-    )?))
+    let resolved_user = stored_state
+        .user
+        .unwrap_or_else(|| PasskeyRegistrationUser {
+            id: stored_state.user_id.clone(),
+            name: stored_state.user_id.clone(),
+            display_name: None,
+        });
+    let mut input = CreatePasskey {
+        user_id: stored_state.user_id,
+        name: body
+            .name
+            .as_deref()
+            .map(trim_name)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned),
+        credential_id,
+        public_key: metadata.public_key,
+        counter: snapshot.counter,
+        device_type: snapshot.device_type().to_owned(),
+        backed_up: snapshot.backed_up,
+        transports: transports_to_csv(&transports),
+        credential: snapshot.serialized,
+        aaguid: metadata.aaguid,
+    };
+    let callback = config.registration.after_verification.clone();
+    let client_data = body.response.clone();
+    let stored_context = stored_state.context;
+    let authenticated_owner = authenticated_owner.map(str::to_owned);
+    let request = req.clone();
+    let auth_config = ctx.config.clone();
+    let extensions = ctx.extensions.clone();
+    let apply_policy = move |mut input: CreatePasskey| async move {
+        if let Some(callback) = callback {
+            let callback_context = PasskeyRegistrationContext {
+                request: &request,
+                auth_config: &auth_config,
+                extensions: &extensions,
+            };
+            if let Some(result) = callback
+                .after_verification(
+                    &callback_context,
+                    &verified,
+                    &resolved_user,
+                    &client_data,
+                    stored_context.as_deref(),
+                )
+                .await?
+            {
+                if let Some(user_id) = result.user_id.filter(|id| !id.is_empty()) {
+                    if authenticated_owner
+                        .as_ref()
+                        .is_some_and(|owner| owner != &user_id)
+                    {
+                        return Err(AuthError::Upstream {
+                            status: 401,
+                            code: "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY",
+                            message: "You are not allowed to register this passkey",
+                        });
+                    }
+                    input.user_id = user_id;
+                }
+                if input.name.is_none() {
+                    input.name = result
+                        .name
+                        .as_deref()
+                        .map(trim_name)
+                        .filter(|name| !name.is_empty())
+                        .map(str::to_owned);
+                }
+            }
+        }
+        if input.user_id.is_empty() {
+            return Err(AuthError::Upstream {
+                status: 400,
+                code: "RESOLVED_USER_INVALID",
+                message: "Resolved user is invalid",
+            });
+        }
+        Ok(input)
+    };
+    let outcome: AuthResult<Value> = if body.create_session.as_bool() == Some(true) {
+        let meta = better_auth_core::RequestMeta::from_request(req);
+        let expires_at = Utc::now() + ctx.config.session.expires_in;
+        let committed = ctx
+            .database
+            .transaction_boxed(Box::new(move |transaction| {
+                Box::pin(async move {
+                    input = apply_policy(input).await?;
+                    let user = transaction.get_user_by_id(&input.user_id).await?.ok_or(
+                        AuthError::Upstream {
+                            status: 500,
+                            code: "USER_NOT_FOUND",
+                            message: "User not found",
+                        },
+                    )?;
+                    let user_id = input.user_id.clone();
+                    let passkey = transaction.create_passkey(input).await?;
+                    let session = transaction
+                        .create_session(better_auth_core::CreateSession {
+                            additional_fields: Default::default(),
+                            token: None,
+                            user_id,
+                            expires_at,
+                            ip_address: meta.ip_address,
+                            user_agent: meta.user_agent,
+                            impersonated_by: None,
+                            active_organization_id: None,
+                            active_team_id: None,
+                        })
+                        .await
+                        .map_err(|error| match error {
+                            AuthError::SessionCreationCancelled => AuthError::Upstream {
+                                status: 500,
+                                code: "UNABLE_TO_CREATE_SESSION",
+                                message: "Unable to create session",
+                            },
+                            other => other,
+                        })?;
+                    Ok(Box::new((passkey, user, session))
+                        as better_auth_core::store::BoxedTransactionValue)
+                })
+            }))
+            .await;
+        match committed {
+            Ok(value) => {
+                let (passkey, user, session) = *value
+                    .downcast::<(better_auth_core::Passkey, S::User, S::Session)>()
+                    .map_err(|_| {
+                        AuthError::internal("invalid passkey registration transaction result")
+                    })?;
+                let mut result = serde_json::to_value(PasskeyView::from(&passkey))?;
+                if let Some(object) = result.as_object_mut() {
+                    let _ =
+                        object.insert("user".into(), serde_json::to_value(ctx.user_view(&user))?);
+                    let _ = object.insert(
+                        "session".into(),
+                        serde_json::to_value(ctx.session_view(&session))?,
+                    );
+                }
+                Ok(result)
+            }
+            Err(error) => Err(error),
+        }
+    } else {
+        match apply_policy(input).await {
+            Ok(input) => ctx
+                .database
+                .create_passkey(input)
+                .await
+                .and_then(|passkey| {
+                    serde_json::to_value(PasskeyView::from(&passkey)).map_err(AuthError::from)
+                }),
+            Err(error) => Err(error),
+        }
+    };
+    match outcome {
+        Ok(value) => Ok(PasskeyHandlerOutcome::Success(value)),
+        Err(error) if super::registration::is_application_error(&error) => Err(error),
+        Err(_) => passkey_registration_failure(),
+    }
 }
 
 pub(super) async fn verify_authentication_core(

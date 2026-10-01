@@ -552,6 +552,23 @@
         "rejection": "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
         "authorization": "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
         "state": "passkey registration freshness rejects before consumption and freshAge zero permits old sessions"
+      },
+      "requiredEvidence": {
+        "success": [
+          "passkey registration policy resolves a proven existing owner and creates its real session with callback facts",
+          "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
+          "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
+          "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior"
+        ],
+        "rejection": [
+          "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior"
+        ],
+        "authorization": [
+          "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior"
+        ],
+        "state": [
+          "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior"
+        ]
       }
     },
     {
@@ -1952,6 +1969,30 @@
           "passkey rejected cryptographic attempts consume challenges without credential or session writes",
           "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
           "passkey foreign owner, expired challenge and wrong ceremony retire the actual persisted generation"
+        ]
+      },
+      "requiredEvidence": {
+        "success": [
+          "passkey registration policy resolves a proven existing owner and creates its real session with callback facts",
+          "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
+          "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
+          "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior"
+        ],
+        "rejection": [
+          "passkey registration policy resolves a proven existing owner and creates its real session with callback facts",
+          "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
+          "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
+          "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior"
+        ],
+        "authorization": [
+          "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
+          "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry"
+        ],
+        "state": [
+          "passkey registration policy resolves a proven existing owner and creates its real session with callback facts",
+          "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
+          "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
+          "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior"
         ]
       }
     },

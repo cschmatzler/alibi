@@ -666,6 +666,12 @@ struct PluginTransaction<'a, S: AuthSchema> {
 
 #[async_trait]
 impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
+    async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {
+        self.inner.get_user_by_id(id).await
+    }
+    async fn create_passkey(&self, data: CreatePasskey) -> AuthResult<Passkey> {
+        self.inner.create_passkey(data).await
+    }
     async fn create_user(&self, data: CreateUser) -> AuthResult<S::User> {
         self.inner
             .create_user(create_data(data, &self.creates)?)

@@ -36,6 +36,18 @@ pub type TransactionWork<S> =
 
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
+    /// Read an existing registration owner through this transaction's connection.
+    async fn get_user_by_id(&self, _id: &str) -> AuthResult<Option<S::User>> {
+        Err(AuthError::NotImplemented(
+            "User lookup in a transaction is not supported by this store".to_owned(),
+        ))
+    }
+    /// Persist a verified passkey in the same transaction as its new session.
+    async fn create_passkey(&self, _passkey: CreatePasskey) -> AuthResult<Passkey> {
+        Err(AuthError::NotImplemented(
+            "Passkey creation in a transaction is not supported by this store".to_owned(),
+        ))
+    }
     async fn create_user(&self, create_user: CreateUser) -> AuthResult<S::User>;
     async fn create_account(&self, create_account: CreateAccount) -> AuthResult<S::Account>;
     async fn create_session(&self, create_session: CreateSession) -> AuthResult<S::Session>;

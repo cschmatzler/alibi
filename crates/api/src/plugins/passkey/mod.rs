@@ -4,8 +4,14 @@ use better_auth_core::{AuthRequest, AuthResponse};
 use better_auth_core::utils::cookie_utils::create_session_cookie;
 
 pub(super) mod handlers;
+mod registration;
 pub(super) mod types;
 pub(super) mod webauthn;
+pub use registration::{
+    PasskeyRegistrationAfterVerification, PasskeyRegistrationConfig, PasskeyRegistrationContext,
+    PasskeyRegistrationOverride, PasskeyRegistrationUser, PasskeyUserResolver,
+    VerifiedPasskeyRegistration,
+};
 
 #[cfg(test)]
 mod tests;
@@ -32,6 +38,8 @@ pub struct PasskeyConfig {
     pub origin: String,
     #[config(default = 300)]
     pub challenge_ttl_secs: i64,
+    #[config(default = PasskeyRegistrationConfig::default())]
+    pub registration: PasskeyRegistrationConfig,
 }
 
 // -- Plugin --
@@ -45,18 +53,52 @@ impl PasskeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, session) = ctx.require_session(req).await?;
-        if !ctx.session_manager().is_session_fresh(&session) {
-            return Err(AuthError::Upstream {
-                status: 403,
-                code: "SESSION_NOT_FRESH",
-                message: "Session is not fresh",
-            });
-        }
+        use better_auth_core::AuthUser;
+        let session = self.registration_session(req, ctx).await?;
+        let user = if let Some((user, _)) = session {
+            let id = user.id().into_owned();
+            let name = user
+                .email()
+                .filter(|email| !email.is_empty())
+                .unwrap_or(&id)
+                .to_owned();
+            PasskeyRegistrationUser {
+                id,
+                name: name.clone(),
+                display_name: Some(name),
+            }
+        } else {
+            let Some(resolver) = &self.config.registration.resolve_user else {
+                return Ok(AuthResponse::json(
+                    400,
+                    &serde_json::json!({"code":"RESOLVE_USER_REQUIRED","message":"Passkey registration requires either an authenticated session or a resolveUser callback when requireSession is false"}),
+                )?);
+            };
+            let context = PasskeyRegistrationContext {
+                request: req,
+                auth_config: &ctx.config,
+                extensions: &ctx.extensions,
+            };
+            match resolver
+                .resolve_user(&context, req.query.get("context").map(String::as_str))
+                .await
+            {
+                Ok(Some(user)) if !user.id.is_empty() && !user.name.is_empty() => user,
+                Ok(_) => {
+                    return Ok(AuthResponse::json(
+                        400,
+                        &serde_json::json!({"code":"RESOLVED_USER_INVALID","message":"Resolved user is invalid"}),
+                    )?);
+                }
+                Err(error) if registration::is_application_error(&error) => return Err(error),
+                Err(_) => return Ok(AuthResponse::new(500)),
+            }
+        };
         let passkey_name = req.query.get("name").map(|s| s.as_str());
         let authenticator_attachment = req.query.get("authenticatorAttachment").map(|s| s.as_str());
         let (result, cookie_header) = generate_register_options_core(
             &user,
+            req.query.get("context").map(String::as_str),
             passkey_name,
             authenticator_attachment,
             &self.config,
@@ -72,24 +114,91 @@ impl PasskeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, session) = ctx.require_session(req).await?;
-        if !ctx.session_manager().is_session_fresh(&session) {
+        let body: VerifyRegistrationRequest = match better_auth_core::validate_request_body(req) {
+            Ok(v) => v,
+            Err(resp) => return Ok(resp),
+        };
+        let session = if self.config.registration.require_session {
+            self.registration_session(req, ctx).await?
+        } else {
+            None
+        };
+        let owner_id = session
+            .as_ref()
+            .map(|(user, _)| better_auth_core::AuthUser::id(user).into_owned());
+        match verify_registration_core(&body, req, owner_id.as_deref(), &self.config, ctx).await? {
+            PasskeyHandlerOutcome::Success(result) => {
+                let token = result
+                    .get("session")
+                    .and_then(|session| session.get("token"))
+                    .and_then(serde_json::Value::as_str);
+                let response = AuthResponse::json(200, &result)?;
+                if let Some(token) = token {
+                    use better_auth_core::utils::cookie_utils::{
+                        create_session_cookie_with_max_age, create_session_like_cookie,
+                        related_cookie_name, sign_cookie_value, verify_cookie_value,
+                    };
+                    let preference = related_cookie_name(&ctx.config, "dont_remember");
+                    let dont_remember = crate::plugins::helpers::get_cookie(req, &preference)
+                        .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
+                        .is_some_and(|value| !value.is_empty());
+                    let mut response = response.with_appended_header(
+                        "Set-Cookie",
+                        create_session_cookie_with_max_age(
+                            Some(token),
+                            if dont_remember {
+                                None
+                            } else {
+                                Some(ctx.config.session.expires_in.num_seconds())
+                            },
+                            &ctx.config,
+                        ),
+                    );
+                    if dont_remember {
+                        response.headers.append(
+                            "Set-Cookie",
+                            create_session_like_cookie(
+                                &preference,
+                                &sign_cookie_value("true", &ctx.config.secret),
+                                None,
+                                &ctx.config,
+                            ),
+                        );
+                    }
+                    Ok(response)
+                } else {
+                    Ok(response)
+                }
+            }
+            PasskeyHandlerOutcome::Response(response) => Ok(response),
+        }
+    }
+
+    async fn registration_session<S: better_auth_core::AuthSchema>(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<(S::User, better_auth_core::wire::SessionView)>> {
+        let session = match ctx.require_session(req).await {
+            Ok(session) => Some(session),
+            Err(AuthError::Unauthenticated | AuthError::SessionNotFound)
+                if !self.config.registration.require_session =>
+            {
+                None
+            }
+            Err(error) => return Err(error),
+        };
+        if self.config.registration.require_session
+            && let Some((_, session)) = &session
+            && !ctx.session_manager().is_session_fresh(session)
+        {
             return Err(AuthError::Upstream {
                 status: 403,
                 code: "SESSION_NOT_FRESH",
                 message: "Session is not fresh",
             });
         }
-        let body: VerifyRegistrationRequest = match better_auth_core::validate_request_body(req) {
-            Ok(v) => v,
-            Err(resp) => return Ok(resp),
-        };
-        match verify_registration_core(&body, req, &user, &self.config, ctx).await? {
-            PasskeyHandlerOutcome::Success(result) => {
-                AuthResponse::json(200, &result).map_err(AuthError::from)
-            }
-            PasskeyHandlerOutcome::Response(response) => Ok(response),
-        }
+        Ok(session)
     }
 
     /// GET /passkey/generate-authenticate-options

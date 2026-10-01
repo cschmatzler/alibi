@@ -150,6 +150,23 @@ where
     S::Session: SeaOrmSessionModel,
     S::Verification: SeaOrmVerificationModel,
 {
+    async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+        let id = S::User::parse_id(id)?;
+        <S::User as SeaOrmUserModel>::Entity::find()
+            .filter(S::User::id_column().eq(id))
+            .one(self.tx)
+            .await
+            .map_err(map_db_err)
+    }
+    async fn create_passkey(
+        &self,
+        data: better_auth_core::CreatePasskey,
+    ) -> AuthResult<better_auth_core::Passkey> {
+        self.store
+            .create_passkey_with_connection(self.tx, data)
+            .await
+    }
     async fn create_user(&self, create_user: better_auth_core::CreateUser) -> AuthResult<S::User> {
         let user = self.store.create_user_in_tx(self.tx, create_user).await?;
         self.pending_after

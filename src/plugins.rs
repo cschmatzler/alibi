@@ -36,3 +36,8 @@ pub use better_auth_api::plugins::api_key::{
     DeleteExpiredApiKeysResponse,
 };
 pub use better_auth_api::plugins::open_api::{self, OpenApiConfig, OpenApiPlugin};
+pub use better_auth_api::plugins::passkey::{
+    PasskeyRegistrationAfterVerification, PasskeyRegistrationConfig, PasskeyRegistrationContext,
+    PasskeyRegistrationOverride, PasskeyRegistrationUser, PasskeyUserResolver,
+    VerifiedPasskeyRegistration,
+};

@@ -50,6 +50,10 @@ impl PasskeySnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct StoredRegistrationState {
     pub user_id: String,
+    #[serde(default)]
+    pub user: Option<super::PasskeyRegistrationUser>,
+    #[serde(default)]
+    pub context: Option<String>,
     pub state: webauthn_rs::prelude::PasskeyRegistration,
 }
 

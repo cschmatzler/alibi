@@ -7,6 +7,7 @@ import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { createApiKeyGenerationFixture } from "./api-key-generation-fixture";
 import { createApiKeyHookFixture } from "./api-key-hook-fixture";
 import { passkeyFixture } from "./passkey-fixture";
+import { passkeyRegistrationFixture } from "./passkey-registration-fixture";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { createTwoFactorPolicyFixture } from "./two-factor-policy-fixture";
 import { createTwoFactorOtpFixture } from "./two-factor-otp-fixture";
@@ -403,6 +404,7 @@ const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 const organizationCreationFixture = createOrganizationCreationFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationHooksFixture = organizationCreationHooksFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationDeletionFixture = organizationDeletionHooksFixture(database, authOptions, `http://localhost:${PORT}`);
+const passkeyRegistration = passkeyRegistrationFixture(authOptions);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
@@ -414,6 +416,7 @@ for (const [path, instance] of siweFixture.profiles) verificationProfiles.set(pa
 for (const [path, instance] of adminBannedMessageFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of adminPermissionFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of multipleSessionFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of passkeyRegistration.profiles) verificationProfiles.set(path, instance);
 for (const name of ["email-verification-required", "email-verification-no-signup-mail", "email-verification-failing-notifications"]) {
   const path = `/__test/profiles/${name}/api/auth`;
   const instance = betterAuth({
@@ -997,6 +1000,8 @@ const server = Bun.serve({
         return jsonResponse({ organizationId: persistedOrg!.id, memberId: persistedMember!.id, userId: persistedMember!.userId, organizationCreatedAtMillis: new Date(persistedOrg!.createdAt as Date).getTime(), memberCreatedAtMillis: new Date(persistedMember!.createdAt as Date).getTime() });
       }
 
+      const enrollmentControl = await passkeyRegistration.handle(request);
+      if (enrollmentControl) return enrollmentControl;
       const passkeyControl = await passkeyControls(request);
       if (passkeyControl) return passkeyControl;
 

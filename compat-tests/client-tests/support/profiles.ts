@@ -11,7 +11,7 @@ export type FixtureProfile =
   | "two-factor-lockout-fractional" | "two-factor-lockout-zero" | "two-factor-lockout-disabled" | "two-factor-skip-verification"
   | "two-factor-totp-default" | "two-factor-totp-config" | "two-factor-totp-disabled" | "two-factor-totp-zero"
   | "session-fields" | "session-fields-plugins"
-  | "api-key-generation" | "passkey-fresh" | "passkey-no-freshness"
+  | "api-key-generation" | "passkey-fresh" | "passkey-no-freshness" | "passkey-first" | "passkey-first-missing"
   | "device-custom" | "device-configured" | "device-unicode" | "device-too-long"
   | "siwe" | "siwe-email" | "siwe-contract"
   | "phone-default" | "phone-signup" | "phone-proof" | "phone-custom"
