@@ -1,3 +1,5 @@
+import { expect } from "bun:test";
+import { z } from "zod";
 import { compatScenario } from "../../support/scenario";
 import { asArray, asRecord, signUpUser } from "./helpers";
 
@@ -212,3 +214,23 @@ compatScenario("organization membership mutations cover permissions, role update
     leaveOrganization: ctx.snapshot(leaveOrganization),
   };
 });
+
+compatScenario("organization member role updates normalize string and array input without deduplicating roles", async ctx => {
+ const owner=await signUpUser(ctx,"normalize-owner","role-normalize-owner","Owner");
+ const target=await signUpUser(ctx,"normalize-target","role-normalize-target","Target");
+ const created=await owner.orgClient.organization.create({name:"Normalize",slug:ctx.uniqueToken("normalize")});
+ expect(created.error).toBeNull();const organizationId=z.object({id:z.string()}).parse(created.data).id;
+ const invited=await owner.orgClient.organization.inviteMember({organizationId,email:target.email,role:"member"});
+ expect(invited.error).toBeNull();const invitationId=z.object({id:z.string()}).parse(invited.data).id;
+ const accepted=await target.orgClient.organization.acceptInvitation({invitationId});expect(accepted.error).toBeNull();
+ const memberId=z.object({member:z.object({id:z.string()})}).parse(accepted.data).member.id;
+ const observations=[];
+ for(const [role,expected] of [["  admin , member, ,admin  ","admin,member,admin"],[[" admin ,member ","", " admin"],"admin,member,admin"],[" member ","member"]] as const){
+  const result=await owner.orgClient.organization.updateMemberRole({organizationId,memberId,role:role as never});
+  expect(result.error).toBeNull();expect(result.data).toHaveProperty("role",expected);
+  const stored=await ctx.rawRequest({path:`/__test/organization-creation-state?email=${encodeURIComponent(target.email)}`});
+  expect(stored.status).toBe(200);expect(z.object({organizations:z.array(z.object({id:z.string(),role:z.string()}).passthrough())}).parse(stored.body).organizations.find(row=>row.id===organizationId)).toHaveProperty("role",expected);
+  observations.push({result:ctx.snapshot(result),stored});
+ }
+ return {created:ctx.snapshot(created),invited:ctx.snapshot(invited),accepted:ctx.snapshot(accepted),observations};
+}, ["POST /organization/update-member-role"]);
