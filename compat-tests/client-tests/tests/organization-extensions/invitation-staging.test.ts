@@ -792,6 +792,23 @@ compatScenario(
       status: "pending",
       expiresAt: "2000-01-01T00:00:00.000Z",
     });
+    const principalsBefore = await Promise.all(
+      [s.owner, s.target, s.foreign].map(({ user }) =>
+        ctx.readUserState({ userId: user.id }),
+      ),
+    );
+    const guest = createAuthClient({
+      baseURL: `${ctx.baseURL}${authProfilePath(s.profile)}`,
+      plugins: [organizationClient()],
+      fetchOptions: {
+        customFetchImpl: ctx.actor("stage-expired-guest", s.profile).fetch,
+      },
+    });
+    const unauthenticated = await guest.organization.acceptInvitation({
+      invitationId: s.invitation.id,
+    });
+    expect(unauthenticated.error?.status).toBe(401);
+    expect(await state(ctx)).toEqual(before);
     const result = await s.target.client.organization.acceptInvitation({
       invitationId: s.invitation.id,
     });
@@ -809,15 +826,24 @@ compatScenario(
     const after = await state(ctx);
     expect(after).toEqual(before);
     expect(after.receipts).toEqual([]);
+    const principalsAfter = await Promise.all(
+      [s.owner, s.target, s.foreign].map(({ user }) =>
+        ctx.readUserState({ userId: user.id }),
+      ),
+    );
+    expect(principalsAfter).toEqual(principalsBefore);
     cookiePolicy(s.target.cookies.at(-1)!, false);
     expect(await ctx.readUserState({ userId: s.foreign.user.id })).toEqual(
       s.foreignBefore,
     );
     return {
       before,
+      principalsBefore,
+      unauthenticated: ctx.snapshot(unauthenticated),
       result: ctx.snapshot(result),
       foreign: ctx.snapshot(foreign),
       after,
+      principalsAfter,
       foreignBefore: s.foreignBefore,
       foreignAfter: await ctx.readUserState({ userId: s.foreign.user.id }),
     };

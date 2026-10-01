@@ -28,7 +28,7 @@ compatScenario("organization fixed membership policies retain falsy defaults and
   observations.push({suffix,candidate:candidate.created,before,response,after,usersBefore,usersAfter:await owned(ctx,[owner!,existing!,foreign!,candidate])});
  }
  return {owner:owner!.created,existing:existing!.created,foreign:foreign!.created,observations};
-});
+},["POST /organization/create"]);
 
 compatScenario("organization fixed fractional membership admits one physical row then rejects capacity without principal writes",async ctx=>{
  const [owner,foreign]=await actors(ctx,["fractional-owner","fractional-foreign"]);await org(ctx,foreign!,"fractional-foreign");
@@ -36,7 +36,7 @@ compatScenario("organization fixed fractional membership admits one physical row
  const fractionalAllowed=await add(ctx,"org-membership-fractional",fractionalOrganization.id,fractionalTarget.user.id);expect(fractionalAllowed.status).toBe(200);const fractionalAdmitted=await state(ctx);expect(fractionalAdmitted.snapshot.members).toEqual([...fractionalBefore.snapshot.members,row.parse(fractionalAllowed.body)]);
  const fractionalDenied=await add(ctx,"org-membership-fractional",fractionalOrganization.id,fractionalDeniedTarget.user.id);expect(fractionalDenied.status).toBe(403);expect(await state(ctx)).toEqual(fractionalAdmitted);expect(await owned(ctx,[owner!,foreign!,fractionalTarget,fractionalDeniedTarget])).toEqual(fractionalUsers);
  return {owner:owner!.created,foreign:foreign!.created,fractionalBefore,fractionalUsers,fractionalAllowed,fractionalAdmitted,fractionalDenied,fractionalAfter:await state(ctx)};
-});
+},["POST /organization/create"]);
 
 compatScenario("organization asynchronous membership resolver observes target and raw organization after count and keeps raw zero NaN errors",async ctx=>{
  const [owner,existing,foreign]=await actors(ctx,["resolver-owner","resolver-existing","resolver-foreign"]);const own=await org(ctx,owner!,"resolver-own");await org(ctx,foreign!,"resolver-foreign");expect((await add(ctx,"org-membership-default",own.id,existing!.user.id)).status).toBe(200);const raw=await owner!.client.$fetch("/organization/get-organization",{query:{organizationId:own.id}});expect(raw.error).toBeNull();
@@ -53,7 +53,7 @@ compatScenario("organization asynchronous membership resolver observes target an
  expect(missingTarget.status).toBe(400);expect(missingTarget.body).toHaveProperty("code","USER_NOT_FOUND");expect(missingOrganization.status).toBe(400);expect(missingOrganization.body).toHaveProperty("code","ORGANIZATION_NOT_FOUND");expect(duplicate.status).toBe(400);expect(duplicate.body).toHaveProperty("code","USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION");expect(await state(ctx)).toEqual(before);
  const room=await owner!.client.$fetch("/organization/create-team",{method:"POST",body:{organizationId:own.id,name:"Policy team"}});expect(room.error).toBeNull();await reset(ctx);const teamBefore=await state(ctx);const teamDenied=await add(ctx,"org-membership-resolver-zero-team-limit",own.id,candidate.user.id,{teamId:row.parse(room.data).id});expect(teamDenied.status).toBe(403);const teamAfter=await state(ctx);expect(teamAfter.receipts.map(value=>value.phase)).toEqual(["membership-limit"]);expect(teamAfter.snapshot).toEqual(teamBefore.snapshot);
  return {observations,fractionalBefore,fractionalAllowed,fractionalAfter,before,missingTarget,missingOrganization,duplicate,room:ctx.snapshot(room),teamBefore,teamDenied,teamAfter};
-});
+},["POST /organization/create","GET /organization/get-organization"]);
 
 compatScenario("organization invitation creation stays permitted at capacity and admission checks recipient then membership policy before writes",async ctx=>{
  const [owner,existing,target,foreign]=await actors(ctx,["invite-policy-owner","invite-policy-existing","invite-policy-target","invite-policy-foreign"]);const own=await org(ctx,owner!,"invite-policy-own");await org(ctx,foreign!,"invite-policy-foreign");expect((await add(ctx,"org-membership-default",own.id,existing!.user.id)).status).toBe(200);
@@ -69,6 +69,8 @@ compatScenario("organization invitation creation stays permitted at capacity and
 
 compatScenario("organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks",async ctx=>{
  const [owner,target,foreign]=await actors(ctx,["page-policy-owner","page-policy-target","page-policy-foreign"]);const own=await org(ctx,owner!,"page-policy-own");await org(ctx,foreign!,"page-policy-foreign");expect((await add(ctx,"org-membership-default",own.id,target!.user.id)).status).toBe(200);await reset(ctx);const before=await state(ctx),beforeUsers=await owned(ctx,[owner!,target!,foreign!]);
+ const guest=createAuthClient({baseURL:`${ctx.baseURL}/__test/profiles/org-membership-one/api/auth`,fetchOptions:{customFetchImpl:ctx.actor("page-policy-guest","org-membership-one").fetch}}),guestReads=[];
+ for(const path of ["/organization/list-members","/organization/get-full-organization"]){const result=await guest.$fetch(path,{query:{organizationId:own.id}});expect(result.error).toMatchObject({status:401,code:"UNAUTHORIZED",message:"Unauthorized"});expect(await state(ctx)).toEqual(before);expect(await owned(ctx,[owner!,target!,foreign!])).toEqual(beforeUsers);guestReads.push({path,result:ctx.snapshot(result)});}
  const observations=[];
  for(const [suffix,expected] of [["one",1],["zero",2],["nan",2],["resolver-zero",2],["page-one",2],["page-zero",2]] as const){const selected=client(ctx,owner!,`org-membership-${suffix}` as FixtureProfile);const listed=await selected.$fetch("/organization/list-members",{query:{organizationId:own.id}});expect(listed.error).toBeNull();const page=z.object({members:z.array(row),total:z.number()}).parse(listed.data);expect(page.members).toHaveLength(expected);expect(page.total).toBe(2);
   const full=await selected.$fetch("/organization/get-full-organization",{query:{organizationId:own.id}});
@@ -84,5 +86,5 @@ compatScenario("organization read pages separate full member and user limits wit
  const promoted=await owner!.client.$fetch("/organization/update-member-role",{method:"POST",body:{organizationId:own.id,memberId:originalTarget.id,role:"owner"}});expect(promoted.error).toBeNull();await reset(ctx);const removalBefore=await state(ctx);
  const pagedDenial=await selected.$fetch("/organization/remove-member",{method:"POST",body:{organizationId:own.id,memberIdOrEmail:originalTarget.id}});expect(pagedDenial.error).toMatchObject({status:400,code:"YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER"});expect(await state(ctx)).toEqual(removalBefore);
  const removed=await client(ctx,owner!,"org-membership-resolver-error").$fetch("/organization/remove-member",{method:"POST",body:{organizationId:own.id,memberIdOrEmail:originalTarget.id}});expect(removed.error).toBeNull();const removalAfter=await state(ctx);expect(removalAfter.receipts).toEqual([]);expect(removalAfter.snapshot).toEqual({...removalBefore.snapshot,members:removalBefore.snapshot.members.filter(member=>member.id!==originalTarget.id)});expect(await owned(ctx,[owner!,target!,foreign!])).toEqual(beforeUsers);
- return {before,beforeUsers,observations,queries,fullQueries,foreignView:ctx.snapshot(foreignView),promoted:ctx.snapshot(promoted),removalBefore,pagedDenial:ctx.snapshot(pagedDenial),removed:ctx.snapshot(removed),after:removalAfter,usersAfter:await owned(ctx,[owner!,target!,foreign!])};
-},["GET /organization/list-members","GET /organization/get-full-organization"]);
+ return {before,beforeUsers,guestReads,observations,queries,fullQueries,foreignView:ctx.snapshot(foreignView),promoted:ctx.snapshot(promoted),removalBefore,pagedDenial:ctx.snapshot(pagedDenial),removed:ctx.snapshot(removed),after:removalAfter,usersAfter:await owned(ctx,[owner!,target!,foreign!])};
+},["GET /organization/list-members","GET /organization/get-full-organization","POST /organization/update-member-role","POST /organization/remove-member"]);
