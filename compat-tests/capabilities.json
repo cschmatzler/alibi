@@ -1369,6 +1369,28 @@
         "rejection": null,
         "authorization": null,
         "state": null
+      },
+      "requiredEvidence": {
+        "success": [
+          "organization deletion retains extension rows and valid keys while clearing only its current selected token",
+          "organization deletion leaves an unrelated active organization selected when deleting another owned organization"
+        ],
+        "rejection": [
+          "organization deletion rejects other tenants and member roles before changing any selection or record",
+          "organization deletion body and media validation precede disabled configuration and session authentication",
+          "organization deletion of a real legacy orphan clears only the authenticated token before empty missing-row rejection"
+        ],
+        "authorization": [
+          "organization deletion rejects other tenants and member roles before changing any selection or record",
+          "organization deletion body and media validation precede disabled configuration and session authentication"
+        ],
+        "state": [
+          "organization deletion retains extension rows and valid keys while clearing only its current selected token",
+          "organization deletion rejects other tenants and member roles before changing any selection or record",
+          "organization deletion body and media validation precede disabled configuration and session authentication",
+          "organization deletion of a real legacy orphan clears only the authenticated token before empty missing-row rejection",
+          "organization deletion leaves an unrelated active organization selected when deleting another owned organization"
+        ]
       }
     },
     {

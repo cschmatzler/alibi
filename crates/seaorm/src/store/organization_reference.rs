@@ -1,0 +1,24 @@
+//! Match the pinned default SQLite adapter's retained organization extension rows.
+use sea_orm_migration::prelude::*;
+pub(super) struct DetachOrganizationReferences;
+impl MigrationName for DetachOrganizationReferences {
+    fn name(&self) -> &str {
+        "m20261001_000014_detach_organization_references"
+    }
+}
+#[async_trait::async_trait]
+impl MigrationTrait for DetachOrganizationReferences {
+    fn use_transaction(&self) -> Option<bool> {
+        Some(false)
+    }
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        super::user_reference::remove_auth_references(
+            manager,
+            &[
+                super::user_reference::AuthReference::TeamOrganization,
+                super::user_reference::AuthReference::OrganizationRoleOrganization,
+            ],
+        )
+        .await
+    }
+}

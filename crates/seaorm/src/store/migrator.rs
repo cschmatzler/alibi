@@ -27,6 +27,7 @@ impl MigratorTrait for AuthMigrator {
             Box::new(super::two_factor_user_reference::TwoFactorUserReference),
             Box::new(super::two_factor_verification_policy::TwoFactorVerificationPolicy),
             Box::new(super::nullable_organization_metadata::NullableOrganizationMetadata),
+            Box::new(super::organization_reference::DetachOrganizationReferences),
         ]
     }
 

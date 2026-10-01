@@ -249,18 +249,31 @@ pub(crate) async fn update_organization_core(
 pub(crate) async fn delete_organization_core(
     body: &DeleteOrganizationRequest,
     user: &impl AuthUser,
+    session: &impl AuthSession,
     config: &OrganizationConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<OrganizationResponse> {
+) -> AuthResult<Option<OrganizationResponse>> {
     if config.disable_organization_deletion {
-        return Err(AuthError::forbidden("Organization deletion is disabled"));
+        return Err(super::extension_common::org_error(
+            404,
+            "ORGANIZATION_DELETION_DISABLED",
+        ));
+    }
+
+    if body.organization_id.is_empty() {
+        return Err(super::extension_common::org_error(
+            400,
+            "ORGANIZATION_NOT_FOUND",
+        ));
     }
 
     let member = ctx
         .database
         .get_member(&body.organization_id, &user.id())
         .await?
-        .ok_or_else(|| AuthError::bad_request("User is not a member of the organization"))?;
+        .ok_or_else(|| {
+            super::extension_common::org_error(400, "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION")
+        })?;
 
     if !super::extension_common::has_action(
         member.role(),
@@ -272,22 +285,33 @@ pub(crate) async fn delete_organization_core(
     )
     .await?
     {
-        return Err(AuthError::forbidden(
-            "You don't have permission to delete this organization",
+        return Err(super::extension_common::org_error(
+            403,
+            "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_ORGANIZATION",
         ));
     }
 
-    let organization = ctx
+    if session.active_organization_id() == Some(body.organization_id.as_str()) {
+        let _ = ctx
+            .database
+            .update_session_active_organization(session.token(), None)
+            .await?;
+    }
+    let Some(organization) = ctx
         .database
         .get_organization_by_id(&body.organization_id)
         .await?
-        .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
+    else {
+        return Ok(None);
+    };
 
     ctx.database
         .delete_organization(&body.organization_id)
         .await?;
 
-    Ok(OrganizationResponse::from_organization(&organization))
+    Ok(Some(OrganizationResponse::from_stored_organization(
+        &organization,
+    )?))
 }
 
 pub(crate) async fn list_organizations_core(
@@ -610,18 +634,27 @@ pub async fn handle_delete_organization(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
-    let (user, session) = require_session(req, ctx).await?;
-    let body: DeleteOrganizationRequest = match better_auth_core::validate_request_body(req) {
+    let body = match super::org_input::delete(req) {
         Ok(v) => v,
         Err(resp) => return Ok(resp),
     };
-    let response = delete_organization_core(&body, &user, config, ctx).await?;
-    if session.active_organization_id() == Some(&body.organization_id) {
-        let _ = ctx
-            .database
-            .update_session_active_organization(session.token(), None)
-            .await?;
+    if config.disable_organization_deletion {
+        return Err(super::extension_common::org_error(
+            404,
+            "ORGANIZATION_DELETION_DISABLED",
+        ));
     }
+    let (user, session) = match require_session(req, ctx).await {
+        Ok(session) => session,
+        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
+            return Ok(AuthResponse::new(401).with_header("content-type", "application/json"));
+        }
+        Err(error) => return Err(error),
+    };
+    let Some(response) = delete_organization_core(&body, &user, &session, config, ctx).await?
+    else {
+        return Ok(AuthResponse::new(400).with_header("content-type", "application/json"));
+    };
     Ok(AuthResponse::json(200, &response)?)
 }
 

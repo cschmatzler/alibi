@@ -18,7 +18,12 @@ mod nullable_organization_tests;
 mod nullable_user_flags;
 #[cfg(test)]
 mod nullable_user_tests;
+#[cfg(test)]
+mod organization_deletion_tests;
 mod organization_extensions;
+mod organization_reference;
+#[cfg(test)]
+mod organization_reference_tests;
 mod organization_roles;
 mod organizations;
 mod passkeys;

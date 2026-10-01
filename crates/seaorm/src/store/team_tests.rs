@@ -474,8 +474,7 @@ async fn deleting_team_prunes_only_live_pending_invitation_links() -> TestResult
 }
 
 #[tokio::test]
-async fn member_user_and_organization_deletion_clean_team_links_and_release_capacity() -> TestResult
-{
+async fn member_and_user_deletion_clean_team_links_and_release_capacity() -> TestResult {
     let store = memory_store().await?;
     let first_org = organization(&store, "cleanup-first").await?;
     let second_org = organization(&store, "cleanup-second").await?;
@@ -530,23 +529,6 @@ async fn member_user_and_organization_deletion_clean_team_links_and_release_capa
     store.delete_user(&principal).await?;
     assert!(store.list_user_teams(&principal).await?.is_empty());
     assert_eq!(stored_count(&store, &second.id).await?, 0);
-    let role = store
-        .create_organization_role(CreateOrganizationRole {
-            organization_id: first_org.clone(),
-            role: "cleanup-role".to_owned(),
-            permission: [("team".to_owned(), vec!["update".to_owned()])].into(),
-        })
-        .await?;
-    store.delete_organization(&first_org).await?;
-    assert!(store.get_team(None, &first.id).await?.is_none());
-    assert!(store.list_team_members(&first.id).await?.is_empty());
-    assert!(
-        store
-            .get_organization_role(&first_org, &OrganizationRoleSelector::Id(role.id))
-            .await?
-            .is_none()
-    );
-    assert!(store.get_team(None, &second.id).await?.is_some());
     Ok(())
 }
 

@@ -540,7 +540,7 @@ async function waitForRolePolicy(promise:Promise<void>, message:string) {
   finally { if (timer !== undefined) clearTimeout(timer); }
 }
 
-const TEAM_PROFILES = ["org-teams", "org-teams-no-default", "org-teams-limited", "org-teams-removable", "org-teams-dynamic", "org-roles-limited", "org-roles-no-ac", "org-roles-delegated", "org-roles-callback"] as const;
+const TEAM_PROFILES = ["org-deletion-disabled", "org-teams", "org-teams-no-default", "org-teams-limited", "org-teams-removable", "org-teams-dynamic", "org-roles-limited", "org-roles-no-ac", "org-roles-delegated", "org-roles-callback"] as const;
 const teamProfiles = new Map(TEAM_PROFILES.map(name => {
   const dynamic = name === "org-teams-dynamic" || name.startsWith("org-roles-");
   const statements = name === "org-roles-delegated" ? {...defaultStatements,apiKey:["create","read","update","delete"]} as const : defaultStatements;
@@ -552,6 +552,7 @@ const teamProfiles = new Map(TEAM_PROFILES.map(name => {
     plugins: [
       ...authOptions.plugins.filter(plugin => plugin.id !== "organization"),
       organization({
+        disableOrganizationDeletion:name === "org-deletion-disabled",
         ...(dynamic ? {dynamicAccessControl:{enabled:true,
           ...(name === "org-roles-limited" ? {maximumRolesPerOrganization:1} : {}),
           ...(name === "org-roles-callback" ? {maximumRolesPerOrganization:async (organizationId:string) => {
@@ -616,6 +617,12 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
     if (!selected) return jsonResponse({message:"Unknown fixture profile"},{status:400});
     try {
 
+      if(body?.operation === "orphan-organization" && typeof body.organizationId === "string") {
+        const row=database.query("SELECT id FROM organization WHERE id=?").get(body.organizationId);
+        if(!row)return jsonResponse({message:"Organization not found"},{status:400});
+        database.query("DELETE FROM organization WHERE id=?").run(body.organizationId);
+        return jsonResponse({removed:true});
+      }
       if (body?.operation === "role-policy" && typeof body.organizationId === "string") {
         if (profileName !== "org-roles-callback" || !database.query("SELECT id FROM organization WHERE id=?").get(body.organizationId)) {
           return jsonResponse({message:"Role policy organization not found"},{status:400});

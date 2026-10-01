@@ -255,8 +255,7 @@ async fn control(
         .get("emptyCredentialPassword")
         .and_then(JsValue::as_bool)
         == Some(true)
-    {
-        if database
+        && database
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Sqlite,
                 "UPDATE accounts SET password='' WHERE user_id=? AND provider_id='credential'",
@@ -264,9 +263,8 @@ async fn control(
             ))
             .await
             .is_err()
-        {
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
+    {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
     if value.get("credentialState").and_then(JsValue::as_bool) == Some(true) {
         use better_auth_core::store::AccountStore;
