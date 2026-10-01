@@ -288,6 +288,7 @@ export function compatScenario(
     const ts = await runScenario("TS", TS_BASE_URL, seed, scenario);
     const rust = await runScenario("Rust", RUST_BASE_URL, seed, scenario);
     const comparison = {
+      compactSessionCacheSecret: "compat-test-only-key-not-real-minimum-32chars",
       leftBaseURL: TS_BASE_URL, rightBaseURL: RUST_BASE_URL,
       leftStartedAt: ts.startedAt, rightStartedAt: rust.startedAt,
       leftFinishedAt: ts.finishedAt, rightFinishedAt: rust.finishedAt,

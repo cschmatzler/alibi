@@ -1,10 +1,15 @@
-import { createHash } from "node:crypto";
+import { sessionSchema, userSchema } from "@better-auth/core/db";
+import { safeJSONParse } from "@better-auth/core/utils/json";
+import { z } from "zod";
+import { Cookie } from "tough-cookie";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { normalizeClientValue } from "./normalize";
 
 /** A safe diagnostic without response secrets. */
 export type Difference = { readonly path: string; readonly reason: string };
 /** Explicit fixture origins and scenario clocks used to compare runtime output. */
 export type ComparisonContext = {
+  readonly compactSessionCacheSecret?: string;
   readonly leftBaseURL: string;
   readonly rightBaseURL: string;
   readonly leftOAuthURL?: string | undefined;
@@ -150,6 +155,85 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     if (record(value)) return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableJSON(value[key])}`).join(",")}}`;
     return JSON.stringify(value) ?? "undefined";
   }
+  function exactCacheCopy(a: unknown, b: unknown): boolean {
+    if (Array.isArray(a)) return Array.isArray(b) && a.length === b.length && a.every((child,index) => exactCacheCopy(child,b[index]));
+    if (record(a)) return record(b) && Object.keys(a).length === Object.keys(b).length
+      && Object.entries(a).every(([key,child]) => Object.hasOwn(b,key) && exactCacheCopy(child,b[key]));
+    return Object.is(a,b);
+  }
+  const cachePayloadSchema = z.looseObject({session: sessionSchema.loose(), user: userSchema.loose(), updatedAt: z.number(), version: z.string().optional()});
+  function compactCookieHeaders(value: Record<string,unknown>): {name:string;attributes:string;tombstone:boolean}[] | undefined {
+    if (!Object.hasOwn(value,"rawCookies")) return [];
+    if (!Array.isArray(value.rawCookies) || !value.rawCookies.length || typeof value.token!=="string") return;
+    const result: {name:string;attributes:string;tombstone:boolean}[]=[];
+    const live: {name:string;value:string;attributes:string;raw:string}[]=[];
+    for (const raw of value.rawCookies) {
+      if (typeof raw!=="string") return;
+      const cookie=Cookie.parse(raw);
+      if (!cookie || !/^better-auth\.session_data(?:\.(?:0|[1-9]\d*))?$/.test(cookie.key)) return;
+      const separator=raw.indexOf(";"),pair=separator<0?raw:raw.slice(0,separator),attributes=separator<0?"":raw.slice(separator);
+      let decoded:string;try{decoded=decodeURIComponent(cookie.value);}catch{return;}
+      if (pair!==`${cookie.key}=${encodeURIComponent(decoded)}`) return;
+      const tombstone=decoded==="" && cookie.maxAge===0;
+      if (decoded==="" && !tombstone) return;
+      result.push({name:cookie.key,attributes,tombstone});
+      if (!tombstone) live.push({name:cookie.key,value:decoded,attributes,raw});
+    }
+    if (!live.length || live.length>100 || live.map(part=>part.value).join("")!==value.token) return;
+    const attributes=live[0]!.attributes,capacity=4050-(`better-auth.session_data.99=${attributes}`).length;
+    if (capacity<=0) return;
+    for (let index=0;index<live.length;index++) {
+      const part=live[index]!;
+      const name=live.length===1?"better-auth.session_data":`better-auth.session_data.${index}`;
+      if (part.name!==name || part.attributes!==attributes || Buffer.byteLength(part.raw)>4050
+        || part.value.length!==Math.min(capacity,value.token.length-index*capacity)) return;
+    }
+    if (live.length!==Math.ceil(value.token.length/capacity)) return;
+    return result;
+  }
+  function authenticatedCompactCache(value: Record<string, unknown>, start: number, finish: number | undefined): boolean {
+    if (!context.compactSessionCacheSecret || Object.keys(value).sort().join(",") !== (Object.hasOwn(value,"rawCookies") ? "decoded,effectiveMaxAgeSeconds,envelope,observedAt,rawCookies,token" : "decoded,effectiveMaxAgeSeconds,envelope,observedAt,token")
+      || compactCookieHeaders(value)===undefined
+      || typeof value.effectiveMaxAgeSeconds !== "number" || !value.effectiveMaxAgeSeconds
+      || typeof value.token !== "string" || !/^[A-Za-z0-9_-]+$/.test(value.token)
+      || !record(value.envelope) || Object.keys(value.envelope).sort().join(",") !== "expiresAt,session,signature"
+      || typeof value.observedAt !== "number" || !Number.isFinite(value.observedAt)
+      || value.observedAt < start || value.observedAt > (finish ?? start)) return false;
+    try {
+      const bytes = Buffer.from(value.token, "base64url");
+      if (bytes.toString("base64url") !== value.token) return false;
+      const text = new TextDecoder("utf-8", {fatal:true}).decode(bytes);
+      const parsedEnvelope: unknown = JSON.parse(text);
+      if (JSON.stringify(parsedEnvelope) !== text || JSON.stringify(value.envelope) !== text || !exactCacheCopy(parsedEnvelope,value.envelope)) return false;
+      const raw = value.envelope;
+      if (!record(raw.session) || typeof raw.session.updatedAt !== "number" || !Number.isFinite(raw.session.updatedAt)
+        || raw.session.updatedAt > value.observedAt || typeof raw.signature !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(raw.signature)) return false;
+      const signature = Buffer.from(raw.signature, "base64url");
+      const mac = (payload:Record<string,unknown>,expiresAt:unknown) => createHmac("sha256",context.compactSessionCacheSecret!)
+        .update(JSON.stringify({...payload,expiresAt})).digest();
+      const expected = mac(raw.session,raw.expiresAt);
+      if (signature.toString("base64url") !== raw.signature || signature.length !== expected.length || !timingSafeEqual(signature,expected)) return false;
+      const clip = (value:number) => Number.isFinite(value) && Math.abs(value)<=8.64e15 ? Math.trunc(value) : NaN;
+      const age = value.effectiveMaxAgeSeconds;
+      const earliest = clip(raw.session.updatedAt+age*1000), latest = clip(value.observedAt+age*1000);
+      if (Number.isNaN(earliest) || Number.isNaN(latest)) {
+        if (raw.expiresAt !== null) return false;
+      } else if (typeof raw.expiresAt !== "number" || !Number.isInteger(raw.expiresAt) || raw.expiresAt < earliest || raw.expiresAt > latest) return false;
+      // Independent Source decoder contract: Date revival precedes its HMAC
+      // and loose payload schema; complete passthrough fields remain observable.
+      const revived = safeJSONParse(text);
+      if (!record(revived) || !record(revived.session)) return false;
+      const parsed = cachePayloadSchema.safeParse(revived.session);
+      const valid = typeof revived.expiresAt === "number" && Number.isFinite(revived.expiresAt)
+        && timingSafeEqual(signature,mac(revived.session,revived.expiresAt))
+        && parsed.success && revived.expiresAt >= value.observedAt
+        && parsed.data.session.expiresAt.getTime() >= value.observedAt;
+      return valid ? exactCacheCopy(normalizeClientValue(parsed.data),value.decoded) : value.decoded === null;
+    } catch { return false; }
+  }
+  function cacheClock(a: number, b: number, path: string) {
+    if (a !== b && Math.abs((a-context.leftStartedAt)-(b-context.rightStartedAt)) > 1500) fail(path,"compact cache timestamp differs");
+  }
   const leftEncryptedClaims = new Map<string, string>(), rightEncryptedClaims = new Map<string, string>();
   function rememberEncryptedClaims(value: Record<string, unknown>, seen: Map<string, string>, path: string) {
     const token = String(value.token), claims = stableJSON(value.payload), previous = seen.get(token);
@@ -208,7 +292,10 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     } catch { return undefined; }
   }
 
-  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false, urlQueryContext: "url" | "query" | undefined = undefined, adminFilterUrl = false) {
+  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false, urlQueryContext: "url" | "query" | undefined = undefined, adminFilterUrl = false, compactCache = false) {
+    if (compactCache && typeof a === "number" && typeof b === "number" && /\.compactSessionCache\.(?:envelope\.expiresAt|(?:envelope\.session|decoded)\.updatedAt)$/.test(`.${path}`)) {
+      cacheClock(a,b,path); return;
+    }
     if (typeof a === "string" && typeof b === "string" && !traceShape(path)
       && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path)) {
       if (key === "teamId" && (a.includes(",") || b.includes(","))) {
@@ -267,10 +354,32 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     }
     if (Array.isArray(a) && Array.isArray(b)) {
       if (a.length !== b.length) fail(path, "array length differs");
-      a.forEach((child, index) => visit(child, b[index], `${path ? `${path}.` : ""}${index}`, key, false, applicationData || jwtPayload, false, false, urlQueryContext, adminFilterUrl));
+      a.forEach((child, index) => visit(child, b[index], `${path ? `${path}.` : ""}${index}`, key, false, applicationData || jwtPayload, false, false, urlQueryContext, adminFilterUrl, compactCache));
       return;
     }
     if (record(a) && record(b)) {
+      if (key === "compactSessionCache") {
+        if (applicationData || traceShape(path) || /(?:^|\.)applicationData(?:\.|$)/.test(path)) {
+          if (stableJSON(a) !== stableJSON(b)) fail(path,"application compact-cache-shaped data differs literally");
+          return;
+        }
+        if (!authenticatedCompactCache(a,context.leftStartedAt,context.leftFinishedAt)
+          || !authenticatedCompactCache(b,context.rightStartedAt,context.rightFinishedAt)) {
+          if (stableJSON(a) !== stableJSON(b)) fail(path,"unverified compact cache observation differs literally");
+          return;
+        }
+        if (Object.hasOwn(a,"rawCookies")!==Object.hasOwn(b,"rawCookies")) fail(`${path}.rawCookies`,"raw compact cookie presence differs");
+        visit(compactCookieHeaders(a),compactCookieHeaders(b),`${path}.rawCookies`,"",false,false,false,false,undefined,false,false);
+        const leftEnvelope = a.envelope as Record<string,unknown>, rightEnvelope = b.envelope as Record<string,unknown>;
+        const leftPayload = leftEnvelope.session as Record<string,unknown>, rightPayload = rightEnvelope.session as Record<string,unknown>;
+        if (!Object.is(a.effectiveMaxAgeSeconds,b.effectiveMaxAgeSeconds)) fail(path,"compact cache effective lifetime differs");
+        identity(String(a.token),String(b.token),`${path}.token`,"token");
+        cacheClock(Number(a.observedAt),Number(b.observedAt),`${path}.observedAt`);
+        visit(leftEnvelope.expiresAt,rightEnvelope.expiresAt,`${path}.envelope.expiresAt`,"expiresAt",false,false,false,false,undefined,false,true);
+        visit(leftPayload,rightPayload,`${path}.envelope.session`,"",false,false,false,false,undefined,false,true);
+        visit(a.decoded,b.decoded,`${path}.decoded`,"",false,false,false,false,undefined,false,true);
+        return;
+      }
       if (key === "accountCookie" && !applicationData && !traceShape(path)) {
         if (!encryptedAccountCookie(a) || !encryptedAccountCookie(b)) {
           fail(path, "authenticated encrypted account-cookie envelope differs");
@@ -355,7 +464,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           // use the existing graph. Arity, order, duplicates and URL fields stay.
           visit(a.filterValue, b.filterValue, childPath, "id", false, false, false, false, "query");
         }
-        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData, false, false, urlQueryContext === "query" || (urlQueryContext === "url" && childKey === "query") ? "query" : undefined, adminFilterUrl);
+        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData, false, false, urlQueryContext === "query" || (urlQueryContext === "url" && childKey === "query") ? "query" : undefined, adminFilterUrl, compactCache);
       }
       return;
     }
