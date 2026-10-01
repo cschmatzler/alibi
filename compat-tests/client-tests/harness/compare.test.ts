@@ -1,4 +1,7 @@
 import { Database } from "bun:sqlite";
+import { symmetricEncodeJWT, symmetricDecodeJWT } from "better-auth/crypto";
+import { decodeProtectedHeader, EncryptJWT } from "jose";
+import { hkdfSync } from "node:crypto";
 import { betterAuth } from "better-auth";
 import { apiKey } from "@better-auth/api-key";
 import { getMigrations } from "better-auth/db/migration";
@@ -381,4 +384,73 @@ test("actual custom API-key generators preserve observational prefix relationshi
   expect(compareValues(left.issued,wrongPrefix,clocks)).toContainEqual({path:"prefix",reason:"value or type differs"});
   expect(compareValues(left.issued,{...right.issued,key:"raw_abcdefghijklmn",start:"ra"},clocks)).toContainEqual({path:"key",reason:"API key prefix relationship differs"});
   expect(compareValues(left.issued,{...right.issued,start:"xx"},clocks)).toContainEqual({path:"start",reason:"API key stored-prefix relationship differs"});
+});
+
+
+test("published encrypted account cookies retain complete claims, clocks, identity and rotation", async () => {
+  const secret = "local-harness-encryption-secret-32-bytes", salt = "better-auth-account";
+  const startedAt = Date.now();
+  const account = { id: "account", userId: "owner", accountId: "provider-subject", providerId: "google", accessToken: "literal-access-token", refreshToken: null, scope: "openid email", password: null, permissions: ["read", "write"], details: { jti: "application-value", exp: 42 } };
+  const issue = async (lifetime = 300) => {
+    const token = await symmetricEncodeJWT(account, secret, salt, lifetime);
+    const payload = await symmetricDecodeJWT(token, secret, salt);
+    expect(payload).not.toBeNull();
+    return { token, header: decodeProtectedHeader(token), payload: payload! };
+  };
+  const left = await issue(), right = await issue(), leftNext = await issue(), rightNext = await issue();
+  expect(left.payload.jti).not.toBe(right.payload.jti);
+  expect(left.token).not.toBe(right.token);
+  const execution = { ...context, leftStartedAt: startedAt, rightStartedAt: startedAt, leftFinishedAt: Date.now(), rightFinishedAt: Date.now() };
+  const view = (first: typeof left, next: typeof left) => ({ owner: { id: "owner" }, account: { id: "account", userId: "owner" }, first: { accountCookie: first }, repeated: { accountCookie: first }, next: { accountCookie: next } });
+  const a = view(left, leftNext), b = view(right, rightNext);
+  expect(compareValues(a, b, execution)).toEqual([]);
+  const changedPayload = (payload: Record<string, unknown>) => ({ ...b, first: { accountCookie: { ...right, payload } }, repeated: { accountCookie: { ...right, payload } } });
+  for (const changed of [
+    changedPayload({ ...right.payload, userId: "foreign" }),
+    changedPayload({ ...right.payload, providerId: "github" }),
+    changedPayload({ ...right.payload, refreshToken: "unexpected" }),
+    changedPayload({ ...right.payload, permissions: ["read"] }),
+    changedPayload({ ...right.payload, details: { jti: "changed-application-value", exp: 42 } }),
+    changedPayload({ ...right.payload, exp: Number(right.payload.exp) + 1 }),
+    changedPayload({ ...right.payload, iat: Number(right.payload.iat) - 20, exp: Number(right.payload.exp) - 20 }),
+    changedPayload({ ...right.payload, jti: "literal-not-generated" }),
+    { ...b, repeated: { accountCookie: { ...right, payload: { ...right.payload, jti: rightNext.payload.jti } } } },
+    { ...b, next: { accountCookie: right } },
+    { ...b, next: { accountCookie: { ...rightNext, payload: { ...rightNext.payload, jti: right.payload.jti } } } },
+    { ...b, first: { accountCookie: { ...right, header: { ...right.header, kid: "wrong" } } } },
+    { ...b, first: { accountCookie: { ...right, header: { ...right.header, enc: "A256GCM" } } } },
+    { ...b, first: { accountCookie: { ...right, token: right.token.split(".").slice(0, 4).join(".") } } },
+    changedPayload({ ...right.payload, password: undefined }),
+  ]) expect(compareValues(a, changed, execution).length).toBeGreaterThan(0);
+  const noNull = structuredClone(b);
+  delete noNull.first.accountCookie.payload.refreshToken;
+  delete noNull.repeated.accountCookie.payload.refreshToken;
+  expect(compareValues(a, noNull, execution).length).toBeGreaterThan(0);
+  // Actual source-readable protected extensions remain literal, even when their
+  // names look like generated identities or token fields elsewhere in a trace.
+  const key = new Uint8Array(hkdfSync("sha256", secret, salt, "BetterAuth.js Generated Encryption Key", 64));
+  const extended = async (extension: Record<string, string>) => {
+    const token = await new EncryptJWT(account).setProtectedHeader({ ...left.header, ...extension, alg: "dir", enc: "A256CBC-HS512" })
+      .setIssuedAt().setExpirationTime("5m").setJti(crypto.randomUUID()).encrypt(key);
+    const payload = await symmetricDecodeJWT(token, secret, salt);
+    expect(payload).not.toBeNull();
+    return { token, header: decodeProtectedHeader(token), payload: payload! };
+  };
+  for (const headerKey of ["id", "token", "issuerURL", "createdAt"]) {
+    const first = await extended({ [headerKey]: headerKey === "createdAt" ? new Date(startedAt).toISOString() : "http://localhost:3100/header" });
+    const second = await extended({ [headerKey]: headerKey === "createdAt" ? new Date(startedAt + 1).toISOString() : "http://localhost:3200/header" });
+    const diff = compareValues(view(first, leftNext), view(second, rightNext), execution);
+    expect(diff).toContainEqual({ path: "first.accountCookie.header", reason: "protected encrypted cookie header differs" });
+  }
+  for (const [field, value] of [["providerId", "github"], ["userId", "foreign"], ["exp", Number(right.payload.exp) + 1]] as const) {
+    const diff = compareValues(a, changedPayload({ ...right.payload, [field]: value }), execution);
+    expect(diff.some(item => item.path === `first.accountCookie.payload.${field}` || (field === "exp" && item.reason === "JWT lifetime differs"))).toBe(true);
+    expect(diff.some(item => item.reason === "the same encrypted cookie has different decoded claims")).toBe(false);
+  }
+  const differentLifetime = await issue(301);
+  expect(compareValues(a, view(differentLifetime, rightNext), execution).length).toBeGreaterThan(0);
+  // Claims outside the authenticated envelope retain literal application values.
+  expect(compareValues({ payload: left.payload }, { payload: right.payload }, execution).length).toBeGreaterThan(0);
+  expect(compareValues({ metadata: { accountCookie: left } }, { metadata: { accountCookie: right } }, execution).length).toBeGreaterThan(0);
+  expect(compareValues({ additionalFields: { accountCookie: left } }, { additionalFields: { accountCookie: right } }, execution).length).toBeGreaterThan(0);
 });

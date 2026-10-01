@@ -49,6 +49,11 @@ Outside devenv, run `bunx playwright install --with-deps chromium` in
 - A software ES256 authenticator produces valid registration and authentication
   signatures. The passkey scenario checks persisted credentials, ownership
   rejection, counter updates, replay rejection, rename and deletion.
+- Account-cookie scenarios authenticate actual compact encrypted cookies with the
+  published decoder and retain their complete protected headers and payloads.
+  The explicit evidence container tracks random JWT IDs, token rotation and
+  repeated claims without normalizing application JWT-shaped data. See the
+  [comparison regression audit](audits/encrypted-cookie-comparison.md).
 - Harness negative controls deliberately corrupt identity relationships,
   lifetimes, redirects, array structure and cookies. A live HTTP/SDK canary
   confirms wrong session ownership and removed cookie protection are detected.
