@@ -1,6 +1,7 @@
 pub mod extension_common;
 pub mod invitation;
 pub mod member;
+pub(crate) mod member_addition;
 pub mod org;
 pub(crate) mod org_input;
 pub mod role;
