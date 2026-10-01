@@ -14,8 +14,8 @@ const registrationOptions = z.object({ challenge: z.string().min(1), rp: z.objec
 const authenticationOptions = z.object({ challenge: z.string().min(1), rpId: z.string() });
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest();
 
-type BackupFlags = { backupEligible?: boolean; backedUp?: boolean };
-const flags = (base: number, state: BackupFlags) => base | (state.backupEligible ? 0x08 : 0) | (state.backedUp ? 0x10 : 0);
+type BackupFlags = { backupEligible?: boolean; backedUp?: boolean; userVerified?: boolean; userPresent?: boolean; counter?: number; rpId?: string };
+const flags = (base: number, state: BackupFlags) => (state.userVerified === false ? base & ~0x04 : base) & (state.userPresent === false ? ~0x01 : 0xff) | (state.backupEligible ? 0x08 : 0) | (state.backedUp ? 0x10 : 0);
 
 /** Synthetic ES256 WebAuthn device for deterministic credential round trips. */
 export class Authenticator {
@@ -41,8 +41,8 @@ export class Authenticator {
   authenticate(options: unknown, origin: string, backup: BackupFlags = {}) {
     const parsed = authenticationOptions.parse(options);
     const clientDataJSON = Buffer.from(JSON.stringify({ type: "webauthn.get", challenge: parsed.challenge, origin, crossOrigin: false }));
-    const counter = Buffer.alloc(4); counter.writeUInt32BE(++this.counter);
-    const authenticatorData = Buffer.concat([hash(parsed.rpId), Buffer.from([flags(0x05, backup)]), counter]);
+    const counter = Buffer.alloc(4); counter.writeUInt32BE(backup.counter ?? ++this.counter);
+    const authenticatorData = Buffer.concat([hash(backup.rpId ?? parsed.rpId), Buffer.from([flags(0x05, backup)]), counter]);
     const signature = sign("sha256", Buffer.concat([authenticatorData, hash(clientDataJSON)]), key.privateKey);
     return {
       id: credential.toString("base64url"), rawId: credential.toString("base64url"), type: "public-key",

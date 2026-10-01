@@ -17,6 +17,15 @@ use webauthn_rs::prelude::{
 };
 
 use super::PasskeyConfig;
+use webauthn_rs_core::{
+    WebauthnCore,
+    error::WebauthnError,
+    internals::AuthenticatorData,
+    proto::{
+        Authentication, AuthenticationResult, AuthenticationState, Credential,
+        UserVerificationPolicy,
+    },
+};
 
 pub(super) const PASSKEY_CHALLENGE_COOKIE_NAME: &str = "better-auth-passkey";
 const OPTIONS_TIMEOUT_MS: u64 = 60_000;
@@ -60,6 +69,10 @@ pub(crate) struct StoredRegistrationState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub(crate) enum StoredAuthenticationState {
+    /// Source policy for newly issued ceremonies. Older variants remain readable.
+    Core {
+        state: AuthenticationState,
+    },
     Passkey {
         state: webauthn_rs::prelude::PasskeyAuthentication,
     },
@@ -116,6 +129,63 @@ pub(super) fn resolve_rp_id(
     } else {
         Ok(config.rp_id.clone())
     }
+}
+
+/// Source checks the exact configured origin and has no historical UV/backup
+/// requirement. Use typed core policy while retaining all crypto validation.
+pub(super) fn build_authentication_core(
+    config: &PasskeyConfig,
+    auth_config: &AuthConfig,
+    origin: &str,
+) -> AuthResult<WebauthnCore> {
+    // Retain the high-level builder's RP/origin configuration validation.
+    let _ = build_webauthn(config, auth_config, origin)?;
+    let rp_id = resolve_rp_id(config, auth_config)?;
+    let parsed_origin = Url::parse(origin)
+        .map_err(|error| AuthError::bad_request(format!("Invalid passkey origin: {error}")))?;
+    Ok(WebauthnCore::new_unsafe_experts_only(
+        &config.rp_name,
+        &rp_id,
+        vec![parsed_origin],
+        Duration::from_millis(OPTIONS_TIMEOUT_MS),
+        Some(false),
+        Some(false),
+    ))
+}
+
+pub(super) fn finish_core_authentication(
+    core: &WebauthnCore,
+    authentication: &PublicKeyCredential,
+    mut state: AuthenticationState,
+    stored_passkey: &WebauthnPasskey,
+    current_counter: u32,
+    origin: &str,
+) -> Result<AuthenticationResult, WebauthnError> {
+    let client_data = better_auth_core::utils::json::from_slice::<
+        better_auth_core::utils::json::JsValue,
+    >(authentication.response.client_data_json.as_ref())?;
+    if client_data.get("origin").and_then(|origin| origin.as_str()) != Some(origin) {
+        return Err(WebauthnError::InvalidRPOrigin);
+    }
+    let data = AuthenticatorData::<Authentication>::try_from(
+        authentication.response.authenticator_data.as_ref(),
+    )?;
+    if !data.user_present {
+        return Err(WebauthnError::UserNotPresent);
+    }
+    if data.backup_state && !data.backup_eligible {
+        return Err(WebauthnError::CredentialMayNotBeHardwareBound);
+    }
+    let mut credential = Credential::from(stored_passkey.clone());
+    // Only verifier policy fields are normalized on this disposable clone.
+    // Neither the key/ID nor the original verified owner comes from the request.
+    credential.registration_policy = UserVerificationPolicy::Preferred;
+    credential.user_verified = false;
+    credential.backup_eligible = data.backup_eligible;
+    credential.counter = current_counter;
+    state.set_allowed_credentials(vec![credential]);
+    // Verify the original signed bytes once. Parsing flags never grants authority.
+    core.authenticate_credential(authentication, &state)
 }
 
 pub(super) fn build_webauthn(

@@ -28,6 +28,13 @@ struct Clock {
     expires_at: chrono::DateTime<chrono::Utc>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CurrentCounter {
+    credential_id: String,
+    counter: u32,
+}
+
 pub(super) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
@@ -49,6 +56,7 @@ pub(super) async fn router(
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
     let state_database = database.clone();
+    let counter_database = database.clone();
     Ok(router
         .route(
             "/__test/passkey-state",
@@ -92,6 +100,23 @@ pub(super) async fn router(
                     Json(json!({ "passkeys": passkeys,
                 "sessions": {"count": sessions.try_get::<i64>("", "count").unwrap()},
                 "challenges": {"count": challenges.try_get::<i64>("", "count").unwrap()} }))
+                }
+            }),
+        )
+        .route(
+            "/__test/passkey-current-counter",
+            post(move |Json(input): Json<CurrentCounter>| {
+                let database = counter_database.clone();
+                async move {
+                    let result = database
+                        .execute_raw(Statement::from_sql_and_values(
+                            DbBackend::Sqlite,
+                            "UPDATE passkeys SET counter = ? WHERE credential_id = ?",
+                            [i64::from(input.counter).into(), input.credential_id.into()],
+                        ))
+                        .await
+                        .unwrap();
+                    Json(json!({"updated": result.rows_affected()}))
                 }
             }),
         )

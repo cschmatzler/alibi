@@ -6,9 +6,7 @@ use better_auth_core::{AuthContext, AuthError, AuthResult, CreatePasskey, Create
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use uuid::Uuid;
-use webauthn_rs::prelude::{
-    DiscoverableKey, Passkey as WebauthnPasskey, PublicKeyCredential, RegisterPublicKeyCredential,
-};
+use webauthn_rs::prelude::{DiscoverableKey, PublicKeyCredential, RegisterPublicKeyCredential};
 
 use crate::plugins::StatusResponse;
 use crate::plugins::helpers::{SessionIssueError, issue_user_session};
@@ -19,11 +17,11 @@ use super::types::{
 };
 use super::webauthn::{
     StoredAuthenticationState, StoredRegistrationState, authentication_options_json,
-    build_webauthn, challenge_cookie_name, create_challenge_cookie,
+    build_authentication_core, build_webauthn, challenge_cookie_name, create_challenge_cookie,
     credential_id_from_authentication, decode_challenge_cookie, decode_credential_id,
-    extract_registration_metadata, generate_ts_user_handle, get_cookie_value, parse_stored_passkey,
-    parse_transports_csv, registration_options_json, resolve_origin, snapshot_passkey,
-    transports_to_csv,
+    extract_registration_metadata, finish_core_authentication, generate_ts_user_handle,
+    get_cookie_value, parse_stored_passkey, parse_transports_csv, registration_options_json,
+    resolve_origin, snapshot_passkey, transports_to_csv,
 };
 use super::{PasskeyConfig, PasskeyRegistrationUser};
 
@@ -177,17 +175,13 @@ pub(super) async fn generate_authenticate_options_core<U: AuthUser>(
     config: &PasskeyConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<(Value, String)> {
-    let webauthn = build_webauthn(config, &ctx.config, &generation_origin(config, ctx))?;
+    let core = build_authentication_core(config, &ctx.config, &generation_origin(config, ctx))?;
 
     let stored_passkeys = if let Some(user) = maybe_user {
         ctx.database.list_passkeys_by_user(&user.id()).await?
     } else {
         Vec::new()
     };
-    let parsed_passkeys = stored_passkeys
-        .iter()
-        .filter_map(|passkey| parse_stored_passkey(passkey.credential()).ok())
-        .collect::<Vec<WebauthnPasskey>>();
     let allow_credentials_json = stored_passkeys
         .iter()
         .map(|passkey| {
@@ -204,21 +198,23 @@ pub(super) async fn generate_authenticate_options_core<U: AuthUser>(
         })
         .collect::<Vec<_>>();
 
-    let (options, state) = if parsed_passkeys.is_empty() {
-        let (options, state) = webauthn
-            .start_discoverable_authentication()
-            .map_err(|error| {
-                AuthError::internal(format!("Failed to generate authenticate options: {error}"))
-            })?;
-        (options, StoredAuthenticationState::Discoverable { state })
-    } else {
-        let (options, state) = webauthn
-            .start_passkey_authentication(&parsed_passkeys)
-            .map_err(|error| {
-                AuthError::internal(format!("Failed to generate authenticate options: {error}"))
-            })?;
-        (options, StoredAuthenticationState::Passkey { state })
-    };
+    // Source's allowCredentials is a browser hint; verification selects the real
+    // current stored credential by its ID and authenticates that credential owner.
+    let builder = core
+        .new_challenge_authenticate_builder(
+            Vec::new(),
+            Some(webauthn_rs_core::proto::UserVerificationPolicy::Preferred),
+        )
+        .map_err(|error| {
+            AuthError::internal(format!("Failed to generate authenticate options: {error}"))
+        })?
+        .allow_backup_eligible_upgrade(true);
+    let (options, state) = core
+        .generate_challenge_authenticate(builder)
+        .map_err(|error| {
+            AuthError::internal(format!("Failed to generate authenticate options: {error}"))
+        })?;
+    let state = StoredAuthenticationState::Core { state };
 
     let token = Uuid::new_v4().to_string();
     let expires_at = Utc::now() + Duration::seconds(config.challenge_ttl_secs);
@@ -569,6 +565,29 @@ pub(super) async fn verify_authentication_core(
     };
 
     let authentication_result = match stored_state {
+        StoredAuthenticationState::Core { state } => {
+            let counter = match u32::try_from(passkey.counter()) {
+                Ok(counter) => counter,
+                Err(_) => return passkey_authentication_failure(),
+            };
+            // Public saved counter is authoritative, even if application code
+            // changed it independently of the opaque verifier credential.
+            let mut current = webauthn_rs_core::proto::Credential::from(stored_passkey.clone());
+            current.counter = counter;
+            stored_passkey = current.into();
+            let core = match build_authentication_core(config, &ctx.config, &origin) {
+                Ok(core) => core,
+                Err(_) => return passkey_authentication_failure(),
+            };
+            finish_core_authentication(
+                &core,
+                &authentication,
+                state,
+                &stored_passkey,
+                counter,
+                &origin,
+            )
+        }
         StoredAuthenticationState::Passkey { state } => {
             webauthn.finish_passkey_authentication(&authentication, &state)
         }
