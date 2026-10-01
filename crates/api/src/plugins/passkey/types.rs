@@ -1,7 +1,5 @@
 pub(in crate::plugins) use better_auth_core::wire::PasskeyView;
-
 use serde::{Deserialize, Serialize};
-
 use validator::Validate;
 
 // -- Request types --

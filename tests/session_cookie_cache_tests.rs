@@ -16,28 +16,19 @@ mod application_model;
 #[path = "session_cookie_cache_tests/tests.rs"]
 mod tests;
 
+use application_model::{ApplicationSchema, application_session};
 use async_trait::async_trait;
-
 use better_auth::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
-
 use better_auth::{AuthBuilder, AuthConfig};
-
 use better_auth_core::{
     AuthRequest, AuthResult, CacheVersionContext, CacheVersionSource, CookieCacheConfig,
     CookieCacheVersion, CookieCacheVersionResolver, HttpMethod,
 };
-
 use better_auth_seaorm::sea_orm::{ConnectionTrait, Statement};
-
 use better_auth_seaorm::store::__private_test_support::migrator::run_migrations;
-
 use better_auth_seaorm::{Database, SeaOrmStore};
-
 use serde_json::{Value, json};
-
 use std::sync::{Arc, Mutex};
-
-use application_model::{ApplicationSchema, application_session};
 
 struct Version(Mutex<Vec<Value>>);
 

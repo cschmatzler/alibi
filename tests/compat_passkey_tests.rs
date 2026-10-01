@@ -21,7 +21,5 @@ mod compat;
 mod tests;
 
 use compat::helpers::*;
-
 use compat::schema::OpenApiProfile;
-
 use compat::validator::SpecValidator;

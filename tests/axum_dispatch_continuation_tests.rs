@@ -11,7 +11,6 @@
 mod tests;
 
 use async_trait::async_trait;
-
 use axum::{
     Router,
     body::Body,
@@ -20,22 +19,15 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-
 use better_auth::integrations::axum::AxumIntegration;
-
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-
 use better_auth_core::middleware::{BodyLimitConfig, CsrfConfig, RateLimitConfig};
-
 use better_auth_core::store::UserStore;
-
 use better_auth_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, CreateUser,
     UpdateUser,
 };
-
 use better_auth_seaorm::{Database, SeaOrmStore};
-
 use std::{
     sync::{
         Arc, Mutex,
@@ -43,15 +35,12 @@ use std::{
     },
     time::Duration,
 };
-
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
     sync::{Notify, oneshot},
 };
-
 use tower::ServiceExt;
-
 use tracing::{Instrument, instrument::WithSubscriber};
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

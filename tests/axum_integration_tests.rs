@@ -14,26 +14,17 @@ use axum::{
     extract::{FromRef, State},
     http::{Method, Request, StatusCode},
 };
-
 use better_auth::integrations::axum::{AxumIntegration, CurrentSession, OptionalSession};
-
 use better_auth::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin,
     SessionManagementPlugin, UserManagementPlugin, password_management::SendResetPassword,
 };
-
 use better_auth::prelude::AuthUser;
-
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-
 use better_auth_seaorm::{Database, DatabaseConnection, SeaOrmStore};
-
 use serde_json::{Value, json};
-
 use std::sync::Arc;
-
 use tower::ServiceExt;
-
 // for oneshot
 use tower_http::cors::CorsLayer;
 

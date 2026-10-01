@@ -2,18 +2,12 @@
 mod tests;
 
 use super::Middleware;
-
 use crate::config::{AuthConfig, extract_origin};
-
 use crate::error::{AuthError, AuthResult};
-
 use crate::types::{AuthRequest, AuthResponse, HttpMethod};
-
 use async_trait::async_trait;
-
 #[cfg(test)]
 use std::collections::HashMap;
-
 use std::sync::Arc;
 
 const CROSS_SITE_NAVIGATION_LOGIN_BLOCKED: &str =

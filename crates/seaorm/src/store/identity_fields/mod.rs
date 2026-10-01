@@ -3,11 +3,9 @@
 #[cfg(test)]
 mod tests;
 
-use sea_orm::EntityName;
-
-use sea_orm_migration::prelude::*;
-
 use super::entities::{session, user};
+use sea_orm::EntityName;
+use sea_orm_migration::prelude::*;
 
 pub(super) struct PluginIdentityFields;
 

@@ -1,8 +1,7 @@
 //! Server-only member-admission callbacks over immutable original snapshots.
+use super::{OrganizationMemberCreatePatch, types::OrganizationResponse};
 use async_trait::async_trait;
 use better_auth_core::{AuthResult, Member, wire::UserView};
-
-use super::{OrganizationMemberCreatePatch, types::OrganizationResponse};
 
 /// The source callback draft has no generated ID or creation timestamp.
 #[derive(Debug, Clone)]

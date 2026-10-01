@@ -1,30 +1,11 @@
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
-
-use base64::Engine;
-
-use chrono::{Duration, Utc};
-
-use rand::{Rng, thread_rng};
-
-use sha2::{Digest, Sha256};
-
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
-
-use better_auth_core::{
-    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateAccount, CreateUser,
-    CreateVerification, UpdateAccount, UpdateUser,
-};
-
 use super::encryption::encrypt_token_set;
-
 use super::providers::{
     OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthConfig, OAuthProvider, OAuthScopeOrder,
     OAuthTokenSet, OAuthUserInfo, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
-
 use super::state::{
     AccountCookiePayload, OAuthStateLink, OAuthStatePayload, RecoveredOAuthServerContext,
     account_cookie_name, capture_server_context, create_account_cookie_value,
@@ -32,14 +13,21 @@ use super::state::{
     decode_cookie_state_value, decode_database_state_cookie_value, filter_additional_state_data,
     get_cookie, state_cookie_name, verified_server_context,
 };
-
 use super::types::{
     LinkSocialRequest, OAuthIdTokenRequest, SocialSignInRequest, SocialSignInResponse,
 };
-
-use better_auth_core::wire::{SessionView, UserView};
-
 use crate::plugins::helpers::{SessionIssueError, apply_default_role, issue_user_session};
+use base64::Engine;
+use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
+use better_auth_core::wire::{SessionView, UserView};
+use better_auth_core::{
+    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateAccount, CreateUser,
+    CreateVerification, UpdateAccount, UpdateUser,
+};
+use chrono::{Duration, Utc};
+use rand::{Rng, thread_rng};
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 
 pub(in crate::plugins) struct ProcessOAuthUserResult {
     pub(in crate::plugins) session: SessionView,

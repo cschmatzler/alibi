@@ -1,13 +1,8 @@
 use super::super::OrganizationConfig;
-
 use better_auth_core::types::OrganizationPermissions;
-
 use better_auth_core::wire::SessionView;
-
 use better_auth_core::{AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema};
-
 use std::collections::HashMap;
-
 use std::sync::{Mutex, OnceLock};
 
 type OrganizationRoles = HashMap<String, OrganizationPermissions>;

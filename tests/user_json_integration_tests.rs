@@ -35,11 +35,8 @@ mod custom_user {
 mod tests;
 
 use better_auth::{AuthBuilder, AuthConfig};
-
 use better_auth_core::{AuthUser, CreateUser, UpdateUser};
-
 use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
-
 use better_auth_seaorm::{Database, SeaOrmStore};
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

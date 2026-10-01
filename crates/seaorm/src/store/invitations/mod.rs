@@ -1,30 +1,20 @@
 #[cfg(test)]
 mod tests;
 
+use super::entities::invitation::{ActiveModel, Column, Entity};
+use super::{SeaOrmStore, map_db_err};
+use crate::schema::{AuthSchema, SeaOrmSessionModel, SeaOrmUserModel};
 use async_trait::async_trait;
-
+use better_auth_core::entity::AuthUser;
+use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::store::InvitationStore;
+use better_auth_core::{CreateInvitation, Invitation, InvitationStatus};
 use chrono::Utc;
-
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
     QueryOrder, QuerySelect, Set, TransactionTrait,
 };
-
 use uuid::Uuid;
-
-use better_auth_core::store::InvitationStore;
-
-use better_auth_core::error::{AuthError, AuthResult};
-
-use crate::schema::{AuthSchema, SeaOrmSessionModel, SeaOrmUserModel};
-
-use better_auth_core::{CreateInvitation, Invitation, InvitationStatus};
-
-use better_auth_core::entity::AuthUser;
-
-use super::entities::invitation::{ActiveModel, Column, Entity};
-
-use super::{SeaOrmStore, map_db_err};
 
 #[async_trait]
 impl<S> InvitationStore for SeaOrmStore<S>

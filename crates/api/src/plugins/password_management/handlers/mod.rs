@@ -1,32 +1,24 @@
 #[cfg(test)]
 mod tests;
 
-use chrono::{Duration, Utc};
-
-use url::Url;
-
-use uuid::Uuid;
-
-use better_auth_core::utils::password as password_utils;
-
-use better_auth_core::wire::UserView;
-
-use better_auth_core::{
-    AuthAccount, AuthContext, AuthError, AuthResult, AuthSession, AuthUser, AuthVerification,
-    CreateAccount, RequestMeta, UpdateAccount,
-};
-
-use crate::plugins::helpers::{
-    SessionIssueError, get_credential_account, get_credential_password_hash, issue_user_session,
-};
-
 use super::types::{
     ChangePasswordRequest, ChangePasswordResponse, RequestPasswordResetRequest,
     RequestPasswordResetResponse, ResetPasswordRequest, ResetPasswordTokenQuery,
     ResetPasswordTokenResult, VerifyPasswordRequest,
 };
-
 use super::{PasswordManagementConfig, StatusResponse};
+use crate::plugins::helpers::{
+    SessionIssueError, get_credential_account, get_credential_password_hash, issue_user_session,
+};
+use better_auth_core::utils::password as password_utils;
+use better_auth_core::wire::UserView;
+use better_auth_core::{
+    AuthAccount, AuthContext, AuthError, AuthResult, AuthSession, AuthUser, AuthVerification,
+    CreateAccount, RequestMeta, UpdateAccount,
+};
+use chrono::{Duration, Utc};
+use url::Url;
+use uuid::Uuid;
 
 const PASSWORD_RESET_SUCCESS_MESSAGE: &str =
     "If this email exists in our system, check your email for the reset link";

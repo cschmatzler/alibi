@@ -4,14 +4,11 @@
 //! enabling `serde_json` features that reserve otherwise valid application keys.
 
 use indexmap::IndexMap;
-
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{DeserializeOwned, IntoDeserializer, MapAccess, SeqAccess, Visitor},
 };
-
 use serde_json::{Number, Value};
-
 use std::{
     any::{Any, TypeId},
     fmt,

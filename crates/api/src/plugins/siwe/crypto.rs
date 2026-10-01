@@ -1,12 +1,8 @@
-use async_trait::async_trait;
-
-use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
-
-use sha3::{Digest, Keccak256};
-
 use super::config::{SiweCallbackResult, SiweVerification, SiweVerifier};
-
 use super::parse::valid_address;
+use async_trait::async_trait;
+use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
+use sha3::{Digest, Keccak256};
 
 /// Secure EIP-191 verifier for externally owned Ethereum accounts. Contract
 /// wallets can use a custom [`SiweVerifier`] backed by the application's RPC.

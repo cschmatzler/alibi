@@ -1,6 +1,5 @@
-use sea_orm::entity::prelude::*;
-
 pub use crate::json_metadata::JsonMetadata;
+use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "organization")]

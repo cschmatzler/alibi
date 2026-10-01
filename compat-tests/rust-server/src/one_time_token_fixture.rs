@@ -1,5 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
-
+use crate::TestSchema;
 use axum::{
     Json, Router,
     http::{HeaderMap, StatusCode},
@@ -22,8 +21,7 @@ use better_auth_core::{AuthContext, AuthPlugin, AuthResponse, AuthRoute};
 use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
 use serde::Deserialize;
 use serde_json::json;
-
-use crate::TestSchema;
+use std::{collections::HashMap, sync::Arc};
 
 type Auth = Arc<BetterAuth<TestSchema>>;
 const PROFILES: &[&str] = &[

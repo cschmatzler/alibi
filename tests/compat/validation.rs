@@ -3,9 +3,8 @@
 //! Validates JSON responses field-by-field against `SchemaExpectation`,
 //! producing a list of `ShapeDiff` items for any mismatches.
 
-use serde_json::Value;
-
 use super::schema::{FieldExpectation, SchemaExpectation};
+use serde_json::Value;
 
 // ---------------------------------------------------------------------------
 // Types

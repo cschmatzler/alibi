@@ -11,20 +11,14 @@
 mod tests;
 
 use async_trait::async_trait;
-
 use better_auth::{AuthBuilder, AuthConfig};
-
 use better_auth_core::wire::SessionView;
-
 use better_auth_core::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     BeforeRequestAction, HttpMethod,
 };
-
 use better_auth_seaorm::{Database, SeaOrmStore};
-
 use serde_json::json;
-
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},

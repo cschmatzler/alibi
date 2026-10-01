@@ -1,24 +1,17 @@
 #[cfg(test)]
 mod tests;
 
+use super::{SeaOrmStore, cancelled_by_hook, map_db_err};
+use crate::schema::{AuthSchema, SeaOrmSessionModel};
 use async_trait::async_trait;
-
+use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::store::SessionStore;
+use better_auth_core::types::CreateSession;
 use chrono::{DateTime, Utc};
-
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, ExprTrait,
     IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
 };
-
-use better_auth_core::store::SessionStore;
-
-use crate::schema::{AuthSchema, SeaOrmSessionModel};
-
-use super::{SeaOrmStore, cancelled_by_hook, map_db_err};
-
-use better_auth_core::error::{AuthError, AuthResult};
-
-use better_auth_core::types::CreateSession;
 
 impl<S> SeaOrmStore<S>
 where

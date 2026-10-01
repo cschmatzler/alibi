@@ -7,59 +7,38 @@ mod otp;
 #[cfg(test)]
 mod tests;
 
-use aes_gcm::aead::{Aead, KeyInit};
-use std::fmt::Write;
-
-use aes_gcm::{Aes256Gcm, Key, Nonce};
-
-use async_trait::async_trait;
-
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-
-use chrono::{Duration, Utc};
-
-use hkdf::Hkdf;
-
-use hmac::{Hmac, Mac};
-
-use rand::Rng;
-
-use rand::distributions::Alphanumeric;
-
-use serde::{Deserialize, Serialize};
-
-use sha2::Sha256;
-
-use std::sync::Arc;
-
-use totp_rs::{Algorithm, TOTP};
-
-use validator::Validate;
-
-use better_auth_core::entity::{AuthSession, AuthTwoFactor, AuthUser, AuthVerification};
-
-use better_auth_core::utils::cookie_utils::{
-    create_clear_cookie, create_session_cookie, create_session_cookie_with_max_age,
-    create_session_like_cookie, related_cookie_name,
-};
-
-use better_auth_core::wire::UserView;
-
-use better_auth_core::{
-    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateTwoFactor,
-    CreateVerification, RequestMeta, TwoFactor, UpdateTwoFactor, UpdateUser,
-};
-
+use super::StatusResponse;
 use crate::plugins::helpers::{
     SessionIssueError, delete_session_cookie_headers, get_cookie, get_credential_password_hash,
     issue_user_session, issue_user_session_with_overrides,
 };
-
-use super::StatusResponse;
-
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Key, Nonce};
+use async_trait::async_trait;
 pub use backup_storage::{TwoFactorBackupCipher, TwoFactorBackupStorage};
-
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use better_auth_core::entity::{AuthSession, AuthTwoFactor, AuthUser, AuthVerification};
+use better_auth_core::utils::cookie_utils::{
+    create_clear_cookie, create_session_cookie, create_session_cookie_with_max_age,
+    create_session_like_cookie, related_cookie_name,
+};
+use better_auth_core::wire::UserView;
+use better_auth_core::{
+    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateTwoFactor,
+    CreateVerification, RequestMeta, TwoFactor, UpdateTwoFactor, UpdateUser,
+};
+use chrono::{Duration, Utc};
+use hkdf::Hkdf;
+use hmac::{Hmac, Mac};
 pub use otp_storage::{TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage};
+use rand::Rng;
+use rand::distributions::Alphanumeric;
+use serde::{Deserialize, Serialize};
+use sha2::Sha256;
+use std::fmt::Write;
+use std::sync::Arc;
+use totp_rs::{Algorithm, TOTP};
+use validator::Validate;
 
 const TWO_FACTOR_COOKIE_SUFFIX: &str = "two_factor";
 

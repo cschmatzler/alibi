@@ -17,5 +17,4 @@ mod compat;
 mod tests;
 
 use compat::helpers::*;
-
 use compat::shapes::compare_shapes;

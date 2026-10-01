@@ -1,5 +1,4 @@
 use super::*;
-
 use std::io::Write;
 
 /// Test organization CRUD endpoints against the spec.

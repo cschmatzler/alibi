@@ -1,24 +1,14 @@
 use super::token::create_email_verification_token;
-
 use super::*;
-
 use crate::plugins::test_helpers;
-
 use async_trait::async_trait;
-
 use better_auth_core::wire::UserView;
-
-use better_auth_core::{AuthResult, AuthSession, CreateUser, UpdateUser};
-
-use chrono::{Duration, Utc};
-
-use std::collections::HashMap;
-
-use std::sync::Arc;
-
-use std::sync::atomic::{AtomicU32, Ordering};
-
 use better_auth_core::{AuthPlugin, HttpMethod};
+use better_auth_core::{AuthResult, AuthSession, CreateUser, UpdateUser};
+use chrono::{Duration, Utc};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 // ------------------------------------------------------------------
 // Custom sender

@@ -22,19 +22,15 @@ mod compat;
 #[path = "compatibility_tests/tests.rs"]
 mod tests;
 
-use std::collections::{BTreeMap, HashSet};
-
 use better_auth::{
     AuthBuilder, AuthConfig, BetterAuth,
     plugins::EmailPasswordPlugin,
     prelude::{AuthRequest, HttpMethod},
 };
-
 use better_auth_seaorm::{Database, DatabaseConnection, SeaOrmStore};
-
 use compat::helpers::html_text_content;
-
 use serde_json::Value;
+use std::collections::{BTreeMap, HashSet};
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 

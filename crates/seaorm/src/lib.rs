@@ -14,24 +14,16 @@ pub mod store;
 
 pub mod session_fields;
 
+#[doc(hidden)]
+pub use better_auth_core as __private_core;
 pub use better_auth_seaorm_macros::AuthEntity;
-
 pub use hooks::{HookControl, SeaOrmHookContext, SeaOrmHooks, current_request_hook_context};
-
 pub use json_metadata::JsonMetadata;
-
 pub use schema::{
     SeaOrmAccountModel, SeaOrmSessionModel, SeaOrmUserModel, SeaOrmVerificationModel,
 };
-
 pub use sea_orm;
-
-pub use sea_orm::{Database, DatabaseConnection};
-
-pub use store::SeaOrmStore;
-
-#[doc(hidden)]
-pub use better_auth_core as __private_core;
-
 #[doc(hidden)]
 pub use sea_orm as __private_seaorm;
+pub use sea_orm::{Database, DatabaseConnection};
+pub use store::SeaOrmStore;

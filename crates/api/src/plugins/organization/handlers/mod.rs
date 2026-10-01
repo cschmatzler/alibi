@@ -20,23 +20,15 @@ mod validation;
 
 pub(in crate::plugins) mod invitation_acceptance;
 
-pub use invitation::*;
-
-pub use member::*;
-
-pub use org::*;
-
-use better_auth_core::entity::{AuthMember, AuthSession, AuthUser};
-
-use better_auth_core::error::{AuthError, AuthResult};
-
-use better_auth_core::plugin::AuthContext;
-
-use better_auth_core::types::{AuthRequest, AuthResponse};
-
 use super::OrganizationConfig;
-
 use super::types::{HasPermissionRequest, HasPermissionResponse};
+use better_auth_core::entity::{AuthMember, AuthSession, AuthUser};
+use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::plugin::AuthContext;
+use better_auth_core::types::{AuthRequest, AuthResponse};
+pub use invitation::*;
+pub use member::*;
+pub use org::*;
 
 /// Helper function to require authenticated session
 ///

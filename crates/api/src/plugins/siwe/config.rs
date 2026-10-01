@@ -1,11 +1,10 @@
-use std::fmt;
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use better_auth_core::AuthResponse;
 use rand::Rng;
 use rand::distributions::Alphanumeric;
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::sync::Arc;
 
 /// An application callback may reject with an endpoint response or fail while contacting a wallet,
 /// identity, or nonce provider.

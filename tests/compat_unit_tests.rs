@@ -25,5 +25,4 @@ use compat::schema::{
     OpenApiProfile, extract_success_schema, load_openapi_spec, load_openapi_spec_with_profile,
     resolve_object_schema,
 };
-
 use compat::shapes::{check_camel_case_fields, compare_shapes, extract_type_signature};

@@ -1,19 +1,11 @@
 use super::*;
-
 use crate::plugins::test_helpers;
-
 use better_auth_core::entity::{AuthAccount, AuthSession};
-
 use better_auth_core::utils::cookie_utils::related_cookie_name;
-
 use better_auth_core::wire::{SessionView, UserView};
-
 use better_auth_core::{AuthPlugin, CreateSession, CreateUser, HttpMethod};
-
 use chrono::{Duration, Utc};
-
 use std::collections::HashMap;
-
 use std::sync::Arc;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

@@ -1,12 +1,9 @@
 //! Proc macros used by the Better Auth root crates.
 
 use proc_macro::TokenStream as ProcMacroTokenStream;
-
-use syn::{Data, DeriveInput, Fields, Ident, LitStr, Type, parse_macro_input};
-
 use proc_macro2::TokenStream;
-
 use quote::quote;
+use syn::{Data, DeriveInput, Fields, Ident, LitStr, Type, parse_macro_input};
 
 struct FieldInfo {
     ident: Ident,

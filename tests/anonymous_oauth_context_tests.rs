@@ -15,32 +15,21 @@
 mod tests;
 
 use async_trait::async_trait;
-
 use axum::{
     Json, Router,
     routing::{get, post},
 };
-
 use better_auth::plugins::anonymous::{AnonymousConfig, AnonymousLink, LinkAnonymousAccount};
-
 use better_auth::plugins::oauth::OAuthProvider;
-
 use better_auth::plugins::{AnonymousPlugin, EmailPasswordPlugin, OAuthPlugin};
-
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-
 use better_auth_core::{
     AuthRequest, AuthResponse, AuthResult, AuthSession, AuthUser, AuthVerification, HttpMethod,
 };
-
 use better_auth_seaorm::sea_orm::{ConnectionTrait, Statement};
-
 use better_auth_seaorm::{Database, SeaOrmStore};
-
 use chrono::{Duration, Utc};
-
 use serde_json::{Value, json};
-
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},

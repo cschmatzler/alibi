@@ -1,7 +1,5 @@
 use crate::plugins::authentication_helpers::{JsonField, JsonFieldKind, RequestBody};
-
 use better_auth_core::{AuthError, wire::UserView};
-
 use serde::Deserialize;
 
 #[derive(Clone)]

@@ -2,11 +2,8 @@
 mod tests;
 
 use super::Middleware;
-
 use crate::error::AuthResult;
-
 use crate::types::{AuthRequest, AuthResponse};
-
 use async_trait::async_trait;
 
 /// Configuration for body size limit middleware.

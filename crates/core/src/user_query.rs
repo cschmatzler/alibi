@@ -1,10 +1,9 @@
 //! Internal helpers for applying admin user-list query semantics.
 
-use chrono::{DateTime, Utc};
-use std::cmp::Ordering;
-
 use crate::entity::AuthUser;
 use crate::types::{ListUsersParams, UserFilterValue};
+use chrono::{DateTime, Utc};
+use std::cmp::Ordering;
 
 fn string_field(user: &impl AuthUser, field: &str) -> Option<String> {
     match field {

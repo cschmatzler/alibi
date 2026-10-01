@@ -5,26 +5,18 @@ mod crypto;
 #[cfg(test)]
 mod tests;
 
-use std::{str::FromStr, sync::Arc};
-
+use super::token_crypto::{decrypt, encrypt};
 use async_trait::async_trait;
-
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-
 use better_auth_core::wire::{SessionView, UserView};
-
 use better_auth_core::{
     AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
     AuthRoute, AuthSchema, CreateJwk, HttpMethod, Jwk,
 };
-
 use chrono::{DateTime, Duration, Utc};
-
 use serde::{Deserialize, Serialize};
-
 use serde_json::{Map, Value, json};
-
-use super::token_crypto::{decrypt, encrypt};
+use std::{str::FromStr, sync::Arc};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum JwtAlgorithm {

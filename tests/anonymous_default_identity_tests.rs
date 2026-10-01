@@ -10,15 +10,10 @@
 mod tests;
 
 use better_auth::plugins::AnonymousPlugin;
-
 use better_auth::plugins::anonymous::AnonymousConfig;
-
 use better_auth::{AuthBuilder, AuthConfig};
-
 use better_auth_core::{AuthRequest, AuthSession, AuthUser, HttpMethod};
-
 use better_auth_seaorm::{Database, SeaOrmStore};
-
 use serde_json::{Value, json};
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

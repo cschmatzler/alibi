@@ -3,9 +3,7 @@
 mod tests;
 
 use super::entities::{invitation, organization_role, team, team_member};
-
 use sea_orm::{EntityName, Schema};
-
 use sea_orm_migration::prelude::*;
 
 pub(super) struct OrganizationExtensions;

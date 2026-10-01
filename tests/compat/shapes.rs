@@ -3,9 +3,8 @@
 //! These utilities compare two JSON values structurally (ignoring dynamic
 //! values like IDs and tokens) and verify field-naming conventions.
 
-use serde_json::Value;
-
 use super::validation::json_type_name;
+use serde_json::Value;
 
 // ---------------------------------------------------------------------------
 // Shape comparison

@@ -61,62 +61,49 @@ pub mod utils;
 pub mod wire;
 
 // Re-export commonly used items
+#[doc(hidden)]
+pub use crate as __private_core;
 pub use authenticated_user::AuthenticatedUser;
-
 // Re-export commonly used items
 pub use background_tasks::{BackgroundTaskCompletion, BackgroundTaskHandler};
-
 // Re-export commonly used items
 pub use better_auth_macros::{AuthSchema, PluginConfig};
-
 pub use cache::{
     CacheVersionContext, CacheVersionSource, CookieCacheVersion, CookieCacheVersionResolver,
 };
-
 pub use config::{
     AccountConfig, AccountLinkingConfig, AdvancedConfig, AdvancedDatabaseConfig, AuthConfig,
     CookieAttributes, CookieCacheConfig, CookieCacheStrategy, CookieOverride, CrossSubDomainConfig,
     IpAddressConfig, JwtConfig, OAuthStateStrategy, PasswordConfig, SameSite, SessionConfig,
     core_paths, extract_origin,
 };
-
 pub use email::{ConsoleEmailProvider, EmailProvider};
-
 pub use entity::{
     AuthAccount, AuthApiKey, AuthInvitation, AuthMember, AuthOrganization, AuthPasskey,
     AuthSession, AuthTwoFactor, AuthUser, AuthVerification, MemberUserView,
 };
-
 pub use error::{
     AuthError, AuthResult, DatabaseError, validate_request_body, validation_error_response,
 };
-
 pub use hooks::{RequestHookContext, with_request_hook_context, with_request_hook_context_value};
-
 pub use middleware::{
     BodyLimitConfig, BodyLimitMiddleware, CorsConfig, CorsMiddleware, CsrfConfig, CsrfMiddleware,
     EndpointRateLimit, Middleware, RateLimitConfig, RateLimitMiddleware,
 };
-
 pub use openapi::{
     OpenApiBuilder, OpenApiEndpoint, OpenApiField, OpenApiInfo, OpenApiModel, OpenApiOperation,
     OpenApiRegistry, OpenApiResponse, OpenApiSpec, PluginOpenApiMetadata,
 };
-
 pub use plugin::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRoute, BeforeRequestAction, ContextExtensions,
     VerificationEmailOverride, VerificationEmailOverrideHandle,
 };
-
 pub use schema::AuthSchema;
-
 pub use session::SessionManager;
-
 pub use store::{
     AuthStore, AuthTransaction, CacheAdapter, ConsumeApiKeyResult, MemoryCacheAdapter,
     WalletAddressStore, transaction,
 };
-
 pub use types::{
     ApiKey, AuthRequest, AuthResponse, CodeMessageResponse, CreateAccount, CreateApiKey,
     CreateDeviceCode, CreateInvitation, CreateMember, CreateOrganization, CreatePasskey,
@@ -129,18 +116,11 @@ pub use types::{
     UpdatePasskey, UpdateTeam, UpdateTwoFactor, UpdateUser, UpdateUserRequest, UpdateUserResponse,
     UpdateVerification, UserFilterValue, ValidationErrorResponse, WalletAddress,
 };
-
+pub use types::{CreateJwk, Jwk};
 pub use utils::password::{PasswordHasher, ScryptHasher, hash_password, verify_password};
-
 #[doc(hidden)]
 pub use uuid;
-
 pub use wire::{
     AccountView, ApiKeyView, InvitationView, OrganizationView, PasskeyView, SessionView, UserView,
     VerificationView,
 };
-
-#[doc(hidden)]
-pub use crate as __private_core;
-
-pub use types::{CreateJwk, Jwk};

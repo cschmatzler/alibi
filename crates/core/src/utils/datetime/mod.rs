@@ -4,7 +4,6 @@
 mod tests;
 
 use chrono::{DateTime, SecondsFormat, Utc};
-
 use serde::Serializer;
 
 /// Serialize a timestamp with exactly three fractional digits and a UTC suffix.

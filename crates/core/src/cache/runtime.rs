@@ -1,14 +1,9 @@
 //! Request-local cache cookies and genuine stored/cached snapshot transitions.
 use super::{CacheValidation, CacheVersionContext};
-
 use crate::types::RequestExtensions;
-
 use crate::utils::cookie_utils::{related_cookie_name, sign_cookie_value, verify_cookie_value};
-
 use crate::{AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, AuthSession};
-
 use indexmap::IndexMap;
-
 use std::sync::Mutex;
 
 #[derive(Debug)]

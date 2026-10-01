@@ -10,15 +10,10 @@
 mod tests;
 
 use better_auth::AuthConfig;
-
 use better_auth_core::store::OrganizationStore;
-
 use better_auth_core::{CreateOrganization, UpdateOrganization};
-
 use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
-
 use better_auth_seaorm::{Database, SeaOrmStore};
-
 use serde_json::json;
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

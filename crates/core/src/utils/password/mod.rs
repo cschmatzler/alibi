@@ -7,24 +7,16 @@
 #[cfg(test)]
 mod tests;
 
+use crate::error::{AuthError, AuthResult};
+use crate::plugin::AuthContext;
+use crate::schema::AuthSchema;
+use crate::types::UpdateUser;
+use async_trait::async_trait;
+use rand::{RngCore, rngs::OsRng};
+use serde::Serialize;
 use std::fmt::Write;
 use std::sync::Arc;
-
-use async_trait::async_trait;
-
-use rand::{RngCore, rngs::OsRng};
-
-use serde::Serialize;
-
 use unicode_normalization::UnicodeNormalization;
-
-use crate::error::{AuthError, AuthResult};
-
-use crate::plugin::AuthContext;
-
-use crate::schema::AuthSchema;
-
-use crate::types::UpdateUser;
 
 // ---------------------------------------------------------------------------
 // PasswordHasher trait

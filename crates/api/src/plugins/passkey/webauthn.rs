@@ -1,33 +1,20 @@
-use std::time::Duration;
-
+use super::PasskeyConfig;
 use base64::Engine;
-
 use base64::engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD};
-
 use better_auth_core::{AuthConfig, AuthError, AuthRequest, AuthResult};
-
 use chrono::Utc;
-
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
-
 use rand::seq::SliceRandom;
-
 use serde::{Deserialize, Serialize};
-
 use serde_json::{Value, json};
-
+use std::time::Duration;
 use url::Url;
-
 use uuid::Uuid;
-
 use webauthn_rs::prelude::{
     Base64UrlSafeData, CreationChallengeResponse, CredentialID, DiscoverableAuthentication,
     Passkey as WebauthnPasskey, PublicKeyCredential, RegisterPublicKeyCredential,
     RequestChallengeResponse, Webauthn, WebauthnBuilder,
 };
-
-use super::PasskeyConfig;
-
 use webauthn_rs_core::{
     WebauthnCore,
     error::WebauthnError,

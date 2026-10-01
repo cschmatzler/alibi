@@ -1,33 +1,26 @@
-use better_auth_core::{
-    AuthAccount, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema,
-    AuthUser, AuthVerification, CreateAccount, CreateUser, CreateVerification, UpdateAccount,
-    UpdateUser,
-};
-
-use chrono::Utc;
-
-use rand::{Rng, rngs::OsRng};
-
-use serde_json::json;
-
-use std::sync::Arc;
-
 use super::{
     PhoneNumberPlugin, PhoneNumberVerification, PhoneOtpDelivery,
     types::{
         ResetRequest, SendRequest, SignInRequest, VerifyRequest, phone_error, reject_verified_input,
     },
 };
-
 use crate::plugins::authentication_helpers::{
     find_verification, parse_body, prepare_additional_user_fields, session_response,
     session_response_with_remember,
 };
-
 use crate::plugins::{
     email_password::EmailPasswordConfig,
     password_management::{OnPasswordResetCallback, PasswordManagementConfig},
 };
+use better_auth_core::{
+    AuthAccount, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema,
+    AuthUser, AuthVerification, CreateAccount, CreateUser, CreateVerification, UpdateAccount,
+    UpdateUser,
+};
+use chrono::Utc;
+use rand::{Rng, rngs::OsRng};
+use serde_json::json;
+use std::sync::Arc;
 
 struct PasswordSettings {
     minimum: usize,

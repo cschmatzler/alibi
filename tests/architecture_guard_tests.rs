@@ -14,7 +14,6 @@
 mod tests;
 
 use std::fs;
-
 use std::path::{Path, PathBuf};
 
 fn collect_files(root: &Path, files: &mut Vec<PathBuf>) {

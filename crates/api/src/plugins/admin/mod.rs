@@ -11,31 +11,22 @@ mod validation;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
-
+use crate::plugins::helpers::{delete_session_cookie_headers, get_cookie};
+pub use access::RolePermissions;
+use access::{has_permission, is_admin_role, is_admin_user_id};
 use better_auth_core::entity::AuthUser;
-
 use better_auth_core::utils::cookie_utils::{
     create_clear_cookie, create_session_cookie_with_max_age, create_session_like_cookie,
     related_cookie_name,
 };
-
 use better_auth_core::utils::username::{UsernameValidationError, validate_username};
-
 use better_auth_core::wire::{SessionView, UserView};
-
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, ErrorCodeMessageResponse,
 };
-
 pub(in crate::plugins) use callbacks::BannedUserMessagePolicy;
-
 pub use callbacks::{AdminBannedUserMessage, AdminBannedUserMessageHandler};
-
-use crate::plugins::helpers::{delete_session_cookie_headers, get_cookie};
-
-use access::{has_permission, is_admin_role, is_admin_user_id};
-
+use handlers::AdminDateOperationError;
 use handlers::{
     AdminSessionCookiePayload, ban_user_core, create_admin_session_cookie_value, create_user_core,
     decode_admin_session_cookie_value, get_user_core, has_permission_core, impersonate_user_core,
@@ -43,16 +34,12 @@ use handlers::{
     revoke_user_sessions_core, set_role_core, set_user_password_core, stop_impersonating_core,
     unban_user_core, update_user_core,
 };
-
+use std::collections::HashMap;
 use types::{
     AdminUpdateUserRequest, BanUserRequest, CreateUserRequest, HasPermissionRequest,
     ListUsersQueryParams, RevokeSessionRequest, SetRoleRequest, SetUserPasswordRequest,
     UserIdRequest,
 };
-
-pub use access::RolePermissions;
-
-use handlers::AdminDateOperationError;
 
 const MESSAGE_CHANGE_ROLE: &str = "You are not allowed to change users role";
 

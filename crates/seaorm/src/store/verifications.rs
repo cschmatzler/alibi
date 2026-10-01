@@ -2,27 +2,19 @@
 #[path = "verification_tests.rs"]
 mod tests;
 
+use super::{SeaOrmStore, cancelled_by_hook, map_db_err};
+use crate::schema::{AuthSchema, SeaOrmVerificationModel};
 use async_trait::async_trait;
-
+use better_auth_core::entity::AuthVerification;
+use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::store::{VerificationStore, verification_reservation_key};
+use better_auth_core::types::{CreateVerification, UpdateVerification};
 use chrono::{DateTime, Utc};
-
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, Iterable,
     QueryFilter, QueryOrder, QuerySelect, QueryTrait, SqliteTransactionMode, TransactionOptions,
     TransactionTrait,
 };
-
-use better_auth_core::store::{VerificationStore, verification_reservation_key};
-
-use better_auth_core::entity::AuthVerification;
-
-use better_auth_core::error::{AuthError, AuthResult};
-
-use crate::schema::{AuthSchema, SeaOrmVerificationModel};
-
-use better_auth_core::types::{CreateVerification, UpdateVerification};
-
-use super::{SeaOrmStore, cancelled_by_hook, map_db_err};
 
 impl<S> SeaOrmStore<S>
 where

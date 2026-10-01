@@ -67,22 +67,20 @@ pub mod __private_test_support {
     }
 }
 
-use std::marker::PhantomData;
-use std::sync::Arc;
-
+use crate::hooks::{SeaOrmHookContext, SeaOrmHooks, current_request_hook_context};
+use crate::schema::{
+    AuthSchema, SeaOrmAccountModel, SeaOrmSessionModel, SeaOrmUserModel, SeaOrmVerificationModel,
+};
 use async_trait::async_trait;
+use better_auth_core::config::AuthConfig;
+use better_auth_core::error::{AuthError, AuthResult, DatabaseError};
 use better_auth_core::store::{
     AuthTransaction, BoxedTransactionValue, TransactionStore, TransactionWork,
 };
 use chrono::{DateTime, Utc};
 use sea_orm::{DatabaseConnection, DatabaseTransaction, DbErr, SqlErr, TransactionTrait};
-
-use crate::hooks::{SeaOrmHookContext, SeaOrmHooks, current_request_hook_context};
-use crate::schema::{
-    AuthSchema, SeaOrmAccountModel, SeaOrmSessionModel, SeaOrmUserModel, SeaOrmVerificationModel,
-};
-use better_auth_core::config::AuthConfig;
-use better_auth_core::error::{AuthError, AuthResult, DatabaseError};
+use std::marker::PhantomData;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct SeaOrmStore<S: AuthSchema> {

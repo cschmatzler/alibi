@@ -16,33 +16,24 @@ mod application_model;
 #[path = "session_fields_tests/tests.rs"]
 mod tests;
 
+use application_model::ApplicationSchema;
 use async_trait::async_trait;
-
 use better_auth::plugins::{
     EmailPasswordPlugin, OpenApiPlugin, OrganizationPlugin, SessionManagementPlugin,
 };
-
 use better_auth::{
     AuthBuilder, AuthConfig,
     field_policy::{FieldConfig, FieldValues},
 };
-
 use better_auth_core::{AuthRequest, AuthResult, CreateSession, HttpMethod, utils::json::JsValue};
-
 use better_auth_seaorm::sea_orm::{ConnectionTrait, Statement};
-
 use better_auth_seaorm::store::__private_test_support::migrator::run_migrations;
-
 use better_auth_seaorm::{Database, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore};
-
 use serde_json::{Value, json};
-
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
-
-use application_model::ApplicationSchema;
 
 struct ApplicationHook;
 

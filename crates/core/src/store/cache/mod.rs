@@ -131,18 +131,13 @@ pub mod redis_adapter {
 #[cfg(test)]
 mod tests;
 
-use async_trait::async_trait;
-
-use chrono::{DateTime, Duration, Utc};
-
-use std::collections::HashMap;
-
-use std::sync::{Arc, Mutex};
-
 use crate::error::{AuthError, AuthResult};
-
+use async_trait::async_trait;
+use chrono::{DateTime, Duration, Utc};
 #[cfg(feature = "redis-cache")]
 pub use redis_adapter::RedisAdapter;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 /// Cache adapter trait for session caching
 #[async_trait]

@@ -1,30 +1,19 @@
 use super::entities::member;
-
 use super::entities::organization_role::{self, Column, Entity};
-
 use super::{SeaOrmStore, map_db_err};
-
-use better_auth_core::error::{AuthError, AuthResult};
-
 use crate::schema::AuthSchema;
-
 use async_trait::async_trait;
-
+use better_auth_core::error::{AuthError, AuthResult};
 use better_auth_core::store::OrganizationRoleStore;
-
 use better_auth_core::types::{
     CreateOrganizationRole, OrganizationRole, OrganizationRoleSelector, UpdateOrganizationRole,
 };
-
 use chrono::Utc;
-
 use sea_orm::sea_query::Expr;
-
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, EntityTrait, PaginatorTrait, QueryFilter,
     QuerySelect, Set,
 };
-
 use uuid::Uuid;
 
 #[async_trait]

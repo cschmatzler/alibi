@@ -1,14 +1,9 @@
-use serde::{Deserialize, Serialize};
-
-use validator::Validate;
-
-use better_auth_core::entity::{AuthAccount, AuthUser};
-
-use better_auth_core::{AuthContext, AuthError, AuthResult};
-
-use better_auth_core::{AuthRequest, AuthResponse};
-
 use super::StatusResponse;
+use better_auth_core::entity::{AuthAccount, AuthUser};
+use better_auth_core::{AuthContext, AuthError, AuthResult};
+use better_auth_core::{AuthRequest, AuthResponse};
+use serde::{Deserialize, Serialize};
+use validator::Validate;
 
 /// Account management plugin for listing and unlinking user accounts.
 pub struct AccountManagementPlugin {

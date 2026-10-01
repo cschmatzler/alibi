@@ -7,21 +7,11 @@
 mod tests;
 
 use better_auth::plugins::magic_link::MagicLinkConfig;
-use better_auth::plugins::phone_number::PhoneNumberConfig;
-use std::sync::Arc;
-
-use std::sync::atomic::{AtomicU64, Ordering};
-
-use std::sync::{Mutex, Once, OnceLock};
-
 use better_auth::plugins::multi_session::MultiSessionPlugin;
-
 use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
-
+use better_auth::plugins::phone_number::PhoneNumberConfig;
 use better_auth::plugins::phone_number::PhoneNumberPlugin;
-
 use better_auth::plugins::siwe::{Eip191Verifier, RandomSiweNonce, SiweConfig, SiwePlugin};
-
 use better_auth::{
     AuthBuilder, AuthConfig, BetterAuth,
     plugins::{
@@ -43,12 +33,12 @@ use better_auth::{
     },
     prelude::{AuthRequest, HttpMethod},
 };
-
 use better_auth_seaorm::{Database, DatabaseConnection, SeaOrmStore};
-
 use reqwest::Url;
-
 use serde_json::Value;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, Once, OnceLock};
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 

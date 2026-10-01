@@ -16,9 +16,7 @@ mod compat;
 mod tests;
 
 use compat::helpers::{TestAuthOptions, create_test_auth_with_options};
-
 use serde_json::Value;
-
 use std::collections::BTreeSet;
 
 fn canonical(path: &str) -> String {

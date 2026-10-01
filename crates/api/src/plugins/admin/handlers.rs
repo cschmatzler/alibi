@@ -1,29 +1,20 @@
-use chrono::{DateTime, Duration, Utc};
-
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
-
-use serde::{Deserialize, Serialize};
-
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
-
-use better_auth_core::wire::{SessionView, UserView};
-
-use better_auth_core::{
-    AuthContext, AuthError, AuthResult, CreateAccount, CreateSession, UpdateUser,
-};
-
-use crate::plugins::StatusResponse;
-
 use super::access::has_permission;
-
 use super::types::{
     AdminUpdateUserRequest, AdminUserView, BanUserRequest, CreateUserRequest, GetUserQuery,
     HasPermissionRequest, ListSessionsResponse, ListUsersQueryParams, ListUsersResponse,
     PermissionResponse, RevokeSessionRequest, RoleInput, SessionUserResponse, SetRoleRequest,
     SetUserPasswordRequest, SuccessResponse, UserIdRequest, UserResponse,
 };
-
 use super::{AdminConfig, target_is_admin};
+use crate::plugins::StatusResponse;
+use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
+use better_auth_core::wire::{SessionView, UserView};
+use better_auth_core::{
+    AuthContext, AuthError, AuthResult, CreateAccount, CreateSession, UpdateUser,
+};
+use chrono::{DateTime, Duration, Utc};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use serde::{Deserialize, Serialize};
 
 const MESSAGE_USER_NOT_FOUND: &str = "User not found";
 

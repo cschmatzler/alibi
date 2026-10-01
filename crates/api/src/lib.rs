@@ -35,9 +35,8 @@ pub use plugins::email_verification::EmailVerificationPlugin;
 pub use plugins::oauth::OAuthPlugin;
 pub use plugins::oauth_proxy::{OAuthProxyConfig, OAuthProxyPlugin};
 pub use plugins::one_tap::{OneTapConfig, OneTapPlugin};
+pub use plugins::open_api::{OpenApiConfig, OpenApiPlugin};
 pub use plugins::passkey::{PasskeyConfig, PasskeyPlugin};
 pub use plugins::password_management::PasswordManagementPlugin;
 pub use plugins::session_management::SessionManagementPlugin;
 pub use plugins::two_factor::TwoFactorPlugin;
-
-pub use plugins::open_api::{OpenApiConfig, OpenApiPlugin};

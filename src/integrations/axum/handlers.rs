@@ -1,4 +1,6 @@
 #[cfg(feature = "axum")]
+use crate::BetterAuth;
+#[cfg(feature = "axum")]
 use axum::{
     Router,
     extract::{FromRef, FromRequestParts, Request, State},
@@ -7,29 +9,20 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-
+#[cfg(feature = "axum")]
+use better_auth_core::AuthSession;
+#[cfg(feature = "axum")]
+use better_auth_core::middleware::BodyLimitConfig;
+use better_auth_core::{AuthError, AuthRequest, AuthResponse, AuthSchema, HttpMethod, core_paths};
 #[cfg(feature = "axum")]
 use std::sync::{Arc, Mutex};
-
 #[cfg(feature = "axum")]
 use tokio::{
     sync::{mpsc, oneshot},
     task::{Id, JoinSet},
 };
-
 #[cfg(feature = "axum")]
 use tracing::{Instrument, instrument::WithSubscriber};
-
-#[cfg(feature = "axum")]
-use crate::BetterAuth;
-
-#[cfg(feature = "axum")]
-use better_auth_core::AuthSession;
-
-#[cfg(feature = "axum")]
-use better_auth_core::middleware::BodyLimitConfig;
-
-use better_auth_core::{AuthError, AuthRequest, AuthResponse, AuthSchema, HttpMethod, core_paths};
 
 #[cfg(feature = "axum")]
 type AxumAuthHandlerFuture = std::pin::Pin<Box<dyn Future<Output = Response> + Send>>;

@@ -54,9 +54,6 @@ mod user_with_extras {
 mod tests;
 
 use better_auth::seaorm::AuthEntity;
-
 use better_auth::seaorm::SeaOrmUserModel;
-
 use better_auth::seaorm::sea_orm;
-
 use better_auth::seaorm::sea_orm::entity::prelude::*;

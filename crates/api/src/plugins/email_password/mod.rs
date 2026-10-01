@@ -1,49 +1,33 @@
 #[cfg(test)]
 mod tests;
 
-use better_auth_core::field_policy::FieldValues;
-
-use async_trait::async_trait;
-
-use serde::{Deserialize, Serialize};
-
-use std::sync::Arc;
-
-use validator::Validate;
-
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
-
-use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
-
-use better_auth_core::{AuthError, AuthResult};
-
-use better_auth_core::{
-    AuthRequest, AuthResponse, CreateAccount, CreateSession, CreateUser, ErrorCodeMessageResponse,
-    HttpMethod, RequestMeta,
-};
-
 use super::{email_verification::EmailVerificationPlugin, two_factor};
-
+use crate::plugins::authentication_helpers::{
+    JsonField, JsonFieldKind, RequestBody, is_valid_email, parse_body,
+};
+use crate::plugins::helpers::{SessionIssueError, apply_default_role, issue_user_session};
+use async_trait::async_trait;
+use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
+use better_auth_core::field_policy::FieldValues;
 use better_auth_core::utils::cookie_utils::{
     create_session_cookie, create_session_cookie_with_max_age, create_session_like_cookie,
     related_cookie_name, sign_cookie_value,
 };
-
 use better_auth_core::utils::password::{self as password_utils, PasswordHasher};
-
 use better_auth_core::utils::username::{
     UsernameValidationError, normalize_username, normalize_username_fields, validate_username,
 };
-
 use better_auth_core::wire::UserView;
-
-use crate::plugins::authentication_helpers::{
-    JsonField, JsonFieldKind, RequestBody, is_valid_email, parse_body,
+use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
+use better_auth_core::{AuthError, AuthResult};
+use better_auth_core::{
+    AuthRequest, AuthResponse, CreateAccount, CreateSession, CreateUser, ErrorCodeMessageResponse,
+    HttpMethod, RequestMeta,
 };
-
-use crate::plugins::helpers::{SessionIssueError, apply_default_role, issue_user_session};
-
+use serde::{Deserialize, Serialize};
 use std::io::Write;
+use std::sync::Arc;
+use validator::Validate;
 
 const MESSAGE_INVALID_USERNAME_OR_PASSWORD: &str = "Invalid username or password";
 

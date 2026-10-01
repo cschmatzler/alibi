@@ -10,17 +10,11 @@
 mod tests;
 
 use better_auth::plugins::SessionManagementPlugin;
-
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-
 use better_auth_core::{AuthRequest, AuthResponse, AuthSession, AuthUser, CreateUser, HttpMethod};
-
 use better_auth_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
-
 use better_auth_seaorm::{Database, SeaOrmStore};
-
 use chrono::{Duration, Utc};
-
 use serde_json::{Value, json};
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

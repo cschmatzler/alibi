@@ -5,28 +5,20 @@ use super::oauth::handlers::{
     fetch_user_info_from_provider, parse_callback_user_payload, process_oauth_sign_in,
     validate_authorization_code_via_provider,
 };
-
 use super::oauth::state::{
     OAuthStatePayload, RecoveredOAuthServerContext, state_cookie_name, verified_server_context,
 };
-
 use super::oauth::{
     OAuthConfig, OAuthProcessPolicy, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoRequest,
 };
-
 use async_trait::async_trait;
-
 use better_auth_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, AuthSession, AuthVerification, BeforeRequestAction, HttpMethod, OAuthStateStrategy,
 };
-
 use chrono::{DateTime, Utc};
-
 use serde::{Deserialize, Serialize};
-
 use serde_json::{Value, json};
-
 use std::sync::atomic::{AtomicBool, Ordering};
 
 struct OAuthProxyUnhandledError(AtomicBool);

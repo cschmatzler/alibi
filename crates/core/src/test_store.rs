@@ -115,26 +115,14 @@ mod session_contract_tests {
     }
 }
 
-use std::collections::HashMap;
-
-use std::sync::{Arc, Mutex};
-
-use async_trait::async_trait;
-
-use chrono::{DateTime, Utc};
-
 use crate::config::AuthConfig;
-
 use crate::error::{AuthError, AuthResult};
-
 use crate::schema::AuthSchema;
-
 use crate::store::{
     AccountStore, ApiKeyStore, AuthStore, AuthTransaction, ConsumeApiKeyResult, DeviceCodeStore,
     InvitationStore, ListOrganizationMembersParams, MemberStore, OrganizationStore, PasskeyStore,
     SessionStore, TransactionStore, TwoFactorStore, UserStore, VerificationStore,
 };
-
 use crate::types::{
     ApiKey, CreateAccount, CreateApiKey, CreateDeviceCode, CreateInvitation, CreateMember,
     CreateOrganization, CreatePasskey, CreateSession, CreateTwoFactor, CreateUser,
@@ -142,8 +130,11 @@ use crate::types::{
     Organization, Passkey, TwoFactor, UpdateAccount, UpdateApiKey, UpdateDeviceCode,
     UpdateOrganization, UpdatePasskeyAuthentication, UpdateUser,
 };
-
 use crate::wire::{AccountView, SessionView, UserView, VerificationView};
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 pub struct BundledSchema;
 

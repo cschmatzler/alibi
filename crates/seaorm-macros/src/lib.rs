@@ -1,16 +1,11 @@
 //! Proc macros for the Better Auth `SeaORM` integration.
 
 use better_auth_schema_registry::{self as registry, EntityRole};
-
-use proc_macro_crate::{FoundCrate, crate_name};
-
-use proc_macro2::{Ident, Span, TokenStream};
-
-use quote::quote;
-
-use syn::{Data, DeriveInput, Fields, LitStr, Type, parse_macro_input};
-
 use proc_macro::TokenStream as ProcMacroTokenStream;
+use proc_macro_crate::{FoundCrate, crate_name};
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::quote;
+use syn::{Data, DeriveInput, Fields, LitStr, Type, parse_macro_input};
 
 fn found_crate_tokens(name: &str) -> Option<TokenStream> {
     match crate_name(name).ok()? {

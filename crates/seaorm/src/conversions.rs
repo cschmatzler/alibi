@@ -1,10 +1,8 @@
+use crate::store::entities;
 use better_auth_core::{
     ApiKey, DeviceCode, Invitation, InvitationStatus, Member, Organization, Passkey, TwoFactor,
 };
-
 use chrono::{DateTime, Utc};
-
-use crate::store::entities;
 
 impl From<&entities::organization::Model> for Organization {
     fn from(model: &entities::organization::Model) -> Self {

@@ -1,8 +1,32 @@
 //! Built-in plugins and plugin-specific configuration modules.
 
 pub use better_auth_api::OAuthPlugin;
+pub use better_auth_api::plugins::anonymous::{
+    self, AnonymousConfig, AnonymousIdentity, AnonymousLink, AnonymousPlugin, LinkAnonymousAccount,
+};
+pub use better_auth_api::plugins::api_key::{
+    ApiKeyCallbackContext, ApiKeyDefaultPermissions, ApiKeyErrorMessage, ApiKeyGenerationOptions,
+    ApiKeyGenerator, ApiKeyGetter, ApiKeyPermissions, ApiKeyValidator,
+    DeleteExpiredApiKeysResponse,
+};
+pub use better_auth_api::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
 pub use better_auth_api::plugins::email_verification::SendVerificationEmail;
+pub use better_auth_api::plugins::magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
+pub use better_auth_api::plugins::multi_session::{self, MultiSessionConfig, MultiSessionPlugin};
+pub use better_auth_api::plugins::one_tap::{
+    self, GoogleJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin,
+};
+pub use better_auth_api::plugins::open_api::{self, OpenApiConfig, OpenApiPlugin};
+pub use better_auth_api::plugins::passkey::{
+    AuthenticationResult, PasskeyAuthenticationAfterVerification, PasskeyAuthenticationConfig,
+    PasskeyAuthenticationContext, PasskeyRegistrationAfterVerification, PasskeyRegistrationConfig,
+    PasskeyRegistrationContext, PasskeyRegistrationOverride, PasskeyRegistrationUser,
+    PasskeyUserResolver, VerifiedPasskeyAuthentication, VerifiedPasskeyRegistration,
+};
 pub use better_auth_api::plugins::password_management::SendResetPassword;
+pub use better_auth_api::plugins::phone_number::{
+    PhoneNumberConfig, PhoneNumberPlugin, SendPhoneOtp,
+};
 pub use better_auth_api::plugins::two_factor::{
     SendTwoFactorOtp, TwoFactorBackupCipher, TwoFactorBackupStorage, TwoFactorOtpCipher,
     TwoFactorOtpHasher, TwoFactorOtpStorage,
@@ -20,34 +44,5 @@ pub use better_auth_api::plugins::{
     oauth_proxy, one_time_token, organization, passkey, password_management, phone_number,
     session_management, two_factor, user_management,
 };
-pub use better_auth_api::{OAuthProxyConfig, OAuthProxyPlugin};
-
-pub use better_auth_api::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
-pub use better_auth_api::plugins::magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
-pub use better_auth_api::plugins::multi_session::{self, MultiSessionConfig, MultiSessionPlugin};
-
-pub use better_auth_api::plugins::phone_number::{
-    PhoneNumberConfig, PhoneNumberPlugin, SendPhoneOtp,
-};
 pub use better_auth_api::plugins::{SiweConfig, SiwePlugin, siwe};
-
-pub use better_auth_api::plugins::api_key::{
-    ApiKeyCallbackContext, ApiKeyDefaultPermissions, ApiKeyErrorMessage, ApiKeyGenerationOptions,
-    ApiKeyGenerator, ApiKeyGetter, ApiKeyPermissions, ApiKeyValidator,
-    DeleteExpiredApiKeysResponse,
-};
-pub use better_auth_api::plugins::open_api::{self, OpenApiConfig, OpenApiPlugin};
-pub use better_auth_api::plugins::passkey::{
-    AuthenticationResult, PasskeyAuthenticationAfterVerification, PasskeyAuthenticationConfig,
-    PasskeyAuthenticationContext, PasskeyRegistrationAfterVerification, PasskeyRegistrationConfig,
-    PasskeyRegistrationContext, PasskeyRegistrationOverride, PasskeyRegistrationUser,
-    PasskeyUserResolver, VerifiedPasskeyAuthentication, VerifiedPasskeyRegistration,
-};
-
-pub use better_auth_api::plugins::one_tap::{
-    self, GoogleJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin,
-};
-
-pub use better_auth_api::plugins::anonymous::{
-    self, AnonymousConfig, AnonymousIdentity, AnonymousLink, AnonymousPlugin, LinkAnonymousAccount,
-};
+pub use better_auth_api::{OAuthProxyConfig, OAuthProxyPlugin};

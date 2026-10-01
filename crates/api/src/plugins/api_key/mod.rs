@@ -13,37 +13,25 @@ mod tests;
 mod crud_tests;
 
 use base64::Engine;
-
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-
-use rand::seq::SliceRandom;
-
-use sha2::{Digest, Sha256};
-
-use std::sync::{Arc, Mutex};
-
 use better_auth_core::entity::AuthUser;
-
 use better_auth_core::{AuthContext, AuthError, AuthResult, BeforeRequestAction};
-
 use better_auth_core::{AuthRequest, AuthResponse};
-
 pub use callbacks::{
     ApiKeyCallbackContext, ApiKeyDefaultPermissions, ApiKeyGenerationOptions, ApiKeyGenerator,
     ApiKeyGetter, ApiKeyPermissions, ApiKeyValidator,
 };
-
+use handlers::{create_key_core, delete_key_core, get_key_core, list_keys_core, update_key_core};
+use rand::seq::SliceRandom;
+use sha2::{Digest, Sha256};
+use std::sync::{Arc, Mutex};
+pub use types::{
+    CreateKeyRequest, CreateKeyResponse, DeleteExpiredApiKeysResponse, UpdateKeyRequest,
+};
+use types::{DeleteKeyRequest, ListKeysQuery, parse_api_key_body};
 pub use verification::{
     ApiKeyErrorDetails, ApiKeyErrorMessage, ApiKeyValidationError, ApiKeyVerificationError,
     VerifyApiKey,
-};
-
-use handlers::{create_key_core, delete_key_core, get_key_core, list_keys_core, update_key_core};
-
-use types::{DeleteKeyRequest, ListKeysQuery, parse_api_key_body};
-
-pub use types::{
-    CreateKeyRequest, CreateKeyResponse, DeleteExpiredApiKeysResponse, UpdateKeyRequest,
 };
 
 // ---------------------------------------------------------------------------

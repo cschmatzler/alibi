@@ -4,11 +4,8 @@ use better_auth_core::{
     AuthAccount, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema,
     AuthSession, AuthUser, CreateUser, CreateVerification, UpdateUser,
 };
-
 use chrono::{Duration, Utc};
-
 use serde::de::DeserializeOwned;
-
 use serde_json::Value;
 
 #[derive(Clone, Copy)]

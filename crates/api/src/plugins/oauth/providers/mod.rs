@@ -2,17 +2,11 @@
 mod tests;
 
 use async_trait::async_trait;
-
 use chrono::{DateTime, Utc};
-
 use serde::Deserialize;
-
 use serde::de::DeserializeOwned;
-
 use serde_json::Value;
-
 use std::collections::HashMap;
-
 use std::sync::Arc;
 
 /// Configuration for the OAuth plugin, containing all registered providers.

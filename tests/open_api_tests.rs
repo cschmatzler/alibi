@@ -13,24 +13,16 @@
 mod tests;
 
 use async_trait::async_trait;
-
 use better_auth::plugin::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRoute, OpenApiEndpoint, OpenApiField,
     OpenApiModel, PluginOpenApiMetadata,
 };
-
 use better_auth::plugins::{OpenApiConfig, OpenApiPlugin};
-
 use better_auth::{AuthBuilder, AuthConfig, AuthResult, AuthSchema};
-
 use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
-
 use better_auth_seaorm::store::entities::{account, session, user, verification};
-
 use better_auth_seaorm::{Database, SeaOrmStore};
-
 use serde_json::{Value, json};
-
 use std::sync::Arc;
 
 struct AppSchema;

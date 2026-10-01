@@ -1,5 +1,4 @@
 use super::*;
-
 use std::io::Write;
 
 /// Run selected spec-driven endpoint validations in a single smoke test.

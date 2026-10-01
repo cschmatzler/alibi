@@ -55,12 +55,9 @@ async fn test_list_sessions_integration() {
 // Upstream source: packages/better-auth/src/api/routes public endpoint handler matching this request path; adapted to the Rust integration endpoint case.
 #[tokio::test]
 async fn test_revoke_session_integration() {
-    use better_auth::prelude::CreateSession;
-
-    use chrono::{Duration, Utc};
-
     use better_auth::prelude::AuthRequest;
-
+    use better_auth::prelude::CreateSession;
+    use chrono::{Duration, Utc};
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -161,15 +158,11 @@ async fn test_forget_password_integration() {
 // Upstream source: packages/better-auth/src/api/routes public endpoint handler matching this request path; adapted to the Rust integration endpoint case.
 #[tokio::test]
 async fn test_reset_password_integration() {
-    use better_auth::prelude::CreateVerification;
-
-    use chrono::{Duration, Utc};
-
-    use uuid::Uuid;
-
     use better_auth::prelude::AuthRequest;
-
+    use better_auth::prelude::CreateVerification;
+    use chrono::{Duration, Utc};
     use std::collections::HashMap;
+    use uuid::Uuid;
 
     let auth = create_test_auth_memory().await;
     let (_user_id, _session_token) = create_test_user_and_session(Arc::clone(&auth)).await;
@@ -268,15 +261,11 @@ async fn test_change_password_with_revocation_integration() {
 // Upstream source: packages/better-auth/src/api/routes public endpoint handler matching this request path; adapted to the Rust integration endpoint case.
 #[tokio::test]
 async fn test_reset_password_token_integration() {
-    use better_auth::prelude::CreateVerification;
-
-    use chrono::{Duration, Utc};
-
-    use uuid::Uuid;
-
     use better_auth::prelude::AuthRequest;
-
+    use better_auth::prelude::CreateVerification;
+    use chrono::{Duration, Utc};
     use std::collections::HashMap;
+    use uuid::Uuid;
 
     let auth = create_test_auth_memory().await;
     let (_user_id, _session_token) = create_test_user_and_session(Arc::clone(&auth)).await;
@@ -347,7 +336,6 @@ async fn test_error_endpoint() {
 #[tokio::test]
 async fn test_get_session_post_requires_defer_session_refresh() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -379,7 +367,6 @@ async fn test_get_session_post_requires_defer_session_refresh() {
 #[tokio::test]
 async fn test_delete_user_post_method() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -413,9 +400,7 @@ async fn test_delete_user_post_method() {
 #[tokio::test]
 async fn test_set_password_public_route_absent_for_social_user() {
     use better_auth::prelude::{AuthRequest, CreateSession, CreateUser};
-
     use chrono::{Duration, Utc};
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -468,7 +453,6 @@ async fn test_set_password_public_route_absent_for_social_user() {
 #[tokio::test]
 async fn test_set_password_already_has_password() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -503,7 +487,6 @@ async fn test_set_password_already_has_password() {
 #[tokio::test]
 async fn test_set_password_unauthenticated() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -532,9 +515,7 @@ async fn test_set_password_unauthenticated() {
 #[tokio::test]
 async fn test_revoke_other_sessions_integration() {
     use better_auth::prelude::{AuthRequest, CreateSession};
-
     use chrono::{Duration, Utc};
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -587,7 +568,6 @@ async fn test_revoke_other_sessions_integration() {
 #[tokio::test]
 async fn test_cookie_based_auth() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -630,7 +610,6 @@ async fn test_cookie_based_auth() {
 #[tokio::test]
 async fn test_bare_bearer_cannot_override_an_invalid_session_cookie() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -684,7 +663,6 @@ async fn test_bare_bearer_cannot_override_an_invalid_session_cookie() {
 #[tokio::test]
 async fn test_unauthorized_password_operations() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -714,7 +692,6 @@ async fn test_unauthorized_password_operations() {
 #[tokio::test]
 async fn test_change_email_success() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -752,7 +729,6 @@ async fn test_change_email_success() {
 #[tokio::test]
 async fn test_change_email_duplicate() {
     use better_auth::prelude::{AuthRequest, CreateUser};
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -793,7 +769,6 @@ async fn test_change_email_duplicate() {
 #[tokio::test]
 async fn test_change_email_unauthenticated() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -820,9 +795,7 @@ async fn test_change_email_unauthenticated() {
 #[tokio::test]
 async fn test_delete_user_callback_success() {
     use better_auth::prelude::{AuthRequest, CreateVerification};
-
     use chrono::{Duration, Utc};
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -876,7 +849,6 @@ async fn test_delete_user_callback_success() {
 #[tokio::test]
 async fn test_delete_user_callback_invalid_token() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -910,7 +882,6 @@ async fn test_delete_user_callback_invalid_token() {
 #[tokio::test]
 async fn test_list_accounts_empty() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -945,7 +916,6 @@ async fn test_list_accounts_empty() {
 #[tokio::test]
 async fn test_list_accounts_with_account() {
     use better_auth::prelude::{AuthRequest, CreateAccount};
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -1005,7 +975,6 @@ async fn test_list_accounts_with_account() {
 #[tokio::test]
 async fn test_unlink_account_success() {
     use better_auth::prelude::{AuthRequest, CreateAccount};
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -1079,9 +1048,7 @@ async fn test_unlink_account_success() {
 #[tokio::test]
 async fn test_unlink_last_account_fails() {
     use better_auth::prelude::{AuthRequest, CreateAccount, CreateSession, CreateUser};
-
     use chrono::{Duration, Utc};
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -1149,7 +1116,6 @@ async fn test_unlink_last_account_fails() {
 #[tokio::test]
 async fn test_list_accounts_unauthenticated() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -1612,7 +1578,6 @@ async fn test_concurrent_requests() {
 #[tokio::test]
 async fn test_sign_up_with_username_and_sign_in() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -1674,7 +1639,6 @@ async fn test_sign_up_with_username_and_sign_in() {
 #[tokio::test]
 async fn test_sign_in_username_wrong_password() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -1723,7 +1687,6 @@ async fn test_sign_in_username_wrong_password() {
 #[tokio::test]
 async fn test_sign_in_username_nonexistent() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -1774,7 +1737,6 @@ async fn test_api_key_create() {
 #[tokio::test]
 async fn test_api_key_create_with_options() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let (auth, _user_id, token) = create_auth_with_apikey().await;
@@ -1815,7 +1777,6 @@ async fn test_api_key_create_with_options() {
 #[tokio::test]
 async fn test_api_key_get() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let (auth, _user_id, token) = create_auth_with_apikey().await;
@@ -1855,7 +1816,6 @@ async fn test_api_key_get() {
 #[tokio::test]
 async fn test_api_key_list() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let (auth, _user_id, token) = create_auth_with_apikey().await;
@@ -1892,7 +1852,6 @@ async fn test_api_key_list() {
 #[tokio::test]
 async fn test_api_key_update() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let (auth, _user_id, token) = create_auth_with_apikey().await;
@@ -1963,7 +1922,6 @@ async fn test_delete_user_removes_their_api_keys() {
 #[tokio::test]
 async fn test_api_key_delete() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let (auth, _user_id, token) = create_auth_with_apikey().await;
@@ -2015,7 +1973,6 @@ async fn test_api_key_delete() {
 #[tokio::test]
 async fn test_api_key_create_unauthenticated() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -2042,7 +1999,6 @@ async fn test_api_key_create_unauthenticated() {
 #[tokio::test]
 async fn test_api_key_list_unauthenticated() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let auth = create_test_auth_memory().await;
@@ -2064,7 +2020,6 @@ async fn test_api_key_list_unauthenticated() {
 #[tokio::test]
 async fn test_api_key_get_other_users_key() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let (auth, _user_id, token1) = create_auth_with_apikey().await;
@@ -2118,7 +2073,6 @@ async fn test_api_key_get_other_users_key() {
 #[tokio::test]
 async fn test_api_key_delete_other_users_key() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let (auth, _user_id, token1) = create_auth_with_apikey().await;
@@ -2172,7 +2126,6 @@ async fn test_api_key_delete_other_users_key() {
 #[tokio::test]
 async fn test_api_key_update_other_users_key() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let (auth, _user_id, token1) = create_auth_with_apikey().await;
@@ -2229,7 +2182,6 @@ async fn test_api_key_update_other_users_key() {
 #[tokio::test]
 async fn test_api_key_list_empty() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let (auth, _user_id, token) = create_auth_with_apikey().await;
@@ -2259,7 +2211,6 @@ async fn test_api_key_list_empty() {
 #[tokio::test]
 async fn test_api_key_get_missing_id() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let (auth, _user_id, token) = create_auth_with_apikey().await;
@@ -2285,7 +2236,6 @@ async fn test_api_key_get_missing_id() {
 #[tokio::test]
 async fn test_api_key_get_nonexistent() {
     use better_auth::prelude::AuthRequest;
-
     use std::collections::HashMap;
 
     let (auth, _user_id, token) = create_auth_with_apikey().await;

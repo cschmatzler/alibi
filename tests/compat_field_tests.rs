@@ -16,7 +16,5 @@ mod compat;
 mod tests;
 
 use better_auth::prelude::CreateAccount;
-
 use compat::helpers::*;
-
 use compat::shapes::{check_camel_case_fields, extract_type_signature};

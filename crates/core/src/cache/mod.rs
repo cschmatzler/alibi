@@ -8,22 +8,15 @@ mod date;
 pub mod runtime;
 
 use crate::{AuthResult, AuthSession, AuthUser, SessionView, UserView};
-
 use async_trait::async_trait;
-
 use base64::{
     Engine,
     engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
 };
-
 use chrono::{SecondsFormat, Utc};
-
 use hmac::{Hmac, Mac};
-
 use serde_json::{Value, json};
-
 use sha2::Sha256;
-
 use std::fmt::Write;
 use std::{any::Any, fmt, sync::Arc};
 

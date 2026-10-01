@@ -2,21 +2,13 @@
 mod tests;
 
 use super::entities::jwk::{ActiveModel, Entity};
-
 use super::{SeaOrmStore, map_db_err};
-
-use better_auth_core::error::AuthResult;
-
 use crate::schema::AuthSchema;
-
 use async_trait::async_trait;
-
+use better_auth_core::error::AuthResult;
 use better_auth_core::store::JwkStore;
-
 use better_auth_core::types::{CreateJwk, Jwk};
-
 use sea_orm::{ActiveModelTrait, EntityTrait, QuerySelect, Set};
-
 use sea_orm_migration::prelude::*;
 
 #[async_trait]

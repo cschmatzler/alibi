@@ -28,54 +28,41 @@ mod extension_tests;
 #[cfg(test)]
 mod dynamic_role_tests;
 
+use async_trait::async_trait;
+use better_auth_core::error::AuthResult;
+use better_auth_core::plugin::{AuthContext, AuthPlugin, AuthRoute};
+use better_auth_core::types::{AuthRequest, AuthResponse, HttpMethod};
 pub use creation_policy::OrganizationCreationPolicy;
-
+pub use extensions::{
+    DefaultTeamContext, DefaultTeamFactory, DynamicAccessControlConfig, OrganizationLimitResolver,
+    OrganizationTeamHooks, TeamsConfig, default_organization_statements,
+};
+pub use invitation_acceptance_lifecycle::{
+    OrganizationInvitationAcceptanceContext, OrganizationInvitationAcceptanceHooks,
+    OrganizationInvitationAcceptedContext,
+};
 pub use lifecycle::{
     OrganizationCreatePatch, OrganizationCreatedContext, OrganizationCreationHooks,
     OrganizationDeleteContext, OrganizationDeletionHooks, OrganizationDraftContext,
     OrganizationMemberCreatePatch, OrganizationMemberDraftContext,
 };
-
-pub use invitation_acceptance_lifecycle::{
-    OrganizationInvitationAcceptanceContext, OrganizationInvitationAcceptanceHooks,
-    OrganizationInvitationAcceptedContext,
-};
-
-pub use membership_policy::{MembershipLimit, OrganizationMembershipLimitResolver};
-
 pub use member_addition_lifecycle::{
     OrganizationMemberAddedContext, OrganizationMemberAdditionContext,
     OrganizationMemberAdditionDraft, OrganizationMemberAdditionHooks,
 };
-
 pub use member_removal_lifecycle::{
     OrganizationMemberRemovalContext, OrganizationMemberRemovalHooks,
 };
-
 pub use member_role_lifecycle::{
     OrganizationMemberRoleContext, OrganizationMemberRoleHooks, OrganizationMemberRolePatch,
     OrganizationMemberRoleUpdatedContext,
 };
-
-pub use extensions::{
-    DefaultTeamContext, DefaultTeamFactory, DynamicAccessControlConfig, OrganizationLimitResolver,
-    OrganizationTeamHooks, TeamsConfig, default_organization_statements,
-};
-
+pub use membership_policy::{MembershipLimit, OrganizationMembershipLimitResolver};
+use std::collections::HashMap;
 pub use update_lifecycle::{
     OrganizationUpdateContext, OrganizationUpdateHooks, OrganizationUpdateInput,
     OrganizationUpdatePatch, OrganizationUpdatedContext,
 };
-
-use std::collections::HashMap;
-
-use async_trait::async_trait;
-
-use better_auth_core::error::AuthResult;
-
-use better_auth_core::plugin::{AuthContext, AuthPlugin, AuthRoute};
-
-use better_auth_core::types::{AuthRequest, AuthResponse, HttpMethod};
 
 /// Permission definitions for a role
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]

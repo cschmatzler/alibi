@@ -1,15 +1,14 @@
 //! Controlled invitation clocks; these routes are outside the auth router.
 
+use crate::TestSchema;
 use axum::{Json, Router, extract::State, http::StatusCode, routing::post};
 use better_auth::BetterAuth;
 use better_auth_seaorm::sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use better_auth_seaorm::store::entities::invitation;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
-
-use crate::TestSchema;
-use better_auth_seaorm::store::entities::invitation;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

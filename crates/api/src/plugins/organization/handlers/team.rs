@@ -1,21 +1,13 @@
 use super::super::extensions::{TeamHookContext, TeamLimitContext};
-
 use super::super::{OrganizationConfig, OrganizationPlugin};
-
 use super::extension_common::{has_action, org_error, session};
-
 use better_auth_core::entity::AuthUser;
-
 use better_auth_core::types::{AddTeamMemberResult, CreateTeam, Team, UpdateTeam};
-
 use better_auth_core::wire::{SessionView, UserView};
-
 use better_auth_core::{
     AuthContext, AuthRequest, AuthResponse, AuthResult, AuthSchema, HttpMethod,
 };
-
 use serde::Deserialize;
-
 use validator::Validate;
 
 #[derive(Debug, Deserialize, Validate)]

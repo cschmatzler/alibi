@@ -9,14 +9,10 @@
 #[path = "phone_number_integration_tests/tests.rs"]
 mod tests;
 
-use std::sync::Arc;
-
 use better_auth::plugins::phone_number::{PhoneNumberConfig, PhoneNumberPlugin};
-
 use better_auth::{AuthBuilder, AuthConfig};
-
 use better_auth_core::{AuthAccount, AuthSession, AuthUser, CreateUser, UpdateUser};
-
 use better_auth_seaorm::{Database, SeaOrmStore};
+use std::sync::Arc;
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

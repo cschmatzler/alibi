@@ -1,5 +1,4 @@
 use super::*;
-
 use std::io::Write;
 
 /// All response fields must use camelCase (not `snake_case`) for frontend compatibility.

@@ -1,17 +1,14 @@
+use super::{SeaOrmStore, cancelled_by_hook, map_db_err};
+use crate::schema::{AuthSchema, SeaOrmAccountModel};
 use async_trait::async_trait;
+use better_auth_core::error::AuthResult;
+use better_auth_core::store::AccountStore;
+use better_auth_core::types::{CreateAccount, UpdateAccount};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
     IntoActiveModel, QueryFilter, QueryOrder,
 };
-
-use better_auth_core::store::AccountStore;
-
-use crate::schema::{AuthSchema, SeaOrmAccountModel};
-use better_auth_core::error::AuthResult;
-use better_auth_core::types::{CreateAccount, UpdateAccount};
-
-use super::{SeaOrmStore, cancelled_by_hook, map_db_err};
 
 impl<S> SeaOrmStore<S>
 where

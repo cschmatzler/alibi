@@ -2,22 +2,15 @@
     unused_crate_dependencies,
     reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
 )]
+use chrono::Utc;
+use clap::Parser;
+use serde::Serialize;
+use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as FmtWrite;
-
 use std::fs;
-
-use std::path::PathBuf;
-
-use chrono::Utc;
-
-use clap::Parser;
-
-use serde::Serialize;
-
-use serde_json::{Map, Value};
-
 use std::io::Write;
+use std::path::PathBuf;
 
 type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 

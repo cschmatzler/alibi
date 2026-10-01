@@ -1,18 +1,12 @@
 //! Source admits unrecognized OKP curves under none attestation. This validates
 //! the ceremony, not possession of a usable signing key, and stores raw facts.
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-
-use better_auth_core::utils::json::{JsValue, from_slice};
-
-use serde::{Deserialize, Serialize};
-
-use serde_cbor_2::Value as Cbor;
-
-use webauthn_rs::prelude::{Passkey, RegisterPublicKeyCredential};
-
-use webauthn_rs_core::{crypto::compute_sha256, error::WebauthnError};
-
 use super::webauthn::PasskeySnapshot;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use better_auth_core::utils::json::{JsValue, from_slice};
+use serde::{Deserialize, Serialize};
+use serde_cbor_2::Value as Cbor;
+use webauthn_rs::prelude::{Passkey, RegisterPublicKeyCredential};
+use webauthn_rs_core::{crypto::compute_sha256, error::WebauthnError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(in crate::plugins) struct RawNonePolicy {

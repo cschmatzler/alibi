@@ -14,25 +14,19 @@ mod validation;
 #[cfg(test)]
 mod tests;
 
+use super::helpers::{apply_default_role, issue_user_session};
+use better_auth_core::{
+    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthSession,
+    AuthUser, CreateAccount, CreateUser, CreateVerification, CreateWalletAddress, RequestMeta,
+};
+use chrono::{Duration, Utc};
 pub use config::{
     Cacao, CacaoHeader, CacaoPayload, CacaoSignature, EnsLookup, EnsProfile, RandomSiweNonce,
     SiweCallbackError, SiweCallbackResult, SiweConfig, SiweNonceProvider, SiweVerification,
     SiweVerifier,
 };
-
 pub use crypto::{Eip191Verifier, ethereum_message_hash};
-
-use better_auth_core::{
-    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthSession,
-    AuthUser, CreateAccount, CreateUser, CreateVerification, CreateWalletAddress, RequestMeta,
-};
-
-use chrono::{Duration, Utc};
-
 use serde_json::json;
-
-use super::helpers::{apply_default_role, issue_user_session};
-
 use validation::VerifyBody;
 
 #[derive(Debug, Clone)]

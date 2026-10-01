@@ -1,10 +1,7 @@
-use chrono::{DateTime, Utc};
-
-use serde::{Deserialize, Serialize};
-
-use std::borrow::Cow;
-
 use crate::entity::{AuthApiKey, AuthPasskey, AuthTwoFactor};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 
 /// Private keyring persistence. Public JWKS responses must select public material explicitly.
 #[derive(Debug, Clone)]

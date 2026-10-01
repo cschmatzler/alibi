@@ -1,3 +1,4 @@
+use super::{JwtAlgorithm, JwtKeyPairConfig};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use better_auth_core::{AuthError, AuthResult};
 use ed25519_dalek::{Signer, Verifier};
@@ -7,8 +8,6 @@ use rsa::signature::{RandomizedSigner, SignatureEncoding};
 use rsa::traits::{PrivateKeyParts, PublicKeyParts};
 use serde_json::{Value, json};
 use sha2::Sha256;
-
-use super::{JwtAlgorithm, JwtKeyPairConfig};
 
 ///
 /// # Errors

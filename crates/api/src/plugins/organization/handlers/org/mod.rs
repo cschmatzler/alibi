@@ -2,13 +2,9 @@
 mod tests;
 
 use super::page::OrganizationPageError;
-
 use super::require_session;
-
 use crate::plugins::organization::OrganizationConfig;
-
 use crate::plugins::organization::membership_policy::{read_page_limit, truthy_number};
-
 use crate::plugins::organization::types::{
     BasicMemberResponse, CheckSlugRequest, CheckSlugResponse, CreateOrganizationRequest,
     CreateOrganizationResponse, CreatedOrganizationResponse, DeleteOrganizationRequest,
@@ -16,21 +12,14 @@ use crate::plugins::organization::types::{
     NullableStringField, OrganizationResponse, SetActiveOrganizationRequest,
     UpdateOrganizationRequest,
 };
-
 use better_auth_core::entity::{AuthMember, AuthOrganization, AuthSession, AuthUser};
-
 use better_auth_core::error::{AuthError, AuthResult};
-
 use better_auth_core::plugin::AuthContext;
-
 use better_auth_core::store::MemberPageQuery;
-
 use better_auth_core::types::{
     AuthRequest, AuthResponse, CreateMember, CreateOrganization, UpdateOrganization,
 };
-
 use better_auth_core::wire::{InvitationView, SessionView};
-
 use std::collections::HashMap;
 
 fn has_role(member: &impl AuthMember, role: &str) -> bool {

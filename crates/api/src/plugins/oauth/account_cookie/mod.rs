@@ -3,12 +3,10 @@
 mod tests;
 
 use super::state::AccountCookiePayload;
-
 use aes_gcm::aes::{
     Aes256,
     cipher::{BlockDecrypt, BlockEncrypt, KeyInit, generic_array::GenericArray},
 };
-
 use base64::{
     Engine, alphabet,
     engine::{
@@ -16,22 +14,15 @@ use base64::{
         general_purpose::{GeneralPurpose, GeneralPurposeConfig, URL_SAFE_NO_PAD as BASE64},
     },
 };
-
 use better_auth_core::{
     AuthError, AuthResult,
     utils::json::{JsValue, parse_value},
 };
-
 use chrono::Utc;
-
 use hkdf::Hkdf;
-
 use hmac::{Hmac, Mac};
-
 use rand::{RngCore, rngs::OsRng};
-
 use serde_json::json;
-
 use sha2::{Digest, Sha256, Sha512};
 
 const INFO: &[u8] = b"BetterAuth.js Generated Encryption Key";

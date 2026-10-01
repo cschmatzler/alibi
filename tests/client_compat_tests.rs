@@ -8,15 +8,11 @@
 #[path = "client_compat_tests/tests.rs"]
 mod tests;
 
-use std::net::TcpListener;
-
-use std::path::PathBuf;
-
-use std::process::{Child, Command, ExitStatus, Stdio};
-
-use std::time::Duration;
-
 use std::io::Write;
+use std::net::TcpListener;
+use std::path::PathBuf;
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::time::Duration;
 
 struct ManagedChild {
     label: &'static str,

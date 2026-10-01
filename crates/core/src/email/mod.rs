@@ -1,10 +1,8 @@
 #[cfg(test)]
 mod tests;
 
-use async_trait::async_trait;
-
 use crate::error::AuthResult;
-
+use async_trait::async_trait;
 use std::io::Write;
 
 /// Trait for sending emails. Implement this to integrate with your

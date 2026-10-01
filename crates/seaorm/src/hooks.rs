@@ -1,6 +1,4 @@
 use async_trait::async_trait;
-use sea_orm::{DatabaseConnection, DatabaseTransaction};
-
 use better_auth_core::AuthResult;
 use better_auth_core::config::AuthConfig;
 use better_auth_core::hooks::RequestHookContext;
@@ -10,6 +8,7 @@ use better_auth_core::types::{
     CreateAccount, CreateSession, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
     UpdateVerification,
 };
+use sea_orm::{DatabaseConnection, DatabaseTransaction};
 
 /// Control flow returned by `SeaORM` `before_*` hooks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

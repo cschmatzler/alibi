@@ -9,29 +9,20 @@
 #[path = "json_number_integration_tests/tests.rs"]
 mod tests;
 
-use std::sync::{Arc, Mutex};
-
 use async_trait::async_trait;
-
 use better_auth::plugins::magic_link::{
     MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, SendMagicLink,
 };
-
 use better_auth::plugins::{ApiKeyPlugin, EmailPasswordPlugin};
-
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-
 use better_auth_core::utils::cookie_utils::create_session_cookie;
-
 use better_auth_core::{
     AuthRequest, AuthResponse, AuthResult, CreateOrganization, HttpMethod, UpdateOrganization,
 };
-
 use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
-
 use better_auth_seaorm::{Database, SeaOrmStore};
-
 use serde_json::Value;
+use std::sync::{Arc, Mutex};
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 

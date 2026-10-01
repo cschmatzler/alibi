@@ -1,16 +1,13 @@
-use std::sync::Arc;
-
-use better_auth_core::config::AuthConfig;
-use better_auth_core::store::{InvitationStore, OrganizationStore, UserStore};
-use chrono::{Duration, Utc};
-
+use super::SeaOrmStore;
 use crate::Database;
 use crate::store::__private_test_support::bundled_schema::BundledSchema;
 use crate::store::__private_test_support::migrator::run_migrations;
+use better_auth_core::config::AuthConfig;
+use better_auth_core::store::{InvitationStore, OrganizationStore, UserStore};
 use better_auth_core::types::CreateUser;
 use better_auth_core::{CreateInvitation, CreateOrganization, InvitationStatus};
-
-use super::SeaOrmStore;
+use chrono::{Duration, Utc};
+use std::sync::Arc;
 
 async fn test_store() -> SeaOrmStore<BundledSchema> {
     let database = Database::connect("sqlite::memory:")

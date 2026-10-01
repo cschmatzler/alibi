@@ -1,29 +1,18 @@
 #[cfg(test)]
 mod tests;
 
-use async_trait::async_trait;
-
-use std::any::{Any, TypeId};
-
-use std::collections::HashMap;
-
-use std::sync::Arc;
-
 use crate::config::AuthConfig;
-
 use crate::email::EmailProvider;
-
 use crate::entity::AuthSession;
-
 use crate::error::{AuthError, AuthResult};
-
 use crate::schema::AuthSchema;
-
 use crate::session::SessionManager;
-
 use crate::store::AuthStore;
-
 use crate::types::{AuthRequest, AuthResponse, HttpMethod};
+use async_trait::async_trait;
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 type MetadataMap = HashMap<String, serde_json::Value>;
 

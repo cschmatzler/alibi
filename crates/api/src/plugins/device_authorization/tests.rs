@@ -1,17 +1,13 @@
+use super::*;
+use crate::plugins::test_helpers;
+use better_auth_core::{AuthResponse, CreateDeviceCode, CreateUser, HttpMethod};
+use chrono::{Duration, Utc};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
-
-use chrono::{Duration, Utc};
-use serde_json::Value;
-
-use better_auth_core::{AuthResponse, CreateDeviceCode, CreateUser, HttpMethod};
-
-use crate::plugins::test_helpers;
-
-use super::*;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 

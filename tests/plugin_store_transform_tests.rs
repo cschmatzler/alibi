@@ -9,19 +9,15 @@
 #[path = "plugin_store_transform_tests/tests.rs"]
 mod tests;
 
-use std::sync::{Arc, Mutex};
-
 use async_trait::async_trait;
-
 use better_auth::{AuthBuilder, AuthConfig};
-
 use better_auth_core::{
     AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
     AuthUser, CreateUser, UpdateUser,
     store::{UserStore, transaction},
 };
-
 use better_auth_seaorm::{Database, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore};
+use std::sync::{Arc, Mutex};
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 

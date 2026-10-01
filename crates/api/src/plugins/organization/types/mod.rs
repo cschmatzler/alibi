@@ -2,15 +2,10 @@
 mod tests;
 
 use better_auth_core::entity::MemberUserView;
-
 use better_auth_core::entity::{AuthMember, AuthOrganization};
-
 use better_auth_core::utils::json::JsValue;
-
 use serde::{Deserialize, Serialize};
-
 use std::collections::HashMap;
-
 use validator::Validate;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

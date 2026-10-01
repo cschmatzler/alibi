@@ -2,11 +2,8 @@
 mod tests;
 
 use super::Middleware;
-
 use crate::error::AuthResult;
-
 use crate::types::{AuthRequest, AuthResponse, HttpMethod};
-
 use async_trait::async_trait;
 
 /// Configuration for CORS middleware.

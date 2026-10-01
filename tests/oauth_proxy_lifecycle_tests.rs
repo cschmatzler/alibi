@@ -18,23 +18,15 @@ use axum::{
     extract::{Form, State},
     routing::{get, post},
 };
-
 use better_auth::plugins::oauth::OAuthProvider;
-
 use better_auth::plugins::{
     EmailPasswordPlugin, OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin, SessionManagementPlugin,
 };
-
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-
 use better_auth_core::{AuthRequest, AuthResponse, AuthSession, AuthUser, HttpMethod};
-
 use better_auth_seaorm::sea_orm::{ConnectionTrait, Statement};
-
 use better_auth_seaorm::{Database, SeaOrmStore};
-
 use serde_json::{Value, json};
-
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},

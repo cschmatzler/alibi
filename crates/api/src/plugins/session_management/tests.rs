@@ -1,15 +1,9 @@
 use super::*;
-
 use crate::plugins::test_helpers;
-
 use better_auth_core::config::AccountConfig;
-
 use better_auth_core::utils::cookie_utils::related_cookie_name;
-
 use better_auth_core::wire::SessionView;
-
 use better_auth_core::{CreateSession, CreateUser};
-
 use chrono::{Duration, Utc};
 
 // Upstream reference: packages/better-auth/src/api/routes/session-api.test.ts :: describe("session") and packages/better-auth/src/api/routes/sign-out.test.ts :: describe("sign-out"); adapted to the Rust session-management plugin.

@@ -1,15 +1,9 @@
 use super::*;
-
 use crate::store::{SeaOrmStore, bundled_schema::BundledSchema, migrator::AuthMigrator};
-
 use better_auth_core::entity::{AuthSession, AuthUser};
-
 use better_auth_core::store::{SessionStore, UserStore};
-
 use better_auth_core::{AuthConfig, CreateSession, CreateUser, UpdateUser};
-
 use chrono::Utc;
-
 use sea_orm::{ConnectionTrait, Database, Statement};
 
 #[tokio::test]

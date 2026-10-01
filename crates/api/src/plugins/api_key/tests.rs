@@ -5,17 +5,12 @@ mod session_tests;
 mod verification_tests;
 
 use super::*;
-
 use better_auth_core::wire::{SessionView, UserView};
-
 use better_auth_core::{
     AuthContext, AuthPlugin, CreateSession, CreateUser, HttpMethod, UpdateApiKey,
 };
-
 use chrono::{Duration, Utc};
-
 use std::collections::HashMap;
-
 use std::sync::Arc;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
