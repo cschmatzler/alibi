@@ -7,6 +7,8 @@ pub struct RequestHookContext {
     pub path: String,
     pub headers: std::collections::HashMap<String, String>,
     pub query: std::collections::HashMap<String, String>,
+    /// Original request body, available to application lifecycle callbacks.
+    pub body: Option<Vec<u8>>,
     pub meta: RequestMeta,
     /// Typed request state shared with the trusted dispatch and its hooks.
     pub extensions: RequestExtensions,
@@ -21,6 +23,7 @@ impl RequestHookContext {
             path: request.path().to_owned(),
             headers: request.headers.clone(),
             query: request.query.clone(),
+            body: request.body.clone(),
             meta: RequestMeta::from_request(request),
             extensions: request.extensions().clone(),
         }
@@ -50,3 +53,13 @@ pub async fn with_request_hook_context_value<T>(
 pub fn current_request_hook_context() -> Option<RequestHookContext> {
     REQUEST_HOOK_CONTEXT.try_with(Clone::clone).ok()
 }
+
+/// A trusted endpoint's parsed body for adapter callbacks. Completed response
+/// callbacks still receive the original request body.
+#[derive(Clone, Debug)]
+pub struct ValidatedRequestBody(pub crate::utils::json::JsValue);
+
+/// Request body after a plugin has transformed endpoint input. Original HTTP
+/// bytes remain available on `AuthRequest` and `RequestHookContext`.
+#[derive(Clone, Debug)]
+pub struct TransformedRequestBody(pub crate::utils::json::JsValue);

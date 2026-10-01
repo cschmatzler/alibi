@@ -12,6 +12,10 @@ pub use better_auth_api::plugins::api_key::{
 pub use better_auth_api::plugins::bearer::{self, BearerConfig, BearerPlugin};
 pub use better_auth_api::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
 pub use better_auth_api::plugins::email_verification::SendVerificationEmail;
+pub use better_auth_api::plugins::last_login_method::{
+    self, BeforeStoreLastLoginMethodCookie, LastLoginMethodConfig, LastLoginMethodContext,
+    LastLoginMethodPlugin, ResolveLastLoginMethod,
+};
 pub use better_auth_api::plugins::magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
 pub use better_auth_api::plugins::multi_session::{self, MultiSessionConfig, MultiSessionPlugin};
 pub use better_auth_api::plugins::one_tap::{

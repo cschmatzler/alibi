@@ -74,8 +74,10 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
             AuthRoute::post("/sign-in/social", "social_sign_in"),
-            AuthRoute::get("/callback/{provider}", "oauth_callback"),
-            AuthRoute::post("/callback/{provider}", "oauth_callback_post"),
+            AuthRoute::get("/callback/{provider}", "oauth_callback")
+                .with_context_path("/callback/:id"),
+            AuthRoute::post("/callback/{provider}", "oauth_callback_post")
+                .with_context_path("/callback/:id"),
             AuthRoute::post("/link-social", "link_social"),
             AuthRoute::post("/get-access-token", "get_access_token"),
             AuthRoute::post("/refresh-token", "refresh_token"),

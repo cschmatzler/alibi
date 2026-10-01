@@ -94,6 +94,7 @@ mod device_fixture;
 mod google_id_token_fixture;
 mod invitation_fixture;
 mod jwt_fixture;
+mod last_login_method_fixture;
 mod lifecycle_fixture;
 mod magic_profiles;
 mod multiple_session_fixture;
@@ -899,6 +900,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?,
     );
 
+    let last_login_router = last_login_method_fixture::router(
+        &config,
+        reset_database.clone(),
+        port,
+        social_profile.clone(),
+        social_id_token_valid.clone(),
+        oauth_refresh_mode.clone(),
+    )
+    .await?;
     let otp_router = otp_profiles::router(
         &config,
         otp_database,
@@ -1833,6 +1843,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(one_tap_router)
         .merge(google_id_router)
         .merge(otp_router)
+        .merge(last_login_router)
         .merge(magic_router)
         .merge(siwe_profile_router)
         .merge(phone_router);

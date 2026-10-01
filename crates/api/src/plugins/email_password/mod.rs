@@ -91,6 +91,8 @@ impl std::fmt::Debug for EmailPasswordConfig {
 
 #[derive(Debug, Deserialize, Validate)]
 pub(in crate::plugins) struct SignUpRequest {
+    #[serde(rename = "lastLoginMethod")]
+    last_login_method: Option<better_auth_core::utils::json::JsValue>,
     #[validate(length(min = 1, message = "Name is required"))]
     name: String,
     #[validate(email(message = "Invalid email address"))]
@@ -304,6 +306,25 @@ impl EmailPasswordPlugin {
                 Err(response) => return Ok(response),
             };
 
+        if self.config.enable_username {
+            let mut callback_body = req.body_as_json::<better_auth_core::utils::json::JsValue>()?;
+            if let better_auth_core::utils::json::JsValue::Object(body) = &mut callback_body
+                && body
+                    .get("username")
+                    .is_some_and(|value| value.as_str().is_some_and(|value| !value.is_empty()))
+                && !body
+                    .get("displayUsername")
+                    .is_some_and(|value| value.as_str().is_some_and(|value| !value.is_empty()))
+                && let Some(username) = body.get("username").cloned()
+            {
+                drop(body.insert("displayUsername".into(), username));
+            }
+            req.extensions()
+                .insert(better_auth_core::hooks::TransformedRequestBody(
+                    callback_body,
+                ));
+        }
+
         signup_req.email = signup_req.email.to_lowercase();
 
         let (username, display_username) = normalize_username_fields(
@@ -385,6 +406,15 @@ impl EmailPasswordPlugin {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
+
+        let mut callback_body: better_auth_core::utils::json::JsValue = req.body_as_json()?;
+        if let better_auth_core::utils::json::JsValue::Object(body) = &mut callback_body {
+            let _remember = body
+                .entry("rememberMe".into())
+                .or_insert(better_auth_core::utils::json::JsValue::Bool(true));
+        }
+        req.extensions()
+            .insert(better_auth_core::hooks::ValidatedRequestBody(callback_body));
 
         if !is_valid_email(&signin_req.email) {
             return Err(AuthError::Upstream {
@@ -780,6 +810,8 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
         ctx,
     )?;
 
+    super::last_login_method::reject_last_login_method_input(ctx, body.last_login_method.as_ref())?;
+
     let phone_enabled = ctx
         .get_metadata("phone-number.enabled")
         .and_then(serde_json::Value::as_bool)
@@ -844,7 +876,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
         Box::pin(async move {
             let user = match tx.create_user(create_user).await {
                 Ok(user) => user,
-                Err(AuthError::Database(_)) => {
+                Err(AuthError::Database(_) | AuthError::CallbackFailure(_)) => {
                     return Err(AuthError::UnprocessableEntity(
                         "Failed to create user".to_owned(),
                     ));

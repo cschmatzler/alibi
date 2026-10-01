@@ -106,3 +106,73 @@ async fn store() -> (AuthConfig, Arc<SeaOrmStore<Schema>>) {
     let store = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database));
     (config, store)
 }
+
+struct CommittedSessionObserver {
+    raw: Arc<SeaOrmStore<Schema>>,
+    seen: Arc<Mutex<Vec<String>>>,
+    fail: bool,
+}
+#[async_trait]
+impl better_auth_core::store::SessionCreatedHook<Schema> for CommittedSessionObserver {
+    async fn after_create(
+        &self,
+        session: &<Schema as better_auth_core::AuthSchema>::Session,
+        database: &dyn better_auth_core::store::AuthStore<Schema>,
+    ) -> AuthResult<()> {
+        use better_auth_core::AuthSession;
+        use better_auth_core::store::SessionStore;
+        assert!(self.raw.get_session(session.token()).await?.is_some());
+        drop(
+            database
+                .update_user(
+                    session.user_id().as_ref(),
+                    UpdateUser {
+                        phone_number: Some(None),
+                        ..Default::default()
+                    },
+                )
+                .await?,
+        );
+        self.seen.lock().unwrap().push(session.token().to_owned());
+        if self.fail {
+            return Err(AuthError::internal(
+                "post-commit application callback failed",
+            ));
+        }
+        Ok(())
+    }
+}
+struct SessionLifecyclePlugin(Arc<CommittedSessionObserver>);
+#[async_trait]
+impl AuthPlugin<Schema> for SessionLifecyclePlugin {
+    fn name(&self) -> &'static str {
+        "committed-session-observer"
+    }
+    fn routes(&self) -> Vec<better_auth_core::AuthRoute> {
+        Vec::new()
+    }
+    async fn on_request(
+        &self,
+        _: &AuthRequest,
+        _: &AuthContext<Schema>,
+    ) -> AuthResult<Option<AuthResponse>> {
+        Ok(None)
+    }
+    async fn on_init(&self, ctx: &mut AuthInitContext<Schema>) -> AuthResult<()> {
+        ctx.register_session_created_hook(self.0.clone());
+        Ok(())
+    }
+}
+fn session_input(user_id: String, token: &str) -> better_auth_core::CreateSession {
+    better_auth_core::CreateSession {
+        user_id,
+        token: Some(token.into()),
+        expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+        additional_fields: Default::default(),
+        ip_address: None,
+        user_agent: None,
+        impersonated_by: None,
+        active_organization_id: None,
+        active_team_id: None,
+    }
+}

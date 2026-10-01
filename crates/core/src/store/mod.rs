@@ -45,9 +45,40 @@ pub(crate) struct UserTransforms {
     pub(crate) updates: Vec<UserUpdateTransform>,
 }
 
+/// Application/plugin adapter hook observing a successfully persisted session.
+/// Transactional hooks execute only after commit against the finalized store,
+/// including registered user transforms. Hook failures do not roll back commit.
+#[async_trait]
+pub trait SessionCreatedHook<S: AuthSchema>: Send + Sync {
+    async fn after_create(
+        &self,
+        session: &S::Session,
+        database: &dyn AuthStore<S>,
+    ) -> AuthResult<()>;
+}
+
+pub(crate) struct SessionCreatedCallbacks<S: AuthSchema> {
+    pub(crate) callbacks: Vec<Arc<dyn SessionCreatedHook<S>>>,
+}
+impl<S: AuthSchema> Default for SessionCreatedCallbacks<S> {
+    fn default() -> Self {
+        Self {
+            callbacks: Vec::new(),
+        }
+    }
+}
+impl<S: AuthSchema> Clone for SessionCreatedCallbacks<S> {
+    fn clone(&self) -> Self {
+        Self {
+            callbacks: self.callbacks.clone(),
+        }
+    }
+}
+
 pub(crate) struct PluginStore<S: AuthSchema> {
     inner: Arc<dyn AuthStore<S>>,
     transforms: UserTransforms,
+    session_callbacks: SessionCreatedCallbacks<S>,
     session_fields: crate::field_policy::SessionFields,
     adapter_fields: crate::field_policy::SessionAdapterFields,
 }
@@ -57,12 +88,14 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(crate) fn new(
         inner: Arc<dyn AuthStore<S>>,
         transforms: UserTransforms,
+        session_callbacks: SessionCreatedCallbacks<S>,
         session_fields: crate::field_policy::SessionFields,
         adapter_fields: crate::field_policy::SessionAdapterFields,
     ) -> Self {
         Self {
             inner,
             transforms,
+            session_callbacks,
             session_fields,
             adapter_fields,
         }
@@ -126,7 +159,11 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             .defaults(&mut create_session.additional_fields);
         self.adapter_fields
             .attach(&mut create_session.additional_fields, true);
-        self.inner.create_session(create_session).await
+        let session = self.inner.create_session(create_session).await?;
+        for callback in &self.session_callbacks.callbacks {
+            callback.after_create(&session, self).await?;
+        }
+        Ok(session)
     }
     async fn get_session(&self, token: &str) -> AuthResult<Option<S::Session>> {
         self.inner.get_session(token).await
@@ -754,6 +791,7 @@ impl<S: AuthSchema> OrganizationRoleStore for PluginStore<S> {
 struct PluginTransaction<'a, S: AuthSchema> {
     inner: &'a dyn AuthTransaction<S>,
     creates: Vec<UserCreateTransform>,
+    pending_sessions: Arc<std::sync::Mutex<Vec<S::Session>>>,
     session_fields: crate::field_policy::SessionFields,
     adapter_fields: crate::field_policy::SessionAdapterFields,
 }
@@ -818,7 +856,12 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .defaults(&mut create_session.additional_fields);
         self.adapter_fields
             .attach(&mut create_session.additional_fields, true);
-        self.inner.create_session(create_session).await
+        let session = self.inner.create_session(create_session).await?;
+        self.pending_sessions
+            .lock()
+            .map_err(|_| AuthError::internal("Session callback queue poisoned"))?
+            .push(session.clone());
+        Ok(session)
     }
 
     async fn create_verification(&self, data: CreateVerification) -> AuthResult<S::Verification> {
@@ -833,21 +876,38 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
         work: Box<TransactionWork<S>>,
     ) -> AuthResult<BoxedTransactionValue> {
         let creates = self.transforms.creates.clone();
+        let pending_sessions = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let pending_in_transaction = Arc::clone(&pending_sessions);
         let session_fields = self.session_fields.clone();
         let adapter_fields = self.adapter_fields.clone();
-        self.inner
+        let value = self
+            .inner
             .transaction_boxed(Box::new(move |inner| {
                 Box::pin(async move {
                     let transaction = PluginTransaction {
                         inner,
                         creates,
+                        pending_sessions: pending_in_transaction,
                         session_fields,
                         adapter_fields,
                     };
                     work(&transaction).await
                 })
             }))
-            .await
+            .await?;
+        // The adapter owns commit/rollback. Callbacks observe only committed
+        // sessions and run against the ordinary store, never a closed transaction.
+        let sessions = std::mem::take(
+            &mut *pending_sessions
+                .lock()
+                .map_err(|_| AuthError::internal("Session callback queue poisoned"))?,
+        );
+        for session in sessions {
+            for callback in &self.session_callbacks.callbacks {
+                callback.after_create(&session, self).await?;
+            }
+        }
+        Ok(value)
     }
 }
 

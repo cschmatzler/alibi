@@ -280,7 +280,12 @@ impl<S: AuthSchema> BetterAuth<S> {
                 .await
             {
                 Ok(response) => response,
-                Err(err) => err.to_auth_response(),
+                Err(err) => {
+                    if matches!(err, AuthError::CallbackFailure(_)) {
+                        run_after_hooks = false;
+                    }
+                    err.to_auth_response()
+                }
             };
             let (cache_headers, ordinary_cache_error) =
                 better_auth_core::cache::runtime::take_issuance(req.extensions());
@@ -320,6 +325,13 @@ impl<S: AuthSchema> BetterAuth<S> {
                     .await
                 {
                     Ok(response) => response,
+                    Err(error @ AuthError::CallbackFailure(_)) => {
+                        // An ordinary application exception aborts completed hooks.
+                        // Source drops accumulated headers, including already-issued
+                        // cookies, while preserving the committed authentication writes.
+                        response = error.to_auth_response();
+                        break;
+                    }
                     Err(error) => {
                         let mut response_2 = error.to_auth_response();
                         for (name, value) in accumulated_headers {
@@ -393,15 +405,40 @@ impl<S: AuthSchema> BetterAuth<S> {
                 core_paths::OK | core_paths::ERROR | core_paths::OPENAPI_SPEC
             ) | (HttpMethod::Post, core_paths::UPDATE_USER)
         );
-        let plugin_route = self.plugins.iter().any(|plugin| {
-            plugin.routes().iter().any(|route| {
+        let plugin_route = self
+            .plugins
+            .iter()
+            .flat_map(|plugin| plugin.routes())
+            .find(|route| {
                 route.method == internal_req.method
                     && route_path_matches(&route.path, internal_req.path())
-            })
-        });
-        if !core_route && !plugin_route {
+            });
+        if !core_route && plugin_route.is_none() {
             return Ok(AuthResponse::new(404));
         }
+
+        let context_path = plugin_route
+            .as_ref()
+            .map(|route| route.context_path.as_deref().unwrap_or(&route.path))
+            .unwrap_or_else(|| internal_req.path())
+            .to_owned();
+        let params = context_path
+            .split('/')
+            .zip(internal_req.path().split('/'))
+            .filter_map(|(part, value)| {
+                let name = part.strip_prefix(':').or_else(|| {
+                    part.strip_prefix('{')
+                        .and_then(|name| name.strip_suffix('}'))
+                })?;
+                Some((name.to_owned(), value.to_owned()))
+            })
+            .collect();
+        internal_req
+            .extensions()
+            .insert(better_auth_core::plugin::ResolvedEndpoint {
+                path: context_path,
+                params,
+            });
 
         // Run plugin before_request hooks (e.g. API-key → session emulation)
         // Plugins now see the normalised (base_path-stripped) path.
@@ -591,6 +628,12 @@ impl<S: AuthSchema> BetterAuth<S> {
         if body.contains_key("email") {
             return Err(AuthError::bad_request("Email can not be updated"));
         }
+
+        let raw_body: better_auth_core::utils::json::JsValue = req.body_as_json()?;
+        better_auth_api::plugins::last_login_method::reject_last_login_method_input(
+            &self.context,
+            raw_body.get("lastLoginMethod"),
+        )?;
 
         let update_req: UpdateUserRequest =
             serde_json::from_value(serde_json::Value::Object(body.clone()))
