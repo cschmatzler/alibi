@@ -120,6 +120,7 @@ mod session_field_model;
 mod session_fields_fixture;
 mod session_profiles;
 mod set_password_fixture;
+mod signup_policy_fixture;
 mod siwe_fixture;
 mod social_provider_fixture;
 mod sqlite_fixture;
@@ -698,6 +699,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
     let set_password_router = set_password_fixture::router(&config, database.clone()).await?;
     let reset_database = database.clone();
+    let signup_policy_router = signup_policy_fixture::router(&config, database.clone()).await?;
     let verification_outbox = Arc::new(Mutex::new(HashMap::new()));
     let team_profiles = team_fixture::profiles(
         &config,
@@ -1870,6 +1872,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(last_login_router)
         .merge(jwt_keyring_router)
         .merge(jwt_remote_router)
+        .merge(signup_policy_router)
         .merge(magic_router)
         .merge(siwe_profile_router)
         .merge(phone_router);
