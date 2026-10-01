@@ -367,8 +367,14 @@ where
         id: &str,
         global_rate_limit_enabled: bool,
     ) -> AuthResult<ConsumeApiKeyResult> {
-        self.inner
+        let serial = self.application.begin_usage(self.profile, id).await;
+        let result = self
+            .inner
             .consume_api_key_usage(id, global_rate_limit_enabled)
-            .await
+            .await;
+        if let Some(serial) = serial {
+            self.application.finish_usage(serial, result.is_ok());
+        }
+        result
     }
 }

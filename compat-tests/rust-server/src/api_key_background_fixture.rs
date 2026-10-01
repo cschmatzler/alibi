@@ -38,6 +38,7 @@ struct Observations {
     serial: usize,
     generated: usize,
     hold: bool,
+    observe_usage: bool,
     observer: String,
     generator: String,
     blocked: HashMap<usize, oneshot::Sender<()>>,
@@ -101,6 +102,35 @@ impl Application {
     }
     fn finish_delete(&self, id: usize, success: bool) {
         self.event(json!({"kind":"row-delete-complete","serial":id,"success":success}));
+        self.state.lock().unwrap().active -= 1;
+        self.changed.send_modify(|value| *value += 1);
+    }
+    async fn begin_usage(&self, profile: &'static str, key_id: &str) -> Option<usize> {
+        let (id, receiver) = {
+            let mut state = self.state.lock().unwrap();
+            if !state.observe_usage {
+                return None;
+            }
+            state.serial += 1;
+            state.active += 1;
+            let id = state.serial;
+            let receiver = if state.hold {
+                let (sender, receiver) = oneshot::channel();
+                state.blocked.insert(id, sender);
+                Some(receiver)
+            } else {
+                None
+            };
+            (id, receiver)
+        };
+        self.event(json!({"kind":"usage-enter","profile":profile,"serial":id,"key":{"id":key_id}}));
+        if let Some(receiver) = receiver {
+            let _ = receiver.await;
+        }
+        Some(id)
+    }
+    fn finish_usage(&self, id: usize, success: bool) {
+        self.event(json!({"kind":"usage-complete","serial":id,"success":success}));
         self.state.lock().unwrap().active -= 1;
         self.changed.send_modify(|value| *value += 1);
     }
@@ -188,6 +218,8 @@ struct Control {
     #[serde(default)]
     hold: bool,
     #[serde(default)]
+    observe_usage: bool,
+    #[serde(default)]
     observer: String,
     #[serde(default)]
     generator: String,
@@ -257,11 +289,17 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     }
     let profiles = Arc::new(profiles);
     let state_db = database.clone();
-    router=router.route("/__test/api-key-background/state",get(move || {
+    router=router.route("/__test/api-key-background/state",get(move |Query(query):Query<HashMap<String,String>>| {
         let database=state_db.clone();
         async move {
-            let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT id,name,reference_id,config_id,key,remaining,request_count,expires_at,created_at,updated_at,last_request FROM api_keys ORDER BY name")).await.unwrap();
+            let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,"SELECT id,name,reference_id,config_id,key,remaining,request_count,expires_at,created_at,updated_at,last_request,last_refill_at,refill_amount,refill_interval,rate_limit_enabled,rate_limit_time_window,rate_limit_max FROM api_keys ORDER BY name")).await.unwrap();
             let values:Vec<_>=rows.iter().map(|row|json!({"id":row.try_get::<String>("","id").unwrap(),"name":row.try_get::<Option<String>>("","name").unwrap(),"referenceId":row.try_get::<String>("","reference_id").unwrap(),"configId":row.try_get::<String>("","config_id").unwrap(),"key":row.try_get::<String>("","key").unwrap(),"remaining":row.try_get::<Option<f64>>("","remaining").unwrap(),"requestCount":row.try_get::<Option<f64>>("","request_count").unwrap(),"expiresAt":row.try_get::<Option<String>>("","expires_at").unwrap(),"createdAt":row.try_get::<String>("","created_at").unwrap(),"updatedAt":row.try_get::<String>("","updated_at").unwrap(),"lastRequest":row.try_get::<Option<String>>("","last_request").unwrap()})).collect();
+            let mut values=values;
+            if query.get("usage").map(String::as_str)==Some("true") {
+                for (value,row) in values.iter_mut().zip(&rows) {
+                    value.as_object_mut().unwrap().extend(json!({"lastRefillAt":row.try_get::<Option<String>>("","last_refill_at").unwrap(),"refillAmount":row.try_get::<Option<f64>>("","refill_amount").unwrap(),"refillInterval":row.try_get::<Option<f64>>("","refill_interval").unwrap(),"rateLimitEnabled":row.try_get::<bool>("","rate_limit_enabled").unwrap(),"rateLimitTimeWindow":row.try_get::<Option<f64>>("","rate_limit_time_window").unwrap(),"rateLimitMax":row.try_get::<Option<f64>>("","rate_limit_max").unwrap()}).as_object().unwrap().clone());
+                }
+            }
             Json(values)
         }
     }));
@@ -280,7 +318,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     }
                     *application.state.lock().unwrap()=Observations::default();
                 },
-                "configure"=>{let mut state=application.state.lock().unwrap();state.hold=input.hold;state.observer=input.observer;state.generator=input.generator;},
+                "configure"=>{let mut state=application.state.lock().unwrap();state.hold=input.hold;state.observer=input.observer;state.generator=input.generator;state.observe_usage=input.observe_usage;},
                 "release"=>{
                     if let Some(serial)=input.serial {
                         if let Some(sender)=application.state.lock().unwrap().blocked.remove(&serial) {let _=sender.send(());}
@@ -296,6 +334,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 },
                 "remaining"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET remaining=11 WHERE id=?",[input.key_id.unwrap().into()])).await.unwrap();},
                 "quota"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET remaining=? WHERE id=?",[input.remaining.unwrap().into(),input.key_id.unwrap().into()])).await.unwrap();},
+                "refill"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET remaining=0,refill_amount=3,refill_interval=60000,last_refill_at=? WHERE id=?",["1970-01-01T00:00:00.000Z".into(),input.key_id.unwrap().into()])).await.unwrap();},
                 "expire"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET expires_at=? WHERE id=?",["1970-01-01T00:00:00.000Z".into(),input.key_id.unwrap().into()])).await.unwrap();},
                 "veto"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"CREATE TRIGGER automatic_cleanup_veto BEFORE DELETE ON api_keys BEGIN SELECT RAISE(ABORT,'actual cleanup storage veto'); END")).await.unwrap();},
                 "restore"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"DROP TRIGGER IF EXISTS automatic_cleanup_veto")).await.unwrap();},

@@ -11,6 +11,7 @@ export async function apiKeyBackgroundFixture(
 ) {
   let events: Record<string, unknown>[] = [], serial = 0, generated = 0;
   let hold = false, observer = "", generator = "", lastAdmission: number | null = null;
+  let observeUsage = false;
   const blocked = new Map<number, () => void>();
   const listeners = new Set<() => void>();
   const inflight = new Set<Promise<unknown>>(), observed = new Set<Promise<unknown>>();
@@ -67,6 +68,23 @@ export async function apiKeyBackgroundFixture(
     const path = `/__test/profiles/${name}/api/auth`;
     const auth = createAuth(path, deferUpdates);
     const context = await auth.$context;
+    const incrementOne = context.adapter.incrementOne.bind(context.adapter);
+    context.adapter.incrementOne = <T>(input: Parameters<typeof incrementOne>[0]): Promise<T | null> => {
+      if (!observeUsage || input.model !== "apikey" || !("remaining" in input.increment || "remaining" in (input.set ?? {}))) return incrementOne<T>(input);
+      const id = ++serial, keyId = input.where?.find(value => value.field === "id")?.value;
+      let release: (() => void) | undefined;
+      const gate = hold ? new Promise<void>(resolve => { release = resolve; }) : null;
+      if (release) blocked.set(id, release);
+      event({kind:"usage-enter",profile:name,serial:id,key:{id:keyId}});
+      const work = (async () => {
+        if (gate) await gate;
+        try {const result = await incrementOne<T>(input);event({kind:"usage-complete",serial:id,success:true});return result;}
+        catch(error){event({kind:"usage-complete",serial:id,success:false});throw error;}
+      })();
+      inflight.add(work);
+      void work.then(() => inflight.delete(work), () => inflight.delete(work));
+      return work;
+    };
     const deleteMany = context.adapter.deleteMany.bind(context.adapter);
     context.adapter.deleteMany = input => {
       if (input.model !== "apikey") return deleteMany(input);
@@ -121,10 +139,12 @@ export async function apiKeyBackgroundFixture(
     async control(request: Request): Promise<Response | null> {
       const url = new URL(request.url);
       if (url.pathname === "/__test/api-key-background/state") {
-        const rows = database.query('SELECT id,name,referenceId,configId,key,remaining,requestCount,expiresAt,createdAt,updatedAt,lastRequest FROM apikey ORDER BY name').all();
+        const usage = url.searchParams.get('usage') === 'true';
+        const rows = database.query(`SELECT id,name,referenceId,configId,key,remaining,requestCount,expiresAt,createdAt,updatedAt,lastRequest${usage ? ',lastRefillAt,refillAmount,refillInterval,rateLimitEnabled,rateLimitTimeWindow,rateLimitMax' : ''} FROM apikey ORDER BY name`).all();
         return Response.json(rows.map((row: any) => ({
           ...row,
-          ...Object.fromEntries(["expiresAt", "createdAt", "updatedAt", "lastRequest"].map(key => [key, row[key] === null ? null : new Date(row[key]).toISOString()])),
+          ...(usage ? {rateLimitEnabled: !!row.rateLimitEnabled} : {}),
+          ...Object.fromEntries(["expiresAt", "createdAt", "updatedAt", "lastRequest", ...(usage ? ["lastRefillAt"] : [])].map(key => [key, row[key] === null ? null : new Date(row[key]).toISOString()])),
         })));
       }
       if (url.pathname === "/__test/api-key-background/control" && request.method === "POST") {
@@ -134,9 +154,9 @@ export async function apiKeyBackgroundFixture(
             release();
             await Promise.allSettled([...inflight, ...observed]);
             events = []; serial = 0; generated = 0; lastAdmission = null;
-            hold = false; observer = ""; generator = "";
+            hold = false; observer = ""; generator = ""; observeUsage = false;
             break;
-          case "configure": hold = !!input.hold; observer = input.observer ?? ""; generator = input.generator ?? ""; break;
+          case "configure": hold = !!input.hold; observer = input.observer ?? ""; generator = input.generator ?? ""; observeUsage = !!input.observeUsage; break;
           case "release": release(input.serial); break;
           case "wait": await wait(input.kind, input.count); break;
           case "window":
@@ -145,6 +165,7 @@ export async function apiKeyBackgroundFixture(
             break;
           case "remaining": database.query('UPDATE apikey SET remaining=11 WHERE id=?').run(input.keyId); break;
           case "quota": database.query('UPDATE apikey SET remaining=? WHERE id=?').run(input.remaining, input.keyId); break;
+          case "refill": database.query('UPDATE apikey SET remaining=0,refillAmount=3,refillInterval=60000,lastRefillAt=? WHERE id=?').run(new Date(0).toISOString(), input.keyId); break;
           case "expire": database.query('UPDATE apikey SET expiresAt=? WHERE id=?').run(new Date(0).toISOString(), input.keyId); break;
           case "veto": database.exec("CREATE TRIGGER automatic_cleanup_veto BEFORE DELETE ON apikey BEGIN SELECT RAISE(ABORT,'actual cleanup storage veto'); END"); break;
           case "restore": database.exec("DROP TRIGGER IF EXISTS automatic_cleanup_veto"); break;
