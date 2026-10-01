@@ -595,7 +595,6 @@ pub(super) async fn verify_authentication_core(
         Ok(snapshot) => snapshot,
         Err(_) => return passkey_authentication_failure(),
     };
-    let device_type = snapshot.device_type().to_string();
     let updated_passkey = match ctx
         .database
         .update_passkey_authentication(
@@ -603,8 +602,11 @@ pub(super) async fn verify_authentication_core(
             UpdatePasskeyAuthentication {
                 credential: snapshot.serialized,
                 counter: snapshot.counter,
-                backed_up: snapshot.backed_up,
-                device_type,
+                // Pinned authentication persists only the new counter. Keep
+                // registration-time public snapshots while updating the opaque
+                // verifier credential with its actual verified backup state.
+                backed_up: passkey.backed_up(),
+                device_type: passkey.device_type().to_owned(),
             },
         )
         .await

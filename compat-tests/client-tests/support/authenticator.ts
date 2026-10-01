@@ -14,18 +14,21 @@ const registrationOptions = z.object({ challenge: z.string().min(1), rp: z.objec
 const authenticationOptions = z.object({ challenge: z.string().min(1), rpId: z.string() });
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest();
 
+type BackupFlags = { backupEligible?: boolean; backedUp?: boolean };
+const flags = (base: number, state: BackupFlags) => base | (state.backupEligible ? 0x08 : 0) | (state.backedUp ? 0x10 : 0);
+
 /** Synthetic ES256 WebAuthn device for deterministic credential round trips. */
 export class Authenticator {
   private counter = 0;
   private userHandle = "";
 
   /** Produce a signed-key registration attestation for the supplied challenge. */
-  register(options: unknown, origin: string) {
+  register(options: unknown, origin: string, backup: BackupFlags = {}) {
     const parsed = registrationOptions.parse(options);
     this.userHandle = parsed.user.id;
     const clientDataJSON = Buffer.from(JSON.stringify({ type: "webauthn.create", challenge: parsed.challenge, origin, crossOrigin: false }));
     const length = Buffer.alloc(2); length.writeUInt16BE(credential.length);
-    const authData = Buffer.concat([hash(parsed.rp.id), Buffer.from([0x45]), Buffer.alloc(4), Buffer.alloc(16), length, credential, publicKey]);
+    const authData = Buffer.concat([hash(parsed.rp.id), Buffer.from([flags(0x45, backup)]), Buffer.alloc(4), Buffer.alloc(16), length, credential, publicKey]);
     const attestation = encodeCBOR(new Map<string, CBORType>([["fmt", "none"], ["attStmt", new Map()], ["authData", authData]]));
     return {
       id: credential.toString("base64url"), rawId: credential.toString("base64url"), type: "public-key",
@@ -35,11 +38,11 @@ export class Authenticator {
   }
 
   /** Sign an assertion for the challenge and increment the credential counter. */
-  authenticate(options: unknown, origin: string) {
+  authenticate(options: unknown, origin: string, backup: BackupFlags = {}) {
     const parsed = authenticationOptions.parse(options);
     const clientDataJSON = Buffer.from(JSON.stringify({ type: "webauthn.get", challenge: parsed.challenge, origin, crossOrigin: false }));
     const counter = Buffer.alloc(4); counter.writeUInt32BE(++this.counter);
-    const authenticatorData = Buffer.concat([hash(parsed.rpId), Buffer.from([0x05]), counter]);
+    const authenticatorData = Buffer.concat([hash(parsed.rpId), Buffer.from([flags(0x05, backup)]), counter]);
     const signature = sign("sha256", Buffer.concat([authenticatorData, hash(clientDataJSON)]), key.privateKey);
     return {
       id: credential.toString("base64url"), rawId: credential.toString("base64url"), type: "public-key",
