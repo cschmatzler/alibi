@@ -1,10 +1,10 @@
 //! Actual immutable built-in provider policies and local provider transport.
 use crate::TestSchema;
 use axum::{
-    Json, Router,
     extract::State,
     http::HeaderMap,
     routing::{get, post},
+    Json, Router,
 };
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
@@ -15,7 +15,7 @@ use better_auth_seaorm::sea_orm::{EntityTrait, QueryOrder};
 use better_auth_seaorm::store::entities::{account, session, user};
 use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
 use chrono::{DateTime, SecondsFormat, Utc};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
