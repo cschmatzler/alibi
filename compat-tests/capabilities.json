@@ -575,6 +575,17 @@
         "rejection": null,
         "authorization": null,
         "state": null
+      },
+      "requiredEvidence": {
+        "success": [
+          "passkey signed uv-absent authenticates original owner without historical verifier restrictions",
+          "passkey signed backup-upgrade-backed authenticates original owner without historical verifier restrictions",
+          "passkey signed backup-downgrade authenticates original owner without historical verifier restrictions",
+          "passkey Source verifier rejects actual signed invalid flags presence RP origins challenge signature and counters before callbacks",
+          "passkey overlapping issued challenges verify against the current saved counter rather than a stale generation snapshot",
+          "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
+          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history"
+        ]
       }
     },
     {
@@ -622,12 +633,24 @@
         "success": [
           "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners",
           "passkey verified callback awaits real stored reads before counter and session while body claims cannot switch credential owner",
-          "passkey callback may change persisted credential ownership and metadata without changing the verified session owner"
+          "passkey callback may change persisted credential ownership and metadata without changing the verified session owner",
+          "passkey signed uv-absent authenticates original owner without historical verifier restrictions",
+          "passkey signed backup-upgrade-backed authenticates original owner without historical verifier restrictions",
+          "passkey signed backup-downgrade authenticates original owner without historical verifier restrictions",
+          "passkey Source verifier rejects actual signed invalid flags presence RP origins challenge signature and counters before callbacks",
+          "passkey overlapping issued challenges verify against the current saved counter rather than a stale generation snapshot",
+          "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
+          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history"
         ],
         "state": [
           "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners",
           "passkey verified callback awaits real stored reads before counter and session while body claims cannot switch credential owner",
-          "passkey callback may change persisted credential ownership and metadata without changing the verified session owner"
+          "passkey callback may change persisted credential ownership and metadata without changing the verified session owner",
+          "passkey signed uv-absent authenticates original owner without historical verifier restrictions",
+          "passkey signed backup-upgrade-backed authenticates original owner without historical verifier restrictions",
+          "passkey signed backup-downgrade authenticates original owner without historical verifier restrictions",
+          "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
+          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history"
         ]
       }
     },
@@ -2238,7 +2261,13 @@
         "success": [
           "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners",
           "passkey verified callback awaits real stored reads before counter and session while body claims cannot switch credential owner",
-          "passkey callback may change persisted credential ownership and metadata without changing the verified session owner"
+          "passkey callback may change persisted credential ownership and metadata without changing the verified session owner",
+          "passkey signed uv-absent authenticates original owner without historical verifier restrictions",
+          "passkey signed backup-upgrade-backed authenticates original owner without historical verifier restrictions",
+          "passkey signed backup-downgrade authenticates original owner without historical verifier restrictions",
+          "passkey overlapping issued challenges verify against the current saved counter rather than a stale generation snapshot",
+          "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
+          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history"
         ],
         "state": [
           "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners",
@@ -2247,7 +2276,14 @@
           "passkey passkey-auth-internal-error callback rejects after real proof and burns challenge without counter session or cookie writes",
           "passkey verified callback awaits real stored reads before counter and session while body claims cannot switch credential owner",
           "passkey cryptographic challenge and signature failures never invoke application callback and cannot reuse consumed context",
-          "passkey callback may change persisted credential ownership and metadata without changing the verified session owner"
+          "passkey callback may change persisted credential ownership and metadata without changing the verified session owner",
+          "passkey signed uv-absent authenticates original owner without historical verifier restrictions",
+          "passkey signed backup-upgrade-backed authenticates original owner without historical verifier restrictions",
+          "passkey signed backup-downgrade authenticates original owner without historical verifier restrictions",
+          "passkey Source verifier rejects actual signed invalid flags presence RP origins challenge signature and counters before callbacks",
+          "passkey overlapping issued challenges verify against the current saved counter rather than a stale generation snapshot",
+          "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
+          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history"
         ],
         "rejection": [
           "passkey passkey-auth-forbidden callback rejects after real proof and burns challenge without counter session or cookie writes",
@@ -2255,11 +2291,19 @@
           "passkey passkey-auth-internal-error callback rejects after real proof and burns challenge without counter session or cookie writes",
           "passkey verified callback awaits real stored reads before counter and session while body claims cannot switch credential owner",
           "passkey cryptographic challenge and signature failures never invoke application callback and cannot reuse consumed context",
-          "passkey callback may change persisted credential ownership and metadata without changing the verified session owner"
+          "passkey callback may change persisted credential ownership and metadata without changing the verified session owner",
+          "passkey signed uv-absent authenticates original owner without historical verifier restrictions",
+          "passkey signed backup-upgrade-backed authenticates original owner without historical verifier restrictions",
+          "passkey signed backup-downgrade authenticates original owner without historical verifier restrictions",
+          "passkey Source verifier rejects actual signed invalid flags presence RP origins challenge signature and counters before callbacks",
+          "passkey overlapping issued challenges verify against the current saved counter rather than a stale generation snapshot",
+          "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
+          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history"
         ],
         "authorization": [
           "passkey passkey-auth-forbidden callback rejects after real proof and burns challenge without counter session or cookie writes",
-          "passkey cryptographic challenge and signature failures never invoke application callback and cannot reuse consumed context"
+          "passkey cryptographic challenge and signature failures never invoke application callback and cannot reuse consumed context",
+          "passkey Source verifier rejects actual signed invalid flags presence RP origins challenge signature and counters before callbacks"
         ]
       }
     },
