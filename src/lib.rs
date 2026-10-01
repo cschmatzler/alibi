@@ -57,8 +57,8 @@ pub mod wire;
 
 pub use better_auth_core::field_policy;
 pub use better_auth_core::{
-    AuthConfig, AuthError, AuthResult, AuthSchema, PasswordHasher, ScryptHasher, hash_password,
-    verify_password,
+    AuthConfig, AuthError, AuthResult, AuthSchema, BackgroundTaskCompletion, BackgroundTaskHandler,
+    PasswordHasher, ScryptHasher, hash_password, verify_password,
 };
 pub use core::{AuthBuilder, BetterAuth};
 

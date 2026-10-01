@@ -176,6 +176,20 @@ pub(super) fn api_key_error(code: ApiKeyErrorCode) -> AuthError {
     }
 }
 
+// Pinned api-key module state is shared by all plugin instances and databases.
+static LAST_EXPIRED_CHECK: Mutex<Option<i64>> = Mutex::new(None);
+fn admit_expired_cleanup(bypass: bool) -> bool {
+    let mut last = LAST_EXPIRED_CHECK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let now = chrono::Utc::now().timestamp_millis();
+    if !bypass && last.is_some_and(|previous| now.saturating_sub(previous) < 10_000) {
+        return false;
+    }
+    *last = Some(now);
+    true
+}
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
@@ -196,8 +210,6 @@ pub enum ApiKeyReferences {
 pub struct ApiKeyPlugin {
     /// Registered configurations. Unscoped requests use the default configuration.
     pub(super) configurations: Vec<ApiKeyConfig>,
-    /// Throttle for `delete_expired_api_keys` -- stores the last check instant.
-    last_expired_check: Arc<Mutex<Option<std::time::Instant>>>,
 }
 
 impl ApiKeyPlugin {
@@ -301,6 +313,10 @@ pub struct ApiKeyConfig {
 
     // -- session emulation --
     pub enable_session_for_api_keys: bool,
+    /// Register automatic cleanup with the application background handler.
+    /// Successful trusted verification launches cleanup only when enabled.
+    /// Database quota and rate-limit admission remain atomic and awaited.
+    pub defer_updates: bool,
 }
 
 impl ApiKeyConfig {
@@ -339,6 +355,7 @@ impl std::fmt::Debug for ApiKeyConfig {
                 "enable_session_for_api_keys",
                 &self.enable_session_for_api_keys,
             )
+            .field("defer_updates", &self.defer_updates)
             .finish_non_exhaustive()
     }
 }
@@ -412,6 +429,7 @@ impl Default for ApiKeyConfig {
             key_expiration: KeyExpirationConfig::default(),
             rate_limit: RateLimitDefaults::default(),
             enable_session_for_api_keys: false,
+            defer_updates: false,
         }
     }
 }
@@ -457,6 +475,7 @@ impl ApiKeyPlugin {
         #[builder(default)] key_expiration: KeyExpirationConfig,
         #[builder(default)] rate_limit: RateLimitDefaults,
         #[builder(default = false)] enable_session_for_api_keys: bool,
+        #[builder(default = false)] defer_updates: bool,
     ) -> Self {
         Self {
             configurations: vec![
@@ -483,17 +502,16 @@ impl ApiKeyPlugin {
                     key_expiration,
                     rate_limit,
                     enable_session_for_api_keys,
+                    defer_updates,
                 }
                 .normalized(),
             ],
-            last_expired_check: Arc::new(Mutex::new(None)),
         }
     }
 
     pub fn with_config(config: ApiKeyConfig) -> Self {
         Self {
             configurations: vec![config.normalized()],
-            last_expired_check: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -541,51 +559,90 @@ impl ApiKeyPlugin {
         URL_SAFE_NO_PAD.encode(digest)
     }
 
-    /// Throttled cleanup -- at most once per 10 seconds.
+    /// Start automatic cleanup without awaiting its deletion.
     pub(super) async fn maybe_delete_expired(
         &self,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-    ) {
-        let should_run = {
-            let mut last = self
-                .last_expired_check
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
-            let now = std::time::Instant::now();
-            match *last {
-                Some(prev) if now.duration_since(prev).as_secs() < 10 => false,
-                _ => {
-                    *last = Some(now);
-                    true
-                }
+    ) -> AuthResult<()> {
+        drop(Self::start_expired_cleanup(ctx).await?);
+        Ok(())
+    }
+
+    pub(super) async fn register_expired_cleanup(
+        &self,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ) -> AuthResult<()> {
+        let completion = Self::start_expired_cleanup(ctx).await?;
+        match &ctx.config.background_tasks {
+            Some(handler) => handler.handle(completion),
+            None => {
+                drop(completion);
+                Ok(())
             }
-        };
-        if should_run {
-            Self::delete_expired_logged(ctx).await;
         }
     }
 
-    /// Force cleanup across all issuing configurations and owners, bypassing the
-    /// ten-second throttle. This server-only operation has no public HTTP route.
-    /// As upstream, adapter failures are logged and the result remains successful.
+    pub(super) async fn start_expired_cleanup(
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ) -> AuthResult<better_auth_core::BackgroundTaskCompletion> {
+        if !admit_expired_cleanup(false) {
+            return Ok(Box::pin(async { Ok(()) }));
+        }
+        use tracing::{Instrument, instrument::WithSubscriber};
+        let database = ctx.database.clone();
+        let request_context = better_auth_core::hooks::current_request_hook_context();
+        let work = async move {
+            let delete = async move {
+                if let Err(error) = database.delete_expired_api_keys().await {
+                    tracing::error!(%error, "Failed to delete expired API keys");
+                }
+                Ok(())
+            };
+            match request_context {
+                Some(context) => {
+                    better_auth_core::hooks::with_request_hook_context_value(context, delete).await
+                }
+                None => delete.await,
+            }
+        }
+        .instrument(tracing::Span::current())
+        .with_current_subscriber();
+        let mut work: better_auth_core::BackgroundTaskCompletion = Box::pin(work);
+        // JavaScript starts the async adapter operation immediately, before its
+        // caller invokes the generator. Poll once in the initiating context.
+        match std::future::poll_fn(|context| std::task::Poll::Ready(work.as_mut().poll(context)))
+            .await
+        {
+            std::task::Poll::Ready(result) => Ok(Box::pin(async move { result })),
+            std::task::Poll::Pending => {
+                let executor = tokio::runtime::Handle::try_current().map_err(|error| {
+                    AuthError::internal(format!(
+                        "Background cleanup requires a Tokio executor: {error}"
+                    ))
+                })?;
+                let running = executor.spawn(work);
+                Ok(Box::pin(async move {
+                    running.await.map_err(|error| {
+                        AuthError::internal(format!("Background cleanup task failed: {error}"))
+                    })?
+                }))
+            }
+        }
+    }
+
+    /// Force cleanup across owners/configurations, updating the same global
+    /// automatic-cleanup timestamp and awaiting deletion despite the throttle.
     pub async fn delete_all_expired_api_keys(
         &self,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> DeleteExpiredApiKeysResponse {
-        *self
-            .last_expired_check
-            .lock()
-            .unwrap_or_else(|error| error.into_inner()) = Some(std::time::Instant::now());
-        Self::delete_expired_logged(ctx).await;
+        let _ = admit_expired_cleanup(true);
+        if let Err(error) = ctx.database.delete_expired_api_keys().await {
+            tracing::error!(%error, "Failed to delete expired API keys");
+        }
         DeleteExpiredApiKeysResponse {
             success: true,
             error: None,
-        }
-    }
-
-    async fn delete_expired_logged(ctx: &AuthContext<impl better_auth_core::AuthSchema>) {
-        if let Err(error) = ctx.database.delete_expired_api_keys().await {
-            tracing::error!(%error, "Failed to delete expired API keys");
         }
     }
 

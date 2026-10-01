@@ -5,6 +5,7 @@ import { Database } from "bun:sqlite";
 import { openApiProfiles } from "./open-api-fixture";
 import { passkey } from "@better-auth/passkey";
 import { betterAuth, type BetterAuthPlugin } from "better-auth";
+import { apiKeyBackgroundFixture } from "./api-key-background-fixture";
 import { createApiKeyGenerationFixture } from "./api-key-generation-fixture";
 import { createApiKeyHookFixture } from "./api-key-hook-fixture";
 import { passkeyFixture } from "./passkey-fixture";
@@ -420,6 +421,8 @@ const passkeyAuthentication = passkeyAuthenticationFixture(database, authOptions
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
+const apiKeyBackground = await apiKeyBackgroundFixture(database, authOptions);
+for (const [path, instance] of apiKeyBackground.profiles) verificationProfiles.set(path, instance);
 const apiKeyGenerationFixture = createApiKeyGenerationFixture(database, authOptions);
 verificationProfiles.set(apiKeyGenerationFixture.path, apiKeyGenerationFixture.auth);
 const apiKeyHookFixture = createApiKeyHookFixture(database, authOptions);
@@ -934,6 +937,8 @@ const server = Bun.serve({
       if (url.pathname === "/__test/api-key/update" && request.method === "POST") {
         return jsonResponse(await auth.api.updateApiKey({ body: await readJson(request) }));
       }
+      const apiKeyBackgroundControl = await apiKeyBackground.control(request);
+      if (apiKeyBackgroundControl) return apiKeyBackgroundControl;
       const apiKeyGenerationControl = await apiKeyGenerationFixture.control(request);
       if (apiKeyGenerationControl) return apiKeyGenerationControl;
       const apiKeyHookControl = await apiKeyHookFixture.control(request);

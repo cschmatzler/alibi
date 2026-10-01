@@ -135,7 +135,8 @@ impl ApiKeyPlugin {
         input: &VerifyApiKey<'_>,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> Result<ApiKeyView, ApiKeyVerificationError> {
-        self.verify_api_key_checked(input, None, ctx, true).await
+        self.verify_api_key_with_registration(input, None, ctx)
+            .await
     }
 
     /// Verify with the actual caller request available to trusted predicates.
@@ -146,8 +147,26 @@ impl ApiKeyPlugin {
         request: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> Result<ApiKeyView, ApiKeyVerificationError> {
-        self.verify_api_key_checked(input, Some(request), ctx, true)
+        self.verify_api_key_with_registration(input, Some(request), ctx)
             .await
+    }
+
+    async fn verify_api_key_with_registration(
+        &self,
+        input: &VerifyApiKey<'_>,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ) -> Result<ApiKeyView, ApiKeyVerificationError> {
+        let view = self
+            .verify_api_key_checked(input, request, ctx, true)
+            .await?;
+        if self
+            .resolve_configuration(Some(&view.config_id))?
+            .defer_updates
+        {
+            self.register_expired_cleanup(ctx).await?;
+        }
+        Ok(view)
     }
 
     async fn verify_api_key_checked(
@@ -325,7 +344,23 @@ impl ApiKeyPlugin {
             }
             Err(ApiKeyVerificationError::Internal(error)) => return Err(error),
         };
-        self.maybe_delete_expired(ctx).await;
+        if config.defer_updates {
+            let completion = Self::start_expired_cleanup(ctx).await?;
+            if let Some(handler) = &ctx.config.background_tasks {
+                if let Err(error) = handler.handle(completion) {
+                    if error.status_code() >= 500
+                        && !matches!(error, AuthError::Api { .. } | AuthError::Upstream { .. })
+                    {
+                        return Ok(Some(BeforeRequestAction::Respond(AuthResponse::new(500))));
+                    }
+                    return Err(error);
+                }
+            } else {
+                drop(completion);
+            }
+        } else {
+            self.maybe_delete_expired(ctx).await?;
+        }
 
         if config.references != ApiKeyReferences::User {
             return Ok(Some(BeforeRequestAction::Respond(

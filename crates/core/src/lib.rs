@@ -14,6 +14,7 @@
 
 extern crate self as better_auth;
 
+pub mod background_tasks;
 pub mod config;
 pub mod email;
 pub mod entity;
@@ -38,6 +39,7 @@ pub mod utils;
 pub mod wire;
 
 // Re-export commonly used items
+pub use background_tasks::{BackgroundTaskCompletion, BackgroundTaskHandler};
 pub use better_auth_macros::{AuthSchema, PluginConfig};
 pub use config::{
     AccountConfig, AccountLinkingConfig, AdvancedConfig, AdvancedDatabaseConfig, AuthConfig,

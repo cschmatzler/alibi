@@ -491,6 +491,9 @@ pub struct AuthConfig {
 
     /// Email provider for sending emails (verification, password reset, etc.)
     pub email_provider: Option<Arc<dyn EmailProvider>>,
+    /// Observe already running deferred operations. Ignoring their completion
+    /// does not cancel them; applications may retain completions for shutdown.
+    pub background_tasks: Option<Arc<dyn crate::BackgroundTaskHandler>>,
 
     /// Advanced configuration options
     pub advanced: AdvancedConfig,
@@ -825,6 +828,7 @@ impl Default for AuthConfig {
             password: PasswordConfig::default(),
             account: AccountConfig::default(),
             email_provider: None,
+            background_tasks: None,
             advanced: AdvancedConfig::default(),
         }
     }
@@ -892,6 +896,11 @@ impl Default for PasswordConfig {
 }
 
 impl AuthConfig {
+    /// Integrate deferred task completions with the application executor.
+    pub fn background_tasks(mut self, handler: Arc<dyn crate::BackgroundTaskHandler>) -> Self {
+        self.background_tasks = Some(handler);
+        self
+    }
     pub fn new(secret: impl Into<String>) -> Self {
         Self {
             secret: secret.into(),

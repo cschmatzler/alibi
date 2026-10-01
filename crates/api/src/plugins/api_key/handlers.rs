@@ -194,6 +194,7 @@ async fn create_key_for_user(
     ApiKeyPlugin::validate_prefix(config, body.prefix.as_deref())?;
     ApiKeyPlugin::validate_name(config, body.name.as_deref(), true)?;
 
+    plugin.maybe_delete_expired(ctx).await?;
     let (full_key, hash, start) = if let Some(generator) = &config.custom_key_generator {
         let full_key = generator
             .generate_key(&super::ApiKeyGenerationOptions {
@@ -262,7 +263,6 @@ async fn create_key_for_user(
         enabled: true,
     };
     let api_key = ctx.database.create_api_key(input).await?;
-    plugin.maybe_delete_expired(ctx).await;
     let mut api_key = ApiKeyView::from(&api_key);
     // Upstream returns supplied falsy metadata at creation, but stores null.
     api_key.metadata = body
@@ -315,7 +315,7 @@ pub(crate) async fn get_key_core(
 ) -> AuthResult<ApiKeyView> {
     let config = plugin.resolve_configuration(config_id)?;
     let api_key = helpers::get_owned_api_key(ctx, config, id, user_id.as_ref(), "read").await?;
-    plugin.maybe_delete_expired(ctx).await;
+    plugin.maybe_delete_expired(ctx).await?;
     Ok(ApiKeyView::from(&api_key))
 }
 
@@ -370,7 +370,7 @@ pub(crate) async fn list_keys_core(
     if let Some(limit) = query.limit {
         views.truncate(limit);
     }
-    plugin.maybe_delete_expired(ctx).await;
+    plugin.maybe_delete_expired(ctx).await?;
     Ok(ListKeysResponse {
         api_keys: views,
         total,
@@ -521,7 +521,7 @@ async fn update_key_for_user(
         ..Default::default()
     };
     let updated = ctx.database.update_api_key(&body.key_id, update).await?;
-    plugin.maybe_delete_expired(ctx).await;
+    plugin.maybe_delete_expired(ctx).await?;
     Ok(ApiKeyView::from(&updated))
 }
 
@@ -535,6 +535,6 @@ pub(crate) async fn delete_key_core(
     let _ =
         helpers::get_owned_api_key(ctx, config, &body.key_id, user_id.as_ref(), "delete").await?;
     ctx.database.delete_api_key(&body.key_id).await?;
-    plugin.maybe_delete_expired(ctx).await;
+    plugin.maybe_delete_expired(ctx).await?;
     Ok(serde_json::json!({ "success": true }))
 }

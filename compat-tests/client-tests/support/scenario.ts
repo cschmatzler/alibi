@@ -281,6 +281,7 @@ export function compatScenario(
   scenarioName: string,
   scenario: (ctx: ScenarioServerContext) => Promise<unknown>,
   stateTransitions: readonly string[] = [],
+  timeoutMs?: number,
 ) {
   test.serial(scenarioName, async () => {
     const seed = `${Date.now()}-${crypto.randomUUID()}`;
@@ -301,5 +302,5 @@ export function compatScenario(
       !RAW_DIFF_ALLOWLIST.some(allowance => allowance.scenario.test(scenarioName) && allowance.path.test(entry.path)));
     if (rawDiffs.length) throw new Error(formatDiffs(`Raw trace drift: ${scenarioName}`, rawDiffs));
     await recordCoverage(scenarioName, ts.traces, stateTransitions);
-  });
+  }, timeoutMs);
 }
