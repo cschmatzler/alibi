@@ -2229,6 +2229,17 @@
           "two-factor OTP enable uses an authoritative owner, validates method before password verification and succeeds with disabled TOTP without a factor",
           "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries"
         ]
+      },
+      "requiredEvidence": {
+        "rejection": [
+          "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation"
+        ],
+        "authorization": [
+          "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation"
+        ],
+        "state": [
+          "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation"
+        ]
       }
     },
     {
