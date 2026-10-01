@@ -328,7 +328,7 @@ test("one comparison graph links observed issuance and transport owner token ref
 });
 
 test("persisted device-code aliases preserve issued-code relationships and rotation", () => {
-  for (const field of ["deviceCode", "userCode"]) {
+  for (const field of ["deviceCode", "userCode", "id", "token", "state"]) {
     const leftClaim = { exp: 4102444800, iss: "https://issuer.fixture", aud: "https://audience.fixture", custom: { [field]: "literal-left" } };
     const rightClaim = { ...leftClaim, custom: { [field]: "literal-right" } };
     expect(compareValues({ payload: leftClaim }, { payload: rightClaim }, context).some(difference => difference.path === `payload.custom.${field}`)).toBe(true);

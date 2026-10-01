@@ -1059,6 +1059,7 @@ const server = Bun.serve({
         siweFixture.reset();
         multipleSessionFixture.reset();
         twoFactorPolicyFixture.reset();
+        twoFactorOtpFixture.reset();
         await resetDatabaseState();
         emailOtpOutbox.clear();
         magicLinkOutbox.clear();

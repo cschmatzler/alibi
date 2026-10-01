@@ -1,12 +1,33 @@
 import { test } from "bun:test";
+import { ZodError } from "zod";
 import { authProfilePath, type FixtureProfile } from "./profiles";
 import { recordCoverage } from "./coverage";
 import { compareValues, type Difference } from "./compare";
 import { createAuthClient } from "better-auth/client";
-import { usernameClient, adminClient, emailOTPClient, magicLinkClient } from "better-auth/client/plugins";
+import {
+  usernameClient,
+  adminClient,
+  emailOTPClient,
+  magicLinkClient,
+} from "better-auth/client/plugins";
 
-function configuredClient(baseURL: string, fetchImpl: (input: string | URL | Request, init?: RequestInit) => Promise<Response>) {
-  return createAuthClient({ baseURL, plugins: [usernameClient(), adminClient(), emailOTPClient(), magicLinkClient()], fetchOptions: { customFetchImpl: fetchImpl } });
+function configuredClient(
+  baseURL: string,
+  fetchImpl: (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => Promise<Response>,
+) {
+  return createAuthClient({
+    baseURL,
+    plugins: [
+      usernameClient(),
+      adminClient(),
+      emailOTPClient(),
+      magicLinkClient(),
+    ],
+    fetchOptions: { customFetchImpl: fetchImpl },
+  });
 }
 import { RAW_DIFF_ALLOWLIST } from "./allowlist";
 import { RUST_BASE_URL, TS_BASE_URL, requireHealthy } from "./config";
@@ -32,11 +53,21 @@ import {
   setSocialProfile,
 } from "./controls";
 import { normalizeClientValue } from "./normalize";
-import { createTracingFetch, type TraceEntry } from "./trace";
+import { createTracingFetch, requestWindow, type TraceEntry } from "./trace";
+import {
+  assuranceEvent,
+  scenarioCoverage,
+  setAssurancePhase,
+  type ScenarioCoverage,
+  type ScenarioOutcome,
+} from "./assurance/evidence";
 
 type ScenarioServerContext = {
   baseURL: string;
-  actor(name?: string, profile?: FixtureProfile): {
+  actor(
+    name?: string,
+    profile?: FixtureProfile,
+  ): {
     client: ReturnType<typeof configuredClient>;
     fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
   };
@@ -58,10 +89,16 @@ type ScenarioServerContext = {
     location: string | null;
     body: unknown;
   }>;
-  expireInvitation(args: { invitationId: string; expiresAt: string }): Promise<unknown>;
+  expireInvitation(args: {
+    invitationId: string;
+    expiresAt: string;
+  }): Promise<unknown>;
   readUserState(args: { userId: string }): Promise<unknown>;
-  readDeviceState(args: {deviceCode: string}): Promise<unknown>;
-  expireDevice(args: {deviceCode: string; expiresAt: string}): Promise<unknown>;
+  readDeviceState(args: { deviceCode: string }): Promise<unknown>;
+  expireDevice(args: {
+    deviceCode: string;
+    expiresAt: string;
+  }): Promise<unknown>;
   readVerificationState(args: { identifier: string }): Promise<unknown>;
   resetServerState(): Promise<unknown>;
   setResetPasswordMode(mode: "capture" | "throw"): Promise<unknown>;
@@ -99,26 +136,16 @@ type ScenarioServerContext = {
     scope?: string | null;
   }): Promise<string>;
   readUserState(args: { userId: string }): Promise<unknown>;
-  readVerificationEmail(args: {
-    email: string;
-  }): Promise<unknown>;
-  readTwoFactorOtp(args: {
-    email: string;
-  }): Promise<unknown>;
-  readChangeEmailConfirmation(args: {
-    email: string;
-  }): Promise<unknown>;
+  readVerificationEmail(args: { email: string }): Promise<unknown>;
+  readTwoFactorOtp(args: { email: string }): Promise<unknown>;
+  readChangeEmailConfirmation(args: { email: string }): Promise<unknown>;
   seedDeleteUserToken(args: {
     email: string;
     token: string;
     expiresAt: string;
   }): Promise<unknown>;
-  removeCredentialAccount(args: {
-    email: string;
-  }): Promise<unknown>;
-  promoteAdmin(args: {
-    email: string;
-  }): Promise<unknown>;
+  removeCredentialAccount(args: { email: string }): Promise<unknown>;
+  promoteAdmin(args: { email: string }): Promise<unknown>;
 };
 
 export type ScenarioContext = ScenarioServerContext;
@@ -132,11 +159,14 @@ type ScenarioRun = {
 };
 
 async function runScenario(
-  label: string,
+  label: "TS" | "Rust",
   baseURL: string,
   seed: string,
   scenario: (ctx: ScenarioServerContext) => Promise<unknown>,
+  scenarioName: string,
+  onCoverage: (coverage: ScenarioCoverage) => void,
 ): Promise<ScenarioRun> {
+  setAssurancePhase(scenarioName, label);
   const health = await requireHealthy(baseURL, label);
   await resetServerState(baseURL);
 
@@ -146,7 +176,10 @@ async function runScenario(
     string,
     {
       client: ReturnType<typeof configuredClient>;
-      fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
+      fetch(
+        input: string | URL | Request,
+        init?: RequestInit,
+      ): Promise<Response>;
     }
   >();
   const shortSeed = seed.replace(/-/g, "").slice(0, 12);
@@ -217,10 +250,18 @@ async function runScenario(
         body: parsed,
       };
     },
-    recordTransport(entries) { traces.push(...entries); },
-    readDeviceState(args) { return readDeviceState(baseURL,args); },
-    expireDevice(args) { return expireDevice(baseURL,args); },
-    readVerificationState(args) { return readVerificationState(baseURL, args); },
+    recordTransport(entries) {
+      traces.push(...entries);
+    },
+    readDeviceState(args) {
+      return readDeviceState(baseURL, args);
+    },
+    expireDevice(args) {
+      return expireDevice(baseURL, args);
+    },
+    readVerificationState(args) {
+      return readVerificationState(baseURL, args);
+    },
     resetServerState() {
       return resetServerState(baseURL);
     },
@@ -242,8 +283,12 @@ async function runScenario(
     seedOAuthAccount(args) {
       return seedOAuthAccount(baseURL, args);
     },
-    readUserState(args) { return readUserState(baseURL, args); },
-    expireInvitation(args) { return expireInvitation(baseURL, args); },
+    readUserState(args) {
+      return readUserState(baseURL, args);
+    },
+    expireInvitation(args) {
+      return expireInvitation(baseURL, args);
+    },
     readVerificationEmail(args) {
       return readVerificationEmail(baseURL, args);
     },
@@ -264,26 +309,60 @@ async function runScenario(
     },
   };
 
-  return {
-    oauthURL: health.oauthBaseURL ?? baseURL.replace("localhost", "127.0.0.1"),
-    startedAt,
-    observation: normalizeClientValue(await scenario(context)),
-    finishedAt: Date.now(),
-    traces,
-  };
+  await scenarioCoverage("begin", label, scenarioName);
+  try {
+    return {
+      oauthURL:
+        health.oauthBaseURL ?? baseURL.replace("localhost", "127.0.0.1"),
+      startedAt,
+      observation: normalizeClientValue(await scenario(context)),
+      finishedAt: Date.now(),
+      traces,
+    };
+  } finally {
+    const coverage = await scenarioCoverage("end", label, scenarioName);
+    if (coverage) onCoverage(coverage);
+  }
 }
 
 function formatDiffs(title: string, differences: Difference[]) {
-  return [title, ...differences.map(entry => `- ${entry.path}: ${entry.reason}`)].join("\n");
+  return [
+    title,
+    ...differences.map((entry) => `- ${entry.path}: ${entry.reason}`),
+  ].join("\n");
 }
 
 /** Split comparator output into client-visible and raw-transport drift. Every difference must land in exactly one bucket. */
-export function classifyDifferences(scenarioName: string, differences: readonly Difference[]) {
-  const clientDiffs = differences.filter(entry => entry.path === "observation" || entry.path.startsWith("observation."));
-  const rawDiffs = differences.filter(entry => entry.path === "traces" || entry.path.startsWith("traces.")).filter(entry =>
-    !RAW_DIFF_ALLOWLIST.some(allowance => allowance.scenario.test(scenarioName) && allowance.path.test(entry.path)));
-  const unclassified = differences.filter(entry => !clientDiffs.includes(entry) && !rawDiffs.includes(entry)
-    && !RAW_DIFF_ALLOWLIST.some(allowance => allowance.scenario.test(scenarioName) && allowance.path.test(entry.path)));
+export function classifyDifferences(
+  scenarioName: string,
+  differences: readonly Difference[],
+) {
+  const clientDiffs = differences.filter(
+    (entry) =>
+      entry.path === "observation" || entry.path.startsWith("observation."),
+  );
+  const rawDiffs = differences
+    .filter(
+      (entry) => entry.path === "traces" || entry.path.startsWith("traces."),
+    )
+    .filter(
+      (entry) =>
+        !RAW_DIFF_ALLOWLIST.some(
+          (allowance) =>
+            allowance.scenario.test(scenarioName) &&
+            allowance.path.test(entry.path),
+        ),
+    );
+  const unclassified = differences.filter(
+    (entry) =>
+      !clientDiffs.includes(entry) &&
+      !rawDiffs.includes(entry) &&
+      !RAW_DIFF_ALLOWLIST.some(
+        (allowance) =>
+          allowance.scenario.test(scenarioName) &&
+          allowance.path.test(entry.path),
+      ),
+  );
   return { clientDiffs, rawDiffs, unclassified };
 }
 
@@ -293,26 +372,128 @@ export function compatScenario(
   stateTransitions: readonly string[] = [],
   timeoutMs?: number,
   comparisonOptions: { readonly oauthProxyProfileSecret?: string } = {},
+  reproduction?: unknown,
 ) {
-  test.serial(scenarioName, async () => {
-    const seed = `${Date.now()}-${crypto.randomUUID()}`;
-    const ts = await runScenario("TS", TS_BASE_URL, seed, scenario);
-    const rust = await runScenario("Rust", RUST_BASE_URL, seed, scenario);
-    const comparison = {
-      compactSessionCacheSecret: "compat-test-only-key-not-real-minimum-32chars",
-      ...comparisonOptions,
-      leftBaseURL: TS_BASE_URL, rightBaseURL: RUST_BASE_URL,
-      leftStartedAt: ts.startedAt, rightStartedAt: rust.startedAt,
-      leftFinishedAt: ts.finishedAt, rightFinishedAt: rust.finishedAt,
-      leftOAuthURL: ts.oauthURL, rightOAuthURL: rust.oauthURL,
-    };
-    // Retain one identity graph across values and transport, and give the
-    // trace shape markers their explicit scope when comparing type labels.
-    const differences = compareValues({ observation: ts.observation, traces: ts.traces }, { observation: rust.observation, traces: rust.traces }, comparison);
-    const { clientDiffs, rawDiffs, unclassified } = classifyDifferences(scenarioName, differences);
-    if (unclassified.length) throw new Error(formatDiffs(`Comparator reported drift outside the observation and trace roots: ${scenarioName}`, unclassified));
-    if (clientDiffs.length) throw new Error(formatDiffs(`Client-visible drift: ${scenarioName}`, clientDiffs));
-    if (rawDiffs.length) throw new Error(formatDiffs(`Raw trace drift: ${scenarioName}`, rawDiffs));
-    await recordCoverage(scenarioName, ts.traces, stateTransitions, TS_BASE_URL);
-  }, timeoutMs);
+  assuranceEvent({ event: "registered", name: scenarioName });
+  test.serial(
+    scenarioName,
+    async () => {
+      const seed = `${Date.now()}-${crypto.randomUUID()}`;
+      const outcome: ScenarioOutcome = {
+        name: scenarioName,
+        status: "failed",
+        coverage: {},
+      };
+      let phase: "TS" | "Rust" = "TS";
+      let failure: ScenarioOutcome["failure"] = "scenario";
+      assuranceEvent({ event: "started", name: scenarioName });
+      try {
+        const ts = await runScenario(
+          "TS",
+          TS_BASE_URL,
+          seed,
+          scenario,
+          scenarioName,
+          (coverage) => {
+            outcome.coverage.TS = coverage;
+          },
+        );
+        phase = "Rust";
+        const rust = await runScenario(
+          "Rust",
+          RUST_BASE_URL,
+          seed,
+          scenario,
+          scenarioName,
+          (coverage) => {
+            outcome.coverage.Rust = coverage;
+          },
+        );
+        const comparison = {
+          compactSessionCacheSecret:
+            "compat-test-only-key-not-real-minimum-32chars",
+          ...comparisonOptions,
+          leftBaseURL: TS_BASE_URL,
+          rightBaseURL: RUST_BASE_URL,
+          leftStartedAt: ts.startedAt,
+          rightStartedAt: rust.startedAt,
+          leftFinishedAt: ts.finishedAt,
+          rightFinishedAt: rust.finishedAt,
+          leftRequestWindows: ts.traces.map((trace) => trace[requestWindow]),
+          rightRequestWindows: rust.traces.map((trace) => trace[requestWindow]),
+          leftOAuthURL: ts.oauthURL,
+          rightOAuthURL: rust.oauthURL,
+        };
+        // Retain one identity graph across values and transport, and give the
+        // trace shape markers their explicit scope when comparing type labels.
+        const differences = compareValues(
+          { observation: ts.observation, traces: ts.traces },
+          { observation: rust.observation, traces: rust.traces },
+          comparison,
+        );
+        const { clientDiffs, rawDiffs, unclassified } = classifyDifferences(
+          scenarioName,
+          differences,
+        );
+        outcome.paths = differences.map((difference) => difference.path);
+        failure = "comparison";
+        if (unclassified.length)
+          throw new Error(
+            formatDiffs(
+              `Comparator reported drift outside the observation and trace roots: ${scenarioName}`,
+              unclassified,
+            ),
+          );
+        if (clientDiffs.length)
+          throw new Error(
+            formatDiffs(`Client-visible drift: ${scenarioName}`, clientDiffs),
+          );
+        if (rawDiffs.length)
+          throw new Error(
+            formatDiffs(`Raw trace drift: ${scenarioName}`, rawDiffs),
+          );
+        failure = "infrastructure";
+        await recordCoverage(
+          scenarioName,
+          ts.traces,
+          stateTransitions,
+          TS_BASE_URL,
+        );
+        outcome.status = "passed";
+      } catch (error) {
+        outcome.failure =
+          failure === "comparison" || failure === "infrastructure"
+            ? failure
+            : error instanceof Error && error.name === "InvalidSequence"
+              ? "invalid-sequence"
+              : error instanceof Error && error.name === "ModelViolation"
+                ? "model"
+                : error instanceof Error &&
+                    (/^expect\(/.test(error.message) ||
+                      error.name === "ZodError")
+                  ? "assertion"
+                  : "scenario";
+        outcome.phase = phase;
+        outcome.signature = `${phase}:${outcome.failure}:${
+          outcome.failure === "comparison"
+            ? outcome.paths
+                ?.map((path) => path.replace(/\.\d+(?=\.|$)/g, ".[]"))
+                .sort()
+                .join(",")
+            : error instanceof Error
+              ? error.message.split("\n")[0]
+              : String(error)
+        }`;
+        if (outcome.failure === "assertion" && error instanceof Error)
+          outcome.signature += `:${error.stack?.split("\n").find((line) => line.includes("/tests/") && !line.includes("/support/")) ?? "unknown-assertion-site"}`;
+        if (error instanceof ZodError)
+          outcome.signature = `${phase}:assertion:validation:${JSON.stringify(error.issues.map((issue) => ({ code: issue.code, path: issue.path })))}`;
+        outcome.reproduction = reproduction;
+        throw error;
+      } finally {
+        assuranceEvent({ event: "finished", ...outcome });
+      }
+    },
+    timeoutMs,
+  );
 }

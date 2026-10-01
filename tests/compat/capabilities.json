@@ -823,8 +823,8 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "reset password callback redirects invalid token to error callback",
-        "rejection": null,
+        "success": "reset password callback redirects with token and preserves callbackURL query params",
+        "rejection": "reset password callback redirects invalid token to error callback",
         "authorization": null,
         "state": null
       }
@@ -1528,7 +1528,7 @@
         "success": "delete user with a fresh session deletes the current account",
         "rejection": null,
         "authorization": null,
-        "state": null
+        "state": "delete user with a fresh session deletes the current account"
       }
     },
     {
@@ -2819,7 +2819,7 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "request password reset masks nonexistent email",
+        "success": ["request password reset then reset password updates credentials", "request password reset masks nonexistent email"],
         "rejection": null,
         "authorization": null,
         "state": null
@@ -2833,7 +2833,7 @@
         "success": "request password reset then reset password updates credentials",
         "rejection": "reset password rejects invalid token",
         "authorization": null,
-        "state": null
+        "state": "request password reset then reset password updates credentials"
       }
     },
     {

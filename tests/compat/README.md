@@ -104,22 +104,123 @@ Outside devenv, run `bunx playwright install --with-deps chromium` in
   `core/profiles` scenario requests `/ok` under every registered profile on both
   servers, so a profile served by one runtime only, or a typo in a profile name,
   fails before any scenario depends on it.
-- Every 4xx/5xx response body in the raw trace is recorded completely and
-  compared by value through the identity bijection, not as a type shape. Error
-  codes, messages and field names therefore cannot drift silently even when a
-  scenario does not return that response. Successful bodies remain shape-compared
-  in the trace and value-compared wherever the scenario returns them.
+- Every public authentication response body, including successful responses that a scenario discards,
+  is retained and compared by value through the identity bijection. All response
+  headers are compared except the explicit transport fields `date`, `server`,
+  `connection`, `keep-alive`, `content-length` and `transfer-encoding`.
+  `set-cookie` is compared as structured cookie evidence. CORS, cache policy,
+  content-type parameters and application headers remain observable. Private
+  fixture controls retain transport shapes and use their scenario's typed state
+  observations; internal ciphertext and callback receipts are not public wire contracts.
+- Runtime clock normalization retains field and entity provenance. Later session
+  observations can use their actual sign-in issuance window; user updates require
+  the actual previously issued session cookie. Session expiry remains tied to its
+  creation/update clock or an explicit scoped expiry control. Clock comparisons
+  retain the existing 1.5-second tolerance; this is not subsecond timing proof.
 
 Concurrent request scenarios may use separate instances of the same tracing
 fetch and record both complete observations through `ctx.recordTransport` in
 success/rejection order. This describes unordered outcomes without comparing
-network completion order. Every request, response shape, status, selected header
+network completion order. Every request, complete response, status, policy header
 and cookie attribute remains in the canonical trace comparison; returned values
 and stored state share its identity graph.
 
 The browser fixture uses local HTTP. Production HTTPS/Secure-cookie deployment
 behavior is not claimed by that test. Structural route evidence is also not a
 claim that every behavior of an endpoint has been tested.
+
+## Assurance of the combined suite
+
+The assurance runner evaluates what the suite can establish, including missing
+tests and missing assertions. It is an explicit command; CI routing is unchanged.
+Install both Bun projects with their frozen lockfiles and run inside `devenv shell`:
+
+```bash
+cd tests/compat/client-tests
+bun run assurance:inventory
+bun run assurance run --budget 12
+```
+
+`run` builds and owns the Rust fixture, instruments the pinned upstream fixture,
+runs the selected SDK scenarios, and runs an upstream-versus-mutated-upstream
+campaign with clean executions before and after it. The strict command exits
+nonzero while any in-scope obligation lacks evidence. `--report-only` permits
+coverage gaps for exploration; broken execution still fails. The default budget
+is a bounded sample, and every unrun mutation stays unresolved. Use repeated
+`--tests tests/path.test.ts` or `--mutation ID` for focused work. For example:
+
+```bash
+bun run assurance run --report-only --budget 5 \
+  --tests tests/password-management/password.test.ts \
+  --tests tests/user-management/user.test.ts
+bun run assurance:mutate --tests tests/password-management/password.test.ts \
+  --mutation 'npm:better-auth/dist/api/routes/password.mjs#omit-effect:6479:6541' \
+  --report-only
+```
+
+Each command owns a fresh directory under `artifacts/assurance/`, containing:
+
+- `harness-controls.json` and `.log`: the harness negative controls run before
+  fixture execution. Missing, failing or stale controls prevent a complete report;
+  the fingerprint includes the controls themselves.
+- `inventory.json`: an independent denominator from the SHA-256-pinned source
+  archive in `../upstream-source.json`, authenticated published npm archives,
+  public exports/options, repository source files, upstream test templates,
+  static branch arms/functions and source mutation candidates. Installed package
+  bytes must match the committed Bun lockfile's npm integrity. Unloaded modules
+  remain in the branch denominator. Parameterized tests are counted as templates,
+  not guessed expanded cases. Optional chains, loops and catches not measured by
+  Istanbul are explicit unmeasured obligations.
+- `parity/suite.json` and `events.jsonl`: registered and completed scenarios,
+  per-scenario oracle coverage, run identity and harness fingerprint. Parity runs
+  also record the tested Rust executable and build-input fingerprints; reporting
+  refuses changed inputs. Only passing
+  dual-fixture scenarios contribute coverage. Startup and reset execution are
+cleared before each scenario. Missing acknowledgements and incomplete runs fail.
+- `campaign/mutations.json`: reached and detected source/response mutations,
+  survivors, unreachable changes, unchanged targets, inconclusive executions and
+  unrun candidates. Source mutations negate conditions, alter comparison boundaries
+  or omit persistent/delivery effects. Response mutations remove or change fields,
+  status, headers and cookie protection. A detection requires a behavioral failure
+  in the same scenario that reached the changed behavior. Startup failures, generic
+  exceptions, timeouts, stale evidence and unrelated failures never count as kills.
+- `report.json`: uncovered branches/functions, unmapped upstream obligations,
+  unproven contracts, unresolved mutations and explicit scope exclusions. There
+  is no percentage that can compensate for a missing obligation.
+
+`../assurance-contracts.json` binds exact upstream anchors to named test owners and
+required mutations. Start with the reset-delivery, single-use and account-deletion
+contracts; other obligations intentionally remain unmapped until reviewed. A
+matching route or test name alone does not create a semantic binding. New upstream
+exports, options and source files enter the denominator even if our tests never
+mention them. The nine documented integration exclusions remain visible with reasons.
+Equivalent mutations require explicit, reviewed reasons; survivors are never
+automatically classified as equivalent.
+
+The generated lifecycle family explores two users, four actors, saved-cookie
+replay, expiry, password changes/resets, revocation and deletion across default,
+disabled-refresh and deferred-refresh profiles. Every action checks physical
+user/account/session state and probes every issued cookie. It complements the
+handwritten plugin/configuration scenarios; it does not generate all possible
+plugins, configurations, storage backends or schedules.
+
+```bash
+bun run assurance:generate --seed 42 --steps 50 --profile session-deferred
+bun run assurance replay --replay artifacts/assurance/RUN/replay.json --report-only
+bun run assurance shrink --replay artifacts/assurance/RUN/parity/replay-0.json --budget 100
+bun run assurance:report --directory artifacts/assurance/RUN
+```
+
+Failed generated cases save their symbolic actions as replay files without
+ephemeral credentials. Reduction accepts only the same behavioral failure with
+valid execution evidence, and records budget exhaustion. State comparison is
+provided by explicit persisted-state observations and the generated model;
+mutation survival exposes side effects that existing assertions fail to observe.
+No universal database snapshot or exhaustive configuration/concurrency exploration
+is claimed. `--reference-only` uses two upstream fixtures to validate the harness
+and is labeled as such; it cannot establish Rust compatibility. Even a completed
+report would establish evidence only within its declared inventory, mutation
+operators and scope, not a mathematical proof over every possible input.
 
 ## Capability inventory and coverage
 
