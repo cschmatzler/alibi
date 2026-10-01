@@ -442,6 +442,38 @@ pub(in crate::plugins) async fn fetch_user_info_from_provider(
             .map_err(AuthError::internal);
     }
 
+    if let Some(token) = request
+        .id_token
+        .as_deref()
+        .filter(|_| provider.id_token.is_some())
+    {
+        // Direct sign-in verifies this immutable token before requesting its profile;
+        // the code flow obtains it from the trusted provider token exchange.
+        let payload = token
+            .split('.')
+            .nth(1)
+            .ok_or_else(|| AuthError::internal("Missing ID-token payload"))?;
+        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(payload)
+            .map_err(|error| AuthError::internal(error.to_string()))?;
+        let profile: serde_json::Value = serde_json::from_slice(&bytes)
+            .map_err(|error| AuthError::internal(error.to_string()))?;
+        if !super::id_token::hosted_domain_allowed(
+            provider,
+            profile.get("hd").and_then(serde_json::Value::as_str),
+        ) {
+            return Err(AuthError::internal("Hosted domain mismatch"));
+        }
+        let mapper = provider
+            .map_user_info
+            .ok_or_else(|| AuthError::internal("Missing user-info mapper"))?;
+        let user = mapper(profile.clone()).map_err(AuthError::internal)?;
+        return Ok(OAuthUserInfoResponse {
+            user,
+            data: profile,
+        });
+    }
+
     let user_info_url = provider
         .user_info_url
         .as_deref()

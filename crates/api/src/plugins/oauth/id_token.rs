@@ -149,7 +149,7 @@ pub(super) async fn verify_provider_token(
     };
     let mut audiences = vec![provider.client_id.clone()];
     audiences.extend(provider.additional_client_ids.clone());
-    verify_jwks_token(
+    let verified = verify_jwks_token(
         token,
         config
             .audience
@@ -159,8 +159,23 @@ pub(super) async fn verify_provider_token(
         nonce,
         config,
     )
-    .await
-    .is_some()
+    .await;
+    verified.is_some_and(|claims| {
+        hosted_domain_allowed(provider, claims.get("hd").and_then(JsValue::as_str))
+    })
+}
+
+pub(in crate::plugins) fn hosted_domain_allowed(
+    provider: &OAuthProvider,
+    claim: Option<&str>,
+) -> bool {
+    provider
+        .hosted_domain
+        .as_deref()
+        .filter(|domain| !domain.is_empty())
+        .is_none_or(|domain| {
+            claim.is_some_and(|claim| !claim.is_empty() && (domain == "*" || domain == claim))
+        })
 }
 
 pub(in crate::plugins) async fn verify_jwks_token(
