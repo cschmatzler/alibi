@@ -120,3 +120,16 @@ remain outside this bounded contract. Normal AuthError delivery and handler
 rejections are covered. The authoring gate from test-audit and authorization
 review were applied. Coordinator owns independent review, full gates and
 publication; no full canonical gate was run here.
+
+## Coordinator integration
+
+The unchanged frozen slice was read against the pinned sender and
+runInBackgroundOrAwait runtime. Owned eager polling, default await, retained
+issued-code state, ignored/throwing observer completion and original task-local
+context match the demonstrated asynchronous contract. No broad callback/error
+mapping changed. Coordinator review is clear; independent organization review
+and the following canonical gate remain pending. Twenty-eight additive names
+are required in actual inventory evidence: all four owners require successful,
+rejected and stateful send/verify behavior, and genuine guest send rejection
+supplies authorization evidence. Verification authorization is not inferred
+from its wrong-owner expired-code response.
