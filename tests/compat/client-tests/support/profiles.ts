@@ -10,6 +10,7 @@ function variants<P extends string, S extends string>(prefix: P, suffixes: reado
  * profile parity scenario proves that both fixture servers serve each entry.
  */
 export const FIXTURE_PROFILES = [
+  ...variants("social-cloudflare-",["default","configured","disabled-scope","disabled-configured","public","post","encoded","mapped","implicit-disabled","signup-disabled","required","configured-endpoint"] as const),
   ...variants("social-atlassian-",["default","configured","disabled-scope","disabled-configured","mapped","implicit-disabled","signup-disabled","required","configured-endpoint"] as const),
   "social-apple-default", "social-apple-configured", "social-apple-disabled-scope", "social-apple-disabled-configured", "social-apple-bundle", "social-apple-audience", "social-apple-client-array", "social-apple-disabled-idtoken", "social-apple-signup-disabled", "social-apple-implicit-disabled", "social-apple-encrypted", "social-apple-mapped", "social-apple-empty-clients",
   "oauth-proxy",

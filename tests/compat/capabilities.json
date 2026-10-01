@@ -173,7 +173,25 @@
           "atlassian explicit signup admits disabled implicit signup",
           "atlassian fractional token expiry has no fabricated default",
           "atlassian refresh rotates owned credentials and local logout revokes session",
-          "atlassian zero token expiry has no fabricated default"
+          "atlassian zero token expiry has no fabricated default",
+          "cloudflare absent token expiry has no fabricated default",
+          "cloudflare actual API empty-names mapping retains independent raw subject",
+          "cloudflare actual API first-only mapping retains independent raw subject",
+          "cloudflare actual API last-only mapping retains independent raw subject",
+          "cloudflare actual API mapped mapping retains independent raw subject",
+          "cloudflare actual API missing-names mapping retains independent raw subject",
+          "cloudflare actual API null-names mapping retains independent raw subject",
+          "cloudflare actual API numeric-name mapping retains independent raw subject",
+          "cloudflare actual API numeric-subject mapping retains independent raw subject",
+          "cloudflare actual API zero-name mapping retains independent raw subject",
+          "cloudflare configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "cloudflare default credentials reach real token exchange refresh and owned persistence",
+          "cloudflare encoded credentials reach real token exchange refresh and owned persistence",
+          "cloudflare explicit signup admits disabled implicit signup",
+          "cloudflare fractional token expiry has no fabricated default",
+          "cloudflare post credentials reach real token exchange refresh and owned persistence",
+          "cloudflare public credentials reach real token exchange refresh and owned persistence",
+          "cloudflare zero token expiry has no fabricated default"
         ],
         "rejection": [
           "social callback rejects consumed database state while retaining the issued session and foreign state",
@@ -202,7 +220,21 @@
           "atlassian rejects null-subject without foreign writes",
           "atlassian rejects userinfo-status without foreign writes",
           "atlassian unsupported ID token and invalid provider/state produce no requests",
-          "atlassian mapped invalid subjects reach application mapper before denial"
+          "cloudflare configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "cloudflare default credentials reach real token exchange refresh and owned persistence",
+          "cloudflare encoded credentials reach real token exchange refresh and owned persistence",
+          "cloudflare post credentials reach real token exchange refresh and owned persistence",
+          "cloudflare public credentials reach real token exchange refresh and owned persistence",
+          "cloudflare rejects api-denied without foreign writes",
+          "cloudflare rejects api-no-result without foreign writes",
+          "cloudflare rejects api-null-result without foreign writes",
+          "cloudflare rejects empty-subject without foreign writes",
+          "cloudflare rejects missing-subject without foreign writes",
+          "cloudflare rejects null-subject without foreign writes",
+          "cloudflare rejects userinfo-status without foreign writes",
+          "cloudflare unsupported ID token and invalid provider state produce no requests",
+          "atlassian mapped invalid subjects reach application mapper before denial",
+          "cloudflare mapped invalid subjects reach application mapper before denial"
         ],
         "authorization": [
           "social linking rejects missing tampered and revoked sessions without changing any principal",
@@ -229,7 +261,21 @@
           "atlassian rejects null-subject without foreign writes",
           "atlassian rejects userinfo-status without foreign writes",
           "atlassian unsupported ID token and invalid provider/state produce no requests",
-          "atlassian mapped invalid subjects reach application mapper before denial"
+          "cloudflare configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "cloudflare default credentials reach real token exchange refresh and owned persistence",
+          "cloudflare encoded credentials reach real token exchange refresh and owned persistence",
+          "cloudflare post credentials reach real token exchange refresh and owned persistence",
+          "cloudflare public credentials reach real token exchange refresh and owned persistence",
+          "cloudflare rejects api-denied without foreign writes",
+          "cloudflare rejects api-no-result without foreign writes",
+          "cloudflare rejects api-null-result without foreign writes",
+          "cloudflare rejects empty-subject without foreign writes",
+          "cloudflare rejects missing-subject without foreign writes",
+          "cloudflare rejects null-subject without foreign writes",
+          "cloudflare rejects userinfo-status without foreign writes",
+          "cloudflare unsupported ID token and invalid provider state produce no requests",
+          "atlassian mapped invalid subjects reach application mapper before denial",
+          "cloudflare mapped invalid subjects reach application mapper before denial"
         ],
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -267,7 +313,42 @@
           "atlassian fractional token expiry has no fabricated default",
           "atlassian unverified email gate stores account without issuing session",
           "atlassian zero token expiry has no fabricated default",
-          "atlassian mapped invalid subjects reach application mapper before denial"
+          "cloudflare absent token expiry has no fabricated default",
+          "cloudflare actual API empty-names mapping retains independent raw subject",
+          "cloudflare actual API first-only mapping retains independent raw subject",
+          "cloudflare actual API last-only mapping retains independent raw subject",
+          "cloudflare actual API mapped mapping retains independent raw subject",
+          "cloudflare actual API missing-names mapping retains independent raw subject",
+          "cloudflare actual API null-names mapping retains independent raw subject",
+          "cloudflare actual API numeric-name mapping retains independent raw subject",
+          "cloudflare actual API numeric-subject mapping retains independent raw subject",
+          "cloudflare actual API zero-name mapping retains independent raw subject",
+          "cloudflare configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "cloudflare default credentials reach real token exchange refresh and owned persistence",
+          "cloudflare encoded credentials reach real token exchange refresh and owned persistence",
+          "cloudflare explicit signup admits disabled implicit signup",
+          "cloudflare fractional token expiry has no fabricated default",
+          "cloudflare post credentials reach real token exchange refresh and owned persistence",
+          "cloudflare public credentials reach real token exchange refresh and owned persistence",
+          "cloudflare rejects api-denied without foreign writes",
+          "cloudflare rejects api-no-result without foreign writes",
+          "cloudflare rejects api-null-result without foreign writes",
+          "cloudflare rejects empty-email without foreign writes",
+          "cloudflare rejects empty-subject without foreign writes",
+          "cloudflare rejects implicit-disabled without foreign writes",
+          "cloudflare rejects missing-email without foreign writes",
+          "cloudflare rejects missing-subject without foreign writes",
+          "cloudflare rejects null-email without foreign writes",
+          "cloudflare rejects null-subject without foreign writes",
+          "cloudflare rejects signup-disabled without foreign writes",
+          "cloudflare rejects token-redirect without foreign writes",
+          "cloudflare rejects token-status without foreign writes",
+          "cloudflare rejects userinfo-status without foreign writes",
+          "cloudflare unsupported ID token and invalid provider state produce no requests",
+          "cloudflare unverified email gate stores account without issuing session",
+          "cloudflare zero token expiry has no fabricated default",
+          "atlassian mapped invalid subjects reach application mapper before denial",
+          "cloudflare mapped invalid subjects reach application mapper before denial"
         ]
       }
     },
@@ -3050,7 +3131,12 @@
           "apple provider refresh rotates stored credentials and excludes foreign owners",
           "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
           "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "atlassian refresh rotates owned credentials and local logout revokes session"
+          "atlassian refresh rotates owned credentials and local logout revokes session",
+          "cloudflare configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "cloudflare default credentials reach real token exchange refresh and owned persistence",
+          "cloudflare encoded credentials reach real token exchange refresh and owned persistence",
+          "cloudflare post credentials reach real token exchange refresh and owned persistence",
+          "cloudflare public credentials reach real token exchange refresh and owned persistence"
         ],
         "rejection": [
           "account token routes reject conflicting and foreign account selectors",
@@ -3060,7 +3146,12 @@
           "apple provider refresh rotates stored credentials and excludes foreign owners",
           "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
           "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "atlassian refresh rotates owned credentials and local logout revokes session"
+          "atlassian refresh rotates owned credentials and local logout revokes session",
+          "cloudflare configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "cloudflare default credentials reach real token exchange refresh and owned persistence",
+          "cloudflare encoded credentials reach real token exchange refresh and owned persistence",
+          "cloudflare post credentials reach real token exchange refresh and owned persistence",
+          "cloudflare public credentials reach real token exchange refresh and owned persistence"
         ],
         "authorization": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
@@ -3076,7 +3167,12 @@
           "apple provider refresh rotates stored credentials and excludes foreign owners",
           "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
           "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "atlassian refresh rotates owned credentials and local logout revokes session"
+          "atlassian refresh rotates owned credentials and local logout revokes session",
+          "cloudflare configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "cloudflare default credentials reach real token exchange refresh and owned persistence",
+          "cloudflare encoded credentials reach real token exchange refresh and owned persistence",
+          "cloudflare post credentials reach real token exchange refresh and owned persistence",
+          "cloudflare public credentials reach real token exchange refresh and owned persistence"
         ]
       }
     },
@@ -3477,7 +3573,32 @@
           "atlassian published disabled-scope authorization audience scopes and PKCE",
           "atlassian refresh rotates owned credentials and local logout revokes session",
           "atlassian zero token expiry has no fabricated default",
-          "atlassian mapped invalid subjects reach application mapper before denial"
+          "cloudflare absent token expiry has no fabricated default",
+          "cloudflare actual API empty-names mapping retains independent raw subject",
+          "cloudflare actual API first-only mapping retains independent raw subject",
+          "cloudflare actual API last-only mapping retains independent raw subject",
+          "cloudflare actual API mapped mapping retains independent raw subject",
+          "cloudflare actual API missing-names mapping retains independent raw subject",
+          "cloudflare actual API null-names mapping retains independent raw subject",
+          "cloudflare actual API numeric-name mapping retains independent raw subject",
+          "cloudflare actual API numeric-subject mapping retains independent raw subject",
+          "cloudflare actual API zero-name mapping retains independent raw subject",
+          "cloudflare configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "cloudflare default credentials reach real token exchange refresh and owned persistence",
+          "cloudflare disabled defaults with no requested scopes omits scope",
+          "cloudflare encoded credentials reach real token exchange refresh and owned persistence",
+          "cloudflare explicit signup admits disabled implicit signup",
+          "cloudflare fractional token expiry has no fabricated default",
+          "cloudflare post credentials reach real token exchange refresh and owned persistence",
+          "cloudflare public credentials reach real token exchange refresh and owned persistence",
+          "cloudflare published configured authorization deduplicates scopes and uses PKCE",
+          "cloudflare published configured-endpoint authorization deduplicates scopes and uses PKCE",
+          "cloudflare published default authorization deduplicates scopes and uses PKCE",
+          "cloudflare published disabled-configured authorization deduplicates scopes and uses PKCE",
+          "cloudflare published disabled-scope authorization deduplicates scopes and uses PKCE",
+          "cloudflare zero token expiry has no fabricated default",
+          "atlassian mapped invalid subjects reach application mapper before denial",
+          "cloudflare mapped invalid subjects reach application mapper before denial"
         ],
         "rejection": [
           "social sign-in rejects invalid callbackURL",
@@ -3500,7 +3621,8 @@
           "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
           "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
           "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner",
-          "atlassian unsupported ID token and invalid provider/state produce no requests"
+          "atlassian unsupported ID token and invalid provider/state produce no requests",
+          "cloudflare unsupported ID token and invalid provider state produce no requests"
         ],
         "authorization": [
           "social sign-in rejects invalid callbackURL",
@@ -3608,7 +3730,27 @@
           "atlassian configured redirect URI is retained in token exchange",
           "atlassian fractional token expiry has no fabricated default",
           "atlassian unverified email gate stores account without issuing session",
-          "atlassian zero token expiry has no fabricated default"
+          "atlassian zero token expiry has no fabricated default",
+          "cloudflare absent token expiry has no fabricated default",
+          "cloudflare actual API empty-names mapping retains independent raw subject",
+          "cloudflare actual API first-only mapping retains independent raw subject",
+          "cloudflare actual API last-only mapping retains independent raw subject",
+          "cloudflare actual API mapped mapping retains independent raw subject",
+          "cloudflare actual API missing-names mapping retains independent raw subject",
+          "cloudflare actual API null-names mapping retains independent raw subject",
+          "cloudflare actual API numeric-name mapping retains independent raw subject",
+          "cloudflare actual API numeric-subject mapping retains independent raw subject",
+          "cloudflare actual API zero-name mapping retains independent raw subject",
+          "cloudflare configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "cloudflare default credentials reach real token exchange refresh and owned persistence",
+          "cloudflare encoded credentials reach real token exchange refresh and owned persistence",
+          "cloudflare explicit signup admits disabled implicit signup",
+          "cloudflare fractional token expiry has no fabricated default",
+          "cloudflare post credentials reach real token exchange refresh and owned persistence",
+          "cloudflare public credentials reach real token exchange refresh and owned persistence",
+          "cloudflare unsupported ID token and invalid provider state produce no requests",
+          "cloudflare unverified email gate stores account without issuing session",
+          "cloudflare zero token expiry has no fabricated default"
         ]
       }
     },
@@ -3660,7 +3802,12 @@
           "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
           "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
           "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures",
-          "atlassian refresh rotates owned credentials and local logout revokes session"
+          "atlassian refresh rotates owned credentials and local logout revokes session",
+          "cloudflare configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "cloudflare default credentials reach real token exchange refresh and owned persistence",
+          "cloudflare encoded credentials reach real token exchange refresh and owned persistence",
+          "cloudflare post credentials reach real token exchange refresh and owned persistence",
+          "cloudflare public credentials reach real token exchange refresh and owned persistence"
         ],
         "rejection": null,
         "authorization": [
@@ -3673,7 +3820,12 @@
           "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
           "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
           "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures",
-          "atlassian refresh rotates owned credentials and local logout revokes session"
+          "atlassian refresh rotates owned credentials and local logout revokes session",
+          "cloudflare configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "cloudflare default credentials reach real token exchange refresh and owned persistence",
+          "cloudflare encoded credentials reach real token exchange refresh and owned persistence",
+          "cloudflare post credentials reach real token exchange refresh and owned persistence",
+          "cloudflare public credentials reach real token exchange refresh and owned persistence"
         ]
       }
     },
