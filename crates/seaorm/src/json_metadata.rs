@@ -101,6 +101,7 @@ impl sea_orm::sea_query::ValueType for JsonMetadata {
             | sea_orm::Value::TimeDateTimeWithTimeZone(_)
             | sea_orm::Value::Uuid(_)
             | sea_orm::Value::Decimal(_)
+            | sea_orm::Value::Enum(_)
             | sea_orm::Value::Array(..) => Err(sea_orm::sea_query::ValueTypeErr),
         }
     }

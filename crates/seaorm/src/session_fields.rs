@@ -122,6 +122,7 @@ pub(crate) async fn prepare_value<C: ConnectionTrait>(
                 | Value::TimeDateTimeWithTimeZone(_)
                 | Value::Uuid(_)
                 | Value::Decimal(_)
+                | Value::Enum(_)
                 | Value::Array(..) => serde_json::Value::Null,
             };
             Ok(crate::JsonMetadata::for_backend(json, backend)?.into())
@@ -156,6 +157,7 @@ pub(crate) async fn prepare_value<C: ConnectionTrait>(
             | Value::TimeDateTimeWithTimeZone(_)
             | Value::Uuid(_)
             | Value::Decimal(_)
+            | Value::Enum(_)
             | Value::Array(..)) => other,
         }),
         ColumnType::Float => Ok(match value {
@@ -189,6 +191,7 @@ pub(crate) async fn prepare_value<C: ConnectionTrait>(
             | Value::TimeDateTimeWithTimeZone(_)
             | Value::Uuid(_)
             | Value::Decimal(_)
+            | Value::Enum(_)
             | Value::Array(..)) => other,
         }),
         ColumnType::Boolean => Ok(match value {
@@ -220,6 +223,7 @@ pub(crate) async fn prepare_value<C: ConnectionTrait>(
             | Value::TimeDateTimeWithTimeZone(_)
             | Value::Uuid(_)
             | Value::Decimal(_)
+            | Value::Enum(_)
             | Value::Array(..)) => other,
         }),
         ColumnType::Blob

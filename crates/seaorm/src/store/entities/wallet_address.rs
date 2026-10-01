@@ -74,6 +74,7 @@ impl sea_orm::sea_query::ValueType for WalletChainId {
             | Value::TimeDateTimeWithTimeZone(_)
             | Value::Uuid(_)
             | Value::Decimal(_)
+            | Value::Enum(_)
             | Value::Array(..) => Err(sea_orm::sea_query::ValueTypeErr),
         }
     }
