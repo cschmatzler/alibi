@@ -181,7 +181,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     } catch { return undefined; }
   }
 
-  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false) {
+  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false) {
     if (typeof a === "string" && typeof b === "string" && !traceShape(path)
       && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path)) {
       if (key === "teamId" && (a.includes(",") || b.includes(","))) {
@@ -198,7 +198,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       if (leftJwt || rightJwt) {
         if (!leftJwt || !rightJwt) {fail(path,"JWT structure differs");return;}
         identity(a,b,path,"jwt");
-        visit(leftJwt.header,rightJwt.header,`${path}.header`,"");
+        visit(leftJwt.header,rightJwt.header,`${path}.header`,"",false,false,true);
         visit(leftJwt.payload,rightJwt.payload,`${path}.payload`,"",true);
         if (leftJwt.signature.length!==rightJwt.signature.length) fail(path,"JWT signature length differs");
         return;
@@ -262,7 +262,12 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           if (!leftSessions.has(a.value) || !rightSessions.has(b.value)) fail(childPath, "one-time-token value is not an observed persisted session token");
           else identity(a.value, b.value, childPath, "token");
         }
-        else if (childKey==="kid" && !inApplicationData && (jwk || (typeof a.alg==="string" && typeof b.alg==="string")) && typeof a.kid==="string" && typeof b.kid==="string") identity(a.kid,b.kid,childPath,"entity");
+        else if (childKey==="kid" && !inApplicationData && (jwk || (typeof a.alg==="string" && typeof b.alg==="string")) && typeof a.kid==="string" && typeof b.kid==="string") {
+          // A provider may use the literal empty selector in a protected header.
+          // Public key IDs and every nonempty selector still use the bijection.
+          if (jwtHeader && !jwk && (a.kid === "" || b.kid === "")) visit(a.kid,b.kid,childPath,childKey);
+          else identity(a.kid,b.kid,childPath,"entity");
+        }
         else if (childKey==="sub" && jwtClaims && typeof a.sub==="string" && typeof b.sub==="string" && (leftEntities.has(a.sub)||rightEntities.has(b.sub))) identity(a.sub,b.sub,childPath,"entity");
         else if (runtimeDates && ["iat","exp"].includes(childKey) && typeof a[childKey]==="number" && typeof b[childKey]==="number") clock(a[childKey],b[childKey],childPath);
         else if (jwtClaims && ["iss","aud"].includes(childKey)) visit(a[childKey],b[childKey],childPath,childKey==="iss" ? "issuerURL" : "audienceURL");
@@ -273,9 +278,9 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
         }
         else if (apiKey && childKey === "key" && typeof a.key === "string" && typeof b.key === "string") {
           if (a.key.length !== b.key.length) fail(childPath, "API key length differs");
-          for (const row of [a,b]) {
-            if (typeof row.prefix === "string" && typeof row.key === "string" && !row.key.startsWith(row.prefix)) fail(childPath, "API key prefix relationship differs");
-          }
+          // Application generators own the full key and need not prepend prefix.
+          // Retain the relationship observed in the source, including its absence.
+          if (typeof a.prefix !== typeof b.prefix || (typeof a.prefix === "string" && typeof b.prefix === "string" && a.key.startsWith(a.prefix) !== b.key.startsWith(b.prefix))) fail(childPath, "API key prefix relationship differs");
           identity(a.key,b.key,childPath,"api-key");
         }
         else if (apiKey && childKey === "start" && typeof a.start === "string" && typeof b.start === "string" && (issuedLeft !== undefined || issuedRight !== undefined)) {

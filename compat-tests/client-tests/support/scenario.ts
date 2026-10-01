@@ -43,6 +43,8 @@ type ScenarioServerContext = {
   uniqueEmail(prefix: string): string;
   uniqueToken(prefix: string): string;
   snapshot<T>(value: T): unknown;
+  /** Record complete transport observations from separately captured concurrent requests. */
+  recordTransport(entries: readonly TraceEntry[]): void;
   rawRequest(args: {
     actor?: string;
     path: string;
@@ -215,6 +217,7 @@ async function runScenario(
         body: parsed,
       };
     },
+    recordTransport(entries) { traces.push(...entries); },
     readDeviceState(args) { return readDeviceState(baseURL,args); },
     expireDevice(args) { return expireDevice(baseURL,args); },
     readVerificationState(args) { return readVerificationState(baseURL, args); },
