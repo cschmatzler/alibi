@@ -2090,7 +2090,11 @@
           "organization member role updates normalize string and array input without deduplicating roles",
           "organization member role callbacks use the target user and normalized initial role with source patch fallback",
           "organization member role after callback keeps original target snapshots across independent writes",
-          "organization member role update awaits async callback before changing the stored role"
+          "organization member role update awaits async callback before changing the stored role",
+          "organization member role revoked and expired sessions preserve cleanup and sibling authority",
+          "organization member role empty input rejects before callbacks and preserves actual full owned and foreign state",
+          "organization member role media and malformed JSON rejection precede authentication with a valid retry",
+          "organization member role selectors retain source empty-role precedence and literal whitespace IDs"
         ],
         "state": [
           "organization member role updates normalize string and array input without deduplicating roles",
@@ -2099,17 +2103,29 @@
           "organization member role validation and foreign authorization reject before any callback or write",
           "organization member role after callback keeps original target snapshots across independent writes",
           "organization member role before callback deletion yields actual missing-member rejection without after callback",
-          "organization member role update awaits async callback before changing the stored role"
+          "organization member role update awaits async callback before changing the stored role",
+          "organization member role revoked and expired sessions preserve cleanup and sibling authority",
+          "organization member role empty input rejects before callbacks and preserves actual full owned and foreign state",
+          "organization member role ordered union and field validation runs before guest authentication without side effects",
+          "organization member role media and malformed JSON rejection precede authentication with a valid retry",
+          "organization member role selectors retain source empty-role precedence and literal whitespace IDs"
         ],
         "rejection": [
           "organization member role callbacks use the target user and normalized initial role with source patch fallback",
           "organization member role callback errors distinguish no write from a committed role change",
           "organization member role validation and foreign authorization reject before any callback or write",
-          "organization member role before callback deletion yields actual missing-member rejection without after callback"
+          "organization member role before callback deletion yields actual missing-member rejection without after callback",
+          "organization member role revoked and expired sessions preserve cleanup and sibling authority",
+          "organization member role empty input rejects before callbacks and preserves actual full owned and foreign state",
+          "organization member role ordered union and field validation runs before guest authentication without side effects",
+          "organization member role media and malformed JSON rejection precede authentication with a valid retry",
+          "organization member role selectors retain source empty-role precedence and literal whitespace IDs"
         ],
         "authorization": [
           "organization member role callbacks use the target user and normalized initial role with source patch fallback",
-          "organization member role validation and foreign authorization reject before any callback or write"
+          "organization member role validation and foreign authorization reject before any callback or write",
+          "organization member role revoked and expired sessions preserve cleanup and sibling authority",
+          "organization member role ordered union and field validation runs before guest authentication without side effects"
         ]
       }
     },
