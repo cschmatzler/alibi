@@ -111,3 +111,15 @@ support these plugin read paths. No schema, migration, dependency lock or invent
 change is part of this policy capability.
 
 Independent JWT-owner review of final frozen `c7084d18` is clear within the documented scope. Coordinator publication retains the same production/public custom-schema consumers and all four actual SDK owners; physical duplicate-member profiles remain present from master. Twenty-five additive requirements anchor actual create/read/invite/accept/removal consumers, including setup for trusted private addition; no fictitious public add-member endpoint is registered. The next complete integrated gate is pending.
+
+## Bounded timestamp scheduling
+
+The first integrated run retained all 557 SDK owners and 39,168 assertions;
+one fixed-policy owner failed the unchanged timestamp tolerance after its
+eight-configuration matrix plus a separate fractional-capacity lifecycle. The
+late real membership timestamp differed by 2.276 seconds across executions.
+The fractional lifecycle now has its own fresh owner/foreign organization setup
+and required evidence, preserving both admitted and rejected physical rows, all
+principal snapshots and transport. No scenario, case, field, array, deadline or
+timestamp tolerance is removed or relaxed. Focused and final gate results are
+recorded by the coordinator after this change.

@@ -1840,7 +1840,8 @@
           "organization addition retargeted trusted patches still roll back with captured original scope and cleanup SQL errors retain the new member",
           "organization physical membership pages preserve newer older newer rows and visible organization limits",
           "organization fixed membership policies retain falsy defaults and raw Number admission without read callbacks",
-          "organization asynchronous membership resolver observes target and raw organization after count and keeps raw zero NaN errors"
+          "organization asynchronous membership resolver observes target and raw organization after count and keeps raw zero NaN errors",
+          "organization fixed fractional membership admits one physical row then rejects capacity without principal writes"
         ],
         "rejection": [
           "organization creation static denial and negative limits preserve ownership while trusted creation bypasses only the allow policy",
@@ -1890,7 +1891,8 @@
           "organization addition retargeted trusted patches still roll back with captured original scope and cleanup SQL errors retain the new member",
           "organization physical membership pages preserve newer older newer rows and visible organization limits",
           "organization fixed membership policies retain falsy defaults and raw Number admission without read callbacks",
-          "organization asynchronous membership resolver observes target and raw organization after count and keeps raw zero NaN errors"
+          "organization asynchronous membership resolver observes target and raw organization after count and keeps raw zero NaN errors",
+          "organization fixed fractional membership admits one physical row then rejects capacity without principal writes"
         ]
       }
     },

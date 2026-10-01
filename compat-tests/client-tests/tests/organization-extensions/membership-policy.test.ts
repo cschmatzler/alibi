@@ -27,10 +27,15 @@ compatScenario("organization fixed membership policies retain falsy defaults and
   expect(after.receipts).toEqual([]);expect(after.snapshot.organizations).toEqual(before.snapshot.organizations);expect(after.snapshot.invitations).toEqual(before.snapshot.invitations);expect(after.snapshot.teams).toEqual(before.snapshot.teams);expect(await owned(ctx,[owner!,existing!,foreign!,candidate])).toEqual(usersBefore);
   observations.push({suffix,candidate:candidate.created,before,response,after,usersBefore,usersAfter:await owned(ctx,[owner!,existing!,foreign!,candidate])});
  }
+ return {owner:owner!.created,existing:existing!.created,foreign:foreign!.created,observations};
+});
+
+compatScenario("organization fixed fractional membership admits one physical row then rejects capacity without principal writes",async ctx=>{
+ const [owner,foreign]=await actors(ctx,["fractional-owner","fractional-foreign"]);await org(ctx,foreign!,"fractional-foreign");
  const fractionalOrganization=await org(ctx,owner!,"fixed-fractional-boundary"),fractionalTarget=await signup(ctx,"fractional-first"),fractionalDeniedTarget=await signup(ctx,"fractional-second");await reset(ctx);const fractionalBefore=await state(ctx),fractionalUsers=await owned(ctx,[owner!,foreign!,fractionalTarget,fractionalDeniedTarget]);
  const fractionalAllowed=await add(ctx,"org-membership-fractional",fractionalOrganization.id,fractionalTarget.user.id);expect(fractionalAllowed.status).toBe(200);const fractionalAdmitted=await state(ctx);expect(fractionalAdmitted.snapshot.members).toEqual([...fractionalBefore.snapshot.members,row.parse(fractionalAllowed.body)]);
  const fractionalDenied=await add(ctx,"org-membership-fractional",fractionalOrganization.id,fractionalDeniedTarget.user.id);expect(fractionalDenied.status).toBe(403);expect(await state(ctx)).toEqual(fractionalAdmitted);expect(await owned(ctx,[owner!,foreign!,fractionalTarget,fractionalDeniedTarget])).toEqual(fractionalUsers);
- return {owner:owner!.created,existing:existing!.created,foreign:foreign!.created,observations,fractionalBefore,fractionalUsers,fractionalAllowed,fractionalAdmitted,fractionalDenied,fractionalAfter:await state(ctx)};
+ return {owner:owner!.created,foreign:foreign!.created,fractionalBefore,fractionalUsers,fractionalAllowed,fractionalAdmitted,fractionalDenied,fractionalAfter:await state(ctx)};
 });
 
 compatScenario("organization asynchronous membership resolver observes target and raw organization after count and keeps raw zero NaN errors",async ctx=>{
