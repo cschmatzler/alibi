@@ -28,7 +28,8 @@ for(const profile of profiles) compatScenario(`api-key ${profile} successful dat
   const denied=await foreign.apiKey.get({query:{id:target.data.id}});expect(denied.error).not.toBeNull();
   await control(ctx,{action:"refill",keyId:target.data.id});
   const before=await rows(ctx), ownerBefore=await ctx.readUserState({userId:signup.data.user.id}), foreignBefore=await ctx.readUserState({userId:other.data.user.id});
-  const selected=before.find(row=>row.id===target.data!.id)!;expect(selected).toMatchObject({remaining:0,lastRefillAt:"1970-01-01T00:00:00.000Z",refillAmount:3,refillInterval:60000,rateLimitEnabled:false});
+  const selected=before.find(row=>row.id===target.data!.id)!;expect(selected).toMatchObject({remaining:0,refillAmount:3,refillInterval:60000,rateLimitEnabled:false});
+  expect(Date.parse(z.string().parse(selected.lastRefillAt))).toBe(0);
   const verify=async(permissions?:Record<string,string[]>)=>ctx.rawRequest({path:`/__test/api-key-background/verify?profile=${profile}`,method:"POST",json:{key:target.data!.key,...(permissions?{permissions}:{})}});
   const forbidden=await verify({resource:["read"]});expect(forbidden.body).toEqual({valid:false,error:{code:"KEY_NOT_FOUND",message:"API Key not found"},key:null});expect(await rows(ctx)).toEqual(before);
   await control(ctx,{action:"configure",hold:true,observeUsage:true,observer:"observe"});

@@ -335,6 +335,24 @@ impl<S: AuthSchema> ApiKeyStore for ControlledStore<S>
 where
     SeaOrmStore<S>: ApiKeyStore,
 {
+    async fn consume_api_key_usage_from_snapshot(
+        &self,
+        observed: &ApiKey,
+        global_rate_limit_enabled: bool,
+    ) -> AuthResult<ConsumeApiKeyResult> {
+        let serial = self
+            .application
+            .begin_usage(self.profile, &observed.id)
+            .await;
+        let result = self
+            .inner
+            .consume_api_key_usage_from_snapshot(observed, global_rate_limit_enabled)
+            .await;
+        if let Some(serial) = serial {
+            self.application.finish_usage(serial, result.is_ok());
+        }
+        result
+    }
     async fn create_api_key(&self, input: CreateApiKey) -> AuthResult<ApiKey> {
         self.inner.create_api_key(input).await
     }

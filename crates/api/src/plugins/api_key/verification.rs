@@ -262,7 +262,7 @@ impl ApiKeyPlugin {
 
         let updated = match ctx
             .database
-            .consume_api_key_usage(&api_key.id, config.rate_limit.enabled)
+            .consume_api_key_usage_from_snapshot(&api_key, config.rate_limit.enabled)
             .await?
         {
             ConsumeApiKeyResult::Allowed(key) => key,
