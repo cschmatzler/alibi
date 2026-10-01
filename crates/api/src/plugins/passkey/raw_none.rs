@@ -1,5 +1,5 @@
-//! Source admits unrecognized OKP curves under none attestation. This validates
-//! the ceremony, not possession of a usable signing key, and stores raw facts.
+//! Bounded Source COSE cases that Core cannot represent retain raw identity.
+//! None validates a ceremony; packed and authentication verify original proofs.
 use super::webauthn::PasskeySnapshot;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use better_auth_core::utils::json::{JsValue, from_slice};
@@ -18,7 +18,9 @@ pub(in crate::plugins) struct RawNonePolicy {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub(super) enum RawCredential {
-    SourceRawNone {
+    // Keep the historical codec discriminator readable across upgrades.
+    #[serde(rename = "sourceRawNone")]
+    SourceRawKey {
         credential_id: Vec<u8>,
         public_key: Vec<u8>,
         counter: u32,
@@ -38,25 +40,22 @@ pub(super) enum StoredCredential {
 
 impl RawCredential {
     pub(super) fn credential_id(&self) -> &[u8] {
-        let Self::SourceRawNone { credential_id, .. } = self;
+        let Self::SourceRawKey { credential_id, .. } = self;
         credential_id
     }
     pub(super) fn public_key(&self) -> &[u8] {
-        let Self::SourceRawNone { public_key, .. } = self;
+        let Self::SourceRawKey { public_key, .. } = self;
         public_key
     }
     pub(super) const fn aaguid(&self) -> [u8; 16] {
-        let Self::SourceRawNone { aaguid, .. } = self;
+        let Self::SourceRawKey { aaguid, .. } = self;
         *aaguid
-    }
-    pub(super) fn has_unsupported_curve(&self) -> bool {
-        decode_first(self.public_key()).is_ok_and(|(key, _)| curve_eight(&key))
     }
     ///
     /// # Errors
     /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn snapshot(&self) -> better_auth_core::AuthResult<PasskeySnapshot> {
-        let Self::SourceRawNone {
+        let Self::SourceRawKey {
             counter,
             backup_eligible,
             backup_state,
@@ -270,6 +269,30 @@ fn curve_eight(value: &Cbor) -> bool {
         .all(|(key, expected)| map.get(&Cbor::Integer(*key)) == Some(&Cbor::Integer(*expected)))
 }
 
+// This measured mismatch remains raw: alg -7 is not changed to EdDSA.
+fn mismatched_ed25519(value: &Cbor) -> bool {
+    let Cbor::Map(map) = value else { return false };
+    [(1, 1), (3, -7), (-1, 6)]
+        .iter()
+        .all(|(key, expected)| map.get(&Cbor::Integer(*key)) == Some(&Cbor::Integer(*expected)))
+}
+
+fn verify_ed25519(key: &[u8], signature: &[u8], data: &[u8]) -> Result<bool, WebauthnError> {
+    use ed25519_dalek::Verifier;
+    let (Cbor::Map(map), _) = decode_first(key)? else {
+        return Err(malformed());
+    };
+    let Some(Cbor::Bytes(x)) = map.get(&Cbor::Integer(-2)) else {
+        return Err(malformed());
+    };
+    let bytes: &[u8; 32] = x.as_slice().try_into().map_err(|_error| malformed())?;
+    let key = ed25519_dalek::VerifyingKey::from_bytes(bytes).map_err(|_error| malformed())?;
+    let Ok(signature) = ed25519_dalek::Signature::from_slice(signature) else {
+        return Ok(false);
+    };
+    Ok(key.verify(data, &signature).is_ok())
+}
+
 // Source converts extensions with `for (const [key, value] of input)` and
 // recursively converts Map values. Strings and arrays of iterable entries are
 // consequently legal; scalar entries throw before registration can finish.
@@ -393,7 +416,7 @@ fn truthy(value: &JsValue) -> bool {
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
-pub(super) fn register_raw_none(
+pub(super) fn register_raw_key(
     registration: &RegisterPublicKeyCredential,
     original: &JsValue,
     policy: &RawNonePolicy,
@@ -407,7 +430,9 @@ pub(super) fn register_raw_none(
     let (Cbor::Map(object), _) = decode_first(attestation_bytes)? else {
         return Err(malformed());
     };
-    if text(&object, "fmt") != Some(&Cbor::Text("none".into())) {
+    let none = text(&object, "fmt") == Some(&Cbor::Text("none".into()));
+    let packed = text(&object, "fmt") == Some(&Cbor::Text("packed".into()));
+    if !none && !packed {
         return Ok(None);
     }
     let Some(Cbor::Bytes(data)) = text(&object, "authData") else {
@@ -427,7 +452,14 @@ pub(super) fn register_raw_none(
         return Err(malformed());
     }
     let (key, key_length) = decode_first(key_bytes)?;
-    if !curve_eight(&key) {
+    let mismatch = mismatched_ed25519(&key);
+    if !(none && curve_eight(&key)) && !mismatch {
+        return Ok(None);
+    }
+    if packed
+        && let Some(Cbor::Map(statement)) = text(&object, "attStmt")
+        && statement.contains_key(&Cbor::Text("x5c".into()))
+    {
         return Ok(None);
     }
     let Some(id) = original.get("id").and_then(JsValue::as_str) else {
@@ -486,10 +518,37 @@ pub(super) fn register_raw_none(
     }
     // None's source verifier reads only `attStmt.size > 0`. Null/missing throw;
     // other decoded primitives/arrays have no size and pass that comparison.
-    if matches!(text(&object, "attStmt"), None | Some(Cbor::Null))
-        || matches!(text(&object, "attStmt"), Some(Cbor::Map(map)) if !map.is_empty())
+    if none
+        && (matches!(text(&object, "attStmt"), None | Some(Cbor::Null))
+            || matches!(text(&object, "attStmt"), Some(Cbor::Map(map)) if !map.is_empty()))
     {
         return Err(WebauthnError::AttestationStatementMapInvalid);
+    }
+    if packed {
+        let Some(Cbor::Map(statement)) = text(&object, "attStmt") else {
+            return Err(malformed());
+        };
+        // Both the -7 tag and ordinary -8 statement are measured controls.
+        if !matches!(
+            statement.get(&Cbor::Text("alg".into())),
+            Some(Cbor::Integer(-7 | -8))
+        ) {
+            return Err(malformed());
+        }
+        let Some(Cbor::Bytes(signature)) = statement.get(&Cbor::Text("sig".into())) else {
+            return Err(malformed());
+        };
+        let mut signed = data.clone();
+        signed.extend_from_slice(&compute_sha256(
+            registration.response.client_data_json.as_ref(),
+        ));
+        if !verify_ed25519(
+            key_bytes.get(..key_length).ok_or_else(malformed)?,
+            signature,
+            &signed,
+        )? {
+            return Err(WebauthnError::AttestationStatementSigInvalid);
+        }
     }
     let counter = u32::from_be_bytes(
         data.get(33..37)
@@ -502,7 +561,7 @@ pub(super) fn register_raw_none(
         .ok_or_else(malformed)?
         .try_into()
         .map_err(|_error| malformed())?;
-    Ok(Some(RawCredential::SourceRawNone {
+    Ok(Some(RawCredential::SourceRawKey {
         credential_id: data.get(55..key_start).ok_or_else(malformed)?.to_vec(),
         public_key: key_bytes.get(..key_length).ok_or_else(malformed)?.to_vec(),
         counter,
@@ -519,4 +578,99 @@ pub(super) fn register_raw_none(
 
 pub(super) fn raw_credential_id(credential: &RawCredential) -> String {
     URL_SAFE_NO_PAD.encode(credential.credential_id())
+}
+
+/// Only freshly issued Source-policy states may authorize a raw assertion.
+/// The stored ID/key tags and current public counter remain authoritative.
+pub(super) fn authenticate_raw(
+    credential: &RawCredential,
+    authentication: &webauthn_rs::prelude::PublicKeyCredential,
+    original: &JsValue,
+    challenge: &str,
+    rp_id: &str,
+    origin: &str,
+    current_counter: u32,
+) -> Result<super::authentication::AuthenticationResult, WebauthnError> {
+    let (key, _) = decode_first(credential.public_key())?;
+    if !mismatched_ed25519(&key) {
+        return Err(WebauthnError::COSEKeyEDDSAInvalidCurve);
+    }
+    if original.get("type").and_then(JsValue::as_str) != Some("public-key")
+        || authentication.raw_id.as_ref() != credential.credential_id()
+        || authentication.id != raw_credential_id(credential)
+    {
+        return Err(malformed());
+    }
+    let client: JsValue = from_slice(authentication.response.client_data_json.as_ref())?;
+    if client.get("type").and_then(JsValue::as_str) != Some("webauthn.get") {
+        return Err(WebauthnError::InvalidClientDataType);
+    }
+    if client.get("challenge").and_then(JsValue::as_str) != Some(challenge) {
+        return Err(WebauthnError::MismatchedChallenge);
+    }
+    if client.get("origin").and_then(JsValue::as_str) != Some(origin) {
+        return Err(WebauthnError::InvalidRPOrigin);
+    }
+    if let Some(binding) = client.get("tokenBinding").filter(|value| truthy(value))
+        && (!binding.is_object()
+            || !matches!(
+                binding.get("status").and_then(JsValue::as_str),
+                Some("present" | "supported" | "notSupported")
+            ))
+    {
+        return Err(malformed());
+    }
+    let bytes = authentication.response.authenticator_data.as_ref();
+    let data = webauthn_rs_core::internals::AuthenticatorData::<
+        webauthn_rs_core::proto::Authentication,
+    >::try_from(bytes)?;
+    if bytes.get(..32) != Some(compute_sha256(rp_id.as_bytes()).as_slice()) {
+        return Err(WebauthnError::InvalidRPIDHash);
+    }
+    if !data.user_present {
+        return Err(WebauthnError::UserNotPresent);
+    }
+    if data.backup_state && !data.backup_eligible {
+        return Err(malformed());
+    }
+    if (data.counter > 0 || current_counter > 0) && data.counter <= current_counter {
+        return Err(malformed());
+    }
+    let mut signed = bytes.to_vec();
+    signed.extend_from_slice(&compute_sha256(
+        authentication.response.client_data_json.as_ref(),
+    ));
+    if !verify_ed25519(
+        credential.public_key(),
+        authentication.response.signature.as_ref(),
+        &signed,
+    )? {
+        return Err(WebauthnError::AuthenticationFailure);
+    }
+    Ok(super::authentication::AuthenticationResult::Raw(
+        super::authentication::RawAuthenticationResult {
+            credential_id: credential.credential_id().to_vec().into(),
+            counter: data.counter,
+            user_verified: data.user_verified,
+            backup_eligible: data.backup_eligible,
+            backup_state: data.backup_state,
+        },
+    ))
+}
+
+impl RawCredential {
+    pub(super) fn apply_authentication(
+        &mut self,
+        result: &super::authentication::RawAuthenticationResult,
+    ) {
+        let Self::SourceRawKey {
+            counter,
+            backup_eligible,
+            backup_state,
+            ..
+        } = self;
+        *counter = result.counter;
+        *backup_eligible = result.backup_eligible;
+        *backup_state = result.backup_state;
+    }
 }

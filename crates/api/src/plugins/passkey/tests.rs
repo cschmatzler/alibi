@@ -598,7 +598,11 @@ fn pending_registration_challenges_keep_original_verification_policy()
             webauthn::finish_core_registration(&core, &core_response, &old_core, &config.origin)?;
         assert_eq!(restored_core.cred_id().as_ref(), credential_id);
         let stored_credential = serde_json::to_string(&restored_core)?;
-        let decoded_credential = webauthn::parse_stored_passkey(&stored_credential)?;
+        let raw_none::StoredCredential::Core(decoded_credential) =
+            serde_json::from_str(&stored_credential)?
+        else {
+            panic!("historical typed credential must retain its codec")
+        };
         assert_eq!(decoded_credential.cred_id(), restored_core.cred_id());
         let result = webauthn.finish_passkey_registration(&response, &state);
         if verified {
@@ -623,89 +627,162 @@ async fn raw_none_credential_sql_readback_keeps_original_key_and_hidden_codec()
     use serde_cbor_2::Value as Cbor;
     use sha2::{Digest, Sha256};
     use std::collections::BTreeMap;
-    let plugin = passkey_plugin();
-    let (ctx, user, session) = test_helpers::create_test_context_with_user(
-        CreateUser::new()
-            .with_email("raw-codec-owner@fixture.test")
-            .with_name("Raw codec owner"),
-        Duration::hours(1),
-    )
-    .await;
-    let request = test_helpers::create_auth_request(
-        HttpMethod::Get,
-        "/passkey/generate-register-options",
-        Some(&session.token),
-        None,
-        HashMap::new(),
-    );
-    let options = plugin
-        .handle_generate_register_options(&request, &ctx)
-        .await?;
-    let issued: serde_json::Value = serde_json::from_slice(&options.body)?;
-    let key = serde_cbor_2::to_vec(&Cbor::Map(BTreeMap::from([
-        (Cbor::Integer(1), Cbor::Integer(1)),
-        (Cbor::Integer(3), Cbor::Integer(-8)),
-        (Cbor::Integer(-1), Cbor::Integer(8)),
-        (Cbor::Integer(-2), Cbor::Bytes(vec![7; 32])),
-    ])))?;
-    let id = b"raw-none-actual-persisted-credential";
-    let mut data = Sha256::digest(b"localhost").to_vec();
-    data.push(0x41);
-    data.extend_from_slice(&25_u32.to_be_bytes());
-    data.extend_from_slice(&[0; 16]);
-    data.extend_from_slice(&u16::try_from(id.len())?.to_be_bytes());
-    data.extend_from_slice(id);
-    data.extend_from_slice(&key);
-    let attestation = serde_cbor_2::to_vec(&Cbor::Map(BTreeMap::from([
-        (Cbor::Text("fmt".into()), Cbor::Text("none".into())),
-        (Cbor::Text("attStmt".into()), Cbor::Map(BTreeMap::new())),
-        (Cbor::Text("authData".into()), Cbor::Bytes(data)),
-    ])))?;
-    let proof = serde_json::json!({"id":URL_SAFE_NO_PAD.encode(id),"rawId":URL_SAFE_NO_PAD.encode(id),"type":"public-key","clientExtensionResults":{},"response":{
-        "clientDataJSON":URL_SAFE_NO_PAD.encode(serde_json::to_vec(&serde_json::json!({"type":"webauthn.create","challenge":(*(issued).get("challenge").expect("fixture contains the requested index")),"origin":"http://localhost:3000"}))?),
-        "attestationObject":URL_SAFE_NO_PAD.encode(attestation),"transports":["internal"],
-    }});
-    let mut request_2 = test_helpers::create_auth_request(
-        HttpMethod::Post,
-        "/passkey/verify-registration",
-        Some(&session.token),
-        Some(serde_json::to_vec(&serde_json::json!({"response":proof}))?),
-        HashMap::new(),
-    );
-    let issued_cookie = cookie_header(&options)
-        .split(';')
-        .next()
-        .ok_or("issued challenge cookie required")?;
-    _ = write!(
-        request_2
-            .headers
-            .get_mut("cookie")
-            .ok_or("signed owner cookie required")?,
-        "; {issued_cookie}"
-    );
-    let result = plugin.handle_verify_registration(&request_2, &ctx).await?;
-    assert_eq!(result.status, 200);
-    let wire: serde_json::Value = serde_json::from_slice(&result.body)?;
-    assert!(wire.get("credential").is_none());
-    let row = ctx
-        .database
-        .get_passkey_by_credential_id(&URL_SAFE_NO_PAD.encode(id))
-        .await?
-        .ok_or("actual credential row required")?;
-    assert_eq!(row.user_id, user.id);
-    assert_eq!(row.counter, 25);
-    assert_eq!(
-        row.public_key,
-        base64::engine::general_purpose::STANDARD.encode(&key)
-    );
-    let raw_none::StoredCredential::Raw(raw) = serde_json::from_str(&row.credential)? else {
-        panic!("actual raw codec required")
-    };
-    assert_eq!(raw.credential_id(), id);
-    assert_eq!(raw.public_key(), key);
-    assert_eq!(raw.snapshot()?.counter, 25);
-    assert!(raw.has_unsupported_curve());
-    assert!(webauthn::parse_stored_passkey(&row.credential).is_err());
-    assert_eq!(ctx.database.get_user_sessions(&user.id).await?.len(), 1);
+    // The raw storage owner also protects the usable mismatched-key codec.
+    // SDK observations cannot read the Native-only hidden credential column.
+    for (algorithm, curve) in [(-8, 8), (-7, 6)] {
+        let signing = ed25519_dalek::SigningKey::from_bytes(&[9; 32]);
+        let plugin = passkey_plugin();
+        let (ctx, user, session) = test_helpers::create_test_context_with_user(
+            CreateUser::new()
+                .with_email("raw-codec-owner@fixture.test")
+                .with_name("Raw codec owner"),
+            Duration::hours(1),
+        )
+        .await;
+        let request = test_helpers::create_auth_request(
+            HttpMethod::Get,
+            "/passkey/generate-register-options",
+            Some(&session.token),
+            None,
+            HashMap::new(),
+        );
+        let options = plugin
+            .handle_generate_register_options(&request, &ctx)
+            .await?;
+        let issued: serde_json::Value = serde_json::from_slice(&options.body)?;
+        let key = serde_cbor_2::to_vec(&Cbor::Map(BTreeMap::from([
+            (Cbor::Integer(1), Cbor::Integer(1)),
+            (Cbor::Integer(3), Cbor::Integer(algorithm)),
+            (Cbor::Integer(-1), Cbor::Integer(curve)),
+            (
+                Cbor::Integer(-2),
+                Cbor::Bytes(signing.verifying_key().as_bytes().to_vec()),
+            ),
+        ])))?;
+        let id = b"raw-none-actual-persisted-credential";
+        let mut data = Sha256::digest(b"localhost").to_vec();
+        data.push(0x41);
+        data.extend_from_slice(&25_u32.to_be_bytes());
+        data.extend_from_slice(&[0; 16]);
+        data.extend_from_slice(&u16::try_from(id.len())?.to_be_bytes());
+        data.extend_from_slice(id);
+        data.extend_from_slice(&key);
+        let attestation = serde_cbor_2::to_vec(&Cbor::Map(BTreeMap::from([
+            (Cbor::Text("fmt".into()), Cbor::Text("none".into())),
+            (Cbor::Text("attStmt".into()), Cbor::Map(BTreeMap::new())),
+            (Cbor::Text("authData".into()), Cbor::Bytes(data)),
+        ])))?;
+        let proof = serde_json::json!({"id":URL_SAFE_NO_PAD.encode(id),"rawId":URL_SAFE_NO_PAD.encode(id),"type":"public-key","clientExtensionResults":{},"response":{
+            "clientDataJSON":URL_SAFE_NO_PAD.encode(serde_json::to_vec(&serde_json::json!({"type":"webauthn.create","challenge":(*(issued).get("challenge").expect("fixture contains the requested index")),"origin":"http://localhost:3000"}))?),
+            "attestationObject":URL_SAFE_NO_PAD.encode(attestation),"transports":["internal"],
+        }});
+        let mut request_2 = test_helpers::create_auth_request(
+            HttpMethod::Post,
+            "/passkey/verify-registration",
+            Some(&session.token),
+            Some(serde_json::to_vec(&serde_json::json!({"response":proof}))?),
+            HashMap::new(),
+        );
+        let issued_cookie = cookie_header(&options)
+            .split(';')
+            .next()
+            .ok_or("issued challenge cookie required")?;
+        _ = write!(
+            request_2
+                .headers
+                .get_mut("cookie")
+                .ok_or("signed owner cookie required")?,
+            "; {issued_cookie}"
+        );
+        let result = plugin.handle_verify_registration(&request_2, &ctx).await?;
+        assert_eq!(result.status, 200);
+        let wire: serde_json::Value = serde_json::from_slice(&result.body)?;
+        assert!(wire.get("credential").is_none());
+        let row = ctx
+            .database
+            .get_passkey_by_credential_id(&URL_SAFE_NO_PAD.encode(id))
+            .await?
+            .ok_or("actual credential row required")?;
+        assert_eq!(row.user_id, user.id);
+        assert_eq!(row.counter, 25);
+        assert_eq!(
+            row.public_key,
+            base64::engine::general_purpose::STANDARD.encode(&key)
+        );
+        let raw_none::StoredCredential::Raw(raw) = serde_json::from_str(&row.credential)? else {
+            panic!("actual raw codec required")
+        };
+        assert_eq!(raw.credential_id(), id);
+        assert_eq!(raw.public_key(), key);
+        assert_eq!(raw.snapshot()?.counter, 25);
+        assert!(serde_json::from_str::<webauthn_rs::prelude::Passkey>(&row.credential).is_err());
+        if curve == 6 {
+            use ed25519_dalek::Signer;
+            let request = test_helpers::create_auth_request(
+                HttpMethod::Get,
+                "/passkey/generate-authenticate-options",
+                None,
+                None,
+                HashMap::new(),
+            );
+            let options = plugin
+                .handle_generate_authenticate_options(&request, &ctx)
+                .await?;
+            let issued: serde_json::Value = serde_json::from_slice(&options.body)?;
+            let client = serde_json::to_vec(
+                &serde_json::json!({"type":"webauthn.get", "challenge":issued["challenge"],"origin":"http://localhost:3000"}),
+            )?;
+            let mut data = Sha256::digest(b"localhost").to_vec();
+            data.push(1);
+            data.extend_from_slice(&26_u32.to_be_bytes());
+            let mut signed = data.clone();
+            signed.extend_from_slice(&Sha256::digest(&client));
+            let response = serde_json::json!({"id":URL_SAFE_NO_PAD.encode(id),"rawId":URL_SAFE_NO_PAD.encode(id),"type":"public-key","clientExtensionResults":{},"response":{
+                "clientDataJSON":URL_SAFE_NO_PAD.encode(client),"authenticatorData":URL_SAFE_NO_PAD.encode(data),"signature":URL_SAFE_NO_PAD.encode(signing.sign(&signed).to_bytes())
+            }});
+            let mut request = test_helpers::create_auth_request(
+                HttpMethod::Post,
+                "/passkey/verify-authentication",
+                None,
+                Some(serde_json::to_vec(
+                    &serde_json::json!({"response":response}),
+                )?),
+                HashMap::new(),
+            );
+            request.headers.insert(
+                "cookie".into(),
+                cookie_header(&options)
+                    .split(';')
+                    .next()
+                    .ok_or("issued authentication cookie required")?
+                    .into(),
+            );
+            let result = plugin.handle_verify_authentication(&request, &ctx).await?;
+            assert_eq!(result.status, 200);
+            let updated = ctx
+                .database
+                .get_passkey_by_credential_id(&URL_SAFE_NO_PAD.encode(id))
+                .await?
+                .ok_or("updated raw row required")?;
+            assert_eq!(updated.public_key, row.public_key);
+            assert_eq!(updated.credential_id, row.credential_id);
+            assert_eq!(updated.user_id, row.user_id);
+            assert_eq!(updated.counter, 26);
+            let raw_none::StoredCredential::Raw(raw) = serde_json::from_str(&updated.credential)?
+            else {
+                panic!("authentication must retain raw codec")
+            };
+            assert_eq!(raw.public_key(), key);
+            assert_eq!(raw.credential_id(), id);
+            assert_eq!(raw.snapshot()?.counter, 26);
+            assert!(
+                serde_json::from_str::<webauthn_rs::prelude::Passkey>(&updated.credential).is_err()
+            );
+        }
+        assert_eq!(
+            ctx.database.get_user_sessions(&user.id).await?.len(),
+            if curve == 6 { 2 } else { 1 }
+        );
+    }
     Ok(())
 }

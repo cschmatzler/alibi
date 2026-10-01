@@ -4,7 +4,55 @@ use better_auth_core::{
     AuthConfig, AuthRequest, AuthResult, ContextExtensions, utils::json::JsValue,
 };
 use std::sync::Arc;
-pub use webauthn_rs::prelude::AuthenticationResult;
+/// Verification authority: Core verifies supported typed keys; the bounded raw
+/// verifier verifies original COSE facts without manufacturing a Core result.
+#[derive(Debug, Clone)]
+pub enum AuthenticationResult {
+    Core(webauthn_rs::prelude::AuthenticationResult),
+    Raw(RawAuthenticationResult),
+}
+
+#[derive(Debug, Clone)]
+pub struct RawAuthenticationResult {
+    pub(super) credential_id: webauthn_rs::prelude::CredentialID,
+    pub(super) counter: u32,
+    pub(super) user_verified: bool,
+    pub(super) backup_eligible: bool,
+    pub(super) backup_state: bool,
+}
+
+impl AuthenticationResult {
+    pub fn cred_id(&self) -> &webauthn_rs::prelude::CredentialID {
+        match self {
+            Self::Core(result) => result.cred_id(),
+            Self::Raw(result) => &result.credential_id,
+        }
+    }
+    pub fn counter(&self) -> u32 {
+        match self {
+            Self::Core(result) => result.counter(),
+            Self::Raw(result) => result.counter,
+        }
+    }
+    pub fn user_verified(&self) -> bool {
+        match self {
+            Self::Core(result) => result.user_verified(),
+            Self::Raw(result) => result.user_verified,
+        }
+    }
+    pub fn backup_eligible(&self) -> bool {
+        match self {
+            Self::Core(result) => result.backup_eligible(),
+            Self::Raw(result) => result.backup_eligible,
+        }
+    }
+    pub fn backup_state(&self) -> bool {
+        match self {
+            Self::Core(result) => result.backup_state(),
+            Self::Raw(result) => result.backup_state,
+        }
+    }
+}
 
 /// Immutable request and application settings. Captures may hold typed services.
 pub struct PasskeyAuthenticationContext<'a> {
