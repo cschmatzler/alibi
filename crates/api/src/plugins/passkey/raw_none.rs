@@ -75,79 +75,166 @@ fn malformed() -> WebauthnError {
 fn text<'a>(map: &'a std::collections::BTreeMap<Cbor, Cbor>, key: &str) -> Option<&'a Cbor> {
     map.get(&Cbor::Text(key.into()))
 }
-// The value decoder accepts indefinite CBOR, but pinned Tiny-CBOR does not.
-// Inspect exactly one item's framing before decoding its values. The bounded
-// recursion/checked lengths never allocate or inspect unrelated outer tail.
-fn definite_item_end(bytes: &[u8], offset: usize, depth: usize) -> Result<usize, WebauthnError> {
-    if depth >= 128 {
-        return Err(malformed());
-    }
-    let header = *bytes.get(offset).ok_or_else(malformed)?;
-    let major = header >> 5;
-    let additional = header & 31;
-    if additional >= 28 {
-        return Err(malformed());
-    }
-    let mut cursor = offset.checked_add(1).ok_or_else(malformed)?;
-    if major == 7 {
-        let extra = match additional {
-            20..=23 => 0,
-            25 => 2,
-            26 => 4,
-            27 => 8,
+// Pinned Tiny-CBOR has a narrower value contract than serde's CBOR decoder:
+// number/string map keys, SameValueZero uniqueness, literal tags, lossy text,
+// and only three half-float values. Decode one item without inspecting its tail.
+const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum SourceMapKey {
+    Text(String),
+    Number(u64),
+}
+
+impl SourceMapKey {
+    fn from_value(value: &Cbor) -> Result<Self, WebauthnError> {
+        let number = match value {
+            Cbor::Text(value) => return Ok(Self::Text(value.clone())),
+            // Only safe integers enter this representation. Their conversion
+            // back to a JS number is exact, including integer/float key aliases.
+            Cbor::Integer(value) => *value as f64,
+            Cbor::Float(value) => *value,
             _ => return Err(malformed()),
         };
-        let end = cursor.checked_add(extra).ok_or_else(malformed)?;
-        return bytes.get(cursor..end).map(|_| end).ok_or_else(malformed);
-    }
-    let argument = if additional < 24 {
-        u64::from(additional)
-    } else {
-        let extra = 1usize << (additional - 24);
-        let end = cursor.checked_add(extra).ok_or_else(malformed)?;
-        let value = bytes
-            .get(cursor..end)
-            .ok_or_else(malformed)?
-            .iter()
-            .fold(0u64, |value, byte| (value << 8) | u64::from(*byte));
-        if value < 24 {
-            return Err(malformed());
-        }
-        cursor = end;
-        value
-    };
-    match major {
-        0 | 1 => Ok(cursor),
-        2 | 3 => {
-            let length = usize::try_from(argument).map_err(|_| malformed())?;
-            let end = cursor.checked_add(length).ok_or_else(malformed)?;
-            bytes.get(cursor..end).map(|_| end).ok_or_else(malformed)
-        }
-        4 | 5 => {
-            let count = usize::try_from(argument)
-                .map_err(|_| malformed())?
-                .checked_mul(if major == 5 { 2 } else { 1 })
-                .ok_or_else(malformed)?;
-            if count > bytes.len().saturating_sub(cursor) {
-                return Err(malformed());
-            }
-            for _ in 0..count {
-                cursor = definite_item_end(bytes, cursor, depth + 1)?;
-            }
-            Ok(cursor)
-        }
-        6 => definite_item_end(bytes, cursor, depth + 1),
-        _ => Err(malformed()),
+        Ok(Self::Number(if number.is_nan() {
+            f64::NAN.to_bits()
+        } else if number == 0.0 {
+            0
+        } else {
+            number.to_bits()
+        }))
     }
 }
-fn decode_first(bytes: &[u8]) -> Result<(Cbor, usize), WebauthnError> {
-    let expected_end = definite_item_end(bytes, 0, 0)?;
-    let mut decoder = serde_cbor_2::Deserializer::from_slice(bytes);
-    let value = Cbor::deserialize(&mut decoder).map_err(|_| malformed())?;
-    if decoder.byte_offset() != expected_end {
-        return Err(malformed());
+
+fn source_number(value: f64) -> Cbor {
+    if value.is_finite() && value.fract() == 0.0 && value.abs() <= MAX_SAFE_INTEGER as f64 {
+        // This bounded integral conversion gives Map.get(number) the same
+        // semantics for integer and floating CBOR encodings.
+        Cbor::Integer(value as i128)
+    } else {
+        Cbor::Float(value)
     }
-    Ok((value, decoder.byte_offset()))
+}
+
+struct SourceDecoder<'a> {
+    bytes: &'a [u8],
+    cursor: usize,
+}
+
+impl SourceDecoder<'_> {
+    fn take<const N: usize>(&mut self) -> Result<[u8; N], WebauthnError> {
+        let end = self.cursor.checked_add(N).ok_or_else(malformed)?;
+        let bytes = self.bytes.get(self.cursor..end).ok_or_else(malformed)?;
+        let result = bytes.try_into().map_err(|_| malformed())?;
+        self.cursor = end;
+        Ok(result)
+    }
+
+    fn argument(&mut self, additional: u8) -> Result<u64, WebauthnError> {
+        let value = match additional {
+            0..=23 => return Ok(u64::from(additional)),
+            24 => u64::from(self.take::<1>()?[0]),
+            25 => u64::from(u16::from_be_bytes(self.take()?)),
+            26 => u64::from(u32::from_be_bytes(self.take()?)),
+            27 => u64::from_be_bytes(self.take()?),
+            _ => return Err(malformed()),
+        };
+        if !(24..=MAX_SAFE_INTEGER).contains(&value) {
+            return Err(malformed());
+        }
+        Ok(value)
+    }
+
+    fn item(&mut self, depth: usize) -> Result<Cbor, WebauthnError> {
+        if depth >= 128 {
+            return Err(malformed());
+        }
+        let header = self.take::<1>()?[0];
+        let major = header >> 5;
+        let additional = header & 31;
+        if major == 7 {
+            return Ok(match additional {
+                20 => Cbor::Bool(false),
+                21 => Cbor::Bool(true),
+                // Undefined and null are rejected in the same positions by
+                // this verifier and each re-encodes to one byte. Original raw
+                // bytes are retained; this is not a persisted value codec.
+                22 | 23 => Cbor::Null,
+                25 => Cbor::Float(match u16::from_be_bytes(self.take()?) {
+                    0x7c00 => f64::INFINITY,
+                    0xfc00 => f64::NEG_INFINITY,
+                    0x7e00 => f64::NAN,
+                    _ => return Err(malformed()),
+                }),
+                26 => source_number(f64::from(f32::from_be_bytes(self.take()?))),
+                27 => source_number(f64::from_be_bytes(self.take()?)),
+                _ => return Err(malformed()),
+            });
+        }
+        let argument = self.argument(additional)?;
+        match major {
+            0 => Ok(Cbor::Integer(i128::from(argument))),
+            1 if argument < MAX_SAFE_INTEGER => Ok(Cbor::Integer(-1 - i128::from(argument))),
+            // -MAX_SAFE_INTEGER-1 is representable in JS, but is not a safe
+            // integer and therefore re-encodes as a float in Tiny-CBOR.
+            1 => Ok(Cbor::Float(-(MAX_SAFE_INTEGER as f64) - 1.0)),
+            2 | 3 => {
+                let length = usize::try_from(argument).map_err(|_| malformed())?;
+                let end = self.cursor.checked_add(length).ok_or_else(malformed)?;
+                // Source ArrayBuffer.slice truncates the payload, but reports
+                // the declared consumed length. A following item still fails.
+                let bytes = self
+                    .bytes
+                    .get(self.cursor..end.min(self.bytes.len()))
+                    .ok_or_else(malformed)?;
+                self.cursor = end;
+                if major == 2 {
+                    Ok(Cbor::Bytes(bytes.to_vec()))
+                } else {
+                    let text = String::from_utf8_lossy(bytes);
+                    Ok(Cbor::Text(
+                        text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned(),
+                    ))
+                }
+            }
+            4 | 5 => {
+                let count = usize::try_from(argument).map_err(|_| malformed())?;
+                let items = count
+                    .checked_mul(if major == 5 { 2 } else { 1 })
+                    .ok_or_else(malformed)?;
+                if items > self.bytes.len().saturating_sub(self.cursor) {
+                    return Err(malformed());
+                }
+                if major == 4 {
+                    let mut values = Vec::new();
+                    for _ in 0..count {
+                        values.push(self.item(depth + 1)?);
+                    }
+                    Ok(Cbor::Array(values))
+                } else {
+                    let mut keys = std::collections::BTreeSet::new();
+                    let mut values = std::collections::BTreeMap::new();
+                    for _ in 0..count {
+                        let key = self.item(depth + 1)?;
+                        if !keys.insert(SourceMapKey::from_value(&key)?) {
+                            return Err(malformed());
+                        }
+                        let value = self.item(depth + 1)?;
+                        let _ = values.insert(key, value);
+                    }
+                    Ok(Cbor::Map(values))
+                }
+            }
+            6 => Ok(Cbor::Tag(argument, Box::new(self.item(depth + 1)?))),
+            _ => Err(malformed()),
+        }
+    }
+}
+
+fn decode_first(bytes: &[u8]) -> Result<(Cbor, usize), WebauthnError> {
+    let mut decoder = SourceDecoder { bytes, cursor: 0 };
+    let value = decoder.item(0)?;
+    Ok((value, decoder.cursor))
 }
 fn curve_eight(value: &Cbor) -> bool {
     let Cbor::Map(map) = value else { return false };
@@ -220,7 +307,8 @@ fn source_encoded_length(value: &Cbor) -> Result<usize, WebauthnError> {
         Cbor::Bytes(value) => argument_length(value.len() as u128)
             .checked_add(value.len())
             .ok_or_else(malformed),
-        Cbor::Text(value) => argument_length(value.len() as u128)
+        // Tiny-CBOR prefixes strings with JS UTF16 length, then emits UTF8.
+        Cbor::Text(value) => argument_length(value.encode_utf16().count() as u128)
             .checked_add(value.len())
             .ok_or_else(malformed),
         Cbor::Array(values) => sum(
