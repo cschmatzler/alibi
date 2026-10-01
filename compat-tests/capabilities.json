@@ -2100,7 +2100,9 @@
           "organization member role revoked and expired sessions preserve cleanup and sibling authority",
           "organization member role empty input rejects before callbacks and preserves actual full owned and foreign state",
           "organization member role media and malformed JSON rejection precede authentication with a valid retry",
-          "organization member role selectors retain source empty-role precedence and literal whitespace IDs"
+          "organization member role selectors retain source empty-role precedence and literal whitespace IDs",
+          "organization member role ECMAScript whitespace normalizes arrays and duplicates before callbacks and storage",
+          "organization member role preserves NEL as a non-whitespace unknown role without callbacks or writes"
         ],
         "state": [
           "organization member role updates normalize string and array input without deduplicating roles",
@@ -2114,7 +2116,9 @@
           "organization member role empty input rejects before callbacks and preserves actual full owned and foreign state",
           "organization member role ordered union and field validation runs before guest authentication without side effects",
           "organization member role media and malformed JSON rejection precede authentication with a valid retry",
-          "organization member role selectors retain source empty-role precedence and literal whitespace IDs"
+          "organization member role selectors retain source empty-role precedence and literal whitespace IDs",
+          "organization member role ECMAScript whitespace normalizes arrays and duplicates before callbacks and storage",
+          "organization member role preserves NEL as a non-whitespace unknown role without callbacks or writes"
         ],
         "rejection": [
           "organization member role callbacks use the target user and normalized initial role with source patch fallback",
@@ -2125,7 +2129,9 @@
           "organization member role empty input rejects before callbacks and preserves actual full owned and foreign state",
           "organization member role ordered union and field validation runs before guest authentication without side effects",
           "organization member role media and malformed JSON rejection precede authentication with a valid retry",
-          "organization member role selectors retain source empty-role precedence and literal whitespace IDs"
+          "organization member role selectors retain source empty-role precedence and literal whitespace IDs",
+          "organization member role ECMAScript whitespace normalizes arrays and duplicates before callbacks and storage",
+          "organization member role preserves NEL as a non-whitespace unknown role without callbacks or writes"
         ],
         "authorization": [
           "organization member role callbacks use the target user and normalized initial role with source patch fallback",

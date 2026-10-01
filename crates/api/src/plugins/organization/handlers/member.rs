@@ -21,6 +21,28 @@ fn has_role(member: &impl AuthMember, role: &str) -> bool {
         .any(|candidate| candidate == role)
 }
 
+// Pinned update-member-role normalizes new inputs with ECMAScript String.trim.
+// Keep this separate from other endpoints and stored membership-role parsing.
+fn normalized_update_roles(role: &super::super::types::RoleInput) -> Vec<&str> {
+    let inputs = match role {
+        super::super::types::RoleInput::One(role) => std::slice::from_ref(role),
+        super::super::types::RoleInput::Many(roles) => roles.as_slice(),
+    };
+    inputs
+        .iter()
+        .flat_map(|role| role.split(','))
+        .map(|role| {
+            role.trim_matches(|character| {
+                matches!(character,
+                    '\u{0009}'..='\u{000D}' | '\u{0020}' | '\u{00A0}' | '\u{1680}' |
+                    '\u{2000}'..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{202F}' |
+                    '\u{205F}' | '\u{3000}' | '\u{FEFF}')
+            })
+        })
+        .filter(|role| !role.is_empty())
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Core functions
 // ---------------------------------------------------------------------------
@@ -277,10 +299,9 @@ pub(crate) async fn update_member_role_core(
 
     let requester_is_owner = has_role(&requester_member, config.effective_creator_role());
     let target_is_owner = has_role(&target_member, config.effective_creator_role());
-    let new_role = body.role.roles().join(",");
+    let new_role = normalized_update_roles(&body.role).join(",");
     let new_role_contains_owner = new_role
         .split(',')
-        .map(str::trim)
         .any(|role| role == config.effective_creator_role());
 
     if (new_role_contains_owner || target_is_owner) && !requester_is_owner {
@@ -318,9 +339,7 @@ pub(crate) async fn update_member_role_core(
                 .map(|role| role.role),
         );
     }
-    let unknown = body
-        .role
-        .roles()
+    let unknown = normalized_update_roles(&body.role)
         .into_iter()
         .filter(|role| !valid_roles.contains(*role))
         .collect::<Vec<_>>();
@@ -471,7 +490,7 @@ pub async fn handle_update_member_role(
         .or(session.active_organization_id())
         .filter(|id| !id.is_empty())
         .ok_or_else(|| super::extension_common::org_error(400, "NO_ACTIVE_ORGANIZATION"))?;
-    if body.role.roles().is_empty() {
+    if normalized_update_roles(&body.role).is_empty() {
         return Ok(empty());
     }
     let response = match update_member_role_core(&body, organization_id, &user, config, ctx).await {

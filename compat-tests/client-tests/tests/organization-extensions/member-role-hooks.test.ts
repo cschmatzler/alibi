@@ -201,6 +201,19 @@ async function rawRole(ctx:ScenarioContext,actor:ReturnType<ScenarioContext["act
  const response=await actor.fetch(`${ctx.baseURL}/__test/profiles/org-member-role-hooks/api/auth/organization/update-member-role`,{method:"POST",headers:{"content-type":media},body});
  const text=await response.text();return {status:response.status,empty:text.length===0,body:text?JSON.parse(text):null};
 }
+compatScenario("organization member role ECMAScript whitespace normalizes arrays and duplicates before callbacks and storage",async ctx=>{
+ const {owner,target,foreign,org,member}=await setup(ctx,"role-js-space"),actors=[owner,target,foreign];await configure(ctx,"record");const before=await fullState(ctx,actors);
+ const role=["\ufeffadmin\ufeff","\u00a0member\u3000"," admin "],result=await update(owner,org.id,member.id,role);expect(result.error).toBeNull();expect(memberSchema.parse(result.data).role).toBe("admin,member,admin");const after=await fullState(ctx,actors);expect(after.hooks.receipts.map(receipt=>receipt.phase)).toEqual(["before-role","after-role"]);expect(after.hooks.receipts[0]!.newRole).toBe("admin,member,admin");expect(after.hooks.receipts[1]!.member.role).toBe("admin,member,admin");expect(after.hooks.snapshot.members.find(row=>row.id===member.id)).toHaveProperty("role","admin,member,admin");stable(before.hooks,after.hooks,member.id);expect(after.users).toEqual(before.users);
+ await configure(ctx,"record");const beforeEmpty=await fullState(ctx,actors),whitespace="\u0009\u000a\u000b\u000c\u000d\u0020\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff";
+ const empty=await rawRole(ctx,owner,JSON.stringify({organizationId:org.id,memberId:member.id,role:whitespace}));expect(empty).toEqual({status:400,empty:true,body:null});expect(await fullState(ctx,actors)).toEqual(beforeEmpty);
+ return {before,result:ctx.snapshot(result),after,beforeEmpty,empty};
+},["POST /organization/update-member-role"]);
+compatScenario("organization member role preserves NEL as a non-whitespace unknown role without callbacks or writes",async ctx=>{
+ const {owner,target,foreign,org,member}=await setup(ctx,"role-nel"),actors=[owner,target,foreign];await configure(ctx,"record");const before=await fullState(ctx,actors),observations=[];
+ for(const role of ["\u0085","\u0085admin\u0085"]){const result=await rawRole(ctx,owner,JSON.stringify({organizationId:org.id,memberId:member.id,role}));expect(result).toEqual({status:400,empty:false,body:{code:"ROLE_NOT_FOUND",message:`ROLE_NOT_FOUND: ${role}`}});expect(await fullState(ctx,actors)).toEqual(before);observations.push(result);}
+ const retry=await update(owner,org.id,member.id,[" admin ","member","admin"]);expect(retry.error).toBeNull();const after=await fullState(ctx,actors);expect(after.hooks.receipts[0]!.newRole).toBe("admin,member,admin");expect(after.hooks.snapshot.members.find(row=>row.id===member.id)).toHaveProperty("role","admin,member,admin");stable(before.hooks,after.hooks,member.id);expect(after.users).toEqual(before.users);
+ return {before,observations,retry:ctx.snapshot(retry),after};
+},["POST /organization/update-member-role"]);
 compatScenario("organization member role empty input rejects before callbacks and preserves actual full owned and foreign state",async ctx=>{
  const {owner,target,foreign,org,member}=await setup(ctx,"role-input-empty"),actors=[owner,target,foreign];await configure(ctx,"record");const before=await fullState(ctx,actors),observations=[];
  for(const role of [""," , , ",[],[""," "]]) {
