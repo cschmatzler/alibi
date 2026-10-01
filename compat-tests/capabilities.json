@@ -1310,6 +1310,32 @@
           "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations",
           "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs"
         ]
+      },
+      "requiredEvidence": {
+        "success": [
+          "organization creation hooks patch persisted drafts and run before selection in actual team order",
+          "organization creation hook null empty and absent patches preserve source merge and no revalidation",
+          "organization creation rejected hooks retain exact earlier rows without selecting the current or sibling session",
+          "organization creation after hooks retain immutable member snapshots after independent database mutation",
+          "organization creation awaits async member hooks before team writes and session selection",
+          "organization trusted creation hook member overrides retain actor authority and original default team membership"
+        ],
+        "rejection": [
+          "organization creation rejected hooks retain exact earlier rows without selecting the current or sibling session",
+          "organization creation policies and duplicate checks precede hooks while trusted creation has no request selection"
+        ],
+        "authorization": [
+          "organization creation policies and duplicate checks precede hooks while trusted creation has no request selection"
+        ],
+        "state": [
+          "organization creation hooks patch persisted drafts and run before selection in actual team order",
+          "organization creation hook null empty and absent patches preserve source merge and no revalidation",
+          "organization creation rejected hooks retain exact earlier rows without selecting the current or sibling session",
+          "organization creation policies and duplicate checks precede hooks while trusted creation has no request selection",
+          "organization creation after hooks retain immutable member snapshots after independent database mutation",
+          "organization creation awaits async member hooks before team writes and session selection",
+          "organization trusted creation hook member overrides retain actor authority and original default team membership"
+        ]
       }
     },
     {

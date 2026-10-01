@@ -9,6 +9,7 @@ import { createTwoFactorPolicyFixture } from "./two-factor-policy-fixture";
 import { createTwoFactorOtpFixture } from "./two-factor-otp-fixture";
 import { createTwoFactorTotpFixture } from "./two-factor-totp-fixture";
 import { createOrganizationCreationFixture } from "./organization-creation-fixture";
+import { organizationCreationHooksFixture } from "./organization-creation-hooks-fixture";
 import { createSiweFixture } from "./siwe-fixture";
 import { createPhoneFixture } from "./phone-fixture";
 import { createAdminPermissionFixture } from "./admin-permission-fixture";
@@ -394,6 +395,7 @@ const siweFixture = await createSiweFixture(database, authOptions, `http://local
 const adminPermissionFixture = createAdminPermissionFixture(authOptions, database);
 const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 const organizationCreationFixture = createOrganizationCreationFixture(database, authOptions, `http://localhost:${PORT}`);
+const organizationHooksFixture = organizationCreationHooksFixture(database, authOptions, `http://localhost:${PORT}`);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
@@ -724,6 +726,11 @@ const server = Bun.serve({
       for (const [name, profile] of organizationCreationFixture.profiles) {
         if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return profile.handler(request);
       }
+      for(const [name,profile] of organizationHooksFixture.profiles) if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return profile.handler(request);
+      if(url.pathname==="/__test/organization-hooks-configure" && request.method==="POST")return organizationHooksFixture.configure(await request.json() as Record<string,unknown>);
+      if(url.pathname==="/__test/organization-hooks-release" && request.method==="POST")return organizationHooksFixture.release();
+      if(url.pathname==="/__test/organization-hooks-state" && request.method==="GET")return organizationHooksFixture.state(url.searchParams.get("waitFor"));
+      if(url.pathname==="/__test/organization-hooks-create" && request.method==="POST")return organizationHooksFixture.server(await request.json() as Record<string,unknown>);
       if (url.pathname === "/__test/organization-creation-state" && request.method === "GET") {
         return jsonResponse(organizationCreationFixture.state(url.searchParams.get("email") ?? "", url.searchParams.get("includeMetadata") === "true", url.searchParams.get("includeLogo") === "true"));
       }

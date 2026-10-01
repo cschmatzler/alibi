@@ -2,6 +2,11 @@ pub mod creation_policy;
 pub use creation_policy::OrganizationCreationPolicy;
 pub mod extensions;
 pub mod handlers;
+pub mod lifecycle;
+pub use lifecycle::{
+    OrganizationCreatePatch, OrganizationCreatedContext, OrganizationCreationHooks,
+    OrganizationDraftContext, OrganizationMemberCreatePatch, OrganizationMemberDraftContext,
+};
 pub mod rbac;
 pub mod types;
 pub use extensions::{
@@ -49,6 +54,9 @@ pub struct OrganizationConfig {
     /// Optional asynchronous policy overrides, evaluated against the actual user.
     #[config(default = None, skip)]
     pub creation_policy: Option<std::sync::Arc<dyn OrganizationCreationPolicy>>,
+    /// Awaited creation callbacks with immutable authority and persisted snapshots.
+    #[config(default = None, skip)]
+    pub creation_hooks: Option<std::sync::Arc<dyn OrganizationCreationHooks>>,
     /// Maximum members per organization (None = unlimited)
     #[config(default = Some(100))]
     pub membership_limit: Option<usize>,

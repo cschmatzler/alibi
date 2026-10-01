@@ -1,4 +1,5 @@
 mod organization_creation_fixture;
+mod organization_creation_hooks_fixture;
 mod team_fixture;
 
 use axum::{
@@ -626,6 +627,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     let team_router = team_fixture::router(database.clone(), team_profiles);
     let creation_router = organization_creation_fixture::router(&config, database.clone()).await?;
+    let creation_hooks_router =
+        organization_creation_hooks_fixture::router(&config, database.clone()).await?;
 
     let magic_outbox = Arc::new(Mutex::new(HashMap::new()));
     let magic_link = magic_profiles::plugin(magic_outbox.clone());
@@ -1611,6 +1614,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(device_profiles)
         .merge(team_router)
         .merge(creation_router)
+        .merge(creation_hooks_router)
         .nest("/api/auth", auth_router)
         .with_state(auth)
         .merge(verification_profile_router)
