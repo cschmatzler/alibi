@@ -524,6 +524,9 @@ test("actual admin ID filter URLs retain observed user identities and every lite
   }
   for (const mutate of [
     (url: URL) => url.searchParams.set("filterField", "email"),
+    (url: URL) => url.searchParams.delete("filterField"),
+    (url: URL) => url.searchParams.delete("filterOperator"),
+    (url: URL) => url.searchParams.delete("filterValue"),
     (url: URL) => url.searchParams.append("filterField", "id"),
     (url: URL) => url.searchParams.set("filterOperator", "not_in"),
     (url: URL) => url.searchParams.set("filterValue", ""),

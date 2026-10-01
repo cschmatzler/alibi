@@ -29,8 +29,8 @@ The live negative controls swap owners, remove an operand, introduce a foreign
 value, change duplicate identity, change/drop the field or operator, set an empty
 operand and change the fragment. Other-field, other-route, external-origin and
 metadata controls prove full observed ID strings remain literal there. The
-focused owner and whole harness pass: 42 tests / 335 assertions in
-`/tmp/admin-filter-identity-harness-final.log`; TypeScript passes separately.
+focused owner and whole harness pass: 42 tests / 338 assertions in
+`/tmp/admin-filter-identity-harness-selector-removal.log`; TypeScript passes separately.
 Canonical integration and independent review remain coordinator-owned. The
 separate adapter implementation supplies the successful array-filter behavior;
 this comparator repair cannot make an incorrect array query pass its assertions.
