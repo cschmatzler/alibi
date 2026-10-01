@@ -104,7 +104,7 @@ fn auth_request_virtual_user_id() {
 fn auth_response_new() {
     let resp = AuthResponse::new(200);
     assert_eq!(resp.status, 200);
-    assert!(resp.body.is_empty());
+    assert_eq!(resp.body, Vec::<u8>::new());
 }
 
 // Rust-specific surface: Rust request/response/type helpers are public library behavior with no direct TS analogue.

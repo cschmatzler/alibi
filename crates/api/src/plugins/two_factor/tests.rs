@@ -216,7 +216,7 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
             if cancel_session && !session_forbidden {
                 let response = result.unwrap().unwrap();
                 assert_eq!(response.status, 500);
-                assert!(response.body.is_empty());
+                assert_eq!(response.body.len(), 0);
             } else {
                 let error = result.unwrap_err();
                 assert_eq!(error.status_code(), if cancel_session { 403 } else { 400 });
@@ -1862,12 +1862,13 @@ async fn pending_backup_cipher_errors_restore_only_decode_stage_attempts() {
             serde_json::to_value(ctx.database.get_user_by_id(&user.id).await.unwrap()).unwrap(),
             before_user
         );
-        assert!(
+        assert_eq!(
             ctx.database
                 .get_user_sessions(&user.id)
                 .await
                 .unwrap()
-                .is_empty()
+                .len(),
+            0
         );
         let attempts = ctx
             .database
@@ -1946,12 +1947,13 @@ async fn pending_backup_cipher_errors_restore_only_decode_stage_attempts() {
             .unwrap(),
             before_challenge
         );
-        assert!(
+        assert_eq!(
             ctx.database
                 .get_user_sessions(&user.id)
                 .await
                 .unwrap()
-                .is_empty()
+                .len(),
+            0
         );
     }
 }
@@ -2129,7 +2131,7 @@ async fn authenticated_otp_maps_only_session_creation_cancellation_and_preserves
             0 => {
                 let response = result.unwrap().unwrap();
                 assert_eq!(response.status, 500);
-                assert!(response.body.is_empty());
+                assert_eq!(response.body.len(), 0);
                 assert_eq!(response.headers.get_all("Set-Cookie").count(), 0);
             }
             1 => assert!(matches!(result, Err(AuthError::Forbidden(_)))),

@@ -157,7 +157,7 @@ async fn test_ban_revokes_user_sessions() {
     let plugin = AdminPlugin::new();
 
     let sessions = ctx.database.get_user_sessions(&user.id).await.unwrap();
-    assert!(!sessions.is_empty());
+    assert_ne!(sessions.len(), 0);
 
     let req = make_request(
         HttpMethod::Post,
@@ -173,7 +173,7 @@ async fn test_ban_revokes_user_sessions() {
     assert_eq!(resp.status, 200);
 
     let sessions_2 = ctx.database.get_user_sessions(&user.id).await.unwrap();
-    assert!(sessions_2.is_empty());
+    assert_eq!(sessions_2.len(), 0);
 }
 
 #[tokio::test]
@@ -442,12 +442,13 @@ async fn test_remove_user_cleans_up_sessions_and_accounts() {
             .unwrap()
             .is_none()
     );
-    assert!(
+    assert_eq!(
         ctx.database
             .get_user_accounts(&user_id)
             .await
             .unwrap()
-            .is_empty()
+            .len(),
+        0
     );
 }
 
@@ -542,12 +543,13 @@ async fn test_set_user_password_does_not_create_credential_account() {
     let resp_2 = plugin.on_request(&req_2, &ctx).await.unwrap().unwrap();
     assert_eq!(resp_2.status, 200);
 
-    assert!(
+    assert_eq!(
         ctx.database
             .get_user_accounts(&user_id)
             .await
             .unwrap()
-            .is_empty()
+            .len(),
+        0
     );
 }
 

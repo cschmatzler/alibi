@@ -62,7 +62,7 @@ async fn default_anonymous_identity_is_lowercase_32_characters_and_retires_its_a
         let stored = auth.store().get_user_by_id(id).await.unwrap().unwrap();
         assert_eq!(stored.email(), Some(email));
         assert_eq!(stored.is_anonymous(), Some(true));
-        assert!(auth.store().get_user_accounts(id).await.unwrap().is_empty());
+        assert_eq!(auth.store().get_user_accounts(id).await.unwrap().len(), 0);
         let sessions = auth.store().get_user_sessions(id).await.unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(
@@ -91,7 +91,7 @@ async fn default_anonymous_identity_is_lowercase_32_characters_and_retires_its_a
             json!({"success":true})
         );
         assert!(auth.store().get_user_by_id(id).await.unwrap().is_none());
-        assert!(auth.store().get_user_sessions(id).await.unwrap().is_empty());
+        assert_eq!(auth.store().get_user_sessions(id).await.unwrap().len(), 0);
         let replay = auth.handle_request(request).await.unwrap();
         assert_eq!(replay.status, 401);
         assert_eq!(

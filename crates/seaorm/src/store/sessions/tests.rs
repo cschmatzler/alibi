@@ -230,7 +230,7 @@ async fn batch_session_lookup_returns_token_index_order_and_includes_expired_row
         vec!["a-token", "m-token", "z-token"]
     );
     assert!(result.first().is_some_and(|row| row.expires_at() < now));
-    assert!(store.get_sessions_by_tokens(&[]).await?.is_empty());
+    assert_eq!(store.get_sessions_by_tokens(&[]).await?.len(), 0);
     let mut config = store.config().as_ref().clone();
     config.advanced.database.default_find_many_limit = 2;
     let limited = SeaOrmStore::<BundledSchema>::new(config, store.connection().clone());

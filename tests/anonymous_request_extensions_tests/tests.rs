@@ -94,7 +94,7 @@ async fn concurrent_cloned_public_requests_share_only_their_own_trusted_dispatch
         999
     );
     let attempts = rows.lock().unwrap().clone();
-    assert!(!attempts.is_empty());
+    assert_ne!(attempts.len(), 0);
     assert!(
         attempts
             .iter()

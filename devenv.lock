@@ -17,6 +17,28 @@
         "type": "github"
       }
     },
+    "fenix": {
+      "inputs": {
+        "nixpkgs": [
+          "rust-style",
+          "nixpkgs"
+        ],
+        "rust-analyzer-src": "rust-analyzer-src"
+      },
+      "locked": {
+        "lastModified": 1790858958,
+        "narHash": "sha256-am3DS8g9vyeQLKk9QQvmJoZLHGBUB1rtd6zVaGeq2Mc=",
+        "owner": "nix-community",
+        "repo": "fenix",
+        "rev": "025bf5b6b0293c5ee3a3506a7e43ba64bc8bb1b7",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "fenix",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "inputs": {
         "nixpkgs-src": "nixpkgs-src"
@@ -63,6 +85,23 @@
         "rust-style": "rust-style"
       }
     },
+    "rust-analyzer-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1790532271,
+        "narHash": "sha256-j8y/AO3AMDF9p+11aIDhnA21JnNj5PjvcejTI43vI8Q=",
+        "owner": "rust-lang",
+        "repo": "rust-analyzer",
+        "rev": "03fcb77246f2568adb0e9b2fa60d19c6cc1686f4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "rust-lang",
+        "ref": "nightly",
+        "repo": "rust-analyzer",
+        "type": "github"
+      }
+    },
     "rust-overlay": {
       "inputs": {
         "nixpkgs": [
@@ -86,15 +125,16 @@
     },
     "rust-style": {
       "inputs": {
+        "fenix": "fenix",
         "nixpkgs": "nixpkgs",
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1790860286,
-        "narHash": "sha256-Dg4tHHO4gVgW7cUEV+tupKwVoXvhOIzkeVR9G2JpLD4=",
+        "lastModified": 1790860813,
+        "narHash": "sha256-Yl+FDPJSNVxRDsg9wx+gZ2Qi8sTBf0Zb1qI8QaoKzq8=",
         "ref": "refs/heads/main",
-        "rev": "ee0c4630687ec0e959f88cb8292983e3ae5e4a7e",
-        "revCount": 7,
+        "rev": "657ff477e38d47f057f02de6be2ec19beaed3869",
+        "revCount": 8,
         "type": "git",
         "url": "ssh://git@github.com/cschmatzler/rust"
       },

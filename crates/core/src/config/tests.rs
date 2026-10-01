@@ -69,7 +69,7 @@ fn new_config_uses_defaults() {
     assert_eq!(cfg.app_name, "Better Auth");
     assert_eq!(cfg.base_url, "http://localhost:3000");
     assert_eq!(cfg.base_path, "/api/auth");
-    assert!(cfg.trusted_origins.is_empty());
+    assert_eq!(cfg.trusted_origins, Vec::<String>::new());
 }
 
 // ── Builder methods ─────────────────────────────────────────────────

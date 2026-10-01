@@ -998,7 +998,7 @@ async fn delegated_signing_uses_external_keys_and_preserves_explicit_payload_and
     let request = test_helpers::create_auth_request_no_query(HttpMethod::Get, "/jwks", None, None);
     let response = plugin.on_request(&request, &ctx).await.unwrap().unwrap();
     assert_eq!(response.status, 404);
-    assert!(response.body.is_empty());
+    assert_eq!(response.body.len(), 0);
     // The reference verifier reads its configured keyring; remoteUrl does not
     // substitute external keys for the local verification adapter.
     assert!(
