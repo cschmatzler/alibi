@@ -4,7 +4,13 @@ use aes_gcm::aes::{
     Aes256,
     cipher::{BlockDecrypt, BlockEncrypt, KeyInit, generic_array::GenericArray},
 };
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as BASE64};
+use base64::{
+    Engine, alphabet,
+    engine::{
+        DecodePaddingMode,
+        general_purpose::{GeneralPurpose, GeneralPurposeConfig, URL_SAFE_NO_PAD as BASE64},
+    },
+};
 use better_auth_core::{
     AuthError, AuthResult,
     utils::json::{JsValue, parse_value},
@@ -19,6 +25,30 @@ use sha2::{Digest, Sha256, Sha512};
 const INFO: &[u8] = b"BetterAuth.js Generated Encryption Key";
 fn invalid() -> AuthError {
     AuthError::bad_request("Account not found")
+}
+fn decode_segment(value: &str) -> AuthResult<Vec<u8>> {
+    // Pinned JOSE uses base64url followed by atob: only these five ASCII
+    // whitespace characters are ignored; padding is optional but exact.
+    let compact: Vec<_> = value
+        .bytes()
+        .filter(|byte| !matches!(byte, b'\t' | b'\n' | b'\x0c' | b'\r' | b' '))
+        .collect();
+    let unpadded = compact
+        .iter()
+        .rposition(|byte| *byte != b'=')
+        .map_or(0, |index| index + 1);
+    let padding = compact.len() - unpadded;
+    if padding != 0 && (compact.len() % 4 != 0 || padding != (4 - unpadded % 4) % 4) {
+        return Err(invalid());
+    }
+    GeneralPurpose::new(
+        &alphabet::URL_SAFE,
+        GeneralPurposeConfig::new()
+            .with_decode_padding_mode(DecodePaddingMode::RequireNone)
+            .with_decode_allow_trailing_bits(true),
+    )
+    .decode(compact.get(..unpadded).ok_or_else(invalid)?)
+    .map_err(|_| invalid())
 }
 fn key(secret: &str) -> AuthResult<[u8; 64]> {
     let mut key = [0; 64];
@@ -85,6 +115,9 @@ pub(super) fn encode(
     ))
 }
 pub(super) fn decode(secret: &str, token: &str) -> AuthResult<AccountCookiePayload> {
+    // Cookie values arrive URI-encoded; the source cookie parser decodes them
+    // before JOSE sees the protected header and its authenticated spelling.
+    let token = urlencoding::decode(token).map_err(|_| invalid())?;
     let parts: Vec<_> = token.split('.').collect();
     let [header, encrypted_key, iv, ciphertext, tag] = parts.as_slice() else {
         return Err(invalid());
@@ -93,7 +126,7 @@ pub(super) fn decode(secret: &str, token: &str) -> AuthResult<AccountCookiePaylo
         return Err(invalid());
     }
     let key = key(secret)?;
-    let header_bytes = BASE64.decode(header).map_err(|_| invalid())?;
+    let header_bytes = decode_segment(header)?;
     let header_data = parse_value(std::str::from_utf8(&header_bytes).map_err(|_| invalid())?)
         .map_err(|_| invalid())?;
     if header_data.get("alg").and_then(JsValue::as_str) != Some("dir")
@@ -108,9 +141,9 @@ pub(super) fn decode(secret: &str, token: &str) -> AuthResult<AccountCookiePaylo
     {
         return Err(invalid());
     }
-    let iv = BASE64.decode(iv).map_err(|_| invalid())?;
-    let mut ciphertext = BASE64.decode(ciphertext).map_err(|_| invalid())?;
-    let tag = BASE64.decode(tag).map_err(|_| invalid())?;
+    let iv = decode_segment(iv)?;
+    let mut ciphertext = decode_segment(ciphertext)?;
+    let tag = decode_segment(tag)?;
     if iv.len() != 16 || ciphertext.is_empty() || ciphertext.len() % 16 != 0 || tag.len() != 32 {
         return Err(invalid());
     }

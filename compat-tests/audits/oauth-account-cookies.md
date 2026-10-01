@@ -89,3 +89,48 @@ cookie, or that every endpoint's invalid-cookie fallback behavior matches source
 The actual strict-selector get-access-token boundary above returns source
 `400 ACCOUNT_NOT_FOUND` for invalid encrypted cookies; wider normal OAuth/profile
 and adapter failure branches remain separately recorded in the One Tap audit.
+
+## Account-cookie Base64 spellings
+
+Independent review of the encrypted-cookie capability found that pinned JOSE's
+actual Bun decoder accepts optional exact Base64 padding, unused trailing bits,
+and ASCII TAB, LF, FF, CR and SPACE. The initial Rust reader used strict
+unpadded decoding and rejected these equivalent authenticated values. The private
+account-cookie reader now follows this grammar, retaining the URL-safe alphabet
+and rejecting partial/excess padding, vertical tab, and literal `+` or `/`.
+The owning cookie value is URI-decoded once before segment parsing, matching the
+source cookie parser: actual Cookie headers carry padding and whitespace as
+percent-encoded text. Other cookie owners and the canonical writer are unchanged.
+
+The ORIGINAL protected segment after cookie decoding remains the authenticated
+AAD. Decode aliases never skip or weaken the existing constant-time MAC check,
+decrypt-before-authenticate prohibition, date validation or stored-user binding.
+Changing only the header spelling still fails authentication even when its
+decoded JSON is unchanged. The encrypted-key segment must remain empty.
+
+The existing live cookie primary is extended rather than duplicated. A real
+issued account cookie is decoded in full by the published helper for padded IV,
+padded tag, IV and tag trailing-bit aliases, and all five accepted whitespace
+characters. Every alias reads the genuine owner's retained grant and is also
+rejected with a real foreign user's signed session. Partial/excess padding,
+vertical tab, invalid alphabet, a nonempty encrypted key, and a header spelling
+with the old MAC fail the real endpoint. The canonical whole-cookie observation,
+complete HTTP traces and final unchanged physical state are retained. No private
+decoder export, synthetic cookie fixture, comparator adjustment or exemption is
+introduced; an always-reject reader and an ownership-blind reader cannot pass.
+
+`/tmp/account-cookie-alias-self-control.log` records the extended primary against
+Source twice (1 scenario / 158 assertions). Its intended baseline Rust failure
+is `200` expected versus `400` received for a padded IV, recorded in
+`/tmp/account-cookie-alias-before.log`. The intermediate Base64-only repair still
+failed the actual URI-encoded Cookie header
+(`/tmp/account-cookie-alias-base64-only-before.log`), proving the owning parser
+requirement. Final focused proof is recorded in
+`/tmp/account-cookie-alias-sdk-final.log` (15 One Tap scenarios / 832 assertions),
+`/tmp/account-cookie-alias-vectors-final.log` (the pinned vector owner),
+`/tmp/account-cookie-alias-native-oauth-final.log` (18 real OAuth siblings),
+`/tmp/account-cookie-alias-typecheck-final.log`, and
+`/tmp/account-cookie-alias-clippy-final.log`. Canonical gates and publication stay
+coordinator-owned. Malformed URI error transport, compression, chunking, rotating
+secrets, custom account columns and the previously listed TTL boundaries remain
+separate gaps; this capability does not claim their closure.

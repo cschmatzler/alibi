@@ -1,5 +1,9 @@
 import { expect } from "bun:test";
-import { makeSignature, symmetricEncodeJWT } from "better-auth/crypto";
+import {
+  makeSignature,
+  symmetricDecodeJWT,
+  symmetricEncodeJWT,
+} from "better-auth/crypto";
 import { compatScenario } from "../../support/scenario";
 import { credential, successful, state } from "./helpers";
 const secret = "compat-test-only-key-not-real-minimum-32chars";
@@ -134,6 +138,63 @@ compatScenario(
         "." +
         (await makeSignature(foreign.data!.token!, secret)),
     );
+    // Keep the original whole-cookie observation; feed each equivalent wire
+    // spelling to the real authenticated endpoint and the published decoder.
+    const alphabet =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const alias = (index: number, transform: (value: string) => string) => {
+      const segments = cookie.token.split(".");
+      segments[index] = transform(segments[index]!);
+      return segments.join(".");
+    };
+    const trailingBits = (value: string) =>
+      value.slice(0, -1) + alphabet[alphabet.indexOf(value.at(-1)!) + 1];
+    const aliases = [
+      alias(2, (value) => value + "=="),
+      alias(4, (value) => value + "="),
+      alias(2, trailingBits),
+      alias(4, trailingBits),
+      alias(4, (value) => "\t\n\f\r " + value),
+    ];
+    const aliasReads = [];
+    const foreignAliasReads = [];
+    for (const value of aliases) {
+      const decoded = await symmetricDecodeJWT<Record<string, unknown>>(
+        value,
+        secret,
+        "better-auth-account",
+      );
+      expect(decoded).toEqual(cookie.payload);
+      const response = await request(value);
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toEqual(leewayBody);
+      aliasReads.push({ status: response.status, body });
+      const denied = await request(value, foreignCookie);
+      expect(denied.status).toBe(400);
+      const deniedBody = await denied.json();
+      expect(deniedBody.code).toBe("ACCOUNT_NOT_FOUND");
+      foreignAliasReads.push({ status: denied.status, body: deniedBody });
+    }
+    const malformedReads = [];
+    for (const value of [
+      alias(2, (value) => value + "="),
+      alias(4, (value) => value + "=="),
+      alias(4, (value) => "\v" + value),
+      alias(2, (value) => "+" + value.slice(1)),
+      alias(1, () => "AA"),
+      // Decoding this header yields the same JSON, but its ORIGINAL spelling
+      // participates in authentication and must not be canonicalized as AAD.
+      alias(0, (value) => " " + value),
+    ]) {
+      expect(await symmetricDecodeJWT(value, secret, "better-auth-account"))
+        .toBeNull();
+      const response = await request(value);
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.code).toBe("ACCOUNT_NOT_FOUND");
+      malformedReads.push({ status: response.status, body });
+    }
     const foreignRead = await request(cookie.token, foreignCookie);
     expect(foreignRead.status).toBe(400);
     const foreignBody = await foreignRead.json();
@@ -149,6 +210,9 @@ compatScenario(
       leewayBody,
       rejected,
       foreignBody,
+      aliasReads,
+      foreignAliasReads,
+      malformedReads,
       persisted: {
         ...persisted,
         jwksFetches: persisted.jwksFetches - baseline.jwksFetches,
