@@ -138,6 +138,7 @@ compatScenario(
       foreignAfter,
     };
   },
+  ["POST /admin/ban-user", "POST /admin/unban-user", "POST /admin/impersonate-user", "POST /sign-in/email"],
 );
 
 compatScenario(
@@ -207,6 +208,7 @@ compatScenario(
       foreignAfter,
     };
   },
+  ["POST /admin/ban-user", "POST /sign-in/email"],
 );
 
 compatScenario(
@@ -294,6 +296,7 @@ compatScenario(
     }
     return { observations };
   },
+  ["POST /admin/ban-user", "POST /admin/unban-user", "POST /admin/impersonate-user"],
 );
 
 compatScenario(
@@ -368,6 +371,7 @@ compatScenario(
       foreignAfter,
     };
   },
+  ["POST /admin/ban-user", "POST /admin/impersonate-user"],
 );
 
 compatScenario(
@@ -426,4 +430,5 @@ compatScenario(
       foreignAfter,
     };
   },
+  ["POST /admin/ban-user", "POST /admin/impersonate-user"],
 );

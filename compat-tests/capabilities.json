@@ -604,11 +604,22 @@
       "requiredEvidence": {
         "success": [
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
-          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban"
+          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
+          "admin zero duration and empty reason use source defaults while owned sessions transition",
+          "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions",
+          "admin configured fractional negative and NaN defaults preserve persisted session ownership"
         ],
         "state": [
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
-          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban"
+          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
+          "admin zero duration and empty reason use source defaults while owned sessions transition",
+          "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions",
+          "admin configured fractional negative and NaN defaults preserve persisted session ownership",
+          "admin invalid configured dates fail before writes without changing issued owner or target sessions",
+          "admin date mapping preserves genuine application hook API errors and unchanged owned state"
+        ],
+        "rejection": [
+          "admin date mapping preserves genuine application hook API errors and unchanged owned state"
         ]
       }
     },
@@ -677,10 +688,16 @@
       },
       "requiredEvidence": {
         "success": [
-          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban"
+          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
+          "admin zero duration and empty reason use source defaults while owned sessions transition",
+          "admin configured fractional negative and NaN defaults preserve persisted session ownership"
         ],
         "state": [
-          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban"
+          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
+          "admin zero duration and empty reason use source defaults while owned sessions transition",
+          "admin configured fractional negative and NaN defaults preserve persisted session ownership",
+          "admin invalid configured dates fail before writes without changing issued owner or target sessions",
+          "admin date mapping preserves genuine application hook API errors and unchanged owned state"
         ]
       }
     },
@@ -789,6 +806,16 @@
         "rejection": null,
         "authorization": null,
         "state": null
+      },
+      "requiredEvidence": {
+        "success": [
+          "admin zero duration and empty reason use source defaults while owned sessions transition",
+          "admin configured fractional negative and NaN defaults preserve persisted session ownership"
+        ],
+        "state": [
+          "admin zero duration and empty reason use source defaults while owned sessions transition",
+          "admin configured fractional negative and NaN defaults preserve persisted session ownership"
+        ]
       }
     },
     {
@@ -1720,10 +1747,17 @@
       },
       "requiredEvidence": {
         "success": [
-          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban"
+          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
+          "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions"
         ],
         "state": [
-          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban"
+          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
+          "admin zero duration and empty reason use source defaults while owned sessions transition",
+          "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions"
+        ],
+        "rejection": [
+          "admin zero duration and empty reason use source defaults while owned sessions transition",
+          "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions"
         ]
       }
     },
