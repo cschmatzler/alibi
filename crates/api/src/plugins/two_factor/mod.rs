@@ -31,6 +31,9 @@ use crate::plugins::helpers::{
 
 use super::StatusResponse;
 
+mod otp_storage;
+pub use otp_storage::{TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage};
+
 #[cfg(test)]
 mod tests;
 
@@ -48,9 +51,6 @@ const DEFAULT_TWO_FACTOR_COOKIE_MAX_AGE_SECS: i64 = 10 * 60;
 const DEFAULT_TRUST_DEVICE_MAX_AGE_SECS: i64 = 30 * 24 * 60 * 60;
 const DEFAULT_TOTP_PERIOD_SECS: u64 = 30;
 const DEFAULT_TOTP_DIGITS: usize = 6;
-const DEFAULT_OTP_DIGITS: usize = 6;
-const DEFAULT_OTP_LIFETIME_SECS: i64 = 3 * 60;
-const DEFAULT_OTP_ATTEMPT_LIMIT: usize = 5;
 const DEFAULT_BACKUP_CODE_COUNT: usize = 10;
 const DEFAULT_BACKUP_CODE_LENGTH: usize = 10;
 
@@ -131,6 +131,17 @@ pub struct TwoFactorConfig {
     /// Optional OTP sender callback. When absent, `/two-factor/send-otp` is disabled.
     #[config(default = None, skip)]
     pub send_otp: Option<Arc<dyn SendTwoFactorOtp>>,
+    /// Number of decimal digits in delivered OTPs, following JS numeric length.
+    #[config(default = 6.0)]
+    pub otp_digits: f64,
+    /// OTP lifetime in minutes; zero selects the pinned three-minute default.
+    #[config(default = 3.0)]
+    pub otp_period_minutes: f64,
+    /// Failed OTP budget; zero selects the pinned five-attempt default.
+    #[config(default = 5.0)]
+    pub otp_allowed_attempts: f64,
+    #[config(default = TwoFactorOtpStorage::default(), skip)]
+    pub otp_storage: TwoFactorOtpStorage,
 }
 
 impl std::fmt::Debug for TwoFactorConfig {
@@ -152,6 +163,10 @@ impl std::fmt::Debug for TwoFactorConfig {
             .field("totp_issuer", &self.totp_issuer)
             .field("totp_disabled", &self.totp_disabled)
             .field("send_otp", &self.send_otp.as_ref().map(|_| "custom"))
+            .field("otp_digits", &self.otp_digits)
+            .field("otp_period_minutes", &self.otp_period_minutes)
+            .field("otp_allowed_attempts", &self.otp_allowed_attempts)
+            .field("otp_storage", &self.otp_storage)
             .finish()
     }
 }
@@ -159,7 +174,17 @@ impl std::fmt::Debug for TwoFactorConfig {
 #[derive(Debug, Deserialize, Validate)]
 pub(crate) struct EnableRequest {
     password: Option<String>,
+    #[serde(default)]
+    method: EnableMethod,
     issuer: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum EnableMethod {
+    Otp,
+    #[default]
+    Totp,
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -177,6 +202,21 @@ pub(crate) struct VerifyTotpRequest {
     code: String,
     #[serde(rename = "trustDevice")]
     trust_device: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct SendOtpRequest {
+    #[serde(rename = "trustDevice")]
+    _trust_device: Option<bool>,
+}
+
+impl crate::plugins::authentication_helpers::RequestBody for SendOtpRequest {
+    const FIELDS: &'static [crate::plugins::authentication_helpers::JsonField] =
+        &[crate::plugins::authentication_helpers::JsonField {
+            name: "trustDevice",
+            kind: crate::plugins::authentication_helpers::JsonFieldKind::Boolean,
+            required: false,
+        }];
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -201,12 +241,15 @@ pub(crate) struct VerifyBackupCodeRequest {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct EnableResponse {
-    method: &'static str,
-    #[serde(rename = "totpURI")]
-    totp_uri: String,
-    #[serde(rename = "backupCodes")]
-    backup_codes: Vec<String>,
+#[serde(tag = "method", rename_all = "lowercase")]
+pub(crate) enum EnableResponse {
+    Otp,
+    Totp {
+        #[serde(rename = "totpURI")]
+        totp_uri: String,
+        #[serde(rename = "backupCodes")]
+        backup_codes: Vec<String>,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -496,12 +539,22 @@ impl TwoFactorPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, session) = ctx.require_session(req).await?;
         let body: EnableRequest =
             match parse_password_body(req, self.config.allow_passwordless, true) {
-                Ok(v) => v,
-                Err(resp) => return Ok(resp),
+                Ok(body) => body,
+                Err(response) => return Ok(response),
             };
+        let (user, session) = ctx
+            .require_authoritative_session(req)
+            .await
+            .map_err(|error| match error {
+                AuthError::Unauthenticated | AuthError::SessionNotFound => AuthError::Upstream {
+                    status: 401,
+                    code: "UNAUTHORIZED",
+                    message: "Unauthorized",
+                },
+                error => error,
+            })?;
 
         let (response, set_cookie_headers) =
             match enable_core(&body, &user, &session, &self.config, ctx).await {
@@ -593,6 +646,11 @@ impl TwoFactorPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
+        if let Err(response) =
+            crate::plugins::authentication_helpers::parse_body::<SendOtpRequest>(req)
+        {
+            return Ok(response);
+        }
         let response = send_otp_core(req, &self.config, ctx).await?;
         AuthResponse::json(200, &response).map_err(AuthError::from)
     }
@@ -610,6 +668,13 @@ impl TwoFactorPlugin {
         let (response, set_cookie_headers) =
             match verify_otp_core(req, &body, &self.config, ctx).await {
                 Ok(result) => result,
+                // OTP's own code budget does not expire the pending-factor cookie.
+                Err(
+                    error @ AuthError::Upstream {
+                        code: "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE",
+                        ..
+                    },
+                ) => return Err(error),
                 Err(error) => return verification_error_response(error, ctx),
             };
         let mut auth_response = AuthResponse::json(200, &response)?;
@@ -676,6 +741,39 @@ async fn enable_core(
         config.allow_passwordless,
     )
     .await?;
+    if body.method == EnableMethod::Otp {
+        if config.send_otp.is_none() {
+            return Err(AuthError::Upstream {
+                status: 400,
+                code: "OTP_NOT_CONFIGURED",
+                message: "OTP is not available",
+            });
+        }
+        let updated_user = ctx
+            .database
+            .update_user(
+                user.id().as_ref(),
+                UpdateUser {
+                    two_factor_enabled: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        let issued = issue_user_session_with_overrides(
+            ctx,
+            updated_user.id().as_ref(),
+            current_session.ip_address().map(str::to_owned),
+            current_session.user_agent().map(str::to_owned),
+            current_session,
+        )
+        .await
+        .map_err(SessionIssueError::into_auth_error)?;
+        ctx.database.delete_session(current_session.token()).await?;
+        return Ok((
+            EnableResponse::Otp,
+            vec![create_session_cookie(issued.session.token(), &ctx.config)],
+        ));
+    }
     if config.totp_disabled {
         return Err(AuthError::Upstream {
             status: 400,
@@ -769,8 +867,7 @@ async fn enable_core(
         true,
     );
     Ok((
-        EnableResponse {
-            method: "totp",
+        EnableResponse::Totp {
             totp_uri,
             backup_codes,
         },
@@ -933,6 +1030,7 @@ async fn verify_totp_core(
                 user,
                 *session,
                 two_factor.verified() != Some(true),
+                false,
                 ctx,
             )
             .await?;
@@ -977,30 +1075,34 @@ async fn send_otp_core(
         .ok_or_else(|| AuthError::bad_request("otp isn't configured"))?;
     let state = resolve_two_factor_state(req, ctx).await?;
 
-    let otp = format!(
-        "{:0width$}",
-        rand::thread_rng().gen_range(0..10u32.pow(DEFAULT_OTP_DIGITS as u32)),
-        width = DEFAULT_OTP_DIGITS
-    );
-    let hashed_otp = better_auth_core::hash_password(None, &otp).await?;
-    let identifier = otp_verification_identifier(state.key());
-
-    if let Some(existing) = ctx
-        .database
-        .get_verification_by_identifier(&identifier)
-        .await?
-    {
-        ctx.database
-            .delete_verification(existing.id().as_ref())
-            .await?;
+    // The upstream random-string loop produces ceil(digits) decimal characters.
+    let digits = config.otp_digits;
+    if digits <= 0.0 || digits > 32768.5 || digits.is_infinite() {
+        return Err(AuthError::internal("Invalid two-factor OTP length"));
     }
+    let otp: String = (0..digits.ceil() as usize)
+        .map(|_| char::from(b'0' + rand::thread_rng().gen_range(0..10u8)))
+        .collect();
+    let stored_otp = config.otp_storage.store(&otp, &ctx.config.secret).await?;
+    let identifier = otp_verification_identifier(state.key());
+    let period = if config.otp_period_minutes == 0.0 || config.otp_period_minutes.is_nan() {
+        3.0
+    } else {
+        config.otp_period_minutes
+    };
+    let milliseconds = Utc::now().timestamp_millis() as f64 + period * 60000.0;
+    if !milliseconds.is_finite() || milliseconds.abs() > 8_640_000_000_000_000.0 {
+        return Err(AuthError::internal("Invalid two-factor OTP expiry"));
+    }
+    let expires_at = chrono::DateTime::from_timestamp_millis(milliseconds.trunc() as i64)
+        .ok_or_else(|| AuthError::internal("Invalid two-factor OTP expiry"))?;
 
     _ = ctx
         .database
         .create_verification(CreateVerification {
             identifier,
-            value: format!("{}:0", hashed_otp),
-            expires_at: Utc::now() + Duration::seconds(DEFAULT_OTP_LIFETIME_SECS),
+            value: format!("{}:0", stored_otp),
+            expires_at,
         })
         .await?;
 
@@ -1039,27 +1141,63 @@ async fn verify_otp_core(
         return Err(AuthError::bad_request("OTP has expired"));
     };
 
-    let Some((stored_hash, counter)) = verification.value().rsplit_once(':') else {
-        return Err(AuthError::internal("Malformed OTP verification payload"));
-    };
-
-    let attempts = counter.parse::<usize>().map_err(|error| {
-        AuthError::internal(format!("Malformed OTP attempt counter: {}", error))
-    })?;
-    if attempts >= DEFAULT_OTP_ATTEMPT_LIMIT {
-        return Err(AuthError::bad_request(
-            "Too many attempts. Please request a new code.",
-        ));
+    let mut parts = verification.value().split(':');
+    let stored_otp = parts.next().unwrap_or_default();
+    let counter = parts.next().unwrap_or_default();
+    // parseInt(counter, 10) accepts a signed decimal prefix and ignores its suffix.
+    let trimmed = counter.trim_start_matches(|c: char| {
+        matches!(
+            c,
+            '\t' | '\n' | '\r' | '\u{b}' | '\u{c}' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'
+                ..='\u{200a}'
+                    | '\u{2028}'
+                    | '\u{2029}'
+                    | '\u{202f}'
+                    | '\u{205f}'
+                    | '\u{3000}'
+                    | '\u{feff}'
+        )
+    });
+    let prefix_length = trimmed
+        .char_indices()
+        .take_while(|(index, c)| c.is_ascii_digit() || (*index == 0 && (*c == '+' || *c == '-')))
+        .last()
+        .map_or(0, |(index, c)| index + c.len_utf8());
+    let attempts = trimmed[..prefix_length].parse::<f64>().unwrap_or(0.0);
+    let allowed_attempts =
+        if config.otp_allowed_attempts == 0.0 || config.otp_allowed_attempts.is_nan() {
+            5.0
+        } else {
+            config.otp_allowed_attempts
+        };
+    if attempts >= allowed_attempts {
+        return Err(AuthError::Upstream {
+            status: 400,
+            code: "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE",
+            message: "Too many attempts. Please request a new code.",
+        });
     }
 
-    let is_valid = match better_auth_core::verify_password(None, &body.code, stored_hash).await {
-        Ok(()) => true,
-        Err(AuthError::InvalidCredentials) => false,
-        Err(error) => return Err(error),
-    };
+    let is_valid = config
+        .otp_storage
+        .verify(stored_otp, &body.code, &ctx.config.secret)
+        .await?;
 
     if !is_valid {
-        let next_value = format!("{}:{}", stored_hash, attempts + 1);
+        let next_count = attempts + 1.0;
+        let next_counter = if next_count.is_infinite() {
+            if next_count.is_sign_negative() {
+                "-Infinity".into()
+            } else {
+                "Infinity".into()
+            }
+        } else {
+            better_auth_core::utils::json::number_to_string(
+                &serde_json::Number::from_f64(next_count)
+                    .ok_or_else(|| AuthError::internal("Invalid OTP counter"))?,
+            )?
+        };
+        let next_value = format!("{stored_otp}:{next_counter}");
         let expires_at = verification.expires_at();
         let verification_identifier = verification.identifier().to_string();
         _ = ctx
@@ -1082,7 +1220,7 @@ async fn verify_otp_core(
 
     match state {
         ResolvedTwoFactorState::Session { user, session, .. } => {
-            verify_existing_session_factor(user, *session, true, ctx).await
+            verify_existing_session_factor(user, *session, true, true, ctx).await
         }
         ResolvedTwoFactorState::Pending(pending) => {
             finalize_pending_two_factor(pending, req, body.trust_device.unwrap_or(false), true, ctx)
@@ -1188,7 +1326,7 @@ async fn verify_backup_code_core(
                     Vec::new(),
                 ))
             } else {
-                verify_existing_session_factor(user, *session, false, ctx).await
+                verify_existing_session_factor(user, *session, false, false, ctx).await
             }
         }
         ResolvedTwoFactorState::Pending(pending) => {
@@ -1471,6 +1609,7 @@ async fn verify_existing_session_factor(
     user: impl AuthUser,
     session: impl AuthSession,
     enable_two_factor_if_needed: bool,
+    return_updated_snapshot: bool,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<(SessionTokenResponse<UserView>, Vec<String>)> {
     if enable_two_factor_if_needed && !user.two_factor_enabled() {
@@ -1496,10 +1635,18 @@ async fn verify_existing_session_factor(
         ctx.database.delete_session(session.token()).await?;
         return Ok((
             SessionTokenResponse {
-                token: session.token().to_string(),
-                // TS keeps the verify response on the pre-update snapshot even
-                // though the re-issued session already observes 2FA as enabled.
-                user: ctx.user_view(&user),
+                token: if return_updated_snapshot {
+                    issued.session.token().to_string()
+                } else {
+                    session.token().to_string()
+                },
+                // TOTP retains its original response snapshot; OTP returns the
+                // updated user and newly issued token.
+                user: if return_updated_snapshot {
+                    ctx.user_view(&updated_user)
+                } else {
+                    ctx.user_view(&user)
+                },
             },
             vec![create_session_cookie(issued.session.token(), &ctx.config)],
         ));
@@ -1725,9 +1872,14 @@ fn parse_password_body<T: serde::de::DeserializeOwned + 'static>(
     allow_passwordless: bool,
     include_issuer: bool,
 ) -> Result<T, AuthResponse> {
-    use super::authentication_helpers::{JsonField, parse_body_with_fields};
+    use super::authentication_helpers::{JsonField, JsonFieldKind, parse_body_with_fields};
     let fields = [
         JsonField::string("password", !allow_passwordless),
+        JsonField {
+            name: "method",
+            kind: JsonFieldKind::OneOf(&["otp", "totp"]),
+            required: false,
+        },
         JsonField::string("issuer", false),
     ];
     parse_body_with_fields(

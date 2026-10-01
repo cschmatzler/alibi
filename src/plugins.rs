@@ -3,7 +3,9 @@
 pub use better_auth_api::OAuthPlugin;
 pub use better_auth_api::plugins::email_verification::SendVerificationEmail;
 pub use better_auth_api::plugins::password_management::SendResetPassword;
-pub use better_auth_api::plugins::two_factor::SendTwoFactorOtp;
+pub use better_auth_api::plugins::two_factor::{
+    SendTwoFactorOtp, TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage,
+};
 pub use better_auth_api::plugins::user_management::SendChangeEmailConfirmation;
 pub use better_auth_api::plugins::{
     AccountManagementPlugin, AdminConfig, AdminPlugin, ApiKeyConfig, ApiKeyPlugin,

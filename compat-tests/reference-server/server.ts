@@ -5,6 +5,7 @@ import { passkey } from "@better-auth/passkey";
 import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { createTwoFactorPolicyFixture } from "./two-factor-policy-fixture";
+import { createTwoFactorOtpFixture } from "./two-factor-otp-fixture";
 import { createTwoFactorTotpFixture } from "./two-factor-totp-fixture";
 import { createOrganizationCreationFixture } from "./organization-creation-fixture";
 import { createSiweFixture } from "./siwe-fixture";
@@ -465,6 +466,7 @@ for (const name of ["magic-link-hashed", "magic-link-disabled"]) {
 const phoneFixture = await createPhoneFixture(authOptions, twoFactorOtpOutbox);
 const twoFactorTotpFixture = createTwoFactorTotpFixture(authOptions);
 const twoFactorPolicyFixture = createTwoFactorPolicyFixture(authOptions, database);
+const twoFactorOtpFixture = createTwoFactorOtpFixture(authOptions, database);
 const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
 
@@ -747,6 +749,8 @@ const server = Bun.serve({
       }
       const policyControl = await twoFactorPolicyFixture(request, url);
       if (policyControl) return policyControl;
+      const otpControl = await twoFactorOtpFixture(request, url);
+      if (otpControl) return otpControl;
       const totpControl = await twoFactorTotpFixture(request, url);
       if (totpControl) return totpControl;
       const ottControl=await oneTimeTokenControl(request,url);
