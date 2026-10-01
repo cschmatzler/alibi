@@ -237,6 +237,42 @@ pub struct IssuedSession<S: better_auth_core::AuthSchema> {
     pub session: S::Session,
 }
 
+/// Original rows used by the handler that issued the completed session.
+/// This is a callback observation; authorization still uses a current session read.
+pub(crate) struct CompletedSession<S: better_auth_core::AuthSchema> {
+    pub(crate) user: S::User,
+    pub(crate) session: S::Session,
+}
+
+pub(crate) fn record_completed_session<S: better_auth_core::AuthSchema>(
+    user: &S::User,
+    session: &S::Session,
+) {
+    if let Some(request) = better_auth_core::hooks::current_request_hook_context() {
+        request.extensions.insert(CompletedSession::<S> {
+            user: user.clone(),
+            session: session.clone(),
+        });
+    }
+}
+
+pub(crate) fn completed_response_session<S: better_auth_core::AuthSchema>(
+    req: &AuthRequest,
+    ctx: &AuthContext<S>,
+    response: &better_auth_core::AuthResponse,
+) -> Option<std::sync::Arc<CompletedSession<S>>> {
+    // A clearing cookie is not a completed login. The snapshot comes from the
+    // trusted issuer, never the response body or a freshly mutated database row.
+    let selected = response.headers.get_all("set-cookie").any(|header| {
+        cookie::Cookie::parse(header.clone()).is_ok_and(|cookie| {
+            cookie.name() == ctx.config.session.cookie_name && !cookie.value().is_empty()
+        })
+    });
+    selected
+        .then(|| req.extensions().get::<CompletedSession<S>>())
+        .flatten()
+}
+
 /// Session issuance failures that callers may need to surface differently from
 /// a generic auth error (for example OAuth callback redirects).
 pub enum SessionIssueError {
@@ -398,6 +434,7 @@ async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
         }
     };
 
+    record_completed_session::<S>(&user, &session);
     Ok(IssuedSession { user, session })
 }
 

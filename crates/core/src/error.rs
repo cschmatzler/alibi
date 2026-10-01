@@ -59,6 +59,12 @@ pub enum AuthError {
     #[error("session creation cancelled by database hook")]
     SessionCreationCancelled,
 
+    /// A user-create database hook explicitly cancelled creation.
+    /// Endpoint owners may map the absent user differently from a genuine
+    /// application Forbidden error with the same text.
+    #[error("user creation cancelled by database hook")]
+    UserCreationCancelled,
+
     #[error("{0}")]
     BannedUser(String),
 
@@ -127,6 +133,7 @@ impl AuthError {
             // 403
             Self::Forbidden(_)
             | Self::SessionCreationCancelled
+            | Self::UserCreationCancelled
             | Self::BannedUser(_)
             | Self::Unauthorized => 403,
             // 404

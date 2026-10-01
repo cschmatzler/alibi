@@ -622,11 +622,11 @@ impl EmailPasswordPlugin {
 ///
 /// Returns `(response, Option<session_token>)`. The session token is present
 /// only when `auto_sign_in` is true.
-pub(crate) async fn sign_up_core(
+pub(crate) async fn sign_up_core<S: better_auth_core::AuthSchema>(
     body: &SignUpRequest,
     config: &EmailPasswordConfig,
     meta: &RequestMeta,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<S>,
 ) -> AuthResult<(SignUpResponse<UserView>, Option<String>)> {
     if !config.enable_signup {
         return Err(AuthError::forbidden("User registration is not enabled"));
@@ -750,6 +750,7 @@ pub(crate) async fn sign_up_core(
                     })
                     .await?;
                 let token = session.token().to_string();
+                super::helpers::record_completed_session::<S>(&user, &session);
 
                 Ok((
                     SignUpResponse {

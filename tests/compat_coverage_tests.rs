@@ -30,6 +30,7 @@ async fn runtime_routes_match_capability_inventory() {
         phone_enabled: true,
         multi_session_enabled: true,
         one_tap_enabled: true,
+        anonymous_enabled: true,
         ..Default::default()
     })
     .await;

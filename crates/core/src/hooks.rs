@@ -1,4 +1,4 @@
-use crate::types::{AuthRequest, HttpMethod, RequestMeta};
+use crate::types::{AuthRequest, HttpMethod, RequestExtensions, RequestMeta};
 
 /// Request-derived data available to middleware, stores, and other hooks during request handling.
 #[derive(Debug, Clone)]
@@ -8,6 +8,8 @@ pub struct RequestHookContext {
     pub headers: std::collections::HashMap<String, String>,
     pub query: std::collections::HashMap<String, String>,
     pub meta: RequestMeta,
+    /// Typed request state shared with the trusted dispatch and its hooks.
+    pub extensions: RequestExtensions,
 }
 
 impl RequestHookContext {
@@ -19,6 +21,7 @@ impl RequestHookContext {
             headers: request.headers.clone(),
             query: request.query.clone(),
             meta: RequestMeta::from_request(request),
+            extensions: request.extensions().clone(),
         }
     }
 }

@@ -17,10 +17,11 @@ use super::providers::{
     OAuthTokenSet, OAuthUserInfo, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use super::state::{
-    AccountCookiePayload, OAuthStateLink, OAuthStatePayload, account_cookie_name,
-    create_account_cookie_value, create_cookie_state_value, create_database_state_cookie_value,
-    decode_account_cookie_value, decode_cookie_state_value, decode_database_state_cookie_value,
-    filter_additional_state_data, get_cookie, state_cookie_name,
+    AccountCookiePayload, OAuthStateLink, OAuthStatePayload, RecoveredOAuthServerContext,
+    account_cookie_name, capture_server_context, create_account_cookie_value,
+    create_cookie_state_value, create_database_state_cookie_value, decode_account_cookie_value,
+    decode_cookie_state_value, decode_database_state_cookie_value, filter_additional_state_data,
+    get_cookie, state_cookie_name, verified_server_context,
 };
 use super::types::{
     LinkSocialRequest, OAuthIdTokenRequest, SocialSignInRequest, SocialSignInResponse,
@@ -1371,7 +1372,7 @@ async fn initiate_oauth_flow_core(
     let (code_verifier, code_challenge) = generate_pkce();
     let state = uuid::Uuid::new_v4().to_string();
 
-    let payload = OAuthStatePayload::new(
+    let mut payload = OAuthStatePayload::new(
         request.callback_url.to_string(),
         code_verifier,
         request.error_callback_url,
@@ -1380,6 +1381,7 @@ async fn initiate_oauth_flow_core(
         request.request_sign_up,
         request.additional_data,
     );
+    capture_server_context(&mut payload, &state, &ctx.config.secret)?;
 
     match ctx.config.account.store_state_strategy {
         better_auth_core::OAuthStateStrategy::Database => {
@@ -1663,6 +1665,10 @@ pub(crate) async fn handle_callback(
 
     if payload.is_expired() {
         return Ok(redirect_on_error("please_restart_the_process", None));
+    }
+    if let Some(context) = verified_server_context(&payload, &state_param, &ctx.config.secret) {
+        req.extensions()
+            .insert(RecoveredOAuthServerContext(context));
     }
 
     let Some(code) = merged.get("code").cloned() else {

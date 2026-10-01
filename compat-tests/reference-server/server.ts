@@ -40,6 +40,7 @@ import { organization } from "better-auth/plugins/organization";
 import { createAccessControl } from "better-auth/plugins/access";
 import { defaultStatements } from "better-auth/plugins/organization/access";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
+import { anonymousFixture } from "./anonymous-fixture";
 import { socialProviderFixture } from "./social-provider-fixture";
 
 function getPort() {
@@ -429,10 +430,12 @@ const organizationDeletionFixture = organizationDeletionHooksFixture(database, a
 const passkeyRegistration = passkeyRegistrationFixture(authOptions);
 const passkeyAuthentication = passkeyAuthenticationFixture(database, authOptions, `http://localhost:${PORT}`);
 const socialProvidersFixture = socialProviderFixture(authOptions);
+const anonymousProfiles = await anonymousFixture(authOptions, database);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
 for (const [path, instance] of socialProvidersFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of anonymousProfiles.profiles) verificationProfiles.set(path, instance);
 const apiKeyBackground = await apiKeyBackgroundFixture(database, authOptions);
 for (const [path, instance] of apiKeyBackground.profiles) verificationProfiles.set(path, instance);
 const apiKeyGenerationFixture = createApiKeyGenerationFixture(database, authOptions);
@@ -784,6 +787,8 @@ const server = Bun.serve({
     try {
       const url = new URL(request.url);
       organizationTransport.observe(request);
+      const anonymousControl = await anonymousProfiles.handle(request);
+      if (anonymousControl) return anonymousControl;
       const socialProviderControl = await socialProvidersFixture.handle(request);
       if (socialProviderControl) return socialProviderControl;
       const transportControl = await organizationTransport.handle(request, url);
@@ -1034,6 +1039,7 @@ const server = Bun.serve({
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         socialProvidersFixture.reset();
         organizationInvitationFixture.reset();
+        anonymousProfiles.reset();
         passkeyRegistration.reset();
         passkeyAuthentication.reset();
         siweFixture.reset();

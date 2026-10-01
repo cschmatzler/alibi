@@ -142,7 +142,8 @@
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
           "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
-          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets"
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie"
         ],
         "rejection": [
           "social callback rejects consumed database state while retaining the issued session and foreign state",
@@ -150,13 +151,15 @@
           "social linking rejects missing tampered and revoked sessions without changing any principal",
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
-          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets"
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie"
         ],
         "authorization": [
           "social linking rejects missing tampered and revoked sessions without changing any principal",
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
-          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets"
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie"
         ],
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -167,7 +170,8 @@
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
           "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
-          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets"
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie"
         ]
       }
     },
@@ -1443,12 +1447,21 @@
     {
       "route": "POST /delete-anonymous-user",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": [
+          "anonymous official client issues repeats and deletes only its actual authenticated owner"
+        ],
+        "rejection": [
+          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
+          "anonymous official client issues repeats and deletes only its actual authenticated owner"
+        ],
+        "authorization": [
+          "anonymous official client issues repeats and deletes only its actual authenticated owner"
+        ],
+        "state": [
+          "anonymous official client issues repeats and deletes only its actual authenticated owner"
+        ]
       }
     },
     {
@@ -2794,12 +2807,28 @@
     {
       "route": "POST /sign-in/anonymous",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": [
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
+          "anonymous upgrade transfers original completed user and session snapshots before cleanup",
+          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
+          "anonymous official client issues repeats and deletes only its actual authenticated owner",
+          "anonymous issuance inherits only a real signed browser-session preference"
+        ],
+        "rejection": [
+          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
+          "anonymous official client issues repeats and deletes only its actual authenticated owner"
+        ],
+        "authorization": [
+          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state"
+        ],
+        "state": [
+          "anonymous upgrade transfers original completed user and session snapshots before cleanup",
+          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
+          "anonymous official client issues repeats and deletes only its actual authenticated owner",
+          "anonymous issuance inherits only a real signed browser-session preference"
+        ]
       }
     },
     {
@@ -2930,7 +2959,8 @@
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
           "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
-          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets"
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie"
         ],
         "rejection": "social sign-in rejects invalid callbackURL",
         "authorization": "social sign-in rejects invalid callbackURL",
@@ -2943,7 +2973,8 @@
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
           "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
-          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets"
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie"
         ]
       }
     },
@@ -2989,15 +3020,26 @@
           "account info requires an explicit account selector",
           "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
           "phone signup binds integral and exponential JSON numbers to exact SQLite text",
-          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners"
+          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
+          "anonymous upgrade transfers original completed user and session snapshots before cleanup",
+          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
+          "anonymous official client issues repeats and deletes only its actual authenticated owner",
+          "anonymous issuance inherits only a real signed browser-session preference"
         ],
-        "rejection": "sign up with duplicate email returns error",
-        "authorization": null,
+        "rejection": [
+          "sign up with duplicate email returns error",
+          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state"
+        ],
+        "authorization": [
+          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state"
+        ],
         "state": [
           "official client signs in with imported TypeScript scrypt credentials",
           "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
           "phone signup binds integral and exponential JSON numbers to exact SQLite text",
-          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners"
+          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
+          "anonymous upgrade transfers original completed user and session snapshots before cleanup",
+          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state"
         ]
       }
     },

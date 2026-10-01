@@ -1,10 +1,23 @@
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
+use hmac::{Hmac, Mac};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use sha2::Sha256;
 
 use better_auth_core::entity::AuthAccount;
 use better_auth_core::{AuthConfig, AuthRequest, AuthResult, OAuthStateStrategy};
+
+/// Only trusted hooks populate this context before OAuth state issuance.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct OAuthServerContext {
+    #[serde(rename = "anonymousUserId")]
+    pub(crate) anonymous_user_id: String,
+}
+
+pub(crate) struct CapturedOAuthServerContext(pub(crate) OAuthServerContext);
+pub(crate) struct RecoveredOAuthServerContext(pub(crate) OAuthServerContext);
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct OAuthStateLink {
@@ -29,6 +42,23 @@ pub(crate) struct OAuthStatePayload {
     pub expires_at: i64,
     #[serde(rename = "requestSignUp", skip_serializing_if = "Option::is_none")]
     pub request_sign_up: Option<bool>,
+    // Old state codecs permitted arbitrary client additionalData under these
+    // names. Deserialize them without assigning authority; authenticate the
+    // original values before narrowing to the trusted typed context.
+    #[serde(
+        rename = "serverContext",
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "better_auth_core::utils::json::deserialize_optional_value"
+    )]
+    pub server_context: Option<Value>,
+    #[serde(
+        rename = "_serverContextProof",
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "better_auth_core::utils::json::deserialize_optional_value"
+    )]
+    pub server_context_proof: Option<Value>,
     #[serde(flatten)]
     #[serde(deserialize_with = "better_auth_core::utils::json::deserialize_map")]
     pub additional_data: Map<String, Value>,
@@ -52,6 +82,8 @@ impl OAuthStatePayload {
             link,
             expires_at: (Utc::now() + Duration::minutes(10)).timestamp_millis(),
             request_sign_up,
+            server_context: None,
+            server_context_proof: None,
             additional_data,
         }
     }
@@ -59,6 +91,63 @@ impl OAuthStatePayload {
     pub(crate) fn is_expired(&self) -> bool {
         self.expires_at < Utc::now().timestamp_millis()
     }
+}
+
+fn server_context_mac(secret: &str, state: &str, context: &Value) -> AuthResult<Hmac<Sha256>> {
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+        .map_err(|_| better_auth_core::AuthError::internal("Invalid OAuth context signing key"))?;
+    let bytes = better_auth_core::utils::json::to_vec(context)?;
+    let state_len = u64::try_from(state.len())
+        .map_err(|_| better_auth_core::AuthError::internal("OAuth state is too long"))?;
+    let context_len = u64::try_from(bytes.len())
+        .map_err(|_| better_auth_core::AuthError::internal("OAuth context is too long"))?;
+    mac.update(b"better-auth-rs:oauth:server-context:v1\0");
+    mac.update(&state_len.to_be_bytes());
+    mac.update(state.as_bytes());
+    mac.update(&context_len.to_be_bytes());
+    mac.update(&bytes);
+    Ok(mac)
+}
+
+pub(crate) fn capture_server_context(
+    payload: &mut OAuthStatePayload,
+    state: &str,
+    secret: &str,
+) -> AuthResult<()> {
+    let Some(context) = better_auth_core::hooks::current_request_hook_context()
+        .and_then(|request| request.extensions.get::<CapturedOAuthServerContext>())
+    else {
+        return Ok(());
+    };
+    let value = better_auth_core::utils::json::to_value(&context.0)?;
+    let proof = URL_SAFE_NO_PAD.encode(
+        server_context_mac(secret, state, &value)?
+            .finalize()
+            .into_bytes(),
+    );
+    payload.server_context = Some(value);
+    payload.server_context_proof = Some(Value::String(proof));
+    Ok(())
+}
+
+pub(crate) fn verified_server_context(
+    payload: &OAuthStatePayload,
+    state: &str,
+    secret: &str,
+) -> Option<OAuthServerContext> {
+    let context = payload.server_context.as_ref()?;
+    let proof = payload.server_context_proof.as_ref()?.as_str()?;
+    if proof.len() != 43 {
+        return None;
+    }
+    let proof = URL_SAFE_NO_PAD.decode(proof).ok()?;
+    server_context_mac(secret, state, context)
+        .ok()?
+        .verify_slice(&proof)
+        .ok()?;
+    // Only an authenticated newly issued value may select a stored user.
+    better_auth_core::utils::json::from_slice(&better_auth_core::utils::json::to_vec(context).ok()?)
+        .ok()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -261,5 +350,7 @@ fn reserved_state_key(key: &str) -> bool {
             | "link"
             | "expiresAt"
             | "requestSignUp"
+            | "serverContext"
+            | "_serverContextProof"
     )
 }

@@ -1,5 +1,6 @@
 /** Explicit equivalent configurations of the pinned runtime. */
 export type FixtureProfile =
+  | `anonymous-${"standard" | "disabled" | "link-error" | "user-cancel" | "user-forbidden" | "session-cancel" | "session-forbidden" | "snapshot" | "invalid-email" | "empty-name"}`
   | "admin-impersonation-privileged" | "admin-impersonation-ordinary" | "admin-impersonation-legacy" | "admin-impersonation-no-base"
   | "org-member-multiplicity" | "org-member-multiplicity-page-zero" | "org-member-multiplicity-page-one" | "org-member-multiplicity-page-two"
   | "passkey-first-trusted-origin" | "passkey-first-configured-origin"
