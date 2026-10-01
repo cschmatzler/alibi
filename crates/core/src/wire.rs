@@ -708,6 +708,18 @@ fn serialize_api_key_number<S: Serializer>(
     }
 }
 
+// The source adapter exposes dates to JSON through Date.toJSON(). Keep native
+// accessor/storage precision intact while projecting valid RFC3339 wire dates.
+fn api_key_wire_date(value: &str) -> String {
+    DateTime::parse_from_rfc3339(value).map_or_else(
+        |_| value.to_owned(),
+        |date| {
+            date.with_timezone(&Utc)
+                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+        },
+    )
+}
+
 impl<T: AuthApiKey> From<&T> for ApiKeyView {
     fn from(ak: &T) -> Self {
         Self {
@@ -719,17 +731,17 @@ impl<T: AuthApiKey> From<&T> for ApiKeyView {
             config_id: ak.config_id().into_owned(),
             refill_interval: ak.refill_interval(),
             refill_amount: ak.refill_amount(),
-            last_refill_at: ak.last_refill_at().map(str::to_owned),
+            last_refill_at: ak.last_refill_at().map(api_key_wire_date),
             enabled: ak.enabled(),
             rate_limit_enabled: ak.rate_limit_enabled(),
             rate_limit_time_window: ak.rate_limit_time_window(),
             rate_limit_max: ak.rate_limit_max(),
             request_count: ak.request_count(),
             remaining: ak.remaining(),
-            last_request: ak.last_request().map(str::to_owned),
-            expires_at: ak.expires_at().map(str::to_owned),
-            created_at: ak.created_at().to_owned(),
-            updated_at: ak.updated_at().to_owned(),
+            last_request: ak.last_request().map(api_key_wire_date),
+            expires_at: ak.expires_at().map(api_key_wire_date),
+            created_at: api_key_wire_date(ak.created_at()),
+            updated_at: api_key_wire_date(ak.updated_at()),
             permissions: ak
                 .permissions()
                 .and_then(|s| crate::utils::json::from_slice(s.as_bytes()).ok()),

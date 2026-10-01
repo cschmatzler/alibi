@@ -451,16 +451,7 @@ impl ApiKeyPlugin {
                 200,
                 &serde_json::json!({
                     "user": ctx.user_view(&user),
-                    "session": {
-                        "id": session.id,
-                        "token": session.token,
-                        "userId": session.user_id,
-                        "userAgent": session.user_agent,
-                        "ipAddress": session.ip_address,
-                        "createdAt": session.created_at,
-                        "updatedAt": session.updated_at,
-                        "expiresAt": session.expires_at,
-                    },
+                    "session": session,
                 }),
             )?)));
         }
