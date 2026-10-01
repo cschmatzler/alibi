@@ -1118,16 +1118,21 @@ async fn sign_in_with_id_token_core(
     meta: &better_auth_core::RequestMeta,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<SocialSignInResponse> {
-    let verifier = provider
-        .verify_id_token
-        .as_ref()
-        .ok_or_else(|| AuthError::not_found("id_token not supported"))?;
-    let valid = verifier
-        .verify_id_token(&id_token.token, id_token.nonce.as_deref())
+    if provider.verify_id_token.is_none() && provider.id_token.is_none() {
+        return Err(AuthError::Upstream {
+            status: 404,
+            code: "ID_TOKEN_NOT_SUPPORTED",
+            message: "id_token not supported",
+        });
+    }
+    if !super::id_token::verify_provider_token(provider, &id_token.token, id_token.nonce.as_deref())
         .await
-        .map_err(AuthError::internal)?;
-    if !valid {
-        return Err(AuthError::forbidden("Invalid token"));
+    {
+        return Err(AuthError::Upstream {
+            status: 401,
+            code: "INVALID_TOKEN",
+            message: "Invalid token",
+        });
     }
 
     let user_info = fetch_user_info_from_provider(
@@ -1140,11 +1145,24 @@ async fn sign_in_with_id_token_core(
                 .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
             scopes: id_token.scopes.clone().unwrap_or_default(),
             id_token: Some(id_token.token.clone()),
+            user: id_token.user.clone(),
             ..Default::default()
         },
     )
     .await
-    .map_err(|_error| AuthError::forbidden("Failed to get user info"))?;
+    .map_err(|_error| AuthError::Upstream {
+        status: 401,
+        code: "FAILED_TO_GET_USER_INFO",
+        message: "Failed to get user info",
+    })?;
+
+    if user_info.user.email.is_empty() {
+        return Err(AuthError::Upstream {
+            status: 401,
+            code: "USER_EMAIL_NOT_FOUND",
+            message: "User email not found",
+        });
+    }
 
     let outcome = process_oauth_sign_in(
         &body.provider,
@@ -1185,16 +1203,21 @@ async fn link_with_id_token_core(
     session: &impl AuthSession,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<SocialSignInResponse> {
-    let verifier = provider
-        .verify_id_token
-        .as_ref()
-        .ok_or_else(|| AuthError::not_found("id_token not supported"))?;
-    let valid = verifier
-        .verify_id_token(&id_token.token, id_token.nonce.as_deref())
+    if provider.verify_id_token.is_none() && provider.id_token.is_none() {
+        return Err(AuthError::Upstream {
+            status: 404,
+            code: "ID_TOKEN_NOT_SUPPORTED",
+            message: "id_token not supported",
+        });
+    }
+    if !super::id_token::verify_provider_token(provider, &id_token.token, id_token.nonce.as_deref())
         .await
-        .map_err(AuthError::internal)?;
-    if !valid {
-        return Err(AuthError::forbidden("Invalid token"));
+    {
+        return Err(AuthError::Upstream {
+            status: 401,
+            code: "INVALID_TOKEN",
+            message: "Invalid token",
+        });
     }
 
     let response = fetch_user_info_from_provider(
@@ -1207,14 +1230,23 @@ async fn link_with_id_token_core(
                 .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
             scopes: id_token.scopes.clone().unwrap_or_default(),
             id_token: Some(id_token.token.clone()),
+            user: id_token.user.clone(),
             ..Default::default()
         },
     )
     .await
-    .map_err(|_error| AuthError::forbidden("Failed to get user info"))?;
+    .map_err(|_error| AuthError::Upstream {
+        status: 401,
+        code: "FAILED_TO_GET_USER_INFO",
+        message: "Failed to get user info",
+    })?;
 
     if response.user.email.is_empty() {
-        return Err(AuthError::forbidden("User email not found"));
+        return Err(AuthError::Upstream {
+            status: 401,
+            code: "USER_EMAIL_NOT_FOUND",
+            message: "User email not found",
+        });
     }
 
     let existing_accounts = ctx.database.get_user_accounts(&session.user_id()).await?;

@@ -37,13 +37,14 @@ pub struct OAuthUserInfo {
     pub email_verified: bool,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct OAuthCallbackUserPayload {
     pub name: Option<OAuthCallbackUserName>,
     pub email: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OAuthCallbackUserName {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
@@ -245,7 +246,9 @@ pub struct OAuthProvider {
     pub map_user_info: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
     pub get_user_info: Option<Arc<dyn OAuthUserInfoHandler>>,
     pub refresh_access_token: Option<Arc<dyn OAuthRefreshTokenHandler>>,
+    /// Application override takes precedence over the trusted built-in JWKS policy.
     pub verify_id_token: Option<Arc<dyn OAuthIdTokenVerifier>>,
+    pub id_token: Option<super::id_token::OAuthIdTokenConfig>,
     pub disable_implicit_sign_up: bool,
     pub disable_sign_up: bool,
     pub override_user_info_on_sign_in: bool,
@@ -320,6 +323,7 @@ impl OAuthProvider {
             get_user_info: None,
             refresh_access_token: None,
             verify_id_token: None,
+            id_token: None,
             disable_implicit_sign_up: false,
             disable_sign_up: false,
             override_user_info_on_sign_in: false,
@@ -391,6 +395,7 @@ impl OAuthProvider {
             get_user_info: None,
             refresh_access_token: None,
             verify_id_token: None,
+            id_token: None,
             disable_implicit_sign_up: false,
             disable_sign_up: false,
             override_user_info_on_sign_in: false,
@@ -441,6 +446,7 @@ impl OAuthProvider {
             ))),
             refresh_access_token: None,
             verify_id_token: None,
+            id_token: None,
             disable_implicit_sign_up: false,
             disable_sign_up: false,
             override_user_info_on_sign_in: false,
@@ -470,6 +476,7 @@ impl OAuthProvider {
             get_user_info: None,
             refresh_access_token: None,
             verify_id_token: None,
+            id_token: None,
             disable_implicit_sign_up: false,
             disable_sign_up: false,
             override_user_info_on_sign_in: false,

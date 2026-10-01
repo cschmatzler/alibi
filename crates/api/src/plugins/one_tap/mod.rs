@@ -5,19 +5,14 @@ use crate::plugins::oauth::{
     process_oauth_sign_in,
 };
 use async_trait::async_trait;
-use base64::Engine;
-use better_auth_core::utils::json::{JsValue, parse_value};
+use better_auth_core::utils::json::JsValue;
 use better_auth_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
     HttpMethod,
 };
-use chrono::Utc;
-use jsonwebtoken::{Algorithm, DecodingKey};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 use std::sync::Arc;
-
-const GOOGLE_JWKS_URL: &str = "https://www.googleapis.com/oauth2/v3/certs";
 
 const MISSING_CLIENT: &str = "Google client ID is required for One Tap. Set it on the oneTap plugin (clientId) or on socialProviders.google.";
 
@@ -47,37 +42,7 @@ impl From<Vec<String>> for OneTapClientId {
     }
 }
 
-/// A transport/cache for Google's public signing keys. Token verification always
-/// validates signatures and Google claims independently of this source.
-#[async_trait]
-pub trait GoogleJwksSource: Send + Sync {
-    async fn fetch_keys(&self) -> Result<Vec<Value>, String>;
-}
-
-struct DefaultGoogleJwksSource(reqwest::Client);
-
-#[async_trait]
-impl GoogleJwksSource for DefaultGoogleJwksSource {
-    async fn fetch_keys(&self) -> Result<Vec<Value>, String> {
-        let bytes = self
-            .0
-            .get(GOOGLE_JWKS_URL)
-            .send()
-            .await
-            .map_err(|error| error.to_string())?
-            .error_for_status()
-            .map_err(|error| error.to_string())?
-            .bytes()
-            .await
-            .map_err(|error| error.to_string())?;
-        let data: Value =
-            better_auth_core::utils::json::from_slice(&bytes).map_err(|error| error.to_string())?;
-        data.get("keys")
-            .and_then(Value::as_array)
-            .cloned()
-            .ok_or_else(|| "Keys not found".into())
-    }
-}
+pub use crate::plugins::oauth::OAuthJwksSource as GoogleJwksSource;
 
 #[derive(Clone, Default)]
 pub struct OneTapConfig {
@@ -118,10 +83,11 @@ impl OneTapPlugin {
     }
     #[must_use]
     pub fn with_config(config: OneTapConfig) -> Self {
-        let keys = config
-            .jwks_source
-            .clone()
-            .unwrap_or_else(|| Arc::new(DefaultGoogleJwksSource(reqwest::Client::new())));
+        let keys = config.jwks_source.clone().unwrap_or_else(|| {
+            Arc::new(crate::plugins::oauth::HttpOAuthJwksSource::new(
+                "https://www.googleapis.com/oauth2/v3/certs",
+            ))
+        });
         Self { config, keys }
     }
     #[expect(
@@ -326,59 +292,10 @@ impl OneTapPlugin {
         Ok(response)
     }
     async fn verify(&self, token: &str, audience: &[String]) -> Option<JsValue> {
-        let parts: Vec<_> = token.split('.').collect();
-        let [header_encoded, payload_encoded, signature] = parts.as_slice() else {
-            return None;
-        };
-        let (signed, _) = token.rsplit_once('.')?;
-        let raw_header = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .decode(header_encoded)
-            .ok()?;
-        let raw_header = parse_value(std::str::from_utf8(&raw_header).ok()?).ok()?;
-        let _ignored_as_object = raw_header.as_object()?;
-        if raw_header.get("alg").and_then(JsValue::as_str) != Some("RS256") {
-            return None;
-        }
-        let keys = self.keys.fetch_keys().await.ok()?;
-        let selected: Vec<_> = keys
-            .into_iter()
-            .filter(|key| {
-                let kid = raw_header.get("kid").filter(|kid| js_truthy(kid));
-                kid.is_none_or(|kid| {
-                    kid.as_str()
-                        .is_some_and(|kid| key.get("kid").and_then(Value::as_str) == Some(kid))
-                })
-            })
-            .collect();
-        let mut public_keys = Vec::new();
-        for key in selected {
-            let key: jsonwebtoken::jwk::Jwk = serde_json::from_value(key).ok()?;
-            public_keys.push(DecodingKey::from_jwk(&key).ok()?);
-        }
-        if let Some(crit) = raw_header.get("crit") {
-            let names = crit.as_array()?;
-            if names.is_empty()
-                || names.iter().any(|name| name.as_str() != Some("b64"))
-                || raw_header.get("b64").and_then(JsValue::as_bool) != Some(true)
-            {
-                return None;
-            }
-        }
-        for key in public_keys {
-            if jsonwebtoken::crypto::verify(signature, signed.as_bytes(), &key, Algorithm::RS256)
-                .ok()
-                == Some(true)
-            {
-                let raw_payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                    .decode(payload_encoded)
-                    .ok()?;
-                let payload = parse_value(std::str::from_utf8(&raw_payload).ok()?).ok()?;
-                if valid_claims(&payload, audience) {
-                    return Some(payload);
-                }
-            }
-        }
-        None
+        let mut policy = crate::plugins::oauth::OAuthIdTokenConfig::google();
+        policy.selection = crate::plugins::oauth::OAuthJwksSelection::AllMatching;
+        policy.jwks_source = self.keys.clone();
+        crate::plugins::oauth::id_token::verify_jwks_token(token, audience, None, &policy).await
     }
 }
 
@@ -414,57 +331,6 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTapPlugin {
         }
         Ok(None)
     }
-}
-
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_precision_loss,
-    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
-)]
-fn valid_claims(payload: &JsValue, audiences: &[String]) -> bool {
-    if !payload
-        .get("iss")
-        .and_then(JsValue::as_str)
-        .is_some_and(|issuer| {
-            issuer == "https://accounts.google.com" || issuer == "accounts.google.com"
-        })
-    {
-        return false;
-    }
-    let matches_audience = match payload.get("aud") {
-        Some(JsValue::String(value)) => audiences.contains(value),
-        Some(JsValue::Array(values)) => values.iter().any(|value| {
-            value
-                .as_str()
-                .is_some_and(|value| audiences.iter().any(|audience| audience == value))
-        }),
-        _ => false,
-    };
-    if !matches_audience {
-        return false;
-    }
-    let now = Utc::now().timestamp() as f64;
-    let Some(iat) = payload
-        .get("iat")
-        .and_then(JsValue::as_f64)
-        .filter(|value| value.is_finite())
-    else {
-        return false;
-    };
-    if iat > now || now - iat > 3600.0 {
-        return false;
-    }
-    for (claim, lower_bound) in [("exp", true), ("nbf", false)] {
-        if let Some(value) = payload.get(claim) {
-            let Some(date) = value.as_f64() else {
-                return false;
-            };
-            if lower_bound && date <= now || !lower_bound && date > now {
-                return false;
-            }
-        }
-    }
-    true
 }
 
 fn js_truthy(value: &JsValue) -> bool {

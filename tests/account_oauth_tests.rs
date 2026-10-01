@@ -398,6 +398,7 @@ fn make_test_provider(mock_url: &str) -> OAuthProvider {
         get_user_info: None,
         refresh_access_token: None,
         verify_id_token: None,
+        id_token: None,
         disable_implicit_sign_up: false,
         disable_sign_up: false,
         override_user_info_on_sign_in: false,

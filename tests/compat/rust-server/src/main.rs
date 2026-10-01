@@ -611,6 +611,7 @@ fn mock_oauth_plugin(
                 get_user_info: None,
                 refresh_access_token: None,
                 verify_id_token: None,
+            id_token: None,
                 disable_implicit_sign_up: false,
                 disable_sign_up: false,
                 override_user_info_on_sign_in: false,
@@ -655,6 +656,7 @@ fn mock_oauth_plugin(
                 refresh_access_token: Some(Arc::new(CompatGoogleRefreshHandler {
                     mode: oauth_refresh_mode,
                 })),
+                id_token: None,
                 verify_id_token: Some(Arc::new(CompatGoogleIdTokenVerifier {
                     valid: social_id_token_valid,
                 })),
