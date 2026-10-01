@@ -105,7 +105,12 @@ required.
 ## Additional 1.7.6 package and integration boundaries
 
 The upstream tag packages below are absent from the current selected profiles.
-They are explicit unresolved boundaries, not silently excluded capabilities.
+They were enumerated to account for package boundaries beyond route profiles.
+At the user's later scope decision, OAuth authorization server/MCP/CIMD, enterprise
+SSO, SCIM, Stripe, i18n, Expo and Electron are explicitly excluded implementation
+targets. Their rows below retain the original boundary descriptions for audit
+provenance and are not outstanding tasks. Redis storage and observable native
+framework/custom-adapter integrations remain separately accounted for.
 All listed runtime packages are version 1.7.6 in that tag.
 
 | Boundary | Runtime capability and main source | Required dependency |
