@@ -600,7 +600,8 @@
           "passkey Source verifier rejects actual signed invalid flags presence RP origins challenge signature and counters before callbacks",
           "passkey overlapping issued challenges verify against the current saved counter rather than a stale generation snapshot",
           "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
-          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history"
+          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history",
+          "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes"
         ],
         "rejection": null,
         "authorization": null,
@@ -618,7 +619,11 @@
           "passkey registration policy resolves a proven existing owner and creates its real session with callback facts",
           "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
           "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
-          "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior"
+          "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior",
+          "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
+          "passkey Ed25519Curve8 packed self attestation rejects genuine false and malformed signatures before callback enrollment or session",
+          "passkey raw curve8 none admission validates the actual ceremony before callback persistence and owner issuance",
+          "passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks"
         ],
         "rejection": [
           "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
@@ -650,7 +655,8 @@
           "passkey Source verifier rejects actual signed invalid flags presence RP origins challenge signature and counters before callbacks",
           "passkey overlapping issued challenges verify against the current saved counter rather than a stale generation snapshot",
           "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
-          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history"
+          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history",
+          "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes"
         ],
         "rejection": null,
         "authorization": null,
@@ -2236,7 +2242,8 @@
           "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
           "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history",
           "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes"
+          "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
+          "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes"
         ],
         "authorization": [
           "passkey rejected cryptographic attempts consume challenges without credential or session writes",
@@ -2268,7 +2275,8 @@
           "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication",
           "passkey eddsa-none-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes"
+          "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
+          "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes"
         ]
       }
     },
@@ -2291,7 +2299,9 @@
           "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication",
           "passkey eddsa-none-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes"
+          "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
+          "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
+          "passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks"
         ],
         "rejection": [
           "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
@@ -2306,14 +2316,19 @@
           "passkey eddsa-none-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
-          "passkey Ed448 packed self attestation rejects genuine false and malformed signatures before callback enrollment or session"
+          "passkey Ed448 packed self attestation rejects genuine false and malformed signatures before callback enrollment or session",
+          "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
+          "passkey Ed25519Curve8 packed self attestation rejects genuine false and malformed signatures before callback enrollment or session",
+          "passkey raw curve8 none admission validates the actual ceremony before callback persistence and owner issuance",
+          "passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks"
         ],
         "authorization": [
           "passkey foreign owner, expired challenge and wrong ceremony retire the actual persisted generation",
           "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
           "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
           "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
-          "passkey registration rejects actual packed signature failures malformed proofs flags origins and wrong owner before writes"
+          "passkey registration rejects actual packed signature failures malformed proofs flags origins and wrong owner before writes",
+          "passkey raw curve8 none admission validates the actual ceremony before callback persistence and owner issuance"
         ],
         "state": [
           "passkey registration authentication ownership and deletion round trip",
@@ -2332,7 +2347,11 @@
           "passkey eddsa-none-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
-          "passkey Ed448 packed self attestation rejects genuine false and malformed signatures before callback enrollment or session"
+          "passkey Ed448 packed self attestation rejects genuine false and malformed signatures before callback enrollment or session",
+          "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
+          "passkey Ed25519Curve8 packed self attestation rejects genuine false and malformed signatures before callback enrollment or session",
+          "passkey raw curve8 none admission validates the actual ceremony before callback persistence and owner issuance",
+          "passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks"
         ]
       }
     },

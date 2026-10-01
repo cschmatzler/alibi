@@ -115,7 +115,7 @@ and `...format-final.log`. Full passkey37/5168 passes in `/tmp/passkey-raw-none-
 Actual source alg-7/crv6 Ed25519 none/packed/login success remains a separate
 representation/verification capability, proved in
 `/tmp/passkey-okp-algorithm-mismatch-source-oracle.log`. Other unknown curves,
-tagged/duplicate or exotic noncanonical COSE values, Firefox's malformed-map
+exotic noncanonical COSE reencoding and unmeasured tagged selector values, Firefox's malformed-map
 workaround, unusual non-string response fields, malformed transport values,
 certificate attestations and wider callback result fields are not closed here.
 The128 nesting limit is bounded Rust behavior; Source nesting-limit equivalence is
@@ -132,3 +132,43 @@ excluded as a setup-only check. Source files are unchanged and actual pinned
 Source-self execution supplies runtime evidence. Required production API
 lib and fixture strict Clippy, actual native tests and TypeScript remain the
 bounded checks for this feature. Coordinator owns canonical gates and publication.
+
+
+## Decoder review and measured repair
+
+Independent review of frozen 36208658 found that the general Rust CBOR decoder
+collapsed duplicate map keys, accepted non-string/non-number keys and finite
+half-floats, accepted integers beyond the pinned safe range, stripped tags and
+rejected lossy UTF-8. Real pinned registration probes confirm the admission
+contract, not merely the dependency parser. Duplicate outer fmt/authData,
+boolean/array keys, integer/float aliases, repeated NaN and signed-zero aliases,
+finite half statements and an integer above MAX_SAFE_INTEGER all reject with
+500 before credential/callback/session writes. A half Infinity statement, a
+literal tagged statement and an ignored malformed-UTF8 text key really enroll.
+
+The revised private decoder implements the measured Tiny-CBOR value contract
+while retaining checked cursor arithmetic and the existing bounded nesting.
+It preserves literal tags and SameValueZero key identity, limits decoded length
+arguments to Source's supported range and uses lossy text decoding. It does not
+change dependency versions/features or the historical verifier. Null/undefined
+use one private stand-in only where the consuming checks reject both or observe
+an identical one-byte reencoding length; original proof/key bytes remain retained.
+BOM and truncated payload cursor details were checked directly against installed
+Tiny-CBOR; those additional parser observations are not claimed API evidence.
+
+The primary original-proof SDK owner now has 29 rejection controls; its legal
+owner has six actual enrollment/callback/session transitions. Meaningful old
+production fails at duplicate-fmt acceptance in
+`/tmp/raw-none-decoder-before.log` and at lossy-text rejection in
+`/tmp/raw-none-decoder-lossy-before.log`. Expanded Source-self passes two owners /
+1,632 assertions; repaired dual-runtime four raw owners / 1,998 assertions and
+whole passkey family 37 / 5,710 assertions pass. Twelve native tests, production
+strict Clippy, locked fixture build and client TypeScript pass. Nineteen inventory
+requirements are additive; all earlier requirements remain enforced. Phone-owner
+independent review and the next canonical integration gate are still pending.
+
+Exotic COSE values may reencode to different bytes in Source while this raw codec
+retains original key bytes; that public-key normalization capability remains
+explicitly open. These measured outer-value controls do not claim to close it,
+unmeasured tagged selectors, arbitrary nesting, duplicate credential storage or
+trusted raw-public-key-only mutation. Strict wire comparison remains unchanged.

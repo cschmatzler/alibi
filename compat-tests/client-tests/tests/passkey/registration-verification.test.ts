@@ -167,7 +167,7 @@ for(const algorithm of ["Ed448","Ed25519Curve8"] as const)compatScenario(`passke
 
 compatScenario("passkey raw curve8 none admission validates the actual ceremony before callback persistence and owner issuance",async ctx=>{
   const fixture=await setup(ctx),device=new Authenticator("Ed25519Curve8"),attempts=[];
-  for(const mode of ["presence","backup-flags","rp","origin-case","challenge","client-type","token-binding","statement","statement-null","outer-indefinite","statement-indefinite","key-nonminimal","authdata-tail","extensions-tail","extensions-missing","extensions-scalar","extensions-array-numbers","credential-type","foreign-owner","expired"] as const){
+  for(const mode of ["presence","backup-flags","rp","origin-case","challenge","client-type","token-binding","statement","statement-null","outer-indefinite","statement-indefinite","duplicate-fmt","duplicate-auth-data","boolean-map-key","array-map-key","finite-half-statement","huge-integer-statement","numeric-map-key-collision","nan-map-key-collision","signed-zero-map-key-collision","key-nonminimal","authdata-tail","extensions-tail","extensions-missing","extensions-scalar","extensions-array-numbers","credential-type","foreign-owner","expired"] as const){
     const options=await fixture.options();
     const proof=device.register(mode==="challenge"?{...options.data as object,challenge:"wrong-raw-none-challenge"}:options.data,mode==="origin-case"?ctx.baseURL.replace("localhost","LOCALHOST"):ctx.baseURL,{userVerified:false,...(mode==="presence"?{userPresent:false}:mode==="backup-flags"?{backedUp:true}:mode==="rp"?{rpId:"foreign.fixture.test"}:{})});
     const attestation=decodeCBOR(Uint8Array.from(Buffer.from(proof.response.attestationObject,"base64url"))) as Map<string,CBORType>;
@@ -185,6 +185,22 @@ compatScenario("passkey raw curve8 none admission validates the actual ceremony 
     proof.response.attestationObject=Buffer.from(encodeCBOR(attestation)).toString("base64url");
     if(mode==="outer-indefinite"){const encoded=Buffer.from(proof.response.attestationObject,"base64url");expect(encoded[0]).toBe(0xa3);proof.response.attestationObject=Buffer.concat([Buffer.from([0xbf]),encoded.subarray(1),Buffer.from([0xff])]).toString("base64url");}
     if(mode==="statement-indefinite"){const encoded=Buffer.from(proof.response.attestationObject,"base64url"),label=Buffer.from(encodeCBOR("attStmt")),start=encoded.indexOf(label)+label.length;expect(encoded[start]).toBe(0xa0);proof.response.attestationObject=Buffer.concat([encoded.subarray(0,start),Buffer.from([0x9f,0xff]),encoded.subarray(start+1)]).toString("base64url");}
+    if(mode==="duplicate-fmt"||mode==="duplicate-auth-data"||mode==="boolean-map-key"||mode==="array-map-key"){
+      const encoded=Buffer.from(proof.response.attestationObject,"base64url");expect(encoded[0]).toBe(0xa3);
+      const key=mode==="duplicate-fmt"?"fmt":mode==="duplicate-auth-data"?"authData":mode==="boolean-map-key"?true:[];
+      const value=mode==="duplicate-fmt"?"none":mode==="duplicate-auth-data"?data:9;
+      proof.response.attestationObject=Buffer.concat([Buffer.from([0xa4]),encoded.subarray(1),Buffer.from(encodeCBOR(key)),Buffer.from(encodeCBOR(value))]).toString("base64url");
+    }
+    if(mode.endsWith("collision")){
+      const encoded=Buffer.from(proof.response.attestationObject,"base64url");expect(encoded[0]).toBe(0xa3);
+      const extra=mode==="numeric-map-key-collision"?[1,9,0xfa,0x3f,0x80,0,0,9]:mode==="nan-map-key-collision"?[0xf9,0x7e,0,9,0xfa,0x7f,0xc0,0,0,9]:[0,9,0xfa,0x80,0,0,0,9];
+      proof.response.attestationObject=Buffer.concat([Buffer.from([0xa5]),encoded.subarray(1),Buffer.from(extra)]).toString("base64url");
+    }
+    if(mode==="finite-half-statement"||mode==="huge-integer-statement"){
+      const encoded=Buffer.from(proof.response.attestationObject,"base64url"),label=Buffer.from(encodeCBOR("attStmt")),start=encoded.indexOf(label)+label.length;expect(encoded[start]).toBe(0xa0);
+      const value=mode==="finite-half-statement"?[0xf9,0x3c,0x00]:[0x1b,0x00,0x20,0,0,0,0,0,0];
+      proof.response.attestationObject=Buffer.concat([encoded.subarray(0,start),Buffer.from(value),encoded.subarray(start+1)]).toString("base64url");
+    }
     const cd=JSON.parse(Buffer.from(proof.response.clientDataJSON,"base64url").toString());
     if(mode==="client-type")cd.type="webauthn.get";
     if(mode==="token-binding")cd.tokenBinding={status:"unexpected"};
@@ -207,13 +223,22 @@ compatScenario("passkey raw curve8 none admission validates the actual ceremony 
 
 compatScenario("passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks",async ctx=>{
   const fixture=await setup(ctx),outputs=[];
-  for(const mode of ["statement-array","statement-string","statement-number"] as const){
+  for(const mode of ["statement-array","statement-string","statement-number","infinite-half-statement","tag-statement","lossy-text-key"] as const){
     const options=await fixture.options(),proof=new Authenticator("Ed25519Curve8",Buffer.from(`compat-raw-none-${mode}`)).register(options.data,ctx.baseURL,{userVerified:false});
     const attestation=decodeCBOR(Uint8Array.from(Buffer.from(proof.response.attestationObject,"base64url"))) as Map<string,CBORType>;
     const data=Buffer.from(attestation.get("authData") as Uint8Array);data[32]=data[32]!|0x80;
     attestation.set("authData",Buffer.concat([data,Buffer.from(encodeCBOR(mode==="statement-array"?[["application",true]]:mode==="statement-string"?"ab":new Map([["application",new Map([["flag",true]])]])))]));
     attestation.set("attStmt",mode==="statement-array"?["unexpected"]:mode==="statement-string"?"unexpected":9);
     proof.response.attestationObject=Buffer.from(encodeCBOR(attestation)).toString("base64url");
+    if(mode==="infinite-half-statement"||mode==="tag-statement"){
+      const encoded=Buffer.from(proof.response.attestationObject,"base64url"),label=Buffer.from(encodeCBOR("attStmt")),start=encoded.indexOf(label)+label.length;expect(encoded[start]).toBe(9);
+      const value=mode==="infinite-half-statement"?[0xf9,0x7c,0x00]:[0xd8,0x63,0x09];
+      proof.response.attestationObject=Buffer.concat([encoded.subarray(0,start),Buffer.from(value),encoded.subarray(start+1)]).toString("base64url");
+    }
+    if(mode==="lossy-text-key"){
+      const encoded=Buffer.from(proof.response.attestationObject,"base64url");expect(encoded[0]).toBe(0xa3);
+      proof.response.attestationObject=Buffer.concat([Buffer.from([0xa4]),encoded.subarray(1),Buffer.from([0x61,0xff,0x09])]).toString("base64url");
+    }
     const result=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response:proof,createSession:true}});expect(result.error,mode).toBeNull();expect(result.data).toMatchObject({userId:fixture.signup.data!.user.id,credentialID:proof.id,counter:0,user:{id:fixture.signup.data!.user.id},session:{userId:fixture.signup.data!.user.id}});
     const events=await fixture.events();expect(events).toHaveLength(2);expect(events[1]).toMatchObject({stage:"verified",userId:fixture.signup.data!.user.id,context:fixture.context});expect(events[1]!.clientData).toEqual(proof);expect(fixture.requests.at(-1)).toEqual({response:proof,createSession:true});
     const current=await fixture.owner.getSession(),issued=z.object({session:z.object({id:z.string(),token:z.string()})}).parse(result.data);expect(current.data?.session.id).toBe(issued.session.id);expect(current.data?.session.token).toBe(issued.session.token);expect(current.data?.user.id).toBe(fixture.signup.data!.user.id);

@@ -310,9 +310,9 @@ tree.
 
 | Following slice | Owner and dependencies | Evidence and status |
 | --- | --- | --- |
-| OTP background delivery | Phone owner; existing background completion interface and initiating request context | Frozen 9c7067d8: 71 SDK / 5,884; four default/observe/ignore/throw owners / 976, 19 native tests, real before-await/context failures. Coordinator and independent organization review clear. The new inventory adds 28 requirements without removing any. No next full-gate claim yet. |
-| Server-only organization member addition | Organization owner; captured addition callbacks, existing member/team operations | Frozen a0c0996d: nine primary differential owners / 1,568 and Source controls; full organization/OpenAPI 122 / 10,318; 334 API and one real-SQLite public-helper owner pass. Coordinator and independent phone reviews clear. Trusted Rust helper/private fixture; no public add-member route. Eighteen setup-route lifecycle requirements enforce these nine owners; next gate pending. |
-| Unsupported-curve none enrollment | JWT owner; versioned private original-proof/pending-ceremony codec | 37 passkey SDK / 5,090 and repeated Source controls pass. Protocol parser/security review and frozen integration pending. No fake typed verifier output, proof rewriting, retry, dependency or schema changes. |
+| OTP background delivery | Phone owner; existing background completion interface and initiating request context | Frozen 9c7067d8: 71 SDK / 5,884; four default/observe/ignore/throw owners / 976, 19 native tests, real before-await/context failures. Coordinator and independent organization review clear. The inventory adds 28 requirements without removing any. Delivered PR #112 after the measured 530-scenario gate below. |
+| Server-only organization member addition | Organization owner; captured addition callbacks, existing member/team operations | Frozen a0c0996d: nine primary differential owners / 1,568 and Source controls; full organization/OpenAPI 122 / 10,318; 334 API and one real-SQLite public-helper owner pass. Coordinator and independent phone reviews clear. Trusted Rust helper/private fixture; no public add-member route. Eighteen setup-route lifecycle requirements enforce these nine owners. Delivered PR #113 after the measured 530-scenario gate below. |
+| Unsupported-curve none enrollment | JWT owner; versioned private original-proof/pending-ceremony codec | Frozen 36208658 has 37 passkey SDK / 5,168 and repeated Source controls. Independent review found genuine CBOR decoder divergences; repair and expanded original-proof controls are active. Unpublished until resolved and gated. No fake typed verifier output, proof rewriting, retry, dependency or schema changes. |
 
 The newly measured duplicate-member pair and duplicate-passkey credential
 admission differ from Native unique constraints. They are separate shared
@@ -323,3 +323,20 @@ mismatch, complex CBOR representations and trusted raw-public-key-only mutation
 are explicit further passkey boundaries. Anonymous authentication and the other
 included audited families follow the selected priorities. The user's excluded
 integration packages remain excluded.
+
+
+The OTP delivery and trusted organization member-addition integration e2c5563b
+passed the complete canonical gate: 530 SDK scenarios / 33,246 assertions,
+42 harness tests / 344 assertions, two Chromium tests / 22 assertions and
+78.550841% source lines (29,433 / 37,470). Every default/optional test, strict
+production check, Rustls/Redis build, locked fixture, TypeScript, docs and coverage
+check passed. PRs #112–113 are merged; master 8c0c8dc1 is full-tree equal to that
+validated tree. The inventory has 1,649 enforced requirements, with none removed.
+
+The next storage slice preserves physical duplicate member identities and pages.
+Its installed-upgrade review found a genuine dependent composite-FK break;
+frozen guard 5324954f now refuses before writes and proves application-owned
+member-ID migration followed by successful retry (61 native storage tests).
+Its official-client lifecycle extension is active with the phone owner.
+The passkey slice is independently repairing measured duplicate-map, number,
+tag and text decoder behavior rather than broadening comparison exceptions.
