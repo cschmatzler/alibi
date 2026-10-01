@@ -9,15 +9,16 @@ pub use better_auth_api::plugins::two_factor::{
 };
 pub use better_auth_api::plugins::user_management::SendChangeEmailConfirmation;
 pub use better_auth_api::plugins::{
-    AccountManagementPlugin, AdminConfig, AdminPlugin, ApiKeyConfig, ApiKeyPlugin,
-    ChangeEmailConfig, DeleteUserConfig, DeviceAuthorizationPlugin, EmailPasswordConfig,
-    EmailPasswordPlugin, EmailVerificationConfig, EmailVerificationHook, EmailVerificationPlugin,
-    OrganizationConfig, OrganizationPlugin, PasskeyConfig, PasskeyPlugin, PasswordManagementConfig,
-    PasswordManagementPlugin, RolePermissions, SessionManagementPlugin, TwoFactorConfig,
-    TwoFactorPlugin, UserManagementConfig, UserManagementPlugin, account_management, admin,
-    api_key, device_authorization, email_otp, email_password, email_verification, jwt, magic_link,
-    oauth, one_time_token, organization, passkey, password_management, phone_number,
-    session_management, two_factor, user_management,
+    AccountManagementPlugin, AdminBannedUserMessage, AdminBannedUserMessageHandler, AdminConfig,
+    AdminPlugin, ApiKeyConfig, ApiKeyPlugin, ChangeEmailConfig, DeleteUserConfig,
+    DeviceAuthorizationPlugin, EmailPasswordConfig, EmailPasswordPlugin, EmailVerificationConfig,
+    EmailVerificationHook, EmailVerificationPlugin, OrganizationConfig, OrganizationPlugin,
+    PasskeyConfig, PasskeyPlugin, PasswordManagementConfig, PasswordManagementPlugin,
+    RolePermissions, SessionManagementPlugin, TwoFactorConfig, TwoFactorPlugin,
+    UserManagementConfig, UserManagementPlugin, account_management, admin, api_key,
+    device_authorization, email_otp, email_password, email_verification, jwt, magic_link, oauth,
+    one_time_token, organization, passkey, password_management, phone_number, session_management,
+    two_factor, user_management,
 };
 
 pub use better_auth_api::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};

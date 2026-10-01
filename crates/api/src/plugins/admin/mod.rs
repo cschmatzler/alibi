@@ -13,6 +13,9 @@ use better_auth_core::{
 use validator::Validate;
 
 pub mod access;
+mod callbacks;
+pub(crate) use callbacks::BannedUserMessagePolicy;
+pub use callbacks::{AdminBannedUserMessage, AdminBannedUserMessageHandler};
 pub(super) mod handlers;
 pub(super) mod types;
 
@@ -86,6 +89,10 @@ pub struct AdminConfig {
     /// Message surfaced to banned users.
     #[config(default = "You have been banned from this application. Please contact support if you believe this is an error.".to_string())]
     pub banned_user_message: String,
+    /// Optional asynchronous message callback over the stored application user.
+    /// When configured, this takes precedence over `banned_user_message`.
+    #[config(skip, default = None)]
+    pub banned_user_message_callback: Option<AdminBannedUserMessageHandler>,
     /// Whether other admin users may be impersonated.
     #[config(default = false)]
     pub allow_impersonating_admins: bool,
@@ -132,6 +139,10 @@ better_auth_core::impl_auth_plugin! {
                     )));
                 }
             }
+            if let Some(handler) = &self.config.banned_user_message_callback {
+                handler.validate::<S::User>()?;
+                ctx.extensions.insert(BannedUserMessagePolicy(handler.clone()));
+            }
             let default_role = self.config.default_role.clone();
             ctx.register_user_create_transform(move |mut input| {
                 _ = input.banned.get_or_insert(false);
@@ -153,6 +164,17 @@ better_auth_core::impl_auth_plugin! {
 }
 
 impl AdminPlugin {
+    /// Configure an awaited message callback over the exact stored user entity.
+    #[must_use]
+    pub fn banned_user_message_callback<U: AuthUser, H: AdminBannedUserMessage<U>>(
+        mut self,
+        handler: H,
+    ) -> Self {
+        self.config.banned_user_message_callback =
+            Some(AdminBannedUserMessageHandler::new::<U, H>(handler));
+        self
+    }
+
     async fn require_session(
         &self,
         req: &AuthRequest,

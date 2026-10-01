@@ -12,6 +12,7 @@ import { createOrganizationCreationFixture } from "./organization-creation-fixtu
 import { organizationCreationHooksFixture } from "./organization-creation-hooks-fixture";
 import { createSiweFixture } from "./siwe-fixture";
 import { createPhoneFixture } from "./phone-fixture";
+import { createAdminBannedMessageFixture } from "./admin-banned-message-fixture";
 import { createAdminPermissionFixture } from "./admin-permission-fixture";
 import { createMultipleSessionFixture } from "./multiple-session-fixture";
 import { createSessionFieldsFixture } from "./session-fields-fixture";
@@ -392,6 +393,7 @@ const { runMigrations } = await getMigrations(authOptions);
 await runMigrations();
 const sessionFieldsFixture=await createSessionFieldsFixture(database,authOptions,`http://localhost:${PORT}`);
 const siweFixture = await createSiweFixture(database, authOptions, `http://localhost:${PORT}`);
+const adminBannedMessageFixture = createAdminBannedMessageFixture(authOptions, database);
 const adminPermissionFixture = createAdminPermissionFixture(authOptions, database);
 const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 const organizationCreationFixture = createOrganizationCreationFixture(database, authOptions, `http://localhost:${PORT}`);
@@ -400,6 +402,7 @@ const organizationHooksFixture = organizationCreationHooksFixture(database, auth
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
 for (const [path, instance] of siweFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of adminBannedMessageFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of adminPermissionFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of multipleSessionFixture.profiles) verificationProfiles.set(path, instance);
 for (const name of ["email-verification-required", "email-verification-no-signup-mail", "email-verification-failing-notifications"]) {
@@ -974,6 +977,8 @@ const server = Bun.serve({
         return jsonResponse({ updated: result.changes });
       }
 
+      const adminBannedMessageResponse = adminBannedMessageFixture.handle(request);
+      if (adminBannedMessageResponse) return adminBannedMessageResponse;
       const adminRoleStateResponse = adminPermissionFixture.handle(request);
       if (adminRoleStateResponse) return adminRoleStateResponse;
 

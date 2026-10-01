@@ -483,7 +483,11 @@ pub(crate) async fn impersonate_user_core(
                 )
                 .await?;
         } else {
-            return Err(AuthError::banned_user(config.banned_user_message.clone()).into());
+            let message = match &config.banned_user_message_callback {
+                Some(handler) => handler.message(&target).await?,
+                None => config.banned_user_message.clone(),
+            };
+            return Err(AuthError::banned_user(message).into());
         }
     }
 
