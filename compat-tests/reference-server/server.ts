@@ -725,7 +725,7 @@ const server = Bun.serve({
         if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return profile.handler(request);
       }
       if (url.pathname === "/__test/organization-creation-state" && request.method === "GET") {
-        return jsonResponse(organizationCreationFixture.state(url.searchParams.get("email") ?? "", url.searchParams.get("includeMetadata") === "true"));
+        return jsonResponse(organizationCreationFixture.state(url.searchParams.get("email") ?? "", url.searchParams.get("includeMetadata") === "true", url.searchParams.get("includeLogo") === "true"));
       }
       if (url.pathname === "/__test/organization-create" && request.method === "POST") {
         return organizationCreationFixture.server(await request.json() as Record<string,unknown>);

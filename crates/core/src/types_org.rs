@@ -186,7 +186,8 @@ impl CreateOrganization {
 pub struct UpdateOrganization {
     pub name: Option<String>,
     pub slug: Option<String>,
-    pub logo: Option<String>,
+    /// None retains the stored logo; Some(None) clears it; Some(Some) sets it.
+    pub logo: Option<Option<String>>,
     pub metadata: Option<serde_json::Value>,
 }
 
