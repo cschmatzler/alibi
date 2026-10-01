@@ -65,7 +65,9 @@ pub mod wire;
 pub use crate as __private_core;
 pub use authenticated_user::AuthenticatedUser;
 // Re-export commonly used items
-pub use background_tasks::{BackgroundTaskCompletion, BackgroundTaskHandler};
+pub use background_tasks::{
+    BackgroundTaskCompletion, BackgroundTaskHandler, start_background_task,
+};
 // Re-export commonly used items
 pub use better_auth_macros::{AuthSchema, PluginConfig};
 pub use cache::{

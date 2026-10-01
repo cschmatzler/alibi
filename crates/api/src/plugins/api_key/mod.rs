@@ -579,40 +579,7 @@ impl ApiKeyPlugin {
     pub(super) async fn start_background_work(
         operation: impl Future<Output = AuthResult<()>> + Send + 'static,
     ) -> AuthResult<better_auth_core::BackgroundTaskCompletion> {
-        use tracing::{Instrument, instrument::WithSubscriber};
-        let request_context = better_auth_core::hooks::current_request_hook_context();
-        let work = async move {
-            match request_context {
-                Some(context) => {
-                    better_auth_core::hooks::with_request_hook_context_value(context, operation)
-                        .await
-                }
-                None => operation.await,
-            }
-        }
-        .instrument(tracing::Span::current())
-        .with_current_subscriber();
-        let mut work: better_auth_core::BackgroundTaskCompletion = Box::pin(work);
-        // JavaScript starts the async adapter operation immediately, before its
-        // caller invokes the generator. Poll once in the initiating context.
-        match std::future::poll_fn(|context| std::task::Poll::Ready(work.as_mut().poll(context)))
-            .await
-        {
-            std::task::Poll::Ready(result) => Ok(Box::pin(async move { result })),
-            std::task::Poll::Pending => {
-                let executor = tokio::runtime::Handle::try_current().map_err(|error| {
-                    AuthError::internal(format!(
-                        "Background cleanup requires a Tokio executor: {error}"
-                    ))
-                })?;
-                let running = executor.spawn(work);
-                Ok(Box::pin(async move {
-                    running.await.map_err(|error| {
-                        AuthError::internal(format!("Background cleanup task failed: {error}"))
-                    })?
-                }))
-            }
-        }
+        better_auth_core::start_background_task(operation).await
     }
 
     /// Force cleanup across owners/configurations, updating the same global

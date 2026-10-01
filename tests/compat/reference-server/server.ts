@@ -3,7 +3,9 @@ import { createJwtKeyringFixture } from "./jwt-keyring-fixture";
 import { createRemoteJwtFixture } from "./jwt-remote-fixture";
 import { createLastLoginMethodFixture } from "./last-login-method-fixture";
 import { createSetPasswordFixture } from "./set-password-fixture";
-import { createDispatchFixture } from "./dispatch-fixture";import { createTwoFactorPendingLookupFixture } from "./two-factor-pending-lookup-fixture";
+import { createDispatchFixture } from "./dispatch-fixture";
+import { createSignupPolicyFixture } from "./signup-policy-fixture";
+import { createTwoFactorPendingLookupFixture } from "./two-factor-pending-lookup-fixture";
 import { createBearerFixture } from "./bearer-fixture";
 import { sessionCookieCacheFixture } from "./session-cookie-cache-fixture";
 import { organizationMembershipPolicyFixture } from "./organization-membership-policy-fixture";
@@ -567,6 +569,7 @@ const authContext = await auth.$context;
 const oneTapProfiles = createOneTapProfiles(authOptions);
 const googleIdProfiles = googleIdTokenProfiles(authOptions);
 const setPasswordFixture = createSetPasswordFixture(database, authOptions);
+const signupPolicyFixture = createSignupPolicyFixture(database, authOptions);
 
 const OTT_PROFILE_NAMES=["ott-default","ott-hashed","ott-no-cookie","ott-server-header","ott-refresh-disabled","ott-refresh-deferred"] as const;
 const ottExposedHeaderFixture: BetterAuthPlugin = {
@@ -954,6 +957,12 @@ const server = Bun.serve({
         return jsonResponse({ ok: true, oauthBaseURL, upstreamVersion: INSTALLED_BETTER_AUTH_VERSION });
       }
 
+      const signupPolicyControl = await signupPolicyFixture.handle(request);
+      if (signupPolicyControl) return signupPolicyControl;
+      for (const [name, profile] of signupPolicyFixture.profiles) {
+        const path = `/__test/profiles/${name}/api/auth`;
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return profile.handler(request);
+      }
       for(const [name,auth] of lastLoginMethodFixture.profiles){
         const path=`/__test/profiles/${name}/api/auth`;
         if(url.pathname===path||url.pathname.startsWith(`${path}/`))return auth.handler(request);
