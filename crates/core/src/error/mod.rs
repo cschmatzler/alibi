@@ -1,10 +1,13 @@
+#[cfg(test)]
+mod tests;
+
 use thiserror::Error;
 
 /// Authentication framework error types.
 ///
 /// Each variant maps to an HTTP status code via [`AuthError::status_code`].
 /// Use [`AuthError::to_auth_response`] to produce a standardized JSON response
-/// matching the better-auth OpenAPI spec: `{ "message": "..." }`.
+/// matching the better-auth `OpenAPI` spec: `{ "message": "..." }`.
 #[derive(Error, Debug)]
 pub enum AuthError {
     /// An intentional public API error from application policy or input validation.
@@ -118,13 +121,11 @@ pub enum AuthError {
 }
 
 impl AuthError {
-
     /// HTTP status code for this error.
     #[must_use]
     pub const fn status_code(&self) -> u16 {
         match self {
-            Self::Api { status, .. } => *status,
-            Self::Upstream { status, .. } => *status,
+            Self::Api { status, .. } | Self::Upstream { status, .. } => *status,
             // 400
             Self::BadRequest(_) | Self::InvalidRequest(_) | Self::Validation(_) => 400,
             // 401
@@ -163,7 +164,7 @@ impl AuthError {
         }
     }
 
-/// Resolve the wire error code for a message, if upstream defines one.
+    /// Resolve the wire error code for a message, if upstream defines one.
     ///
     /// better-auth 1.5 replaced message-derived codes with explicit constants,
     /// and only errors built from one of those constants carry a `code` at all
@@ -174,7 +175,7 @@ impl AuthError {
         upstream_code(message).map(str::to_owned)
     }
 
-/// Compute the HTTP status, error code, and user-facing message.
+    /// Compute the HTTP status, error code, and user-facing message.
     ///
     /// The code is `None` for messages upstream has no constant for; those
     /// responses carry only a `message`.
@@ -198,6 +199,7 @@ impl AuthError {
             | Self::SessionNotFound
             | Self::Forbidden(_)
             | Self::SessionCreationCancelled
+            | Self::UserCreationCancelled
             | Self::Unauthorized
             | Self::UserNotFound
             | Self::NotFound(_)
@@ -228,7 +230,7 @@ impl AuthError {
         (status, code, message)
     }
 
-/// Convert this error into a standardized [`AuthResponse`](crate::types::AuthResponse) matching the
+    /// Convert this error into a standardized [`AuthResponse`](crate::types::AuthResponse) matching the
     /// better-auth spec: `{ "code": "...", "message": "..." }`.
     ///
     /// Named `to_auth_response` to avoid collision with Axum's
@@ -246,47 +248,47 @@ impl AuthError {
         .unwrap_or_else(|_| crate::types::AuthResponse::text(status, &message))
     }
 
-#[must_use]
+    #[must_use]
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self::BadRequest(message.into())
     }
 
-#[must_use]
+    #[must_use]
     pub fn forbidden(message: impl Into<String>) -> Self {
         Self::Forbidden(message.into())
     }
 
-#[must_use]
+    #[must_use]
     pub fn banned_user(message: impl Into<String>) -> Self {
         Self::BannedUser(message.into())
     }
 
-#[must_use]
+    #[must_use]
     pub fn not_found(message: impl Into<String>) -> Self {
         Self::NotFound(message.into())
     }
 
-#[must_use]
+    #[must_use]
     pub fn conflict(message: impl Into<String>) -> Self {
         Self::Conflict(message.into())
     }
 
-#[must_use]
+    #[must_use]
     pub fn method_not_allowed(message: impl Into<String>) -> Self {
         Self::MethodNotAllowed(message.into())
     }
 
-#[must_use]
+    #[must_use]
     pub fn payload_too_large(message: impl Into<String>) -> Self {
         Self::PayloadTooLarge(message.into())
     }
 
-#[must_use]
+    #[must_use]
     pub fn not_implemented(message: impl Into<String>) -> Self {
         Self::NotImplemented(message.into())
     }
 
-#[must_use]
+    #[must_use]
     pub fn plugin(plugin: &str, message: impl Into<String>) -> Self {
         Self::Plugin {
             plugin: plugin.to_owned(),
@@ -294,26 +296,25 @@ impl AuthError {
         }
     }
 
-#[must_use]
+    #[must_use]
     pub fn config(message: impl Into<String>) -> Self {
         Self::Config(message.into())
     }
 
-#[must_use]
+    #[must_use]
     pub fn internal(message: impl Into<String>) -> Self {
         Self::Internal(message.into())
     }
 
-#[must_use]
+    #[must_use]
     pub fn validation(message: impl Into<String>) -> Self {
         Self::Validation(message.into())
     }
 
-#[must_use]
+    #[must_use]
     pub fn authentication_failed(message: impl Into<String>) -> Self {
         Self::AuthenticationFailed(message.into())
     }
-
 }
 
 #[derive(Error, Debug)]
@@ -349,71 +350,6 @@ impl axum::response::IntoResponse for AuthError {
             .into_response()
     }
 }
-
-/// Convert `validator::ValidationErrors` into a standardized error response body.
-///
-/// Returns a 400 response with `{ "code": "VALIDATION_ERROR", "message": "[body.field] ..." }`
-/// matching the TS better-auth error shape.
-#[must_use]
-pub fn validation_error_response(
-    errors: &validator::ValidationErrors,
-) -> crate::types::AuthResponse {
-    // Build a TS-compatible message: "[body.field] message; [body.field2] message2"
-    let messages: Vec<String> = errors
-        .field_errors()
-        .into_iter()
-        .flat_map(|(field, errs)| {
-            errs.iter().map(move |e| {
-                let msg = e
-                    .message
-                    .as_ref()
-                    .map_or_else(|| format!("Invalid value for {field}"), ToString::to_string);
-                format!("[body.{field}] {msg}")
-            })
-        })
-        .collect();
-    let message = messages.join("; ");
-
-    let body = crate::types::ErrorCodeMessageResponse {
-        code: Some("VALIDATION_ERROR".to_owned()),
-        message,
-    };
-
-    // Validation errors return 400 (not 422) per the TS spec
-    crate::types::AuthResponse::json(400, &body)
-        .unwrap_or_else(|_| crate::types::AuthResponse::text(400, "Validation failed"))
-}
-
-/// Validate a request body, returning a parsed + validated value or an error response.
-///
-/// # Errors
-///
-/// Returns an error response if the request body is missing, malformed, or fails validation.
-pub fn validate_request_body<T>(
-    req: &crate::types::AuthRequest,
-) -> Result<T, crate::types::AuthResponse>
-where
-    T: serde::de::DeserializeOwned + validator::Validate + 'static,
-{
-    let value: T = req.body_as_json().map_err(|e| {
-        let message = format!("Invalid JSON: {e}");
-        let code = AuthError::code_from_message(&message);
-        crate::types::AuthResponse::json(
-            400,
-            &crate::types::ErrorCodeMessageResponse { code, message },
-        )
-        .unwrap_or_else(|_| crate::types::AuthResponse::text(400, "Invalid JSON"))
-    })?;
-
-    value
-        .validate()
-        .map_err(|e| validation_error_response(&e))?;
-
-    Ok(value)
-}
-
-#[cfg(test)]
-mod tests;
 
 /// Explicit upstream error codes, ordered by message for binary search.
 const UPSTREAM_ERROR_CODES: &[(&str, &str)] = &[
@@ -1044,6 +980,68 @@ const UPSTREAM_ERROR_CODES: &[(&str, &str)] = &[
     ("sendOTP not implemented", "SEND_OTP_NOT_IMPLEMENTED"),
     ("totp isn't configured", "TOTP_NOT_CONFIGURED"),
 ];
+
+/// Convert `validator::ValidationErrors` into a standardized error response body.
+///
+/// Returns a 400 response with `{ "code": "VALIDATION_ERROR", "message": "[body.field] ..." }`
+/// matching the TS better-auth error shape.
+#[must_use]
+pub fn validation_error_response(
+    errors: &validator::ValidationErrors,
+) -> crate::types::AuthResponse {
+    // Build a TS-compatible message: "[body.field] message; [body.field2] message2"
+    let messages: Vec<String> = errors
+        .field_errors()
+        .into_iter()
+        .flat_map(|(field, errs)| {
+            errs.iter().map(move |e| {
+                let msg = e
+                    .message
+                    .as_ref()
+                    .map_or_else(|| format!("Invalid value for {field}"), ToString::to_string);
+                format!("[body.{field}] {msg}")
+            })
+        })
+        .collect();
+    let message = messages.join("; ");
+
+    let body = crate::types::ErrorCodeMessageResponse {
+        code: Some("VALIDATION_ERROR".to_owned()),
+        message,
+    };
+
+    // Validation errors return 400 (not 422) per the TS spec
+    crate::types::AuthResponse::json(400, &body)
+        .unwrap_or_else(|_| crate::types::AuthResponse::text(400, "Validation failed"))
+}
+
+/// Validate a request body, returning a parsed + validated value or an error response.
+///
+/// # Errors
+///
+/// Returns an error response if the request body is missing, malformed, or fails validation.
+pub fn validate_request_body<T>(
+    req: &crate::types::AuthRequest,
+) -> Result<T, crate::types::AuthResponse>
+where
+    T: serde::de::DeserializeOwned + validator::Validate + 'static,
+{
+    let value: T = req.body_as_json().map_err(|e| {
+        let message = format!("Invalid JSON: {e}");
+        let code = AuthError::code_from_message(&message);
+        crate::types::AuthResponse::json(
+            400,
+            &crate::types::ErrorCodeMessageResponse { code, message },
+        )
+        .unwrap_or_else(|_| crate::types::AuthResponse::text(400, "Invalid JSON"))
+    })?;
+
+    value
+        .validate()
+        .map_err(|e| validation_error_response(&e))?;
+
+    Ok(value)
+}
 
 fn upstream_code(message: &str) -> Option<&'static str> {
     UPSTREAM_ERROR_CODES

@@ -7,6 +7,9 @@ use better_auth_core::{
 
 use super::SendTwoFactorOtp;
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn deliver(
     sender: Arc<dyn SendTwoFactorOtp>,
     user: UserView,

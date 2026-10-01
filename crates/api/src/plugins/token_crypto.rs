@@ -15,6 +15,9 @@ pub(in crate::plugins) fn hash_token(token: &str) -> String {
 
 // Upstream symmetricEncrypt uses SHA256(secret), XChaCha20-Poly1305's managed
 // 24-byte nonce followed by ciphertext/tag, serialized as lowercase hexadecimal.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn encrypt(plain: &str, secret: &str) -> AuthResult<String> {
     let cipher = XChaCha20Poly1305::new(&Sha256::digest(secret.as_bytes()));
     let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
@@ -28,6 +31,9 @@ pub(in crate::plugins) fn encrypt(plain: &str, secret: &str) -> AuthResult<Strin
     }))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn decrypt(stored: &str, secret: &str) -> AuthResult<String> {
     if !stored.len().is_multiple_of(2) {
         return Err(AuthError::internal("Invalid encrypted token"));

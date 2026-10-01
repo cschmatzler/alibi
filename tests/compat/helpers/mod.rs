@@ -3,6 +3,11 @@
 //! This is the **canonical** location for all shared test utilities.
 //! All integration test files should use `use compat::helpers::*;`.
 
+#[cfg(test)]
+mod tests;
+
+use better_auth::plugins::magic_link::MagicLinkConfig;
+use better_auth::plugins::phone_number::PhoneNumberConfig;
 use std::sync::Arc;
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -52,6 +57,254 @@ type TestAuth = BetterAuth<TestSchema>;
 static MOCK_OAUTH_SERVER: Once = Once::new();
 
 const MOCK_OAUTH_BASE_URL: &str = "http://127.0.0.1:3110";
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ResetSenderMode {
+    #[default]
+    Capture,
+    Fail,
+}
+
+#[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Configure independent authentication features in shared integration fixtures"
+)]
+pub struct TestAuthOptions {
+    pub reset_sender_mode: ResetSenderMode,
+    pub creator_role: Option<String>,
+    pub teams_enabled: bool,
+    pub dynamic_roles_enabled: bool,
+    pub phone_enabled: bool,
+    pub multi_session_enabled: bool,
+    pub one_tap_enabled: bool,
+    pub anonymous_enabled: bool,
+    pub oauth_proxy_enabled: bool,
+}
+
+struct TestResetSender {
+    mode: ResetSenderMode,
+}
+
+static RESET_PASSWORD_OUTBOX: OnceLock<Mutex<std::collections::HashMap<String, String>>> =
+    OnceLock::new();
+
+#[async_trait::async_trait]
+impl SendResetPassword for TestResetSender {
+    async fn send(&self, user: &Value, _url: &str, token: &str) -> better_auth::AuthResult<()> {
+        if self.mode == ResetSenderMode::Fail {
+            return Err(better_auth::AuthError::internal(
+                "test reset sender failure".to_owned(),
+            ));
+        }
+        if let Some(email) = user.get("email").and_then(|value| value.as_str()) {
+            reset_password_outbox()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(email.to_owned(), token.to_owned());
+        }
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Unique email generator
+// ---------------------------------------------------------------------------
+
+static EMAIL_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+// ---------------------------------------------------------------------------
+// TestHarness
+// ---------------------------------------------------------------------------
+
+/// Unified test harness wrapping `BetterAuth` with ergonomic helpers.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// let h = TestHarness::new().await;
+/// let (token, _) = h.signup("alice@test.com", "password123", "Alice").await;
+/// let (status, body) = h.send(h.authed_get("/get-session", &token)).await;
+/// assert_eq!(status, 200);
+/// ```
+pub struct TestHarness {
+    auth: Arc<TestAuth>,
+}
+
+impl TestHarness {
+    /// Create a harness with **all** plugins enabled (suitable for compat and
+    /// comprehensive integration tests).
+    pub async fn new() -> Self {
+        let auth = create_test_auth().await;
+        Self {
+            auth: Arc::new(auth),
+        }
+    }
+
+    /// Create a harness with configurable test auth behavior.
+    pub async fn with_options(options: TestAuthOptions) -> Self {
+        let auth = create_test_auth_with_options(options).await;
+        Self {
+            auth: Arc::new(auth),
+        }
+    }
+
+    /// Create a harness with a **minimal** plugin set matching
+    /// `integration_tests.rs` conventions (`EmailPassword`, `SessionManagement`,
+    /// `PasswordManagement`, `AccountManagement`, `ApiKey`).
+    pub async fn minimal() -> Self {
+        let config = test_config()
+            .base_url("http://localhost:3000")
+            .password_min_length(6);
+        let store = test_store(&config).await;
+        let auth = AuthBuilder::<TestSchema>::new(config)
+            .store(store)
+            .plugin(EmailPasswordPlugin::new().enable_signup(true))
+            .plugin(SessionManagementPlugin::new())
+            .plugin(
+                PasswordManagementPlugin::new().send_reset_password(Arc::new(TestResetSender {
+                    mode: ResetSenderMode::Capture,
+                })),
+            )
+            .plugin(AccountManagementPlugin::new())
+            .plugin(EmailVerificationPlugin::new())
+            .plugin(
+                UserManagementPlugin::new()
+                    .change_email_enabled(true)
+                    .delete_user_enabled(true)
+                    .require_delete_verification(false),
+            )
+            .plugin(ApiKeyPlugin::builder().build())
+            .plugin(mock_oauth_plugin())
+            .build()
+            .await
+            .unwrap_or_else(|e| panic!("Failed to create test auth instance: {e}"));
+        Self {
+            auth: Arc::new(auth),
+        }
+    }
+
+    /// Wrap an existing `Arc<BetterAuth>` in a harness.
+    pub const fn from_arc(auth: Arc<TestAuth>) -> Self {
+        Self { auth }
+    }
+
+    /// Access the inner `BetterAuth` reference.
+    pub fn auth(&self) -> &TestAuth {
+        &self.auth
+    }
+
+    /// Consume the harness and return the inner `Arc`.
+    pub fn into_arc(self) -> Arc<TestAuth> {
+        self.auth
+    }
+
+    // -------------------------------------------------------------------
+    // Request builders (instance methods delegate to helpers that include
+    // `origin` header for CSRF by default)
+    // -------------------------------------------------------------------
+
+    /// Build a GET request (with `origin` header).
+    #[expect(
+        clippy::unused_self,
+        reason = "Request builders share the fixture instance interface used by compatibility scenarios"
+    )]
+    pub fn get(&self, path: &str) -> AuthRequest {
+        get_request(path)
+    }
+
+    /// Build an authenticated GET request (with `origin` header).
+    #[expect(
+        clippy::unused_self,
+        reason = "Request builders share the fixture instance interface used by compatibility scenarios"
+    )]
+    pub fn authed_get(&self, path: &str, token: &str) -> AuthRequest {
+        get_with_auth(path, token)
+    }
+
+    /// Build a POST request with a JSON body (with `origin` header).
+    #[expect(
+        clippy::unused_self,
+        reason = "Request builders share the fixture instance interface used by compatibility scenarios"
+    )]
+    pub fn post(&self, path: &str, body: Value) -> AuthRequest {
+        post_json(path, body)
+    }
+
+    /// Build an authenticated POST request with a JSON body (with `origin`
+    /// header).
+    #[expect(
+        clippy::unused_self,
+        reason = "Request builders share the fixture instance interface used by compatibility scenarios"
+    )]
+    pub fn authed_post(&self, path: &str, body: Value, token: &str) -> AuthRequest {
+        post_json_with_auth(path, body, token)
+    }
+
+    // -------------------------------------------------------------------
+    // Send
+    // -------------------------------------------------------------------
+
+    /// Send a request and return `(status_code, parsed_json_body)`.
+    pub async fn send(&self, req: AuthRequest) -> (u16, Value) {
+        send_request(&self.auth, req).await
+    }
+
+    // -------------------------------------------------------------------
+    // User lifecycle
+    // -------------------------------------------------------------------
+
+    /// Sign up a new user. Returns `(token, response_json)`.
+    pub async fn signup(&self, email: &str, password: &str, name: &str) -> (String, Value) {
+        let req = self.post(
+            "/sign-up/email",
+            serde_json::json!({ "name": name, "email": email, "password": password }),
+        );
+        let (status, json) = self.send(req).await;
+        assert_eq!(
+            status, 200,
+            "signup should succeed, got status {status}: {json}"
+        );
+        let token = json
+            .get("token")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| panic!("signup response missing token"))
+            .to_owned();
+        (token, json)
+    }
+
+    /// Sign in an existing user. Returns `(token, response_json)`.
+    pub async fn signin(&self, email: &str, password: &str) -> (String, Value) {
+        let req = self.post(
+            "/sign-in/email",
+            serde_json::json!({ "email": email, "password": password }),
+        );
+        let (status, json) = self.send(req).await;
+        assert_eq!(
+            status, 200,
+            "signin should succeed, got status {status}: {json}"
+        );
+        let token = json
+            .get("token")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| panic!("signin response missing token"))
+            .to_owned();
+        (token, json)
+    }
+
+    /// Create a test user with a unique email and return `(user_id, session_token)`.
+    pub async fn create_user_with_session(&self) -> (String, String) {
+        let email = unique_email("harness");
+        let (token, json) = self.signup(&email, "password123", "Test User").await;
+        let user_id = json
+            .get("user")
+            .and_then(|u| u.get("id"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| panic!("missing user id"))
+            .to_owned();
+        (user_id, token)
+    }
+}
 
 fn ensure_mock_oauth_server() {
     MOCK_OAUTH_SERVER.call_once(|| {
@@ -136,53 +389,8 @@ fn ensure_mock_oauth_server() {
     std::thread::sleep(std::time::Duration::from_millis(25));
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum ResetSenderMode {
-    #[default]
-    Capture,
-    Fail,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct TestAuthOptions {
-    pub reset_sender_mode: ResetSenderMode,
-    pub creator_role: Option<String>,
-    pub teams_enabled: bool,
-    pub dynamic_roles_enabled: bool,
-    pub phone_enabled: bool,
-    pub multi_session_enabled: bool,
-    pub one_tap_enabled: bool,
-    pub anonymous_enabled: bool,
-    pub oauth_proxy_enabled: bool,
-}
-
-struct TestResetSender {
-    mode: ResetSenderMode,
-}
-
-static RESET_PASSWORD_OUTBOX: OnceLock<Mutex<std::collections::HashMap<String, String>>> =
-    OnceLock::new();
-
 fn reset_password_outbox() -> &'static Mutex<std::collections::HashMap<String, String>> {
     RESET_PASSWORD_OUTBOX.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
-}
-
-#[async_trait::async_trait]
-impl SendResetPassword for TestResetSender {
-    async fn send(&self, user: &Value, _url: &str, token: &str) -> better_auth::AuthResult<()> {
-        if self.mode == ResetSenderMode::Fail {
-            return Err(better_auth::AuthError::internal(
-                "test reset sender failure".to_owned(),
-            ));
-        }
-        if let Some(email) = user.get("email").and_then(|value| value.as_str()) {
-            reset_password_outbox()
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .insert(email.to_owned(), token.to_owned());
-        }
-        Ok(())
-    }
 }
 
 pub fn take_reset_password_token(email: &str) -> Option<String> {
@@ -191,12 +399,6 @@ pub fn take_reset_password_token(email: &str) -> Option<String> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .remove(email)
 }
-
-// ---------------------------------------------------------------------------
-// Unique email generator
-// ---------------------------------------------------------------------------
-
-static EMAIL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Generate a unique email address for testing, avoiding hard-coded collisions.
 pub fn unique_email(prefix: &str) -> String {
@@ -230,9 +432,9 @@ fn mock_oauth_plugin() -> OAuthPlugin {
         ) -> Result<OAuthUserInfoResponse, String> {
             Ok(OAuthUserInfoResponse {
                 user: OAuthUserInfo {
-                    id: "mock-account-id".to_string(),
-                    email: "mock@example.com".to_string(),
-                    name: Some("Mock OAuth User".to_string()),
+                    id: "mock-account-id".to_owned(),
+                    email: "mock@example.com".to_owned(),
+                    name: Some("Mock OAuth User".to_owned()),
                     image: None,
                     email_verified: true,
                 },
@@ -250,26 +452,26 @@ fn mock_oauth_plugin() -> OAuthPlugin {
     OAuthPlugin::new().add_provider(
         "mock",
         OAuthProvider {
-            client_id: "mock-client-id".to_string(),
+            client_id: "mock-client-id".to_owned(),
             additional_client_ids: Vec::new(),
             hosted_domain: None,
             require_email_verification: false,
-            client_secret: "mock-client-secret".to_string(),
+            client_secret: "mock-client-secret".to_owned(),
             auth_url: format!("{MOCK_OAUTH_BASE_URL}/__test/oauth/authorize"),
             token_url: format!("{MOCK_OAUTH_BASE_URL}/__test/oauth/token"),
             user_info_url: Some(format!("{MOCK_OAUTH_BASE_URL}/__test/oauth/userinfo")),
             scopes: vec![
-                "openid".to_string(),
-                "email".to_string(),
-                "profile".to_string(),
+                "openid".to_owned(),
+                "email".to_owned(),
+                "profile".to_owned(),
             ],
             authorization: None,
             authorization_params: Vec::new(),
             map_user_info: Some(|_value| {
                 Ok(OAuthUserInfo {
-                    id: "mock-account-id".to_string(),
-                    email: "mock@example.com".to_string(),
-                    name: Some("Mock OAuth User".to_string()),
+                    id: "mock-account-id".to_owned(),
+                    email: "mock@example.com".to_owned(),
+                    name: Some("Mock OAuth User".to_owned()),
                     image: None,
                     email_verified: true,
                 })
@@ -349,7 +551,7 @@ pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth
             change_email_enabled: true,
             ..Default::default()
         }))
-        .plugin(MagicLinkPlugin::new(Default::default()))
+        .plugin(MagicLinkPlugin::new(MagicLinkConfig::default()))
         .plugin(
             UserManagementPlugin::new()
                 .change_email_enabled(true)
@@ -376,7 +578,7 @@ pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth
             Arc::new(Eip191Verifier),
         )));
     let builder = if options.phone_enabled {
-        builder.plugin(PhoneNumberPlugin::new(Default::default()))
+        builder.plugin(PhoneNumberPlugin::new(PhoneNumberConfig::default()))
     } else {
         builder
     };
@@ -629,9 +831,6 @@ pub fn html_text_content(html: &str) -> String {
     normalize_whitespace(&decode_html_entities(&text))
 }
 
-#[cfg(test)]
-mod tests;
-
 pub async fn signup_user(
     auth: &TestAuth,
     email: &str,
@@ -678,197 +877,4 @@ pub async fn signin_user(auth: &TestAuth, email: &str, password: &str) -> (Strin
         .unwrap_or_else(|| panic!("signin response missing token"))
         .to_owned();
     (token, json)
-}
-
-// ---------------------------------------------------------------------------
-// TestHarness
-// ---------------------------------------------------------------------------
-
-/// Unified test harness wrapping `BetterAuth` with ergonomic helpers.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// let h = TestHarness::new().await;
-/// let (token, _) = h.signup("alice@test.com", "password123", "Alice").await;
-/// let (status, body) = h.send(h.authed_get("/get-session", &token)).await;
-/// assert_eq!(status, 200);
-/// ```
-pub struct TestHarness {
-    auth: Arc<TestAuth>,
-}
-
-impl TestHarness {
-    /// Create a harness with **all** plugins enabled (suitable for compat and
-    /// comprehensive integration tests).
-    pub async fn new() -> Self {
-        let auth = create_test_auth().await;
-        Self {
-            auth: Arc::new(auth),
-        }
-    }
-
-    /// Create a harness with configurable test auth behavior.
-    pub async fn with_options(options: TestAuthOptions) -> Self {
-        let auth = create_test_auth_with_options(options).await;
-        Self {
-            auth: Arc::new(auth),
-        }
-    }
-
-    /// Create a harness with a **minimal** plugin set matching
-    /// `integration_tests.rs` conventions (`EmailPassword`, `SessionManagement`,
-    /// `PasswordManagement`, `AccountManagement`, `ApiKey`).
-    pub async fn minimal() -> Self {
-        let config = test_config()
-            .base_url("http://localhost:3000")
-            .password_min_length(6);
-        let store = test_store(&config).await;
-        let auth = AuthBuilder::<TestSchema>::new(config)
-            .store(store)
-            .plugin(EmailPasswordPlugin::new().enable_signup(true))
-            .plugin(SessionManagementPlugin::new())
-            .plugin(
-                PasswordManagementPlugin::new().send_reset_password(Arc::new(TestResetSender {
-                    mode: ResetSenderMode::Capture,
-                })),
-            )
-            .plugin(AccountManagementPlugin::new())
-            .plugin(EmailVerificationPlugin::new())
-            .plugin(
-                UserManagementPlugin::new()
-                    .change_email_enabled(true)
-                    .delete_user_enabled(true)
-                    .require_delete_verification(false),
-            )
-            .plugin(ApiKeyPlugin::builder().build())
-            .plugin(mock_oauth_plugin())
-            .build()
-            .await
-            .unwrap_or_else(|e| panic!("Failed to create test auth instance: {e}"));
-        Self {
-            auth: Arc::new(auth),
-        }
-    }
-
-    /// Wrap an existing `Arc<BetterAuth>` in a harness.
-    pub const fn from_arc(auth: Arc<TestAuth>) -> Self {
-        Self { auth }
-    }
-
-    /// Access the inner `BetterAuth` reference.
-    pub fn auth(&self) -> &TestAuth {
-        &self.auth
-    }
-
-    /// Consume the harness and return the inner `Arc`.
-    pub fn into_arc(self) -> Arc<TestAuth> {
-        self.auth
-    }
-
-    // -------------------------------------------------------------------
-    // Request builders (instance methods delegate to helpers that include
-    // `origin` header for CSRF by default)
-    // -------------------------------------------------------------------
-
-    /// Build a GET request (with `origin` header).
-    #[expect(
-        clippy::unused_self,
-        reason = "Request builders share the fixture instance interface used by compatibility scenarios"
-    )]
-    pub fn get(&self, path: &str) -> AuthRequest {
-        get_request(path)
-    }
-
-    /// Build an authenticated GET request (with `origin` header).
-    #[expect(
-        clippy::unused_self,
-        reason = "Request builders share the fixture instance interface used by compatibility scenarios"
-    )]
-    pub fn authed_get(&self, path: &str, token: &str) -> AuthRequest {
-        get_with_auth(path, token)
-    }
-
-    /// Build a POST request with a JSON body (with `origin` header).
-    #[expect(
-        clippy::unused_self,
-        reason = "Request builders share the fixture instance interface used by compatibility scenarios"
-    )]
-    pub fn post(&self, path: &str, body: Value) -> AuthRequest {
-        post_json(path, body)
-    }
-
-    /// Build an authenticated POST request with a JSON body (with `origin`
-    /// header).
-    #[expect(
-        clippy::unused_self,
-        reason = "Request builders share the fixture instance interface used by compatibility scenarios"
-    )]
-    pub fn authed_post(&self, path: &str, body: Value, token: &str) -> AuthRequest {
-        post_json_with_auth(path, body, token)
-    }
-
-    // -------------------------------------------------------------------
-    // Send
-    // -------------------------------------------------------------------
-
-    /// Send a request and return `(status_code, parsed_json_body)`.
-    pub async fn send(&self, req: AuthRequest) -> (u16, Value) {
-        send_request(&self.auth, req).await
-    }
-
-    // -------------------------------------------------------------------
-    // User lifecycle
-    // -------------------------------------------------------------------
-
-    /// Sign up a new user. Returns `(token, response_json)`.
-    pub async fn signup(&self, email: &str, password: &str, name: &str) -> (String, Value) {
-        let req = self.post(
-            "/sign-up/email",
-            serde_json::json!({ "name": name, "email": email, "password": password }),
-        );
-        let (status, json) = self.send(req).await;
-        assert_eq!(
-            status, 200,
-            "signup should succeed, got status {status}: {json}"
-        );
-        let token = json
-            .get("token")
-            .and_then(|v| v.as_str())
-            .unwrap_or_else(|| panic!("signup response missing token"))
-            .to_owned();
-        (token, json)
-    }
-
-    /// Sign in an existing user. Returns `(token, response_json)`.
-    pub async fn signin(&self, email: &str, password: &str) -> (String, Value) {
-        let req = self.post(
-            "/sign-in/email",
-            serde_json::json!({ "email": email, "password": password }),
-        );
-        let (status, json) = self.send(req).await;
-        assert_eq!(
-            status, 200,
-            "signin should succeed, got status {status}: {json}"
-        );
-        let token = json
-            .get("token")
-            .and_then(|v| v.as_str())
-            .unwrap_or_else(|| panic!("signin response missing token"))
-            .to_owned();
-        (token, json)
-    }
-
-    /// Create a test user with a unique email and return `(user_id, session_token)`.
-    pub async fn create_user_with_session(&self) -> (String, String) {
-        let email = unique_email("harness");
-        let (token, json) = self.signup(&email, "password123", "Test User").await;
-        let user_id = json
-            .get("user")
-            .and_then(|u| u.get("id"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_else(|| panic!("missing user id"))
-            .to_owned();
-        (user_id, token)
-    }
 }

@@ -9,34 +9,6 @@
     reason = "integration tests intentionally use direct assertions over concrete JSON payloads"
 )]
 
-use std::borrow::Cow;
-
-use better_auth::plugins::{
-    AccountManagementPlugin, EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin,
-};
-
-use better_auth::prelude::{
-    AuthAccount, AuthRequest, AuthSession, AuthUser, AuthVerification, CreateAccount,
-    CreateSession, CreateUser, CreateVerification, HttpMethod, UpdateAccount, UpdateUser,
-};
-
-use better_auth::{AuthConfig, AuthError, AuthResult, AuthSchema, BetterAuth};
-
-use better_auth_seaorm::sea_orm;
-
-use better_auth_seaorm::sea_orm::entity::prelude::*;
-
-use better_auth_seaorm::sea_orm::{ActiveValue::NotSet, ActiveValue::Set, ConnectionTrait, Schema};
-
-use better_auth_seaorm::{
-    Database, DatabaseConnection, SeaOrmAccountModel, SeaOrmSessionModel, SeaOrmStore,
-    SeaOrmUserModel, SeaOrmVerificationModel,
-};
-
-use chrono::{DateTime, Utc};
-
-use serde_json::json;
-
 mod user {
 
     use super::*;
@@ -594,8 +566,47 @@ mod verification {
     }
 }
 
+#[cfg(test)]
+#[path = "legacy_schema_integration_tests/tests.rs"]
+mod tests;
+
+use std::borrow::Cow;
+
+use better_auth::plugins::{
+    AccountManagementPlugin, EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin,
+};
+
+use better_auth::prelude::{
+    AuthAccount, AuthRequest, AuthSession, AuthUser, AuthVerification, CreateAccount,
+    CreateSession, CreateUser, CreateVerification, HttpMethod, UpdateAccount, UpdateUser,
+};
+
+use better_auth::{AuthConfig, AuthError, AuthResult, AuthSchema, BetterAuth};
+
+use better_auth_seaorm::sea_orm;
+
+use better_auth_seaorm::sea_orm::entity::prelude::*;
+
+use better_auth_seaorm::sea_orm::{ActiveValue::NotSet, ActiveValue::Set, ConnectionTrait, Schema};
+
+use better_auth_seaorm::{
+    Database, DatabaseConnection, SeaOrmAccountModel, SeaOrmSessionModel, SeaOrmStore,
+    SeaOrmUserModel, SeaOrmVerificationModel,
+};
+
+use chrono::{DateTime, Utc};
+
+use serde_json::json;
+
 #[derive(Debug)]
 pub struct LegacySchema;
+
+impl AuthSchema for LegacySchema {
+    type User = user::Model;
+    type Session = session::Model;
+    type Account = account::Model;
+    type Verification = verification::Model;
+}
 
 fn test_session_cookie(token: &str) -> String {
     format!(
@@ -605,13 +616,6 @@ fn test_session_cookie(token: &str) -> String {
             "test-secret-key-that-is-at-least-32-characters-long"
         )
     )
-}
-
-impl AuthSchema for LegacySchema {
-    type User = user::Model;
-    type Session = session::Model;
-    type Account = account::Model;
-    type Verification = verification::Model;
 }
 
 async fn test_database() -> DatabaseConnection {
@@ -745,11 +749,3 @@ async fn seed_legacy_user(database: &DatabaseConnection) -> i32 {
 
     user.id
 }
-
-
-
-
-
-#[cfg(test)]
-#[path = "legacy_schema_integration_tests/tests.rs"]
-mod tests;

@@ -373,6 +373,9 @@ impl ApiKeyPlugin {
         clippy::too_many_lines,
         reason = "Keep API key validation and session substitution in one ordered middleware decision"
     )]
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn api_key_session(
         &self,
         req: &AuthRequest,

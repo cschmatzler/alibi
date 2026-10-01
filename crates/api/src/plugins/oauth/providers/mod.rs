@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use async_trait::async_trait;
 
 use chrono::{DateTime, Utc};
@@ -223,6 +226,10 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
 
 /// Configuration for a single OAuth provider.
 #[derive(Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Preserve independent public provider policy switches"
+)]
 pub struct OAuthProvider {
     pub client_id: String,
     /// Additional Google client IDs accepted when verifying ID tokens.
@@ -287,13 +294,13 @@ impl Default for OAuthAuthorizationPolicy {
 }
 
 impl OAuthProvider {
-
     /// GitLab.com social login with the published `read_user` scope and PKCE.
+    #[must_use]
     pub fn gitlab(client_id: &str, client_secret: &str) -> Self {
         Self::gitlab_with_issuer(client_id, client_secret, "https://gitlab.com")
     }
 
-/// GitLab social login hosted at an application-configured issuer.
+    /// GitLab social login hosted at an application-configured issuer.
     ///
     /// The issuer may include a deployment path. Repeated path slashes follow
     /// the pinned provider's endpoint construction rather than URL resolution.
@@ -325,7 +332,7 @@ impl OAuthProvider {
         }
     }
 
-#[must_use]
+    #[must_use]
     pub fn with_client_ids(mut self, client_ids: Vec<String>) -> Self {
         let mut ids = client_ids.into_iter();
         self.client_id = ids.next().unwrap_or_default();
@@ -333,7 +340,7 @@ impl OAuthProvider {
         self
     }
 
-#[must_use]
+    #[must_use]
     pub fn with_hosted_domain(mut self, domain: impl Into<String>) -> Self {
         let domain = domain.into();
         self.authorization_params.retain(|(key, _)| key != "hd");
@@ -343,47 +350,47 @@ impl OAuthProvider {
         self
     }
 
-#[must_use]
+    #[must_use]
     pub const fn require_email_verification(mut self, required: bool) -> Self {
         self.require_email_verification = required;
         self
     }
 
-#[must_use]
+    #[must_use]
     pub fn google(client_id: &str, client_secret: &str) -> Self {
         Self {
-            client_id: client_id.to_string(),
+            client_id: client_id.to_owned(),
             additional_client_ids: Vec::new(),
             hosted_domain: None,
             require_email_verification: false,
-            client_secret: client_secret.to_string(),
-            auth_url: "https://accounts.google.com/o/oauth2/v2/auth".to_string(),
-            token_url: "https://oauth2.googleapis.com/token".to_string(),
-            user_info_url: Some("https://www.googleapis.com/oauth2/v3/userinfo".to_string()),
+            client_secret: client_secret.to_owned(),
+            auth_url: "https://accounts.google.com/o/oauth2/v2/auth".to_owned(),
+            token_url: "https://oauth2.googleapis.com/token".to_owned(),
+            user_info_url: Some("https://www.googleapis.com/oauth2/v3/userinfo".to_owned()),
             scopes: vec![
-                "email".to_string(),
-                "profile".to_string(),
-                "openid".to_string(),
+                "email".to_owned(),
+                "profile".to_owned(),
+                "openid".to_owned(),
             ],
             authorization: Some(OAuthAuthorizationPolicy::default()),
-            authorization_params: vec![("include_granted_scopes".to_string(), "true".to_string())],
+            authorization_params: vec![("include_granted_scopes".to_owned(), "true".to_owned())],
             map_user_info: Some(|v| {
                 Ok(OAuthUserInfo {
                     id: v
                         .get("sub")
                         .and_then(|v| v.as_str())
                         .ok_or("missing sub")?
-                        .to_string(),
+                        .to_owned(),
                     email: v
                         .get("email")
                         .and_then(|v| v.as_str())
                         .ok_or("missing email")?
-                        .to_string(),
+                        .to_owned(),
                     name: v.get("name").and_then(|v| v.as_str()).map(String::from),
                     image: v.get("picture").and_then(|v| v.as_str()).map(String::from),
                     email_verified: v
                         .get("email_verified")
-                        .and_then(|v| v.as_bool())
+                        .and_then(Value::as_bool)
                         .unwrap_or(false),
                 })
             }),
@@ -396,7 +403,7 @@ impl OAuthProvider {
         }
     }
 
-#[must_use]
+    #[must_use]
     pub fn github(client_id: &str, client_secret: &str) -> Self {
         Self::github_with_endpoints(
             client_id,
@@ -408,7 +415,7 @@ impl OAuthProvider {
         )
     }
 
-/// Construct a GitHub provider using custom endpoints.
+    /// Construct a GitHub provider using custom endpoints.
     ///
     /// This keeps the built-in GitHub semantics while allowing local test
     /// harnesses or GitHub Enterprise-style deployments to override the URLs.
@@ -422,21 +429,21 @@ impl OAuthProvider {
         user_emails_url: &str,
     ) -> Self {
         Self {
-            client_id: client_id.to_string(),
+            client_id: client_id.to_owned(),
             additional_client_ids: Vec::new(),
             hosted_domain: None,
             require_email_verification: false,
-            client_secret: client_secret.to_string(),
-            auth_url: auth_url.to_string(),
-            token_url: token_url.to_string(),
-            user_info_url: Some(user_info_url.to_string()),
-            scopes: vec!["read:user".to_string(), "user:email".to_string()],
+            client_secret: client_secret.to_owned(),
+            auth_url: auth_url.to_owned(),
+            token_url: token_url.to_owned(),
+            user_info_url: Some(user_info_url.to_owned()),
+            scopes: vec!["read:user".to_owned(), "user:email".to_owned()],
             authorization: Some(OAuthAuthorizationPolicy::default()),
             authorization_params: Vec::new(),
             map_user_info: None,
             get_user_info: Some(Arc::new(GitHubUserInfoHandler::new(
-                user_info_url.to_string(),
-                user_emails_url.to_string(),
+                user_info_url.to_owned(),
+                user_emails_url.to_owned(),
             ))),
             refresh_access_token: None,
             verify_id_token: None,
@@ -446,18 +453,18 @@ impl OAuthProvider {
         }
     }
 
-#[must_use]
+    #[must_use]
     pub fn discord(client_id: &str, client_secret: &str) -> Self {
         Self {
-            client_id: client_id.to_string(),
+            client_id: client_id.to_owned(),
             additional_client_ids: Vec::new(),
             hosted_domain: None,
             require_email_verification: false,
-            client_secret: client_secret.to_string(),
-            auth_url: "https://discord.com/api/oauth2/authorize".to_string(),
-            token_url: "https://discord.com/api/oauth2/token".to_string(),
-            user_info_url: Some("https://discord.com/api/users/@me".to_string()),
-            scopes: vec!["identify".to_string(), "email".to_string()],
+            client_secret: client_secret.to_owned(),
+            auth_url: "https://discord.com/api/oauth2/authorize".to_owned(),
+            token_url: "https://discord.com/api/oauth2/token".to_owned(),
+            user_info_url: Some("https://discord.com/api/users/@me".to_owned()),
+            scopes: vec!["identify".to_owned(), "email".to_owned()],
             authorization: Some(OAuthAuthorizationPolicy {
                 scope_order: OAuthScopeOrder::RequestedThenConfigured,
                 pkce: false,
@@ -474,7 +481,18 @@ impl OAuthProvider {
             override_user_info_on_sign_in: false,
         }
     }
+}
 
+impl std::fmt::Debug for OAuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuthConfig").finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for OAuthProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuthProvider").finish_non_exhaustive()
+    }
 }
 
 fn gitlab_endpoint(issuer: &str, suffix: &str) -> String {
@@ -495,6 +513,10 @@ fn gitlab_endpoint(issuer: &str, suffix: &str) -> String {
         .join("://")
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Match the public provider callback type, which owns its JSON profile"
+)]
 fn gitlab_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
     let locked = profile.get("locked").is_some_and(|value| match value {
         Value::Null => false,
@@ -542,6 +564,10 @@ fn gitlab_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
 }
 
 /// Discord's normalized user fields for its declared string profile schema.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Match the public provider callback type, which owns its JSON profile"
+)]
 fn discord_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
     let id = profile
         .get("id")
@@ -567,13 +593,13 @@ fn discord_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
             let shifted = (snowflake >> 22usize)
                 .to_str_radix(10)
                 .parse::<f64>()
-                .map_err(|_| "invalid Discord snowflake number")?;
+                .map_err(|_error| "invalid Discord snowflake number")?;
             shifted % 6.0
         } else {
             // Discord's declared discriminator consists of decimal digits.
             discriminator
                 .parse::<f64>()
-                .map_err(|_| "invalid Discord discriminator")?
+                .map_err(|_error| "invalid Discord discriminator")?
                 % 5.0
         };
         format!("https://cdn.discordapp.com/embed/avatars/{index}.png")
@@ -607,19 +633,4 @@ fn discord_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
             .and_then(Value::as_bool)
             .unwrap_or(false),
     })
-}
-
-#[cfg(test)]
-mod tests;
-
-impl std::fmt::Debug for OAuthConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("OAuthConfig").finish_non_exhaustive()
-    }
-}
-
-impl std::fmt::Debug for OAuthProvider {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("OAuthProvider").finish_non_exhaustive()
-    }
 }

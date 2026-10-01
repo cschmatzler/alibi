@@ -1,32 +1,55 @@
 //! Genuine provider HTTP and public dispatch own proxy state, row and principal transitions.
+#![cfg(test)]
+#![expect(
+    unused_crate_dependencies,
+    reason = "Cargo shares package dependencies across its library and integration targets"
+)]
 #![cfg(feature = "axum")]
 #![allow(
     clippy::unwrap_used,
     reason = "local fixture setup and contract assertions must succeed"
 )]
+#[cfg(test)]
+#[path = "oauth_proxy_lifecycle_tests/tests.rs"]
+mod tests;
+
 use axum::{
     Json, Router,
     extract::{Form, State},
     routing::{get, post},
 };
+
 use better_auth::plugins::oauth::OAuthProvider;
+
 use better_auth::plugins::{
     EmailPasswordPlugin, OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin, SessionManagementPlugin,
 };
+
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
+
 use better_auth_core::{AuthRequest, AuthResponse, AuthSession, AuthUser, HttpMethod};
+
 use better_auth_seaorm::sea_orm::{ConnectionTrait, Statement};
+
 use better_auth_seaorm::{Database, SeaOrmStore};
+
 use serde_json::{Value, json};
+
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+
 const PREVIEW: &str = "http://localhost:42681";
+
 const PRODUCTION: &str = "http://127.0.0.1:42681";
+
 const SECRET: &str = "local-proxy-test-session-secret-32";
+
 const PROXY_SECRET: &str = "local-proxy-test-dedicated-secret-32";
+
 #[derive(Default)]
 struct Provider {
     verifier: String,
@@ -34,6 +57,139 @@ struct Provider {
     consumed: bool,
     receipts: Vec<Value>,
 }
+
+struct Fixture {
+    preview: BetterAuth<Schema>,
+    production: BetterAuth<Schema>,
+    preview_db: better_auth_seaorm::DatabaseConnection,
+    production_db: better_auth_seaorm::DatabaseConnection,
+    provider: Arc<Mutex<Provider>>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Fixture {
+    async fn new() -> Self {
+        let provider = Arc::new(Mutex::new(Provider::default()));
+        let router = Router::new().route("/oauth/token", post(|State(state): State<Arc<Mutex<Provider>>>, Form(form): Form<HashMap<String, String>>| async move {
+            let mut provider_2 = state.lock().unwrap(); provider_2.receipts.push(json!({"stage":"token", "form":form}));
+            assert_eq!(form.get("client_id").expect("provider fixture contains this parameter"), "local-client"); assert_eq!(form.get("client_secret").expect("provider fixture contains this parameter"), "local-secret");
+            assert_eq!(form.get("redirect_uri").expect("provider fixture contains this parameter"), &format!("{PRODUCTION}/api/auth/callback/gitlab"));
+            assert_eq!(form.get("code_verifier").expect("provider fixture contains this parameter"), &provider_2.verifier); assert_eq!(provider_2.verifier.len(), 128);
+            if provider_2.consumed || form.get("code").expect("provider fixture contains this parameter") != &format!("real-code-{}", provider_2.code) { return (axum::http::StatusCode::BAD_REQUEST, Json(json!({"error":"invalid_grant"}))); }
+            provider_2.consumed = true; drop(provider_2);
+            (axum::http::StatusCode::OK, Json(json!({"access_token":"real-provider-access", "refresh_token":"real-provider-refresh", "token_type":"Bearer", "scope":"read_user issued", "expires_in":3600})))
+        })).route("/api/v4/user", get(|State(state): State<Arc<Mutex<Provider>>>, headers: axum::http::HeaderMap| async move {
+            state.lock().unwrap().receipts.push(json!({"stage":"userinfo", "authorization":headers.get("authorization").expect("provider fixture contains this parameter").to_str().unwrap()}));
+            Json(json!({"id":777,"email":"proxy-owner@fixture.test","email_verified":true,"name":"Actual Provider Owner","state":"active","locked":false,"avatar_url":"https://assets.fixture.test/owner.png"}))
+        })).with_state(Arc::clone(&provider));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let issuer = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        let preview_db = Database::connect("sqlite::memory:").await.unwrap();
+        let production_db = Database::connect("sqlite::memory:").await.unwrap();
+        for db in [&preview_db, &production_db] {
+            better_auth_seaorm::store::__private_test_support::migrator::run_migrations(db)
+                .await
+                .unwrap();
+        }
+        let enabled = std::env::var_os("OAUTH_PROXY_BASELINE").is_none();
+        let preview = build(PREVIEW, &issuer, preview_db.clone(), enabled).await;
+        let production = build(PRODUCTION, &issuer, production_db.clone(), enabled).await;
+        Self {
+            preview,
+            production,
+            preview_db,
+            production_db,
+            provider,
+            task,
+        }
+    }
+    async fn issue(&self, endpoint: &str, cookie: Option<&str>) -> (url::Url, Value) {
+        let issued = request(&self.preview, endpoint, Some(json!({"provider":"gitlab", "callbackURL":format!("{PREVIEW}/complete?application=kept"), "newUserCallbackURL":format!("{PREVIEW}/new-owner"), "errorCallbackURL":format!("{PREVIEW}/failure"), "disableRedirect":true, "additionalData":{"serverContext":{"anonymousUserId":"forged-foreign"},"application":{"kept":true}}})), cookie).await;
+        assert_eq!(issued.status, 200);
+        let body: Value = serde_json::from_slice(&issued.body).unwrap();
+        let url = url::Url::parse(
+            body.get("url")
+                .expect("provider fixture contains this parameter")
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+        let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
+        assert_eq!(
+            query
+                .get("redirect_uri")
+                .expect("provider fixture contains this parameter"),
+            &format!("{PRODUCTION}/api/auth/callback/gitlab"),
+            "original Native OAuth redirected to preview instead of production"
+        );
+        let raw = self
+            .preview_db
+            .query_one_raw(Statement::from_string(
+                self.preview_db.get_database_backend(),
+                "SELECT value FROM verifications".to_owned(),
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        let state: Value =
+            serde_json::from_str(&raw.try_get::<String>("", "value").unwrap()).unwrap();
+        assert_eq!(
+            state
+                .get("application")
+                .expect("provider fixture contains this parameter"),
+            &json!({"kept":true})
+        );
+        assert!(state.get("serverContext").is_none());
+        let mut provider = self.provider.lock().unwrap();
+        provider.code += 1;
+        provider.consumed = false;
+        provider.verifier = state
+            .get("codeVerifier")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned();
+        drop(provider);
+        (url, state)
+    }
+    async fn forward(&self, authorization: &url::Url) -> (AuthResponse, url::Url) {
+        let query: HashMap<_, _> = authorization.query_pairs().into_owned().collect();
+        let mut callback = url::Url::parse(
+            query
+                .get("redirect_uri")
+                .expect("provider fixture contains this parameter"),
+        )
+        .unwrap();
+        _ = callback
+            .query_pairs_mut()
+            .append_pair(
+                "state",
+                query
+                    .get("state")
+                    .expect("provider fixture contains this parameter"),
+            )
+            .append_pair(
+                "code",
+                &format!("real-code-{}", self.provider.lock().unwrap().code),
+            );
+        let response = request(&self.production, &target(&callback), None, None).await;
+        assert_eq!(response.status, 302);
+        let bridge = location(&response);
+        assert_eq!(bridge.origin().ascii_serialization(), PREVIEW);
+        assert_eq!(bridge.path(), "/api/auth/callback/gitlab/oauth-proxy");
+        (response, bridge)
+    }
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
 async fn request(
     auth: &BetterAuth<Schema>,
     path: &str,
@@ -53,18 +209,20 @@ async fn request(
             .into_owned()
             .collect();
     }
-    let _ = req.headers.insert("origin".into(), PREVIEW.into());
+    drop(req.headers.insert("origin".into(), PREVIEW.into()));
     if let Some(body) = body {
         req.body = Some(body.to_string().into_bytes());
-        let _ = req
-            .headers
-            .insert("content-type".into(), "application/json".into());
+        drop(
+            req.headers
+                .insert("content-type".into(), "application/json".into()),
+        );
     }
     if let Some(cookie) = cookie {
-        let _ = req.headers.insert("cookie".into(), cookie.into());
+        drop(req.headers.insert("cookie".into(), cookie.into()));
     }
     auth.handle_request(req).await.unwrap()
 }
+
 fn cookies(response: &AuthResponse) -> String {
     response
         .headers
@@ -73,12 +231,21 @@ fn cookies(response: &AuthResponse) -> String {
         .collect::<Vec<_>>()
         .join("; ")
 }
+
 fn location(response: &AuthResponse) -> url::Url {
-    url::Url::parse(response.headers.get("location").unwrap()).unwrap()
+    url::Url::parse(
+        response
+            .headers
+            .get("location")
+            .expect("provider fixture contains this parameter"),
+    )
+    .unwrap()
 }
+
 fn target(url: &url::Url) -> String {
     format!("{}?{}", url.path(), url.query().unwrap_or_default())
 }
+
 async fn rows(database: &better_auth_seaorm::DatabaseConnection) -> Value {
     let mut value = serde_json::Map::new();
     for table in ["users", "accounts", "sessions", "verifications"] {
@@ -111,10 +278,11 @@ async fn rows(database: &better_auth_seaorm::DatabaseConnection) -> Value {
                     .unwrap()
             })
             .collect::<Vec<_>>();
-        let _ = value.insert(table.into(), json!(serialized));
+        drop(value.insert(table.into(), json!(serialized)));
     }
     Value::Object(value)
 }
+
 async fn build(
     origin: &str,
     issuer: &str,
@@ -148,114 +316,3 @@ async fn build(
         builder.build().await.unwrap()
     }
 }
-struct Fixture {
-    preview: BetterAuth<Schema>,
-    production: BetterAuth<Schema>,
-    preview_db: better_auth_seaorm::DatabaseConnection,
-    production_db: better_auth_seaorm::DatabaseConnection,
-    provider: Arc<Mutex<Provider>>,
-    task: tokio::task::JoinHandle<()>,
-}
-impl Fixture {
-    async fn new() -> Self {
-        let provider = Arc::new(Mutex::new(Provider::default()));
-        let router = Router::new().route("/oauth/token", post(|State(state): State<Arc<Mutex<Provider>>>, Form(form): Form<HashMap<String, String>>| async move {
-            let mut provider = state.lock().unwrap(); provider.receipts.push(json!({"stage":"token", "form":form}));
-            assert_eq!(form.get("client_id").unwrap(), "local-client"); assert_eq!(form.get("client_secret").unwrap(), "local-secret");
-            assert_eq!(form.get("redirect_uri").unwrap(), &format!("{PRODUCTION}/api/auth/callback/gitlab"));
-            assert_eq!(form.get("code_verifier").unwrap(), &provider.verifier); assert_eq!(provider.verifier.len(), 128);
-            if provider.consumed || form.get("code").unwrap() != &format!("real-code-{}", provider.code) { return (axum::http::StatusCode::BAD_REQUEST, Json(json!({"error":"invalid_grant"}))); }
-            provider.consumed = true;
-            (axum::http::StatusCode::OK, Json(json!({"access_token":"real-provider-access", "refresh_token":"real-provider-refresh", "token_type":"Bearer", "scope":"read_user issued", "expires_in":3600})))
-        })).route("/api/v4/user", get(|State(state): State<Arc<Mutex<Provider>>>, headers: axum::http::HeaderMap| async move {
-            state.lock().unwrap().receipts.push(json!({"stage":"userinfo", "authorization":headers.get("authorization").unwrap().to_str().unwrap()}));
-            Json(json!({"id":777,"email":"proxy-owner@fixture.test","email_verified":true,"name":"Actual Provider Owner","state":"active","locked":false,"avatar_url":"https://assets.fixture.test/owner.png"}))
-        })).with_state(provider.clone());
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let issuer = format!("http://{}", listener.local_addr().unwrap());
-        let task = tokio::spawn(async move {
-            axum::serve(listener, router).await.unwrap();
-        });
-        let preview_db = Database::connect("sqlite::memory:").await.unwrap();
-        let production_db = Database::connect("sqlite::memory:").await.unwrap();
-        for db in [&preview_db, &production_db] {
-            better_auth_seaorm::store::__private_test_support::migrator::run_migrations(db)
-                .await
-                .unwrap();
-        }
-        let enabled = std::env::var_os("OAUTH_PROXY_BASELINE").is_none();
-        let preview = build(PREVIEW, &issuer, preview_db.clone(), enabled).await;
-        let production = build(PRODUCTION, &issuer, production_db.clone(), enabled).await;
-        Self {
-            preview,
-            production,
-            preview_db,
-            production_db,
-            provider,
-            task,
-        }
-    }
-    async fn issue(&self, endpoint: &str, cookie: Option<&str>) -> (url::Url, Value) {
-        let issued = request(&self.preview, endpoint, Some(json!({"provider":"gitlab", "callbackURL":format!("{PREVIEW}/complete?application=kept"), "newUserCallbackURL":format!("{PREVIEW}/new-owner"), "errorCallbackURL":format!("{PREVIEW}/failure"), "disableRedirect":true, "additionalData":{"serverContext":{"anonymousUserId":"forged-foreign"},"application":{"kept":true}}})), cookie).await;
-        assert_eq!(issued.status, 200);
-        let body: Value = serde_json::from_slice(&issued.body).unwrap();
-        let url = url::Url::parse(body.get("url").unwrap().as_str().unwrap()).unwrap();
-        let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
-        assert_eq!(
-            query.get("redirect_uri").unwrap(),
-            &format!("{PRODUCTION}/api/auth/callback/gitlab"),
-            "original Native OAuth redirected to preview instead of production"
-        );
-        let raw = self
-            .preview_db
-            .query_one_raw(Statement::from_string(
-                self.preview_db.get_database_backend(),
-                "SELECT value FROM verifications".to_owned(),
-            ))
-            .await
-            .unwrap()
-            .unwrap();
-        let state: Value =
-            serde_json::from_str(&raw.try_get::<String>("", "value").unwrap()).unwrap();
-        assert_eq!(state.get("application").unwrap(), &json!({"kept":true}));
-        assert!(state.get("serverContext").is_none());
-        let mut provider = self.provider.lock().unwrap();
-        provider.code += 1;
-        provider.consumed = false;
-        provider.verifier = state
-            .get("codeVerifier")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_owned();
-        (url, state)
-    }
-    async fn forward(&self, authorization: &url::Url) -> (AuthResponse, url::Url) {
-        let query: HashMap<_, _> = authorization.query_pairs().into_owned().collect();
-        let mut callback = url::Url::parse(query.get("redirect_uri").unwrap()).unwrap();
-        let _ = callback
-            .query_pairs_mut()
-            .append_pair("state", query.get("state").unwrap())
-            .append_pair(
-                "code",
-                &format!("real-code-{}", self.provider.lock().unwrap().code),
-            );
-        let response = request(&self.production, &target(&callback), None, None).await;
-        assert_eq!(response.status, 302);
-        let bridge = location(&response);
-        assert_eq!(bridge.origin().ascii_serialization(), PREVIEW);
-        assert_eq!(bridge.path(), "/api/auth/callback/gitlab/oauth-proxy");
-        (response, bridge)
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
-}
-
-
-
-#[cfg(test)]
-#[path = "oauth_proxy_lifecycle_tests/tests.rs"]
-mod tests;

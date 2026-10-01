@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use std::collections::HashMap;
 
 use base64::Engine;
@@ -37,6 +40,103 @@ use super::types::{
 use better_auth_core::wire::{SessionView, UserView};
 
 use crate::plugins::helpers::{SessionIssueError, apply_default_role, issue_user_session};
+
+pub(in crate::plugins) struct ProcessOAuthUserResult {
+    pub(in crate::plugins) session: SessionView,
+    pub(in crate::plugins) user: UserView,
+    pub(in crate::plugins) is_register: bool,
+    pub(in crate::plugins) account_cookie: Option<AccountCookiePayload>,
+}
+
+pub(in crate::plugins) enum OAuthSignInError {
+    Generic(String),
+    SessionAuth(AuthError),
+    Banned(String),
+    EmailNotVerified,
+}
+
+impl OAuthSignInError {
+    fn into_auth_error(self) -> AuthError {
+        match self {
+            Self::Generic(message) => AuthError::forbidden(message),
+            Self::SessionAuth(error) => AuthError::forbidden(error.to_string()),
+            Self::Banned(message) => AuthError::banned_user(message),
+            Self::EmailNotVerified => AuthError::Upstream {
+                status: 403,
+                code: "EMAIL_NOT_VERIFIED",
+                message: "Email not verified",
+            },
+        }
+    }
+
+    pub(in crate::plugins) fn redirect_parts(&self) -> (String, Option<&str>) {
+        match self {
+            // Upstream turns a plain internal error string into the `error`
+            // param verbatim, with no description.
+            Self::Generic(message) => (message.replace(' ', "_"), None),
+            Self::SessionAuth(error) => (error.to_string().replace(' ', "_"), None),
+            // An APIError instead redirects with its `code` and message, so the
+            // param is the constant, not a lowercased word.
+            Self::Banned(message) => ("BANNED_USER".to_owned(), Some(message.as_str())),
+            Self::EmailNotVerified => ("email_not_verified".to_owned(), None),
+        }
+    }
+}
+
+impl From<String> for OAuthSignInError {
+    fn from(value: String) -> Self {
+        Self::Generic(value)
+    }
+}
+
+impl From<SessionIssueError> for OAuthSignInError {
+    fn from(value: SessionIssueError) -> Self {
+        match value {
+            SessionIssueError::Auth(error) => Self::SessionAuth(error),
+            SessionIssueError::Banned { message } => Self::Banned(message),
+        }
+    }
+}
+
+struct InitiatedOAuthFlow {
+    response: SocialSignInResponse,
+    state: String,
+    payload: OAuthStatePayload,
+}
+
+struct FlowStartRequest<'a> {
+    provider_name: &'a str,
+    provider: &'a OAuthProvider,
+    callback_url: &'a str,
+    new_user_callback_url: Option<String>,
+    error_callback_url: Option<String>,
+    scopes: Option<&'a [String]>,
+    login_hint: Option<&'a str>,
+    request_sign_up: Option<bool>,
+    additional_data: serde_json::Map<String, serde_json::Value>,
+    link: Option<OAuthStateLink>,
+    disable_redirect: bool,
+}
+
+/// Normalized policy shared by social callbacks and One Tap.
+#[derive(Clone, Default)]
+pub(in crate::plugins) struct OAuthProcessPolicy {
+    pub(in crate::plugins) override_user_info: bool,
+    pub(in crate::plugins) require_email_verification: bool,
+    pub(in crate::plugins) callback_url: Option<String>,
+    pub(in crate::plugins) use_updated_user: bool,
+}
+
+impl OAuthProcessPolicy {
+    const fn for_provider(provider: &OAuthProvider, callback_url: Option<String>) -> Self {
+        Self {
+            override_user_info: provider.override_user_info_on_sign_in,
+            require_email_verification: provider.require_email_verification,
+            callback_url,
+            use_updated_user: true,
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Shared helpers (DRY)
@@ -82,42 +182,46 @@ fn build_authorization_url(
     code_challenge: &str,
     login_hint: Option<&str>,
 ) -> AuthResult<String> {
-    let effective_scopes: Vec<&str> = if let Some(policy) = &provider.authorization {
-        let mut effective = Vec::new();
-        if !policy.disable_default_scopes {
-            effective.extend(provider.scopes.iter().map(String::as_str));
-        }
-        let configured = policy.configured_scopes.iter().map(String::as_str);
-        let requested = scopes.unwrap_or_default().iter().map(String::as_str);
-        match policy.scope_order {
-            OAuthScopeOrder::ConfiguredThenRequested => {
-                effective.extend(configured);
-                effective.extend(requested);
+    let effective_scopes: Vec<&str> = provider.authorization.as_ref().map_or_else(
+        || {
+            scopes.map_or_else(
+                || provider.scopes.iter().map(String::as_str).collect(),
+                |s| s.iter().map(String::as_str).collect(),
+            )
+        },
+        |policy| {
+            let mut effective = Vec::new();
+            if !policy.disable_default_scopes {
+                effective.extend(provider.scopes.iter().map(String::as_str));
             }
-            OAuthScopeOrder::RequestedThenConfigured => {
-                effective.extend(requested);
-                effective.extend(configured);
+            let configured = policy.configured_scopes.iter().map(String::as_str);
+            let requested = scopes.unwrap_or_default().iter().map(String::as_str);
+            match policy.scope_order {
+                OAuthScopeOrder::ConfiguredThenRequested => {
+                    effective.extend(configured);
+                    effective.extend(requested);
+                }
+                OAuthScopeOrder::RequestedThenConfigured => {
+                    effective.extend(requested);
+                    effective.extend(configured);
+                }
             }
-        }
-        effective
-    } else {
-        scopes
-            .map(|s| s.iter().map(String::as_str).collect())
-            .unwrap_or_else(|| provider.scopes.iter().map(String::as_str).collect())
-    };
+            effective
+        },
+    );
     let scope_str = effective_scopes.join(" ");
 
     let mut url = url::Url::parse(&provider.auth_url)
         .map_err(|error| AuthError::internal(format!("Invalid auth URL: {error}")))?;
-    let _ = url
+    _ = url
         .query_pairs_mut()
         .append_pair("response_type", "code")
         .append_pair("client_id", &provider.client_id)
         .append_pair("state", state);
     if provider.authorization.is_none() || !effective_scopes.is_empty() {
-        let _ = url.query_pairs_mut().append_pair("scope", &scope_str);
+        _ = url.query_pairs_mut().append_pair("scope", &scope_str);
     }
-    let _ = url
+    _ = url
         .query_pairs_mut()
         .append_pair("redirect_uri", callback_url);
     if provider
@@ -125,7 +229,7 @@ fn build_authorization_url(
         .as_ref()
         .is_none_or(|policy| policy.pkce)
     {
-        let _ = url
+        _ = url
             .query_pairs_mut()
             .append_pair("code_challenge_method", "S256")
             .append_pair("code_challenge", code_challenge);
@@ -137,7 +241,7 @@ fn build_authorization_url(
             .filter(|prompt| !prompt.is_empty())
             .or(policy.default_prompt.as_deref())
         {
-            let _ = url.query_pairs_mut().append_pair("prompt", prompt);
+            _ = url.query_pairs_mut().append_pair("prompt", prompt);
         }
         if effective_scopes.contains(&"bot")
             && let Some(permissions) = policy.discord_permissions
@@ -153,18 +257,21 @@ fn build_authorization_url(
                     .ok_or_else(|| AuthError::internal("Invalid Discord permissions number"))?;
                 better_auth_core::utils::json::number_to_string(&number)?
             };
-            let _ = url.query_pairs_mut().append_pair("permissions", &value);
+            _ = url.query_pairs_mut().append_pair("permissions", &value);
         }
     }
     if let Some(login_hint) = login_hint {
-        let _ = url.query_pairs_mut().append_pair("login_hint", login_hint);
+        _ = url.query_pairs_mut().append_pair("login_hint", login_hint);
     }
     for (key, value) in &provider.authorization_params {
-        let _ = url.query_pairs_mut().append_pair(key, value);
+        _ = url.query_pairs_mut().append_pair(key, value);
     }
     Ok(url.to_string())
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn refresh_tokens_via_provider(
     provider: &OAuthProvider,
     refresh_token: &str,
@@ -257,7 +364,10 @@ fn parse_token_response(token_data: serde_json::Value) -> AuthResult<OAuthTokenS
     })
 }
 
-pub(crate) async fn validate_authorization_code_via_provider(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn validate_authorization_code_via_provider(
     provider: &OAuthProvider,
     code: &str,
     redirect_uri: &str,
@@ -285,27 +395,29 @@ pub(crate) async fn validate_authorization_code_via_provider(
         .form(&form)
         .send()
         .await
-        .map_err(|e| AuthError::internal(format!("Token exchange failed: {}", e)))?;
+        .map_err(|e| AuthError::internal(format!("Token exchange failed: {e}")))?;
 
     if !token_resp.status().is_success() {
         let error_body = token_resp
             .text()
             .await
-            .unwrap_or_else(|_| "Unknown error".to_string());
+            .unwrap_or_else(|_| "Unknown error".to_owned());
         return Err(AuthError::internal(format!(
-            "Token exchange returned error: {}",
-            error_body
+            "Token exchange returned error: {error_body}"
         )));
     }
 
     let token_data: serde_json::Value = token_resp
         .json()
         .await
-        .map_err(|e| AuthError::internal(format!("Failed to parse token response: {}", e)))?;
+        .map_err(|e| AuthError::internal(format!("Failed to parse token response: {e}")))?;
     parse_token_response(token_data)
 }
 
-pub(crate) async fn fetch_user_info_from_provider(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn fetch_user_info_from_provider(
     provider: &OAuthProvider,
     request: OAuthUserInfoRequest,
 ) -> AuthResult<OAuthUserInfoResponse> {
@@ -335,26 +447,25 @@ pub(crate) async fn fetch_user_info_from_provider(
         .header("Accept", "application/json")
         .send()
         .await
-        .map_err(|e| AuthError::internal(format!("Failed to fetch user info: {}", e)))?;
+        .map_err(|e| AuthError::internal(format!("Failed to fetch user info: {e}")))?;
 
     if !user_info_resp.status().is_success() {
         let error_body = user_info_resp
             .text()
             .await
-            .unwrap_or_else(|_| "Unknown error".to_string());
+            .unwrap_or_else(|_| "Unknown error".to_owned());
         return Err(AuthError::internal(format!(
-            "User info request failed: {}",
-            error_body
+            "User info request failed: {error_body}"
         )));
     }
 
     let user_info_json: serde_json::Value = user_info_resp
         .json()
         .await
-        .map_err(|e| AuthError::internal(format!("Failed to parse user info: {}", e)))?;
+        .map_err(|e| AuthError::internal(format!("Failed to parse user info: {e}")))?;
 
     let user = mapper(user_info_json.clone())
-        .map_err(|e| AuthError::internal(format!("Failed to map user info: {}", e)))?;
+        .map_err(|e| AuthError::internal(format!("Failed to map user info: {e}")))?;
 
     Ok(OAuthUserInfoResponse {
         user,
@@ -362,7 +473,7 @@ pub(crate) async fn fetch_user_info_from_provider(
     })
 }
 
-pub(crate) fn parse_callback_user_payload(
+pub(in crate::plugins) fn parse_callback_user_payload(
     user_data: Option<&str>,
 ) -> Option<OAuthCallbackUserPayload> {
     let value: serde_json::Value = serde_json::from_str(user_data?).ok()?;
@@ -373,11 +484,11 @@ pub(crate) fn parse_callback_user_payload(
             .map(|name| OAuthCallbackUserName {
                 first_name: name
                     .get("firstName")
-                    .and_then(|value| value.as_str())
+                    .and_then(|value_2| value_2.as_str())
                     .map(String::from),
                 last_name: name
                     .get("lastName")
-                    .and_then(|value| value.as_str())
+                    .and_then(|value_3| value_3.as_str())
                     .map(String::from),
             }),
         email: value
@@ -403,6 +514,9 @@ fn account_cookie_max_age(config: &better_auth_core::AuthConfig) -> f64 {
     )
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn create_account_cookie_header(
     config: &better_auth_core::AuthConfig,
     secret: &str,
@@ -418,6 +532,9 @@ pub(in crate::plugins) fn create_account_cookie_header(
     )
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn decode_account_cookie(
     req: &AuthRequest,
     config: &better_auth_core::AuthConfig,
@@ -522,107 +639,6 @@ fn auth_base_url(ctx: &AuthContext<impl better_auth_core::AuthSchema>) -> String
     )
 }
 
-pub(in crate::plugins) struct ProcessOAuthUserResult {
-    pub(in crate::plugins) session: SessionView,
-    pub(in crate::plugins) user: UserView,
-    pub(in crate::plugins) is_register: bool,
-    pub(in crate::plugins) account_cookie: Option<AccountCookiePayload>,
-}
-
-pub(crate) enum OAuthSignInError {
-    Generic(String),
-    SessionAuth(AuthError),
-    Banned(String),
-    EmailNotVerified,
-}
-
-impl OAuthSignInError {
-
-    fn into_auth_error(self) -> AuthError {
-        match self {
-            Self::Generic(message) => AuthError::forbidden(message),
-            Self::SessionAuth(error) => AuthError::forbidden(error.to_string()),
-            Self::Banned(message) => AuthError::banned_user(message),
-            Self::EmailNotVerified => AuthError::Upstream {
-                status: 403,
-                code: "EMAIL_NOT_VERIFIED",
-                message: "Email not verified",
-            },
-        }
-    }
-
-pub(crate) fn redirect_parts(&self) -> (String, Option<&str>) {
-        match self {
-            // Upstream turns a plain internal error string into the `error`
-            // param verbatim, with no description.
-            Self::Generic(message) => (message.replace(' ', "_"), None),
-            Self::SessionAuth(error) => (error.to_string().replace(' ', "_"), None),
-            // An APIError instead redirects with its `code` and message, so the
-            // param is the constant, not a lowercased word.
-            Self::Banned(message) => ("BANNED_USER".to_string(), Some(message.as_str())),
-            Self::EmailNotVerified => ("email_not_verified".to_owned(), None),
-        }
-    }
-
-}
-
-impl From<String> for OAuthSignInError {
-    fn from(value: String) -> Self {
-        Self::Generic(value)
-    }
-}
-
-impl From<SessionIssueError> for OAuthSignInError {
-    fn from(value: SessionIssueError) -> Self {
-        match value {
-            SessionIssueError::Auth(error) => Self::SessionAuth(error),
-            SessionIssueError::Banned { message } => Self::Banned(message),
-        }
-    }
-}
-
-struct InitiatedOAuthFlow {
-    response: SocialSignInResponse,
-    state: String,
-    payload: OAuthStatePayload,
-}
-
-struct FlowStartRequest<'a> {
-    provider_name: &'a str,
-    provider: &'a OAuthProvider,
-    callback_url: &'a str,
-    new_user_callback_url: Option<String>,
-    error_callback_url: Option<String>,
-    scopes: Option<&'a [String]>,
-    login_hint: Option<&'a str>,
-    request_sign_up: Option<bool>,
-    additional_data: serde_json::Map<String, serde_json::Value>,
-    link: Option<OAuthStateLink>,
-    disable_redirect: bool,
-}
-
-/// Normalized policy shared by social callbacks and One Tap.
-#[derive(Clone, Default)]
-pub(crate) struct OAuthProcessPolicy {
-    pub(crate) override_user_info: bool,
-    pub(crate) require_email_verification: bool,
-    pub(crate) callback_url: Option<String>,
-    pub(crate) use_updated_user: bool,
-}
-
-impl OAuthProcessPolicy {
-
-    const fn for_provider(provider: &OAuthProvider, callback_url: Option<String>) -> Self {
-        Self {
-            override_user_info: provider.override_user_info_on_sign_in,
-            require_email_verification: provider.require_email_verification,
-            callback_url,
-            use_updated_user: true,
-        }
-    }
-
-}
-
 async fn finish_oauth_session<S: better_auth_core::AuthSchema>(
     user: &S::User,
     is_register: bool,
@@ -694,6 +710,9 @@ async fn finish_oauth_session<S: better_auth_core::AuthSchema>(
     clippy::too_many_lines,
     reason = "Keep OAuth account matching, linking policy, and signup branches together for review"
 )]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn process_oauth_sign_in(
     provider_name: &str,
     policy: &OAuthProcessPolicy,
@@ -704,7 +723,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
     if user_info.email.is_empty() {
-        return Err(OAuthSignInError::Generic("email not found".to_string()));
+        return Err(OAuthSignInError::Generic("email not found".to_owned()));
     }
 
     let linked_account = ctx
@@ -723,21 +742,22 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
 
     if let Some(existing_account) = linked_account {
         if ctx.config.account.update_account_on_sign_in {
-            let _ = ctx
-                .database
-                .update_account(
-                    &existing_account.id(),
-                    UpdateAccount {
-                        access_token: token_bundle.access_token.clone(),
-                        refresh_token: token_bundle.refresh_token.clone(),
-                        id_token: token_bundle.id_token.clone(),
-                        access_token_expires_at: tokens.access_token_expires_at,
-                        refresh_token_expires_at: tokens.refresh_token_expires_at,
-                        ..Default::default()
-                    },
-                )
-                .await
-                .map_err(|error| error.to_string())?;
+            drop(
+                ctx.database
+                    .update_account(
+                        &existing_account.id(),
+                        UpdateAccount {
+                            access_token: token_bundle.access_token.clone(),
+                            refresh_token: token_bundle.refresh_token.clone(),
+                            id_token: token_bundle.id_token.clone(),
+                            access_token_expires_at: tokens.access_token_expires_at,
+                            refresh_token_expires_at: tokens.refresh_token_expires_at,
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .map_err(|error| error.to_string())?,
+            );
         }
 
         let mut user = ctx
@@ -745,7 +765,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
             .get_user_by_id(&existing_account.user_id())
             .await
             .map_err(|error| error.to_string())?
-            .ok_or_else(|| "user not found".to_string())?;
+            .ok_or_else(|| "user not found".to_owned())?;
 
         if user_info.email_verified
             && !user.email_verified()
@@ -798,25 +818,25 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
             AccountCookiePayload {
                 id: Some(existing_account.id().to_string()),
                 user_id: existing_account.user_id().to_string(),
-                provider_id: provider_name.to_string(),
-                account_id: existing_account.account_id().to_string(),
+                provider_id: provider_name.to_owned(),
+                account_id: existing_account.account_id().to_owned(),
                 access_token: token_bundle
                     .access_token
-                    .or_else(|| existing_account.access_token().map(str::to_string)),
+                    .or_else(|| existing_account.access_token().map(str::to_owned)),
                 refresh_token: token_bundle
                     .refresh_token
-                    .or_else(|| existing_account.refresh_token().map(str::to_string)),
+                    .or_else(|| existing_account.refresh_token().map(str::to_owned)),
                 id_token: token_bundle
                     .id_token
-                    .or_else(|| existing_account.id_token().map(str::to_string)),
+                    .or_else(|| existing_account.id_token().map(str::to_owned)),
                 access_token_expires_at: tokens
                     .access_token_expires_at
                     .or_else(|| existing_account.access_token_expires_at()),
                 refresh_token_expires_at: tokens
                     .refresh_token_expires_at
                     .or_else(|| existing_account.refresh_token_expires_at()),
-                scope: existing_account.scope().map(str::to_string),
-                password: existing_account.password().map(str::to_string),
+                scope: existing_account.scope().map(str::to_owned),
+                password: existing_account.password().map(str::to_owned),
                 created_at: Some(existing_account.created_at()),
                 updated_at: Some(existing_account.updated_at()),
             }
@@ -854,7 +874,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
             || (!trusted_provider && !user_info.email_verified)
             || (linking.require_local_email_verified && !existing_user.email_verified())
         {
-            return Err(OAuthSignInError::Generic("account not linked".to_string()));
+            return Err(OAuthSignInError::Generic("account not linked".to_owned()));
         }
 
         let mut linked_user = existing_user;
@@ -863,7 +883,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
             .create_account(CreateAccount {
                 user_id: linked_user.id().to_string(),
                 account_id: user_info.id.clone(),
-                provider_id: provider_name.to_string(),
+                provider_id: provider_name.to_owned(),
                 access_token: token_bundle.access_token,
                 refresh_token: token_bundle.refresh_token,
                 id_token: token_bundle.id_token,
@@ -873,7 +893,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
                 password: None,
             })
             .await
-            .map_err(|_| "unable to link account".to_string())?;
+            .map_err(|_error| "unable to link account".to_owned())?;
 
         if user_info.email_verified
             && !linked_user.email_verified()
@@ -955,7 +975,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         })
     } else {
         if disable_sign_up {
-            return Err(OAuthSignInError::Generic("signup disabled".to_string()));
+            return Err(OAuthSignInError::Generic("signup disabled".to_owned()));
         }
 
         let mut create_user = CreateUser::new()
@@ -968,7 +988,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         let mut create_account = CreateAccount {
             user_id: String::new(),
             account_id: user_info.id.clone(),
-            provider_id: provider_name.to_string(),
+            provider_id: provider_name.to_owned(),
             access_token: token_bundle.access_token,
             refresh_token: token_bundle.refresh_token,
             id_token: token_bundle.id_token,
@@ -979,7 +999,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         };
         // OAuth registration commits its identity and provider binding together.
         // Notifications and session creation follow the committed transaction.
-        let (created_user, created_account) =
+        let (persisted_user, persisted_account) =
             better_auth_core::store::transaction(ctx.database.as_ref(), move |tx| {
                 Box::pin(async move {
                     let user = tx.create_user(create_user).await?;
@@ -989,21 +1009,21 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
                 })
             })
             .await
-            .map_err(|_| "unable to create user".to_string())?;
+            .map_err(|_error| "unable to create user".to_owned())?;
 
-        let issued = finish_oauth_session(&created_user, true, policy, meta, ctx).await?;
+        let issued = finish_oauth_session(&persisted_user, true, policy, meta, ctx).await?;
         let account_cookie = ctx
             .config
             .account
             .store_account_cookie
-            .then(|| AccountCookiePayload::from_account(&created_account));
+            .then(|| AccountCookiePayload::from_account(&persisted_account));
 
         Ok(ProcessOAuthUserResult {
             session: ctx.session_view(&issued.session),
             user: if policy.use_updated_user {
                 ctx.user_view(&issued.user)
             } else {
-                ctx.user_view(&created_user)
+                ctx.user_view(&persisted_user)
             },
             is_register: true,
             account_cookie,
@@ -1011,7 +1031,10 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
     }
 }
 
-pub(crate) async fn complete_link_social(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn complete_link_social(
     provider_name: &str,
     user_info: &OAuthUserInfo,
     tokens: &OAuthTokenSet,
@@ -1025,11 +1048,11 @@ pub(crate) async fn complete_link_social(
         .any(|trusted| trusted == provider_name);
 
     if !linking.enabled || (!trusted_provider && !user_info.email_verified) {
-        return Err("unable_to_link_account".to_string());
+        return Err("unable_to_link_account".to_owned());
     }
 
     if !linking.allow_different_emails && !user_info.email.eq_ignore_ascii_case(&link.email) {
-        return Err("email_does_not_match".to_string());
+        return Err("email_does_not_match".to_owned());
     }
 
     if let Some(existing_account) = ctx
@@ -1039,7 +1062,7 @@ pub(crate) async fn complete_link_social(
         .map_err(|error| error.to_string())?
     {
         if existing_account.user_id() != link.user_id {
-            return Err("account_already_linked_to_different_user".to_string());
+            return Err("account_already_linked_to_different_user".to_owned());
         }
 
         let token_bundle = encrypt_token_set(
@@ -1050,22 +1073,23 @@ pub(crate) async fn complete_link_social(
         )
         .map_err(|error| error.to_string())?;
 
-        let _ = ctx
-            .database
-            .update_account(
-                &existing_account.id(),
-                UpdateAccount {
-                    access_token: token_bundle.access_token,
-                    refresh_token: token_bundle.refresh_token,
-                    id_token: token_bundle.id_token,
-                    access_token_expires_at: tokens.access_token_expires_at,
-                    refresh_token_expires_at: tokens.refresh_token_expires_at,
-                    scope: (!tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
-                    ..Default::default()
-                },
-            )
-            .await
-            .map_err(|error| error.to_string())?;
+        drop(
+            ctx.database
+                .update_account(
+                    &existing_account.id(),
+                    UpdateAccount {
+                        access_token: token_bundle.access_token,
+                        refresh_token: token_bundle.refresh_token,
+                        id_token: token_bundle.id_token,
+                        access_token_expires_at: tokens.access_token_expires_at,
+                        refresh_token_expires_at: tokens.refresh_token_expires_at,
+                        scope: (!tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|error| error.to_string())?,
+        );
 
         return Ok(());
     }
@@ -1078,22 +1102,23 @@ pub(crate) async fn complete_link_social(
     )
     .map_err(|error| error.to_string())?;
 
-    let _ = ctx
-        .database
-        .create_account(CreateAccount {
-            user_id: link.user_id.clone(),
-            account_id: user_info.id.clone(),
-            provider_id: provider_name.to_string(),
-            access_token: token_bundle.access_token,
-            refresh_token: token_bundle.refresh_token,
-            id_token: token_bundle.id_token,
-            access_token_expires_at: tokens.access_token_expires_at,
-            refresh_token_expires_at: tokens.refresh_token_expires_at,
-            scope: (!tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
-            password: None,
-        })
-        .await
-        .map_err(|_| "unable_to_link_account".to_string())?;
+    drop(
+        ctx.database
+            .create_account(CreateAccount {
+                user_id: link.user_id.clone(),
+                account_id: user_info.id.clone(),
+                provider_id: provider_name.to_owned(),
+                access_token: token_bundle.access_token,
+                refresh_token: token_bundle.refresh_token,
+                id_token: token_bundle.id_token,
+                access_token_expires_at: tokens.access_token_expires_at,
+                refresh_token_expires_at: tokens.refresh_token_expires_at,
+                scope: (!tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
+                password: None,
+            })
+            .await
+            .map_err(|_error| "unable_to_link_account".to_owned())?,
+    );
 
     Ok(())
 }
@@ -1410,7 +1435,7 @@ async fn initiate_oauth_flow_core(
         proxy
             .as_ref()
             .map_or(request.callback_url, |flow| flow.callback_url.as_str())
-            .to_string(),
+            .to_owned(),
         code_verifier,
         request.error_callback_url,
         request.new_user_callback_url,
@@ -1420,10 +1445,10 @@ async fn initiate_oauth_flow_core(
     );
     capture_server_context(&mut payload, &state, &ctx.config.secret)?;
     if proxy.is_some() {
-        let _ = payload.additional_data.insert(
+        drop(payload.additional_data.insert(
             "oauthState".to_owned(),
             serde_json::Value::String(state.clone()),
-        );
+        ));
         if let Some(req) = better_auth_core::hooks::current_request_hook_context() {
             req.extensions
                 .insert(crate::plugins::oauth_proxy::IssuedProxyState {
@@ -1435,14 +1460,15 @@ async fn initiate_oauth_flow_core(
 
     match ctx.config.account.store_state_strategy {
         better_auth_core::OAuthStateStrategy::Database => {
-            let _ = ctx
-                .database
-                .create_verification(CreateVerification {
-                    identifier: format!("oauth:{}", state),
-                    value: serde_json::to_string(&payload)?,
-                    expires_at: Utc::now() + Duration::minutes(10),
-                })
-                .await?;
+            drop(
+                ctx.database
+                    .create_verification(CreateVerification {
+                        identifier: format!("oauth:{state}"),
+                        value: serde_json::to_string(&payload)?,
+                        expires_at: Utc::now() + Duration::minutes(10),
+                    })
+                    .await?,
+            );
         }
         better_auth_core::OAuthStateStrategy::Cookie => {}
     }
@@ -1480,6 +1506,9 @@ async fn initiate_oauth_flow_core(
 // Old handlers (rewritten to call core)
 // ---------------------------------------------------------------------------
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn handle_social_sign_in(
     config: &OAuthConfig,
     req: &AuthRequest,
@@ -1547,6 +1576,9 @@ pub(super) async fn handle_social_sign_in(
     clippy::too_many_lines,
     reason = "Keep OAuth state consumption, provider errors, and cookie cleanup in their required order"
 )]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn handle_callback(
     config: &OAuthConfig,
     provider_name: &str,
@@ -1571,20 +1603,24 @@ pub(super) async fn handle_callback(
             let parsed_body =
                 serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&body_text)
                     .ok()
-                    .map(|body| {
-                        body.into_iter()
+                    .map(|body_2| {
+                        body_2
+                            .into_iter()
                             .filter_map(|(key, value)| match value {
                                 serde_json::Value::String(value) => Some((key, value)),
                                 serde_json::Value::Null => None,
-                                other => Some((key, other.to_string())),
+                                other @ (serde_json::Value::Bool(_)
+                                | serde_json::Value::Number(_)
+                                | serde_json::Value::Array(_)
+                                | serde_json::Value::Object(_)) => Some((key, other.to_string())),
                             })
-                            .collect::<std::collections::HashMap<String, String>>()
+                            .collect::<HashMap<String, String>>()
                     })
                     .or_else(|| {
                         Some(
                             url::form_urlencoded::parse(body_text.as_bytes())
                                 .into_owned()
-                                .collect::<std::collections::HashMap<String, String>>(),
+                                .collect::<HashMap<String, String>>(),
                         )
                     })
                     .ok_or_else(|| AuthError::bad_request("Invalid callback request"))?;
@@ -1599,7 +1635,7 @@ pub(super) async fn handle_callback(
         let mut pairs: Vec<_> = merged.iter().collect();
         pairs.sort_by_key(|(left, _)| *left);
         for (key, value) in pairs {
-            let _ = params.append_pair(key, value);
+            _ = params.append_pair(key, value);
         }
         return Ok(redirect_response(&format!(
             "{}/callback/{}?{}",
@@ -1609,35 +1645,29 @@ pub(super) async fn handle_callback(
         )));
     }
 
-    let merged = req.query.clone();
+    let merged_2 = req.query.clone();
 
-    let error = merged.get("error").cloned();
-    let state_param = match merged.get("state").cloned() {
-        Some(state) => state,
-        None => {
-            let separator = if default_error_url.contains('?') {
-                '&'
-            } else {
-                '?'
-            };
-            return Ok(redirect_response(&format!(
-                "{default_error_url}{separator}state=state_not_found"
-            )));
-        }
+    let error = merged_2.get("error").cloned();
+    let Some(state_param) = merged_2.get("state").cloned() else {
+        let separator = if default_error_url.contains('?') {
+            '&'
+        } else {
+            '?'
+        };
+        return Ok(redirect_response(&format!(
+            "{default_error_url}{separator}state=state_not_found"
+        )));
     };
     let payload = match ctx.config.account.store_state_strategy {
         better_auth_core::OAuthStateStrategy::Database => {
-            let verification = match ctx
+            let Some(verification) = ctx
                 .database
                 .get_verification_by_identifier(&format!("oauth:{state_param}"))
                 .await?
-            {
-                Some(verification) => verification,
-                None => {
-                    return Ok(redirect_response(&format!(
-                        "{default_error_url}?error=state_mismatch"
-                    )));
-                }
+            else {
+                return Ok(redirect_response(&format!(
+                    "{default_error_url}?error=state_mismatch"
+                )));
             };
 
             if !ctx.config.account.skip_state_cookie_check {
@@ -1646,15 +1676,13 @@ pub(super) async fn handle_callback(
                         "{default_error_url}?error=state_mismatch"
                     )));
                 };
-                let persisted_state =
-                    match decode_database_state_cookie_value(&ctx.config.secret, &cookie_value) {
-                        Ok(state) => state,
-                        Err(_) => {
-                            return Ok(redirect_response(&format!(
-                                "{default_error_url}?error=state_mismatch"
-                            )));
-                        }
-                    };
+                let Ok(persisted_state) =
+                    decode_database_state_cookie_value(&ctx.config.secret, &cookie_value)
+                else {
+                    return Ok(redirect_response(&format!(
+                        "{default_error_url}?error=state_mismatch"
+                    )));
+                };
                 if persisted_state != state_param {
                     return Ok(redirect_response(&format!(
                         "{default_error_url}?error=state_mismatch"
@@ -1662,8 +1690,10 @@ pub(super) async fn handle_callback(
                 }
             }
 
-            let payload: OAuthStatePayload = serde_json::from_str(verification.value())
-                .map_err(|error| AuthError::internal(format!("Invalid state payload: {error}")))?;
+            let payload: OAuthStatePayload =
+                serde_json::from_str(verification.value()).map_err(|error_2| {
+                    AuthError::internal(format!("Invalid state payload: {error_2}"))
+                })?;
             ctx.database.delete_verification(&verification.id()).await?;
             payload
         }
@@ -1694,33 +1724,21 @@ pub(super) async fn handle_callback(
         .unwrap_or_else(|| default_error_url.clone());
 
     let redirect_on_error = |error_code: &str, description: Option<&str>| {
-        let mut response = redirect_response(
-            &build_redirect_url(
-                &auth_base_url(ctx),
-                Some(&error_url),
-                &[("error", error_code)],
-            )
-            .unwrap_or_else(|_| format!("{default_error_url}?error={error_code}")),
-        )
-        .with_appended_header("Set-Cookie", clear_state_cookie.clone());
+        let mut parameters = vec![("error", error_code)];
         if let Some(description) = description {
-            response = redirect_response(
-                &build_redirect_url(
-                    &auth_base_url(ctx),
-                    Some(&error_url),
-                    &[("error", error_code), ("error_description", description)],
-                )
-                .unwrap_or_else(|_| format!("{default_error_url}?error={error_code}")),
-            )
-            .with_appended_header("Set-Cookie", clear_state_cookie.clone());
+            parameters.push(("error_description", description));
         }
-        response
+        redirect_response(
+            &build_redirect_url(&auth_base_url(ctx), Some(&error_url), &parameters)
+                .unwrap_or_else(|_error| format!("{default_error_url}?error={error_code}")),
+        )
+        .with_appended_header("Set-Cookie", clear_state_cookie.clone())
     };
 
     if let Some(error) = error.as_deref() {
         return Ok(redirect_on_error(
             error,
-            merged.get("error_description").map(String::as_str),
+            merged_2.get("error_description").map(String::as_str),
         ));
     }
 
@@ -1732,11 +1750,11 @@ pub(super) async fn handle_callback(
             .insert(RecoveredOAuthServerContext(context));
     }
 
-    let Some(code) = merged.get("code").cloned() else {
+    let Some(code) = merged_2.get("code").cloned() else {
         return Ok(redirect_on_error("no_code", None));
     };
 
-    let tokens = match validate_authorization_code_via_provider(
+    let Ok(tokens) = validate_authorization_code_via_provider(
         provider,
         &code,
         &format!("{}/callback/{}", auth_base_url(ctx), provider_name),
@@ -1745,15 +1763,14 @@ pub(super) async fn handle_callback(
             .as_ref()
             .is_none_or(|policy| policy.pkce)
             .then_some(payload.code_verifier.as_str()),
-        merged.get("device_id").map(String::as_str),
+        merged_2.get("device_id").map(String::as_str),
     )
     .await
-    {
-        Ok(tokens) => tokens,
-        Err(_) => return Ok(redirect_on_error("invalid_code", None)),
+    else {
+        return Ok(redirect_on_error("invalid_code", None));
     };
 
-    let user_info = match fetch_user_info_from_provider(
+    let Ok(user_info) = fetch_user_info_from_provider(
         provider,
         OAuthUserInfoRequest {
             token_type: tokens.token_type.clone(),
@@ -1764,20 +1781,19 @@ pub(super) async fn handle_callback(
             scopes: tokens.scopes.clone(),
             id_token: tokens.id_token.clone(),
             raw: tokens.raw.clone(),
-            user: parse_callback_user_payload(merged.get("user").map(String::as_str)),
+            user: parse_callback_user_payload(merged_2.get("user").map(String::as_str)),
         },
     )
     .await
-    {
-        Ok(response) => response,
-        Err(_) => return Ok(redirect_on_error("unable_to_get_user_info", None)),
+    else {
+        return Ok(redirect_on_error("unable_to_get_user_info", None));
     };
 
     if let Some(link) = payload.link.as_ref() {
-        if let Err(error) =
+        if let Err(error_3) =
             complete_link_social(provider_name, &user_info.user, &tokens, link, ctx).await
         {
-            return Ok(redirect_on_error(&error, None));
+            return Ok(redirect_on_error(&error_3, None));
         }
 
         return Ok(redirect_response(&payload.callback_url)
@@ -1799,9 +1815,9 @@ pub(super) async fn handle_callback(
     .await
     {
         Ok(outcome) => outcome,
-        Err(error) => {
-            let (code, description) = error.redirect_parts();
-            return Ok(redirect_on_error(&code, description));
+        Err(error_4) => {
+            let (code_2, description) = error_4.redirect_parts();
+            return Ok(redirect_on_error(&code_2, description));
         }
     };
 
@@ -1810,7 +1826,7 @@ pub(super) async fn handle_callback(
             .new_user_url
             .as_deref()
             .unwrap_or(&payload.callback_url)
-            .to_string()
+            .to_owned()
     } else {
         payload.callback_url.clone()
     };
@@ -1832,6 +1848,9 @@ pub(super) async fn handle_callback(
     Ok(response)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn handle_link_social(
     config: &OAuthConfig,
     req: &AuthRequest,
@@ -1859,7 +1878,34 @@ pub(super) async fn handle_link_social(
                     message: "Unauthorized".to_owned(),
                 }
             }
-            error => error,
+            error @ (AuthError::Api { .. }
+            | AuthError::Upstream { .. }
+            | AuthError::BadRequest(_)
+            | AuthError::InvalidRequest(_)
+            | AuthError::Validation(_)
+            | AuthError::InvalidCredentials
+            | AuthError::AuthenticationFailed(_)
+            | AuthError::SessionNotFound
+            | AuthError::Forbidden(_)
+            | AuthError::SessionCreationCancelled
+            | AuthError::UserCreationCancelled
+            | AuthError::BannedUser(_)
+            | AuthError::Unauthorized
+            | AuthError::UserNotFound
+            | AuthError::NotFound(_)
+            | AuthError::Conflict(_)
+            | AuthError::MethodNotAllowed(_)
+            | AuthError::PayloadTooLarge(_)
+            | AuthError::UnprocessableEntity(_)
+            | AuthError::RateLimited
+            | AuthError::NotImplemented(_)
+            | AuthError::Config(_)
+            | AuthError::Database(_)
+            | AuthError::Serialization(_)
+            | AuthError::Plugin { .. }
+            | AuthError::Internal(_)
+            | AuthError::PasswordHash(_)
+            | AuthError::Jwt(_)) => error,
         })?;
     let body: LinkSocialRequest = match better_auth_core::validate_request_body(req) {
         Ok(v) => v,
@@ -1896,6 +1942,3 @@ pub(super) async fn handle_link_social(
         ),
     }
 }
-
-#[cfg(test)]
-mod tests;

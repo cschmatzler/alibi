@@ -4,7 +4,23 @@
 //! refresh tokens, and ID tokens are encrypted before being persisted and
 //! decrypted transparently on read.
 
+#[cfg(test)]
+mod tests;
+
 use better_auth_core::AuthError;
+
+/// A set of OAuth tokens (access, refresh, id) after conditional encryption.
+pub struct EncryptedTokenSet {
+    pub access_token: Option<String>,
+    pub refresh_token: Option<String>,
+    pub id_token: Option<String>,
+}
+
+impl std::fmt::Debug for EncryptedTokenSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EncryptedTokenSet").finish_non_exhaustive()
+    }
+}
 
 /// Encrypt a plaintext string using AES-256-GCM.
 ///
@@ -19,6 +35,9 @@ pub fn encrypt_token(plaintext: &str, secret: &str) -> Result<String, AuthError>
 
 /// Source recognizes even-length hexadecimal (and versioned `$ba$` envelopes)
 /// as ciphertext. Other strings, including old plaintext tokens, pass through.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub fn decrypt_token(stored: &str, secret: &str) -> Result<String, AuthError> {
     let likely_encrypted = stored.starts_with("$ba$")
         || (!stored.is_empty()
@@ -32,6 +51,9 @@ pub fn decrypt_token(stored: &str, secret: &str) -> Result<String, AuthError> {
 
 /// Conditionally encrypt a token value. Returns the original value when
 /// encryption is disabled, or the encrypted value when enabled.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub fn maybe_encrypt(
     value: Option<String>,
     encrypt: bool,
@@ -61,15 +83,11 @@ pub fn maybe_decrypt(
     }
 }
 
-/// A set of OAuth tokens (access, refresh, id) after conditional encryption.
-pub struct EncryptedTokenSet {
-    pub access_token: Option<String>,
-    pub refresh_token: Option<String>,
-    pub id_token: Option<String>,
-}
-
 /// Read `encrypt_oauth_tokens` and `secret` from the auth context and
 /// conditionally encrypt a full set of OAuth tokens in one call.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub fn encrypt_token_set(
     ctx: &better_auth_core::AuthContext<impl better_auth_core::AuthSchema>,
     access_token: Option<String>,
@@ -84,13 +102,4 @@ pub fn encrypt_token_set(
         // Source persists provider ID tokens as returned, independently of this option.
         id_token,
     })
-}
-
-#[cfg(test)]
-mod tests;
-
-impl std::fmt::Debug for EncryptedTokenSet {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EncryptedTokenSet").finish_non_exhaustive()
-    }
 }

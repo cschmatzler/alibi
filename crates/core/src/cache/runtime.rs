@@ -1,20 +1,41 @@
 //! Request-local cache cookies and genuine stored/cached snapshot transitions.
 use super::{CacheValidation, CacheVersionContext};
+
 use crate::types::RequestExtensions;
+
 use crate::utils::cookie_utils::{related_cookie_name, sign_cookie_value, verify_cookie_value};
+
 use crate::{AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, AuthSession};
+
 use indexmap::IndexMap;
+
 use std::sync::Mutex;
 
 #[derive(Debug)]
 struct IssuancePreference(bool);
+
 #[derive(Debug, Default)]
 struct PendingIssuance(Mutex<PendingData>);
+
 #[derive(Debug, Default)]
 struct PendingData {
     prior_headers: Vec<String>,
     cache_headers: Vec<String>,
     ordinary_error: bool,
+}
+
+/// Result of a cache-aware HTTP session read. A cached user is an output
+/// snapshot, while Stored retains the actual application model.
+pub struct AuthenticatedRead<S: AuthSchema> {
+    pub user: crate::AuthenticatedUser<S>,
+    pub session: crate::SessionView,
+    pub needs_refresh: Option<bool>,
+}
+
+impl<S: AuthSchema> std::fmt::Debug for AuthenticatedRead<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthenticatedRead").finish_non_exhaustive()
+    }
 }
 
 /// Preserve a validated endpoint preference without trusting embedding state.
@@ -26,7 +47,9 @@ pub fn set_issuance_preference(request: &AuthRequest, dont_remember: bool) {
         .insert(IssuancePreference(dont_remember));
 }
 
-fn cookies(headers: &std::collections::HashMap<String, String>) -> IndexMap<String, String> {
+fn cookies<H: std::hash::BuildHasher + Sync>(
+    headers: &std::collections::HashMap<String, String, H>,
+) -> IndexMap<String, String> {
     let mut values = IndexMap::new();
     if let Some(header) = headers.get("cookie") {
         for cookie in cookie::Cookie::split_parse(header).flatten() {
@@ -39,11 +62,13 @@ fn cookies(headers: &std::collections::HashMap<String, String>) -> IndexMap<Stri
     }
     values
 }
+
 fn chunk_index(name: &str, base: &str) -> Option<u64> {
     let suffix = name.strip_prefix(base)?.strip_prefix('.')?;
     let index: u64 = suffix.parse().ok()?;
     (index <= 9_007_199_254_740_991 && index.to_string() == suffix).then_some(index)
 }
+
 fn cache_value(values: &IndexMap<String, String>, name: &str) -> Option<String> {
     if let Some(value) = values.get(name).filter(|value| !value.is_empty()) {
         return Some(value.clone());
@@ -60,6 +85,7 @@ fn cache_value(values: &IndexMap<String, String>, name: &str) -> Option<String> 
             .collect()
     })
 }
+
 fn existing_names(values: &IndexMap<String, String>, name: &str) -> Vec<String> {
     values
         .keys()
@@ -79,11 +105,14 @@ pub(super) fn browser_preference(
 }
 
 /// Build cache cookies from the actual stored models and their public output.
-pub async fn stored_headers<S: AuthSchema>(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub async fn stored_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
     ctx: &AuthContext<S>,
     user: &S::User,
     session: &S::Session,
-    headers: &std::collections::HashMap<String, String>,
+    headers: &std::collections::HashMap<String, String, H>,
     dont_remember: bool,
 ) -> AuthResult<Vec<String>> {
     let context = CacheVersionContext::created(
@@ -105,10 +134,10 @@ async fn stored_read_headers<S: AuthSchema>(
     build_headers(ctx, context, headers, false).await
 }
 
-async fn build_headers<S: AuthSchema>(
+async fn build_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
     ctx: &AuthContext<S>,
     context: CacheVersionContext,
-    headers: &std::collections::HashMap<String, String>,
+    headers: &std::collections::HashMap<String, String, H>,
     dont_remember: bool,
 ) -> AuthResult<Vec<String>> {
     let Some(config) = ctx
@@ -145,26 +174,26 @@ async fn build_headers<S: AuthSchema>(
     };
     let mut output = IndexMap::new();
     for old in existing_names(&cookies(headers), &name) {
-        _ = output.insert(
+        drop(output.insert(
             old.clone(),
             super::cookie_header(&old, "", Some(0.0), &ctx.config)?,
-        );
+        ));
     }
     if count <= 1 {
-        _ = output.insert(
+        drop(output.insert(
             name.clone(),
             super::cookie_header(&name, &value, max_age, &ctx.config)?,
-        );
+        ));
     } else if count <= 100 {
         // Encoded compact values are ASCII, so byte chunking matches JS strings.
         for (index, chunk) in value.as_bytes().chunks(capacity).enumerate() {
             let chunk = std::str::from_utf8(chunk)
-                .map_err(|_| AuthError::internal("Invalid compact cache encoding"))?;
+                .map_err(|_error| AuthError::internal("Invalid compact cache encoding"))?;
             let part = format!("{name}.{index}");
-            _ = output.insert(
+            drop(output.insert(
                 part.clone(),
                 super::cookie_header(&part, chunk, max_age, &ctx.config)?,
-            );
+            ));
         }
     }
     Ok(output.into_values().collect())
@@ -174,6 +203,14 @@ async fn build_headers<S: AuthSchema>(
 /// Error headers are request local and only explicit public API errors retain
 /// the queued token; ordinary callback errors follow the source empty500 path.
 #[doc(hidden)]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "Preserve JavaScript Number rounding at the compatibility boundary"
+)]
 pub async fn emit_issuance<S: AuthSchema>(
     ctx: &AuthContext<S>,
     user: &S::User,
@@ -282,6 +319,9 @@ pub fn take_issuance(extensions: &RequestExtensions) -> (Vec<String>, bool) {
 
 /// Try the authenticated compact cache before any physical session lookup.
 /// Missing or invalid cache data can only produce a storage fallback.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub async fn read<S: AuthSchema>(
     ctx: &AuthContext<S>,
     request: &AuthRequest,
@@ -342,16 +382,16 @@ pub async fn read<S: AuthSchema>(
     Ok(None)
 }
 
-/// Result of a cache-aware HTTP session read. A cached user is an output
-/// snapshot, while Stored retains the actual application model.
-pub struct AuthenticatedRead<S: AuthSchema> {
-    pub user: crate::AuthenticatedUser<S>,
-    pub session: crate::SessionView,
-    pub needs_refresh: Option<bool>,
-}
-
 /// Shared direct/nested get-session lifecycle for the explicitly migrated
 /// guards. Nested reads behave as GET even when their parent endpoint is POST.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "Preserve JavaScript Number rounding at the compatibility boundary"
+)]
 pub async fn authenticated<S: AuthSchema>(
     ctx: &AuthContext<S>,
     request: &AuthRequest,
@@ -442,6 +482,7 @@ pub async fn authenticated<S: AuthSchema>(
         needs_refresh: (deferred && !suppressed).then_some(read.needs_refresh),
     }))
 }
+
 fn cleanup<S: AuthSchema>(ctx: &AuthContext<S>, request: &AuthRequest) {
     for header in crate::utils::cookie_utils::delete_session_cookie_headers(&ctx.config) {
         request.queue_response_header("Set-Cookie", header);

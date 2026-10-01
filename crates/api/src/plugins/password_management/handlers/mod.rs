@@ -35,6 +35,9 @@ const PASSWORD_RESET_SUCCESS_MESSAGE: &str =
 // Core functions (framework-agnostic business logic)
 // ---------------------------------------------------------------------------
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn request_password_reset_core(
     body: &RequestPasswordResetRequest,
     config: &PasswordManagementConfig,
@@ -100,6 +103,9 @@ pub(in crate::plugins) async fn request_password_reset_core(
     Ok(success)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn reset_password_core(
     body: &ResetPasswordRequest,
     config: &PasswordManagementConfig,
@@ -186,6 +192,9 @@ pub(in crate::plugins) async fn reset_password_core(
     Ok(StatusResponse { status: true })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn reset_password_token_core(
     token: &str,
     query: &ResetPasswordTokenQuery,
@@ -227,6 +236,9 @@ pub(in crate::plugins) async fn reset_password_token_core(
 }
 
 /// Change the user's password. Returns the response and an optional new session token.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn change_password_core(
     body: &ChangePasswordRequest,
     user: &impl AuthUser,
@@ -302,6 +314,9 @@ pub(in crate::plugins) async fn change_password_core(
     Ok((response, new_token))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn verify_password_core(
     body: &VerifyPasswordRequest,
     user: &impl AuthUser,
@@ -329,6 +344,7 @@ pub(in crate::plugins) async fn verify_password_core(
         | AuthError::AuthenticationFailed(_)
         | AuthError::SessionNotFound
         | AuthError::Forbidden(_)
+        | AuthError::UserCreationCancelled
         | AuthError::SessionCreationCancelled
         | AuthError::BannedUser(_)
         | AuthError::Unauthorized

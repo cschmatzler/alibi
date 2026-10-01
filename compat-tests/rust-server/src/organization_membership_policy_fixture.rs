@@ -2,32 +2,32 @@
 use crate::{CompatVerificationSender, EmailOutboxRecord, TestSchema};
 use async_trait::async_trait;
 use axum::{
+    Json, Router,
     extract::Query,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
 };
 use better_auth::plugins::organization::{
-    extensions::TeamLimitContext,
-    types::{AddOrganizationMemberRequest, OrganizationResponse},
     MembershipLimit, OrganizationConfig, OrganizationLimitResolver,
     OrganizationMembershipLimitResolver, TeamsConfig,
+    extensions::TeamLimitContext,
+    types::{AddOrganizationMemberRequest, OrganizationResponse},
 };
 use better_auth::wire::UserView;
 use better_auth::{
+    AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{
         EmailPasswordPlugin, EmailVerificationPlugin, OrganizationPlugin, SessionManagementPlugin,
     },
-    AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
 };
 use better_auth_seaorm::{
-    sea_orm::{ConnectionTrait, DbBackend, Statement},
     DatabaseConnection, SeaOrmStore,
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -80,23 +80,22 @@ async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
         for row in rows {
             let mut value = serde_json::Map::new();
             for key in columns {
-                let field =
-                    match *key {
-                        "memberCount" => json!(
-                            row.try_get::<i64>("", key)
-                                .map_err(|e| AuthError::internal(e.to_string()))?
-                        ),
-                        "createdAt" | "updatedAt" | "expiresAt" => json!(
+                let field = match *key {
+                    "memberCount" => json!(
+                        row.try_get::<i64>("", key)
+                            .map_err(|e| AuthError::internal(e.to_string()))?
+                    ),
+                    "createdAt" | "updatedAt" | "expiresAt" => json!(
                             row.try_get::<Option<chrono::DateTime<chrono::Utc>>>("", key)
                                 .map_err(|e| AuthError::internal(e.to_string()))?
                                 .map(|value| value
                                     .to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
                         ),
-                        _ => json!(
-                            row.try_get::<Option<String>>("", key)
-                                .map_err(|e| AuthError::internal(e.to_string()))?
-                        ),
-                    };
+                    _ => json!(
+                        row.try_get::<Option<String>>("", key)
+                            .map_err(|e| AuthError::internal(e.to_string()))?
+                    ),
+                };
                 let _ = value.insert((*key).into(), field);
             }
             values.push(Value::Object(value));

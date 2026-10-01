@@ -46,8 +46,9 @@ async fn runtime_routes_match_capability_inventory() {
     if std::env::var("BETTER_AUTH_UPDATE_CAPABILITIES").as_deref() == Ok("1") {
         return;
     }
-    let inventory: Value = serde_json::from_str(include_str!("../../compat-tests/capabilities.json"))
-        .expect("capability inventory JSON");
+    let inventory: Value =
+        serde_json::from_str(include_str!("../../compat-tests/capabilities.json"))
+            .expect("capability inventory JSON");
     let expected: BTreeSet<String> = inventory["capabilities"]
         .as_array()
         .expect("capabilities")

@@ -32,6 +32,9 @@ impl std::fmt::Debug for EmailOtpStorage {
 }
 
 impl EmailOtpStorage {
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn store(&self, otp: &str, secret: &str) -> AuthResult<String> {
         match self {
             Self::Plain => Ok(otp.to_owned()),
@@ -41,6 +44,9 @@ impl EmailOtpStorage {
         }
     }
 
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn verify(&self, stored: &str, otp: &str, secret: &str) -> AuthResult<bool> {
         match self {
             Self::Plain => Ok(constant_time_equal(stored, otp)),
@@ -50,6 +56,9 @@ impl EmailOtpStorage {
         }
     }
 
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn retrieve(&self, stored: &str, secret: &str) -> AuthResult<Option<String>> {
         let plain = match self {
             Self::Plain => Some(stored.to_owned()),
@@ -62,6 +71,9 @@ impl EmailOtpStorage {
         })
     }
 
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn reusable(&self, stored: &str, secret: &str) -> AuthResult<Option<String>> {
         match self {
             Self::Hashed => Ok(None),

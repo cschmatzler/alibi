@@ -106,6 +106,9 @@ pub fn org_error(status: u16, code: &'static str) -> AuthError {
     }
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub async fn session<S: AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
@@ -116,7 +119,33 @@ pub async fn session<S: AuthSchema>(
             AuthError::Unauthenticated | AuthError::SessionNotFound => {
                 org_error(401, "UNAUTHORIZED")
             }
-            error => error,
+            error @ (AuthError::Api { .. }
+            | AuthError::Upstream { .. }
+            | AuthError::BadRequest(_)
+            | AuthError::InvalidRequest(_)
+            | AuthError::Validation(_)
+            | AuthError::InvalidCredentials
+            | AuthError::AuthenticationFailed(_)
+            | AuthError::Forbidden(_)
+            | AuthError::SessionCreationCancelled
+            | AuthError::UserCreationCancelled
+            | AuthError::BannedUser(_)
+            | AuthError::Unauthorized
+            | AuthError::UserNotFound
+            | AuthError::NotFound(_)
+            | AuthError::Conflict(_)
+            | AuthError::MethodNotAllowed(_)
+            | AuthError::PayloadTooLarge(_)
+            | AuthError::UnprocessableEntity(_)
+            | AuthError::RateLimited
+            | AuthError::NotImplemented(_)
+            | AuthError::Config(_)
+            | AuthError::Database(_)
+            | AuthError::Serialization(_)
+            | AuthError::Plugin { .. }
+            | AuthError::Internal(_)
+            | AuthError::PasswordHash(_)
+            | AuthError::Jwt(_)) => error,
         })
 }
 
@@ -195,6 +224,9 @@ pub async fn organization_roles<S: AuthSchema>(
     Ok(roles)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn cached_has_permissions(
     role: &str,
     required: &OrganizationPermissions,

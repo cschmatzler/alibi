@@ -77,6 +77,11 @@ async fn boolean_custom_entities_keep_explicit_plugin_flags_through_persistence(
 // The SDK's bundled model cannot exercise an application's physical column
 // mapping. This owner queries the public generic store against a derived model.
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn custom_user_array_filters_bind_declared_physical_columns()
 -> Result<(), Box<dyn std::error::Error>> {
     use better_auth::prelude::{AuthSchema, UserFilterValue};
@@ -97,7 +102,7 @@ async fn custom_user_array_filters_bind_declared_physical_columns()
     }
     let database = Database::connect("sqlite::memory:").await?;
     let schema = Schema::new(database.get_database_backend());
-    let _ = database
+    _ = database
         .execute(&schema.create_table_from_entity(user_with_extras::Entity))
         .await?;
     for (id, locale, verified, tenant) in [
@@ -118,7 +123,7 @@ async fn custom_user_array_filters_bind_declared_physical_columns()
         active.locale = Set(Some(locale.to_owned()));
         active.r#type = Set(Some(format!("profile-{id}")));
         active.tenant_id = Set(Some(tenant));
-        let _ = active.insert(&database).await?;
+        drop(active.insert(&database).await?);
     }
     let store = SeaOrmStore::<ApplicationSchema>::new(
         better_auth::AuthConfig::new("custom-array-filter-application-secret32"),
@@ -161,7 +166,7 @@ async fn custom_user_array_filters_bind_declared_physical_columns()
             .collect::<Vec<_>>(),
         vec!["german"]
     );
-    let (users, total) = store
+    let (users_2, total_2) = store
         .list_users(ListUsersParams {
             filter_field: Some("emailVerified".into()),
             filter_operator: Some("not_in".into()),
@@ -171,15 +176,15 @@ async fn custom_user_array_filters_bind_declared_physical_columns()
             ..Default::default()
         })
         .await?;
-    assert_eq!(total, 2);
+    assert_eq!(total_2, 2);
     assert_eq!(
-        users
+        users_2
             .iter()
             .map(|user| user.id.as_str())
             .collect::<Vec<_>>(),
         vec!["english", "french"]
     );
-    let (users, total) = store
+    let (users_3, total_3) = store
         .list_users(ListUsersParams {
             filter_field: Some("type".into()),
             filter_operator: Some("in".into()),
@@ -192,15 +197,15 @@ async fn custom_user_array_filters_bind_declared_physical_columns()
             ..Default::default()
         })
         .await?;
-    assert_eq!(total, 2);
+    assert_eq!(total_3, 2);
     assert_eq!(
-        users
+        users_3
             .iter()
             .map(|user| user.id.as_str())
             .collect::<Vec<_>>(),
         vec!["french", "german"]
     );
-    let (users, total) = store
+    let (users_4, total_4) = store
         .list_users(ListUsersParams {
             filter_field: Some("tenantId".into()),
             filter_operator: Some("in".into()),
@@ -210,9 +215,9 @@ async fn custom_user_array_filters_bind_declared_physical_columns()
             ..Default::default()
         })
         .await?;
-    assert_eq!(total, 2);
+    assert_eq!(total_4, 2);
     assert_eq!(
-        users
+        users_4
             .iter()
             .map(|user| user.id.as_str())
             .collect::<Vec<_>>(),

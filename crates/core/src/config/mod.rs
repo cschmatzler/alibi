@@ -1,13 +1,3 @@
-use crate::email::EmailProvider;
-
-use crate::error::AuthError;
-
-use chrono::Duration;
-
-use std::collections::HashMap;
-
-use std::sync::Arc;
-
 /// Well-known core route paths.
 ///
 /// These constants are the single source of truth for route paths used by both
@@ -111,6 +101,19 @@ pub mod core_paths {
         )
     }
 }
+
+#[cfg(test)]
+mod tests;
+
+use crate::email::EmailProvider;
+
+use crate::error::AuthError;
+
+use chrono::Duration;
+
+use std::collections::HashMap;
+
+use std::sync::Arc;
 
 /// Main configuration for `BetterAuth`
 #[derive(Clone)]
@@ -595,7 +598,6 @@ impl Default for PasswordConfig {
 }
 
 impl AuthConfig {
-
     /// Integrate deferred task completions with the application executor.
     #[must_use]
     pub fn background_tasks(mut self, handler: Arc<dyn crate::BackgroundTaskHandler>) -> Self {
@@ -603,7 +605,7 @@ impl AuthConfig {
         self
     }
 
-#[must_use]
+    #[must_use]
     pub fn new(secret: impl Into<String>) -> Self {
         Self {
             secret: secret.into(),
@@ -611,14 +613,14 @@ impl AuthConfig {
         }
     }
 
-/// Set the application name.
+    /// Set the application name.
     #[must_use]
     pub fn app_name(mut self, name: impl Into<String>) -> Self {
         self.app_name = name.into();
         self
     }
 
-/// Set the base URL (e.g. `"https://myapp.com"`).
+    /// Set the base URL (e.g. `"https://myapp.com"`).
     ///
     /// Also updates `session.cookie_secure` to match the URL scheme:
     /// HTTPS URLs set `Secure=true`, HTTP URLs set `Secure=false`.
@@ -629,118 +631,118 @@ impl AuthConfig {
         self
     }
 
-#[must_use]
+    #[must_use]
     pub fn account(mut self, account: AccountConfig) -> Self {
         self.account = account;
         self
     }
 
-/// Set the base path where auth routes are mounted.
+    /// Set the base path where auth routes are mounted.
     #[must_use]
     pub fn base_path(mut self, path: impl Into<String>) -> Self {
         self.base_path = path.into();
         self
     }
 
-/// Add a trusted origin. Supports glob patterns (e.g. `"https://*.example.com"`).
+    /// Add a trusted origin. Supports glob patterns (e.g. `"https://*.example.com"`).
     #[must_use]
     pub fn trusted_origin(mut self, origin: impl Into<String>) -> Self {
         self.trusted_origins.push(origin.into());
         self
     }
 
-/// Set all trusted origins at once.
+    /// Set all trusted origins at once.
     #[must_use]
     pub fn trusted_origins(mut self, origins: Vec<String>) -> Self {
         self.trusted_origins = origins;
         self
     }
 
-/// Add a path to the disabled paths list.
+    /// Add a path to the disabled paths list.
     #[must_use]
     pub fn disabled_path(mut self, path: impl Into<String>) -> Self {
         self.disabled_paths.push(path.into());
         self
     }
 
-/// Set all disabled paths at once.
+    /// Set all disabled paths at once.
     #[must_use]
     pub fn disabled_paths(mut self, paths: Vec<String>) -> Self {
         self.disabled_paths = paths;
         self
     }
 
-/// Set the session expiration duration.
+    /// Set the session expiration duration.
     #[must_use]
     pub const fn session_expires_in(mut self, duration: Duration) -> Self {
         self.session.expires_in = duration;
         self
     }
 
-#[must_use]
+    #[must_use]
     pub const fn session_update_age(mut self, duration: Duration) -> Self {
         self.session.update_age = Some(duration);
         self
     }
 
-#[must_use]
+    #[must_use]
     pub const fn disable_session_refresh(mut self, disabled: bool) -> Self {
         self.session.disable_session_refresh = disabled;
         self
     }
 
-#[must_use]
+    #[must_use]
     pub const fn session_fresh_age(mut self, duration: Duration) -> Self {
         self.session.fresh_age = Some(duration);
         self
     }
 
-/// Set the cookie cache configuration for sessions.
+    /// Set the cookie cache configuration for sessions.
     #[must_use]
-    pub const fn session_cookie_cache(mut self, config: CookieCacheConfig) -> Self {
+    pub fn session_cookie_cache(mut self, config: CookieCacheConfig) -> Self {
         self.session.cookie_cache = Some(config);
         self
     }
 
-/// Set the JWT expiration duration.
+    /// Set the JWT expiration duration.
     #[must_use]
     pub const fn jwt_expires_in(mut self, duration: Duration) -> Self {
         self.jwt.expires_in = duration;
         self
     }
 
-/// Set the minimum password length.
+    /// Set the minimum password length.
     #[must_use]
     pub const fn password_min_length(mut self, length: usize) -> Self {
         self.password.min_length = length;
         self
     }
 
-#[must_use]
+    #[must_use]
     pub fn advanced(mut self, advanced: AdvancedConfig) -> Self {
         self.advanced = advanced;
         self
     }
 
-#[must_use]
+    #[must_use]
     pub fn cookie_prefix(mut self, prefix: impl Into<String>) -> Self {
         self.advanced.cookie_prefix = Some(prefix.into());
         self
     }
 
-#[must_use]
+    #[must_use]
     pub const fn disable_csrf_check(mut self, disabled: bool) -> Self {
         self.advanced.disable_csrf_check = disabled;
         self
     }
 
-#[must_use]
+    #[must_use]
     pub const fn disable_origin_check(mut self, disabled: bool) -> Self {
         self.advanced.disable_origin_check = disabled;
         self
     }
 
-#[must_use]
+    #[must_use]
     pub fn cross_sub_domain_cookies(mut self, domain: impl Into<String>) -> Self {
         self.advanced.cross_sub_domain_cookies = Some(CrossSubDomainConfig {
             domain: domain.into(),
@@ -748,7 +750,7 @@ impl AuthConfig {
         self
     }
 
-/// Check whether a given origin is trusted.
+    /// Check whether a given origin is trusted.
     ///
     /// An origin is trusted if it matches:
     /// 1. The origin extracted from [`base_url`](Self::base_url), or
@@ -775,7 +777,7 @@ impl AuthConfig {
         })
     }
 
-/// Check whether a URL is a safe redirect target.
+    /// Check whether a URL is a safe redirect target.
     ///
     /// A URL is safe if it is a relative path (starts with `/`, no
     /// traversal tricks) or its origin matches [`base_url`](Self::base_url)
@@ -791,13 +793,13 @@ impl AuthConfig {
         extract_origin(url).is_some_and(|origin| self.is_origin_trusted(&origin))
     }
 
-/// Check whether a given path is disabled.
+    /// Check whether a given path is disabled.
     #[must_use]
     pub fn is_path_disabled(&self, path: &str) -> bool {
         self.disabled_paths.iter().any(|disabled| disabled == path)
     }
 
-///
+    ///
     /// # Errors
     ///
     /// Returns a configuration error if the signing secret is empty or shorter than 32 bytes.
@@ -814,7 +816,12 @@ impl AuthConfig {
 
         Ok(())
     }
+}
 
+impl std::fmt::Debug for AuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthConfig").finish_non_exhaustive()
+    }
 }
 
 /// Check whether a URL is a safe relative path.
@@ -870,17 +877,8 @@ pub fn extract_origin(url: &str) -> Option<String> {
 // normalizing an explicit pattern into a newly trusted authority.
 fn legacy_pattern_origin(url: &str) -> Option<String> {
     let scheme_end = url.find("://")?;
-    let rest = &url[scheme_end + 3..];
+    let rest = url.get(scheme_end + 3..)?;
     let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let origin = format!("{}{}", &url[..scheme_end + 3], &rest[..host_end]);
+    let origin = format!("{}{}", url.get(..scheme_end + 3)?, rest.get(..host_end)?);
     Some(origin)
-}
-
-#[cfg(test)]
-mod tests;
-
-impl std::fmt::Debug for AuthConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AuthConfig").finish_non_exhaustive()
-    }
 }

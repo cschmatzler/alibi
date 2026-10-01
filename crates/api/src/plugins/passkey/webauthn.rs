@@ -150,6 +150,9 @@ pub(super) fn challenge_cookie_name(auth_config: &AuthConfig) -> String {
         )
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn resolve_rp_id(
     config: &PasskeyConfig,
     auth_config: &AuthConfig,
@@ -166,6 +169,9 @@ pub(super) fn resolve_rp_id(
 
 /// Core verification for newly issued ceremonies, retaining RP configuration
 /// checks and requiring the exact configured origin in the original client data.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn build_verification_core(
     config: &PasskeyConfig,
     auth_config: &AuthConfig,
@@ -186,6 +192,9 @@ pub(super) fn build_verification_core(
     ))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn finish_core_registration(
     core: &WebauthnCore,
     registration: &RegisterPublicKeyCredential,
@@ -230,6 +239,9 @@ pub(super) fn finish_core_registration(
         .map(WebauthnPasskey::from)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn finish_core_authentication(
     core: &WebauthnCore,
     authentication: &PublicKeyCredential,
@@ -274,6 +286,9 @@ pub(super) fn finish_core_authentication(
     core.authenticate_credential(authentication, &state)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn build_webauthn(
     config: &PasskeyConfig,
     auth_config: &AuthConfig,
@@ -292,6 +307,9 @@ pub(super) fn build_webauthn(
         .map_err(|error| AuthError::config(format!("Invalid passkey config: {error}")))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn create_challenge_cookie(
     auth_config: &AuthConfig,
     ttl_secs: i64,
@@ -320,6 +338,9 @@ pub(super) fn create_challenge_cookie(
     ))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn decode_challenge_cookie(
     auth_config: &AuthConfig,
     raw_cookie: &str,
@@ -350,6 +371,9 @@ pub(super) fn generate_ts_user_handle() -> String {
     URL_SAFE_NO_PAD.encode(handle.as_bytes())
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn registration_options_json(
     options: CreationChallengeResponse,
     generated_user_handle: &str,
@@ -418,6 +442,9 @@ pub(super) fn registration_options_json(
     Ok(value)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn authentication_options_json(options: RequestChallengeResponse) -> AuthResult<Value> {
     let mut value = serde_json::to_value(options.public_key)?;
     let Some(root) = value.as_object_mut() else {
@@ -447,6 +474,9 @@ pub(super) fn authentication_options_json(options: RequestChallengeResponse) -> 
     Ok(value)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn decode_credential_id(credential_id: &str) -> AuthResult<CredentialID> {
     let bytes = URL_SAFE_NO_PAD
         .decode(credential_id)
@@ -456,6 +486,9 @@ pub(super) fn decode_credential_id(credential_id: &str) -> AuthResult<Credential
     Ok(bytes.into())
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn parse_stored_passkey(serialized: &str) -> AuthResult<WebauthnPasskey> {
     let stored =
         serde_json::from_str::<super::raw_none::StoredCredential>(serialized).map_err(|error| {
@@ -475,6 +508,9 @@ pub(super) fn parse_stored_passkey(serialized: &str) -> AuthResult<WebauthnPassk
     }
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn extract_passkey_snapshot_fields(value: &Value) -> AuthResult<(u64, bool, bool)> {
     // webauthn-rs does not expose stable accessors for all persisted passkey
     // attributes we need at registration time. We intentionally depend on the
@@ -500,6 +536,9 @@ pub(super) fn extract_passkey_snapshot_fields(value: &Value) -> AuthResult<(u64,
     Ok((counter, backed_up, backup_eligible))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn snapshot_passkey(passkey: &WebauthnPasskey) -> AuthResult<PasskeySnapshot> {
     let serialized = serde_json::to_string(passkey)?;
     let value: Value = serde_json::from_str(&serialized)?;
@@ -513,6 +552,9 @@ pub(super) fn snapshot_passkey(passkey: &WebauthnPasskey) -> AuthResult<PasskeyS
     })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn extract_registration_metadata(
     registration: &RegisterPublicKeyCredential,
 ) -> AuthResult<RegisteredPasskeyMetadata> {

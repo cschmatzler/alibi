@@ -125,6 +125,9 @@ pub(super) const fn phone_error(
 
 // Pinned parseUserInput applies the registered schema to signup's additional
 // fields. The verified field is input:false, whose guard uses JS truthiness.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn reject_verified_input(
     input: Option<&better_auth_core::utils::json::JsValue>,
 ) -> Result<(), AuthError> {
@@ -151,6 +154,9 @@ pub(in crate::plugins) fn reject_verified_input(
     clippy::cast_possible_truncation,
     reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
 )]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn parse_signup_phone(
     ctx: &better_auth_core::AuthContext<impl better_auth_core::AuthSchema>,
     input: Option<&better_auth_core::utils::json::JsValue>,

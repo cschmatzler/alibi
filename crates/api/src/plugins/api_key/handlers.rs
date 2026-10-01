@@ -140,6 +140,9 @@ pub(super) fn check_permissions(key_permissions_json: &str, required: &serde_jso
     true
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn create_key_core(
     body: &CreateKeyRequest,
     user_id: impl AsRef<str>,
@@ -323,6 +326,9 @@ fn expiration_date(seconds: Option<f64>) -> AuthResult<Option<String>> {
     ))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn get_key_core(
     id: &str,
     config_id: Option<&str>,
@@ -336,6 +342,9 @@ pub(in crate::plugins) async fn get_key_core(
     Ok(ApiKeyView::from(&api_key))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn list_keys_core(
     user_id: impl AsRef<str>,
     query: &ListKeysQuery,
@@ -442,6 +451,9 @@ fn sort_views(views: &mut [ApiKeyView], sort_by: &str, direction: Option<&str>) 
     });
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn update_key_core(
     body: &UpdateKeyRequest,
     user_id: impl AsRef<str>,
@@ -545,6 +557,9 @@ async fn update_key_for_user(
     Ok(ApiKeyView::from(&updated))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn delete_key_core(
     body: &DeleteKeyRequest,
     user_id: impl AsRef<str>,

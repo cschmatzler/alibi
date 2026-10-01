@@ -1,4 +1,7 @@
 //! Pinned Better Auth account-cookie JWE: dir with A256CBC-HS512.
+#[cfg(test)]
+mod tests;
+
 use super::state::AccountCookiePayload;
 
 use aes_gcm::aes::{
@@ -96,6 +99,14 @@ fn authentication(
     Ok(mac)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "Preserve JavaScript Number rounding at the compatibility boundary"
+)]
 pub(super) fn encode(
     secret: &str,
     payload: &AccountCookiePayload,
@@ -108,25 +119,28 @@ pub(super) fn encode(
     let now = Utc::now().timestamp();
     let mut claims = serde_json::to_value(payload)?;
     let claims = claims.as_object_mut().ok_or_else(invalid)?;
-    _ = claims.insert("iat".into(), json!(now));
+    drop(claims.insert("iat".into(), json!(now)));
     let expiry = now as f64 + max_age;
     if !expiry.is_finite() {
         return Err(AuthError::internal(
             "Invalid account-cookie expiration time",
         ));
     }
-    _ = claims.insert("exp".into(), json!(expiry));
-    _ = claims.insert("jti".into(), json!(uuid::Uuid::new_v4().to_string()));
+    drop(claims.insert("exp".into(), json!(expiry)));
+    drop(claims.insert("jti".into(), json!(uuid::Uuid::new_v4().to_string())));
     let mut ciphertext = better_auth_core::utils::json::to_vec(claims)?;
     let padding = 16 - ciphertext.len() % 16;
-    ciphertext.resize(ciphertext.len() + padding, padding as u8);
+    ciphertext.resize(
+        ciphertext.len() + padding,
+        u8::try_from(padding).map_err(|error| AuthError::Internal(error.to_string()))?,
+    );
     let mut iv = [0; 16];
     OsRng.fill_bytes(&mut iv);
-    let cipher = Aes256::new_from_slice(&key[32..]).map_err(|_| invalid())?;
+    let cipher = Aes256::new_from_slice(&key[32..]).map_err(|_error| invalid())?;
     let mut previous = iv;
     for block in ciphertext.as_chunks_mut::<16>().0 {
-        for (byte, previous) in block.iter_mut().zip(previous) {
-            *byte ^= previous;
+        for (byte, previous_2_3) in block.iter_mut().zip(previous) {
+            *byte ^= previous_2_3;
         }
         cipher.encrypt_block(GenericArray::from_mut_slice(block));
         previous.copy_from_slice(block);
@@ -147,6 +161,9 @@ pub(super) fn encode(
     clippy::cast_precision_loss,
     reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
 )]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn decode(secret: &str, token: &str) -> AuthResult<AccountCookiePayload> {
     // Cookie values arrive URI-encoded; the source cookie parser decodes them
     // before JOSE sees the protected header and its authenticated spelling.
@@ -219,6 +236,3 @@ pub(super) fn decode(secret: &str, token: &str) -> AuthResult<AccountCookiePaylo
     }
     better_auth_core::utils::json::from_slice(&ciphertext).map_err(|_error| invalid())
 }
-
-#[cfg(test)]
-mod tests;

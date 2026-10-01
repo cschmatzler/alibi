@@ -11,14 +11,6 @@
     reason = "SeaORM DeriveEntityModel requires pub types"
 )]
 
-use better_auth::seaorm::AuthEntity;
-
-use better_auth::seaorm::SeaOrmUserModel;
-
-use better_auth::seaorm::sea_orm;
-
-use better_auth::seaorm::sea_orm::entity::prelude::*;
-
 mod user_with_extras {
     use super::*;
 
@@ -57,8 +49,14 @@ mod user_with_extras {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-
-
 #[cfg(test)]
 #[path = "auth_entity_extra_fields_tests/tests.rs"]
 mod tests;
+
+use better_auth::seaorm::AuthEntity;
+
+use better_auth::seaorm::SeaOrmUserModel;
+
+use better_auth::seaorm::sea_orm;
+
+use better_auth::seaorm::sea_orm::entity::prelude::*;

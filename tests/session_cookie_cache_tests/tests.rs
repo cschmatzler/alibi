@@ -1,8 +1,14 @@
 use super::*;
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn cache_version_retains_actual_custom_models_only_for_created_source_and_never_leaks_private_columns()
  {
+    use better_auth::field_policy::FieldConfig;
+
     let db = Database::connect("sqlite::memory:").await.unwrap();
     run_migrations(&db).await.unwrap();
     for sql in [
@@ -26,20 +32,24 @@ async fn cache_version_retains_actual_custom_models_only_for_created_source_and_
         .base_url("http://localhost:42594")
         .session_cookie_cache(CookieCacheConfig {
             enabled: true,
-            version: Some(CookieCacheVersion::Resolver(version.clone())),
+            version: Some(CookieCacheVersion::Resolver(Arc::<Version>::clone(
+                &version,
+            ))),
             ..Default::default()
         });
-    use better_auth::field_policy::FieldConfig;
-    _ = config.session.additional_fields.insert(
-        "hidden".into(),
-        FieldConfig::new(json!({"type":"string"}))
-            .default_value(json!("actual-hidden-default"))
-            .hidden(),
+
+    drop(
+        config.session.additional_fields.insert(
+            "hidden".into(),
+            FieldConfig::new(json!({"type":"string"}))
+                .default_value(json!("actual-hidden-default"))
+                .hidden(),
+        ),
     );
-    _ = config.session.additional_fields.insert(
+    drop(config.session.additional_fields.insert(
         "label".into(),
         FieldConfig::new(json!({"type":"string"})).default_value(json!("public-label")),
-    );
+    ));
     let auth = AuthBuilder::<ApplicationSchema>::new(config.clone())
         .store(SeaOrmStore::<ApplicationSchema>::new(config, db.clone()))
         .plugin(EmailPasswordPlugin::new().enable_username(false))

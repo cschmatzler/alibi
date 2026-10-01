@@ -24,6 +24,9 @@ use crate::plugins::organization::{
     clippy::too_many_lines,
     reason = "Keep membership authorization and its transaction callbacks in one ordered operation"
 )]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn add_member<S: AuthSchema>(
     body: &AddOrganizationMemberRequest,
     headers: &HashMap<String, String>,

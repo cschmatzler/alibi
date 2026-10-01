@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use async_trait::async_trait;
 
 use serde::{Deserialize, Serialize};
@@ -108,69 +111,10 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin 
 }
 
 // ---------------------------------------------------------------------------
-// Core functions — framework-agnostic business logic
-// ---------------------------------------------------------------------------
-
-pub(in crate::plugins) async fn sign_out_core(
-    session: &impl AuthSession,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<SuccessResponse> {
-    ctx.database.delete_session(session.token()).await?;
-    Ok(SuccessResponse { success: true })
-}
-
-pub(in crate::plugins) async fn list_sessions_core(
-    user_id: impl AsRef<str>,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<Vec<SessionView>> {
-    let sessions = ctx.session_manager().list_user_sessions(user_id).await?;
-    Ok(sessions
-        .iter()
-        .map(|session| ctx.session_view(session))
-        .collect())
-}
-
-pub(in crate::plugins) async fn revoke_session_core(
-    user: &impl AuthUser,
-    token: &str,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<StatusResponse> {
-    if let Some(session_to_revoke) = ctx.database.get_session(token).await?
-        && session_to_revoke.user_id() == user.id()
-    {
-        ctx.database.delete_session(token).await?;
-    }
-    Ok(StatusResponse { status: true })
-}
-
-pub(in crate::plugins) async fn revoke_sessions_core(
-    user_id: impl AsRef<str>,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<StatusResponse> {
-    ctx.database.delete_user_sessions(user_id.as_ref()).await?;
-    Ok(StatusResponse { status: true })
-}
-
-pub(in crate::plugins) async fn revoke_other_sessions_core(
-    user_id: impl AsRef<str>,
-    current_session: &impl AuthSession,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<StatusResponse> {
-    let all_sessions = ctx.session_manager().list_user_sessions(user_id).await?;
-    for session in all_sessions {
-        if session.token() != current_session.token() {
-            ctx.database.delete_session(session.token()).await?;
-        }
-    }
-    Ok(StatusResponse { status: true })
-}
-
-// ---------------------------------------------------------------------------
 // Old handler methods — delegate to core functions
 // ---------------------------------------------------------------------------
 
 impl SessionManagementPlugin {
-
     #[expect(
         clippy::too_many_lines,
         reason = "Keep validated session field updates and persistence callbacks in request order"
@@ -326,7 +270,7 @@ impl SessionManagementPlugin {
         Ok(response)
     }
 
-async fn handle_get_session(
+    async fn handle_get_session(
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -357,7 +301,7 @@ async fn handle_get_session(
             .with_header("pragma", "no-cache"))
     }
 
-async fn get_session_response(
+    async fn get_session_response(
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -379,7 +323,7 @@ async fn get_session_response(
         )?)
     }
 
-async fn handle_sign_out(
+    async fn handle_sign_out(
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -399,7 +343,7 @@ async fn handle_sign_out(
         Ok(response)
     }
 
-async fn handle_list_sessions(
+    async fn handle_list_sessions(
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -422,7 +366,7 @@ async fn handle_list_sessions(
         Ok(AuthResponse::json(200, &sessions)?)
     }
 
-async fn handle_revoke_session(
+    async fn handle_revoke_session(
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -440,7 +384,7 @@ async fn handle_revoke_session(
         Ok(AuthResponse::json(200, &response)?)
     }
 
-async fn handle_revoke_sessions(
+    async fn handle_revoke_sessions(
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -453,7 +397,7 @@ async fn handle_revoke_sessions(
         Ok(AuthResponse::json(200, &response)?)
     }
 
-async fn handle_revoke_other_sessions(
+    async fn handle_revoke_other_sessions(
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -465,7 +409,86 @@ async fn handle_revoke_other_sessions(
         let response = revoke_other_sessions_core(user.id(), &current_session, ctx).await?;
         Ok(AuthResponse::json(200, &response)?)
     }
+}
 
+impl std::fmt::Debug for SessionManagementPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionManagementPlugin")
+            .finish_non_exhaustive()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Core functions — framework-agnostic business logic
+// ---------------------------------------------------------------------------
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn sign_out_core(
+    session: &impl AuthSession,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<SuccessResponse> {
+    ctx.database.delete_session(session.token()).await?;
+    Ok(SuccessResponse { success: true })
+}
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn list_sessions_core(
+    user_id: impl AsRef<str>,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<Vec<SessionView>> {
+    let sessions = ctx.session_manager().list_user_sessions(user_id).await?;
+    Ok(sessions
+        .iter()
+        .map(|session| ctx.session_view(session))
+        .collect())
+}
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn revoke_session_core(
+    user: &impl AuthUser,
+    token: &str,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<StatusResponse> {
+    if let Some(session_to_revoke) = ctx.database.get_session(token).await?
+        && session_to_revoke.user_id() == user.id()
+    {
+        ctx.database.delete_session(token).await?;
+    }
+    Ok(StatusResponse { status: true })
+}
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn revoke_sessions_core(
+    user_id: impl AsRef<str>,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<StatusResponse> {
+    ctx.database.delete_user_sessions(user_id.as_ref()).await?;
+    Ok(StatusResponse { status: true })
+}
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins) async fn revoke_other_sessions_core(
+    user_id: impl AsRef<str>,
+    current_session: &impl AuthSession,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<StatusResponse> {
+    let all_sessions = ctx.session_manager().list_user_sessions(user_id).await?;
+    for session in all_sessions {
+        if session.token() != current_session.token() {
+            ctx.database.delete_session(session.token()).await?;
+        }
+    }
+    Ok(StatusResponse { status: true })
 }
 
 fn session_authorization_error(error: AuthError) -> AuthError {
@@ -477,15 +500,5 @@ fn session_authorization_error(error: AuthError) -> AuthError {
         }
     } else {
         error
-    }
-}
-
-#[cfg(test)]
-mod tests;
-
-impl std::fmt::Debug for SessionManagementPlugin {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SessionManagementPlugin")
-            .finish_non_exhaustive()
     }
 }

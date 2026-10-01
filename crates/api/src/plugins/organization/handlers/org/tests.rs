@@ -1,3 +1,4 @@
+use crate::plugins::organization::{DynamicAccessControlConfig, TeamsConfig};
 use better_auth_core::types::{CreateOrganization, CreateUser, HttpMethod};
 
 use chrono::Duration;
@@ -13,29 +14,29 @@ use super::{get_full_organization_core, handle_create_organization};
 use crate::plugins::organization::types::GetFullOrganizationQuery;
 
 fn test_config() -> OrganizationConfig {
-        OrganizationConfig {
-            allow_user_to_create_organization: true,
-            organization_limit: None,
-            creation_policy: None,
-            creation_hooks: None,
-            update_hooks: None,
-            member_role_hooks: None,
-            member_removal_hooks: None,
-            member_addition_hooks: None,
-            invitation_acceptance_hooks: None,
-            deletion_hooks: None,
-            membership_limit: Some(crate::plugins::organization::MembershipLimit::Fixed(100.0)),
-            creator_role: "owner".to_string(),
-            invitation_expires_in: 60 * 60 * 48,
-            invitation_limit: Some(100),
-            disable_organization_deletion: false,
-            roles: None,
-            require_email_verification_on_invitation: None,
-            teams: Default::default(),
-            dynamic_access_control: Default::default(),
-            access_control: None,
-        }
+    OrganizationConfig {
+        allow_user_to_create_organization: true,
+        organization_limit: None,
+        creation_policy: None,
+        creation_hooks: None,
+        update_hooks: None,
+        member_role_hooks: None,
+        member_removal_hooks: None,
+        member_addition_hooks: None,
+        invitation_acceptance_hooks: None,
+        deletion_hooks: None,
+        membership_limit: Some(crate::plugins::organization::MembershipLimit::Fixed(100.0)),
+        creator_role: "owner".to_owned(),
+        invitation_expires_in: 60 * 60 * 48,
+        invitation_limit: Some(100),
+        disable_organization_deletion: false,
+        roles: None,
+        require_email_verification_on_invitation: None,
+        teams: TeamsConfig::default(),
+        dynamic_access_control: DynamicAccessControlConfig::default(),
+        access_control: None,
     }
+}
 
 fn test_user(email: &str, name: &str) -> CreateUser {
     CreateUser {
@@ -140,58 +141,58 @@ async fn create_organization_updates_active_organization_by_default() {
 
 #[tokio::test]
 async fn get_full_organization_respects_members_limit() {
-        let ctx = create_test_context().await;
-        let config = test_config();
-        let (user, session) = create_user_and_session(
-            &ctx,
-            test_user("owner3@example.com", "Owner"),
-            Duration::hours(1),
-        )
-        .await;
-        let organization = ctx
-            .database
-            .create_organization(CreateOrganization {
-                id: None,
-                name: "Team".to_string(),
-                slug: "team".to_string(),
-                logo: None,
-                metadata: None,
-            })
-            .await
-            .expect("organization should be created");
-        ctx.database
-            .create_member(better_auth_core::types::CreateMember {
-                organization_id: organization.id.clone(),
-                user_id: user.id.clone(),
-                role: config.creator_role.clone(),
-            })
-            .await
-            .expect("owner member should be created");
-
-        let extra_user = create_user(&ctx, test_user("member@example.com", "Member")).await;
-        ctx.database
-            .create_member(better_auth_core::types::CreateMember {
-                organization_id: organization.id.clone(),
-                user_id: extra_user.id.clone(),
-                role: "member".to_string(),
-            })
-            .await
-            .expect("extra member should be created");
-
-        let response = get_full_organization_core(
-            &GetFullOrganizationQuery {
-                organization_id: Some(organization.id.clone()),
-                organization_slug: None,
-                members_limit: Some(1.0),
-            },
-            &user,
-            &session,
-            &config,
-            &ctx,
-        )
+    let ctx = create_test_context().await;
+    let config = test_config();
+    let (user, session) = create_user_and_session(
+        &ctx,
+        test_user("owner3@example.com", "Owner"),
+        Duration::hours(1),
+    )
+    .await;
+    let organization = ctx
+        .database
+        .create_organization(CreateOrganization {
+            id: None,
+            name: "Team".to_owned(),
+            slug: "team".to_owned(),
+            logo: None,
+            metadata: None,
+        })
         .await
-        .expect("request should succeed")
-        .expect("organization should exist");
+        .expect("organization should be created");
+    ctx.database
+        .create_member(better_auth_core::types::CreateMember {
+            organization_id: organization.id.clone(),
+            user_id: user.id.clone(),
+            role: config.creator_role.clone(),
+        })
+        .await
+        .expect("owner member should be created");
 
-        assert_eq!(response.members.len(), 1);
-    }
+    let extra_user = create_user(&ctx, test_user("member@example.com", "Member")).await;
+    ctx.database
+        .create_member(better_auth_core::types::CreateMember {
+            organization_id: organization.id.clone(),
+            user_id: extra_user.id.clone(),
+            role: "member".to_owned(),
+        })
+        .await
+        .expect("extra member should be created");
+
+    let response = get_full_organization_core(
+        &GetFullOrganizationQuery {
+            organization_id: Some(organization.id.clone()),
+            organization_slug: None,
+            members_limit: Some(1.0),
+        },
+        &user,
+        &session,
+        &config,
+        &ctx,
+    )
+    .await
+    .expect("request should succeed")
+    .expect("organization should exist");
+
+    assert_eq!(response.members.len(), 1);
+}

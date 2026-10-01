@@ -71,10 +71,8 @@ pub struct AuthRequest {
 pub struct RequestExtensions(Arc<Mutex<crate::plugin::ContextExtensions>>);
 
 impl std::fmt::Debug for RequestExtensions {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("RequestExtensions")
-            .finish_non_exhaustive()
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RequestExtensions").finish_non_exhaustive()
     }
 }
 
@@ -506,7 +504,8 @@ impl AuthRequest {
 
     /// Typed values established by trusted hooks and handlers in this dispatch.
     /// Caller-supplied values are discarded at every public dispatch boundary.
-    pub fn extensions(&self) -> &RequestExtensions {
+    #[must_use]
+    pub const fn extensions(&self) -> &RequestExtensions {
         &self.extensions
     }
 

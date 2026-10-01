@@ -18,6 +18,8 @@ pub mod team;
 
 mod validation;
 
+pub(in crate::plugins) mod invitation_acceptance;
+
 pub use invitation::*;
 
 pub use member::*;
@@ -37,6 +39,9 @@ use super::OrganizationConfig;
 use super::types::{HasPermissionRequest, HasPermissionResponse};
 
 /// Helper function to require authenticated session
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn require_session<S: better_auth_core::AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
@@ -45,6 +50,9 @@ pub(in crate::plugins) async fn require_session<S: better_auth_core::AuthSchema>
 }
 
 /// Helper function to get organization ID from request or session
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn resolve_organization_id(
     org_id: Option<&str>,
     org_slug: Option<&str>,
@@ -73,6 +81,9 @@ pub(in crate::plugins) async fn resolve_organization_id(
 // Core function
 // ---------------------------------------------------------------------------
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn has_permission_core(
     body: &HasPermissionRequest,
     user: &impl AuthUser,
@@ -163,5 +174,3 @@ pub async fn handle_has_permission(
     let response = has_permission_core(&body, &user, &session, config, ctx).await?;
     Ok(AuthResponse::json(200, &response)?)
 }
-
-pub(crate) mod invitation_acceptance;

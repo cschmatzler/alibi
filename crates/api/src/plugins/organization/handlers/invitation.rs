@@ -22,6 +22,25 @@ use crate::plugins::organization::types::{
     ListInvitationsQuery, RejectInvitationRequest, UserInvitationResponse,
 };
 
+impl crate::plugins::organization::OrganizationPlugin {
+    /// List pending invitations for an email through a trusted server-side call.
+    ///
+    /// This method accepts an application-authorized email without a session.
+    /// The HTTP endpoint instead derives the email from a verified session and
+    /// rejects client email selectors.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
+    pub async fn list_user_invitations(
+        &self,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        email: &str,
+    ) -> AuthResult<Vec<UserInvitationResponse<InvitationView>>> {
+        list_user_invitations_for_email_core(email, ctx).await
+    }
+}
+
 fn normalized_roles(input: &crate::plugins::organization::types::RoleInput) -> String {
     input.joined()
 }
@@ -30,6 +49,9 @@ fn requested_roles(input: &crate::plugins::organization::types::RoleInput) -> Ve
     input.roles()
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn require_verified_invitation_email<S: better_auth_core::AuthSchema>(
     user: &impl AuthUser,
     config: &OrganizationConfig,
@@ -53,6 +75,9 @@ pub(super) fn require_verified_invitation_email<S: better_auth_core::AuthSchema>
     clippy::too_many_lines,
     reason = "Keep invitation authorization, quota checks, and delivery callbacks in their required order"
 )]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn invite_member_core(
     body: &InviteMemberRequest,
     user: &impl AuthUser,
@@ -90,7 +115,12 @@ pub(in crate::plugins) async fn invite_member_core(
     }
 
     let mut valid_roles = vec!["owner".to_owned(), "admin".to_owned(), "member".to_owned()];
-    valid_roles.extend(config.roles.iter().flat_map(|roles| roles.keys().cloned()));
+    valid_roles.extend(
+        config
+            .roles
+            .iter()
+            .flat_map(|roles_2| roles_2.keys().cloned()),
+    );
     if config.dynamic_access_control.enabled {
         valid_roles.extend(
             ctx.database
@@ -133,10 +163,12 @@ pub(in crate::plugins) async fn invite_member_core(
     }
 
     if let Some(limit) = config.invitation_limit {
-        let pending_count = ctx
-            .database
-            .count_pending_organization_invitations(&org_id)
-            .await? as usize;
+        let pending_count = usize::try_from(
+            ctx.database
+                .count_pending_organization_invitations(&org_id)
+                .await?,
+        )
+        .map_err(|error| AuthError::Internal(error.to_string()))?;
         if pending_count >= limit {
             return Err(AuthError::Upstream {
                 status: 403,
@@ -166,8 +198,11 @@ pub(in crate::plugins) async fn invite_member_core(
         return Ok(ctx.invitation_view(&existing));
     }
 
-    let expires_at =
-        chrono::Utc::now() + chrono::Duration::seconds(config.invitation_expires_in as i64);
+    let expires_at = chrono::Utc::now()
+        + chrono::Duration::seconds(
+            i64::try_from(config.invitation_expires_in)
+                .map_err(|error| AuthError::Config(error.to_string()))?,
+        );
     let requested_teams = if config.teams.enabled {
         body.team_id
             .as_ref()
@@ -223,6 +258,9 @@ pub(in crate::plugins) async fn invite_member_core(
     Ok(ctx.invitation_view(&invitation))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn get_invitation_core(
     query: &GetInvitationQuery,
     user: &impl AuthUser,
@@ -278,6 +316,9 @@ pub(in crate::plugins) async fn get_invitation_core(
     })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn list_invitations_core(
     query: &ListInvitationsQuery,
     user: &impl AuthUser,
@@ -301,6 +342,9 @@ pub(in crate::plugins) async fn list_invitations_core(
         .collect())
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn list_user_invitations_core(
     user: &impl AuthUser,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -353,25 +397,9 @@ async fn list_user_invitations_for_email_core(
         .collect())
 }
 
-impl crate::plugins::organization::OrganizationPlugin {
-    /// List pending invitations for an email through a trusted server-side call.
-    ///
-    /// This method accepts an application-authorized email without a session.
-    /// The HTTP endpoint instead derives the email from a verified session and
-    /// rejects client email selectors.
-    ///
-    /// # Errors
-    ///
-    /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-    pub async fn list_user_invitations(
-        &self,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-        email: &str,
-    ) -> AuthResult<Vec<UserInvitationResponse<InvitationView>>> {
-        list_user_invitations_for_email_core(email, ctx).await
-    }
-}
-
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn reject_invitation_core(
     body: &RejectInvitationRequest,
     user: &impl AuthUser,
@@ -416,6 +444,9 @@ pub(in crate::plugins) async fn reject_invitation_core(
     })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn cancel_invitation_core(
     body: &CancelInvitationRequest,
     user: &impl AuthUser,
@@ -568,6 +599,9 @@ pub async fn handle_list_user_invitations(
     Ok(AuthResponse::json(200, &invitations)?)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub async fn handle_accept_invitation(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,

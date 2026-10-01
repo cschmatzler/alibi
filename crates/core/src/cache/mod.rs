@@ -3,19 +3,28 @@
 //! The codec authenticates data; storage bypass and authoritative-read policy
 //! belong to the session resolver. No database model is reconstructed here.
 
+mod date;
+
+pub mod runtime;
+
 use crate::{AuthResult, AuthSession, AuthUser, SessionView, UserView};
+
 use async_trait::async_trait;
+
 use base64::{
     Engine,
     engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
 };
-use chrono::{SecondsFormat, Utc};
-use hmac::{Hmac, Mac};
-use serde_json::{Value, json};
-use sha2::Sha256;
-mod date;
-pub mod runtime;
 
+use chrono::{SecondsFormat, Utc};
+
+use hmac::{Hmac, Mac};
+
+use serde_json::{Value, json};
+
+use sha2::Sha256;
+
+use std::fmt::Write;
 use std::{any::Any, fmt, sync::Arc};
 
 /// Which actual snapshot a version callback receives.
@@ -41,9 +50,8 @@ pub struct CacheVersionContext {
 }
 
 impl fmt::Debug for CacheVersionContext {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("CacheVersionContext")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CacheVersionContext")
             .field("source", &self.source())
             .field("user", &self.user)
             .field("session", &self.session)
@@ -67,6 +75,7 @@ impl CacheVersionContext {
         }
     }
     /// A cache hit has no original database models.
+    #[must_use]
     pub fn cached(user: UserView, session: SessionView) -> Self {
         Self {
             user,
@@ -83,18 +92,23 @@ impl CacheVersionContext {
             source: CacheVersionSource::Stored,
         }
     }
-    pub fn source(&self) -> CacheVersionSource {
+    #[must_use]
+    pub const fn source(&self) -> CacheVersionSource {
         self.source
     }
-    pub fn user(&self) -> &UserView {
+    #[must_use]
+    pub const fn user(&self) -> &UserView {
         &self.user
     }
-    pub fn session(&self) -> &SessionView {
+    #[must_use]
+    pub const fn session(&self) -> &SessionView {
         &self.session
     }
+    #[must_use]
     pub fn stored_user<T: AuthUser>(&self) -> Option<&T> {
         self.originals.as_ref()?.0.downcast_ref()
     }
+    #[must_use]
     pub fn stored_session<T: AuthSession>(&self) -> Option<&T> {
         self.originals.as_ref()?.1.downcast_ref()
     }
@@ -114,15 +128,18 @@ pub enum CookieCacheVersion {
 }
 
 impl fmt::Debug for CookieCacheVersion {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Literal(value) => formatter.debug_tuple("Literal").field(value).finish(),
-            Self::Resolver(_) => formatter.write_str("Resolver(..)"),
+            Self::Literal(value) => f.debug_tuple("Literal").field(value).finish(),
+            Self::Resolver(_) => f.write_str("Resolver(..)"),
         }
     }
 }
 
 impl CookieCacheVersion {
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub async fn resolve(&self, context: &CacheVersionContext) -> AuthResult<String> {
         match self {
             Self::Literal(value) => Ok(if value.is_empty() {
@@ -146,7 +163,15 @@ pub struct CompactCache {
     pub expires_at: f64,
 }
 
+/// Result of the authenticated envelope checks, before any storage fallback.
+#[derive(Clone, Debug)]
+pub enum CacheValidation {
+    Invalid,
+    Hit(Box<CompactCache>),
+}
+
 /// Source `maxAge || 300`, preserving fractions, negatives and infinity.
+#[must_use]
 pub fn effective_max_age(max_age: f64) -> f64 {
     if max_age == 0.0 || max_age.is_nan() {
         300.0
@@ -155,9 +180,20 @@ pub fn effective_max_age(max_age: f64) -> f64 {
     }
 }
 
-/// Encode the already-filtered canonical output. Infinite or out-of-range
+/// Encode the already-filtered canonical output.
+///
+/// Infinite or out-of-range
 /// expiry becomes JSON null, as for an invalid JavaScript Date; the reader
 /// rejects that envelope instead of pretending that it expires normally.
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    clippy::suboptimal_flops,
+    reason = "Match JavaScript Number arithmetic and its separate rounding steps for cookie expiry"
+)]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub fn encode_compact(
     user: &UserView,
     session: &SessionView,
@@ -180,7 +216,7 @@ pub fn encode_compact(
         Value::Null
     };
     let mut signed = payload.as_object().cloned().unwrap_or_default();
-    _ = signed.insert("expiresAt".into(), expiry.clone());
+    drop(signed.insert("expiresAt".into(), expiry.clone()));
     let signature = signature(secret, crate::utils::json::to_string(&signed)?.as_bytes());
     let envelope = json!({"session":payload,"expiresAt":expiry,"signature":signature});
     Ok(URL_SAFE_NO_PAD.encode(crate::utils::json::to_string(&envelope)?))
@@ -195,6 +231,10 @@ fn signature(secret: &str, data: &[u8]) -> String {
 
 /// Authenticate a compact envelope. Malformed data is a cache miss, allowing
 /// the caller's genuine storage fallback; it never supplies an identity.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep compact authentication, shape validation, and date reviving in wire order"
+)]
 pub fn decode_compact(value: &str, secret: &str) -> Option<CompactCache> {
     let bytes = URL_SAFE_NO_PAD
         .decode(value)
@@ -205,18 +245,18 @@ pub fn decode_compact(value: &str, secret: &str) -> Option<CompactCache> {
     let expires_at = parsed
         .get("expiresAt")?
         .as_f64()
-        .filter(|value| value.is_finite())?;
+        .filter(|value_2| value_2.is_finite())?;
     let signature = parsed.get("signature")?.as_str()?;
     let payload = parsed.get("session")?.as_object()?;
     let original_payload = payload;
     let mut normalized = crate::utils::json::JsValue::Object(payload.clone());
     date::revive(&mut normalized);
-    let payload = normalized.as_object()?;
-    let mut signed = payload.clone();
-    _ = signed.insert(
+    let payload_2 = normalized.as_object()?;
+    let mut signed = payload_2.clone();
+    drop(signed.insert(
         "expiresAt".into(),
         crate::utils::json::JsValue::Number(expires_at),
-    );
+    ));
     let message = crate::utils::json::to_string(&signed).ok()?;
     let signature = URL_SAFE_NO_PAD
         .decode(signature)
@@ -240,8 +280,8 @@ pub fn decode_compact(value: &str, secret: &str) -> Option<CompactCache> {
         ),
     ] {
         for field in required {
-            let text = object.get(*field)?.as_str()?;
-            if date::parse(text).is_some() {
+            let text_2 = object.get(*field)?.as_str()?;
+            if date::parse(text_2).is_some() {
                 return None;
             }
         }
@@ -249,14 +289,14 @@ pub fn decode_compact(value: &str, secret: &str) -> Option<CompactCache> {
             if object
                 .get(*field)
                 .and_then(crate::utils::json::JsValue::as_str)
-                .is_some_and(|text| date::parse(text).is_some())
+                .is_some_and(|text_3| date::parse(text_3).is_some())
             {
                 return None;
             }
         }
         for field in ["createdAt", "updatedAt"] {
-            if let Some(value) = object.get(field) {
-                _ = date::parse(value.as_str()?)?;
+            if let Some(value_3) = object.get(field) {
+                _ = date::parse(value_3.as_str()?)?;
             }
         }
     }
@@ -269,39 +309,39 @@ pub fn decode_compact(value: &str, secret: &str) -> Option<CompactCache> {
     if original_payload
         .get("version")
         .and_then(crate::utils::json::JsValue::as_str)
-        .is_some_and(|text| date::parse(text).is_some())
+        .is_some_and(|text_4| date::parse(text_4).is_some())
     {
         return None;
     }
-    let updated_at = payload
+    let updated_at = payload_2
         .get("updatedAt")?
         .as_f64()
-        .filter(|value| value.is_finite())?;
-    let version = match payload.get("version") {
+        .filter(|value_4| value_4.is_finite())?;
+    let version = match payload_2.get("version") {
         None => None,
-        Some(value) => Some(value.as_str()?.to_string()),
+        Some(value_5) => Some(value_5.as_str()?.to_owned()),
     };
-    let mut user = payload.get("user")?.to_json_value().ok()?;
-    let mut session = payload.get("session")?.to_json_value().ok()?;
+    let mut user = payload_2.get("user")?.to_json_value().ok()?;
+    let mut session = payload_2.get("session")?.to_json_value().ok()?;
     // The source schemas supply absent creation/update dates and a false
     // emailVerified value. Producer dates are canonical JavaScript Date JSON.
     for object in [&mut user, &mut session] {
         let map = object.as_object_mut()?;
         for key in ["createdAt", "updatedAt"] {
             if !map.contains_key(key) {
-                _ = map.insert(
+                drop(map.insert(
                     key.into(),
                     json!(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)),
-                );
+                ));
             }
         }
     }
     let map = user.as_object_mut()?;
     let email = map.get("email")?.as_str()?.to_lowercase();
-    _ = map.insert("email".into(), Value::String(email));
+    drop(map.insert("email".into(), Value::String(email)));
     _ = map.get("name")?.as_str()?;
     if !map.contains_key("emailVerified") {
-        _ = map.insert("emailVerified".into(), Value::Bool(false));
+        drop(map.insert("emailVerified".into(), Value::Bool(false)));
     }
     let user = serde_json::from_value(user).ok()?;
     let null_extensions: Vec<_> = ["activeOrganizationId", "activeTeamId", "impersonatedBy"]
@@ -310,7 +350,7 @@ pub fn decode_compact(value: &str, secret: &str) -> Option<CompactCache> {
         .collect();
     let mut session: SessionView = serde_json::from_value(session).ok()?;
     for name in null_extensions {
-        _ = session.extension_fields.insert(name.into(), Value::Null);
+        drop(session.extension_fields.insert(name.into(), Value::Null));
     }
     Some(CompactCache {
         user,
@@ -321,16 +361,17 @@ pub fn decode_compact(value: &str, secret: &str) -> Option<CompactCache> {
     })
 }
 
-/// Result of the authenticated envelope checks, before any storage fallback.
-#[derive(Clone, Debug)]
-pub enum CacheValidation {
-    Invalid,
-    Hit(Box<CompactCache>),
-}
-
-/// Check the signed-token binding before invoking the version callback, then
-/// both source expiry guards. Callback errors propagate as real application
-/// errors; an invalid envelope instead permits storage fallback.
+/// Check the token binding, version callback, and source expiry guards.
+///
+/// Callback errors propagate; invalid envelopes permit storage fallback.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "Preserve JavaScript Number rounding at the compatibility boundary"
+)]
 pub async fn validate_compact(
     mut cache: CompactCache,
     token: &str,
@@ -368,6 +409,9 @@ pub async fn validate_compact(
 
 /// Reject selected formats that do not have a runtime implementation yet.
 /// Disabling caching does not reject an otherwise-unused strategy setting.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub fn validate_config(config: &crate::CookieCacheConfig) -> AuthResult<()> {
     if config.enabled && config.strategy != crate::CookieCacheStrategy::Compact {
         return Err(crate::AuthError::config(
@@ -378,16 +422,19 @@ pub fn validate_config(config: &crate::CookieCacheConfig) -> AuthResult<()> {
 }
 
 /// Render a cache-related cookie using the source numeric Max-Age policy.
+///
 /// Negative and NaN ages omit Max-Age; nonnegative ages are floored, and
 /// values above the cookie serializer's 400-day ceiling fail rather than
 /// saturating. No Expires attribute is synthesized.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub fn cookie_header(
     name: &str,
     value: &str,
     max_age: Option<f64>,
     config: &crate::AuthConfig,
 ) -> AuthResult<String> {
-    let session = &config.session;
     const COMPONENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
         .remove(b'-')
         .remove(b'_')
@@ -398,6 +445,9 @@ pub fn cookie_header(
         .remove(b'\'')
         .remove(b'(')
         .remove(b')');
+
+    let session = &config.session;
+
     let encoded = percent_encoding::utf8_percent_encode(value, COMPONENT);
     let mut header = format!("{name}={encoded}");
     if let Some(age) = max_age.filter(|age| *age >= 0.0) {
@@ -406,7 +456,7 @@ pub fn cookie_header(
                 "Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration.",
             ));
         }
-        header.push_str(&format!("; Max-Age={}", age.floor()));
+        _ = write!(header, "; Max-Age={}", age.floor());
     }
     header.push_str("; Path=/");
     if session.cookie_http_only {

@@ -289,7 +289,7 @@ impl<S: AuthSchema> BetterAuth<S> {
             if ordinary_cache_error {
                 run_after_hooks = false;
                 response = AuthResponse::new(500);
-                _ = req.take_response_headers();
+                drop(req.take_response_headers());
             }
             if better_auth_api::plugins::oauth_proxy::take_unhandled_error(&req) {
                 run_after_hooks = false;

@@ -22,35 +22,9 @@ use super::types::{
     RefreshTokenResponse,
 };
 
-fn access_token_failure() -> AuthError {
-    AuthError::Upstream {
-        status: 400,
-        code: "FAILED_TO_GET_ACCESS_TOKEN",
-        message: "Failed to get a valid access token",
-    }
-}
-
-fn refresh_token_failure() -> AuthError {
-    AuthError::Upstream {
-        status: 400,
-        code: "FAILED_TO_REFRESH_ACCESS_TOKEN",
-        message: "Failed to refresh access token",
-    }
-}
-
 enum AccountSelection {
     Id(String),
     Cookie,
-}
-
-fn invalid_selection(location: &str, message: &str) -> AuthResult<AuthResponse> {
-    Ok(AuthResponse::json(
-        400,
-        &better_auth_core::ErrorCodeMessageResponse {
-            code: Some("VALIDATION_ERROR".into()),
-            message: format!("[{location}] {message}"),
-        },
-    )?)
 }
 
 impl AccountSelection {
@@ -130,6 +104,32 @@ impl AccountSelection {
     }
 }
 
+const fn access_token_failure() -> AuthError {
+    AuthError::Upstream {
+        status: 400,
+        code: "FAILED_TO_GET_ACCESS_TOKEN",
+        message: "Failed to get a valid access token",
+    }
+}
+
+const fn refresh_token_failure() -> AuthError {
+    AuthError::Upstream {
+        status: 400,
+        code: "FAILED_TO_REFRESH_ACCESS_TOKEN",
+        message: "Failed to refresh access token",
+    }
+}
+
+fn invalid_selection(location: &str, message: &str) -> AuthResult<AuthResponse> {
+    Ok(AuthResponse::json(
+        400,
+        &better_auth_core::ErrorCodeMessageResponse {
+            code: Some("VALIDATION_ERROR".into()),
+            message: format!("[{location}] {message}"),
+        },
+    )?)
+}
+
 fn scopes(account: &AccountCookiePayload) -> Vec<String> {
     account
         .scope
@@ -203,14 +203,14 @@ async fn valid_access_token(
             .filter(|token| !token.is_empty())
     {
         let refresh_token = maybe_decrypt(Some(stored_refresh), encrypted, &ctx.config.secret)
-            .map_err(|_| access_token_failure())?
+            .map_err(|_error| access_token_failure())?
             .unwrap_or_default();
         let tokens = refresh_tokens_via_provider(provider, &refresh_token)
             .await
-            .map_err(|_| access_token_failure())?;
+            .map_err(|_error| access_token_failure())?;
         persist_tokens(account, &tokens, ctx)
             .await
-            .map_err(|_| access_token_failure())?;
+            .map_err(|_error| access_token_failure())?;
         true
     } else {
         false
@@ -223,7 +223,7 @@ async fn valid_access_token(
                     encrypted,
                     &ctx.config.secret,
                 )
-                .map_err(|_| access_token_failure())?
+                .map_err(|_error| access_token_failure())?
                 .unwrap_or_default(),
             ),
             access_token_expires_at: account
@@ -252,6 +252,9 @@ fn token_response(
     Ok(response)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn handle_get_access_token(
     config: &OAuthConfig,
     req: &AuthRequest,
@@ -259,7 +262,7 @@ pub(super) async fn handle_get_access_token(
 ) -> AuthResult<AuthResponse> {
     let selection = match AccountSelection::from_body(req) {
         Ok(selection) => selection,
-        Err(message) => return invalid_selection("body", message),
+        Err(message) => return invalid_selection("body", &message),
     };
     let (_, session) = match ctx.require_session(req).await {
         Ok(session) => session,
@@ -273,6 +276,9 @@ pub(super) async fn handle_get_access_token(
     token_response(&response, &account, refreshed, ctx)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn handle_refresh_token(
     config: &OAuthConfig,
     req: &AuthRequest,
@@ -280,7 +286,7 @@ pub(super) async fn handle_refresh_token(
 ) -> AuthResult<AuthResponse> {
     let selection = match AccountSelection::from_body(req) {
         Ok(selection) => selection,
-        Err(message) => return invalid_selection("body", message),
+        Err(message) => return invalid_selection("body", &message),
     };
     let (_, session) = match ctx.require_session(req).await {
         Ok(session) => session,
@@ -306,14 +312,14 @@ pub(super) async fn handle_refresh_token(
         ctx.config.account.encrypt_oauth_tokens,
         &ctx.config.secret,
     )
-    .map_err(|_| refresh_token_failure())?
+    .map_err(|_error| refresh_token_failure())?
     .unwrap_or_default();
     let tokens = refresh_tokens_via_provider(provider, &refresh_token)
         .await
-        .map_err(|_| refresh_token_failure())?;
+        .map_err(|_error| refresh_token_failure())?;
     persist_tokens(&mut account, &tokens, ctx)
         .await
-        .map_err(|_| refresh_token_failure())?;
+        .map_err(|_error| refresh_token_failure())?;
     let response = RefreshTokenResponse {
         access_token: tokens.access_token,
         access_token_expires_at: tokens
@@ -336,6 +342,9 @@ pub(super) async fn handle_refresh_token(
     )
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn handle_account_info(
     config: &OAuthConfig,
     req: &AuthRequest,

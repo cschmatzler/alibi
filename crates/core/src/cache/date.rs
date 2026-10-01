@@ -53,7 +53,7 @@ pub(super) fn parse(value: &str) -> Option<DateTime<Utc>> {
         .fold(0, |total, (digit, factor)| {
             total + u32::from(digit - b'0') * factor
         });
-    let first = NaiveDate::from_ymd_opt(year as i32, month, 1)?;
+    let first = NaiveDate::from_ymd_opt(i32::try_from(year).ok()?, month, 1)?;
     let date =
         first.checked_add_signed(Duration::days(i64::from(day - 1) + i64::from(hour == 24)))?;
     Some(
@@ -71,6 +71,6 @@ pub(super) fn revive(value: &mut JsValue) {
         }
         JsValue::Array(values) => values.iter_mut().for_each(revive),
         JsValue::Object(values) => values.values_mut().for_each(revive),
-        _ => {}
+        JsValue::Null | JsValue::Bool(_) | JsValue::Number(_) => {}
     }
 }

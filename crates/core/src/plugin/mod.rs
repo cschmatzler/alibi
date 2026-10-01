@@ -646,13 +646,15 @@ impl<S: AuthSchema> AuthContext<S> {
     /// Sensitive stateful operations must continue using the physical APIs.
     /// Nested source get-session errors become an unauthenticated session;
     /// errors from later application/store operations are not caught here.
+    /// # Errors
+    /// Returns an error if the request has no valid session or session lookup fails.
     pub async fn require_cached_session(
         &self,
         req: &AuthRequest,
     ) -> AuthResult<(crate::AuthenticatedUser<S>, crate::wire::SessionView)> {
         let read = crate::cache::runtime::authenticated(self, req, false)
             .await
-            .map_err(|_| AuthError::Unauthenticated)?
+            .map_err(|_error| AuthError::Unauthenticated)?
             .ok_or(AuthError::Unauthenticated)?;
         Ok((read.user, read.session))
     }

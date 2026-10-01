@@ -1,27 +1,46 @@
+#![cfg(test)]
+#![expect(
+    unused_crate_dependencies,
+    reason = "Cargo shares package dependencies across its library and integration targets"
+)]
 #![cfg(feature = "seaorm2")]
 #![expect(
-    clippy::unwrap_used,
     clippy::indexing_slicing,
     reason = "Assert real SQLite-backed public handler and independently specified application-model callback snapshots"
 )]
 //! Native-only application schema contract. Official SDK scenarios own built-in wire parity.
+#[path = "../compat-tests/rust-server/src/session_field_model.rs"]
+mod application_model;
+
+#[cfg(test)]
+#[path = "session_cookie_cache_tests/tests.rs"]
+mod tests;
+
 use async_trait::async_trait;
+
 use better_auth::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
+
 use better_auth::{AuthBuilder, AuthConfig};
+
 use better_auth_core::{
     AuthRequest, AuthResult, CacheVersionContext, CacheVersionSource, CookieCacheConfig,
     CookieCacheVersion, CookieCacheVersionResolver, HttpMethod,
 };
+
 use better_auth_seaorm::sea_orm::{ConnectionTrait, Statement};
+
 use better_auth_seaorm::store::__private_test_support::migrator::run_migrations;
+
 use better_auth_seaorm::{Database, SeaOrmStore};
+
 use serde_json::{Value, json};
+
 use std::sync::{Arc, Mutex};
-#[path = "../compat-tests/rust-server/src/session_field_model.rs"]
-mod application_model;
+
 use application_model::{ApplicationSchema, application_session};
 
 struct Version(Mutex<Vec<Value>>);
+
 #[async_trait]
 impl CookieCacheVersionResolver for Version {
     async fn resolve(&self, context: &CacheVersionContext) -> AuthResult<String> {
@@ -62,6 +81,7 @@ impl CookieCacheVersionResolver for Version {
         Ok("application-v1".into())
     }
 }
+
 fn request(
     method: HttpMethod,
     path: &str,
@@ -69,23 +89,19 @@ fn request(
     cookies: Option<String>,
 ) -> AuthRequest {
     let mut request = AuthRequest::new(method, path);
-    _ = request
-        .headers
-        .insert("origin".into(), "http://localhost:42594".into());
-    _ = request
-        .headers
-        .insert("content-type".into(), "application/json".into());
+    drop(
+        request
+            .headers
+            .insert("origin".into(), "http://localhost:42594".into()),
+    );
+    drop(
+        request
+            .headers
+            .insert("content-type".into(), "application/json".into()),
+    );
     request.body = body.map(|value| serde_json::to_vec(&value).unwrap());
     if let Some(cookies) = cookies {
-        _ = request.headers.insert("cookie".into(), cookies);
+        drop(request.headers.insert("cookie".into(), cookies));
     }
     request
 }
-
-
-
-
-
-#[cfg(test)]
-#[path = "session_cookie_cache_tests/tests.rs"]
-mod tests;

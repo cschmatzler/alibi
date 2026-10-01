@@ -29,6 +29,9 @@ impl std::fmt::Debug for TwoFactorBackupStorage {
 }
 
 impl TwoFactorBackupStorage {
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(in crate::plugins) async fn store_codes(
         &self,
         codes: &[String],
@@ -42,6 +45,9 @@ impl TwoFactorBackupStorage {
         }
     }
 
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(in crate::plugins) async fn load_codes(
         &self,
         stored: &str,

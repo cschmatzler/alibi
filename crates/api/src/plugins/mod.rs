@@ -52,13 +52,6 @@ pub mod two_factor;
 
 pub mod user_management;
 
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize)]
-pub(in crate::plugins) struct StatusResponse {
-    status: bool,
-}
-
 #[cfg(test)]
 pub(in crate::plugins) mod test_helpers {
 
@@ -223,6 +216,8 @@ pub(in crate::plugins) mod test_helpers {
     }
 }
 
+use serde::{Deserialize, Serialize};
+
 pub use account_management::AccountManagementPlugin;
 
 pub use admin::{
@@ -272,3 +267,8 @@ pub use user_management::{
 };
 
 pub use anonymous::{AnonymousConfig, AnonymousPlugin};
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(in crate::plugins) struct StatusResponse {
+    status: bool,
+}

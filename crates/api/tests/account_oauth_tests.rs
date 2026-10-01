@@ -14,6 +14,10 @@
     reason = "oauth integration tests intentionally discard setup return values from inserts and config mutation helpers"
 )]
 
+#[cfg(test)]
+#[path = "account_oauth_tests/tests.rs"]
+mod tests;
+
 use async_trait::async_trait;
 
 use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
@@ -44,7 +48,46 @@ use chrono::{Duration, Utc};
 
 use serde_json::json;
 
+use std::sync::Arc;
+
 const TEST_SECRET: &str = "test-secret-key-that-is-at-least-32-characters-long";
+
+#[derive(Debug, Clone)]
+struct RotatingRefreshHandler {
+    sequence: Arc<std::sync::Mutex<Vec<(String, OAuthTokenSet)>>>,
+}
+
+#[async_trait]
+impl OAuthRefreshTokenHandler for RotatingRefreshHandler {
+    async fn refresh_access_token(&self, refresh_token: &str) -> Result<OAuthTokenSet, String> {
+        let mut sequence = self.sequence.lock().unwrap();
+        let (expected, response) = sequence.remove(0);
+        drop(sequence);
+
+        if refresh_token != expected {
+            return Err(format!(
+                "unexpected refresh token: expected {expected}, got {refresh_token}"
+            ));
+        }
+        Ok(response)
+    }
+}
+
+#[derive(Clone)]
+struct CookieIssuerProfile(OAuthUserInfo);
+
+#[async_trait]
+impl OAuthUserInfoHandler for CookieIssuerProfile {
+    async fn get_user_info(
+        &self,
+        _: OAuthUserInfoRequest,
+    ) -> Result<OAuthUserInfoResponse, String> {
+        Ok(OAuthUserInfoResponse {
+            user: self.0.clone(),
+            data: json!({}),
+        })
+    }
+}
 
 fn test_config() -> AuthConfig {
     AuthConfig::new(TEST_SECRET)
@@ -166,43 +209,6 @@ async fn create_test_database() -> Arc<dyn AuthStore<TestSchema>> {
         Arc::new(test_config()),
         database,
     ))
-}
-
-#[derive(Debug, Clone)]
-struct RotatingRefreshHandler {
-    sequence: Arc<std::sync::Mutex<Vec<(String, OAuthTokenSet)>>>,
-}
-
-#[async_trait]
-impl OAuthRefreshTokenHandler for RotatingRefreshHandler {
-    async fn refresh_access_token(&self, refresh_token: &str) -> Result<OAuthTokenSet, String> {
-        let mut sequence = self.sequence.lock().unwrap();
-        let (expected, response) = sequence.remove(0);
-        drop(sequence);
-
-        if refresh_token != expected {
-            return Err(format!(
-                "unexpected refresh token: expected {expected}, got {refresh_token}"
-            ));
-        }
-        Ok(response)
-    }
-}
-
-#[derive(Clone)]
-struct CookieIssuerProfile(OAuthUserInfo);
-
-#[async_trait]
-impl OAuthUserInfoHandler for CookieIssuerProfile {
-    async fn get_user_info(
-        &self,
-        _: OAuthUserInfoRequest,
-    ) -> Result<OAuthUserInfoResponse, String> {
-        Ok(OAuthUserInfoResponse {
-            user: self.0.clone(),
-            data: json!({}),
-        })
-    }
 }
 
 /// Issue the production encrypted cookie through the OAuth callback lifecycle.
@@ -373,25 +379,30 @@ async fn handle_mock_connection(stream: tokio::net::TcpStream, email: &str) {
 
 fn make_test_provider(mock_url: &str) -> OAuthProvider {
     OAuthProvider {
-        client_id: "client".to_string(),
+        client_id: "client".to_owned(),
         additional_client_ids: Vec::new(),
         hosted_domain: None,
         require_email_verification: false,
-        client_secret: "secret".to_string(),
-        auth_url: format!("{}/auth", mock_url),
-        token_url: format!("{}/token", mock_url),
-        user_info_url: Some(format!("{}/userinfo", mock_url)),
-        scopes: vec!["email".to_string()],
+        client_secret: "secret".to_owned(),
+        auth_url: format!("{mock_url}/auth"),
+        token_url: format!("{mock_url}/token"),
+        user_info_url: Some(format!("{mock_url}/userinfo")),
+        scopes: vec!["email".to_owned()],
         authorization: None,
         authorization_params: Vec::new(),
         map_user_info: Some(|v| {
             Ok(OAuthUserInfo {
-                id: v["sub"].as_str().unwrap_or("mock-user-id-123").to_string(),
-                email: v["email"]
+                id: (*(v).get("sub").unwrap_or(&serde_json::Value::Null))
+                    .as_str()
+                    .unwrap_or("mock-user-id-123")
+                    .to_owned(),
+                email: (*(v).get("email").unwrap_or(&serde_json::Value::Null))
                     .as_str()
                     .unwrap_or("unknown@example.com")
-                    .to_string(),
-                name: v["name"].as_str().map(String::from),
+                    .to_owned(),
+                name: (*(v).get("name").unwrap_or(&serde_json::Value::Null))
+                    .as_str()
+                    .map(String::from),
                 image: None,
                 email_verified: true,
             })
@@ -404,17 +415,3 @@ fn make_test_provider(mock_url: &str) -> OAuthProvider {
         override_user_info_on_sign_in: false,
     }
 }
-
-
-
-
-
-
-
-
-
-#[cfg(test)]
-#[path = "account_oauth_tests/tests.rs"]
-mod tests;
-
-use std::sync::Arc;

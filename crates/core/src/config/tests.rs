@@ -147,16 +147,16 @@ fn disabled_paths_replaces() {
 
 // ── is_origin_trusted ───────────────────────────────────────────────
 
-    // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
-    #[test]
-    fn is_origin_trusted_matches_base_url() {
-        let cfg = AuthConfig::new("test-secret-min-32-chars-1234567").base_url("https://myapp.com");
-        assert!(cfg.is_origin_trusted("https://myapp.com"));
-        let native_custom =
-            AuthConfig::new("test-secret-min-32-chars-1234567").base_url("myapp://auth");
-        assert!(native_custom.is_origin_trusted("myapp://auth"));
-        assert!(!native_custom.is_origin_trusted("myapp://auth/callback"));
-    }
+// Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
+#[test]
+fn is_origin_trusted_matches_base_url() {
+    let cfg = AuthConfig::new("test-secret-min-32-chars-1234567").base_url("https://myapp.com");
+    assert!(cfg.is_origin_trusted("https://myapp.com"));
+    let native_custom =
+        AuthConfig::new("test-secret-min-32-chars-1234567").base_url("myapp://auth");
+    assert!(native_custom.is_origin_trusted("myapp://auth"));
+    assert!(!native_custom.is_origin_trusted("myapp://auth/callback"));
+}
 
 // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
 #[test]
@@ -286,13 +286,13 @@ fn same_site_display() {
 }
 
 // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
-    #[test]
-    fn cookie_cache_config_defaults() {
-        let c = CookieCacheConfig::default();
-        assert!(!c.enabled);
-        assert_eq!(c.max_age, 300.0);
-        assert_eq!(c.strategy, CookieCacheStrategy::Compact);
-    }
+#[test]
+fn cookie_cache_config_defaults() {
+    let c = CookieCacheConfig::default();
+    assert!(!c.enabled);
+    assert!((c.max_age - 300.0).abs() < f64::EPSILON);
+    assert_eq!(c.strategy, CookieCacheStrategy::Compact);
+}
 
 // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
 #[test]
@@ -345,22 +345,22 @@ fn session_builder_methods() {
 }
 
 // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
-    #[test]
-    fn session_cookie_cache_builder() {
-        let cache = CookieCacheConfig {
-            enabled: true,
-            max_age: 600.0,
-            strategy: CookieCacheStrategy::Jwt,
-            ..CookieCacheConfig::default()
-        };
-        let cfg = AuthConfig::new("test-secret-min-32-chars-1234567").session_cookie_cache(cache);
+#[test]
+fn session_cookie_cache_builder() {
+    let cache = CookieCacheConfig {
+        enabled: true,
+        max_age: 600.0,
+        strategy: CookieCacheStrategy::Jwt,
+        ..CookieCacheConfig::default()
+    };
+    let cfg = AuthConfig::new("test-secret-min-32-chars-1234567").session_cookie_cache(cache);
 
-        let cc = cfg.session.cookie_cache.as_ref();
-        assert!(cc.is_some());
-        let cc = cc.unwrap();
-        assert!(cc.enabled);
-        assert_eq!(cc.strategy, CookieCacheStrategy::Jwt);
-    }
+    let cc = cfg.session.cookie_cache.as_ref();
+    assert!(cc.is_some());
+    let cc = cc.unwrap();
+    assert!(cc.enabled);
+    assert_eq!(cc.strategy, CookieCacheStrategy::Jwt);
+}
 
 // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
 #[test]

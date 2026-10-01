@@ -62,6 +62,9 @@ fn json_media_type(value: &str) -> bool {
 }
 
 /// Media and JSON parsing also apply to the schema-less stop-impersonating route.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn parse(req: &AuthRequest) -> Result<Option<JsValue>, AuthResponse> {
     let Some(bytes) = req.body.as_deref() else {
         // Bun materializes an incoming empty chunked JSON stream as null.
@@ -182,6 +185,9 @@ fn valid_permissions(value: Option<&JsValue>) -> bool {
         })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn body<T: DeserializeOwned + 'static>(req: &AuthRequest) -> Result<T, AuthResponse> {
     let value = parse(req)?;
     let route = req.path.rsplit('/').next().unwrap_or_default();
@@ -274,6 +280,9 @@ pub(super) fn body<T: DeserializeOwned + 'static>(req: &AuthRequest) -> Result<T
         .map_err(|_error| response(400, "VALIDATION_ERROR", "[body] Invalid input"))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn get_user(req: &AuthRequest) -> Result<super::types::GetUserQuery, AuthResponse> {
     drop(parse(req)?);
     match req.query_values("id") {
@@ -285,6 +294,9 @@ pub(super) fn get_user(req: &AuthRequest) -> Result<super::types::GetUserQuery, 
     }
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn list_users(req: &AuthRequest) -> Result<(), AuthResponse> {
     drop(parse(req)?);
     let mut issues = Vec::new();

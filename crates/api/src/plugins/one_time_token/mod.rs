@@ -230,6 +230,7 @@ impl OneTimeTokenPlugin {
                 | AuthError::AuthenticationFailed(_)
                 | AuthError::SessionNotFound
                 | AuthError::Forbidden(_)
+                | AuthError::UserCreationCancelled
                 | AuthError::SessionCreationCancelled
                 | AuthError::BannedUser(_)
                 | AuthError::Unauthorized

@@ -1,50 +1,44 @@
-//! Source acceptance claims before its subsequent membership transaction.
 use super::extension_common::org_error;
+/// Source acceptance claims before its subsequent membership transaction.
+use std::sync::Arc;
 
 use super::invitation::require_verified_invitation_email;
+
 use crate::plugins::organization::extensions::TeamLimitContext;
+
 use crate::plugins::organization::types::{
     AcceptInvitationRequest, AcceptInvitationResponse, BasicMemberResponse, OrganizationResponse,
 };
+
 use crate::plugins::organization::{
     OrganizationConfig, OrganizationInvitationAcceptanceContext,
     OrganizationInvitationAcceptedContext,
 };
+
 use better_auth_core::entity::{AuthInvitation, AuthSession, AuthUser};
+
 use better_auth_core::store::transaction;
+
 use better_auth_core::types::AddTeamMemberResult;
+
 use better_auth_core::wire::InvitationView;
+
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, CreateMember, InvitationStatus,
 };
-
-fn acceptance_error(status: u16, code: &'static str) -> AuthError {
-    let message = match code {
-        "INVITATION_NOT_FOUND" => "Invitation not found",
-        "YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION" => {
-            "You are not the recipient of the invitation"
-        }
-        "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED" => "Organization membership limit reached",
-        _ => return org_error(status, code),
-    };
-    AuthError::Upstream {
-        status,
-        code,
-        message,
-    }
-}
 
 /// Keep only headers emitted by this accepted request's lifecycle removable.
 #[derive(Clone)]
 pub(super) struct AcceptanceTransport {
     request: AuthRequest,
-    cookies: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    cookies: Arc<std::sync::Mutex<Vec<String>>>,
 }
+
 impl AcceptanceTransport {
     pub(super) fn new(request: &AuthRequest) -> Self {
         Self {
             request: request.clone(),
-            cookies: Default::default(),
+            cookies: Arc::default(),
         }
     }
     fn issue_cookie(&self, value: String) {
@@ -66,7 +60,7 @@ impl AcceptanceTransport {
             if let Some(index) = headers.iter().rposition(|(name, value)| {
                 name.eq_ignore_ascii_case("set-cookie") && value == cookie
             }) {
-                let _ = headers.remove(index);
+                drop(headers.remove(index));
             }
         }
         for (name, value) in headers {
@@ -75,6 +69,34 @@ impl AcceptanceTransport {
     }
 }
 
+fn acceptance_error(status: u16, code: &'static str) -> AuthError {
+    let message = match code {
+        "INVITATION_NOT_FOUND" => "Invitation not found",
+        "YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION" => {
+            "You are not the recipient of the invitation"
+        }
+        "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED" => "Organization membership limit reached",
+        _ => return org_error(status, code),
+    };
+    AuthError::Upstream {
+        status,
+        code,
+        message,
+    }
+}
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "Preserve JavaScript Number rounding at the compatibility boundary"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep invitation claims, membership transactions, and lifecycle callbacks in order"
+)]
 pub(super) async fn accept<S: AuthSchema>(
     body: &AcceptInvitationRequest,
     user: &impl AuthUser,
@@ -153,7 +175,7 @@ pub(super) async fn accept<S: AuthSchema>(
     let teams = config.teams.clone();
     let tx_user = original_user.clone();
     let tx_transport = transport.clone();
-    let auth_config = ctx.config.clone();
+    let auth_config = Arc::clone(&ctx.config);
     let result = transaction(ctx.database.as_ref(), move |tx| {
         Box::pin(async move {
             let team_ids: Vec<_> = if teams.enabled {
@@ -195,13 +217,15 @@ pub(super) async fn accept<S: AuthSchema>(
                 }
             }
             if team_ids.len() == 1 {
-                let updated = tx
-                    .update_session_active_team(&token, team_ids.first().copied())
-                    .await?;
                 use better_auth_core::utils::cookie_utils::{
                     create_session_cookie_with_max_age, create_session_like_cookie,
                     related_cookie_name, sign_cookie_value, verify_cookie_value,
                 };
+
+                let updated = tx
+                    .update_session_active_team(&token, team_ids.first().copied())
+                    .await?;
+
                 let preference = related_cookie_name(&auth_config, "dont_remember");
                 let dont_remember =
                     crate::plugins::helpers::get_cookie(&tx_transport.request, &preference)
@@ -228,9 +252,13 @@ pub(super) async fn accept<S: AuthSchema>(
                     role: accepted_for_tx.role,
                 })
                 .await?;
-            let _ = tx
-                .update_session_active_organization(&token, Some(&accepted_for_tx.organization_id))
-                .await?;
+            drop(
+                tx.update_session_active_organization(
+                    &token,
+                    Some(&accepted_for_tx.organization_id),
+                )
+                .await?,
+            );
             Ok(member)
         })
     })
@@ -240,14 +268,15 @@ pub(super) async fn accept<S: AuthSchema>(
         Err(error) => {
             // A reset error replaces the original transaction error. A missing
             // or independently transitioned row is a successful conditional no-op.
-            let _ = ctx
-                .database
-                .update_invitation_status_if_status(
-                    &body.invitation_id,
-                    InvitationStatus::Accepted,
-                    InvitationStatus::Pending,
-                )
-                .await?;
+            drop(
+                ctx.database
+                    .update_invitation_status_if_status(
+                        &body.invitation_id,
+                        InvitationStatus::Accepted,
+                        InvitationStatus::Pending,
+                    )
+                    .await?,
+            );
             return Err(error);
         }
     };

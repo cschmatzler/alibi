@@ -15,9 +15,9 @@ async fn test_encrypt_oauth_tokens_stored_encrypted_in_db() {
 
     // Encrypt before storing (simulating what handle_callback does)
     let encrypted_access =
-        maybe_encrypt(Some(plaintext_access.to_string()), true, TEST_SECRET).unwrap();
+        maybe_encrypt(Some(plaintext_access.to_owned()), true, TEST_SECRET).unwrap();
     let encrypted_refresh =
-        maybe_encrypt(Some(plaintext_refresh.to_string()), true, TEST_SECRET).unwrap();
+        maybe_encrypt(Some(plaintext_refresh.to_owned()), true, TEST_SECRET).unwrap();
 
     // Verify the encrypted values are different from plaintext
     assert_ne!(encrypted_access.as_deref(), Some(plaintext_access));
@@ -37,8 +37,16 @@ async fn test_encrypt_oauth_tokens_stored_encrypted_in_db() {
     // Verify tokens in DB are encrypted (not plaintext)
     let accounts = db.get_user_accounts(&user_id).await.unwrap();
     assert_eq!(accounts.len(), 1);
-    let stored_access = accounts[0].access_token().unwrap();
-    let stored_refresh = accounts[0].refresh_token().unwrap();
+    let stored_access = (*(accounts)
+        .first()
+        .expect("fixture contains the requested index"))
+    .access_token()
+    .unwrap();
+    let stored_refresh = (*(accounts)
+        .first()
+        .expect("fixture contains the requested index"))
+    .refresh_token()
+    .unwrap();
     assert_ne!(stored_access, plaintext_access);
     assert_ne!(stored_refresh, plaintext_refresh);
 
@@ -49,14 +57,14 @@ async fn test_encrypt_oauth_tokens_stored_encrypted_in_db() {
     assert_eq!(decrypted_refresh, plaintext_refresh);
 
     // Now test via the get-access-token handler which should decrypt transparently
-    let ctx = AuthContext::new(config.clone(), db.clone());
+    let ctx = AuthContext::new(Arc::clone(&config), Arc::clone(&db));
 
     let mut req = AuthRequest::new(HttpMethod::Post, "/get-access-token");
     req.body = Some(json!({"accountId": account_id}).to_string().into_bytes());
     req.headers
-        .insert("content-type".to_string(), "application/json".to_string());
+        .insert("content-type".to_owned(), "application/json".to_owned());
     req.headers.insert(
-        "cookie".to_string(),
+        "cookie".to_owned(),
         format!(
             "better-auth.session_token={}",
             better_auth_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
@@ -66,7 +74,7 @@ async fn test_encrypt_oauth_tokens_stored_encrypted_in_db() {
     let mut oauth_config = OAuthConfig::default();
     let provider = make_test_provider("http://localhost:65535");
     oauth_config.providers.insert(
-        "google".to_string(),
+        "google".to_owned(),
         OAuthProvider {
             client_id: provider.client_id,
             additional_client_ids: Vec::new(),
@@ -96,10 +104,15 @@ async fn test_encrypt_oauth_tokens_stored_encrypted_in_db() {
             assert_eq!(resp.status, 200);
             let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
             // The access token returned should be the DECRYPTED plaintext
-            assert_eq!(body["accessToken"], plaintext_access);
+            assert_eq!(
+                (*(body)
+                    .get("accessToken")
+                    .unwrap_or(&serde_json::Value::Null)),
+                plaintext_access
+            );
         }
         Ok(None) => panic!("Expected response from get-access-token but got None"),
-        Err(e) => panic!("get-access-token handler error: {:?}", e),
+        Err(e) => panic!("get-access-token handler error: {e:?}"),
     }
 }
 
@@ -1041,27 +1054,27 @@ async fn test_link_social_returns_redirect_url_with_state() {
         &config,
         "link@example.com",
         "existing-provider",
-        Some("existing-token".to_string()),
+        Some("existing-token".to_owned()),
         None,
     )
     .await;
 
     let mut oauth_config = OAuthConfig::default();
     oauth_config.providers.insert(
-        "github".to_string(),
+        "github".to_owned(),
         OAuthProvider {
-            client_id: "client".to_string(),
+            client_id: "client".to_owned(),
             additional_client_ids: Vec::new(),
             hosted_domain: None,
             require_email_verification: false,
-            client_secret: "secret".to_string(),
-            auth_url: "https://github.com/login/oauth/authorize".to_string(),
-            token_url: "https://github.com/login/oauth/access_token".to_string(),
-            user_info_url: Some("https://api.github.com/user".to_string()),
-            scopes: vec!["user:email".to_string()],
+            client_secret: "secret".to_owned(),
+            auth_url: "https://github.com/login/oauth/authorize".to_owned(),
+            token_url: "https://github.com/login/oauth/access_token".to_owned(),
+            user_info_url: Some("https://api.github.com/user".to_owned()),
+            scopes: vec!["user:email".to_owned()],
             authorization: None,
             authorization_params: Vec::new(),
-            map_user_info: Some(|_| unreachable!()),
+            map_user_info: Some(|_| panic!("This rejection must precede profile mapping")),
             get_user_info: None,
             refresh_access_token: None,
             verify_id_token: None,
@@ -1071,15 +1084,15 @@ async fn test_link_social_returns_redirect_url_with_state() {
         },
     );
 
-    let ctx = AuthContext::new(config.clone(), db.clone());
+    let ctx = AuthContext::new(Arc::clone(&config), Arc::clone(&db));
     let oauth_plugin = OAuthPlugin::with_config(oauth_config);
 
     let mut req = AuthRequest::new(HttpMethod::Post, "/link-social");
     req.body = Some(json!({"provider": "github"}).to_string().into_bytes());
     req.headers
-        .insert("content-type".to_string(), "application/json".to_string());
+        .insert("content-type".to_owned(), "application/json".to_owned());
     req.headers.insert(
-        "cookie".to_string(),
+        "cookie".to_owned(),
         format!(
             "better-auth.session_token={}",
             better_auth_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
@@ -1093,18 +1106,25 @@ async fn test_link_social_returns_redirect_url_with_state() {
             assert_eq!(resp.status, 200);
             let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
             assert!(
-                body["url"].as_str().is_some(),
+                (*(body).get("url").unwrap_or(&serde_json::Value::Null))
+                    .as_str()
+                    .is_some(),
                 "Response should contain URL"
             );
-            assert_eq!(body["redirect"], true);
-            let url = body["url"].as_str().unwrap();
+            assert_eq!(
+                (*(body).get("redirect").unwrap_or(&serde_json::Value::Null)),
+                true
+            );
+            let url = (*(body).get("url").unwrap_or(&serde_json::Value::Null))
+                .as_str()
+                .unwrap();
             assert!(url.contains("state="), "URL should contain state param");
             assert!(
                 url.contains("code_challenge="),
                 "URL should contain PKCE challenge"
             );
         }
-        Err(e) => panic!("link-social should succeed: {:?}", e),
+        Err(e) => panic!("link-social should succeed: {e:?}"),
         Ok(None) => panic!("Expected a response"),
     }
 }
@@ -1215,16 +1235,16 @@ async fn test_get_access_token_preserves_source_plaintext_import_when_encryption
         &config,
         "plaintext-access@example.com",
         "google",
-        Some("plain-access-token".to_string()),
-        Some("plain-refresh-token".to_string()),
+        Some("plain-access-token".to_owned()),
+        Some("plain-refresh-token".to_owned()),
     )
     .await;
 
     let before = serde_json::to_value(db.get_user_accounts(&user_id).await.unwrap()).unwrap();
-    let ctx = AuthContext::new(config.clone(), db.clone());
+    let ctx = AuthContext::new(Arc::clone(&config), Arc::clone(&db));
     let mut oauth_config = OAuthConfig::default();
     oauth_config.providers.insert(
-        "google".to_string(),
+        "google".to_owned(),
         make_test_provider("http://localhost:65535"),
     );
     let oauth_plugin = OAuthPlugin::with_config(oauth_config);
@@ -1232,9 +1252,9 @@ async fn test_get_access_token_preserves_source_plaintext_import_when_encryption
     let mut req = AuthRequest::new(HttpMethod::Post, "/get-access-token");
     req.body = Some(json!({"accountId": account_id}).to_string().into_bytes());
     req.headers
-        .insert("content-type".to_string(), "application/json".to_string());
+        .insert("content-type".to_owned(), "application/json".to_owned());
     req.headers.insert(
-        "cookie".to_string(),
+        "cookie".to_owned(),
         format!(
             "better-auth.session_token={}",
             better_auth_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
@@ -1245,7 +1265,12 @@ async fn test_get_access_token_preserves_source_plaintext_import_when_encryption
     let response = result.unwrap().unwrap();
     assert_eq!(response.status, 200);
     let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert_eq!(body["accessToken"], "plain-access-token");
+    assert_eq!(
+        (*(body)
+            .get("accessToken")
+            .unwrap_or(&serde_json::Value::Null)),
+        "plain-access-token"
+    );
     assert_eq!(
         serde_json::to_value(db.get_user_accounts(&user_id).await.unwrap()).unwrap(),
         before
@@ -1263,12 +1288,12 @@ async fn test_refresh_token_passes_plaintext_import_to_custom_provider_and_encry
         &config,
         "plaintext-refresh@example.com",
         "google",
-        Some("plain-access-token".to_string()),
-        Some("plain-refresh-token".to_string()),
+        Some("plain-access-token".to_owned()),
+        Some("plain-refresh-token".to_owned()),
     )
     .await;
 
-    let ctx = AuthContext::new(config.clone(), db.clone());
+    let ctx = AuthContext::new(Arc::clone(&config), Arc::clone(&db));
     let mut oauth_config = OAuthConfig::default();
     let sequence = Arc::new(std::sync::Mutex::new(vec![(
         "plain-refresh-token".to_owned(),
@@ -1281,7 +1306,7 @@ async fn test_refresh_token_passes_plaintext_import_to_custom_provider_and_encry
     )]));
     let mut provider = make_test_provider("http://localhost:65535");
     provider.refresh_access_token = Some(Arc::new(RotatingRefreshHandler {
-        sequence: sequence.clone(),
+        sequence: Arc::clone(&sequence),
     }));
     oauth_config.providers.insert("google".to_owned(), provider);
     let oauth_plugin = OAuthPlugin::with_config(oauth_config);
@@ -1289,9 +1314,9 @@ async fn test_refresh_token_passes_plaintext_import_to_custom_provider_and_encry
     let mut req = AuthRequest::new(HttpMethod::Post, "/refresh-token");
     req.body = Some(json!({"accountId": account_id}).to_string().into_bytes());
     req.headers
-        .insert("content-type".to_string(), "application/json".to_string());
+        .insert("content-type".to_owned(), "application/json".to_owned());
     req.headers.insert(
-        "cookie".to_string(),
+        "cookie".to_owned(),
         format!(
             "better-auth.session_token={}",
             better_auth_core::utils::cookie_utils::sign_cookie_value(&session_token, TEST_SECRET)
@@ -1302,9 +1327,22 @@ async fn test_refresh_token_passes_plaintext_import_to_custom_provider_and_encry
     let response = result.unwrap().unwrap();
     assert_eq!(response.status, 200);
     let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert_eq!(body["accessToken"], "new-access-token");
-    assert_eq!(body["refreshToken"], "new-refresh-token");
-    assert_eq!(body["idToken"], "literal-provider-id-token");
+    assert_eq!(
+        (*(body)
+            .get("accessToken")
+            .unwrap_or(&serde_json::Value::Null)),
+        "new-access-token"
+    );
+    assert_eq!(
+        (*(body)
+            .get("refreshToken")
+            .unwrap_or(&serde_json::Value::Null)),
+        "new-refresh-token"
+    );
+    assert_eq!(
+        (*(body).get("idToken").unwrap_or(&serde_json::Value::Null)),
+        "literal-provider-id-token"
+    );
     assert!(sequence.lock().unwrap().is_empty());
     let account = db.get_user_accounts(&user_id).await.unwrap().remove(0);
     assert_eq!(account.id(), account_id);

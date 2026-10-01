@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use async_trait::async_trait;
 
 use chrono::{DateTime, Utc};
@@ -12,6 +15,10 @@ use better_auth_core::store::SessionStore;
 use crate::schema::{AuthSchema, SeaOrmSessionModel};
 
 use super::{SeaOrmStore, cancelled_by_hook, map_db_err};
+
+use better_auth_core::error::{AuthError, AuthResult};
+
+use better_auth_core::types::CreateSession;
 
 impl<S> SeaOrmStore<S>
 where
@@ -112,7 +119,7 @@ where
     S: AuthSchema,
     S::Session: SeaOrmSessionModel,
 {
-    pub(super) async fn update_session_scope_with_connection<C: sea_orm::ConnectionTrait>(
+    pub(super) async fn update_session_scope_with_connection<C: ConnectionTrait>(
         &self,
         connection: &C,
         token: &str,
@@ -128,19 +135,19 @@ where
         let mut active = model.into_active_model();
         match scope {
             SessionScope::Team(team) => {
-                S::Session::set_active_team_id(&mut active, team.map(str::to_owned))?
+                S::Session::set_active_team_id(&mut active, team.map(str::to_owned))?;
             }
             SessionScope::Organization(organization) => {
-                S::Session::set_active_organization_id(&mut active, organization.map(str::to_owned))
+                S::Session::set_active_organization_id(
+                    &mut active,
+                    organization.map(str::to_owned),
+                );
             }
         }
         S::Session::set_updated_at(&mut active, Utc::now());
         active.update(connection).await.map_err(map_db_err)
     }
 }
-
-#[cfg(test)]
-mod tests;
 
 #[async_trait]
 impl<S> SessionStore<S> for SeaOrmStore<S>
@@ -355,7 +362,3 @@ where
         active.update(self.connection()).await.map_err(map_db_err)
     }
 }
-
-use better_auth_core::error::{AuthError, AuthResult};
-
-use better_auth_core::types::CreateSession;

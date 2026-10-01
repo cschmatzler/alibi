@@ -258,7 +258,7 @@ where
             self.connection().get_database_backend(),
             sea_orm::DbBackend::Sqlite | sea_orm::DbBackend::Postgres
         ) {
-            return Err(crate::error::AuthError::NotImplemented(
+            return Err(AuthError::NotImplemented(
                 "Conditional invitation updates require RETURNING support".into(),
             ));
         }

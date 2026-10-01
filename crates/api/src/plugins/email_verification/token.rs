@@ -13,6 +13,9 @@ pub(in crate::plugins) struct EmailVerificationClaims {
     pub(in crate::plugins) request_type: Option<String>,
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn create_email_verification_token(
     secret: &str,
     email: &str,
@@ -49,6 +52,9 @@ pub(in crate::plugins) fn create_email_verification_token(
     clippy::cast_precision_loss,
     reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
 )]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn decode_email_verification_token(
     secret: &str,
     token: &str,

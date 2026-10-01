@@ -11,6 +11,10 @@
 )]
 mod compat;
 
+#[cfg(test)]
+#[path = "compat_coverage_tests/tests.rs"]
+mod tests;
+
 use compat::helpers::{TestAuthOptions, create_test_auth_with_options};
 
 use serde_json::Value;
@@ -29,9 +33,3 @@ fn canonical(path: &str) -> String {
         .collect::<Vec<_>>()
         .join("/")
 }
-
-
-
-#[cfg(test)]
-#[path = "compat_coverage_tests/tests.rs"]
-mod tests;

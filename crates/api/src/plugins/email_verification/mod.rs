@@ -252,6 +252,9 @@ impl EmailVerificationPlugin {
     /// If [`EmailVerificationConfig::send_verification_email`] is set the
     /// custom callback is used; otherwise the default `EmailProvider` path is
     /// taken.
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(in crate::plugins) async fn send_verification_email_for_user(
         &self,
         user: &impl AuthUser,
@@ -358,6 +361,9 @@ impl EmailVerificationPlugin {
 
 /// Password registration emits verification before creating its session. The
 /// transaction handle keeps OTP challenges in the same transaction as the user.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn send_signup_verification<S: better_auth_core::AuthSchema>(
     user: &S::User,
     callback_url: Option<&str>,

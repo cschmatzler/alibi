@@ -1,12 +1,34 @@
 pub mod creation_policy;
 
-pub use creation_policy::OrganizationCreationPolicy;
-
 pub mod extensions;
 
 pub mod handlers;
 
 pub mod lifecycle;
+
+pub mod invitation_acceptance_lifecycle;
+
+pub mod membership_policy;
+
+pub mod member_addition_lifecycle;
+
+pub mod member_removal_lifecycle;
+
+pub mod member_role_lifecycle;
+
+pub mod rbac;
+
+pub mod types;
+
+pub mod update_lifecycle;
+
+#[cfg(test)]
+mod extension_tests;
+
+#[cfg(test)]
+mod dynamic_role_tests;
+
+pub use creation_policy::OrganizationCreationPolicy;
 
 pub use lifecycle::{
     OrganizationCreatePatch, OrganizationCreatedContext, OrganizationCreationHooks,
@@ -14,27 +36,17 @@ pub use lifecycle::{
     OrganizationMemberCreatePatch, OrganizationMemberDraftContext,
 };
 
-pub mod invitation_acceptance_lifecycle;
-
 pub use invitation_acceptance_lifecycle::{
     OrganizationInvitationAcceptanceContext, OrganizationInvitationAcceptanceHooks,
     OrganizationInvitationAcceptedContext,
 };
 
-pub mod membership_policy;
-
 pub use membership_policy::{MembershipLimit, OrganizationMembershipLimitResolver};
-
-pub mod member_addition_lifecycle;
 
 pub use member_addition_lifecycle::{
     OrganizationMemberAddedContext, OrganizationMemberAdditionContext,
     OrganizationMemberAdditionDraft, OrganizationMemberAdditionHooks,
 };
-
-pub mod member_removal_lifecycle;
-
-pub mod member_role_lifecycle;
 
 pub use member_removal_lifecycle::{
     OrganizationMemberRemovalContext, OrganizationMemberRemovalHooks,
@@ -44,12 +56,6 @@ pub use member_role_lifecycle::{
     OrganizationMemberRoleContext, OrganizationMemberRoleHooks, OrganizationMemberRolePatch,
     OrganizationMemberRoleUpdatedContext,
 };
-
-pub mod rbac;
-
-pub mod types;
-
-pub mod update_lifecycle;
 
 pub use extensions::{
     DefaultTeamContext, DefaultTeamFactory, DynamicAccessControlConfig, OrganizationLimitResolver,
@@ -132,7 +138,7 @@ pub struct OrganizationConfig {
     #[config(default = Some(MembershipLimit::Fixed(100.0)), skip)]
     pub membership_limit: Option<MembershipLimit>,
     /// Role assigned to organization creator (default: "owner")
-    #[config(default = "owner".to_string())]
+    #[config(default = "owner".to_owned())]
     pub creator_role: String,
     /// Invitation expiration in seconds (default: 48 hours)
     #[config(default = 60 * 60 * 48)]
@@ -287,12 +293,6 @@ impl OrganizationPlugin {
     }
 }
 
-#[cfg(test)]
-mod extension_tests;
-
-#[cfg(test)]
-mod dynamic_role_tests;
-
 /// Metadata key announcing that the organization plugin is installed.
 pub(in crate::plugins) const METADATA_ENABLED: &str = "organization.enabled";
 
@@ -305,12 +305,11 @@ pub(in crate::plugins) const METADATA_CREATOR_ROLE: &str = "organization.creator
 
 #[async_trait]
 impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
-
     fn name(&self) -> &'static str {
         "organization"
     }
 
-fn session_fields(&self) -> better_auth_core::field_policy::FieldConfigs {
+    fn session_fields(&self) -> better_auth_core::field_policy::FieldConfigs {
         let mut fields = better_auth_core::field_policy::FieldConfigs::new();
         drop(
             fields.insert(
@@ -335,7 +334,7 @@ fn session_fields(&self) -> better_auth_core::field_policy::FieldConfigs {
         fields
     }
 
-async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
+    async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
         ctx.set_metadata(METADATA_ENABLED, serde_json::Value::Bool(true));
         ctx.set_metadata(
             "organization.teams.enabled",
@@ -360,7 +359,7 @@ async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthR
         Ok(())
     }
 
-fn routes(&self) -> Vec<AuthRoute> {
+    fn routes(&self) -> Vec<AuthRoute> {
         let mut routes = vec![
             // Organization CRUD
             AuthRoute::post("/organization/create", "create_organization"),
@@ -423,7 +422,7 @@ fn routes(&self) -> Vec<AuthRoute> {
         routes
     }
 
-async fn on_request(
+    async fn on_request(
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<S>,
@@ -509,7 +508,6 @@ async fn on_request(
             }
         }
     }
-
 }
 
 impl std::fmt::Debug for OrganizationPlugin {

@@ -107,6 +107,9 @@ fn passkey_not_found<T>() -> PasskeyHandlerResult<T> {
     response_code(401, "PASSKEY_NOT_FOUND", "Passkey not found")
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn generate_register_options_core(
     user: &PasskeyRegistrationUser,
     requested_context: Option<&str>,
@@ -212,6 +215,9 @@ pub(super) async fn generate_register_options_core(
     Ok((response, cookie))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn generate_authenticate_options_core<U: AuthUser>(
     maybe_user: Option<&U>,
     config: &PasskeyConfig,
@@ -286,6 +292,9 @@ pub(super) async fn generate_authenticate_options_core<U: AuthUser>(
     clippy::too_many_lines,
     reason = "Keep challenge consumption, credential verification, and registration callbacks in protocol order"
 )]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
     body: &VerifyRegistrationRequest,
     req: &better_auth_core::AuthRequest,
@@ -574,6 +583,7 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
                             | AuthError::Plugin { .. }
                             | AuthError::Internal(_)
                             | AuthError::PasswordHash(_)
+                            | AuthError::UserCreationCancelled
                             | AuthError::Jwt(_)) => other,
                         })?;
                     Ok::<better_auth_core::store::BoxedTransactionValue, AuthError>(Box::new((
@@ -624,6 +634,9 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
     clippy::too_many_lines,
     reason = "Keep credential verification, counter updates, and session callbacks in protocol order"
 )]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn verify_authentication_core(
     body: &VerifyAuthenticationRequest,
     req: &better_auth_core::AuthRequest,
@@ -806,6 +819,9 @@ pub(super) async fn verify_authentication_core(
     )))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn list_user_passkeys_core(
     user: &impl AuthUser,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -814,6 +830,9 @@ pub(super) async fn list_user_passkeys_core(
     Ok(passkeys.iter().map(PasskeyView::from).collect())
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn delete_passkey_core(
     body: &DeletePasskeyRequest,
     user: &impl AuthUser,
@@ -838,6 +857,9 @@ pub(super) async fn delete_passkey_core(
     }))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn update_passkey_core(
     body: &UpdatePasskeyRequest,
     user: &impl AuthUser,

@@ -1,11 +1,14 @@
 //! Application-owned anonymous identity/link handlers and actual stored-state observer.
 use crate::TestSchema;
 use async_trait::async_trait;
-use axum::{extract::Query, routing::get, Json, Router};
+use axum::{Json, Router, extract::Query, routing::get};
 use better_auth::{
+    AuthBuilder, AuthConfig, AuthError, AuthResult,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{
+        AnonymousPlugin, EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, PasskeyPlugin,
+        SessionManagementPlugin,
         anonymous::{AnonymousConfig, AnonymousIdentity, AnonymousLink, LinkAnonymousAccount},
         email_otp::{EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, SendEmailOtp},
         email_verification::SendVerificationEmail,
@@ -16,23 +19,20 @@ use better_auth::{
             PhoneNumberConfig, PhoneNumberPlugin, PhoneOtpDelivery, PhoneSignupIdentity,
             SendPhoneOtp,
         },
-        AnonymousPlugin, EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, PasskeyPlugin,
-        SessionManagementPlugin,
     },
-    AuthBuilder, AuthConfig, AuthError, AuthResult,
 };
 use better_auth_core::{AuthRequest, AuthSession, CreateSession, CreateUser};
 use better_auth_seaorm::{
+    DatabaseConnection, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore,
     sea_orm::{ConnectionTrait, EntityTrait, QueryOrder, Statement},
     store::entities::{account, session, user},
-    DatabaseConnection, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore,
 };
 use chrono::{DateTime, SecondsFormat, Utc};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc, Mutex,
+    atomic::{AtomicUsize, Ordering},
 };
 
 #[derive(Clone, Default)]

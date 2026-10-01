@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use better_auth_core::entity::MemberUserView;
 
 use better_auth_core::entity::{AuthMember, AuthOrganization};
@@ -10,198 +13,12 @@ use std::collections::HashMap;
 
 use validator::Validate;
 
-pub(super) fn undefined_string() -> String {
-    "undefined".to_owned()
-}
-
-/// The pinned membership endpoints use JavaScript's `String` coercion for IDs.
-pub(super) fn deserialize_coercible_string<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    fn string(value: &JsValue) -> Result<String, &'static str> {
-        match value {
-            JsValue::Null => Ok("null".to_owned()),
-            JsValue::Bool(value) => Ok(value.to_string()),
-            JsValue::String(value) => Ok(value.clone()),
-            JsValue::Number(value) => Ok(ryu_js::Buffer::new().format(*value).to_owned()),
-            JsValue::Array(values) => values
-                .iter()
-                .map(|value_2| match value_2 {
-                    JsValue::Null => Ok(String::new()),
-                    value_2_3 @ (JsValue::Bool(_)
-                    | JsValue::Number(_)
-                    | JsValue::String(_)
-                    | JsValue::Array(_)
-                    | JsValue::Object(_)) => string(value_2_3),
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map(|values| values.join(",")),
-            JsValue::Object(value) if value.contains_key("toString") => {
-                Err("Cannot convert object to primitive value")
-            }
-            JsValue::Object(_) => Ok("[object Object]".to_owned()),
-        }
-    }
-    let value = JsValue::deserialize(deserializer)?;
-    string(&value).map_err(serde::de::Error::custom)
-}
-
-// These routes intentionally use different published query conversions:
-// list-members Number(string), get-full-organization parseInt(string).
-fn query_whitespace(c: char) -> bool {
-    matches!(c, '\u{0009}'..='\u{000D}' | '\u{0020}' | '\u{00A0}' | '\u{1680}' | '\u{2000}'..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{202F}' | '\u{205F}' | '\u{3000}' | '\u{FEFF}')
-}
-
-fn number_query(value: &str) -> f64 {
-    let value = value.trim_matches(query_whitespace);
-    if value.is_empty() {
-        return 0.0;
-    }
-    for (prefixes, radix, bits) in [
-        (["0x", "0X"], 16, 4),
-        (["0o", "0O"], 8, 3),
-        (["0b", "0B"], 2, 1),
-    ] {
-        if let Some(digits) = prefixes
-            .iter()
-            .find_map(|prefix| value.strip_prefix(prefix))
-        {
-            return radix_number(digits, radix, bits).unwrap_or(f64::NAN);
-        }
-    }
-    match value {
-        "Infinity" | "+Infinity" => f64::INFINITY,
-        "-Infinity" => f64::NEG_INFINITY,
-        _ if value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || b"+-.eE".contains(&byte)) =>
-        {
-            value.parse().unwrap_or(f64::NAN)
-        }
-        _ => f64::NAN,
-    }
-}
-
-fn integer_query(value: &str) -> f64 {
-    let value = value.trim_start_matches(query_whitespace);
-    let (value, sign) = if let Some(value) = value.strip_prefix('-') {
-        (value, -1.0)
-    } else {
-        (value.strip_prefix('+').unwrap_or(value), 1.0)
-    };
-    if let Some(value) = value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-    {
-        let length = value.bytes().take_while(u8::is_ascii_hexdigit).count();
-        return sign
-            * radix_number(value.get(..length).unwrap_or_default(), 16, 4).unwrap_or(f64::NAN);
-    }
-    let length = value.bytes().take_while(u8::is_ascii_digit).count();
-    sign * value
-        .get(..length)
-        .unwrap_or_default()
-        .parse::<f64>()
-        .unwrap_or(f64::NAN)
-}
-
-fn deserialize_query_number<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-    integer_string: bool,
-) -> Result<Option<f64>, D::Error> {
-    match Option::<JsValue>::deserialize(deserializer)? {
-        None => Ok(None),
-        Some(JsValue::Number(number)) => Ok(Some(number)),
-        Some(JsValue::String(value)) => Ok(Some(if integer_string {
-            integer_query(&value)
-        } else {
-            number_query(&value)
-        })),
-        _ => Err(serde::de::Error::custom(
-            "Page limits must be a string or number",
-        )),
-    }
-}
-
-fn deserialize_optional_number<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<f64>, D::Error> {
-    deserialize_query_number(deserializer, false)
-}
-
-fn deserialize_optional_integer_query<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<f64>, D::Error> {
-    deserialize_query_number(deserializer, true)
-}
-
-// Retain one-rounded radix conversion already used for JS Number SIWE inputs.
-fn radix_number(digits: &str, radix: u32, bits_per_digit: usize) -> Option<f64> {
-    if digits.is_empty() {
-        return None;
-    }
-    let digits = digits
-        .chars()
-        .map(|character| character.to_digit(radix))
-        .collect::<Option<Vec<_>>>()?;
-    let Some(first_nonzero) = digits.iter().position(|digit| *digit != 0) else {
-        return Some(0.0);
-    };
-    let significant = digits.get(first_nonzero..)?;
-    let first = *significant.first()?;
-    let first_bits = (u32::BITS - first.leading_zeros()) as usize;
-    let bit_length = first_bits + (significant.len() - 1) * bits_per_digit;
-    if bit_length > 1024 {
-        return Some(f64::INFINITY);
-    }
-    let mut mantissa = 0u64;
-    let mut position = 0;
-    let mut guard = false;
-    let mut sticky = false;
-    for (index, digit) in significant.iter().enumerate() {
-        let width = if index == 0 {
-            first_bits
-        } else {
-            bits_per_digit
-        };
-        for bit in (0..width).rev() {
-            let set = (*digit >> bit) & 1 != 0;
-            if position < 53 {
-                mantissa = (mantissa << 1) | u64::from(set);
-            } else if position == 53 {
-                guard = set;
-            } else {
-                sticky |= set;
-            }
-            position += 1;
-        }
-    }
-    if bit_length <= 53 {
-        return Some(mantissa as f64);
-    }
-    if guard && (sticky || mantissa & 1 != 0) {
-        mantissa += 1;
-    }
-    Some(mantissa as f64 * 2.0f64.powi((bit_length - 53) as i32))
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum NullableStringField {
     #[default]
     Missing,
     Null,
     Value(String),
-}
-
-pub(super) fn deserialize_nullable_string_field<'de, D>(
-    deserializer: D,
-) -> Result<NullableStringField, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = Option::<String>::deserialize(deserializer)?;
-    Ok(value.map_or(NullableStringField::Null, NullableStringField::Value))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -609,6 +426,9 @@ impl CreatedOrganizationResponse {
 }
 
 impl OrganizationResponse {
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(in crate::plugins) fn from_stored_organization(
         organization: &impl AuthOrganization,
     ) -> Result<Self, serde_json::Error> {
@@ -691,5 +511,196 @@ impl BasicMemberResponse {
     }
 }
 
-#[cfg(test)]
-mod tests;
+pub(super) fn undefined_string() -> String {
+    "undefined".to_owned()
+}
+
+/// The pinned membership endpoints use JavaScript's `String` coercion for IDs.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(super) fn deserialize_coercible_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    fn string(value: &JsValue) -> Result<String, &'static str> {
+        match value {
+            JsValue::Null => Ok("null".to_owned()),
+            JsValue::Bool(value) => Ok(value.to_string()),
+            JsValue::String(value) => Ok(value.clone()),
+            JsValue::Number(value) => Ok(ryu_js::Buffer::new().format(*value).to_owned()),
+            JsValue::Array(values) => values
+                .iter()
+                .map(|value_2| match value_2 {
+                    JsValue::Null => Ok(String::new()),
+                    value_2_3 @ (JsValue::Bool(_)
+                    | JsValue::Number(_)
+                    | JsValue::String(_)
+                    | JsValue::Array(_)
+                    | JsValue::Object(_)) => string(value_2_3),
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(|values| values.join(",")),
+            JsValue::Object(value) if value.contains_key("toString") => {
+                Err("Cannot convert object to primitive value")
+            }
+            JsValue::Object(_) => Ok("[object Object]".to_owned()),
+        }
+    }
+    let value = JsValue::deserialize(deserializer)?;
+    string(&value).map_err(serde::de::Error::custom)
+}
+
+// These routes intentionally use different published query conversions:
+// list-members Number(string), get-full-organization parseInt(string).
+const fn query_whitespace(c: char) -> bool {
+    matches!(c, '\u{0009}'..='\u{000D}' | '\u{0020}' | '\u{00A0}' | '\u{1680}' | '\u{2000}'..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{202F}' | '\u{205F}' | '\u{3000}' | '\u{FEFF}')
+}
+
+fn number_query(value: &str) -> f64 {
+    let value = value.trim_matches(query_whitespace);
+    if value.is_empty() {
+        return 0.0;
+    }
+    for (prefixes, radix, bits) in [
+        (["0x", "0X"], 16, 4),
+        (["0o", "0O"], 8, 3),
+        (["0b", "0B"], 2, 1),
+    ] {
+        if let Some(digits) = prefixes
+            .iter()
+            .find_map(|prefix| value.strip_prefix(prefix))
+        {
+            return radix_number(digits, radix, bits).unwrap_or(f64::NAN);
+        }
+    }
+    match value {
+        "Infinity" | "+Infinity" => f64::INFINITY,
+        "-Infinity" => f64::NEG_INFINITY,
+        _ if value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || b"+-.eE".contains(&byte)) =>
+        {
+            value.parse().unwrap_or(f64::NAN)
+        }
+        _ => f64::NAN,
+    }
+}
+
+fn integer_query(value: &str) -> f64 {
+    let value = value.trim_start_matches(query_whitespace);
+    let (value, sign) = value.strip_prefix('-').map_or_else(
+        || (value.strip_prefix('+').unwrap_or(value), 1.0),
+        |value| (value, -1.0),
+    );
+    if let Some(value) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        let length = value.bytes().take_while(u8::is_ascii_hexdigit).count();
+        return sign
+            * radix_number(value.get(..length).unwrap_or_default(), 16, 4).unwrap_or(f64::NAN);
+    }
+    let length = value.bytes().take_while(u8::is_ascii_digit).count();
+    sign * value
+        .get(..length)
+        .unwrap_or_default()
+        .parse::<f64>()
+        .unwrap_or(f64::NAN)
+}
+
+fn deserialize_query_number<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+    integer_string: bool,
+) -> Result<Option<f64>, D::Error> {
+    match Option::<JsValue>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(JsValue::Number(number)) => Ok(Some(number)),
+        Some(JsValue::String(value)) => Ok(Some(if integer_string {
+            integer_query(&value)
+        } else {
+            number_query(&value)
+        })),
+        _ => Err(serde::de::Error::custom(
+            "Page limits must be a string or number",
+        )),
+    }
+}
+
+fn deserialize_optional_number<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    deserialize_query_number(deserializer, false)
+}
+
+fn deserialize_optional_integer_query<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    deserialize_query_number(deserializer, true)
+}
+
+// Retain one-rounded radix conversion already used for JS Number SIWE inputs.
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "Preserve JavaScript Number rounding at the compatibility boundary"
+)]
+fn radix_number(digits: &str, radix: u32, bits_per_digit: usize) -> Option<f64> {
+    if digits.is_empty() {
+        return None;
+    }
+    let digits = digits
+        .chars()
+        .map(|character| character.to_digit(radix))
+        .collect::<Option<Vec<_>>>()?;
+    let Some(first_nonzero) = digits.iter().position(|digit| *digit != 0) else {
+        return Some(0.0);
+    };
+    let significant = digits.get(first_nonzero..)?;
+    let first = *significant.first()?;
+    let first_bits = usize::try_from(u32::BITS - first.leading_zeros()).ok()?;
+    let bit_length = first_bits + (significant.len() - 1) * bits_per_digit;
+    if bit_length > 1024 {
+        return Some(f64::INFINITY);
+    }
+    let mut mantissa = 0u64;
+    let mut position = 0;
+    let mut guard = false;
+    let mut sticky = false;
+    for (index, digit) in significant.iter().enumerate() {
+        let width = if index == 0 {
+            first_bits
+        } else {
+            bits_per_digit
+        };
+        for bit in (0..width).rev() {
+            let set = (*digit >> bit) & 1 != 0;
+            match position.cmp(&53) {
+                std::cmp::Ordering::Less => mantissa = (mantissa << 1) | u64::from(set),
+                std::cmp::Ordering::Equal => guard = set,
+                std::cmp::Ordering::Greater => sticky |= set,
+            }
+            position += 1;
+        }
+    }
+    if bit_length <= 53 {
+        return Some(mantissa as f64);
+    }
+    if guard && (sticky || mantissa & 1 != 0) {
+        mantissa += 1;
+    }
+    Some(mantissa as f64 * 2.0f64.powi(i32::try_from(bit_length - 53).ok()?))
+}
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(super) fn deserialize_nullable_string_field<'de, D>(
+    deserializer: D,
+) -> Result<NullableStringField, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?;
+    Ok(value.map_or(NullableStringField::Null, NullableStringField::Value))
+}

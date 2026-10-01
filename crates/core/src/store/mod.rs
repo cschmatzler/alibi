@@ -98,6 +98,9 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
     async fn list_users_by_ids(&self, ids: &[String]) -> AuthResult<Vec<S::User>> {
         self.inner.list_users_by_ids(ids).await
     }
+    async fn list_users_by_ids_page(&self, ids: &[String], limit: f64) -> AuthResult<Vec<S::User>> {
+        self.inner.list_users_by_ids_page(ids, limit).await
+    }
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
         self.inner.get_user_by_email(email).await
     }
@@ -377,6 +380,12 @@ impl<S: AuthSchema> MemberStore for PluginStore<S> {
     ) -> AuthResult<(Vec<Member>, usize)> {
         self.inner.query_organization_members(params).await
     }
+    async fn query_organization_members_page(
+        &self,
+        params: &MemberPageQuery,
+    ) -> AuthResult<(Vec<Member>, usize)> {
+        self.inner.query_organization_members_page(params).await
+    }
     async fn count_organization_members(&self, org_id: &str) -> AuthResult<i64> {
         self.inner.count_organization_members(org_id).await
     }
@@ -406,6 +415,16 @@ impl<S: AuthSchema> InvitationStore for PluginStore<S> {
         status: InvitationStatus,
     ) -> AuthResult<Invitation> {
         self.inner.update_invitation_status(id, status).await
+    }
+    async fn update_invitation_status_if_status(
+        &self,
+        id: &str,
+        expected: InvitationStatus,
+        status: InvitationStatus,
+    ) -> AuthResult<Option<Invitation>> {
+        self.inner
+            .update_invitation_status_if_status(id, expected, status)
+            .await
     }
     async fn list_organization_invitations(&self, org_id: &str) -> AuthResult<Vec<Invitation>> {
         self.inner.list_organization_invitations(org_id).await
@@ -748,6 +767,41 @@ struct PluginTransaction<'a, S: AuthSchema> {
 
 #[async_trait]
 impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
+    async fn get_team(&self, organization_id: &str, team_id: &str) -> AuthResult<Option<Team>> {
+        self.inner.get_team(organization_id, team_id).await
+    }
+
+    async fn add_team_member(
+        &self,
+        team_id: &str,
+        user_id: &str,
+        maximum: Option<usize>,
+    ) -> AuthResult<AddTeamMemberResult> {
+        self.inner.add_team_member(team_id, user_id, maximum).await
+    }
+
+    async fn create_member(&self, member: CreateMember) -> AuthResult<Member> {
+        self.inner.create_member(member).await
+    }
+
+    async fn update_session_active_team(
+        &self,
+        token: &str,
+        team_id: Option<&str>,
+    ) -> AuthResult<S::Session> {
+        self.inner.update_session_active_team(token, team_id).await
+    }
+
+    async fn update_session_active_organization(
+        &self,
+        token: &str,
+        organization_id: Option<&str>,
+    ) -> AuthResult<S::Session> {
+        self.inner
+            .update_session_active_organization(token, organization_id)
+            .await
+    }
+
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {
         self.inner.get_user_by_id(id).await
     }
@@ -844,11 +898,7 @@ pub type TransactionWork<S> =
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     /// Read a team within the authorized organization through this transaction.
-    async fn get_team(
-        &self,
-        _organization_id: &str,
-        _team_id: &str,
-    ) -> AuthResult<Option<crate::types::Team>> {
+    async fn get_team(&self, _organization_id: &str, _team_id: &str) -> AuthResult<Option<Team>> {
         Err(AuthError::NotImplemented(
             "Team lookup in a transaction is not supported by this store".into(),
         ))
@@ -859,7 +909,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         _team_id: &str,
         _user_id: &str,
         _maximum: Option<usize>,
-    ) -> AuthResult<crate::types::AddTeamMemberResult> {
+    ) -> AuthResult<AddTeamMemberResult> {
         Err(AuthError::NotImplemented(
             "Team admission in a transaction is not supported by this store".into(),
         ))

@@ -56,6 +56,9 @@ impl AdminBannedUserMessageHandler {
             marker: std::marker::PhantomData,
         }))
     }
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn validate<U: AuthUser>(&self) -> AuthResult<()> {
         if self.0.user_type() != TypeId::of::<U>() {
             return Err(AuthError::config(
@@ -64,6 +67,9 @@ impl AdminBannedUserMessageHandler {
         }
         Ok(())
     }
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn message<U: AuthUser>(&self, user: &U) -> AuthResult<String> {
         self.0.message(user).await
     }
@@ -72,6 +78,9 @@ impl AdminBannedUserMessageHandler {
 #[derive(Clone)]
 pub(in crate::plugins) struct BannedUserMessagePolicy(pub(super) AdminBannedUserMessageHandler);
 impl BannedUserMessagePolicy {
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(in crate::plugins) async fn message<U: AuthUser>(&self, user: &U) -> AuthResult<String> {
         self.0.message(user).await
     }

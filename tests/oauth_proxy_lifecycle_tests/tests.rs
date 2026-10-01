@@ -1,6 +1,11 @@
 use super::*;
+use std::io::Write;
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn production_exchange_preserves_rows_then_preview_consumes_state_and_issues_only_the_actual_owner()
  {
     let fixture = Fixture::new().await;
@@ -25,7 +30,11 @@ async fn production_exchange_preserves_rows_then_preview_consumes_state_and_issu
     let before = rows(&fixture.preview_db).await;
     let prod_before = rows(&fixture.production_db).await;
     let (authorization, state) = fixture.issue("/api/auth/sign-in/social", None).await;
-    let original_state = state.get("oauthState").unwrap().as_str().unwrap();
+    let original_state = state
+        .get("oauthState")
+        .expect("provider fixture contains this parameter")
+        .as_str()
+        .unwrap();
     let issued = rows(&fixture.preview_db).await;
     let (_, bridge) = fixture.forward(&authorization).await;
     assert_eq!(rows(&fixture.production_db).await, prod_before);
@@ -68,11 +77,19 @@ async fn production_exchange_preserves_rows_then_preview_consumes_state_and_issu
     .await;
     let current: Value = serde_json::from_slice(&current.body).unwrap();
     assert_eq!(
-        current.get("user").unwrap().get("id").unwrap(),
+        current
+            .get("user")
+            .expect("provider fixture contains this parameter")
+            .get("id")
+            .expect("provider fixture contains this parameter"),
         owner.id().as_ref()
     );
     assert_eq!(
-        current.get("session").unwrap().get("token").unwrap(),
+        current
+            .get("session")
+            .expect("provider fixture contains this parameter")
+            .get("token")
+            .expect("provider fixture contains this parameter"),
         sessions.first().unwrap().token()
     );
     assert_eq!(
@@ -97,19 +114,29 @@ async fn production_exchange_preserves_rows_then_preview_consumes_state_and_issu
     assert!(location(&replay).as_str().contains("error=state_mismatch"));
     assert_eq!(rows(&fixture.preview_db).await, after);
     let query: HashMap<_, _> = authorization.query_pairs().into_owned().collect();
-    let mut callback = url::Url::parse(query.get("redirect_uri").unwrap()).unwrap();
-    let _ = callback
+    let mut callback = url::Url::parse(
+        query
+            .get("redirect_uri")
+            .expect("provider fixture contains this parameter"),
+    )
+    .unwrap();
+    _ = callback
         .query_pairs_mut()
-        .append_pair("state", query.get("state").unwrap())
+        .append_pair(
+            "state",
+            query
+                .get("state")
+                .expect("provider fixture contains this parameter"),
+        )
         .append_pair("code", "real-code-1");
     let retry = request(&fixture.production, &target(&callback), None, None).await;
     assert!(location(&retry).as_str().contains("error=invalid_code"));
     assert_eq!(rows(&fixture.preview_db).await, after);
     assert_eq!(rows(&fixture.production_db).await, prod_before);
-    eprintln!(
+    writeln!(std::io::stderr(),
         "PROXY_NATIVE_LIFECYCLE {}",
         json!({"before":before,"issued":issued,"authorization":authorization.as_str(),"bridge":bridge.as_str(),"completed":{"status":completed.status,"headers":completed.headers.iter().collect::<Vec<_>>()},"current":current,"after":after,"production":prod_before,"receipts":fixture.provider.lock().unwrap().receipts})
-    );
+    ).expect("write native lifecycle observation");
 }
 
 #[tokio::test]
@@ -127,7 +154,7 @@ async fn completion_rejects_foreign_origin_provider_tampering_and_expired_state_
         .1
         .into_owned();
     foreign.set_query(None);
-    let _ = foreign
+    _ = foreign
         .query_pairs_mut()
         .append_pair("callbackURL", "https://foreign.fixture.test/leak")
         .append_pair("profile", &profile);
@@ -136,25 +163,29 @@ async fn completion_rejects_foreign_origin_provider_tampering_and_expired_state_
     assert_eq!(rows(&fixture.preview_db).await, issued);
     let mut provider = bridge.clone();
     provider.set_path("/api/auth/callback/google/oauth-proxy");
-    let denied = request(&fixture.preview, &target(&provider), None, None).await;
+    let denied_2 = request(&fixture.preview, &target(&provider), None, None).await;
     assert!(
-        location(&denied)
+        location(&denied_2)
             .as_str()
             .contains("error=provider_mismatch")
     );
     assert_eq!(rows(&fixture.preview_db).await, issued);
     let mut invalid = bridge.clone();
     invalid.set_query(None);
-    let _ = invalid
+    _ = invalid
         .query_pairs_mut()
         .append_pair("callbackURL", PREVIEW)
-        .append_pair("profile", &(profile + "00"));
-    let denied = request(&fixture.preview, &target(&invalid), None, None).await;
-    assert!(location(&denied).as_str().contains("error=invalid_profile"));
+        .append_pair("profile", &format!("{profile}00"));
+    let denied_3 = request(&fixture.preview, &target(&invalid), None, None).await;
+    assert!(
+        location(&denied_3)
+            .as_str()
+            .contains("error=invalid_profile")
+    );
     assert_eq!(rows(&fixture.preview_db).await, issued);
     let mut expired = state.clone();
     *expired.get_mut("expiresAt").unwrap() = json!(chrono::Utc::now().timestamp_millis() - 1);
-    let _ = fixture
+    _ = fixture
         .preview_db
         .execute_raw(Statement::from_sql_and_values(
             fixture.preview_db.get_database_backend(),
@@ -163,17 +194,41 @@ async fn completion_rejects_foreign_origin_provider_tampering_and_expired_state_
         ))
         .await
         .unwrap();
-    let denied = request(&fixture.preview, &target(&bridge), None, None).await;
-    assert!(location(&denied).as_str().contains("error=state_mismatch"));
+    let denied_4 = request(&fixture.preview, &target(&bridge), None, None).await;
+    assert!(
+        location(&denied_4)
+            .as_str()
+            .contains("error=state_mismatch")
+    );
     let after = rows(&fixture.preview_db).await;
-    assert_eq!(after.get("users").unwrap(), issued.get("users").unwrap());
     assert_eq!(
-        after.get("accounts").unwrap(),
-        issued.get("accounts").unwrap()
+        after
+            .get("users")
+            .expect("provider fixture contains this parameter"),
+        issued
+            .get("users")
+            .expect("provider fixture contains this parameter")
     );
     assert_eq!(
-        after.get("sessions").unwrap(),
-        issued.get("sessions").unwrap()
+        after
+            .get("accounts")
+            .expect("provider fixture contains this parameter"),
+        issued
+            .get("accounts")
+            .expect("provider fixture contains this parameter")
     );
-    assert_eq!(after.get("verifications").unwrap(), &json!([]));
+    assert_eq!(
+        after
+            .get("sessions")
+            .expect("provider fixture contains this parameter"),
+        issued
+            .get("sessions")
+            .expect("provider fixture contains this parameter")
+    );
+    assert_eq!(
+        after
+            .get("verifications")
+            .expect("provider fixture contains this parameter"),
+        &json!([])
+    );
 }

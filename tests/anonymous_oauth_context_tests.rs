@@ -1,33 +1,55 @@
 //! Legacy state authority is exercised through real anonymous issuance and OAuth HTTP.
+#![cfg(test)]
+#![expect(
+    unused_crate_dependencies,
+    reason = "Cargo shares package dependencies across its library and integration targets"
+)]
 #![cfg(feature = "axum")]
 #![allow(
     clippy::unwrap_used,
     reason = "public lifecycle regression setup is fatal"
 )]
 
+#[cfg(test)]
+#[path = "anonymous_oauth_context_tests/tests.rs"]
+mod tests;
+
 use async_trait::async_trait;
+
 use axum::{
     Json, Router,
     routing::{get, post},
 };
+
 use better_auth::plugins::anonymous::{AnonymousConfig, AnonymousLink, LinkAnonymousAccount};
+
 use better_auth::plugins::oauth::OAuthProvider;
+
 use better_auth::plugins::{AnonymousPlugin, EmailPasswordPlugin, OAuthPlugin};
+
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
+
 use better_auth_core::{
     AuthRequest, AuthResponse, AuthResult, AuthSession, AuthUser, AuthVerification, HttpMethod,
 };
+
 use better_auth_seaorm::sea_orm::{ConnectionTrait, Statement};
+
 use better_auth_seaorm::{Database, SeaOrmStore};
+
 use chrono::{Duration, Utc};
+
 use serde_json::{Value, json};
+
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
 };
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+
 struct Linker(Arc<Mutex<Vec<Value>>>);
+
 #[async_trait]
 impl LinkAnonymousAccount for Linker {
     async fn link(&self, accounts: &AnonymousLink, _request: &AuthRequest) -> AuthResult<()> {
@@ -38,6 +60,7 @@ impl LinkAnonymousAccount for Linker {
         Ok(())
     }
 }
+
 fn request(path: &str, body: Option<Value>, cookies: Option<&str>) -> AuthRequest {
     let mut request = AuthRequest::new(
         if body.is_some() {
@@ -47,20 +70,25 @@ fn request(path: &str, body: Option<Value>, cookies: Option<&str>) -> AuthReques
         },
         path,
     );
-    let _ = request
-        .headers
-        .insert("origin".into(), "http://localhost:42615".into());
+    drop(
+        request
+            .headers
+            .insert("origin".into(), "http://localhost:42615".into()),
+    );
     if let Some(body) = body {
         request.body = Some(body.to_string().into_bytes());
-        let _ = request
-            .headers
-            .insert("content-type".into(), "application/json".into());
+        drop(
+            request
+                .headers
+                .insert("content-type".into(), "application/json".into()),
+        );
     }
     if let Some(cookies) = cookies {
-        let _ = request.headers.insert("cookie".into(), cookies.into());
+        drop(request.headers.insert("cookie".into(), cookies.into()));
     }
     request
 }
+
 fn cookies(response: &AuthResponse) -> String {
     response
         .headers
@@ -69,6 +97,7 @@ fn cookies(response: &AuthResponse) -> String {
         .collect::<Vec<_>>()
         .join("; ")
 }
+
 async fn initiate(
     auth: &BetterAuth<Schema>,
     cookie: &str,
@@ -99,17 +128,14 @@ async fn initiate(
         serde_json::from_str(row.value()).unwrap(),
     )
 }
+
 async fn callback(auth: &BetterAuth<Schema>, state: &str, cookie: &str) -> AuthResponse {
     let mut request = request("/api/auth/callback/gitlab", None, Some(cookie));
-    let _ = request
-        .query
-        .insert("code".into(), "actual-local-code".into());
-    let _ = request.query.insert("state".into(), state.into());
+    drop(
+        request
+            .query
+            .insert("code".into(), "actual-local-code".into()),
+    );
+    drop(request.query.insert("state".into(), state.into()));
     auth.handle_request(request).await.unwrap()
 }
-
-
-
-#[cfg(test)]
-#[path = "anonymous_oauth_context_tests/tests.rs"]
-mod tests;

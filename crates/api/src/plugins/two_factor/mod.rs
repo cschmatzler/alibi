@@ -493,6 +493,7 @@ impl TwoFactorPlugin {
                 | AuthError::InvalidCredentials
                 | AuthError::AuthenticationFailed(_)
                 | AuthError::Forbidden(_)
+                | AuthError::UserCreationCancelled
                 | AuthError::SessionCreationCancelled
                 | AuthError::BannedUser(_)
                 | AuthError::Unauthorized
@@ -558,6 +559,7 @@ impl TwoFactorPlugin {
                 | AuthError::InvalidCredentials
                 | AuthError::AuthenticationFailed(_)
                 | AuthError::Forbidden(_)
+                | AuthError::UserCreationCancelled
                 | AuthError::SessionCreationCancelled
                 | AuthError::BannedUser(_)
                 | AuthError::Unauthorized
@@ -806,6 +808,9 @@ pub(in crate::plugins) fn is_enabled(ctx: &AuthContext<impl better_auth_core::Au
         .unwrap_or(false)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn inspect_trusted_device(
     req: &AuthRequest,
     user: &impl AuthUser,
@@ -878,6 +883,9 @@ pub(in crate::plugins) async fn inspect_trusted_device(
     })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn begin_sign_in_challenge(
     user: &impl AuthUser,
     remember_me: Option<bool>,
@@ -1980,6 +1988,7 @@ async fn verify_existing_session_factor(
             | AuthError::Plugin { .. }
             | AuthError::Internal(_)
             | AuthError::PasswordHash(_)
+            | AuthError::UserCreationCancelled
             | AuthError::Jwt(_)) => ExistingSessionFactorError::Auth(error),
         })?;
         ctx.database.delete_session(session.token()).await?;

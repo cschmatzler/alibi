@@ -45,6 +45,9 @@ pub struct OrganizationUpdatePatch {
     pub metadata: Option<Option<IndexMap<String, JsValue>>>,
 }
 impl OrganizationUpdatePatch {
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(in crate::plugins) fn apply(self, data: &mut UpdateOrganization) -> AuthResult<()> {
         if let Some(name) = self.name {
             data.name = Some(name);

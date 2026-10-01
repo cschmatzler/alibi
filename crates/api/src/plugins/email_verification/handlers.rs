@@ -35,6 +35,9 @@ pub(in crate::plugins) fn verification_url(
     )
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn send_verification_email_core<U: AuthUser>(
     body: &SendVerificationEmailRequest,
     current_user: Option<&U>,
@@ -174,6 +177,13 @@ fn verification_error(
         )
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep verification ownership, account transitions, and callback ordering together"
+)]
 pub(super) async fn verify_email_core<U, S, A>(
     query: &VerifyEmailQuery,
     current_session: Option<(U, S)>,
@@ -228,7 +238,7 @@ where
                 )?;
                 let url = verification_url(&ctx.config, &new_token, query.callback_url.as_deref());
                 let mut updated_user = ctx.user_view(&user);
-                updated_user.email = Some(update_to.to_string());
+                updated_user.email = Some(update_to.to_owned());
                 if config.send_verification_email.is_none()
                     && let Some(sender) = ctx.email_verification_override()
                 {
@@ -255,23 +265,23 @@ where
                 });
             }
             Some("change-email-verification") => {
-                let (_session_user, session): (UserView, SessionView) = match current_session {
-                    Some((user, session)) => (user, session),
-                    None => {
+                let (_session_user, session): (UserView, SessionView) =
+                    if let Some((user_2, session)) = current_session {
+                        (user_2, session)
+                    } else {
                         let session = issue_user_session(ctx, &user.id(), ip_address, user_agent)
                             .await
                             .map_err(SessionIssueError::into_auth_error)?
                             .session;
                         (ctx.user_view(&user), ctx.session_view(&session))
-                    }
-                };
+                    };
 
                 let updated_user = ctx
                     .database
                     .update_user(
                         &user.id(),
                         UpdateUser {
-                            email: Some(update_to.to_string()),
+                            email: Some(update_to.to_owned()),
                             email_verified: Some(true),
                             ..Default::default()
                         },
@@ -286,7 +296,7 @@ where
                 if let Some(callback_url) = query.callback_url.as_deref() {
                     return Ok(VerifyEmailResult::Redirect {
                         url: redirect_url(callback_url, None),
-                        session_token: Some(session.token().to_string()),
+                        session_token: Some(session.token().to_owned()),
                     });
                 }
 
@@ -295,26 +305,25 @@ where
                         "status": true,
                         "user": ctx.user_view(&updated_user),
                     }),
-                    session_token: Some(session.token().to_string()),
+                    session_token: Some(session.token().to_owned()),
                 });
             }
             _ => {
-                let session = match current_session {
-                    Some((_, session)) => session,
-                    None => {
-                        let session = issue_user_session(ctx, &user.id(), ip_address, user_agent)
-                            .await
-                            .map_err(SessionIssueError::into_auth_error)?
-                            .session;
-                        ctx.session_view(&session)
-                    }
+                let session = if let Some((_, session)) = current_session {
+                    session
+                } else {
+                    let session = issue_user_session(ctx, &user.id(), ip_address, user_agent)
+                        .await
+                        .map_err(SessionIssueError::into_auth_error)?
+                        .session;
+                    ctx.session_view(&session)
                 };
                 let updated_user = ctx
                     .database
                     .update_user(
                         &user.id(),
                         UpdateUser {
-                            email: Some(update_to.to_string()),
+                            email: Some(update_to.to_owned()),
                             email_verified: Some(false),
                             ..Default::default()
                         },
@@ -343,7 +352,7 @@ where
                 if let Some(callback_url) = query.callback_url.as_deref() {
                     return Ok(VerifyEmailResult::Redirect {
                         url: redirect_url(callback_url, None),
-                        session_token: Some(session.token().to_string()),
+                        session_token: Some(session.token().to_owned()),
                     });
                 }
 
@@ -352,7 +361,7 @@ where
                         "status": true,
                         "user": ctx.user_view(&updated_user),
                     }),
-                    session_token: Some(session.token().to_string()),
+                    session_token: Some(session.token().to_owned()),
                 });
             }
         }
@@ -398,7 +407,7 @@ where
             Some((session_user, session))
                 if session_user.email().unwrap_or_default() == claims.email =>
             {
-                Some(session.token().to_string())
+                Some(session.token().to_owned())
             }
             _ => {
                 let issued = issue_user_session(ctx, &user.id(), ip_address, user_agent)
@@ -409,7 +418,7 @@ where
                 let mut original_view = ctx.user_view(&user);
                 original_view.email_verified = true;
                 record_completed_session_user_view::<A>(&user, &issued.session, original_view);
-                Some(issued.session.token().to_string())
+                Some(issued.session.token().to_owned())
             }
         }
     } else {

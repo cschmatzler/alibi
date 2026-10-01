@@ -1,3 +1,17 @@
+mod account;
+
+mod account_cookie;
+
+pub mod encryption;
+
+pub(in crate::plugins) mod handlers;
+
+mod providers;
+
+pub(in crate::plugins) mod state;
+
+mod types;
+
 use async_trait::async_trait;
 
 use better_auth_core::AuthResult;
@@ -6,27 +20,13 @@ use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
 
 use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 
-mod account;
-
-mod account_cookie;
-
-pub mod encryption;
-
-pub(crate) mod handlers;
-
 pub(in crate::plugins) use handlers::{
     OAuthProcessPolicy, OAuthSignInError, create_account_cookie_header, process_oauth_sign_in,
 };
 
-mod providers;
-
-pub(crate) mod state;
-
-pub(crate) use state::{
+pub(in crate::plugins) use state::{
     CapturedOAuthServerContext, OAuthServerContext, RecoveredOAuthServerContext,
 };
-
-mod types;
 
 pub use providers::{
     OAuthAuthorizationPolicy, OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthConfig,
@@ -119,6 +119,12 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
     }
 }
 
+impl std::fmt::Debug for OAuthPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuthPlugin").finish_non_exhaustive()
+    }
+}
+
 /// Check if the path matches `/callback/{provider}` (with optional query string).
 fn path_matches_callback(path: &str) -> bool {
     let path_without_query = path.split('?').next().unwrap_or(path);
@@ -134,10 +140,4 @@ fn extract_provider_from_callback(path: &str) -> String {
         .strip_prefix("/callback/")
         .unwrap_or_default()
         .to_owned()
-}
-
-impl std::fmt::Debug for OAuthPlugin {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("OAuthPlugin").finish_non_exhaustive()
-    }
 }

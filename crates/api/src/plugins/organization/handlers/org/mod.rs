@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use super::page::OrganizationPageError;
 
 use super::require_session;
@@ -46,6 +49,9 @@ fn has_role(member: &impl AuthMember, role: &str) -> bool {
     clippy::too_many_lines,
     reason = "Keep organization quotas, creation callbacks, and initial membership in request order"
 )]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn create_organization_core(
     body: &CreateOrganizationRequest,
     user: &impl AuthUser,
@@ -204,6 +210,9 @@ pub(in crate::plugins) async fn create_organization_core(
     })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn update_organization_core(
     body: &UpdateOrganizationRequest,
     raw_metadata: Option<indexmap::IndexMap<String, better_auth_core::utils::json::JsValue>>,
@@ -300,6 +309,9 @@ pub(in crate::plugins) async fn update_organization_core(
     )))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn delete_organization_core(
     body: &DeleteOrganizationRequest,
     user: &impl AuthUser,
@@ -389,6 +401,9 @@ pub(in crate::plugins) async fn delete_organization_core(
     Ok(Some(original))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn list_organizations_core(
     user: &impl AuthUser,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -401,7 +416,15 @@ pub(in crate::plugins) async fn list_organizations_core(
     Ok(responses)
 }
 
-pub(crate) async fn get_full_organization_core(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "Preserve JavaScript Number rounding at the compatibility boundary"
+)]
+pub(in crate::plugins) async fn get_full_organization_core(
     query: &GetFullOrganizationQuery,
     user: &impl AuthUser,
     session: &impl AuthSession,
@@ -423,9 +446,9 @@ pub(crate) async fn get_full_organization_core(
             .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
         organization.id().to_string()
     } else if let Some(id) = query.organization_id.as_deref().filter(|id| !id.is_empty()) {
-        id.to_string()
+        id.to_owned()
     } else if let Some(active_org_id) = session.active_organization_id() {
-        active_org_id.to_string()
+        active_org_id.to_owned()
     } else {
         return Ok(None);
     };
@@ -458,7 +481,7 @@ pub(crate) async fn get_full_organization_core(
         .list_users_by_ids_page(&user_ids, read_page_limit(config.membership_limit.as_ref()))
         .await?
         .into_iter()
-        .map(|user| (user.id().to_string(), user))
+        .map(|user_2| (user_2.id().to_string(), user_2))
         .collect::<HashMap<_, _>>();
     let mut members = Vec::with_capacity(members_raw.len());
 
@@ -498,16 +521,20 @@ pub(crate) async fn get_full_organization_core(
         .await?
         .is_none()
     {
-        let _ = ctx
-            .database
-            .update_session_active_organization(session.token(), None)
-            .await?;
+        drop(
+            ctx.database
+                .update_session_active_organization(session.token(), None)
+                .await?,
+        );
         return Err(AuthError::forbidden("User is not a member of the organization").into());
     }
 
     Ok(Some(response))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn check_slug_core(
     body: &CheckSlugRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -524,6 +551,9 @@ pub(in crate::plugins) async fn check_slug_core(
     Ok(CheckSlugResponse { status: true })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn set_active_organization_core(
     body: &SetActiveOrganizationRequest,
     user: &impl AuthUser,
@@ -607,6 +637,9 @@ pub(in crate::plugins) async fn set_active_organization_core(
     )?))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn leave_organization_core(
     body: &LeaveOrganizationRequest,
     user: &impl AuthUser,
@@ -773,6 +806,9 @@ pub async fn handle_delete_organization(
 }
 
 /// Handle list organizations request
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub async fn handle_list_organizations(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -846,6 +882,9 @@ pub async fn handle_get_organization(
     Ok(AuthResponse::json(200, &response)?)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub async fn handle_get_full_organization(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -971,6 +1010,3 @@ fn parse_query<T: Default + serde::de::DeserializeOwned>(query: &HashMap<String,
         .unwrap_or(serde_json::Value::Object(serde_json::Map::default()));
     serde_json::from_value(json_value).unwrap_or_default()
 }
-
-#[cfg(test)]
-mod tests;

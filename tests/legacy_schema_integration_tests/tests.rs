@@ -1,4 +1,5 @@
 use super::*;
+use better_auth_core::field_policy::FieldValues;
 
 #[tokio::test]
 #[expect(
@@ -148,7 +149,7 @@ async fn legacy_numeric_schema_signup_flow_uses_numeric_ids_and_defaults() {
     let token = body["token"]
         .as_str()
         .expect("token should exist")
-        .to_string();
+        .to_owned();
 
     let stored_user = auth
         .store()
@@ -389,7 +390,7 @@ async fn nullable_ban_expiry_patch_preserves_ban_and_other_principals()
         for user in [&owner, &foreign] {
             let session = store
                 .create_session(CreateSession {
-                    additional_fields: better_auth_core::field_policy::FieldValues::default(),
+                    additional_fields: FieldValues::default(),
                     token: None,
                     user_id: user.id().into_owned(),
                     expires_at: Utc::now() + chrono::Duration::days(1),
@@ -501,6 +502,10 @@ async fn nullable_ban_expiry_patch_preserves_ban_and_other_principals()
     clippy::panic_in_result_fn,
     reason = "public custom-schema test asserts actual persisted state and propagates setup failures"
 )]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn invitation_transaction_uses_manual_numeric_session_columns_and_rolls_back_missing_team_binding()
 -> Result<(), Box<dyn std::error::Error>> {
     use better_auth_core::store::{
@@ -539,7 +544,7 @@ async fn invitation_transaction_uses_manual_numeric_session_columns_and_rolls_ba
             impersonated_by: None,
             active_organization_id: None,
             active_team_id: None,
-            additional_fields: Default::default(),
+            additional_fields: FieldValues::default(),
         })
         .await?;
     let peer = store
@@ -552,7 +557,7 @@ async fn invitation_transaction_uses_manual_numeric_session_columns_and_rolls_ba
             impersonated_by: None,
             active_organization_id: None,
             active_team_id: None,
-            additional_fields: Default::default(),
+            additional_fields: FieldValues::default(),
         })
         .await?;
     let (token, organization_id, user_id) = (
@@ -560,11 +565,12 @@ async fn invitation_transaction_uses_manual_numeric_session_columns_and_rolls_ba
         org.id.clone(),
         owner.id().into_owned(),
     );
+    let value = organization_id.clone();
     let committed = transaction(&store, move |tx| {
         Box::pin(async move {
             let member = tx
                 .create_member(CreateMember {
-                    organization_id: organization_id.clone(),
+                    organization_id: value.clone(),
                     user_id,
                     role: "member".into(),
                 })
@@ -596,7 +602,7 @@ async fn invitation_transaction_uses_manual_numeric_session_columns_and_rolls_ba
         )?,
         serde_json::to_value(&peer)?
     );
-    let (token, team_id, user_id, organization_id) = (
+    let (token_2, team_id, user_id_2, organization_id_2) = (
         session.token.clone(),
         team.id.clone(),
         owner.id().into_owned(),
@@ -604,11 +610,12 @@ async fn invitation_transaction_uses_manual_numeric_session_columns_and_rolls_ba
     );
     let rejected: AuthResult<()> = transaction(&store, move |tx| {
         Box::pin(async move {
-            assert!(tx.get_team(&organization_id, &team_id).await?.is_some());
-            let _ = tx.add_team_member(&team_id, &user_id, Some(1)).await?;
-            let _ = tx
-                .update_session_active_team(&token, Some(&team_id))
-                .await?;
+            assert!(tx.get_team(&organization_id_2, &team_id).await?.is_some());
+            drop(tx.add_team_member(&team_id, &user_id_2, Some(1)).await?);
+            drop(
+                tx.update_session_active_team(&token_2, Some(&team_id))
+                    .await?,
+            );
             Ok(())
         })
     })

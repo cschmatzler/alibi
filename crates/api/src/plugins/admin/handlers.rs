@@ -94,6 +94,9 @@ fn date_after_seconds(seconds: f64) -> Result<DateTime<Utc>, AdminDateOperationE
         .ok_or(AdminDateOperationError::InvalidDate)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn create_admin_session_cookie_value(
     secret: &str,
     payload: &AdminSessionCookiePayload,
@@ -117,6 +120,9 @@ pub(in crate::plugins) fn create_admin_session_cookie_value(
     )?)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn decode_admin_session_cookie_value(
     secret: &str,
     token: &str,
@@ -156,6 +162,9 @@ fn validate_role_input(role: &RoleInput, config: &AdminConfig) -> AuthResult<()>
     }
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn set_role_core(
     body: &SetRoleRequest,
     config: &AdminConfig,
@@ -180,6 +189,9 @@ pub(in crate::plugins) async fn set_role_core(
     })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn get_user_core(
     query: &GetUserQuery,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -206,6 +218,9 @@ fn requested_create_role(body: &CreateUserRequest) -> AuthResult<Option<RoleInpu
         .transpose()
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn create_user_core(
     body: &CreateUserRequest,
     config: &AdminConfig,
@@ -278,6 +293,9 @@ pub(in crate::plugins) async fn create_user_core(
     })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn update_user_core(
     body: &AdminUpdateUserRequest,
     acting_user: &UserView,
@@ -365,6 +383,9 @@ pub(in crate::plugins) async fn update_user_core(
     Ok(AdminUserView::from(&updated_user))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn list_users_core(
     query: &ListUsersQueryParams,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -401,6 +422,9 @@ pub(in crate::plugins) async fn list_users_core(
     })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn list_user_sessions_core(
     body: &UserIdRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -415,6 +439,9 @@ pub(in crate::plugins) async fn list_user_sessions_core(
     })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn ban_user_core(
     body: &BanUserRequest,
     admin_user_id: impl AsRef<str>,
@@ -465,6 +492,9 @@ pub(in crate::plugins) async fn ban_user_core(
     })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn unban_user_core(
     body: &UserIdRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -488,6 +518,9 @@ pub(in crate::plugins) async fn unban_user_core(
     })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn impersonate_user_core(
     body: &UserIdRequest,
     admin_user_id: impl AsRef<str>,
@@ -570,6 +603,9 @@ pub(in crate::plugins) async fn impersonate_user_core(
     Ok((response, token))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn stop_impersonating_core(
     session: &impl AuthSession,
     admin_cookie: &AdminSessionCookiePayload,
@@ -609,6 +645,9 @@ pub(in crate::plugins) async fn stop_impersonating_core(
     Ok((response, token))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn revoke_user_session_core(
     body: &RevokeSessionRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -619,6 +658,9 @@ pub(in crate::plugins) async fn revoke_user_session_core(
     Ok(SuccessResponse { success: true })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn revoke_user_sessions_core(
     body: &UserIdRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -631,6 +673,9 @@ pub(in crate::plugins) async fn revoke_user_sessions_core(
     Ok(SuccessResponse { success: true })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn remove_user_core(
     body: &UserIdRequest,
     admin_user_id: impl AsRef<str>,
@@ -657,6 +702,9 @@ pub(in crate::plugins) async fn remove_user_core(
     Ok(SuccessResponse { success: true })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn set_user_password_core(
     body: &SetUserPasswordRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -690,6 +738,9 @@ pub(in crate::plugins) async fn set_user_password_core(
     Ok(StatusResponse { status: true })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn has_permission_core(
     body: &HasPermissionRequest,
     user: &UserView,

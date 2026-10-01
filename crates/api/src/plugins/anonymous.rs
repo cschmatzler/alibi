@@ -3,12 +3,16 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+
 use better_auth_core::wire::{SessionView, UserView};
+
 use better_auth_core::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, AuthSession, AuthUser, BeforeRequestAction, CreateUser, HttpMethod, RequestMeta,
 };
+
 use rand::distributions::{Alphanumeric, DistString};
+
 use serde_json::json;
 
 use super::helpers::{
@@ -55,18 +59,29 @@ pub struct AnonymousPlugin {
 }
 
 impl AnonymousPlugin {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn with_config(config: AnonymousConfig) -> Self {
+    #[must_use]
+    pub const fn with_config(config: AnonymousConfig) -> Self {
         Self { config }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep anonymous session reuse, user creation, and session issuance in request order"
+    )]
     async fn sign_in<S: AuthSchema>(
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<AuthResponse> {
+        use better_auth_core::utils::cookie_utils::{
+            create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
+            sign_cookie_value, verify_cookie_value,
+        };
+
         if let Some((current, _)) = anonymous_session(req, ctx).await
             && current.is_anonymous() == Some(true)
         {
@@ -80,33 +95,32 @@ impl AnonymousPlugin {
             Some(identity) => identity.email().await?,
             None => None,
         };
-        let email = match custom.filter(|value| !value.is_empty()) {
-            Some(email) => {
-                if !super::authentication_helpers::is_valid_email(&email) {
-                    return Ok(error(
-                        400,
-                        "INVALID_EMAIL_FORMAT",
-                        "Email was not generated in a valid format",
-                    ));
-                }
-                email
+        let email = if let Some(email) = custom.filter(|value| !value.is_empty()) {
+            if !super::authentication_helpers::is_valid_email(&email) {
+                return Ok(error(
+                    400,
+                    "INVALID_EMAIL_FORMAT",
+                    "Email was not generated in a valid format",
+                ));
             }
-            None => {
-                let id = Alphanumeric.sample_string(&mut rand::thread_rng(), 32);
-                self.config
-                    .email_domain_name
-                    .as_ref()
-                    .filter(|domain| !domain.is_empty())
-                    .map(|domain| format!("temp-{id}@{domain}"))
-                    .unwrap_or_else(|| format!("{id}@anonymous.placeholder.invalid"))
-            }
+            email
+        } else {
+            let id = Alphanumeric.sample_string(&mut rand::thread_rng(), 32);
+            self.config
+                .email_domain_name
+                .as_ref()
+                .filter(|domain| !domain.is_empty())
+                .map_or_else(
+                    || format!("{id}@anonymous.placeholder.invalid"),
+                    |domain| format!("temp-{id}@{domain}"),
+                )
         };
         let name = match &self.config.identity {
             Some(identity) => identity.name(req).await?,
             None => None,
         }
         .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "Anonymous".to_string());
+        .unwrap_or_else(|| "Anonymous".to_owned());
         let mut create = CreateUser::new().with_email(email).with_name(name);
         create.is_anonymous = Some(true);
         create.email_verified = Some(false);
@@ -123,7 +137,34 @@ impl AnonymousPlugin {
                         message: "Failed to create user",
                     }
                 }
-                error => error,
+                error @ (better_auth_core::AuthError::Api { .. }
+                | better_auth_core::AuthError::Upstream { .. }
+                | better_auth_core::AuthError::BadRequest(_)
+                | better_auth_core::AuthError::InvalidRequest(_)
+                | better_auth_core::AuthError::Validation(_)
+                | better_auth_core::AuthError::InvalidCredentials
+                | better_auth_core::AuthError::Unauthenticated
+                | better_auth_core::AuthError::AuthenticationFailed(_)
+                | better_auth_core::AuthError::SessionNotFound
+                | better_auth_core::AuthError::Forbidden(_)
+                | better_auth_core::AuthError::SessionCreationCancelled
+                | better_auth_core::AuthError::BannedUser(_)
+                | better_auth_core::AuthError::Unauthorized
+                | better_auth_core::AuthError::UserNotFound
+                | better_auth_core::AuthError::NotFound(_)
+                | better_auth_core::AuthError::Conflict(_)
+                | better_auth_core::AuthError::MethodNotAllowed(_)
+                | better_auth_core::AuthError::PayloadTooLarge(_)
+                | better_auth_core::AuthError::UnprocessableEntity(_)
+                | better_auth_core::AuthError::RateLimited
+                | better_auth_core::AuthError::NotImplemented(_)
+                | better_auth_core::AuthError::Config(_)
+                | better_auth_core::AuthError::Database(_)
+                | better_auth_core::AuthError::Serialization(_)
+                | better_auth_core::AuthError::Plugin { .. }
+                | better_auth_core::AuthError::Internal(_)
+                | better_auth_core::AuthError::PasswordHash(_)
+                | better_auth_core::AuthError::Jwt(_)) => error,
             })?;
         let meta = RequestMeta::from_request(req);
         let issued = issue_user_session(ctx, user.id().as_ref(), meta.ip_address, meta.user_agent)
@@ -136,7 +177,34 @@ impl AnonymousPlugin {
                         message: "Could not create session",
                     }
                 }
-                cause => cause,
+                cause @ (better_auth_core::AuthError::Api { .. }
+                | better_auth_core::AuthError::Upstream { .. }
+                | better_auth_core::AuthError::BadRequest(_)
+                | better_auth_core::AuthError::InvalidRequest(_)
+                | better_auth_core::AuthError::Validation(_)
+                | better_auth_core::AuthError::InvalidCredentials
+                | better_auth_core::AuthError::Unauthenticated
+                | better_auth_core::AuthError::AuthenticationFailed(_)
+                | better_auth_core::AuthError::SessionNotFound
+                | better_auth_core::AuthError::Forbidden(_)
+                | better_auth_core::AuthError::UserCreationCancelled
+                | better_auth_core::AuthError::BannedUser(_)
+                | better_auth_core::AuthError::Unauthorized
+                | better_auth_core::AuthError::UserNotFound
+                | better_auth_core::AuthError::NotFound(_)
+                | better_auth_core::AuthError::Conflict(_)
+                | better_auth_core::AuthError::MethodNotAllowed(_)
+                | better_auth_core::AuthError::PayloadTooLarge(_)
+                | better_auth_core::AuthError::UnprocessableEntity(_)
+                | better_auth_core::AuthError::RateLimited
+                | better_auth_core::AuthError::NotImplemented(_)
+                | better_auth_core::AuthError::Config(_)
+                | better_auth_core::AuthError::Database(_)
+                | better_auth_core::AuthError::Serialization(_)
+                | better_auth_core::AuthError::Plugin { .. }
+                | better_auth_core::AuthError::Internal(_)
+                | better_auth_core::AuthError::PasswordHash(_)
+                | better_auth_core::AuthError::Jwt(_)) => cause,
             })?;
         // The created row is Source's original new-user snapshot, even if a
         // lifecycle hook subsequently changes the database during session creation.
@@ -145,10 +213,7 @@ impl AnonymousPlugin {
             200,
             &json!({"token":issued.session.token(),"user":ctx.user_view(&user)}),
         )?;
-        use better_auth_core::utils::cookie_utils::{
-            create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
-            sign_cookie_value, verify_cookie_value,
-        };
+
         let preference_name = related_cookie_name(&ctx.config, "dont_remember");
         let dont_remember = get_cookie(req, &preference_name)
             .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
@@ -195,7 +260,34 @@ impl AnonymousPlugin {
                             message: "Unauthorized",
                         }
                     }
-                    error => error,
+                    error @ (better_auth_core::AuthError::Api { .. }
+                    | better_auth_core::AuthError::Upstream { .. }
+                    | better_auth_core::AuthError::BadRequest(_)
+                    | better_auth_core::AuthError::InvalidRequest(_)
+                    | better_auth_core::AuthError::Validation(_)
+                    | better_auth_core::AuthError::InvalidCredentials
+                    | better_auth_core::AuthError::AuthenticationFailed(_)
+                    | better_auth_core::AuthError::SessionNotFound
+                    | better_auth_core::AuthError::Forbidden(_)
+                    | better_auth_core::AuthError::SessionCreationCancelled
+                    | better_auth_core::AuthError::UserCreationCancelled
+                    | better_auth_core::AuthError::BannedUser(_)
+                    | better_auth_core::AuthError::Unauthorized
+                    | better_auth_core::AuthError::UserNotFound
+                    | better_auth_core::AuthError::NotFound(_)
+                    | better_auth_core::AuthError::Conflict(_)
+                    | better_auth_core::AuthError::MethodNotAllowed(_)
+                    | better_auth_core::AuthError::PayloadTooLarge(_)
+                    | better_auth_core::AuthError::UnprocessableEntity(_)
+                    | better_auth_core::AuthError::RateLimited
+                    | better_auth_core::AuthError::NotImplemented(_)
+                    | better_auth_core::AuthError::Config(_)
+                    | better_auth_core::AuthError::Database(_)
+                    | better_auth_core::AuthError::Serialization(_)
+                    | better_auth_core::AuthError::Plugin { .. }
+                    | better_auth_core::AuthError::Internal(_)
+                    | better_auth_core::AuthError::PasswordHash(_)
+                    | better_auth_core::AuthError::Jwt(_)) => error,
                 })?;
         if self.config.disable_delete_anonymous_user {
             return Ok(error(
@@ -229,65 +321,6 @@ impl AnonymousPlugin {
         }
         Ok(response)
     }
-}
-
-// Source's nested get-session disables refresh, catches failed resolution, and
-// retains its real expiry cleanup/response-cookie effects on the request.
-async fn anonymous_session<S: AuthSchema>(
-    req: &AuthRequest,
-    ctx: &AuthContext<S>,
-) -> Option<(better_auth_core::AuthenticatedUser<S>, SessionView)> {
-    let mut read = req.clone();
-    let _ = read.query.insert("disableRefresh".into(), "true".into());
-    ctx.require_cached_session(&read).await.ok()
-}
-
-async fn resolve_anonymous_session<S: AuthSchema>(
-    req: &AuthRequest,
-    ctx: &AuthContext<S>,
-) -> AuthResult<Option<(better_auth_core::AuthenticatedUser<S>, SessionView)>> {
-    if let Some((user, session)) = anonymous_session(req, ctx).await
-        && user.is_anonymous() == Some(true)
-    {
-        return Ok(Some((user, session)));
-    }
-    let Some(context) = req
-        .extensions()
-        .get::<super::oauth::RecoveredOAuthServerContext>()
-    else {
-        return Ok(None);
-    };
-    let Some(user) = ctx
-        .database
-        .get_user_by_id(&context.0.anonymous_user_id)
-        .await?
-    else {
-        return Ok(None);
-    };
-    if user.is_anonymous() != Some(true) {
-        return Ok(None);
-    }
-    let session = ctx
-        .database
-        .get_user_sessions(&context.0.anonymous_user_id)
-        .await?
-        .into_iter()
-        .find(|session| session.expires_at() > chrono::Utc::now());
-    Ok(session.map(|session| {
-        (
-            better_auth_core::AuthenticatedUser::Stored(user),
-            ctx.session_view(&session),
-        )
-    }))
-}
-
-fn error(status: u16, code: &'static str, message: &'static str) -> AuthResponse {
-    better_auth_core::AuthError::Upstream {
-        status,
-        code,
-        message,
-    }
-    .to_auth_response()
 }
 
 #[async_trait]
@@ -407,4 +440,81 @@ impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
         }
         Ok(response)
     }
+}
+
+impl std::fmt::Debug for AnonymousConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnonymousConfig").finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for AnonymousLink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnonymousLink").finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for AnonymousPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnonymousPlugin").finish_non_exhaustive()
+    }
+}
+
+// Source's nested get-session disables refresh, catches failed resolution, and
+// retains its real expiry cleanup/response-cookie effects on the request.
+async fn anonymous_session<S: AuthSchema>(
+    req: &AuthRequest,
+    ctx: &AuthContext<S>,
+) -> Option<(better_auth_core::AuthenticatedUser<S>, SessionView)> {
+    let mut read = req.clone();
+    drop(read.query.insert("disableRefresh".into(), "true".into()));
+    ctx.require_cached_session(&read).await.ok()
+}
+
+async fn resolve_anonymous_session<S: AuthSchema>(
+    req: &AuthRequest,
+    ctx: &AuthContext<S>,
+) -> AuthResult<Option<(better_auth_core::AuthenticatedUser<S>, SessionView)>> {
+    if let Some((user, session)) = anonymous_session(req, ctx).await
+        && user.is_anonymous() == Some(true)
+    {
+        return Ok(Some((user, session)));
+    }
+    let Some(context) = req
+        .extensions()
+        .get::<super::oauth::RecoveredOAuthServerContext>()
+    else {
+        return Ok(None);
+    };
+    let Some(user) = ctx
+        .database
+        .get_user_by_id(&context.0.anonymous_user_id)
+        .await?
+    else {
+        return Ok(None);
+    };
+    if user.is_anonymous() != Some(true) {
+        return Ok(None);
+    }
+    let session = ctx
+        .database
+        .get_user_sessions(&context.0.anonymous_user_id)
+        .await?
+        .into_iter()
+        .find(|session| session.expires_at() > chrono::Utc::now());
+    Ok(session.map(|session| {
+        (
+            better_auth_core::AuthenticatedUser::Stored(user),
+            ctx.session_view(&session),
+        )
+    }))
+}
+
+fn error(status: u16, code: &'static str, message: &'static str) -> AuthResponse {
+    better_auth_core::AuthError::Upstream {
+        status,
+        code,
+        message,
+    }
+    .to_auth_response()
 }

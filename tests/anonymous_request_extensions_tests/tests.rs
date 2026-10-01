@@ -2,6 +2,8 @@ use super::*;
 
 #[tokio::test]
 async fn reused_public_request_keeps_caller_state_out_of_success_failure_and_later_signin() {
+    use better_auth_core::AuthUser;
+
     let (auth, rows) = configured().await;
     let request = request("sequential-owner@example.test");
     let created = auth.handle_request(request.clone()).await.unwrap();
@@ -38,7 +40,7 @@ async fn reused_public_request_keeps_caller_state_out_of_success_failure_and_lat
         .await
         .unwrap()
         .unwrap();
-    use better_auth_core::AuthUser;
+
     assert_eq!(
         auth.store()
             .get_user_accounts(user.id().as_ref())
@@ -66,9 +68,11 @@ async fn reused_public_request_keeps_caller_state_out_of_success_failure_and_lat
 
 #[tokio::test]
 async fn concurrent_cloned_public_requests_share_only_their_own_trusted_dispatch_context() {
+    use better_auth_core::AuthUser;
+
     let (auth, rows) = configured().await;
     let mut request = request("concurrent-owner@example.test");
-    let _ = request.headers.insert("x-concurrent".into(), "true".into());
+    drop(request.headers.insert("x-concurrent".into(), "true".into()));
     let (left, right) = tokio::join!(
         auth.handle_request(request.clone()),
         auth.handle_request(request.clone())
@@ -76,10 +80,10 @@ async fn concurrent_cloned_public_requests_share_only_their_own_trusted_dispatch
     let left = left.unwrap();
     let right = right.unwrap();
     let mut statuses = [left.status, right.status];
-    statuses.sort();
+    statuses.sort_unstable();
     assert_eq!(statuses, [200, 422]);
     let mut markers = [sequence(&left), sequence(&right)];
-    markers.sort();
+    markers.sort_unstable();
     assert_eq!(markers, [1, 2]);
     assert_eq!(
         request
@@ -97,7 +101,7 @@ async fn concurrent_cloned_public_requests_share_only_their_own_trusted_dispatch
             .all(|(sequence, email)| (1..=2).contains(sequence)
                 && email == "concurrent-owner@example.test")
     );
-    use better_auth_core::AuthUser;
+
     let user = auth
         .store()
         .get_user_by_email("concurrent-owner@example.test")

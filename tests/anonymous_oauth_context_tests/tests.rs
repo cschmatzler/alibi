@@ -1,6 +1,10 @@
 use super::*;
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn consumed_oauth_context_requires_actual_capture_and_a_proof_bound_to_the_issued_state() {
     for mode in [
         "captured",
@@ -14,15 +18,15 @@ async fn consumed_oauth_context_requires_actual_capture_and_a_proof_bound_to_the
         "expired",
     ] {
         let calls = Arc::new(AtomicUsize::new(0));
-        let token_calls = calls.clone();
-        let user_calls = calls.clone();
+        let token_calls = Arc::clone(&calls);
+        let user_calls = Arc::clone(&calls);
         let provider = Router::new()
-            .route("/oauth/token", post(move || { let calls=token_calls.clone(); async move {
-                let _ = calls.fetch_add(1, Ordering::SeqCst);
+            .route("/oauth/token", post(move || { let calls_2=Arc::clone(&token_calls); async move {
+                _ = calls_2.fetch_add(1, Ordering::SeqCst);
                 Json(json!({"access_token":"local-actual-access","token_type":"Bearer","scope":"read_user","expires_in":3600}))
             }}))
-            .route("/api/v4/user", get(move || { let calls=user_calls.clone(); async move {
-                let _ = calls.fetch_add(1, Ordering::SeqCst);
+            .route("/api/v4/user", get(move || { let calls_3=Arc::clone(&user_calls); async move {
+                _ = calls_3.fetch_add(1, Ordering::SeqCst);
                 Json(json!({"id":42,"name":"Real Provider Owner","email":"oauth-owner@fixture.test","email_verified":true,"state":"active","locked":false}))
             }}));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -45,7 +49,7 @@ async fn consumed_oauth_context_requires_actual_capture_and_a_proof_bound_to_the
                 OAuthProvider::gitlab_with_issuer("local-client", "local-secret", &issuer),
             ))
             .plugin(AnonymousPlugin::with_config(AnonymousConfig {
-                on_link_account: Some(Arc::new(Linker(events.clone()))),
+                on_link_account: Some(Arc::new(Linker(Arc::clone(&events)))),
                 ..Default::default()
             }))
             .build()
@@ -125,7 +129,7 @@ async fn consumed_oauth_context_requires_actual_capture_and_a_proof_bound_to_the
                     .get_mut("serverContext")
                     .unwrap()
                     .get_mut("anonymousUserId")
-                    .unwrap() = json!(foreign_id)
+                    .unwrap() = json!(foreign_id);
             }
             "copied-proof" => {
                 let (_other_state, _other_cookie, other) =
@@ -139,10 +143,12 @@ async fn consumed_oauth_context_requires_actual_capture_and_a_proof_bound_to_the
             }
             "legacy-object" => {
                 *payload.get_mut("serverContext").unwrap() = json!({"anonymousUserId":foreign_id});
-                let _ = payload
-                    .as_object_mut()
-                    .unwrap()
-                    .remove("_serverContextProof");
+                drop(
+                    payload
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("_serverContextProof"),
+                );
             }
             "legacy-string" => {
                 *payload.get_mut("serverContext").unwrap() = json!("arbitrary old client data");
@@ -162,7 +168,7 @@ async fn consumed_oauth_context_requires_actual_capture_and_a_proof_bound_to_the
             }
             "expired" => {
                 *payload.get_mut("expiresAt").unwrap() =
-                    json!((Utc::now() - Duration::minutes(1)).timestamp_millis())
+                    json!((Utc::now() - Duration::minutes(1)).timestamp_millis());
             }
             _ => {}
         }

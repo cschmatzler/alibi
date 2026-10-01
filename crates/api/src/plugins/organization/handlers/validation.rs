@@ -69,6 +69,9 @@ fn expected(path: &str, expected: &str, value: Option<&Value>) -> Issue {
     ))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn body_object(req: &AuthRequest) -> Result<Map<String, Value>, AuthResponse> {
     let Some(bytes) = req.body.as_deref() else {
         // Bun's incoming empty chunked JSON stream materializes null. An absent
@@ -98,6 +101,9 @@ pub(super) fn body_object(req: &AuthRequest) -> Result<Map<String, Value>, AuthR
     object(Some(&value), "body").cloned().map_err(Into::into)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn object<'a>(
     value: Option<&'a Value>,
     path: &str,
@@ -107,6 +113,9 @@ pub(super) fn object<'a>(
         .ok_or_else(|| expected(path, "object", value))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn optional_string(
     input: &Map<String, Value>,
     field: &str,
@@ -123,6 +132,9 @@ pub(super) fn optional_string(
         .transpose()
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn required_string(
     input: &Map<String, Value>,
     field: &str,
@@ -135,6 +147,9 @@ pub(super) fn required_string(
         .ok_or_else(|| expected(path, "string", input.get(field)))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn permissions(
     value: Option<&Value>,
     path: &str,

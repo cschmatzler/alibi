@@ -552,6 +552,9 @@ async fn context(plugin: &OrganizationPlugin) -> AuthResult<AuthContext<BundledS
     configured_context(plugin, create_test_config()).await
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn configured_context(
     plugin: &OrganizationPlugin,
     config: better_auth_core::AuthConfig,
@@ -604,6 +607,9 @@ pub(super) async fn actor(ctx: &AuthContext<BundledSchema>, name: &str) -> (User
     .await
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) async fn call(
     plugin: &OrganizationPlugin,
     ctx: &AuthContext<BundledSchema>,
@@ -640,10 +646,16 @@ pub(super) async fn call(
     }
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn body<T: DeserializeOwned>(response: &AuthResponse) -> Result<T, serde_json::Error> {
     serde_json::from_slice(&response.body)
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn id(value: &Value) -> Result<&str, std::io::Error> {
     value
         .get("id")
@@ -655,6 +667,9 @@ pub(super) fn id(value: &Value) -> Result<&str, std::io::Error> {
     clippy::panic_in_result_fn,
     reason = "Assertions report test failures; Result propagates setup and fixture errors"
 )]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn assert_error(response: &AuthResponse, status: u16, code: &str) -> TestResult {
     assert_eq!(response.status, status);
     assert_eq!(

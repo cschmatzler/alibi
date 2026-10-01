@@ -20,27 +20,35 @@ async fn default_anonymous_identity_is_lowercase_32_characters_and_retires_its_a
             .unwrap();
         let mut request = AuthRequest::new(HttpMethod::Post, "/api/auth/sign-in/anonymous");
         request.body = Some(json!({}).to_string().into_bytes());
-        let _ = request
-            .headers
-            .insert("content-type".into(), "application/json".into());
-        let _ = request
-            .headers
-            .insert("origin".into(), "http://localhost:42617".into());
+        drop(
+            request
+                .headers
+                .insert("content-type".into(), "application/json".into()),
+        );
+        drop(
+            request
+                .headers
+                .insert("origin".into(), "http://localhost:42617".into()),
+        );
         let issued = auth.handle_request(request.clone()).await.unwrap();
         assert_eq!(issued.status, 200);
         let body: Value = serde_json::from_slice(&issued.body).unwrap();
         let user = body.get("user").unwrap();
         let email = user.get("email").unwrap().as_str().unwrap();
-        let identifier = match domain.filter(|domain| !domain.is_empty()) {
-            Some(domain) => email
-                .strip_prefix("temp-")
-                .unwrap()
-                .strip_suffix(&format!("@{domain}"))
-                .unwrap(),
-            None => email
-                .strip_suffix("@anonymous.placeholder.invalid")
-                .unwrap(),
-        };
+        let identifier = domain.filter(|domain| !domain.is_empty()).map_or_else(
+            || {
+                email
+                    .strip_suffix("@anonymous.placeholder.invalid")
+                    .unwrap()
+            },
+            |domain| {
+                email
+                    .strip_prefix("temp-")
+                    .unwrap()
+                    .strip_suffix(&format!("@{domain}"))
+                    .unwrap()
+            },
+        );
         assert_eq!(identifier.len(), 32);
         assert!(
             identifier
@@ -67,7 +75,7 @@ async fn default_anonymous_identity_is_lowercase_32_characters_and_retires_its_a
             .map(|header| header.split(';').next().unwrap())
             .collect::<Vec<_>>()
             .join("; ");
-        let _ = request.headers.insert("cookie".into(), cookie.clone());
+        drop(request.headers.insert("cookie".into(), cookie.clone()));
         let rejected = auth.handle_request(request.clone()).await.unwrap();
         assert_eq!(rejected.status, 400);
         assert_eq!(

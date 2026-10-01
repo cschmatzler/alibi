@@ -53,6 +53,9 @@ pub(in crate::plugins) async fn run_notification(
     }
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn parse_email(email: &str) -> AuthResult<String> {
     let normalized = email.to_lowercase();
     if !is_valid_email(&normalized) {
@@ -67,6 +70,9 @@ pub(in crate::plugins) fn parse_email(email: &str) -> AuthResult<String> {
 
 /// Preserve the newest lookup snapshot before the configured global cleanup.
 /// The atomic consume operation has its own expiry and concurrency contract.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn find_verification<S: AuthSchema>(
     ctx: &AuthContext<S>,
     identifier: &str,
@@ -120,11 +126,17 @@ pub(in crate::plugins) fn is_valid_email(email: &str) -> bool {
 
 /// Parse the upstream schema at the HTTP boundary. The error includes all
 /// failed fields in declaration order, including explicitly null optionals.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn parse_body<T: RequestBody>(req: &AuthRequest) -> Result<T, AuthResponse> {
     parse_body_with_fields(req, T::FIELDS)
 }
 
 /// Parse schemas whose required fields depend on trusted plugin configuration.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn parse_body_with_fields<T: DeserializeOwned + 'static>(
     req: &AuthRequest,
     fields: &[JsonField],
@@ -134,6 +146,9 @@ pub(in crate::plugins) fn parse_body_with_fields<T: DeserializeOwned + 'static>(
 
 /// Remove configured unknown fields before schema validation without serializing
 /// the remaining JavaScript numbers (which may include infinity or signed zero).
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn parse_body_with_ignored_fields<T: RequestBody>(
     req: &AuthRequest,
     ignored: &[&str],
@@ -271,6 +286,9 @@ pub(in crate::plugins) fn validation_response(message: &str) -> AuthResponse {
 
 /// Default username create-hook behavior for auth methods whose additional
 /// inputs have already passed through the username input transform.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn prepare_additional_user_fields(
     ctx: &AuthContext<impl AuthSchema>,
     data: &mut CreateUser,
@@ -326,6 +344,9 @@ pub(in crate::plugins) async fn prepare_additional_user_fields(
     Ok(())
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn session_response<S: AuthSchema>(
     ctx: &AuthContext<S>,
     req: &AuthRequest,
@@ -334,6 +355,9 @@ pub(in crate::plugins) async fn session_response<S: AuthSchema>(
     session_response_with_remember(ctx, req, user_id, None).await
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn session_response_with_remember<S: AuthSchema>(
     ctx: &AuthContext<S>,
     req: &AuthRequest,
@@ -404,6 +428,9 @@ pub(in crate::plugins) async fn session_response_with_remember<S: AuthSchema>(
 
 /// Email-primary proof replaces access accrued before mailbox ownership was
 /// proven. The database reservation serializes cleanup across auth instances.
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn revoke_unproven_access<S: AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,

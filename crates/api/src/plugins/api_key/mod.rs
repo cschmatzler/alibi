@@ -214,6 +214,9 @@ impl ApiKeyPlugin {
     /// Pick the configuration a request addressed, mirroring upstream's
     /// `resolveConfiguration`: an unknown or absent `config_id` falls back to
     /// the default one, and a missing default is a client error.
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn resolve_configuration(
         &self,
         config_id: Option<&str>,
@@ -534,6 +537,9 @@ impl ApiKeyPlugin {
     }
 
     /// Start automatic cleanup without awaiting its deletion.
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn maybe_delete_expired(
         &self,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -542,6 +548,9 @@ impl ApiKeyPlugin {
         Ok(())
     }
 
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn register_expired_cleanup(
         &self,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -555,6 +564,9 @@ impl ApiKeyPlugin {
         }
     }
 
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn start_expired_cleanup(
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<better_auth_core::BackgroundTaskCompletion> {
@@ -573,6 +585,9 @@ impl ApiKeyPlugin {
 
     // Both automatic bulk cleanup and deferred single-row rejection own their
     // work before application completion registration, preserving hook context.
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn start_background_work(
         operation: impl Future<Output = AuthResult<()>> + Send + 'static,
     ) -> AuthResult<better_auth_core::BackgroundTaskCompletion> {
@@ -630,6 +645,9 @@ impl ApiKeyPlugin {
 
     // -- Validation helpers --
 
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn validate_prefix(config: &ApiKeyConfig, prefix: Option<&str>) -> AuthResult<()> {
         if let Some(p) = prefix.filter(|prefix| !prefix.is_empty()) {
             let len = p.encode_utf16().count();
@@ -645,6 +663,9 @@ impl ApiKeyPlugin {
     /// When `is_create` is true, `require_name` is enforced (name must be
     /// present).  On updates `require_name` is **not** enforced -- the
     /// caller may be updating unrelated fields without resending the name.
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn validate_name(
         config: &ApiKeyConfig,
         name: Option<&str>,
@@ -667,6 +688,9 @@ impl ApiKeyPlugin {
         clippy::cast_precision_loss,
         reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
     )]
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn validate_expires_in(
         config: &ApiKeyConfig,
         expires_in: Option<f64>,
@@ -690,6 +714,9 @@ impl ApiKeyPlugin {
         }
     }
 
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn validate_metadata(
         config: &ApiKeyConfig,
         metadata: Option<&better_auth_core::utils::json::JsValue>,
@@ -714,6 +741,9 @@ impl ApiKeyPlugin {
         Ok(())
     }
 
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn validate_refill(
         refill_interval: Option<f64>,
         refill_amount: Option<f64>,
@@ -755,6 +785,7 @@ impl ApiKeyPlugin {
                 | AuthError::AuthenticationFailed(_)
                 | AuthError::SessionNotFound
                 | AuthError::Forbidden(_)
+                | AuthError::UserCreationCancelled
                 | AuthError::SessionCreationCancelled
                 | AuthError::BannedUser(_)
                 | AuthError::Unauthorized
@@ -839,6 +870,7 @@ impl ApiKeyPlugin {
                 | AuthError::AuthenticationFailed(_)
                 | AuthError::SessionNotFound
                 | AuthError::Forbidden(_)
+                | AuthError::UserCreationCancelled
                 | AuthError::SessionCreationCancelled
                 | AuthError::BannedUser(_)
                 | AuthError::Unauthorized

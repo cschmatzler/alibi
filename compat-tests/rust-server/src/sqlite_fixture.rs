@@ -27,8 +27,8 @@ fn options() -> ConnectOptions {
     options
 }
 
-pub(super) async fn connect(
-) -> Result<(DatabaseConnection, DatabaseConnection), better_auth_seaorm::sea_orm::DbErr> {
+pub(super) async fn connect()
+-> Result<(DatabaseConnection, DatabaseConnection), better_auth_seaorm::sea_orm::DbErr> {
     let configured = options();
     let writer = Database::connect(configured.clone()).await?;
     let observer = Database::connect(configured).await?;
@@ -85,22 +85,26 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(row.try_get::<String>("", "status").unwrap(), "accepted");
-        assert!(observer
-            .execute_raw(Statement::from_string(
-                DbBackend::Sqlite,
-                "UPDATE invitation SET status='pending'"
-            ))
-            .await
-            .is_err());
+        assert!(
+            observer
+                .execute_raw(Statement::from_string(
+                    DbBackend::Sqlite,
+                    "UPDATE invitation SET status='pending'"
+                ))
+                .await
+                .is_err()
+        );
         transaction.rollback().await.unwrap();
-        assert!(writer
-            .query_one_raw(Statement::from_string(
-                DbBackend::Sqlite,
-                "SELECT id FROM member"
-            ))
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            writer
+                .query_one_raw(Statement::from_string(
+                    DbBackend::Sqlite,
+                    "SELECT id FROM member"
+                ))
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     // Accelerate enabled/default retirement policies while preserving disabled

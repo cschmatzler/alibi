@@ -137,6 +137,9 @@ fn validate(issues: &[String]) -> Result<(), AuthResponse> {
     }
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn create(req: &AuthRequest) -> Result<CreateOrganizationRequest, AuthResponse> {
     let decoded = decode(req)?;
     object(decoded.as_ref(), "body")
@@ -173,6 +176,9 @@ pub(super) fn create(req: &AuthRequest) -> Result<CreateOrganizationRequest, Aut
     })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn update(
     req: &AuthRequest,
 ) -> Result<
@@ -253,6 +259,9 @@ pub(super) fn update(
     ))
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn delete(req: &AuthRequest) -> Result<DeleteOrganizationRequest, AuthResponse> {
     let decoded = decode(req)?;
     object(decoded.as_ref(), "body")
@@ -275,6 +284,9 @@ pub(super) fn delete(req: &AuthRequest) -> Result<DeleteOrganizationRequest, Aut
     })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn set_active(req: &AuthRequest) -> Result<SetActiveOrganizationRequest, AuthResponse> {
     let decoded = decode(req)?;
     object(decoded.as_ref(), "body")
@@ -306,6 +318,9 @@ pub(super) fn set_active(req: &AuthRequest) -> Result<SetActiveOrganizationReque
     })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins::organization) fn validate_trusted_create(
     body: &CreateOrganizationRequest,
 ) -> Result<(), AuthError> {
@@ -334,6 +349,9 @@ pub(in crate::plugins::organization) fn validate_trusted_create(
     }
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn member_role_update(
     req: &AuthRequest,
 ) -> Result<UpdateMemberRoleRequest, AuthResponse> {
@@ -387,6 +405,9 @@ pub(super) fn member_role_update(
     })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn member_remove(req: &AuthRequest) -> Result<RemoveMemberRequest, AuthResponse> {
     let decoded = decode(req)?;
     object(decoded.as_ref(), "body")

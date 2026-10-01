@@ -58,6 +58,9 @@ impl RawCredential {
     pub(super) fn has_unsupported_curve(&self) -> bool {
         decode_first(self.public_key()).is_ok_and(|(key, _)| curve_eight(&key))
     }
+    ///
+    /// # Errors
+    /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn snapshot(&self) -> better_auth_core::AuthResult<PasskeySnapshot> {
         let Self::SourceRawNone {
             counter,
@@ -393,6 +396,9 @@ fn truthy(value: &JsValue) -> bool {
     clippy::too_many_lines,
     reason = "Keep the pinned WebAuthn validation sequence together for comparison with the reference runtime"
 )]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn register_raw_none(
     registration: &RegisterPublicKeyCredential,
     original: &JsValue,

@@ -40,6 +40,9 @@ pub(super) async fn send_email_or_log(
     }
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn change_email_core(
     body: &ChangeEmailRequest,
     user: &impl AuthUser,
@@ -109,6 +112,9 @@ pub(in crate::plugins) async fn change_email_core(
     Ok(StatusResponse { status: true })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn delete_user_core(
     body: &DeleteUserRequest,
     user: &impl AuthUser,
@@ -197,6 +203,9 @@ pub(in crate::plugins) async fn delete_user_core(
     })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn delete_user_callback_core(
     token: &str,
     current_user: &impl AuthUser,

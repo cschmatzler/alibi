@@ -60,6 +60,9 @@ fn normalized_update_roles(role: &super::super::types::RoleInput) -> Vec<&str> {
 // Core functions
 // ---------------------------------------------------------------------------
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn get_active_member_core(
     user: &impl AuthUser,
     session: &impl AuthSession,
@@ -78,7 +81,15 @@ pub(in crate::plugins) async fn get_active_member_core(
     Ok(MemberResponse::from_member_and_user(&member, user))
 }
 
-pub(crate) async fn list_members_core(
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "Preserve JavaScript Number rounding at the compatibility boundary"
+)]
+pub(in crate::plugins) async fn list_members_core(
     query: &ListMembersQuery,
     user: &impl AuthUser,
     session: &impl AuthSession,
@@ -96,11 +107,12 @@ pub(crate) async fn list_members_core(
         resolve_organization_id(query.organization_id.as_deref(), None, session, ctx).await?
     };
 
-    let _ = ctx
-        .database
-        .get_member(&org_id, &user.id())
-        .await?
-        .ok_or_else(|| AuthError::forbidden("You are not a member of this organization"))?;
+    drop(
+        ctx.database
+            .get_member(&org_id, &user.id())
+            .await?
+            .ok_or_else(|| AuthError::forbidden("You are not a member of this organization"))?,
+    );
 
     let member_params = MemberPageQuery {
         organization_id: org_id,
@@ -135,7 +147,7 @@ pub(crate) async fn list_members_core(
         .list_users_by_ids_page(&user_ids, members_raw.len() as f64)
         .await?
         .into_iter()
-        .map(|user| (user.id().to_string(), user))
+        .map(|user_2| (user_2.id().to_string(), user_2))
         .collect::<HashMap<_, _>>();
     let mut members = Vec::with_capacity(members_raw.len());
     for member in &members_raw {
@@ -148,6 +160,9 @@ pub(crate) async fn list_members_core(
     Ok(ListMembersResponse { members, total })
 }
 
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn get_active_member_role_core(
     query: &GetActiveMemberRoleQuery,
     user: &impl AuthUser,
@@ -191,6 +206,9 @@ pub(in crate::plugins) async fn get_active_member_role_core(
     clippy::too_many_lines,
     reason = "Keep ownership checks and membership removal callbacks adjacent to their writes"
 )]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn remove_member_core(
     body: &RemoveMemberRequest,
     user: &impl AuthUser,
@@ -202,7 +220,7 @@ pub(in crate::plugins) async fn remove_member_core(
         .organization_id
         .as_deref()
         .filter(|id| !id.is_empty())
-        .or(session.active_organization_id())
+        .or_else(|| session.active_organization_id())
         .filter(|id| !id.is_empty())
         .ok_or_else(|| super::extension_common::org_error(400, "NO_ACTIVE_ORGANIZATION"))?;
 
@@ -335,10 +353,11 @@ pub(in crate::plugins) async fn remove_member_core(
         .await?;
 
     if is_self_removal && session.active_organization_id() == Some(org_id) {
-        let _ = ctx
-            .database
-            .update_session_active_organization(session.token(), None)
-            .await?;
+        drop(
+            ctx.database
+                .update_session_active_organization(session.token(), None)
+                .await?,
+        );
     }
 
     if let (Some(hooks), Some(original)) = (&config.member_removal_hooks, original) {
@@ -352,6 +371,9 @@ pub(in crate::plugins) async fn remove_member_core(
     clippy::too_many_lines,
     reason = "Keep role authorization and before/after callbacks adjacent to the membership write"
 )]
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn update_member_role_core(
     body: &UpdateMemberRoleRequest,
     organization_id: &str,
@@ -520,6 +542,9 @@ pub async fn handle_get_active_member(
 }
 
 /// Handle list members request
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
 pub async fn handle_list_members(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,

@@ -1,22 +1,38 @@
 //! Native embedding contract: private request state is isolated per dispatch.
+#![cfg(test)]
+#![expect(
+    unused_crate_dependencies,
+    reason = "Cargo shares package dependencies across its library and integration targets"
+)]
 #![allow(
     clippy::unwrap_used,
     reason = "public boundary regressions fail on setup errors"
 )]
 
+#[cfg(test)]
+#[path = "anonymous_request_extensions_tests/tests.rs"]
+mod tests;
+
 use async_trait::async_trait;
+
 use better_auth::plugins::EmailPasswordPlugin;
+
 use better_auth::{AuthBuilder, AuthConfig};
+
 use better_auth_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, BeforeRequestAction,
     CreateUser, HttpMethod,
 };
+
 use better_auth_seaorm::{Database, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore};
+
 use serde_json::{Value, json};
+
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
 };
+
 use tokio::sync::Barrier;
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
@@ -65,7 +81,7 @@ impl AuthPlugin<Schema> for ApplicationContext {
         };
         request.extensions().insert(capture.clone());
         if request.header("x-concurrent").is_some() {
-            let _ = self.concurrent.wait().await;
+            _ = self.concurrent.wait().await;
         }
         let handler_copy = request.clone();
         let current = handler_copy
@@ -105,14 +121,17 @@ impl AuthPlugin<Schema> for ApplicationContext {
                 .sequence,
             capture.sequence
         );
-        let _ = response
-            .headers
-            .insert("x-application-sequence", capture.sequence.to_string());
+        drop(
+            response
+                .headers
+                .insert("x-application-sequence", capture.sequence.to_string()),
+        );
         Ok(response)
     }
 }
 
 struct StorageContext(Arc<Mutex<Vec<(usize, String)>>>);
+
 #[async_trait]
 impl SeaOrmHooks<Schema> for StorageContext {
     async fn before_create_user(
@@ -143,7 +162,7 @@ async fn configured() -> (
         .unwrap();
     let rows = Arc::new(Mutex::new(Vec::new()));
     let store = SeaOrmStore::<Schema>::new(config.clone(), database)
-        .with_hooks(vec![Arc::new(StorageContext(rows.clone()))]);
+        .with_hooks(vec![Arc::new(StorageContext(Arc::clone(&rows)))]);
     let auth = AuthBuilder::new(config)
         .store(store)
         .plugin(EmailPasswordPlugin::new().enable_username(false))
@@ -164,12 +183,16 @@ fn request(email: &str) -> AuthRequest {
             .to_string()
             .into_bytes(),
     );
-    let _ = request
-        .headers
-        .insert("content-type".into(), "application/json".into());
-    let _ = request
-        .headers
-        .insert("origin".into(), "http://localhost:42611".into());
+    drop(
+        request
+            .headers
+            .insert("content-type".into(), "application/json".into()),
+    );
+    drop(
+        request
+            .headers
+            .insert("origin".into(), "http://localhost:42611".into()),
+    );
     request.extensions().insert(ApplicationRequest {
         sequence: 999,
         email: "caller@example.test".into(),
@@ -185,11 +208,3 @@ fn sequence(response: &AuthResponse) -> usize {
         .parse()
         .unwrap()
 }
-
-
-
-
-
-#[cfg(test)]
-#[path = "anonymous_request_extensions_tests/tests.rs"]
-mod tests;

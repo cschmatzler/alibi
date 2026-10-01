@@ -29,10 +29,10 @@ impl<S: AuthSchema> Clone for AuthenticatedUser<S> {
 }
 
 impl<S: AuthSchema> fmt::Debug for AuthenticatedUser<S> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Stored(user) => formatter.debug_tuple("Stored").field(user).finish(),
-            Self::Cached(user) => formatter.debug_tuple("Cached").field(user).finish(),
+            Self::Stored(user) => f.debug_tuple("Stored").field(user).finish(),
+            Self::Cached(user) => f.debug_tuple("Cached").field(user).finish(),
         }
     }
 }
