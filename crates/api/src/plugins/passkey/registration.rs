@@ -33,7 +33,8 @@ pub trait PasskeyUserResolver: Send + Sync {
     ) -> AuthResult<Option<PasskeyRegistrationUser>>;
 }
 
-/// Cryptographic facts supplied only after the registration response verifies.
+/// Facts supplied after the requested registration protocol and attestation policy
+/// verifies. None attestation admits a credential without proving key possession.
 #[derive(Debug, Clone)]
 pub struct VerifiedPasskeyRegistration {
     pub credential_id: String,

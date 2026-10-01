@@ -8,7 +8,7 @@ Wider pinned parity work follows these priorities. Excluded external integration
 packages will receive no implementation work. Prepared unmerged work remains
 separate from delivered capabilities.
 
-This snapshot describes merged `origin/master` through PR #95 (including encrypted cookies, organization/member hooks, observed API-key cleanup and Source passkey authentication policies),
+This snapshot describes merged `origin/master` through PR #113 (including encrypted cookies, organization/member hooks and trusted member addition, observed API-key cleanup, configured OTP background delivery and Source passkey authentication policies),
 not the older, dirty coordinator worktree. The reference remains Better Auth
 1.7.6. The [upstream audit](audits/upstream-target.md) records source locations
 and wider boundaries. An audit gap means equivalence has not been established;
@@ -163,3 +163,11 @@ pending canonical integration; prepared work is not described as merged.
 Confirmed remaining differences include staged database API-key failure writes,
 concurrent successful returned-row snapshots, advertised EdDSA registration,
 JSON/custom numeric filter coercion and removal SQL-error wire responses.
+
+
+Latest delivered tree: master 8c0c8dc1 equals the tested e2c5563b integration.
+Its complete canonical gate passed 530 SDK / 33,246 assertions, 42 harness / 344,
+two Chromium / 22 and 78.550841% source lines (29,433 / 37,470). PRs #96–113 are
+merged. Physical duplicate organization memberships, installed-index constraint
+preservation and measured raw-none CBOR decoder differences are active next
+priority slices. Those are not complete merely because the existing suite passes.
