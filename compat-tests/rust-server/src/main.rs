@@ -52,6 +52,7 @@ use tokio::sync::Mutex;
 
 mod admin_banned_message_fixture;
 mod admin_permission_fixture;
+mod api_key_background_fixture;
 mod api_key_generation_fixture;
 mod api_key_hook_fixture;
 mod device_fixture;
@@ -677,6 +678,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         verification_profiles::router(&config, database.clone(), verification_outbox.clone())
             .await?;
     let session_profile_router = session_profiles::router(&config, database.clone()).await?;
+    let api_key_background_router =
+        api_key_background_fixture::router(&config, database.clone()).await?;
     let api_key_hook_router = api_key_hook_fixture::router(&config, database.clone()).await?;
     let multiple_session_counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let multiple_session_router = multiple_session_fixture::router(
@@ -1676,6 +1679,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(admin_permission_router)
         .merge(admin_banned_message_router)
         .merge(api_key_generation_router)
+        .merge(api_key_background_router)
         .merge(api_key_hook_router)
         .merge(session_fields_router)
         .merge(open_api_router)
