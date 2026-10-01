@@ -1202,8 +1202,6 @@ async fn sign_in_with_id_token_core(
         &user_info.user,
         &OAuthTokenSet {
             access_token: id_token.access_token.clone(),
-            refresh_token: id_token.refresh_token.clone(),
-            scopes: id_token.scopes.clone().unwrap_or_default(),
             id_token: Some(id_token.token.clone()),
             ..Default::default()
         },

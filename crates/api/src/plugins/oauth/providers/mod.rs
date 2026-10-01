@@ -346,6 +346,9 @@ impl OAuthProvider {
 
     #[must_use]
     pub fn with_client_ids(mut self, client_ids: Vec<String>) -> Self {
+        if let Some(policy) = self.id_token.as_mut() {
+            policy.client_ids = Some(client_ids.clone());
+        }
         let mut ids = client_ids.into_iter();
         self.client_id = ids.next().unwrap_or_default();
         self.additional_client_ids = ids.collect();

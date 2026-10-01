@@ -67,12 +67,13 @@ pub enum OAuthNonceComparison {
     ExactOrSha256,
 }
 
-/// Trusted provider policy. An absent audience uses the current configured
-/// primary/additional client IDs, so application builder updates remain effective.
+/// Trusted provider policy. An explicit audience overrides provider client IDs.
 #[derive(Clone)]
 pub struct OAuthIdTokenConfig {
     pub issuers: Vec<String>,
     pub audience: Option<Vec<String>>,
+    /// Explicit client-ID array supplied by the provider builder, including an empty array.
+    pub client_ids: Option<Vec<String>>,
     pub jwks_source: Arc<dyn OAuthJwksSource>,
     pub max_age_secs: u64,
     /// Fixed import algorithm, or the JWK's declared algorithm for Apple.
@@ -89,6 +90,7 @@ impl OAuthIdTokenConfig {
                 "accounts.google.com".into(),
             ],
             audience: None,
+            client_ids: None,
             jwks_source: Arc::new(HttpOAuthJwksSource::new(
                 "https://www.googleapis.com/oauth2/v3/certs",
             )),
@@ -103,6 +105,7 @@ impl OAuthIdTokenConfig {
         Self {
             issuers: vec!["https://appleid.apple.com".into()],
             audience: None,
+            client_ids: None,
             jwks_source: Arc::new(HttpOAuthJwksSource::new(
                 "https://appleid.apple.com/auth/keys",
             )),
@@ -118,6 +121,7 @@ impl std::fmt::Debug for OAuthIdTokenConfig {
         f.debug_struct("OAuthIdTokenConfig")
             .field("issuers", &self.issuers)
             .field("audience", &self.audience)
+            .field("client_ids", &self.client_ids)
             .field("max_age_secs", &self.max_age_secs)
             .field("algorithm", &self.algorithm)
             .field("selection", &self.selection)
@@ -147,7 +151,11 @@ pub(super) async fn verify_provider_token(
     audiences.extend(provider.additional_client_ids.clone());
     verify_jwks_token(
         token,
-        config.audience.as_deref().unwrap_or(&audiences),
+        config
+            .audience
+            .as_deref()
+            .or(config.client_ids.as_deref())
+            .unwrap_or(&audiences),
         nonce,
         config,
     )
@@ -173,7 +181,9 @@ pub(in crate::plugins) async fn verify_jwks_token(
     let _ignored_as_object = header.as_object()?;
     let algorithm: Algorithm =
         serde_json::from_value(header.get("alg")?.to_json_value().ok()?).ok()?;
-    if config.algorithm.is_some_and(|fixed| fixed != algorithm) {
+    if matches!(config.selection, OAuthJwksSelection::AllMatching)
+        && config.algorithm.is_some_and(|fixed| fixed != algorithm)
+    {
         return None;
     }
     let keys = config.jwks_source.fetch_keys().await.ok()?;
@@ -193,7 +203,7 @@ pub(in crate::plugins) async fn verify_jwks_token(
             }
         })
         .collect();
-    if !matches!(config.selection, OAuthJwksSelection::AllMatching) {
+    if matches!(config.selection, OAuthJwksSelection::ExactKid) {
         selected.truncate(1);
     }
     let mut public_keys = Vec::new();
@@ -206,6 +216,12 @@ pub(in crate::plugins) async fn verify_jwks_token(
         }
         let key: jsonwebtoken::jwk::Jwk = serde_json::from_value(key).ok()?;
         public_keys.push(DecodingKey::from_jwk(&key).ok()?);
+    }
+    if config.algorithm.is_some_and(|fixed| fixed != algorithm) {
+        return None;
+    }
+    if !matches!(config.selection, OAuthJwksSelection::AllMatching) {
+        public_keys.truncate(1);
     }
     if let Some(crit) = header.get("crit") {
         let names = crit.as_array()?;
