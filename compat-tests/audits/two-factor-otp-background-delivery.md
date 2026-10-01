@@ -127,8 +127,8 @@ The unchanged frozen slice was read against the pinned sender and
 runInBackgroundOrAwait runtime. Owned eager polling, default await, retained
 issued-code state, ignored/throwing observer completion and original task-local
 context match the demonstrated asynchronous contract. No broad callback/error
-mapping changed. Coordinator review is clear; independent organization review
-and the following canonical gate remain pending. Twenty-eight additive names
+mapping changed. Coordinator and independent organization-owner reviews are clear on frozen
+9c7067d8. The following canonical gate remains pending. Twenty-eight additive names
 are required in actual inventory evidence: all four owners require successful,
 rejected and stateful send/verify behavior, and genuine guest send rejection
 supplies authorization evidence. Verification authorization is not inferred
