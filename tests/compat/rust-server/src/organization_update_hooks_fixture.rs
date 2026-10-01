@@ -36,7 +36,7 @@ pub(super) async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value>
         ),
         (
             "members",
-            "SELECT m.id,m.organization_id AS organizationId,m.user_id AS userId,m.role FROM member m JOIN organization o ON o.id=m.organization_id JOIN users u ON u.id=m.user_id ORDER BY o.slug,u.email,m.id",
+            "SELECT m.id,m.organization_id AS organizationId,m.user_id AS userId,m.role FROM member m LEFT JOIN organization o ON o.id=m.organization_id JOIN users u ON u.id=m.user_id ORDER BY o.slug,u.email,m.id",
             &["id", "organizationId", "userId", "role"][..],
         ),
         (
@@ -266,11 +266,21 @@ pub(super) async fn router(
     let configure = hooks.clone();
     let state = hooks.clone();
     let release = hooks.clone();
+    let storage = hooks.clone();
     Ok(Router::new().nest(path,auth.clone().axum_router().with_state(auth.clone()))
         .route("/__test/organization-update-hooks-configure",post(move|Json(body):Json<Value>|{let hooks=configure.clone();async move {
             hooks.gate.lock().await.notify_one();
             *hooks.mode.lock().await=body["mode"].as_str().unwrap_or("record").to_owned();
             hooks.receipts.lock().await.clear();*hooks.gate.lock().await=Arc::new(Notify::new());Json(json!({"configured":true}))
+        }}))
+        .route("/__test/organization-update-storage",post(move|Json(body):Json<Value>|{let hooks=storage.clone();async move {
+            hooks.database.execute_unprepared("DROP TRIGGER IF EXISTS default_organization_update").await.map_err(|error|AuthError::internal(error.to_string()))?;
+            if let Some(mode @ ("delete" | "ignore" | "veto")) = body["mode"].as_str() {
+                let id=body["organizationId"].as_str().unwrap_or_default().replace('\'',"''");
+                let action=match mode { "delete"=>"DELETE FROM member WHERE organization_id=OLD.id; DELETE FROM invitation WHERE organization_id=OLD.id; DELETE FROM organization WHERE id=OLD.id; SELECT RAISE(IGNORE);", "ignore"=>"SELECT RAISE(IGNORE);", _=>"SELECT RAISE(ABORT,'organization update veto');" };
+                hooks.database.execute_unprepared(&format!("CREATE TRIGGER default_organization_update BEFORE UPDATE ON organization WHEN OLD.id='{id}' BEGIN {action} END")).await.map_err(|error|AuthError::internal(error.to_string()))?;
+            }
+            Ok::<_,AuthError>(Json(json!({"configured":true})))
         }}))
         .route("/__test/organization-update-hooks-release",post(move||{let hooks=release.clone();async move { hooks.gate.lock().await.notify_one();Json(json!({"released":true})) }}))
         .route("/__test/organization-update-hooks-state",get(move|Query(query):Query<std::collections::HashMap<String,String>>|{let hooks=state.clone();async move {

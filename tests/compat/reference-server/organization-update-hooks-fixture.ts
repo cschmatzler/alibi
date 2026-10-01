@@ -14,7 +14,7 @@ export function organizationUpdateHooksFixture(database: Database, shared: Param
   function snapshot() {
     return {
       organizations: database.query("SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id").all(),
-      members: database.query("SELECT m.id,m.organizationId,m.userId,m.role FROM member m JOIN organization o ON o.id=m.organizationId JOIN user u ON u.id=m.userId ORDER BY o.slug,u.email,m.id").all(),
+      members: database.query("SELECT m.id,m.organizationId,m.userId,m.role FROM member m LEFT JOIN organization o ON o.id=m.organizationId JOIN user u ON u.id=m.userId ORDER BY o.slug,u.email,m.id").all(),
       sessions: database.query("SELECT s.id,s.userId,s.activeOrganizationId,s.activeTeamId FROM session s JOIN user u ON u.id=s.userId ORDER BY u.email,s.createdAt,s.id").all(),
       users: database.query("SELECT id,email,name FROM user ORDER BY email,id").all(),
     };
@@ -55,6 +55,16 @@ export function organizationUpdateHooksFixture(database: Database, shared: Param
   return {
     auth,
     configure(body: Record<string, unknown>) { release?.(); mode = typeof body.mode === "string" ? body.mode : "record"; receipts.length = 0; gate = new Promise<void>(resolve => { release = resolve; }); return Response.json({ configured: true }); },
+    storage(body: Record<string, unknown>) {
+      database.exec("DROP TRIGGER IF EXISTS default_organization_update");
+      if (body.mode === "delete" || body.mode === "ignore" || body.mode === "veto") {
+        const mode = body.mode;
+        const id = String(body.organizationId).replaceAll("'", "''");
+        const action = mode === "delete" ? "DELETE FROM member WHERE organizationId=OLD.id; DELETE FROM invitation WHERE organizationId=OLD.id; DELETE FROM organization WHERE id=OLD.id; SELECT RAISE(IGNORE);" : mode === "ignore" ? "SELECT RAISE(IGNORE);" : "SELECT RAISE(ABORT,'organization update veto');";
+        database.exec(`CREATE TRIGGER default_organization_update BEFORE UPDATE ON organization WHEN OLD.id='${id}' BEGIN ${action} END`);
+      }
+      return Response.json({ configured: true });
+    },
     release() { release?.(); return Response.json({ released: true }); },
     async state(waitFor: string | null) { for (let attempt = 0; waitFor && attempt < 100 && !receipts.some(receipt => (receipt as { phase: string }).phase === waitFor); attempt++) await Bun.sleep(10); return Response.json({ receipts, snapshot: snapshot() }); },
   };

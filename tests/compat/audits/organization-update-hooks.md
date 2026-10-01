@@ -40,7 +40,9 @@ Only a real `RecordNotUpdated` result maps to absence; query/model errors remain
 errors. Bundled organization ActiveModelBehavior is currently empty; custom
 organization model replacement is not promised by the existing schema API.
 The original public `update_organization` API and missing-row error behavior
-remain intact. The optional operation is used only by configured update hooks.
+remain intact. The optional model-hook operation is used only by configured update hooks.
+The default path has a separate bounded column-patch operation; see
+[the default-update audit](organization-default-update.md).
 
 The native primary owner invokes this real public store against migrated SQLite:
 actual update/readback, SQL ABORT veto with unchanged row, SQL IGNORE zero-row
@@ -126,11 +128,10 @@ supply request/headers; no invented callback request is added here. This slice
 does not create a global trusted server-API dispatcher or assert API-key-only
 middleware equivalence.
 
-Source default update also returns null for adapter absence without hooks. Rust's
-original no-hook missing-row error remains an explicit outstanding default-path
-boundary; enabling the new optional operation for hook configuration does not
-claim to repair that separate branch. Empty update data's pinned Bun prepared-
-query error is also unresolved; no synthetic HTTP500 response is introduced.
+Source default adapter absence and schema-valid empty-patch prepared-query
+failure are now covered by the separate
+[default-update audit](organization-default-update.md). That route does not alter
+this configured hook path or manufacture a SQL failure.
 Nullable SQL metadata upgrades, creation/deletion/member-role lifecycle callbacks
 and global HTTP cancellation/continuation ownership are separate capabilities.
 This frozen baseline does not independently prove disconnected-request lifecycle
