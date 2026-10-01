@@ -1485,7 +1485,7 @@
     {
       "route": "POST /one-tap/callback",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
         "success": null,
         "rejection": null,
