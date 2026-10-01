@@ -504,7 +504,7 @@ pub async fn handle_list_members(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
-    let (user, session) = require_session(req, ctx).await?;
+    let (user, session) = super::extension_common::session(req, ctx).await?;
     let query = parse_query::<ListMembersQuery>(&req.query);
     let response = match list_members_core(&query, &user, &session, config, ctx).await {
         Ok(response) => response,
