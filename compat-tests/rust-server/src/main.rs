@@ -2,6 +2,7 @@ mod organization_creation_fixture;
 mod organization_creation_hooks_fixture;
 mod organization_deletion_hooks_fixture;
 mod organization_transport_probe;
+mod organization_update_hooks_fixture;
 mod team_fixture;
 
 use axum::{
@@ -642,6 +643,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let team_router = team_fixture::router(database.clone(), team_profiles);
     let creation_router = organization_creation_fixture::router(&config, database.clone()).await?;
     let probe = organization_transport_probe::Probe::default();
+    let update_hooks_router =
+        organization_update_hooks_fixture::router(&config, database.clone()).await?;
     let creation_hooks_router =
         organization_creation_hooks_fixture::router(&config, database.clone(), probe.clone())
             .await?;
@@ -1649,6 +1652,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(team_router)
         .merge(creation_router)
         .merge(creation_hooks_router)
+        .merge(update_hooks_router)
         .merge(deletion_hooks_router)
         .nest("/api/auth", auth_router)
         .with_state(auth)

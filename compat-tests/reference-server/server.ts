@@ -15,6 +15,7 @@ import { createTwoFactorOtpFixture } from "./two-factor-otp-fixture";
 import { createTwoFactorTotpFixture } from "./two-factor-totp-fixture";
 import { createOrganizationCreationFixture } from "./organization-creation-fixture";
 import { organizationCreationHooksFixture } from "./organization-creation-hooks-fixture";
+import { organizationUpdateHooksFixture } from "./organization-update-hooks-fixture";
 import {organizationDeletionHooksFixture} from "./organization-deletion-hooks-fixture";
 import { createSiweFixture } from "./siwe-fixture";
 import { createPhoneFixture } from "./phone-fixture";
@@ -409,6 +410,7 @@ const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 const organizationCreationFixture = createOrganizationCreationFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationTransport = organizationTransportProbe();
 const organizationHooksFixture = organizationCreationHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
+const organizationUpdateFixture = organizationUpdateHooksFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationDeletionFixture = organizationDeletionHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
 const passkeyRegistration = passkeyRegistrationFixture(authOptions);
 
@@ -775,6 +777,10 @@ const server = Bun.serve({
       if(url.pathname==="/__test/organization-delete-hooks-state"&&request.method==="GET")return organizationDeletionFixture.state(url.searchParams.get("waitFor"));
       if(url.pathname==="/__test/organization-delete-hooks-server"&&request.method==="POST")return organizationDeletionFixture.server(await request.json() as Record<string,unknown>,request.headers);
       if(url.pathname==="/__test/organization-hooks-configure" && request.method==="POST")return organizationHooksFixture.configure(await request.json() as Record<string,unknown>);
+      if(url.pathname.startsWith("/__test/profiles/org-update-hooks/api/auth/"))return organizationUpdateFixture.auth.handler(request);
+      if(url.pathname==="/__test/organization-update-hooks-configure" && request.method==="POST")return organizationUpdateFixture.configure(await request.json() as Record<string,unknown>);
+      if(url.pathname==="/__test/organization-update-hooks-release" && request.method==="POST")return organizationUpdateFixture.release();
+      if(url.pathname==="/__test/organization-update-hooks-state" && request.method==="GET")return organizationUpdateFixture.state(url.searchParams.get("waitFor"));
       if(url.pathname==="/__test/organization-hooks-release" && request.method==="POST")return organizationHooksFixture.release();
       if(url.pathname==="/__test/organization-hooks-state" && request.method==="GET")return organizationHooksFixture.state(url.searchParams.get("waitFor"));
       if(url.pathname==="/__test/organization-hooks-create" && request.method==="POST")return organizationHooksFixture.server(await request.json() as Record<string,unknown>);

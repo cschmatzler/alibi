@@ -10,9 +10,14 @@ pub use lifecycle::{
 };
 pub mod rbac;
 pub mod types;
+pub mod update_lifecycle;
 pub use extensions::{
     DefaultTeamContext, DefaultTeamFactory, DynamicAccessControlConfig, OrganizationLimitResolver,
     OrganizationTeamHooks, TeamsConfig, default_organization_statements,
+};
+pub use update_lifecycle::{
+    OrganizationUpdateContext, OrganizationUpdateHooks, OrganizationUpdateInput,
+    OrganizationUpdatePatch, OrganizationUpdatedContext,
 };
 
 use std::collections::HashMap;
@@ -61,6 +66,9 @@ pub struct OrganizationConfig {
     /// Awaited deletion callbacks over raw rows and original authority snapshots.
     #[config(default = None, skip)]
     pub deletion_hooks: Option<std::sync::Arc<dyn OrganizationDeletionHooks>>,
+    /// Awaited update callbacks over validated input and original authority.
+    #[config(default = None, skip)]
+    pub update_hooks: Option<std::sync::Arc<dyn OrganizationUpdateHooks>>,
     /// Maximum members per organization (None = unlimited)
     #[config(default = Some(100))]
     pub membership_limit: Option<usize>,

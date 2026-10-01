@@ -30,6 +30,7 @@ pub fn org_error(status: u16, code: &'static str) -> AuthError {
         "NO_ACTIVE_ORGANIZATION" => "No active organization",
         "ORGANIZATION_NOT_FOUND" => "Organization not found",
         "ORGANIZATION_ALREADY_EXISTS" => "Organization already exists",
+        "ORGANIZATION_SLUG_ALREADY_TAKEN" => "Organization slug already taken",
         "ORGANIZATION_DELETION_DISABLED" => "Organization deletion is disabled",
         "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_ORGANIZATION" => {
             "You are not allowed to delete this organization"

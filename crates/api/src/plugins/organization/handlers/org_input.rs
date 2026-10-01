@@ -169,7 +169,15 @@ pub(super) fn create(req: &AuthRequest) -> Result<CreateOrganizationRequest, Aut
     })
 }
 
-pub(super) fn update(req: &AuthRequest) -> Result<UpdateOrganizationRequest, AuthResponse> {
+pub(super) fn update(
+    req: &AuthRequest,
+) -> Result<
+    (
+        UpdateOrganizationRequest,
+        Option<indexmap::IndexMap<String, JsValue>>,
+    ),
+    AuthResponse,
+> {
     let decoded = decode(req)?;
     object(decoded.as_ref(), "body")
         .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
@@ -222,10 +230,17 @@ pub(super) fn update(req: &AuthRequest) -> Result<UpdateOrganizationRequest, Aut
         &mut issues,
     );
     validate(issues)?;
-    Ok(UpdateOrganizationRequest {
-        organization_id,
-        data: fields,
-    })
+    let raw_metadata = data
+        .and_then(|data| data.get("metadata"))
+        .and_then(JsValue::as_object)
+        .cloned();
+    Ok((
+        UpdateOrganizationRequest {
+            organization_id,
+            data: fields,
+        },
+        raw_metadata,
+    ))
 }
 
 pub(super) fn delete(req: &AuthRequest) -> Result<DeleteOrganizationRequest, AuthResponse> {

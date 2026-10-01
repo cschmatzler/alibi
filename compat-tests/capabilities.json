@@ -2031,6 +2031,33 @@
           "organization set-active returns exact stored metadata text and changes only the current token selection",
           "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
         ]
+      },
+      "requiredEvidence": {
+        "state": [
+          "organization update hooks merge null empty and absent patches with parsed adapter output",
+          "organization update hook rejection retains source before and after persistence ordering",
+          "organization update validation authority and duplicate guards run before application hooks",
+          "organization update callbacks retain original actor and membership despite independent writes",
+          "organization update after hook receives null when before hook actually deletes its row",
+          "organization update awaits its real async before hook before executing the adapter",
+          "organization update hooks observe raw nonfinite and signed-zero metadata before adapter JSON normalization"
+        ],
+        "success": [
+          "organization update hooks merge null empty and absent patches with parsed adapter output",
+          "organization update callbacks retain original actor and membership despite independent writes",
+          "organization update after hook receives null when before hook actually deletes its row",
+          "organization update awaits its real async before hook before executing the adapter",
+          "organization update hooks observe raw nonfinite and signed-zero metadata before adapter JSON normalization"
+        ],
+        "rejection": [
+          "organization update hook rejection retains source before and after persistence ordering",
+          "organization update validation authority and duplicate guards run before application hooks",
+          "organization update callbacks retain original actor and membership despite independent writes"
+        ],
+        "authorization": [
+          "organization update validation authority and duplicate guards run before application hooks",
+          "organization update callbacks retain original actor and membership despite independent writes"
+        ]
       }
     },
     {

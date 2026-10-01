@@ -703,6 +703,15 @@ impl OrganizationStore for MemoryStore {
     ) -> AuthResult<Organization> {
         Err(AuthError::internal("unsupported test-store operation"))
     }
+    async fn update_organization_if_present(
+        &self,
+        _id: &str,
+        _update: UpdateOrganization,
+    ) -> AuthResult<Option<Organization>> {
+        Err(AuthError::NotImplemented(
+            "Optional organization updates are not supported by this test store".into(),
+        ))
+    }
     async fn delete_organization(&self, _id: &str) -> AuthResult<()> {
         Ok(())
     }

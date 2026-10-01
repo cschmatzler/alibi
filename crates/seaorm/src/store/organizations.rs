@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set,
-    TransactionTrait,
+    ActiveModelTrait, ColumnTrait, DbBackend, DbErr, EntityTrait, IntoActiveModel, QueryFilter,
+    QueryOrder, Set, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -13,7 +13,7 @@ use crate::schema::AuthSchema;
 use crate::types_org::{CreateOrganization, Organization, UpdateOrganization};
 
 use super::entities;
-use super::entities::organization::{ActiveModel, Column, Entity, JsonMetadata};
+use super::entities::organization::{ActiveModel, Column, Entity, JsonMetadata, Model};
 use super::{SeaOrmStore, map_db_err};
 
 #[async_trait]
@@ -90,29 +90,35 @@ where
             return Err(crate::error::AuthError::not_found("Organization not found"));
         };
 
-        let mut active = model.into_active_model();
-        if let Some(name) = update.name {
-            active.name = Set(name);
-        }
-        if let Some(slug) = update.slug {
-            active.slug = Set(slug);
-        }
-        if let Some(logo) = update.logo {
-            active.logo = Set(logo);
-        }
-        if let Some(metadata) = update.metadata {
-            active.metadata = Set(Some(JsonMetadata::for_backend(
-                better_auth_core::utils::json::to_value(&metadata)?,
-                self.connection().get_database_backend(),
-            )?));
-        }
-        active.updated_at = Set(Utc::now());
+        let active =
+            apply_organization_update(model, update, self.connection().get_database_backend())?;
 
         active
             .update(self.connection())
             .await
             .map(|model| Organization::from(&model))
             .map_err(map_db_err)
+    }
+
+    async fn update_organization_if_present(
+        &self,
+        id: &str,
+        update: UpdateOrganization,
+    ) -> AuthResult<Option<Organization>> {
+        let Some(model) = Entity::find_by_id(id.to_owned())
+            .one(self.connection())
+            .await
+            .map_err(map_db_err)?
+        else {
+            return Ok(None);
+        };
+        let active =
+            apply_organization_update(model, update, self.connection().get_database_backend())?;
+        match active.update(self.connection()).await {
+            Ok(model) => Ok(Some(Organization::from(&model))),
+            Err(DbErr::RecordNotUpdated) => Ok(None),
+            Err(error) => Err(map_db_err(error)),
+        }
     }
 
     async fn delete_organization(&self, id: &str) -> AuthResult<()> {
@@ -158,4 +164,30 @@ where
             .map(|models| models.iter().map(Organization::from).collect())
             .map_err(map_db_err)
     }
+}
+
+fn apply_organization_update(
+    model: Model,
+    update: UpdateOrganization,
+    backend: DbBackend,
+) -> AuthResult<ActiveModel> {
+    let mut active = model.into_active_model();
+    if let Some(name) = update.name {
+        active.name = Set(name);
+    }
+    if let Some(slug) = update.slug {
+        active.slug = Set(slug);
+    }
+    if let Some(logo) = update.logo {
+        active.logo = Set(logo);
+    }
+    if let Some(metadata) = update.metadata {
+        active.metadata = Set(Some(JsonMetadata::for_backend(
+            better_auth_core::utils::json::to_value(&metadata)?,
+            backend,
+        )?));
+    }
+    active.updated_at = Set(Utc::now());
+
+    Ok(active)
 }

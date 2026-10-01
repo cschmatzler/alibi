@@ -299,3 +299,103 @@ async fn invalid_installed_reference_rolls_back_metadata_upgrade_and_restores_se
     assert!(database.query_one_raw(Statement::from_string(database.get_database_backend(),"SELECT version FROM better_auth_migrations WHERE version='m20260930_000013_nullable_organization_metadata'")).await?.is_none());
     Ok(())
 }
+
+#[tokio::test]
+async fn optional_organization_update_distinguishes_absence_from_database_write_failure()
+-> Result<(), Box<dyn std::error::Error>> {
+    let database = Database::connect("sqlite::memory:").await?;
+    run_migrations(&database).await?;
+    let store = SeaOrmStore::<BundledSchema>::new(
+        AuthConfig::new("optional-organization-update-public-store-secret"),
+        database.clone(),
+    );
+    let target = store
+        .create_organization(CreateOrganization::new("Original", "optional-target"))
+        .await?;
+    let foreign = store
+        .create_organization(
+            CreateOrganization::new("Unrelated", "optional-foreign")
+                .with_metadata(json!({"private":"retained"})),
+        )
+        .await?;
+    let updated = store
+        .update_organization_if_present(
+            &target.id,
+            UpdateOrganization {
+                name: Some("Updated".into()),
+                ..Default::default()
+            },
+        )
+        .await?
+        .ok_or_else(|| std::io::Error::other("existing update must return its actual row"))?;
+    assert_eq!(updated.name, "Updated");
+    assert_eq!(updated.id, target.id);
+    assert_eq!(updated.created_at, target.created_at);
+    assert_eq!(updated.logo, target.logo);
+    assert_eq!(updated.metadata, target.metadata);
+    assert_eq!(
+        serde_json::to_value(store.get_organization_by_id(&target.id).await?)?,
+        serde_json::to_value(Some(&updated))?
+    );
+    let _ = database.execute_unprepared("CREATE TRIGGER veto_optional_organization BEFORE UPDATE ON organization WHEN OLD.slug='optional-target' BEGIN SELECT RAISE(ABORT,'optional organization storage veto'); END").await?;
+    let veto = store
+        .update_organization_if_present(
+            &target.id,
+            UpdateOrganization {
+                name: Some("Must Not Persist".into()),
+                ..Default::default()
+            },
+        )
+        .await;
+    assert!(veto.is_err(), "database veto is not a missing-row success");
+    assert_eq!(
+        serde_json::to_value(store.get_organization_by_id(&target.id).await?)?,
+        serde_json::to_value(Some(&updated))?
+    );
+    let _ = database
+        .execute_unprepared("DROP TRIGGER veto_optional_organization")
+        .await?;
+    let _ = database.execute_unprepared("CREATE TRIGGER ignore_optional_organization BEFORE UPDATE ON organization WHEN OLD.slug='optional-target' BEGIN SELECT RAISE(IGNORE); END").await?;
+    assert!(
+        store
+            .update_organization_if_present(
+                &target.id,
+                UpdateOrganization {
+                    name: Some("Ignored By Adapter".into()),
+                    ..Default::default()
+                }
+            )
+            .await?
+            .is_none(),
+        "a real zero-row UPDATE is absence, not a database failure"
+    );
+    assert_eq!(
+        serde_json::to_value(store.get_organization_by_id(&target.id).await?)?,
+        serde_json::to_value(Some(&updated))?
+    );
+    store.delete_organization(&target.id).await?;
+    assert!(
+        store
+            .update_organization_if_present(
+                &target.id,
+                UpdateOrganization {
+                    name: Some("Deleted".into()),
+                    ..Default::default()
+                }
+            )
+            .await?
+            .is_none()
+    );
+    assert!(
+        store
+            .update_organization(&target.id, UpdateOrganization::default())
+            .await
+            .is_err(),
+        "original public update retains its missing-row error contract"
+    );
+    assert_eq!(
+        serde_json::to_value(store.get_organization_by_id(&foreign.id).await?)?,
+        serde_json::to_value(Some(&foreign))?
+    );
+    Ok(())
+}

@@ -301,6 +301,18 @@ pub trait OrganizationStore: Send + Sync {
         id: &str,
         update: UpdateOrganization,
     ) -> AuthResult<Organization>;
+    /// Update a matching organization, retaining adapter model hooks.
+    /// `None` means no row was updated; other storage failures remain errors.
+    /// Custom stores must implement this optional-row operation explicitly.
+    async fn update_organization_if_present(
+        &self,
+        _id: &str,
+        _update: UpdateOrganization,
+    ) -> AuthResult<Option<Organization>> {
+        Err(AuthError::NotImplemented(
+            "Optional organization updates are not supported by this store".into(),
+        ))
+    }
     /// Delete the organization and its members/invitations atomically.
     /// Extension rows (teams, roles, API keys) and sessions are retained, matching
     /// the pinned default adapter. Custom adapters own their constraint policy.
