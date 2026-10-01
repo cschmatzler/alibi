@@ -290,12 +290,12 @@ pub(in crate::plugins) async fn update_organization_core(
     }
     let updated = ctx
         .database
-        .update_organization(&org_id, update_data)
+        .patch_organization_if_present(&org_id, update_data)
         .await?;
 
-    Ok(Some(CreatedOrganizationResponse::from_organization(
-        &updated,
-    )))
+    Ok(updated
+        .as_ref()
+        .map(CreatedOrganizationResponse::from_organization))
 }
 
 ///
@@ -745,7 +745,13 @@ pub async fn handle_update_organization(
         Err(error) => return Err(error),
     };
     let updated =
-        update_organization_core(&body, raw_metadata, &user, &session, config, ctx).await?;
+        match update_organization_core(&body, raw_metadata, &user, &session, config, ctx).await {
+            Ok(updated) => updated,
+            Err(AuthError::Database(_)) if config.update_hooks.is_none() => {
+                return Ok(AuthResponse::new(500));
+            }
+            Err(error) => return Err(error),
+        };
     Ok(AuthResponse::json(200, &updated)?)
 }
 

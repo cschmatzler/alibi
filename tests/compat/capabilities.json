@@ -2382,7 +2382,9 @@
           "organization update callbacks retain original actor and membership despite independent writes",
           "organization update after hook receives null when before hook actually deletes its row",
           "organization update awaits its real async before hook before executing the adapter",
-          "organization update hooks observe raw nonfinite and signed-zero metadata before adapter JSON normalization"
+          "organization update hooks observe raw nonfinite and signed-zero metadata before adapter JSON normalization",
+          "default organization update empty SQL failure preserves state and ordinary retry",
+          "default organization update distinguishes ignored SQL from real row disappearance after authorization"
         ],
         "rejection": [
           "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
@@ -2393,14 +2395,16 @@
           "organization blank update selectors use only the current token selection and preserve other organizations",
           "organization update hook rejection retains source before and after persistence ordering",
           "organization update validation authority and duplicate guards run before application hooks",
-          "organization update callbacks retain original actor and membership despite independent writes"
+          "organization update callbacks retain original actor and membership despite independent writes",
+          "default organization update empty SQL failure preserves state and ordinary retry"
         ],
         "authorization": [
           "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
           "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations",
           "organization logo patches preserve omitted fields, clear SQL null, and enforce authenticated ownership",
           "organization update validation authority and duplicate guards run before application hooks",
-          "organization update callbacks retain original actor and membership despite independent writes"
+          "organization update callbacks retain original actor and membership despite independent writes",
+          "default organization update empty SQL failure preserves state and ordinary retry"
         ],
         "state": [
           "organization metadata stores rounded JavaScript numbers before readback",
@@ -2420,7 +2424,9 @@
           "organization update callbacks retain original actor and membership despite independent writes",
           "organization update after hook receives null when before hook actually deletes its row",
           "organization update awaits its real async before hook before executing the adapter",
-          "organization update hooks observe raw nonfinite and signed-zero metadata before adapter JSON normalization"
+          "organization update hooks observe raw nonfinite and signed-zero metadata before adapter JSON normalization",
+          "default organization update empty SQL failure preserves state and ordinary retry",
+          "default organization update distinguishes ignored SQL from real row disappearance after authorization"
         ]
       }
     },

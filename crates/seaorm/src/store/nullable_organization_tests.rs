@@ -416,3 +416,68 @@ async fn optional_organization_update_distinguishes_absence_from_database_write_
     );
     Ok(())
 }
+
+#[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Public store contract assertions propagate database setup errors"
+)]
+async fn organization_database_patch_retains_unrequested_native_columns()
+-> Result<(), Box<dyn std::error::Error>> {
+    let database = Database::connect("sqlite::memory:").await?;
+    run_migrations(&database).await?;
+    let store = SeaOrmStore::<BundledSchema>::new(
+        AuthConfig::new("organization-database-patch-native-store-secret"),
+        database,
+    );
+    let original = store
+        .create_organization(
+            CreateOrganization::new("Original", "database-patch")
+                .with_logo("https://example.test/original.png")
+                .with_metadata(json!({"nested":[true,null]})),
+        )
+        .await?;
+    let updated = store
+        .patch_organization_if_present(
+            &original.id,
+            UpdateOrganization {
+                name: Some("Updated".into()),
+                logo: Some(None),
+                ..Default::default()
+            },
+        )
+        .await?
+        .ok_or_else(|| std::io::Error::other("patch must return its matching row"))?;
+    assert_eq!(updated.name, "Updated");
+    assert_eq!(updated.logo, None);
+    assert_eq!(updated.metadata, original.metadata);
+    assert_eq!(updated.created_at, original.created_at);
+    assert_eq!(updated.updated_at, original.updated_at);
+    assert!(
+        matches!(
+            store
+                .patch_organization_if_present(&original.id, UpdateOrganization::default())
+                .await,
+            Err(better_auth_core::AuthError::Database(_))
+        ),
+        "an actual empty prepared UPDATE remains a database error"
+    );
+    assert_eq!(
+        serde_json::to_value(store.get_organization_by_id(&original.id).await?)?,
+        serde_json::to_value(Some(&updated))?
+    );
+    store.delete_organization(&original.id).await?;
+    assert!(
+        store
+            .patch_organization_if_present(
+                &original.id,
+                UpdateOrganization {
+                    name: Some("Gone".into()),
+                    ..Default::default()
+                }
+            )
+            .await?
+            .is_none()
+    );
+    Ok(())
+}

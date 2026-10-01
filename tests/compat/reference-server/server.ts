@@ -843,6 +843,7 @@ const server = Bun.serve({
       if(url.pathname==="/__test/organization-member-role-hooks-state"&&request.method==="GET")return organizationMemberRoleFixture.state(url.searchParams.get("waitFor"));
       if(url.pathname.startsWith("/__test/profiles/org-update-hooks/api/auth/"))return organizationUpdateFixture.auth.handler(request);
       if(url.pathname==="/__test/organization-update-hooks-configure" && request.method==="POST")return organizationUpdateFixture.configure(await request.json() as Record<string,unknown>);
+      if(url.pathname==="/__test/organization-update-storage" && request.method==="POST")return organizationUpdateFixture.storage(await request.json() as Record<string,unknown>);
       if(url.pathname==="/__test/organization-update-hooks-release" && request.method==="POST")return organizationUpdateFixture.release();
       if(url.pathname==="/__test/organization-update-hooks-state" && request.method==="GET")return organizationUpdateFixture.state(url.searchParams.get("waitFor"));
       if(url.pathname==="/__test/organization-hooks-release" && request.method==="POST")return organizationHooksFixture.release();

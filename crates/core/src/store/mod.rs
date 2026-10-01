@@ -296,6 +296,13 @@ impl<S: AuthSchema> OrganizationStore for PluginStore<S> {
     ) -> AuthResult<Organization> {
         self.inner.update_organization(id, update).await
     }
+    async fn patch_organization_if_present(
+        &self,
+        id: &str,
+        update: UpdateOrganization,
+    ) -> AuthResult<Option<Organization>> {
+        self.inner.patch_organization_if_present(id, update).await
+    }
     async fn update_organization_if_present(
         &self,
         id: &str,
@@ -1204,6 +1211,21 @@ pub trait OrganizationStore: Send + Sync {
         id: &str,
         update: UpdateOrganization,
     ) -> AuthResult<Organization>;
+    /// Apply exactly the supplied organization columns as a database patch.
+    /// Returns absence separately from database errors. Empty patches are sent
+    /// to the adapter rather than converted into timestamp-only updates.
+    /// Custom stores serving the default HTTP update route must implement this
+    /// bounded operation; the default fails closed with NotImplemented.
+    /// Model callbacks belong to `update_organization_if_present` instead.
+    async fn patch_organization_if_present(
+        &self,
+        _id: &str,
+        _update: UpdateOrganization,
+    ) -> AuthResult<Option<Organization>> {
+        Err(AuthError::NotImplemented(
+            "Organization patches are not supported by this store".into(),
+        ))
+    }
     /// Update a matching organization, retaining adapter model hooks.
     /// `None` means no row was updated; other storage failures remain errors.
     /// Custom stores must implement this optional-row operation explicitly.

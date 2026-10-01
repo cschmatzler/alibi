@@ -8,8 +8,8 @@ use better_auth_core::store::OrganizationStore;
 use better_auth_core::{CreateOrganization, Organization, UpdateOrganization};
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DbBackend, DbErr, EntityTrait, IntoActiveModel, QueryFilter,
-    QuerySelect, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, DbErr, EntityTrait, FromQueryResult,
+    IntoActiveModel, Iterable, QueryFilter, QuerySelect, Set, StatementBuilder, TransactionTrait,
 };
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -98,6 +98,50 @@ where
             .await
             .map(|model_2| Organization::from(&model_2))
             .map_err(map_db_err)
+    }
+
+    async fn patch_organization_if_present(
+        &self,
+        id: &str,
+        update: UpdateOrganization,
+    ) -> AuthResult<Option<Organization>> {
+        use sea_orm::sea_query::{Expr, ExprTrait, Query};
+        let backend = self.connection().get_database_backend();
+        let mut query = Query::update();
+        let _ = query.table(Entity).and_where(Expr::col(Column::Id).eq(id));
+        if let Some(name) = update.name {
+            let _ = query.value(Column::Name, name);
+        }
+        if let Some(slug) = update.slug {
+            let _ = query.value(Column::Slug, slug);
+        }
+        if let Some(logo) = update.logo {
+            let _ = query.value(Column::Logo, logo);
+        }
+        if let Some(metadata) = update.metadata {
+            let metadata = JsonMetadata::for_backend(
+                better_auth_core::utils::json::to_value(&metadata)?,
+                backend,
+            )?;
+            let _ = query.value(Column::Metadata, metadata);
+        }
+        if self.connection().support_returning() {
+            let _ = query.returning(Query::returning().columns(Column::iter()));
+            return Model::find_by_statement(StatementBuilder::build(&query, &backend))
+                .one(self.connection())
+                .await
+                .map(|row| row.as_ref().map(Organization::from))
+                .map_err(map_db_err);
+        }
+        let _ = self
+            .connection()
+            .execute_raw(StatementBuilder::build(&query, &backend))
+            .await
+            .map_err(map_db_err)?;
+        // Backends without RETURNING may report zero changed rows for an
+        // unchanged matching row. Read the physical result instead of treating
+        // that count as absence.
+        self.get_organization_by_id(id).await
     }
 
     async fn update_organization_if_present(
