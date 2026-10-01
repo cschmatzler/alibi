@@ -86,7 +86,7 @@ pub(crate) struct AccessTokenResponse {
     #[serde(rename = "accessTokenExpiresAt")]
     pub access_token_expires_at: Option<String>,
     pub scopes: Vec<String>,
-    #[serde(rename = "idToken")]
+    #[serde(rename = "idToken", skip_serializing_if = "Option::is_none")]
     pub id_token: Option<String>,
 }
 

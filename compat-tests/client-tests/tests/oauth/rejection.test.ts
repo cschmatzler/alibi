@@ -81,7 +81,19 @@ compatScenario("social linking rejects missing tampered and revoked sessions wit
   expect(current.data?.user.id).toBe(ids[0]);
   expect(current.data?.session.token).toBe(ownerSignup.data!.token!);
   expect(foreignCurrent.data?.session.token).toBe(foreignSignup.data!.token!);
-  return { ownerSignup: ctx.snapshot(ownerSignup), foreignSignup: ctx.snapshot(foreignSignup), retiredSignup: ctx.snapshot(retiredSignup), signout: ctx.snapshot(signout), before, denied, link: ctx.snapshot(link), callback, after, current: ctx.snapshot(current), foreignCurrent: ctx.snapshot(foreignCurrent) };
+  const foreignLink = await foreign.client.linkSocial({ provider: "google", callbackURL: "/settings" });
+  expect(foreignLink.error).toBeNull();
+  const foreignState = new URL(foreignLink.data!.url!).searchParams.get("state");
+  if (!foreignState) throw new Error("actual foreign linking state required");
+  const foreignCallback = await ctx.rawRequest({ actor: "foreign", path: `/api/auth/callback/google?${new URLSearchParams({ code: "compat-code", state: foreignState })}`, redirect: "manual" });
+  expect(foreignCallback.status).toBe(302);
+  expect(new URL(foreignCallback.location!, ctx.baseURL).searchParams.get("error")).toBe("email_does_not_match");
+  const afterForeign = await readAll();
+  expect(afterForeign).toEqual(after);
+  const ownerAfterForeign = await owner.client.getSession(), foreignAfterCurrent = await foreign.client.getSession();
+  expect(ownerAfterForeign).toEqual(current);
+  expect(foreignAfterCurrent).toEqual(foreignCurrent);
+  return { ownerSignup: ctx.snapshot(ownerSignup), foreignSignup: ctx.snapshot(foreignSignup), retiredSignup: ctx.snapshot(retiredSignup), signout: ctx.snapshot(signout), before, denied, link: ctx.snapshot(link), callback, after, current: ctx.snapshot(current), foreignCurrent: ctx.snapshot(foreignCurrent), foreignLink: ctx.snapshot(foreignLink), foreignCallback, afterForeign, ownerAfterForeign: ctx.snapshot(ownerAfterForeign), foreignAfterCurrent: ctx.snapshot(foreignAfterCurrent) };
 }, ["state"]);
 
 
