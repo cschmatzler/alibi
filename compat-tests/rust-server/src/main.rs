@@ -1,6 +1,7 @@
 mod organization_creation_fixture;
 mod organization_creation_hooks_fixture;
 mod organization_deletion_hooks_fixture;
+mod organization_transport_probe;
 mod team_fixture;
 
 use axum::{
@@ -633,10 +634,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     let team_router = team_fixture::router(database.clone(), team_profiles);
     let creation_router = organization_creation_fixture::router(&config, database.clone()).await?;
+    let probe = organization_transport_probe::Probe::default();
     let creation_hooks_router =
-        organization_creation_hooks_fixture::router(&config, database.clone()).await?;
+        organization_creation_hooks_fixture::router(&config, database.clone(), probe.clone())
+            .await?;
     let deletion_hooks_router =
-        organization_deletion_hooks_fixture::router(&config, database.clone()).await?;
+        organization_deletion_hooks_fixture::router(&config, database.clone(), probe.clone())
+            .await?;
 
     let magic_outbox = Arc::new(Mutex::new(HashMap::new()));
     let magic_link = magic_profiles::plugin(magic_outbox.clone());
@@ -1654,6 +1658,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(magic_router)
         .merge(siwe_profile_router)
         .merge(phone_router);
+
+    let app = app
+        .layer(axum::middleware::from_fn_with_state(
+            probe.clone(),
+            organization_transport_probe::observe,
+        ))
+        .merge(organization_transport_probe::router(probe));
 
     let addr = format!("0.0.0.0:{port}");
     println!("[rust-server] Listening on http://localhost:{port}");

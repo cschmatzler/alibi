@@ -8,7 +8,14 @@ use axum::{
     routing::{get, post},
 };
 #[cfg(feature = "axum")]
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+#[cfg(feature = "axum")]
+use tokio::{
+    sync::{mpsc, oneshot},
+    task::{Id, JoinSet},
+};
+#[cfg(feature = "axum")]
+use tracing::{Instrument, instrument::WithSubscriber};
 
 #[cfg(feature = "axum")]
 use crate::BetterAuth;
@@ -21,12 +28,113 @@ use better_auth_core::{AuthError, AuthRequest, AuthResponse, AuthSchema, HttpMet
 #[cfg(feature = "axum")]
 type AxumAuthHandlerFuture = std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>>;
 
+// The HTTP service future owns only its reply receiver. Once a complete body
+// has been accepted, one router-owned supervisor owns the entire dispatch.
+// Router construction stays valid outside a runtime; startup is lazy.
+#[cfg(feature = "axum")]
+type DispatchFuture =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<AuthResponse, AuthError>> + Send>>;
+#[cfg(feature = "axum")]
+struct DispatchJob {
+    future: DispatchFuture,
+    reply: oneshot::Sender<Response>,
+}
+#[cfg(feature = "axum")]
+#[derive(Clone, Default)]
+struct AxumDispatchSupervisor(Arc<Mutex<Option<mpsc::UnboundedSender<DispatchJob>>>>);
+#[cfg(feature = "axum")]
+impl AxumDispatchSupervisor {
+    async fn dispatch<S: AuthSchema>(
+        &self,
+        auth: Arc<BetterAuth<S>>,
+        request: AuthRequest,
+    ) -> Response {
+        let runtime = match tokio::runtime::Handle::try_current() {
+            Ok(runtime) => runtime,
+            Err(_) => return dispatch_failure(),
+        };
+        let (reply, receive) = oneshot::channel();
+        let future = Box::pin(
+            async move { auth.handle_request(request).await }
+                .instrument(tracing::Span::current())
+                .with_current_subscriber(),
+        );
+        let submitted = match self.0.lock() {
+            Ok(mut sender) => {
+                // A router can outlive its first runtime. Only a definitively
+                // closed receiver may be replaced; accepted jobs are never retried.
+                if sender
+                    .as_ref()
+                    .is_some_and(mpsc::UnboundedSender::is_closed)
+                {
+                    *sender = None;
+                }
+                let sender = sender.get_or_insert_with(|| {
+                    let (send, receive) = mpsc::unbounded_channel();
+                    // The actor holds no sender or auth reference. Closing the
+                    // router channel drains accepted jobs and then exits.
+                    let _supervisor = runtime.spawn(supervise_dispatches(receive));
+                    send
+                });
+                sender.send(DispatchJob { future, reply }).is_ok()
+            }
+            Err(_) => false,
+        };
+        if !submitted {
+            return dispatch_failure();
+        }
+        receive.await.unwrap_or_else(|_| dispatch_failure())
+    }
+}
+#[cfg(feature = "axum")]
+fn dispatch_failure() -> Response {
+    AuthError::internal("Authentication request failed").into_response()
+}
+#[cfg(feature = "axum")]
+async fn supervise_dispatches(mut receive: mpsc::UnboundedReceiver<DispatchJob>) {
+    let mut workers = JoinSet::new();
+    let mut replies = std::collections::HashMap::<Id, oneshot::Sender<Response>>::new();
+    let mut accepting = true;
+    while accepting || !workers.is_empty() {
+        tokio::select! {
+            job = receive.recv(), if accepting => match job {
+                Some(job) => {
+                    let id = workers.spawn(job.future).id();
+                    let _ = replies.insert(id, job.reply);
+                }
+                None => accepting = false,
+            },
+            completed = workers.join_next_with_id(), if !workers.is_empty() => {
+                if let Some(completed) = completed {
+                    let (id, response) = match completed {
+                        Ok((id, Ok(response))) => (id, convert_auth_response(response)),
+                        Ok((id, Err(error))) => (id, error.into_response()),
+                        Err(error) => {
+                            tracing::error!(panic = error.is_panic(), cancelled = error.is_cancelled(), "Authentication dispatch task failed");
+                            (error.id(), dispatch_failure())
+                        }
+                    };
+                    if let Some(reply) = replies.remove(&id) {
+                        // A disconnected receiver cannot cancel completed work.
+                        let _ = reply.send(response);
+                    }
+                }
+            },
+        }
+    }
+}
+
 /// Integration trait for Axum web framework
 #[cfg(feature = "axum")]
 pub trait AxumIntegration {
     type Schema: AuthSchema;
 
-    /// Create an Axum router with all authentication routes
+    /// Create an Axum router with all authentication routes.
+    /// Fully buffered requests continue dispatch after client disconnect. Router
+    /// drop drains accepted work while its Tokio runtime remains alive. Server
+    /// graceful shutdown alone need not await disconnected work; runtime/process
+    /// shutdown can cancel it. Only the framework request context and tracing
+    /// span are carried into dispatch, not arbitrary caller task-local values.
     fn axum_router(self) -> Router<Arc<BetterAuth<Self::Schema>>>;
 
     /// Create an Axum router that can be nested into an application using a
@@ -58,24 +166,37 @@ impl<T: AuthSchema> AxumIntegration for Arc<BetterAuth<T>> {
         // `handle_request` callers).  The duplication is intentional.
         let disabled_paths = self.config().disabled_paths.clone();
 
+        let supervisor = AxumDispatchSupervisor::default();
         let mut router = Router::new();
 
         // Add status endpoints
         if !disabled_paths.contains(&core_paths::OK.to_string()) {
-            router = router.route(core_paths::OK, get(create_plugin_handler::<T>()));
+            router = router.route(
+                core_paths::OK,
+                get(create_plugin_handler::<T>(supervisor.clone())),
+            );
         }
         if !disabled_paths.contains(&core_paths::ERROR.to_string()) {
-            router = router.route(core_paths::ERROR, get(create_plugin_handler::<T>()));
+            router = router.route(
+                core_paths::ERROR,
+                get(create_plugin_handler::<T>(supervisor.clone())),
+            );
         }
 
         // Add OpenAPI spec endpoint
         if !disabled_paths.contains(&core_paths::OPENAPI_SPEC.to_string()) {
-            router = router.route(core_paths::OPENAPI_SPEC, get(create_plugin_handler::<T>()));
+            router = router.route(
+                core_paths::OPENAPI_SPEC,
+                get(create_plugin_handler::<T>(supervisor.clone())),
+            );
         }
 
         // Add core user management routes
         if !disabled_paths.contains(&core_paths::UPDATE_USER.to_string()) {
-            router = router.route(core_paths::UPDATE_USER, post(create_plugin_handler::<T>()));
+            router = router.route(
+                core_paths::UPDATE_USER,
+                post(create_plugin_handler::<T>(supervisor.clone())),
+            );
         }
         // Register plugin routes
         for plugin in self.plugins() {
@@ -85,7 +206,7 @@ impl<T: AuthSchema> AxumIntegration for Arc<BetterAuth<T>> {
                     continue;
                 }
 
-                let handler_fn = create_plugin_handler::<T>();
+                let handler_fn = create_plugin_handler::<T>(supervisor.clone());
                 match route.method {
                     HttpMethod::Get => {
                         router = router.route(&route.path, get(handler_fn.clone()));
@@ -114,15 +235,14 @@ impl<T: AuthSchema> AxumIntegration for Arc<BetterAuth<T>> {
 }
 
 #[cfg(feature = "axum")]
-fn create_plugin_handler<T: AuthSchema>()
--> impl Fn(State<Arc<BetterAuth<T>>>, Request) -> AxumAuthHandlerFuture + Clone {
-    |State(auth): State<Arc<BetterAuth<T>>>, req: Request| {
+fn create_plugin_handler<T: AuthSchema>(
+    supervisor: AxumDispatchSupervisor,
+) -> impl Fn(State<Arc<BetterAuth<T>>>, Request) -> AxumAuthHandlerFuture + Clone {
+    move |State(auth): State<Arc<BetterAuth<T>>>, req: Request| {
+        let supervisor = supervisor.clone();
         Box::pin(async move {
             match convert_axum_request(req, max_body_bytes(auth.body_limit())).await {
-                Ok(auth_req) => match auth.handle_request(auth_req).await {
-                    Ok(auth_response) => convert_auth_response(auth_response),
-                    Err(err) => err.into_response(),
-                },
+                Ok(auth_req) => supervisor.dispatch(auth, auth_req).await,
                 Err(err) => err.into_response(),
             }
         })
