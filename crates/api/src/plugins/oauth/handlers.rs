@@ -250,7 +250,7 @@ fn parse_token_response(token_data: serde_json::Value) -> AuthResult<OAuthTokenS
     })
 }
 
-async fn validate_authorization_code_via_provider(
+pub(crate) async fn validate_authorization_code_via_provider(
     provider: &OAuthProvider,
     code: &str,
     redirect_uri: &str,
@@ -298,7 +298,7 @@ async fn validate_authorization_code_via_provider(
     parse_token_response(token_data)
 }
 
-pub(super) async fn fetch_user_info_from_provider(
+pub(crate) async fn fetch_user_info_from_provider(
     provider: &OAuthProvider,
     request: OAuthUserInfoRequest,
 ) -> AuthResult<OAuthUserInfoResponse> {
@@ -355,7 +355,9 @@ pub(super) async fn fetch_user_info_from_provider(
     })
 }
 
-fn parse_callback_user_payload(user_data: Option<&str>) -> Option<OAuthCallbackUserPayload> {
+pub(crate) fn parse_callback_user_payload(
+    user_data: Option<&str>,
+) -> Option<OAuthCallbackUserPayload> {
     let value: serde_json::Value = serde_json::from_str(user_data?).ok()?;
     Some(OAuthCallbackUserPayload {
         name: value
@@ -539,7 +541,7 @@ impl OAuthSignInError {
         }
     }
 
-    fn redirect_parts(&self) -> (String, Option<&str>) {
+    pub(crate) fn redirect_parts(&self) -> (String, Option<&str>) {
         match self {
             // Upstream turns a plain internal error string into the `error`
             // param verbatim, with no description.
@@ -990,7 +992,7 @@ pub(crate) async fn process_oauth_sign_in(
     }
 }
 
-async fn complete_link_social(
+pub(crate) async fn complete_link_social(
     provider_name: &str,
     user_info: &OAuthUserInfo,
     tokens: &OAuthTokenSet,
@@ -1373,8 +1375,15 @@ async fn initiate_oauth_flow_core(
     let (code_verifier, code_challenge) = generate_pkce();
     let state = uuid::Uuid::new_v4().to_string();
 
+    let proxy = better_auth_core::hooks::current_request_hook_context().and_then(|req| {
+        req.extensions
+            .get::<crate::plugins::oauth_proxy::OAuthProxyFlow>()
+    });
     let mut payload = OAuthStatePayload::new(
-        request.callback_url.to_string(),
+        proxy
+            .as_ref()
+            .map_or(request.callback_url, |flow| flow.callback_url.as_str())
+            .to_string(),
         code_verifier,
         request.error_callback_url,
         request.new_user_callback_url,
@@ -1383,6 +1392,19 @@ async fn initiate_oauth_flow_core(
         request.additional_data,
     );
     capture_server_context(&mut payload, &state, &ctx.config.secret)?;
+    if proxy.is_some() {
+        let _ = payload.additional_data.insert(
+            "oauthState".to_owned(),
+            serde_json::Value::String(state.clone()),
+        );
+        if let Some(req) = better_auth_core::hooks::current_request_hook_context() {
+            req.extensions
+                .insert(crate::plugins::oauth_proxy::IssuedProxyState {
+                    state: state.clone(),
+                    payload: payload.clone(),
+                });
+        }
+    }
 
     match ctx.config.account.store_state_strategy {
         better_auth_core::OAuthStateStrategy::Database => {
@@ -1400,7 +1422,14 @@ async fn initiate_oauth_flow_core(
 
     let url = build_authorization_url(
         request.provider,
-        &format!("{}/callback/{}", auth_base_url(ctx), request.provider_name),
+        &format!(
+            "{}/callback/{}",
+            proxy.as_ref().map_or_else(
+                || auth_base_url(ctx),
+                |flow| flow.effective_auth_base_url.clone()
+            ),
+            request.provider_name
+        ),
         request.scopes,
         &state,
         &code_challenge,

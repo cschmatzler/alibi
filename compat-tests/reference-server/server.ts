@@ -43,6 +43,7 @@ import { defaultStatements } from "better-auth/plugins/organization/access";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { anonymousFixture } from "./anonymous-fixture";
 import { socialProviderFixture } from "./social-provider-fixture";
+import { oauthProxyFixture } from "./oauth-proxy-fixture";
 
 function getPort() {
   const idx = process.argv.indexOf("--port");
@@ -431,6 +432,7 @@ const organizationDeletionFixture = organizationDeletionHooksFixture(database, a
 const passkeyRegistration = passkeyRegistrationFixture(authOptions);
 const passkeyAuthentication = passkeyAuthenticationFixture(database, authOptions, `http://localhost:${PORT}`);
 const socialProvidersFixture = socialProviderFixture(authOptions);
+const oauthProxyProfiles = await oauthProxyFixture(authOptions);
 const anonymousProfiles = await anonymousFixture(authOptions, database);
 const sessionCookieCacheProfiles = await sessionCookieCacheFixture(authOptions, database);
 
@@ -792,6 +794,8 @@ const server = Bun.serve({
       organizationTransport.observe(request);
       const anonymousControl = await anonymousProfiles.handle(request);
       if (anonymousControl) return anonymousControl;
+      const proxyControl = await oauthProxyProfiles.handle(request);
+      if (proxyControl) return proxyControl;
       const socialProviderControl = await socialProvidersFixture.handle(request);
       if (socialProviderControl) return socialProviderControl;
       const transportControl = await organizationTransport.handle(request, url);
@@ -1043,6 +1047,7 @@ const server = Bun.serve({
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         socialProvidersFixture.reset();
+        await oauthProxyProfiles.reset();
         organizationInvitationFixture.reset();
         anonymousProfiles.reset();
         passkeyRegistration.reset();
