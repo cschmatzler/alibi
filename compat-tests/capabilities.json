@@ -2080,6 +2080,14 @@
         "rejection": "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
         "authorization": null,
         "state": "organization creator role customization preserves explicit grants and prevents removing the only effective owner"
+      },
+      "requiredEvidence": {
+        "success": [
+          "organization member role updates normalize string and array input without deduplicating roles"
+        ],
+        "state": [
+          "organization member role updates normalize string and array input without deduplicating roles"
+        ]
       }
     },
     {
