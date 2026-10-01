@@ -2290,10 +2290,16 @@
         ],
         "state": [
           "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation",
-          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
+          "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
+          "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
+          "two-factor authenticated OTP success rotates its real owner session after code consumption"
         ],
         "success": [
-          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
+          "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
+          "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
+          "two-factor authenticated OTP success rotates its real owner session after code consumption"
         ]
       }
     },
@@ -2424,14 +2430,28 @@
           "two-factor two-factor-trust-fractional retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state"
+          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor authenticated OTP success rotates its real owner session after code consumption"
         ],
         "state": [
           "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
           "two-factor two-factor-trust-fractional retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state"
+          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
+          "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
+          "two-factor authenticated OTP success rotates its real owner session after code consumption"
+        ],
+        "rejection": [
+          "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
+          "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
+          "two-factor authenticated OTP success rotates its real owner session after code consumption"
+        ],
+        "authorization": [
+          "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
+          "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
+          "two-factor authenticated OTP success rotates its real owner session after code consumption"
         ]
       }
     },
