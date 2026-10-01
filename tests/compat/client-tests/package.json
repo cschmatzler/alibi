@@ -3,6 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "assurance": "bun support/assurance/cli.ts",
+    "assurance:inventory": "bun support/assurance/cli.ts inventory",
+    "assurance:mutate": "bun support/assurance/cli.ts mutate",
+    "assurance:generate": "bun support/assurance/cli.ts generate",
+    "assurance:report": "bun support/assurance/cli.ts report",
     "test": "bun test tests",
     "typecheck": "tsc --noEmit",
     "test:harness": "bun test harness",
@@ -37,7 +42,10 @@
     "jose": "6.2.12"
   },
   "devDependencies": {
+    "@babel/parser": "7.29.9",
     "@types/bun": "1.4.2",
+    "@types/istanbul-lib-instrument": "1.7.8",
+    "istanbul-lib-instrument": "6.0.3",
     "playwright": "1.63.0",
     "typescript": "7.0.2"
   }

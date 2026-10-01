@@ -23,3 +23,4 @@ AGENTS.md
 # Test artifacts
 /coverage/
 /tests/compat/client-tests/artifacts/
+/tests/compat/.cache/

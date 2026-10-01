@@ -3,8 +3,10 @@ use crate::TestSchema;
 use axum::{Json, Router, http::StatusCode, routing::post};
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
+use better_auth::plugins::password_management::SendResetPassword;
 use better_auth::plugins::{
-    AdminPlugin, EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin, TwoFactorPlugin,
+    AdminPlugin, EmailPasswordPlugin, OrganizationPlugin, PasswordManagementPlugin,
+    SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
 use better_auth_seaorm::store::entities::session;
@@ -28,6 +30,7 @@ struct SessionClock {
 pub(super) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
+    reset_sender: Arc<dyn SendResetPassword>,
 ) -> AuthResult<Router> {
     let mut router = Router::new();
     for name in [
@@ -54,6 +57,12 @@ pub(super) async fn router(
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new())
                 .plugin(SessionManagementPlugin::new())
+                .plugin(PasswordManagementPlugin::new().send_reset_password(reset_sender.clone()))
+                .plugin(
+                    UserManagementPlugin::new()
+                        .delete_user_enabled(true)
+                        .require_delete_verification(false),
+                )
                 .plugin(AdminPlugin::new())
                 .plugin(TwoFactorPlugin::new())
                 .plugin(OrganizationPlugin::new())

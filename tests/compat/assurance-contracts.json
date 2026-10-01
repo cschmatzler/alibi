@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "upstreamVersion": "1.7.6",
+  "commit": "229a02a652185ed32e87eab0c77c09d58532e0f1",
+  "excludedPackages": [
+    { "package": "@better-auth/oauth-provider", "reason": "Explicit integration exclusion in the compatibility scope." },
+    { "package": "@better-auth/mcp", "reason": "Explicit integration exclusion in the compatibility scope." },
+    { "package": "@better-auth/cimd", "reason": "Explicit integration exclusion in the compatibility scope." },
+    { "package": "@better-auth/sso", "reason": "Explicit integration exclusion in the compatibility scope." },
+    { "package": "@better-auth/scim", "reason": "Explicit integration exclusion in the compatibility scope." },
+    { "package": "@better-auth/stripe", "reason": "Explicit integration exclusion in the compatibility scope." },
+    { "package": "@better-auth/i18n", "reason": "Explicit integration exclusion in the compatibility scope." },
+    { "package": "@better-auth/expo", "reason": "Explicit integration exclusion in the compatibility scope." },
+    { "package": "@better-auth/electron", "reason": "Explicit integration exclusion in the compatibility scope." }
+  ],
+  "excludedSurfaces": [],
+  "equivalentMutations": [],
+  "contracts": [
+    {
+      "id": "password-reset-delivery",
+      "claim": "A reset request delivers the real token, follows the callback and changes persisted credentials.",
+      "upstream": [{ "source": "git:packages/better-auth/src/api/routes/password.test.ts", "kind": "upstream-test", "name": "forgot password > should send a reset password email when enabled" }],
+      "scenarios": ["request password reset then reset password updates credentials"],
+      "mutations": ["npm:better-auth/dist/api/routes/password.mjs#omit-effect:3718:3844", "npm:better-auth/dist/api/routes/password.mjs#omit-effect:3350:3501"]
+    },
+    {
+      "id": "password-reset-single-use",
+      "claim": "A delivered reset token can change credentials once and is consumed in storage.",
+      "upstream": [{ "source": "git:packages/better-auth/src/api/routes/password.test.ts", "kind": "upstream-test", "name": "forgot password > shouldn't allow the token to be used twice" }],
+      "scenarios": ["reset password token cannot be reused"],
+      "mutations": ["npm:better-auth/dist/api/routes/password.mjs#omit-effect:6479:6541"]
+    },
+    {
+      "id": "delete-user-persistence",
+      "claim": "Deleting an account removes its persisted user, credentials and sessions and prevents saved-cookie replay and password sign-in.",
+      "upstream": [{ "source": "git:packages/better-auth/src/api/routes/update-user.test.ts", "kind": "upstream-test", "name": "delete user > should delete the user with a fresh session" }],
+      "scenarios": ["delete user with a fresh session deletes the current account"],
+      "mutations": ["npm:better-auth/dist/api/routes/update-user.mjs#omit-effect:11199:11260"]
+    }
+  ]
+}

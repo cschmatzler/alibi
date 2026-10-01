@@ -179,7 +179,7 @@ enum OAuthRefreshMode {
 
 #[derive(Clone)]
 struct CompatResetSender {
-    outbox: Arc<Mutex<HashMap<String, String>>>,
+    outbox: Arc<Mutex<HashMap<String, EmailOutboxRecord>>>,
     mode: Arc<Mutex<ResetPasswordMode>>,
 }
 
@@ -289,7 +289,7 @@ impl SendResetPassword for CompatResetSender {
     async fn send(
         &self,
         user: &serde_json::Value,
-        _url: &str,
+        url: &str,
         token: &str,
     ) -> better_auth::AuthResult<()> {
         if *self.mode.lock().await == ResetPasswordMode::Fail {
@@ -299,10 +299,13 @@ impl SendResetPassword for CompatResetSender {
         }
 
         if let Some(email) = user.get("email").and_then(|value| value.as_str()) {
-            self.outbox
-                .lock()
-                .await
-                .insert(email.to_string(), token.to_string());
+            self.outbox.lock().await.insert(
+                email.to_string(),
+                EmailOutboxRecord {
+                    url: url.to_owned(),
+                    token: token.to_owned(),
+                },
+            );
         }
         Ok(())
     }
@@ -704,7 +707,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let verification_profile_router =
         verification_profiles::router(&config, database.clone(), verification_outbox.clone())
             .await?;
-    let session_profile_router = session_profiles::router(&config, database.clone()).await?;
+    let session_profile_router = session_profiles::router(
+        &config,
+        database.clone(),
+        Arc::new(CompatResetSender {
+            outbox: reset_outbox.clone(),
+            mode: reset_password_mode.clone(),
+        }),
+    )
+    .await?;
     let api_key_background_router =
         api_key_background_fixture::router(&config, database.clone()).await?;
     let api_key_hook_router = api_key_hook_fixture::router(&config, database.clone()).await?;
@@ -905,7 +916,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let policy_router =
         two_factor_policy_fixture::router(&config, reset_database.clone(), backup_receipts.clone())
             .await?;
-    let two_factor_otp_router =
+    let (two_factor_otp_router, two_factor_otp_controls) =
         two_factor_otp_fixture::router(&config, reset_database.clone()).await?;
     let delivery_router =
         two_factor_delivery_fixture::router(&config, reset_database.clone()).await?;
@@ -1053,11 +1064,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             get(move |Query(query): Query<ResetTokenQuery>| {
                 let reset_outbox = reset_outbox_for_token.clone();
                 async move {
-                    let token = reset_outbox.lock().await.remove(&query.email);
-                    match token {
-                        Some(token) => (
+                    let delivery = reset_outbox.lock().await.get(&query.email).cloned();
+                    match delivery {
+                        Some(delivery) => (
                             axum::http::StatusCode::OK,
-                            Json(serde_json::json!({ "token": token })),
+                            Json(serde_json::json!(delivery)),
                         ),
                         None => (
                             axum::http::StatusCode::NOT_FOUND,
@@ -1137,6 +1148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let verification_outbox = verification_outbox_for_reset.clone();
                 let change_email_outbox = change_email_outbox_for_reset.clone();
                 let two_factor_otp_outbox = two_factor_otp_outbox_for_reset.clone();
+                let two_factor_otp_controls = two_factor_otp_controls.clone();
                 let reset_mode = reset_mode_for_reset.clone();
                 let oauth_mode = oauth_mode_for_reset.clone();
                 let social_profile = social_profile_for_reset.clone();
@@ -1172,6 +1184,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     verification_outbox.lock().await.clear();
                     change_email_outbox.lock().await.clear();
                     two_factor_otp_outbox.lock().await.clear();
+                    two_factor_otp_controls.reset().await;
                     *reset_mode.lock().await = ResetPasswordMode::Capture;
                     *oauth_mode.lock().await = OAuthRefreshMode::Success;
                     *social_profile.lock().await = default_social_profile();

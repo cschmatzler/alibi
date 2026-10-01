@@ -12,7 +12,7 @@ export function createTwoFactorOtpFixture(base:Parameters<typeof betterAuth>[0],
     const settings=name.endsWith("zero")?{digits:0}:name.endsWith("negative")?{digits:-1}:name.endsWith("plain")?{}:name.endsWith("encrypted")?{digits:8,period:0,allowedAttempts:0}:name.endsWith("hashed")?{digits:3.5,period:0.5,allowedAttempts:2.5}:{digits:3,period:1,allowedAttempts:2};
     return[name,betterAuth({...base,appName:"Fixture Auth",basePath:`/__test/profiles/${name}/api/auth`,plugins:[twoFactor({totpOptions:{disable:name.endsWith("hashed")},otpOptions:{...settings,storeOTP:storage,sendOTP:async({user,otp})=>{if(user.email)deliveries.set(user.email,{userId:user.id,otp});record(name,"send",otp);}}})]})] as const;
   }));
-  return async(request:Request,url:URL):Promise<Response|undefined>=>{
+  const handler = async(request:Request,url:URL):Promise<Response|undefined>=>{
     for(const[name,auth]of profiles)if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return auth.handler(request);
     if(url.pathname!=="/__test/two-factor-otp-config"||request.method!=="POST")return;
     const body=await request.json() as {profile:string;email:string;identifier?:string;counter?:string;expire?:boolean};
@@ -27,4 +27,5 @@ export function createTwoFactorOtpFixture(base:Parameters<typeof betterAuth>[0],
     const generations=identifier?(database.query("SELECT COUNT(*) AS total FROM verification WHERE identifier=?").get(identifier) as {total:number}).total:0;
     return Response.json({delivery:delivery??null,row:current,generations,receipts:receipts.get(body.profile)??[]});
   };
+  return Object.assign(handler, { reset() { deliveries.clear(); receipts.clear(); } });
 }

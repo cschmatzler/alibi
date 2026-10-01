@@ -24,9 +24,15 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 type Receipts = Arc<Mutex<HashMap<String, Vec<Value>>>>;
 #[derive(Clone, Default)]
-struct State {
+pub(super) struct State {
     deliveries: Arc<Mutex<HashMap<String, Value>>>,
     receipts: Receipts,
+}
+impl State {
+    pub(super) async fn reset(&self) {
+        self.deliveries.lock().await.clear();
+        self.receipts.lock().await.clear();
+    }
 }
 struct Callback {
     profile: String,
@@ -86,7 +92,7 @@ impl TwoFactorOtpCipher for Callback {
 pub(super) async fn router(
     base: &AuthConfig,
     database: DatabaseConnection,
-) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
+) -> AuthResult<(Router<Arc<BetterAuth<TestSchema>>>, State)> {
     let state = State::default();
     let mut router = Router::new();
     for name in [
@@ -153,9 +159,13 @@ pub(super) async fn router(
         );
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
-    Ok(router.route(
-        "/__test/two-factor-otp-config",
-        post(move |Json(body): Json<Control>| control(body, database.clone(), state.clone())),
+    let controls = state.clone();
+    Ok((
+        router.route(
+            "/__test/two-factor-otp-config",
+            post(move |Json(body): Json<Control>| control(body, database.clone(), state.clone())),
+        ),
+        controls,
     ))
 }
 #[derive(Deserialize)]

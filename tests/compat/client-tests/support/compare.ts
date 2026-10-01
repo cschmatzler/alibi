@@ -5,6 +5,7 @@ import { z } from "zod";
 import { Cookie } from "tough-cookie";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { normalizeClientValue } from "./normalize";
+import type { RequestWindow } from "./trace";
 
 /** A safe diagnostic without response secrets. */
 export type Difference = { readonly path: string; readonly reason: string };
@@ -20,6 +21,8 @@ export type ComparisonContext = {
   readonly rightStartedAt: number;
   readonly leftFinishedAt?: number;
   readonly rightFinishedAt?: number;
+  readonly leftRequestWindows?: readonly (RequestWindow | undefined)[];
+  readonly rightRequestWindows?: readonly (RequestWindow | undefined)[];
 };
 
 const entityKeys = new Set([
@@ -45,6 +48,77 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   const reverseIdentities = new Map<string, string>();
   const fail = (path: string, reason: string) => { differences.push({ path, reason }); };
   const normalizedLeft=normalizeClientValue(left),normalizedRight=normalizeClientValue(right);
+  const pairedDates = new Set<string>();
+  const invalidLifetimes = new Set<string>();
+  const dateKey = (owner: string, field: string, a: string, b: string) => JSON.stringify([owner, field, Date.parse(a), Date.parse(b)]);
+  const dateOwners = (a: Record<string, unknown>, b: Record<string, unknown>) => ["id", "token"].flatMap(key => typeof a[key] === "string" && typeof b[key] === "string" ? [JSON.stringify([key, a[key], b[key]])] : []);
+  const approvedDate = (owners: readonly string[], field: string, a: string, b: string) => owners.some(owner => pairedDates.has(dateKey(owner, field, a, b)));
+  const approveDate = (owners: readonly string[], field: string, a: string, b: string) => { for (const owner of owners) pairedDates.add(dateKey(owner, field, a, b)); };
+  const isDate = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d\d-\d\dT/.test(value) && Number.isFinite(Date.parse(value));
+  type ClockReceipt = { left: RequestWindow; right: RequestWindow; leftUser: string; rightUser: string; authPath: string };
+  const issuances = new Map<string, ClockReceipt>(), cookieOwners = new Map<string, ClockReceipt>();
+  const updates = new Map<string, ClockReceipt[]>();
+  const inWindows = (a: number, b: number, left: RequestWindow, right: RequestWindow) => a >= left.startedAt - 5 && a <= left.finishedAt && b >= right.startedAt - 5 && b <= right.finishedAt;
+  function collectResponseDates(a: unknown, b: unknown, left: RequestWindow, right: RequestWindow) {
+    if (Array.isArray(a) && Array.isArray(b)) { a.forEach((value, index) => collectResponseDates(value, b[index], left, right)); return; }
+    if (!record(a) || !record(b)) return;
+    const owners = dateOwners(a, b);
+    const issuance = typeof a.token === "string" && typeof b.token === "string" ? issuances.get(JSON.stringify([a.token, b.token])) : undefined;
+    const issuedSession = issuance && issuance.leftUser === a.userId && issuance.rightUser === b.userId ? issuance : undefined;
+    for (const key of Object.keys(a)) {
+      if (["metadata", "custom", "additionalFields", "applicationData"].includes(key)) continue;
+      const av = a[key], bv = b[key];
+      if (["createdAt", "updatedAt"].includes(key) && isDate(av) && isDate(bv)) {
+        const at = Date.parse(av), bt = Date.parse(bv);
+        const updateReceipts = key === "updatedAt" && typeof a.id === "string" && typeof b.id === "string" ? updates.get(JSON.stringify([a.id, b.id])) ?? [] : [];
+        if (inWindows(at, bt, left, right) || (issuedSession && inWindows(at, bt, issuedSession.left, issuedSession.right)) || updateReceipts.some(receipt => inWindows(at, bt, receipt.left, receipt.right))) approveDate(owners, key, av, bv);
+      } else collectResponseDates(av, bv, left, right);
+    }
+    // A session's expiry remains tied to its observed creation/update clock.
+    if (typeof a.token === "string" && typeof b.token === "string" && typeof a.userId === "string" && typeof b.userId === "string" && isDate(a.expiresAt) && isDate(b.expiresAt)) {
+      for (const anchor of ["createdAt", "updatedAt"]) {
+        const av = a[anchor], bv = b[anchor];
+        if (isDate(av) && isDate(bv) && approvedDate(owners, anchor, av, bv)) {
+          if (Math.abs((Date.parse(a.expiresAt) - Date.parse(av)) - (Date.parse(b.expiresAt) - Date.parse(bv))) <= 1500) approveDate(owners, "expiresAt", a.expiresAt, b.expiresAt);
+          else for (const owner of owners) invalidLifetimes.add(dateKey(owner, "expiresAt", a.expiresAt, b.expiresAt));
+        }
+      }
+    }
+  }
+  if (record(normalizedLeft) && record(normalizedRight) && Array.isArray(normalizedLeft.traces) && Array.isArray(normalizedRight.traces)) {
+    const rightTraces = normalizedRight.traces;
+    normalizedLeft.traces.forEach((trace, index) => {
+      const other = rightTraces[index], left = context.leftRequestWindows?.[index], right = context.rightRequestWindows?.[index];
+      if (!record(trace) || !record(other) || !left || !right || trace.method !== other.method) return;
+      if (trace.path === other.path && typeof trace.path === "string" && trace.method === "POST" && trace.responseStatus === 200 && other.responseStatus === 200) {
+        const issuancePath = /^(\/(?:api\/auth|__test\/profiles\/[^/]+\/api\/auth))\/sign-(?:in|up)\/email$/.exec(trace.path);
+        const a = trace.responseBody, b = other.responseBody;
+        if (issuancePath && record(a) && record(b) && typeof a.token === "string" && typeof b.token === "string" && record(a.user) && record(b.user) && typeof a.user.id === "string" && typeof b.user.id === "string") {
+          const receipt = { left, right, leftUser: a.user.id, rightUser: b.user.id, authPath: issuancePath[1]! };
+          issuances.set(JSON.stringify([a.token, b.token]), receipt);
+          const containsToken = (cookie: string | undefined, token: string) => { try { return !!cookie && decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1)).startsWith(`${token}.`); } catch { return false; } };
+          if (containsToken(left.issuedSessionCookie, a.token) && containsToken(right.issuedSessionCookie, b.token)) cookieOwners.set(JSON.stringify([left.issuedSessionCookie, right.issuedSessionCookie]), receipt);
+        }
+        const owner = left.sessionCookie && right.sessionCookie ? cookieOwners.get(JSON.stringify([left.sessionCookie, right.sessionCookie])) : undefined;
+        if (owner && trace.path === `${owner.authPath}/update-user`) {
+          const key = JSON.stringify([owner.leftUser, owner.rightUser]);
+          updates.set(key, [...updates.get(key) ?? [], { ...owner, left, right }]);
+        }
+      }
+      for (const [key, a] of Object.entries(left.inputDates)) {
+        const b = right.inputDates[key];
+        if (b && left.inputOwner && right.inputOwner && left.inputOwner.field === right.inputOwner.field && Math.abs((Date.parse(a) - left.startedAt) - (Date.parse(b) - right.startedAt)) <= 1500) approveDate([JSON.stringify([left.inputOwner.field, left.inputOwner.value, right.inputOwner.value])], key.split(".").at(-1)!, a, b);
+      }
+      collectResponseDates(trace.responseBody, other.responseBody, left, right);
+    });
+  }
+
+  function traceEndpoint(root: unknown, path: string): string | undefined {
+    const index = /^traces\.(\d+)\.responseBody(?:\.|$)/.exec(path)?.[1];
+    if (index === undefined || !record(root) || !Array.isArray(root.traces)) return;
+    const trace = root.traces[Number(index)];
+    return record(trace) && typeof trace.path === "string" ? trace.path.split("?")[0] : undefined;
+  }
 
 
   function sessions(value:unknown,result=new Map<string,number>()):Map<string,number> {
@@ -110,6 +184,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   function entityValues(value:unknown,result=new Set<string>()):Set<string> {
     if (Array.isArray(value)) for (const child of value) entityValues(child,result);
     else if (record(value)) for (const [key,child] of Object.entries(value)) {
+      if (["metadata", "custom", "additionalFields", "applicationData"].includes(key)) continue;
       if (entityKeys.has(key) && typeof child==="string") result.add(child);
       entityValues(child,result);
     }
@@ -325,7 +400,33 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     } catch { return undefined; }
   }
 
-  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false, urlQueryContext: "url" | "query" | undefined = undefined, adminFilterUrl = false, compactCache = false, proxyProviders: readonly [string | undefined, string | undefined] | undefined = undefined, proxyPayload = false) {
+  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false, urlQueryContext: "url" | "query" | undefined = undefined, adminFilterUrl = false, compactCache = false, proxyProviders: readonly [string | undefined, string | undefined] | undefined = undefined, proxyPayload = false, owners: readonly string[] = []) {
+    const leftEndpoint = traceEndpoint(normalizedLeft, path), rightEndpoint = traceEndpoint(normalizedRight, path);
+    if (leftEndpoint && leftEndpoint === rightEndpoint && typeof a === "string" && typeof b === "string") {
+      if (key === "totpURI" && /^traces\.\d+\.responseBody\.totpURI$/.test(path) && /\/two-factor\/(?:enable|get-totp-uri)$/.test(leftEndpoint)) {
+        try {
+          const leftURI = new URL(a), rightURI = new URL(b), leftSecret = leftURI.searchParams.get("secret"), rightSecret = rightURI.searchParams.get("secret");
+          if (leftURI.searchParams.getAll("secret").length !== 1 || rightURI.searchParams.getAll("secret").length !== 1) { fail(path, "TOTP URI must contain exactly one secret"); return; }
+          if (leftURI.protocol !== "otpauth:" || rightURI.protocol !== "otpauth:" || leftURI.hostname !== "totp" || rightURI.hostname !== "totp" || !leftSecret || !rightSecret || !/^[A-Z2-7]+=*$/.test(leftSecret) || !/^[A-Z2-7]+=*$/.test(rightSecret) || leftSecret.length !== rightSecret.length) { fail(path, "TOTP secret encoding or URI protocol differs"); return; }
+          identity(leftSecret, rightSecret, `${path}.secret`, "totp-secret");
+          leftURI.searchParams.set("secret", "<generated>"); rightURI.searchParams.set("secret", "<generated>");
+          if (leftURI.href !== rightURI.href) fail(path, "TOTP URI configuration differs");
+        } catch { fail(path, "invalid TOTP URI"); }
+        return;
+      }
+      if (key === "backupCodes" && /^traces\.\d+\.responseBody\.backupCodes\.\d+$/.test(path) && /\/two-factor\/(?:enable|generate-backup-codes)$/.test(leftEndpoint) && !leftEndpoint.includes("two-factor-backup-custom")) {
+        if (!/^[a-zA-Z0-9-]+$/.test(a) || !/^[a-zA-Z0-9-]+$/.test(b) || a.replace(/[a-zA-Z0-9]/g, "x") !== b.replace(/[a-zA-Z0-9]/g, "x")) fail(path, "backup-code format differs");
+        identity(a, b, path, "backup-code"); return;
+      }
+      if (key === "responseBody" && /\/(?:reference|docs)$/.test(leftEndpoint)) {
+        const embedded = /<script\s+id="api-reference"\s+type="application\/json">\s*([^]*?)\s*<\/script>/;
+        const am = embedded.exec(a), bm = embedded.exec(b);
+        if (am?.[1] && bm?.[1]) {
+          try { visit({ frame: a.replace(am[1], "<document>"), document: JSON.parse(am[1]) }, { frame: b.replace(bm[1], "<document>"), document: JSON.parse(bm[1]) }, path, ""); return; }
+          catch { fail(path, "invalid embedded OpenAPI document"); return; }
+        }
+      }
+    }
     if (proxyPayload && key === "timestamp" && typeof a === "number" && typeof b === "number") {
       if (a !== b && Math.abs((a-context.leftStartedAt)-(b-context.rightStartedAt)) > 1500) fail(path,"OAuth proxy profile timestamp differs");
       return;
@@ -334,7 +435,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       cacheClock(a,b,path); return;
     }
     if (typeof a === "string" && typeof b === "string" && !traceShape(path)
-      && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path)) {
+      && !/(?:^|\.)(?:metadata|additionalFields|custom|applicationData)(?:\.|$)/.test(path)) {
       if (key === "profile" && urlQueryContext === "query" && proxyProviders) {
         const leftPayload = leftProxyProfiles.get(a), rightPayload = rightProxyProfiles.get(b);
         if (!leftPayload || !rightPayload) {
@@ -384,6 +485,8 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       const opaqueKey = (key === "deviceCode" || key === "userCode") && (applicationData || jwtPayload) ? key : opaqueAliases[key] ?? key;
       if (opaqueKeys.has(opaqueKey)) { identity(a, b, path, opaqueKey); return; }
       if (key.endsWith("At") || key === "lastRequest" || key === "banExpires") {
+        if (approvedDate(owners, key, a, b)) return;
+        if (owners.some(owner => invalidLifetimes.has(dateKey(owner, key, a, b)))) { fail(path, "session lifetime differs from its observed issuance clock"); return; }
         const at = Date.parse(a), bt = Date.parse(b);
         if (!/^\d{4}-\d\d-\d\dT/.test(a) || !/^\d{4}-\d\d-\d\dT/.test(b) || !Number.isFinite(at) || !Number.isFinite(bt)) {
           fail(path, "invalid timestamp");
@@ -542,7 +645,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           // use the existing graph. Arity, order, duplicates and URL fields stay.
           visit(a.filterValue, b.filterValue, childPath, "id", false, false, false, false, "query");
         }
-        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData, false, false, urlQueryContext === "query" || (urlQueryContext === "url" && childKey === "query") ? "query" : undefined, adminFilterUrl, compactCache, proxyProviders, proxyPayload && childKey === "timestamp");
+        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData, false, false, urlQueryContext === "query" || (urlQueryContext === "url" && childKey === "query") ? "query" : undefined, adminFilterUrl, compactCache, proxyProviders, proxyPayload && childKey === "timestamp", dateOwners(a, b));
       }
       return;
     }

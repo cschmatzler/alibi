@@ -1,8 +1,19 @@
 import { Cookie, CookieJar } from "tough-cookie";
 import { jsonShape } from "./normalize";
+import { mutateTransport } from "./assurance/wire";
+export const requestWindow = Symbol("compat-request-window");
+export type RequestWindow = {
+  startedAt: number;
+  finishedAt: number;
+  inputDates: Record<string, string>;
+  inputOwner?: { field: "id" | "token"; value: string };
+  sessionCookie?: string;
+  issuedSessionCookie?: string;
+};
 
-/** Request/response transport observations with secrets omitted. */
+/** Complete response observations, kept in memory; reports contain paths rather than secrets. */
 export type TraceEntry = {
+  [requestWindow]?: RequestWindow;
   actor: string;
   method: string;
   path: string;
@@ -11,22 +22,30 @@ export type TraceEntry = {
   responseHeaders: Record<string, string>;
   responseCookies: Record<string, unknown>;
   responseBodyShape: unknown;
+  /** Complete public auth responses; fixture-control observations use their typed scenario owners. */
+  responseBody?: unknown;
   /** Complete rejection payload, compared by value: error wire text carries no runtime entropy. */
   responseErrorBody?: unknown;
 };
 
 function bodyShape(text: string) {
   if (!text) return null;
-  try { return jsonShape(JSON.parse(text)); }
-  catch { return "string"; }
+  try {
+    return jsonShape(JSON.parse(text));
+  } catch {
+    return "string";
+  }
 }
 
 /** Every 4xx/5xx body is compared literally through the identity bijection, not as a shape. */
 function errorBody(status: number, text: string): unknown {
   if (status < 400) return undefined;
   if (!text) return null;
-  try { return JSON.parse(text); }
-  catch { return text; }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
 }
 
 function responseCookies(response: Response) {
@@ -43,30 +62,78 @@ function responseCookies(response: Response) {
       sameSite: cookie.sameSite ?? null,
       maxAge: cookie.maxAge ?? null,
       // RFC 6265: Max-Age takes precedence over Expires.
-      expiresAt: cookie.maxAge === undefined && cookie.expires instanceof Date ? cookie.expires.toISOString() : null,
+      expiresAt:
+        cookie.maxAge === undefined && cookie.expires instanceof Date
+          ? cookie.expires.toISOString()
+          : null,
     };
   }
   return result;
 }
 
+function sessionReceipt(request: Headers, response: Headers) {
+  const select = (values: string[]) => {
+    const cookies = values
+      .map((value) => Cookie.parse(value))
+      .filter(
+        (cookie) =>
+          cookie &&
+          /^(?:__Secure-)?better-auth\.session_token$/.test(cookie.key) &&
+          cookie.value &&
+          cookie.maxAge !== 0,
+      );
+    return cookies.length === 1
+      ? `${cookies[0]!.key}=${cookies[0]!.value}`
+      : undefined;
+  };
+  const sessionCookie = select((request.get("cookie") ?? "").split(";")),
+    issuedSessionCookie = select(response.getSetCookie());
+  return {
+    ...(sessionCookie ? { sessionCookie } : {}),
+    ...(issuedSessionCookie ? { issuedSessionCookie } : {}),
+  };
+}
+
 /** Fetch with an isolated standards-aware cookie jar and complete redirect traces. */
-export function createTracingFetch(baseURL: string, actor: string, traces: TraceEntry[], authPath = "/api/auth") {
+export function createTracingFetch(
+  baseURL: string,
+  actor: string,
+  traces: TraceEntry[],
+  authPath = "/api/auth",
+) {
   const jar = new CookieJar();
   const origin = new URL(baseURL);
-  return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const target = new URL(input instanceof Request ? input.url : input, baseURL);
-    if (authPath !== "/api/auth" && target.origin === origin.origin && target.pathname.startsWith("/api/auth/")) {
+  return async (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ): Promise<Response> => {
+    const target = new URL(
+      input instanceof Request ? input.url : input,
+      baseURL,
+    );
+    if (
+      authPath !== "/api/auth" &&
+      target.origin === origin.origin &&
+      target.pathname.startsWith("/api/auth/")
+    ) {
       target.pathname = `${authPath}${target.pathname.slice("/api/auth".length)}`;
     }
-    const supplied = input instanceof Request ? new Request(input, init) : undefined;
-    let request = supplied ? new Request(target, supplied) : new Request(target, init);
+    const supplied =
+      input instanceof Request ? new Request(input, init) : undefined;
+    let request = supplied
+      ? new Request(target, supplied)
+      : new Request(target, init);
     const redirectMode = init?.redirect ?? request.redirect;
-    const requestCredentials = init?.credentials ?? (input instanceof Request ? input.credentials : undefined) ?? "same-origin";
+    const requestCredentials =
+      init?.credentials ??
+      (input instanceof Request ? input.credentials : undefined) ??
+      "same-origin";
     for (let redirects = 0; redirects <= 10; redirects++) {
       const url = new URL(request.url);
       const headers = new Headers(request.headers);
-      const credentials = requestCredentials !== "omit"
-        && (requestCredentials === "include" || url.origin === origin.origin);
+      const credentials =
+        requestCredentials !== "omit" &&
+        (requestCredentials === "include" || url.origin === origin.origin);
       if (credentials && !headers.has("cookie")) {
         const cookies = await jar.getCookieString(url.href, {
           sameSiteContext: url.hostname === origin.hostname ? "strict" : "none",
@@ -74,44 +141,127 @@ export function createTracingFetch(baseURL: string, actor: string, traces: Trace
         if (cookies) headers.set("cookie", cookies);
       }
       if (!headers.has("origin")) headers.set("origin", origin.origin);
-      const response = await fetch(new Request(request, { headers, redirect: "manual" }));
+      const outbound = new Request(request, { headers, redirect: "manual" });
+      const requestText = await request.clone().text(),
+        startedAt = Date.now();
+      const response = await mutateTransport(outbound, await fetch(outbound));
       if (credentials) {
         for (const cookie of response.headers.getSetCookie()) {
           await jar.setCookie(cookie, url.href, { ignoreError: true });
         }
       }
       const selectedHeaders: Record<string, string> = {};
-      for (const header of ["content-type", "location", "set-auth-jwt", "set-ott", "access-control-expose-headers"]) {
-        const value = response.headers.get(header);
-        if (value) selectedHeaders[header] = header === "content-type" ? value.split(";").at(0)?.trim() ?? value : value;
+      for (const [header, value] of response.headers) {
+        // Transport framing, server identity and wall-clock Date are supplied by
+        // different HTTP engines. Cookies have their own structured observation.
+        if (
+          [
+            "date",
+            "server",
+            "connection",
+            "keep-alive",
+            "content-length",
+            "transfer-encoding",
+            "set-cookie",
+          ].includes(header)
+        )
+          continue;
+        selectedHeaders[header] = value;
       }
       const responseText = await response.clone().text();
+      const inputDates: Record<string, string> = {};
+      let inputOwner: RequestWindow["inputOwner"];
+      function dates(value: unknown, path = "") {
+        if (!value || typeof value !== "object") return;
+        for (const [key, child] of Object.entries(value)) {
+          if (
+            [
+              "metadata",
+              "custom",
+              "additionalFields",
+              "applicationData",
+            ].includes(key)
+          )
+            continue;
+          const next = `${path}.${key}`;
+          if (
+            key.endsWith("At") &&
+            typeof child === "string" &&
+            /^\d{4}-\d\d-\d\dT/.test(child) &&
+            Number.isFinite(Date.parse(child))
+          )
+            inputDates[next] = child;
+          else dates(child, next);
+        }
+      }
+      try {
+        const input = JSON.parse(requestText);
+        dates(input);
+        // Only this fixture operation explicitly supplies a session deadline.
+        if (
+          url.pathname === "/__test/expire-session" &&
+          typeof input?.token === "string"
+        )
+          inputOwner = { field: "token", value: input.token };
+      } catch {
+        /* A non-JSON body has no declared clock inputs. */
+      }
       const entry: TraceEntry = {
+        [requestWindow]: {
+          startedAt,
+          finishedAt: Date.now(),
+          inputDates,
+          ...(inputOwner ? { inputOwner } : {}),
+          ...sessionReceipt(headers, response.headers),
+        },
         actor,
         method: request.method,
         path: `${url.pathname}${url.search}`,
-        requestBodyShape: bodyShape(await request.clone().text()),
+        requestBodyShape: bodyShape(requestText),
         responseStatus: response.status,
         responseHeaders: selectedHeaders,
         responseCookies: responseCookies(response),
         responseBodyShape: bodyShape(responseText),
+        ...(url.pathname === "/__test/api-key/create" ||
+        /^\/(?:__test\/profiles\/[^/]+\/)?api\/auth(?:\/|$)/.test(url.pathname)
+          ? {
+              responseBody: (() => {
+                if (!responseText) return null;
+                try {
+                  return JSON.parse(responseText);
+                } catch {
+                  return responseText;
+                }
+              })(),
+            }
+          : {}),
       };
       const rejected = errorBody(response.status, responseText);
       if (rejected !== undefined) entry.responseErrorBody = rejected;
       traces.push(entry);
       const location = response.headers.get("location");
-      if (![301, 302, 303, 307, 308].includes(response.status) || !location || redirectMode === "manual") return response;
+      if (
+        ![301, 302, 303, 307, 308].includes(response.status) ||
+        !location ||
+        redirectMode === "manual"
+      )
+        return response;
       if (redirectMode === "error") throw new Error("Unexpected redirect");
       const next = new URL(location, url);
       const nextHeaders = new Headers(request.headers);
       nextHeaders.delete("cookie");
       if (next.origin !== url.origin) nextHeaders.delete("authorization");
-      const becomesGet = response.status === 303 || ([301, 302].includes(response.status) && request.method === "POST");
+      const becomesGet =
+        response.status === 303 ||
+        ([301, 302].includes(response.status) && request.method === "POST");
       if (becomesGet) nextHeaders.delete("content-type");
       request = new Request(next, {
         method: becomesGet ? "GET" : request.method,
         headers: nextHeaders,
-        body: becomesGet || ["GET", "HEAD"].includes(request.method) ? null : await request.clone().arrayBuffer(),
+        body:
+          becomesGet || ["GET", "HEAD"].includes(request.method)
+            ? null
+            : await request.clone().arrayBuffer(),
         credentials: requestCredentials,
       });
     }
