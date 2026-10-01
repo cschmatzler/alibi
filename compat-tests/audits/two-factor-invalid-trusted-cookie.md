@@ -32,10 +32,10 @@ new public cookie/crypto choice is introduced.
 
 ## Primary owner and authorization/state evidence
 
-The existing `tests/two-factor/trust-ttl.test.ts` owner gains two bounded cases,
-using the real default-TTL skip-enrollment profile and the existing explicitly
-configured TTL/cleanup-disabled profile. Their prior six lifetime cases remain.
-Each new owner uses real public signup, enable, sign-out, credential sign-in,
+The existing `tests/two-factor/trust-ttl.test.ts` owner uses three bounded
+lifecycles for each of the real default-TTL skip-enrollment and explicitly
+configured TTL/cleanup-disabled profiles. The prior six lifetime cases remain.
+Each lifecycle uses real public signup, enable, sign-out, credential sign-in,
 actual delivery and OTP verification to obtain its original signed trust cookie
 and persisted proof. Independent Node HMAC validates the actual issued inner
 signature and changes controlled input syntax; no fixture emits a successful
@@ -111,7 +111,7 @@ The external autoreview tool named by test-audit is unavailable. Coordinator own
 independent review, full canonical gates, inventory and publication. Only focused
 owner/family checks are run here; final results are appended after completion.
 
-Final focused proof: 63 two-factor SDK scenarios / 4,452 assertions pass
+The original combined-owner freeze passed 63 two-factor SDK scenarios / 4,452 assertions
 (`/tmp/two-factor-invalid-trust-family-with-alias-final.log`), including both new
 owners in about3.2 seconds each with the unchanged default scenario timeout.
 All18 existing native factor tests pass (`/tmp/two-factor-invalid-trust-native-final.log`).
@@ -122,3 +122,63 @@ strict Clippy passes (`/tmp/two-factor-invalid-trust-clippy-final.log`); actual
 fixture strict Clippy also passes (`/tmp/two-factor-invalid-trust-fixture-clippy-final.log`).
 Workspace/excluded fixture formatting and `git diff --check` pass. Production
 changes total38 diff lines; fixture/test support stays private to the applications.
+
+
+## Bounded evidence follow-up
+
+The integrated canonical run `/tmp/next-selected-hooks-schema-trust-canonical.log`
+retains the genuine original failure: 435/436 scenarios pass, while the default
+combined owner's final replay challenge `createdAt`, `updatedAt`, and `expiresAt`
+exceed the existing clock comparison. Its source and Rust timestamps are
+02:10:39.171 and 02:10:41.824. The configured combined owner passes. This is
+an evidence-lifetime problem, not a production cookie change.
+
+`support/scenario.ts` records one clock immediately after health/reset for the
+whole scenario. `support/compare.ts` subtracts that clock from every stored date
+and requires the resulting offsets to remain within 1,500 milliseconds. A late
+replay after signup, both enrollments, seven syntax logins, authenticated lookup
+mutations, a second OTP completion, expiry, and two successful rotations compares
+accumulated credential-work duration. No clock, date projection, tolerance,
+comparison rule, timeout, transport or production owner changes in this follow-up.
+
+The single setup implementation now serves three fresh lifecycles per profile:
+
+* Syntax retains all seven original outer/inner cases, exact deletion attributes,
+  original issued row and both users' state, and unrelated expired-row preservation.
+* Authenticated lookup retains the foreign credential, changed stored owner,
+  authenticated missing record and genuinely issued expired proof. It preserves
+  both cleanup policies, second OTP completion/attempt timestamps and the earlier
+  real foreign challenge.
+* Rotation retains actual extra-component acceptance, retired-row/new-cookie
+  state, actual HMAC alias acceptance, retired alias replay, two genuine sibling
+  sessions, current proof and foreign isolation. Its preceding owner challenge is
+  created directly with a genuine invalid-inner request rather than inherited
+  from the lookup lifecycle's expired-proof request; both earlier real owner and
+  foreign challenges must remain unchanged. The expiry rejection remains fully
+  checked by the lookup owner.
+
+Every lifecycle performs real signup, enrollment, pending login, OTP delivery,
+verification, trust issuance and sign-out. The same local assertions, complete
+traced official-client responses/cookies and lossless stored-row projections
+remain. The small duplicated foreign denial in lookup and rotation establishes
+independent real challenge state for their distinct cleanup and retention risks;
+there is no alternate fixture auth result or production seam. Inventory naming is
+left to the coordinator, who will deliberately replace both combined names with
+all six new owners.
+
+Focused proof after this split:
+
+* `/tmp/trust-evidence-bounds-source-control.log`: source-to-source 12/2,178 pass;
+  new lifecycles take 1.0–1.4 seconds each.
+* `/tmp/trust-evidence-bounds-family-final.log`: all 67 two-factor scenarios /
+  4,908 assertions pass on the first current source-to-Rust run. New default
+  syntax/lookup/rotation take 2.17/1.74/1.72 seconds; configured counterparts
+  take 2.29/1.79/1.81 seconds, versus the canonical combined 3.86/3.70 seconds.
+* `/tmp/trust-evidence-bounds-build.log`: current-parent locked fixture build
+  passes in the isolated owner target; no production changes are included.
+* `/tmp/trust-evidence-bounds-typecheck-final.log`: client TypeScript passes;
+  `git diff --check` passes. Only indentation changed after the focused run.
+
+The source baseline failure logs and all previously recorded security/crypto
+bounds above remain valid and retained. Full canonical gates and required-owner
+inventory edits remain coordinator-owned.
