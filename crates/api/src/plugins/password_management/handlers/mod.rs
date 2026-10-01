@@ -366,7 +366,7 @@ fn validate_redirect_target(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     error_message: &str,
 ) -> AuthResult<()> {
-    if ctx.config.advanced.disable_origin_check {
+    if ctx.config.current_origin_check_disabled() {
         return Ok(());
     }
     if ctx.config.is_redirect_target_trusted(target) {

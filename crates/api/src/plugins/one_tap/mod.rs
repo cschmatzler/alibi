@@ -132,7 +132,7 @@ impl OneTapPlugin {
             Ok(body) => body,
             Err(response) => return Ok(response),
         };
-        if !ctx.config.advanced.disable_origin_check
+        if !ctx.config.current_origin_check_disabled()
             && body
                 .callback_url
                 .as_deref()

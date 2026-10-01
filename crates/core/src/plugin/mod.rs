@@ -92,6 +92,12 @@ pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
     /// Routes that this plugin handles
     fn routes(&self) -> Vec<AuthRoute>;
 
+    /// Media types accepted before request hooks and endpoint dispatch. An empty
+    /// list disables the media restriction for an application-owned endpoint.
+    fn allowed_media_types(&self, _route: &AuthRoute) -> Vec<&'static str> {
+        vec!["application/json"]
+    }
+
     /// Session field policies contributed by this registered plugin.
     fn session_fields(&self) -> indexmap::IndexMap<String, crate::field_policy::FieldConfig> {
         indexmap::IndexMap::new()

@@ -22,7 +22,11 @@ export function createDispatchFixture(base: BetterAuthOptions) {
         hooks: { before: [{ matcher: () => true, handler: createAuthMiddleware(async ctx => {
           events.push({ path: new URL(ctx.request!.url).pathname.slice(`/__test/profiles/${name}/api/auth`.length), method: ctx.method ?? "GET" });
         }) }] },
-        endpoints: { owned: createAuthEndpoint("/owned/:id", { method: "GET" }, async ctx => ctx.json({ id: ctx.params.id })) },
+        endpoints: {
+          owned: createAuthEndpoint("/owned/:id", { method: "GET" }, async ctx => ctx.json({ id: ctx.params.id })),
+          child: createAuthEndpoint("/sign-in/child", { method: "POST", metadata: { allowedMediaTypes: [" Application/JSON "] } }, async ctx => ctx.json({ payload: ctx.body })),
+          peer: createAuthEndpoint("/sign-in-peer", { method: "POST", metadata: { allowedMediaTypes: [" Application/JSON "] } }, async ctx => ctx.json({ payload: ctx.body })),
+        },
       }],
     }));
   }

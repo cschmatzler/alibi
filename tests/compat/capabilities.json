@@ -3152,7 +3152,13 @@
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
           "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
-          "server-only setPassword creates a genuine credential for only its physical passwordless owner"
+          "server-only setPassword creates a genuine credential for only its physical passwordless owner",
+          "dispatch default origin and CSRF configuration preserves writes only after admission",
+          "dispatch csrf-off origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
+          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
         ],
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -3178,7 +3184,13 @@
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
           "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
-          "server-only setPassword creates a genuine credential for only its physical passwordless owner"
+          "server-only setPassword creates a genuine credential for only its physical passwordless owner",
+          "dispatch default origin and CSRF configuration preserves writes only after admission",
+          "dispatch csrf-off origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
+          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
         ],
         "authorization": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -3201,7 +3213,13 @@
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
           "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
-          "server-only setPassword creates a genuine credential for only its physical passwordless owner"
+          "server-only setPassword creates a genuine credential for only its physical passwordless owner",
+          "dispatch default origin and CSRF configuration preserves writes only after admission",
+          "dispatch csrf-off origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
+          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
         ],
         "state": [
           "official client signs in with imported TypeScript scrypt credentials",
@@ -3244,7 +3262,13 @@
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
           "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
-          "server-only setPassword creates a genuine credential for only its physical passwordless owner"
+          "server-only setPassword creates a genuine credential for only its physical passwordless owner",
+          "dispatch default origin and CSRF configuration preserves writes only after admission",
+          "dispatch csrf-off origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
+          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
         ]
       }
     },
@@ -3575,7 +3599,13 @@
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
           "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
           "last login custom resolver receives complete transformed endpoint numbers while raw HTTP bytes stay original",
-          "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures"
+          "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures",
+          "dispatch default origin and CSRF configuration preserves writes only after admission",
+          "dispatch csrf-off origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
+          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
         ],
         "rejection": [
           "sign up with duplicate email returns error",
@@ -3590,10 +3620,22 @@
           "last login policy preserves real cookie consent database updates and failed authentication ownership",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
-          "last login negative preserves real cookie consent database updates and failed authentication ownership"
+          "last login negative preserves real cookie consent database updates and failed authentication ownership",
+          "dispatch default origin and CSRF configuration preserves writes only after admission",
+          "dispatch csrf-off origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
+          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
         ],
         "authorization": [
-          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state"
+          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
+          "dispatch default origin and CSRF configuration preserves writes only after admission",
+          "dispatch csrf-off origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
+          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
         ],
         "state": [
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
@@ -3626,7 +3668,13 @@
           "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
           "last login excessive cookie lifetime rejects serialization after real authentication commits",
           "last login custom resolver receives complete transformed endpoint numbers while raw HTTP bytes stay original",
-          "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures"
+          "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures",
+          "dispatch default origin and CSRF configuration preserves writes only after admission",
+          "dispatch csrf-off origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
+          "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
+          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
         ]
       }
     },

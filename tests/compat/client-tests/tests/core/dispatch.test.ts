@@ -21,10 +21,13 @@ for (const mode of ["default", "csrf-off", "origin-off", "origin-off-explicit-cs
     for (const input of [
       { name: "foreign-cookie-origin", headers: { origin: "https://foreign.fixture.test" }, callbackURL: "/owned" },
       { name: "foreign-callback", headers: {}, callbackURL: "https://foreign.fixture.test/owned" },
+      { name: "null-same-origin", headers: { origin: "null", "sec-fetch-site": "same-origin" }, callbackURL: "/owned" },
+      { name: "null-cross-site", headers: { origin: "null", "sec-fetch-site": "cross-site" }, callbackURL: "/owned" },
+      { name: "null-forged-host", headers: { origin: "null", "sec-fetch-site": "same-origin", host: "foreign.fixture.test" }, callbackURL: "/owned" },
     ]) {
       const before = await ctx.readUserState({ userId: signup.data!.user.id });
       const result = await owner.client.signIn.email({ email: signup.data!.user.email, password: "password123", callbackURL: input.callbackURL }, { headers: input.headers });
-      const allowed = input.name === "foreign-cookie-origin" ? mode !== "default" : ["origin-off", "origin-off-explicit-csrf", "origin-path"].includes(mode);
+      const allowed = input.name === "null-same-origin" || (input.name === "foreign-callback" ? ["origin-off", "origin-off-explicit-csrf", "origin-path"].includes(mode) : mode !== "default");
       const after = await ctx.readUserState({ userId: signup.data!.user.id });
       const callbacks = await events(ctx);
       if (allowed) {
@@ -32,7 +35,7 @@ for (const mode of ["default", "csrf-off", "origin-off", "origin-off-explicit-cs
         expect(result.data?.user.id).toBe(signup.data!.user.id);
         expect(callbacks).toEqual([{ path: "/sign-in/email", method: "POST" }]);
       } else {
-        expect(result.error?.code).toBe(input.name === "foreign-cookie-origin" ? "INVALID_ORIGIN" : "INVALID_CALLBACK_URL");
+        expect(result.error?.code).toBe(input.name === "null-cross-site" ? "MISSING_OR_NULL_ORIGIN" : input.name === "foreign-callback" ? "INVALID_CALLBACK_URL" : "INVALID_ORIGIN");
         expect(after).toEqual(before); expect(callbacks).toEqual([]);
       }
       expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
@@ -45,7 +48,31 @@ for (const mode of ["default", "csrf-off", "origin-off", "origin-off-explicit-cs
     if (mode === "csrf-off" || mode === "origin-off") expect(navigation.error).toBeNull();
     else { expect(navigation.error?.code).toBe("CROSS_SITE_NAVIGATION_LOGIN_BLOCKED"); expect(after).toEqual(before); expect(callbacks).toEqual([{ path: "/sign-in/email", method: "POST" }]); }
     expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
-    return { signup: ctx.snapshot(signup), other: ctx.snapshot(other), observations, navigation: ctx.snapshot(navigation), callbacks, before, after, foreignBefore, foreignAfter: await ctx.readUserState({ userId: other.data!.user.id }) };
+    const legacy = [];
+    for (const explicitOrigin of [false, true]) {
+      const legacyBefore = await ctx.readUserState({ userId: signup.data!.user.id });
+      const result = await ctx.actor(`legacy-${explicitOrigin}`, profile).client.signIn.email({ email: signup.data!.user.email, password: "password123" }, { headers: explicitOrigin ? { origin: "https://foreign.fixture.test" } : {} });
+      const legacyAfter = await ctx.readUserState({ userId: signup.data!.user.id }), receipts = await events(ctx);
+      if (explicitOrigin && mode === "default") { expect(result.error?.code).toBe("INVALID_ORIGIN"); expect(legacyAfter).toEqual(legacyBefore); }
+      else { expect(result.error).toBeNull(); expect(result.data?.user.id).toBe(signup.data!.user.id); }
+      expect(receipts).toEqual([{ path: "/sign-in/email", method: "POST" }]);
+      expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+      legacy.push({ explicitOrigin, result: ctx.snapshot(result), before: legacyBefore, after: legacyAfter, receipts });
+    }
+    const prefixes = [];
+    for (const route of ["/sign-in/child", "/sign-in-peer"]) {
+      const physicalBefore = await ctx.readUserState({ userId: signup.data!.user.id });
+      const response = await owner.fetch(authProfilePath(profile) + route, { method: "POST", headers: { origin: "https://foreign.fixture.test", "content-type": "application/json" }, body: JSON.stringify({ value: "observable application input" }) });
+      const result = { status: response.status, body: await response.json() }, receipts = await events(ctx);
+      const allowed = mode !== "default" && (mode !== "origin-path" || route === "/sign-in/child");
+      expect(result.status).toBe(allowed ? 200 : 403);
+      if (allowed) { expect(result.body).toEqual({ payload: { value: "observable application input" } }); expect(receipts).toEqual([{ path: route, method: "POST" }]); }
+      else { expect(result.body).toMatchObject({ code: "INVALID_ORIGIN" }); expect(receipts).toEqual([]); }
+      const physicalAfter = await ctx.readUserState({ userId: signup.data!.user.id });
+      expect(physicalAfter).toEqual(physicalBefore); expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+      prefixes.push({ route, result, receipts, before: physicalBefore, after: physicalAfter });
+    }
+    return { prefixes, legacy, signup: ctx.snapshot(signup), other: ctx.snapshot(other), observations, navigation: ctx.snapshot(navigation), callbacks, before, after, foreignBefore, foreignAfter: await ctx.readUserState({ userId: other.data!.user.id }) };
   }, ["POST /sign-up/email", "POST /sign-in/email"]);
 }
 
@@ -56,7 +83,7 @@ for (const mode of ["default", "trailing", "disabled-email", "disabled-template"
     const results = [];
     for (const [route, method, expected] of [
       ["/ok/", "GET", mode === "trailing" ? 200 : 404],
-      ["/ok", "POST", 404], ["/ok", "HEAD", 404],
+      ["/ok", "POST", 404], ["/ok", "HEAD", 404], ["/ok", "PATCH", 404],
       ["/unregistered", "POST", 404],
       ["/owned/item", "GET", mode === "disabled-literal" ? 404 : 200],
       ["/owned/item/", "GET", mode === "trailing" ? 200 : 404],
@@ -86,17 +113,28 @@ compatScenario("dispatch media and JSON syntax validation precede origin rejecti
   const foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
   const results = [];
   for (const [name, contentType, body, status, code] of [
+    ["malformed-allowed", "application/foo*+jsonapplication/json", JSON.stringify({ email: signup.data!.user.email, password: "password123" }), 400, "VALIDATION_ERROR"],
+    ["non-json-allowed", "text/plainapplication/json", JSON.stringify({ email: signup.data!.user.email, password: "password123" }), 400, "VALIDATION_ERROR"],
+    ["multipart-missing-boundary", "multipart/form-dataapplication/json", "invalid", 500, null],
+    ["multipart", "multipart/form-dataapplication/json; boundary=dispatch-boundary", `--dispatch-boundary\r\nContent-Disposition: form-data; name="email"\r\n\r\n${signup.data!.user.email}\r\n--dispatch-boundary\r\nContent-Disposition: form-data; name="password"\r\n\r\npassword123\r\n--dispatch-boundary--\r\n`, 200, null],
+    ["multipart-file-allowed", "multipart/form-dataapplication/json; boundary=dispatch-boundary", `--dispatch-boundary\r\nContent-Disposition: form-data; name="email"; filename="email.txt"\r\nContent-Type: text/plain\r\n\r\n${signup.data!.user.email}\r\n--dispatch-boundary\r\nContent-Disposition: form-data; name="password"\r\n\r\npassword123\r\n--dispatch-boundary--\r\n`, 400, "VALIDATION_ERROR"],
     ["text", "text/plain", JSON.stringify({ email: signup.data!.user.email, password: "password123" }), 415, "UNSUPPORTED_MEDIA_TYPE"],
     ["missing", "", JSON.stringify({ email: signup.data!.user.email, password: "password123" }), 415, "UNSUPPORTED_MEDIA_TYPE"],
     ["malformed", "application/json", "{", 400, "BAD_REQUEST"],
     ["form", "application/x-www-form-urlencoded", new URLSearchParams({ email: signup.data!.user.email, password: "password123" }).toString(), 200, null],
     ["json-parameter", "Application/JSON; charset=UTF-8", JSON.stringify({ email: signup.data!.user.email, password: "password123" }), 200, null],
+    ["stream", "application/json", JSON.stringify({ email: signup.data!.user.email, password: "password123" }), 200, null],
+    ["stream-malformed", "application/json", "{", 400, "BAD_REQUEST"],
   ] as const) {
     const before = await ctx.readUserState({ userId: signup.data!.user.id });
-    const result = await ctx.rawRequest({ actor: `media-${name}`, path: path + "/sign-in/email", method: "POST", body, headers: { "content-type": contentType, ...(status !== 200 ? { origin: "https://foreign.fixture.test" } : {}) } });
+    const requestBody = name.startsWith("stream") ? new ReadableStream<Uint8Array>({ start(controller) {
+      const encoded = new TextEncoder().encode(body);
+      controller.enqueue(encoded.slice(0, 1)); controller.enqueue(encoded.slice(1)); controller.close();
+    } }) : body;
+    const result = await ctx.rawRequest({ actor: `media-${name}`, path: path + "/sign-in/email", method: "POST", body: requestBody, headers: { "content-type": contentType, ...(status !== 200 ? { origin: "https://foreign.fixture.test" } : {}) } });
     expect(result.status).toBe(status);
     const after = await ctx.readUserState({ userId: signup.data!.user.id }), callbacks = await events(ctx);
-    if (status !== 200) { expect(result.body).toMatchObject({ code }); expect(after).toEqual(before); expect(callbacks).toEqual([]); }
+    if (status !== 200) { if (code) expect(result.body).toMatchObject({ code }); else expect(result.body).toBeNull(); expect(after).toEqual(before); expect(callbacks).toEqual(name.endsWith("allowed") ? [{ path: "/sign-in/email", method: "POST" }] : []); }
     else { expect(callbacks).toEqual([{ path: "/sign-in/email", method: "POST" }]); expect(result.body).toMatchObject({ user: { id: signup.data!.user.id } }); }
     expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
     results.push({ name, contentType, body, before, result, after, callbacks });

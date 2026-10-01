@@ -324,6 +324,11 @@ impl EmailPasswordPlugin {
                     callback_body,
                 ));
         }
+        better_auth_core::middleware::CsrfMiddleware::new(
+            better_auth_core::middleware::CsrfConfig::new(),
+            Arc::clone(&ctx.config),
+        )
+        .check_form_origin(req)?;
 
         signup_req.email = signup_req.email.to_lowercase();
 
@@ -415,6 +420,11 @@ impl EmailPasswordPlugin {
         }
         req.extensions()
             .insert(better_auth_core::hooks::ValidatedRequestBody(callback_body));
+        better_auth_core::middleware::CsrfMiddleware::new(
+            better_auth_core::middleware::CsrfConfig::new(),
+            Arc::clone(&ctx.config),
+        )
+        .check_form_origin(req)?;
 
         if !is_valid_email(&signin_req.email) {
             return Err(AuthError::Upstream {
@@ -692,6 +702,14 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
         }
 
         routes
+    }
+
+    fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
+        if matches!(route.path.as_str(), "/sign-up/email" | "/sign-in/email") {
+            vec!["application/x-www-form-urlencoded", "application/json"]
+        } else {
+            vec!["application/json"]
+        }
     }
 
     async fn on_request(

@@ -352,7 +352,7 @@ impl OAuthProxyPlugin {
             .query
             .get("callbackURL")
             .ok_or_else(|| AuthError::bad_request("Missing callbackURL"))?;
-        if !ctx.config.advanced.disable_origin_check
+        if !ctx.config.current_origin_check_disabled()
             && !ctx.config.is_redirect_target_trusted(callback)
         {
             return Err(AuthError::forbidden("Invalid callbackURL"));

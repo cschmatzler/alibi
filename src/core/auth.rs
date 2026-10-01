@@ -19,6 +19,7 @@ pub struct BetterAuth<S: AuthSchema> {
     config: Arc<AuthConfig>,
     plugins: Vec<Box<dyn AuthPlugin<S>>>,
     middlewares: Vec<Box<dyn Middleware>>,
+    request_protection: CsrfMiddleware,
     body_limit: BodyLimitConfig,
     store: Arc<dyn AuthStore<S>>,
     session_manager: SessionManager<S>,
@@ -205,15 +206,13 @@ impl<S: AuthSchema> AuthBuilder<S> {
 
         let body_limit = self.body_limit_config.unwrap_or_default();
 
-        // Build middleware chain (order matters: body limit → rate limit → CSRF → CORS → custom)
+        let request_protection =
+            CsrfMiddleware::new(self.csrf_config.unwrap_or_default(), Arc::clone(&config));
+        // Transport and application request middleware precede router resolution.
         let mut middlewares: Vec<Box<dyn Middleware>> = vec![
             Box::new(BodyLimitMiddleware::new(body_limit.clone())),
             Box::new(RateLimitMiddleware::new(
                 self.rate_limit_config.unwrap_or_default(),
-            )),
-            Box::new(CsrfMiddleware::new(
-                self.csrf_config.unwrap_or_default(),
-                Arc::clone(&config),
             )),
             Box::new(CorsMiddleware::new(self.cors_config.unwrap_or_default())),
         ];
@@ -224,6 +223,7 @@ impl<S: AuthSchema> AuthBuilder<S> {
             config,
             plugins: self.plugins,
             middlewares,
+            request_protection,
             body_limit,
             store: store_2,
             session_manager,
@@ -268,8 +268,12 @@ impl<S: AuthSchema> BetterAuth<S> {
                     .map(|value| (name.clone(), value.clone()))
             })
             .collect::<Vec<_>>();
+        let request_url = req.url().cloned();
         let mut req =
             AuthRequest::from_parts(req.method, req.path, req.headers, req.body, req.query);
+        if let Some(url) = request_url {
+            req = req.with_url(url);
+        }
         req.set_query_pairs(query_pairs);
 
         let request_context = RequestHookContext::from_request(&req);
@@ -363,6 +367,20 @@ impl<S: AuthSchema> BetterAuth<S> {
         req: &mut AuthRequest,
         run_after_hooks: &mut bool,
     ) -> AuthResult<AuthResponse> {
+        let base_path = self.config.base_path.trim_end_matches('/');
+        let requested_path = req
+            .path()
+            .strip_prefix(base_path)
+            .filter(|suffix| suffix.starts_with('/'))
+            .unwrap_or_else(|| req.path());
+        let disabled_path = requested_path.trim_end_matches('/');
+        if self.config.is_path_disabled(disabled_path) {
+            let mut response =
+                AuthResponse::new(404).with_header("content-type", "text/plain;charset=utf-8");
+            response.body = b"Not Found".to_vec();
+            return Ok(response);
+        }
+
         // Run before-request middleware chain
         if let Some(response) = middleware::run_before(&self.middlewares, req).await? {
             return Ok(response);
@@ -377,6 +395,7 @@ impl<S: AuthSchema> BetterAuth<S> {
         let stripped_path = if !base_path.is_empty() && base_path != "/" {
             req.path()
                 .strip_prefix(base_path)
+                .filter(|suffix| suffix.starts_with('/'))
                 .unwrap_or_else(|| req.path())
         } else {
             req.path()
@@ -391,9 +410,8 @@ impl<S: AuthSchema> BetterAuth<S> {
             r
         };
 
-        // Check if this path is disabled
-        if self.config.is_path_disabled(internal_req.path()) {
-            return Err(AuthError::not_found("This endpoint has been disabled"));
+        if self.config.advanced.skip_trailing_slashes {
+            internal_req.path = internal_req.path.trim_end_matches('/').to_owned();
         }
 
         // The pinned router resolves the endpoint before dispatching hooks.
@@ -405,21 +423,30 @@ impl<S: AuthSchema> BetterAuth<S> {
                 core_paths::OK | core_paths::ERROR | core_paths::OPENAPI_SPEC
             ) | (HttpMethod::Post, core_paths::UPDATE_USER)
         );
-        let plugin_route = self
-            .plugins
-            .iter()
-            .flat_map(|plugin| plugin.routes())
-            .find(|route| {
-                route.method == internal_req.method
-                    && route_path_matches(&route.path, internal_req.path())
-            });
-        if !core_route && plugin_route.is_none() {
+        let plugin_route = self.plugins.iter().find_map(|plugin| {
+            plugin
+                .routes()
+                .into_iter()
+                .find(|route| {
+                    route.method == internal_req.method
+                        && route_path_matches(&route.path, internal_req.path())
+                })
+                .map(|route| (plugin, route))
+        });
+        if (!core_route && plugin_route.is_none()) || internal_req.path().contains("//") {
             return Ok(AuthResponse::new(404));
         }
+        let allowed_media_types = plugin_route.as_ref().map_or_else(
+            || vec!["application/json"],
+            |(plugin, route)| plugin.allowed_media_types(route),
+        );
+        parse_dispatch_body(&internal_req, &allowed_media_types).await?;
+        self.request_protection
+            .check_request_origin(&internal_req)?;
 
         let context_path = plugin_route
             .as_ref()
-            .map(|route| route.context_path.as_deref().unwrap_or(&route.path))
+            .map(|(_, route)| route.context_path.as_deref().unwrap_or(&route.path))
             .unwrap_or_else(|| internal_req.path())
             .to_owned();
         let params = context_path
@@ -584,7 +611,9 @@ impl<S: AuthSchema> BetterAuth<S> {
                 let error_description = req.query.get("error_description").map(String::as_str);
                 let html =
                     core_paths::error_page_html_with_description(&error_code, error_description);
-                Ok(Some(AuthResponse::html(200, html)))
+                Ok(Some(
+                    AuthResponse::html(200, html).with_header("content-type", "text/html"),
+                ))
             }
             (HttpMethod::Get, core_paths::OPENAPI_SPEC) => {
                 let spec = self.openapi_spec();
@@ -767,6 +796,147 @@ fn username_error_response(status: u16, code: &str, message: &str) -> AuthResult
         },
     )
     .map_err(AuthError::from)
+}
+
+async fn parse_dispatch_body(req: &AuthRequest, allowed: &[&str]) -> AuthResult<()> {
+    let Some(body) = &req.body else {
+        return Ok(());
+    };
+    let content_type = req
+        .headers
+        .iter()
+        .find_map(|(key, value)| {
+            key.eq_ignore_ascii_case("content-type")
+                .then_some(value.as_str())
+        })
+        .unwrap_or("");
+    let lower = content_type.to_ascii_lowercase();
+    let base = lower.split(';').next().unwrap_or("").trim();
+    if !allowed.is_empty()
+        && !allowed
+            .iter()
+            .any(|allowed| base.contains(allowed.to_ascii_lowercase().trim()))
+    {
+        let message = if content_type.is_empty() {
+            format!(
+                "Content-Type is required. Allowed types: {}",
+                allowed.join(", ")
+            )
+        } else {
+            format!(
+                "Content-Type \"{content_type}\" is not allowed. Allowed types: {}",
+                allowed.join(", ")
+            )
+        };
+        return Err(AuthError::Api {
+            status: 415,
+            code: Some("UNSUPPORTED_MEDIA_TYPE".into()),
+            message,
+        });
+    }
+    let json_media = lower.strip_prefix("application/").is_some_and(|suffix| {
+        suffix.starts_with("json")
+            || suffix.match_indices("+json").any(|(index, _)| {
+                suffix[..index].bytes().all(|character| {
+                    character.is_ascii_lowercase()
+                        || character.is_ascii_digit()
+                        || matches!(character, b'.' | b'+' | b'-')
+                })
+            })
+    });
+    let parsed = if json_media {
+        Some(
+            better_auth_core::utils::json::from_slice::<better_auth_core::utils::json::JsValue>(
+                body,
+            )
+            .map_err(|_| AuthError::Upstream {
+                status: 400,
+                code: "BAD_REQUEST",
+                message: "Invalid JSON in request body",
+            })?,
+        )
+    } else if lower.contains("application/x-www-form-urlencoded") {
+        Some(better_auth_core::utils::json::JsValue::Object(
+            url::form_urlencoded::parse(body)
+                .map(|(key, value)| {
+                    (
+                        key.into_owned(),
+                        better_auth_core::utils::json::JsValue::String(value.into_owned()),
+                    )
+                })
+                .collect(),
+        ))
+    } else if lower.contains("multipart/form-data") {
+        // Fetch parses form-data even when additional media text follows its subtype.
+        // Keep the original header; normalize only the parser's MIME prefix.
+        let parameters = content_type.split_once(';').map_or("", |(_, value)| value);
+        let boundary = multer::parse_boundary(format!("multipart/form-data;{parameters}"))
+            .map_err(|error| {
+                AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
+            })?;
+        let mut multipart = multer::Multipart::with_reader(body.as_slice(), boundary);
+        let mut fields = better_auth_core::utils::json::JsValue::Object(Default::default());
+        let mut files = better_auth_core::types::MultipartFiles::default();
+        while let Some(field) = multipart.next_field().await.map_err(|error| {
+            AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
+        })? {
+            let Some(name) = field.name().map(str::to_owned) else {
+                continue;
+            };
+            let filename = field.file_name().map(str::to_owned);
+            let content_type = field.content_type().map(ToString::to_string);
+            let bytes = field.bytes().await.map_err(|error| {
+                AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
+            })?;
+            let value = if let Some(filename) = filename {
+                drop(files.0.insert(
+                    name.clone(),
+                    better_auth_core::types::MultipartFile {
+                        filename,
+                        content_type,
+                        bytes: bytes.to_vec(),
+                    },
+                ));
+                better_auth_core::utils::json::JsValue::Object(Default::default())
+            } else {
+                drop(files.0.remove(&name));
+                better_auth_core::utils::json::JsValue::String(
+                    String::from_utf8_lossy(&bytes).into_owned(),
+                )
+            };
+            if let better_auth_core::utils::json::JsValue::Object(object) = &mut fields {
+                drop(object.insert(name, value));
+            }
+        }
+        req.extensions().insert(files);
+        Some(fields)
+    } else {
+        None
+    };
+    let decoded = if let Some(parsed) = parsed {
+        better_auth_core::types::ParsedRequestBody::Value(parsed)
+    } else if lower.contains("text/plain") {
+        let text = String::from_utf8_lossy(body);
+        better_auth_core::types::ParsedRequestBody::Value(
+            better_auth_core::utils::json::JsValue::String(
+                text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned(),
+            ),
+        )
+    } else {
+        let kind = if lower.contains("application/octet-stream") {
+            "ArrayBuffer"
+        } else if lower.contains("application/pdf")
+            || lower.contains("image/")
+            || lower.contains("video/")
+        {
+            "Blob"
+        } else {
+            "ReadableStream"
+        };
+        better_auth_core::types::ParsedRequestBody::Opaque(kind)
+    };
+    req.extensions().insert(decoded);
+    Ok(())
 }
 
 fn route_path_matches(pattern: &str, path: &str) -> bool {

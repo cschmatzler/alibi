@@ -7,7 +7,7 @@ use axum::{
     http::StatusCode,
     http::request::Parts,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::any,
 };
 #[cfg(feature = "axum")]
 use better_auth_core::AuthSession;
@@ -120,78 +120,24 @@ impl<T: AuthSchema> AxumIntegration for Arc<BetterAuth<T>> {
         Self: FromRef<S>,
         S: Clone + Send + Sync + 'static,
     {
-        // NOTE: disabled_paths is checked here at route-registration time so
-        // that disabled routes are never mounted in Axum at all.  The core
-        // handler (`handle_request_inner`) performs the same check at
-        // request-dispatch time for non-Axum integrations (direct
-        // `handle_request` callers).  The duplication is intentional.
-        let disabled_paths = self.config().disabled_paths.clone();
-
+        // Dispatch owns literal disabled paths, method matching and trailing-slash
+        // policy. Axum's method router otherwise adds Allow/HEAD behavior that
+        // the pinned auth router does not expose.
         let supervisor = AxumDispatchSupervisor::default();
-        let mut router = Router::new();
-
-        // Add status endpoints
-        if !disabled_paths.contains(&core_paths::OK.to_owned()) {
-            router = router.route(
-                core_paths::OK,
-                get(create_plugin_handler::<T>(supervisor.clone())),
-            );
-        }
-        if !disabled_paths.contains(&core_paths::ERROR.to_owned()) {
-            router = router.route(
-                core_paths::ERROR,
-                get(create_plugin_handler::<T>(supervisor.clone())),
-            );
-        }
-
-        // Add OpenAPI spec endpoint
-        if !disabled_paths.contains(&core_paths::OPENAPI_SPEC.to_owned()) {
-            router = router.route(
-                core_paths::OPENAPI_SPEC,
-                get(create_plugin_handler::<T>(supervisor.clone())),
-            );
-        }
-
-        // Add core user management routes
-        if !disabled_paths.contains(&core_paths::UPDATE_USER.to_owned()) {
-            router = router.route(
-                core_paths::UPDATE_USER,
-                post(create_plugin_handler::<T>(supervisor.clone())),
-            );
-        }
-        // Register plugin routes
+        let mut paths = std::collections::HashSet::from([
+            core_paths::OK.to_owned(),
+            core_paths::ERROR.to_owned(),
+            core_paths::OPENAPI_SPEC.to_owned(),
+            core_paths::UPDATE_USER.to_owned(),
+        ]);
         for plugin in self.plugins() {
-            for route in plugin.routes() {
-                // Skip disabled paths
-                if disabled_paths.contains(&route.path) {
-                    continue;
-                }
-
-                let handler_fn = create_plugin_handler::<T>(supervisor.clone());
-                match route.method {
-                    HttpMethod::Get => {
-                        router = router.route(&route.path, get(handler_fn.clone()));
-                    }
-                    HttpMethod::Post => {
-                        router = router.route(&route.path, post(handler_fn.clone()));
-                    }
-                    HttpMethod::Put => {
-                        router = router.route(&route.path, axum::routing::put(handler_fn.clone()));
-                    }
-                    HttpMethod::Delete => {
-                        router =
-                            router.route(&route.path, axum::routing::delete(handler_fn.clone()));
-                    }
-                    HttpMethod::Patch => {
-                        router =
-                            router.route(&route.path, axum::routing::patch(handler_fn.clone()));
-                    }
-                    HttpMethod::Options | HttpMethod::Head => {} // Skip unsupported methods
-                }
-            }
+            paths.extend(plugin.routes().into_iter().map(|route| route.path));
         }
-
-        router.method_not_allowed_fallback(|| async { StatusCode::NOT_FOUND })
+        let mut router = Router::new();
+        for path in paths {
+            router = router.route(&path, any(create_plugin_handler::<T>(supervisor.clone())));
+        }
+        router.fallback(create_plugin_handler::<T>(supervisor))
     }
 }
 
@@ -349,7 +295,13 @@ fn create_plugin_handler<T: AuthSchema>(
     move |State(auth): State<Arc<BetterAuth<T>>>, req: Request| {
         let supervisor = supervisor.clone();
         Box::pin(async move {
-            match convert_axum_request(req, max_body_bytes(auth.body_limit())).await {
+            match convert_axum_request(
+                req,
+                max_body_bytes(auth.body_limit()),
+                &auth.config().base_url,
+            )
+            .await
+            {
                 Ok(auth_req) => supervisor.dispatch(auth, auth_req).await,
                 Err(err) => err.into_response(),
             }
@@ -388,6 +340,7 @@ fn is_body_length_limit_error(err: &axum::Error) -> bool {
 async fn convert_axum_request(
     req: Request,
     max_body_bytes: usize,
+    base_url: &str,
 ) -> Result<AuthRequest, AuthError> {
     use std::collections::HashMap;
 
@@ -416,6 +369,29 @@ async fn convert_axum_request(
             drop(headers.insert(name.to_string(), value_str.to_owned()));
         }
     }
+
+    // HTTP origin comes from the received URI/Host. The configured deployment
+    // scheme supplies relative HTTP URIs; forwarding headers do not choose it.
+    let deployment = url::Url::parse(base_url).ok();
+    let scheme = parts
+        .uri
+        .scheme_str()
+        .unwrap_or_else(|| deployment.as_ref().map_or("http", url::Url::scheme));
+    let authority = parts
+        .uri
+        .authority()
+        .map(|value| value.as_str())
+        .or_else(|| headers.get("host").map(String::as_str));
+    let request_url = authority.and_then(|authority| {
+        url::Url::parse(&format!(
+            "{scheme}://{authority}{}",
+            parts
+                .uri
+                .path_and_query()
+                .map_or("/", |value| value.as_str())
+        ))
+        .ok()
+    });
 
     // Get path
     let path = parts.uri.path().to_owned();
@@ -469,6 +445,9 @@ async fn convert_axum_request(
 
     let mut request = AuthRequest::from_parts(method, path, headers, body_bytes, HashMap::new());
     request.set_query_pairs(query_pairs);
+    if let Some(url) = request_url {
+        request = request.with_url(url);
+    }
     Ok(request)
 }
 

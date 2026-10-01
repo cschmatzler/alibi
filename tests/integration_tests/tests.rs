@@ -90,6 +90,8 @@ async fn test_revoke_session_integration() {
         "token": session2.token
     });
 
+    drop(headers.insert("content-type".to_owned(), "application/json".to_owned()));
+
     let request = AuthRequest::from_parts(
         better_auth::prelude::HttpMethod::Post,
         "/revoke-session".to_owned(),
@@ -348,6 +350,8 @@ async fn test_get_session_post_requires_defer_session_refresh() {
     );
     drop(headers.insert("origin".to_owned(), "http://localhost:3000".to_owned()));
 
+    drop(headers.insert("content-type".to_owned(), "application/json".to_owned()));
+
     let request = AuthRequest::from_parts(
         better_auth::prelude::HttpMethod::Post,
         "/get-session".to_owned(),
@@ -378,6 +382,8 @@ async fn test_delete_user_post_method() {
         test_session_cookie(&session_token, &auth),
     );
     drop(headers.insert("origin".to_owned(), "http://localhost:3000".to_owned()));
+
+    drop(headers.insert("content-type".to_owned(), "application/json".to_owned()));
 
     let request = AuthRequest::from_parts(
         better_auth::prelude::HttpMethod::Post,
@@ -542,6 +548,8 @@ async fn test_revoke_other_sessions_integration() {
         test_session_cookie(&session_token1, &auth),
     );
     drop(headers.insert("origin".to_owned(), "http://localhost:3000".to_owned()));
+
+    drop(headers.insert("content-type".to_owned(), "application/json".to_owned()));
 
     let request = AuthRequest::from_parts(
         better_auth::prelude::HttpMethod::Post,

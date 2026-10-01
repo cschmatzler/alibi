@@ -90,6 +90,14 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
         Ok(())
     }
 
+    fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
+        if route.path == "/callback/{provider}" {
+            vec!["application/x-www-form-urlencoded", "application/json"]
+        } else {
+            vec!["application/json"]
+        }
+    }
+
     async fn on_request(
         &self,
         req: &AuthRequest,

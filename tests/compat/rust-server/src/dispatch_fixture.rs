@@ -23,7 +23,18 @@ impl AuthPlugin<TestSchema> for ApplicationObserver {
         "dispatch-application"
     }
     fn routes(&self) -> Vec<AuthRoute> {
-        vec![AuthRoute::get("/owned/{id}", "owned")]
+        vec![
+            AuthRoute::get("/owned/{id}", "owned"),
+            AuthRoute::post("/sign-in/child", "child"),
+            AuthRoute::post("/sign-in-peer", "peer"),
+        ]
+    }
+    fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
+        if route.method == better_auth_core::HttpMethod::Post {
+            vec![" Application/JSON "]
+        } else {
+            vec!["application/json"]
+        }
     }
     async fn before_request(
         &self,
@@ -46,6 +57,12 @@ impl AuthPlugin<TestSchema> for ApplicationObserver {
         req: &AuthRequest,
         _: &AuthContext<TestSchema>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if matches!(req.path(), "/sign-in/child" | "/sign-in-peer") {
+            return Ok(Some(AuthResponse::json(
+                200,
+                &json!({"payload": req.body_as_json::<Value>()?}),
+            )?));
+        }
         if req.path().starts_with("/owned/") {
             return Ok(Some(AuthResponse::json(
                 200,
@@ -82,6 +99,10 @@ pub(super) async fn router(
         }
         if mode == "origin-off-explicit-csrf" {
             configured = configured.disable_csrf_check(false);
+        }
+        configured.advanced.skip_trailing_slashes = mode == "trailing";
+        if mode == "origin-path" {
+            configured.advanced.disable_origin_check_paths = vec!["/sign-in/".into()];
         }
         configured.disabled_paths = match mode {
             "disabled-email" => vec!["/sign-in/email".into()],

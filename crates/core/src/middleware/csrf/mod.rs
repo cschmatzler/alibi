@@ -111,7 +111,9 @@ impl CsrfMiddleware {
     }
 
     fn validate_origin(&self, req: &AuthRequest, force_validate: bool) -> Result<(), AuthError> {
-        if self.auth_config.advanced.disable_csrf_check {
+        if self.auth_config.advanced.disable_csrf_check == Some(true)
+            || self.auth_config.origin_check_disabled_for(req.path())
+        {
             return Ok(());
         }
 
@@ -119,9 +121,17 @@ impl CsrfMiddleware {
             return Ok(());
         }
 
-        let origin = Self::header(req, "origin")
-            .map(ToOwned::to_owned)
-            .or_else(|| Self::header(req, "referer").and_then(extract_origin))
+        let inferred = (Self::header(req, "origin") == Some("null")
+            && Self::header(req, "sec-fetch-site") == Some("same-origin"))
+        .then(|| req.url().and_then(|url| extract_origin(url.as_str())))
+        .flatten();
+        let origin = inferred
+            .or_else(|| {
+                Self::header(req, "origin")
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned)
+                    .or_else(|| Self::header(req, "referer").and_then(extract_origin))
+            })
             .filter(|value| value != "null")
             .ok_or_else(|| AuthError::forbidden(MISSING_OR_NULL_ORIGIN))?;
 
@@ -133,7 +143,10 @@ impl CsrfMiddleware {
     }
 
     fn validate_form_csrf(&self, req: &AuthRequest) -> Result<(), AuthError> {
-        if self.auth_config.advanced.disable_csrf_check {
+        if self.auth_config.advanced.disable_csrf_check == Some(true)
+            || self.auth_config.advanced.disable_origin_check
+                && self.auth_config.advanced.disable_csrf_check.is_none()
+        {
             return Ok(());
         }
 
@@ -157,11 +170,16 @@ impl CsrfMiddleware {
             return self.validate_origin(req, true);
         }
 
+        if Self::header(req, "origin").is_some_and(|value| !value.is_empty())
+            || Self::header(req, "referer").is_some_and(|value| !value.is_empty())
+        {
+            return self.validate_origin(req, true);
+        }
         Ok(())
     }
 
     fn validate_redirect_targets(&self, req: &AuthRequest) -> Result<(), AuthError> {
-        if self.auth_config.advanced.disable_origin_check {
+        if self.auth_config.origin_check_disabled_for(req.path()) {
             return Ok(());
         }
 
@@ -251,6 +269,32 @@ impl CsrfMiddleware {
 
     fn reject(error: AuthError) -> AuthResponse {
         error.to_auth_response()
+    }
+
+    /// Router protection after route/body resolution and before application hooks.
+    ///
+    /// # Errors
+    /// Rejects untrusted request origins and redirect targets.
+    pub fn check_request_origin(&self, req: &AuthRequest) -> AuthResult<()> {
+        if !self.config.enabled || !Self::is_state_changing(req.method()) {
+            return Ok(());
+        }
+        self.validate_origin(req, false)?;
+        self.validate_redirect_targets(req)
+    }
+
+    /// Endpoint-local first-login protection, after application before hooks.
+    ///
+    /// # Errors
+    /// Rejects cross-site navigation or untrusted first-login origins.
+    pub fn check_form_origin(&self, req: &AuthRequest) -> AuthResult<()> {
+        if self.config.enabled
+            && Self::is_state_changing(req.method())
+            && Self::is_form_csrf_path(self.normalized_path(req.path()))
+        {
+            self.validate_form_csrf(req)?;
+        }
+        Ok(())
     }
 }
 
