@@ -313,12 +313,15 @@ async fn convert_axum_request(
     let path = parts.uri.path().to_string();
 
     // Convert query parameters
-    let mut query = HashMap::new();
-    if let Some(query_str) = parts.uri.query() {
-        for (key, value) in url::form_urlencoded::parse(query_str.as_bytes()) {
-            let _ = query.insert(key.to_string(), value.to_string());
-        }
-    }
+    let query_pairs = parts
+        .uri
+        .query()
+        .map(|query| {
+            url::form_urlencoded::parse(query.as_bytes())
+                .map(|(key, value)| (key.into_owned(), value.into_owned()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     // Bound the body read at the caller-configured limit. `BodyLimitMiddleware`
     // runs on the already-buffered `AuthRequest` and only sees `Content-Length`,
@@ -356,9 +359,9 @@ async fn convert_axum_request(
         }
     };
 
-    Ok(AuthRequest::from_parts(
-        method, path, headers, body_bytes, query,
-    ))
+    let mut request = AuthRequest::from_parts(method, path, headers, body_bytes, HashMap::new());
+    request.set_query_pairs(query_pairs);
+    Ok(request)
 }
 
 #[cfg(feature = "axum")]

@@ -40,6 +40,7 @@ pub struct AuthRequest {
     pub headers: HashMap<String, String>,
     pub body: Option<Vec<u8>>,
     pub query: HashMap<String, String>,
+    query_values: HashMap<String, Vec<String>>,
     /// Session authenticated by a trusted plugin hook for the current request.
     pub(crate) virtual_session: Option<crate::wire::SessionView>,
     /// Headers emitted by trusted nested handlers during this dispatch.
@@ -373,6 +374,7 @@ impl AuthRequest {
             headers: HashMap::new(),
             body: None,
             query: HashMap::new(),
+            query_values: HashMap::new(),
             virtual_session: None,
             response_headers: Arc::new(Mutex::new(Headers::new())),
             session_hook_snapshot: Arc::new(Mutex::new(None)),
@@ -395,9 +397,39 @@ impl AuthRequest {
             headers,
             body,
             query,
+            query_values: HashMap::new(),
             virtual_session: None,
             response_headers: Arc::new(Mutex::new(Headers::new())),
             session_hook_snapshot: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Replace query parameters with decoded pairs, preserving repeated values.
+    /// The public `query` map retains the last value for existing integrations.
+    pub fn set_query_pairs<I, K, V>(&mut self, pairs: I)
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: Into<String>,
+        V: Into<String>,
+    {
+        self.query.clear();
+        self.query_values.clear();
+        for (key, value) in pairs {
+            let key = key.into();
+            let value = value.into();
+            let _ = self.query.insert(key.clone(), value.clone());
+            self.query_values.entry(key).or_default().push(value);
+        }
+    }
+
+    /// Values for a decoded query name, in their original per-name order.
+    /// A direct update of the legacy map replaces the captured values when its
+    /// last value changes; removing a name removes it from this view as well.
+    pub fn query_values(&self, name: &str) -> Option<&[String]> {
+        let current = self.query.get(name)?;
+        match self.query_values.get(name) {
+            Some(values) if values.last() == Some(current) => Some(values),
+            _ => Some(std::slice::from_ref(current)),
         }
     }
 
