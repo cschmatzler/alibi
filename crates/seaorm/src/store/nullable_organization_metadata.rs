@@ -1,6 +1,7 @@
 //! Preserve SQL NULL organization metadata in fresh and installed schemas.
 
 use super::nullable_user_flags::sql_tokens;
+use sea_orm::sqlx::AssertSqlSafe;
 use sea_orm::sqlx::{Connection, Row, SqliteConnection};
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseExecutor};
 use sea_orm_migration::prelude::*;
@@ -101,15 +102,22 @@ async fn rebuild_sqlite_organization(manager: &SchemaManager<'_>) -> Result<(), 
         .await
         .map_err(sqlx_error)?;
     let result = rebuild_organization_transaction(&mut connection).await;
-    let _ignored_map_err_3 = sea_orm::sqlx::query(&format!("PRAGMA foreign_keys = {foreign_keys}"))
-        .execute(&mut *connection)
-        .await
-        .map_err(sqlx_error)?;
-    let _ignored_map_err_4 =
-        sea_orm::sqlx::query(&format!("PRAGMA legacy_alter_table = {legacy_alter_table}"))
-            .execute(&mut *connection)
-            .await
-            .map_err(sqlx_error)?;
+    let _ignored_map_err_3 = sea_orm::sqlx::query(if foreign_keys == 0 {
+        "PRAGMA foreign_keys = OFF"
+    } else {
+        "PRAGMA foreign_keys = ON"
+    })
+    .execute(&mut *connection)
+    .await
+    .map_err(sqlx_error)?;
+    let _ignored_map_err_4 = sea_orm::sqlx::query(if legacy_alter_table == 0 {
+        "PRAGMA legacy_alter_table = OFF"
+    } else {
+        "PRAGMA legacy_alter_table = ON"
+    })
+    .execute(&mut *connection)
+    .await
+    .map_err(sqlx_error)?;
     let restored: i64 = sea_orm::sqlx::query_scalar("PRAGMA foreign_keys")
         .fetch_one(&mut *connection)
         .await
@@ -198,13 +206,15 @@ async fn rebuild_organization_transaction(connection: &mut SqliteConnection) -> 
                 copied_columns.insert(0, quote_identifier(alias));
         }
         let copied_columns = copied_columns.join(", ");
-        let _ignored_map_err_5 = sea_orm::sqlx::query(&rewritten)
+        // SQL definitions come from the installed SQLite schema, not row values.
+        // Copied column identifiers escape double quotes; table names are fixed migration literals.
+        let _ignored_map_err_5 = sea_orm::sqlx::query(AssertSqlSafe(rewritten))
             .execute(&mut *transaction)
             .await
             .map_err(sqlx_error)?;
-        let _ignored_map_err_6 = sea_orm::sqlx::query(&format!(
+        let _ignored_map_err_6 = sea_orm::sqlx::query(AssertSqlSafe(format!(
             "INSERT INTO \"organization__nullable_metadata\" ({copied_columns}) SELECT {copied_columns} FROM \"organization\""
-        ))
+        )))
         .execute(&mut *transaction)
         .await
         .map_err(sqlx_error)?;
@@ -236,8 +246,9 @@ async fn rebuild_organization_transaction(connection: &mut SqliteConnection) -> 
                 .map_err(sqlx_error)?;
             }
         }
+        // Replay only index/trigger DDL read from sqlite_schema above.
         for sql_2 in statements {
-            let _ignored_map_err_10 = sea_orm::sqlx::query(&sql_2)
+            let _ignored_map_err_10 = sea_orm::sqlx::query(AssertSqlSafe(sql_2))
                 .execute(&mut *transaction)
                 .await
                 .map_err(sqlx_error)?;

@@ -483,7 +483,7 @@ pub(super) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                                 "DELETE FROM organization WHERE id=?",
                             ).bind(&organization_id).execute(&mut *connection).await;
                             let _ = better_auth_seaorm::sea_orm::sqlx::query(
-                                &format!("PRAGMA foreign_keys={enabled}"),
+                                if enabled == 0 { "PRAGMA foreign_keys=OFF" } else { "PRAGMA foreign_keys=ON" },
                             ).execute(&mut *connection).await
                                 .map_err(|error| AuthError::internal(error.to_string()))?;
                             connection.return_to_pool().await;

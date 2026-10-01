@@ -5,6 +5,7 @@
 //! protection for every supported auth table.
 
 use super::nullable_user_flags::sql_tokens;
+use sea_orm::sqlx::AssertSqlSafe;
 use sea_orm::sqlx::{Connection, Row, SqliteConnection};
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseExecutor, Statement};
 use sea_orm_migration::prelude::*;
@@ -160,15 +161,22 @@ async fn rebuild_sqlite_references(
         .await
         .map_err(sqlx_error)?;
     let result = rebuild_reference_transaction(&mut connection, targets).await;
-    let _ignored_map_err_3 = sea_orm::sqlx::query(&format!("PRAGMA foreign_keys = {foreign_keys}"))
-        .execute(&mut *connection)
-        .await
-        .map_err(sqlx_error)?;
-    let _ignored_map_err_4 =
-        sea_orm::sqlx::query(&format!("PRAGMA legacy_alter_table = {legacy_alter_table}"))
-            .execute(&mut *connection)
-            .await
-            .map_err(sqlx_error)?;
+    let _ignored_map_err_3 = sea_orm::sqlx::query(if foreign_keys == 0 {
+        "PRAGMA foreign_keys = OFF"
+    } else {
+        "PRAGMA foreign_keys = ON"
+    })
+    .execute(&mut *connection)
+    .await
+    .map_err(sqlx_error)?;
+    let _ignored_map_err_4 = sea_orm::sqlx::query(if legacy_alter_table == 0 {
+        "PRAGMA legacy_alter_table = OFF"
+    } else {
+        "PRAGMA legacy_alter_table = ON"
+    })
+    .execute(&mut *connection)
+    .await
+    .map_err(sqlx_error)?;
     let restored: i64 = sea_orm::sqlx::query_scalar("PRAGMA foreign_keys")
         .fetch_one(&mut *connection)
         .await
@@ -222,17 +230,20 @@ async fn rebuild_reference_transaction(
         }
         if removed != 1 { return Err(DbErr::Migration("Unable to safely remove the installed auth user constraint".to_owned())); }
         let rewritten = format!("CREATE TABLE \"{temporary}\" ({}){}", kept.join(","), &sql[body.end..]);
-        let columns = sea_orm::sqlx::query(&format!("PRAGMA table_xinfo(\"{table}\")")).fetch_all(&mut *transaction).await.map_err(sqlx_error)?;
+        let columns = sea_orm::sqlx::query("SELECT * FROM pragma_table_xinfo(?)").bind(table).fetch_all(&mut *transaction).await.map_err(sqlx_error)?;
         let mut copied = columns.iter().filter(|row| row.get::<i64,_>("hidden") == 0).map(|row| format!("\"{}\"",row.get::<String,_>("name").replace('\"',"\"\""))).collect::<Vec<_>>();
         let suffix = &sql[body.end..];
         let without_rowid = sql_tokens(suffix)?.windows(2).any(|pair| matches!(pair, [without,rowid] if suffix[without.clone()].eq_ignore_ascii_case("WITHOUT") && suffix[rowid.clone()].eq_ignore_ascii_case("ROWID")));
         if !without_rowid && let Some(alias) = ["rowid","_rowid_","oid"].into_iter().find(|alias| !columns.iter().any(|row| row.get::<String,_>("name").eq_ignore_ascii_case(alias))) { copied.insert(0,format!("\"{alias}\"")); }
         let copied = copied.join(",");
-        let _ignored_map_err_5 = sea_orm::sqlx::query(&rewritten).execute(&mut *transaction).await.map_err(sqlx_error)?;
-        let _ignored_map_err_6 = sea_orm::sqlx::query(&format!("INSERT INTO \"{temporary}\" ({copied}) SELECT {copied} FROM \"{table}\"")).execute(&mut *transaction).await.map_err(sqlx_error)?;
-        let _ignored_map_err_7 = sea_orm::sqlx::query(&format!("DROP TABLE \"{table}\"")).execute(&mut *transaction).await.map_err(sqlx_error)?;
-        let _ignored_map_err_8 = sea_orm::sqlx::query(&format!("ALTER TABLE \"{temporary}\" RENAME TO \"{table}\"")).execute(&mut *transaction).await.map_err(sqlx_error)?;
-        for statement in statements { let _ignored_map_err_9 = sea_orm::sqlx::query(&statement).execute(&mut *transaction).await.map_err(sqlx_error)?; }
+        // SQL definitions come from the installed SQLite schema, not row values.
+        // Copied column identifiers escape double quotes; table names are fixed by AuthReference.
+        let _ignored_map_err_5 = sea_orm::sqlx::query(AssertSqlSafe(rewritten)).execute(&mut *transaction).await.map_err(sqlx_error)?;
+        let _ignored_map_err_6 = sea_orm::sqlx::query(AssertSqlSafe(format!("INSERT INTO \"{temporary}\" ({copied}) SELECT {copied} FROM \"{table}\""))).execute(&mut *transaction).await.map_err(sqlx_error)?;
+        let _ignored_map_err_7 = sea_orm::sqlx::query(AssertSqlSafe(format!("DROP TABLE \"{table}\""))).execute(&mut *transaction).await.map_err(sqlx_error)?;
+        let _ignored_map_err_8 = sea_orm::sqlx::query(AssertSqlSafe(format!("ALTER TABLE \"{temporary}\" RENAME TO \"{table}\""))).execute(&mut *transaction).await.map_err(sqlx_error)?;
+        // Replay installed index/trigger DDL without regenerating application schema.
+        for statement in statements { let _ignored_map_err_9 = sea_orm::sqlx::query(AssertSqlSafe(statement)).execute(&mut *transaction).await.map_err(sqlx_error)?; }
       }
         let violations = sea_orm::sqlx::query("PRAGMA foreign_key_check").fetch_all(&mut *transaction).await.map_err(sqlx_error)?;
         if !violations.is_empty() { return Err(DbErr::Migration(format!("{} migration would invalidate foreign-key relationships",targets.first().map_or("Auth", |target| target.label())))); }
