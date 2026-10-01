@@ -335,10 +335,13 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
         StoredRegistrationVerifier::Source(StoredCoreRegistrationState::CoreRawNone {
             policy,
             ..
-        }) => match super::raw_none::register_raw_none(&registration, &body.response, policy) {
-            Ok(value) => value,
-            Err(_) => return passkey_registration_failure(),
-        },
+        }) => {
+            match super::raw_none::register_raw_none(&registration, &body.response, policy, &origin)
+            {
+                Ok(value) => value,
+                Err(_) => return passkey_registration_failure(),
+            }
+        }
         _ => None,
     };
     let (snapshot, metadata, credential_id) = if let Some(raw) = raw_registration {

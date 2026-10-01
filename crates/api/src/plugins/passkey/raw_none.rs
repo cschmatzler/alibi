@@ -344,6 +344,7 @@ pub(super) fn register_raw_none(
     registration: &RegisterPublicKeyCredential,
     original: &JsValue,
     policy: &RawNonePolicy,
+    verification_origin: &str,
 ) -> Result<Option<RawCredential>, WebauthnError> {
     // Source decodes the first outer CBOR item; outer trailing bytes are legal.
     let attestation_bytes = registration.response.attestation_object.as_ref();
@@ -392,7 +393,7 @@ pub(super) fn register_raw_none(
     if client.get("challenge").and_then(JsValue::as_str) != Some(policy.challenge.as_str()) {
         return Err(WebauthnError::MismatchedChallenge);
     }
-    if client.get("origin").and_then(JsValue::as_str) != Some(policy.origin.as_str()) {
+    if client.get("origin").and_then(JsValue::as_str) != Some(verification_origin) {
         return Err(WebauthnError::InvalidRPOrigin);
     }
     if let Some(binding) = client.get("tokenBinding").filter(|value| truthy(value))

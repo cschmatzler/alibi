@@ -172,3 +172,80 @@ retains original key bytes; that public-key normalization capability remains
 explicitly open. These measured outer-value controls do not claim to close it,
 unmeasured tagged selectors, arbitrary nesting, duplicate credential storage or
 trusted raw-public-key-only mutation. Strict wire comparison remains unchanged.
+
+## Current verification origin follow-up
+
+Independent phone-owner review of frozen `9172910c` found one new raw-branch
+origin mismatch. With plugin origin omitted, published registration derives its
+expected origin from the current HTTP request's Origin header. The raw verifier
+instead checked the generation-time base URL saved in its policy. A trusted
+alternate Origin consequently admitted a mismatching base proof and rejected
+its matching alternate proof. The typed verifier already receives the current
+resolved origin. This follow-up passes that same origin into the private raw
+verifier. Challenge, RP ID, enrollment owner and historical serialized policy
+remain unchanged; the historical origin field remains readable but does not
+replace current configured/request-origin resolution. No global Origin guard,
+parser, challenge operation, callback contract or cookie mapping changes.
+
+Actual fresh published-runtime HTTP probes are retained in
+`/tmp/passkey-raw-none-origin-review.ts` and `.log`: the alternate origin is
+explicitly trusted, base-proof/alternate-header rejects500 with no credential,
+alternate-proof/alternate-header admits200 and writes the actual owner row,
+and base/base admits200. Each reached challenge is consumed. A separate
+`...origin-default-review.ts`/`.log` measures Source's hostname-casing behavior
+under default trust; native global Origin casing semantics are a separate
+boundary and are not repaired or claimed by this factor-local verifier fix.
+
+Two literal profiles in the existing application enrollment fixtures reuse the
+same genuine signed proof, resolver and after-verification callbacks. Both trust
+exactly `http://localhost:49190` in addition to normal base trust; one omits plugin
+origin, and the other explicitly configures its real base URL. No listener or
+fabricated route response is needed at the alternate origin. Main registrations
+and the existing profile behavior are unchanged. Two table-driven primary SDK
+owners distinguish these configuration contracts without changing earlier
+owners: both mismatch directions, legitimate base and alternate admission,
+configured-origin precedence despite an alternate trusted request header,
+real foreign authenticated-owner rejection, original callback proof/context,
+issued cookie/session token ownership, challenge burn/replay and full foreign
+user/account/session preservation.
+
+A private application observer reads actual user-owned passkey SQL rows with
+bound user IDs and physical row order. It retains every common published stock
+passkey column, including creation dates, nullable fields and stored key/ID/
+backup facts. Previous rows and foreign rows must remain byte-value identical
+within each run. Native-only hidden credential/updated-at fields remain outside
+the shared stock schema; the existing native SQLite raw-codec owner independently
+protects the hidden representation. No synthetic admission, adapter replacement,
+opaque proof digest or shared comparison exception is introduced.
+
+Meaningful frozen-production before controls are preserved in
+`/tmp/passkey-raw-origin-sdk-before.log`: actual `9172910c` plus only the
+application fixture scaffold wrongly admits base-proof/alternate-header,
+while the configured-origin control passes. In
+`/tmp/passkey-raw-origin-sdk-before-admission.log`, only the same mode order is
+changed to expose the other defect first: valid alternate-proof/alternate-header
+wrongly rejects500 while its configured control passes. The normal final mode
+order is restored. Source-to-Source passes two owners/740 assertions in
+`/tmp/passkey-raw-origin-source-self-final.log`, and the repaired differential
+passes two/740 in `/tmp/passkey-raw-origin-sdk-final.log`.
+
+An initial new-owner setup incorrectly expected credentialID in the older narrow
+state observer; `/tmp/passkey-raw-origin-source-self.log` preserves that schema
+failure. The dedicated actual common-column observer replaces that assumption.
+A subsequent stale test-name filter selected zero owners in
+`/tmp/passkey-raw-origin-source-self-v2.log`; it is not represented as behavioral
+verification. Final evidence names and counts above come from actual selected
+owners. Existing canonical key/depth/custom transport/duplicate-credential and
+raw-public-key mutation limits above still apply.
+
+Final whole passkey verification passes 39 SDK scenarios/6,450 assertions in
+`/tmp/passkey-raw-origin-family-final.log`; existing native passkey tests pass
+12/12 in `/tmp/passkey-raw-origin-native-final.log`. Client TypeScript and strict
+locked production API-lib and fixture Clippy pass in
+`/tmp/passkey-raw-origin-typecheck-final.log`,
+`/tmp/passkey-raw-origin-production-clippy-final.log` and
+`/tmp/passkey-raw-origin-fixture-clippy-final.log`. Workspace/fixture formatting
+and diff checks pass. The two prior-code before logs remain nonpassing evidence;
+no full canonical gate, lock or inventory edits were made by this owner.
+All focused application processes were stopped; frozen917 and the earlier SDK
+storage/evidence freezes remain unchanged.

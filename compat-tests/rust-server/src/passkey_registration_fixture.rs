@@ -2,6 +2,7 @@
 use crate::TestSchema;
 use async_trait::async_trait;
 use axum::{
+    extract::Query,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
@@ -29,12 +30,16 @@ use better_auth_core::{
 };
 use better_auth_seaorm::{
     hooks::{HookControl, SeaOrmHookContext, SeaOrmHooks},
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
     DatabaseConnection, SeaOrmStore,
 };
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 #[derive(Clone, Default)]
 pub(super) struct Enrollment(Arc<Mutex<Vec<Value>>>);
@@ -240,14 +245,24 @@ pub(super) async fn router(
     let enrollment = Enrollment::default();
     let mut router = Router::new();
     let mut first = None;
-    for name in ["passkey-first", "passkey-first-missing"] {
+    for name in [
+        "passkey-first",
+        "passkey-first-missing",
+        "passkey-first-trusted-origin",
+        "passkey-first-configured-origin",
+    ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let configured = config.clone().base_path(&path);
+        let configured = if name.ends_with("origin") {
+            configured.trusted_origin("http://localhost:49190")
+        } else {
+            configured
+        };
         let registration = PasskeyRegistrationConfig {
             require_session: false,
-            resolve_user: (name == "passkey-first")
+            resolve_user: (name != "passkey-first-missing")
                 .then(|| Arc::new(enrollment.clone()) as Arc<dyn PasskeyUserResolver>),
-            after_verification: (name == "passkey-first").then(|| {
+            after_verification: (name != "passkey-first-missing").then(|| {
                 Arc::new(enrollment.clone()) as Arc<dyn PasskeyRegistrationAfterVerification>
             }),
         };
@@ -260,7 +275,15 @@ pub(super) async fn router(
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new())
                 .plugin(SessionManagementPlugin::new())
-                .plugin(PasskeyPlugin::new().registration(registration))
+                .plugin(
+                    PasskeyPlugin::new()
+                        .origin(if name == "passkey-first-configured-origin" {
+                            config.base_url.clone()
+                        } else {
+                            String::new()
+                        })
+                        .registration(registration),
+                )
                 .build()
                 .await?,
         );
@@ -271,6 +294,19 @@ pub(super) async fn router(
     }
     let auth = first.unwrap();
     let reset = enrollment.clone();
+    let state_database = database.clone();
+    router=router.route("/__test/passkey-registration-state",get(move|Query(query):Query<HashMap<String,String>>|{let database=state_database.clone();async move{
+        let rows=database.query_all_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"SELECT id,name,public_key AS publicKey,user_id AS userId,credential_id AS credentialID,counter,device_type AS deviceType,backed_up AS backedUp,transports,created_at AS createdAt,aaguid FROM passkeys WHERE user_id=? ORDER BY rowid",[query.get("userId").cloned().unwrap_or_default().into()])).await.map_err(|error|AuthError::internal(error.to_string()))?;
+        let mut result=Vec::new();
+        for row in rows {let mut object=serde_json::Map::new();for column in ["id","name","publicKey","userId","credentialID","counter","deviceType","backedUp","transports","createdAt","aaguid"] {
+            let value=match column {
+                "counter"|"backedUp"=>json!(row.try_get::<i64>("",column).map_err(|error|AuthError::internal(error.to_string()))?),
+                "createdAt"=>json!(row.try_get::<chrono::DateTime<Utc>>("",column).map_err(|error|AuthError::internal(error.to_string()))?.to_rfc3339_opts(chrono::SecondsFormat::Millis,true)),
+                _=>json!(row.try_get::<Option<String>>("",column).map_err(|error|AuthError::internal(error.to_string()))?),
+            };let _=object.insert(column.to_owned(),value);
+        }result.push(Value::Object(object));}
+        Ok::<_,AuthError>(Json(json!({"rows":result})))
+    }}));
     router=router.route("/__test/passkey-enrollment",post(move |headers:HeaderMap,Json(body):Json<Issue>| {
         let auth=auth.clone(); async move {
             let outcome:AuthResult<_>=async {

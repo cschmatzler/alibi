@@ -125,13 +125,14 @@ export function passkeyRegistrationFixture(
     },
   });
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
-  for (const name of ["passkey-first", "passkey-first-missing"]) {
+  for (const name of ["passkey-first", "passkey-first-missing", "passkey-first-trusted-origin", "passkey-first-configured-origin"]) {
     const path = `/__test/profiles/${name}/api/auth`;
     profiles.set(
       path,
       betterAuth({
         ...options,
         basePath: path,
+        ...(name.endsWith("origin")?{trustedOrigins:[...(Array.isArray(options.trustedOrigins)?options.trustedOrigins:[]),"http://localhost:49190"]}:{}),
         databaseHooks: {
           session: {
             create: {
@@ -147,7 +148,9 @@ export function passkeyRegistrationFixture(
           },
         },
         plugins: [
-          name === "passkey-first"
+          name === "passkey-first-configured-origin"
+            ? passkey({...configured.options,origin:options.baseURL as string})
+            : name !== "passkey-first-missing"
             ? configured
             : passkey({ registration: { requireSession: false } }),
           username(),
@@ -160,6 +163,11 @@ export function passkeyRegistrationFixture(
     reset() { events.length = 0; },
     async handle(request: Request): Promise<Response | null> {
       const path = new URL(request.url).pathname;
+      if (path === "/__test/passkey-registration-state") {
+        const database=options.database as import("bun:sqlite").Database;
+        const userId=new URL(request.url).searchParams.get("userId")??"";
+        return Response.json({rows:database.query("SELECT * FROM passkey WHERE userId=? ORDER BY rowid").all(userId).map(value=>{const row=value as Record<string,unknown>;return {...row,createdAt:new Date(String(row.createdAt)).toISOString()};})});
+      }
       if (path === "/__test/passkey-registration-events")
         return Response.json({ events: events.splice(0) });
       if (path !== "/__test/passkey-enrollment" || request.method !== "POST")
