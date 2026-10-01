@@ -155,3 +155,22 @@ assertions in `/tmp/org-member-addition-source-self-final.log` and
 `/tmp/org-member-addition-differential-restored-final.log`. The final direct
 public-helper SQLite regression also passes. Temporary negative servers were
 stopped and no mutant remains in the frozen source.
+
+## Coordinator integration and independent review
+
+Frozen a0c0996d was independently read against the pinned runtime by the
+coordinator and phone/storage owner; both reviews are clear within the stated
+boundaries. The retarget case records the actual inserted row before cleanup,
+and a real ignored-patch variant fails that check. Whole family passes
+122 / 10,318, with final Source and restored Rust primary runs each 9 / 1,568.
+All eleven nonbinding feature files remain byte-identical during integration;
+the three shared bindings retain both member addition and OTP delivery.
+
+Because addMember has no public HTTP route, its controlled server calls are
+accounted for here separately. Eighteen additive inventory requirements use the
+nine owners' genuine organization-creation setup success/state as execution
+anchors; the whole differential owner must pass to record them. They do not
+claim that addMember is an organization-creation handler or expose a fabricated
+public route. Each owner's actual helper result, private transport, callbacks
+and persistence assertions remain the direct evidence. The complete following
+530-scenario canonical gate remains pending.
