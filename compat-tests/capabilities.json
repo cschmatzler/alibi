@@ -2119,6 +2119,14 @@
           "two-factor OTP enable uses an authoritative owner, validates method before password verification and succeeds with disabled TOTP without a factor",
           "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries"
         ]
+      },
+      "requiredEvidence": {
+        "success": [
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
+        ],
+        "state": [
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
+        ]
       }
     },
     {
@@ -2140,6 +2148,14 @@
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
           "two-factor passwordless option retains password ownership for mixed social and credential accounts",
           "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations"
+        ]
+      },
+      "requiredEvidence": {
+        "success": [
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
+        ],
+        "state": [
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
         ]
       }
     },
@@ -2169,6 +2185,14 @@
           "two-factor passwordless option retains password ownership for mixed social and credential accounts",
           "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
           "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation"
+        ]
+      },
+      "requiredEvidence": {
+        "success": [
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
+        ],
+        "state": [
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
         ]
       }
     },
@@ -2245,6 +2269,17 @@
           "two-factor pending backup preserves an identical-message application Forbidden after consumption",
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
           "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations"
+        ]
+      },
+      "requiredEvidence": {
+        "success": [
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
+        ],
+        "state": [
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
+        ],
+        "rejection": [
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
         ]
       }
     },
@@ -2346,6 +2381,14 @@
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
           "two-factor passwordless option retains password ownership for mixed social and credential accounts",
           "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation"
+        ]
+      },
+      "requiredEvidence": {
+        "success": [
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
+        ],
+        "state": [
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
         ]
       }
     },

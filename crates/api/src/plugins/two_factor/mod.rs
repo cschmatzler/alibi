@@ -1,5 +1,5 @@
-use aes_gcm::aead::{Aead, KeyInit, OsRng};
-use aes_gcm::{AeadCore, Aes256Gcm, Key, Nonce};
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Key, Nonce};
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
@@ -2036,19 +2036,17 @@ fn derive_encryption_key(secret: &str) -> AuthResult<Key<Aes256Gcm>> {
 }
 
 fn encrypt_value(secret: &str, plaintext: &str) -> AuthResult<String> {
-    let cipher = Aes256Gcm::new(&derive_encryption_key(secret)?);
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-    let ciphertext = cipher
-        .encrypt(&nonce, plaintext.as_bytes())
-        .map_err(|error| {
-            AuthError::internal(format!("Failed to encrypt two-factor data: {}", error))
-        })?;
-    let mut output = nonce.to_vec();
-    output.extend_from_slice(&ciphertext);
-    Ok(URL_SAFE_NO_PAD.encode(output))
+    super::token_crypto::encrypt(plaintext, secret)
 }
 
 fn decrypt_value(secret: &str, encrypted: &str) -> AuthResult<String> {
+    // New factor rows use the pinned runtime's XChaCha/hex encoding. Installed
+    // Rust rows retain an authenticated AES/HKDF reader; legacy writes are gone.
+    super::token_crypto::decrypt(encrypted, secret)
+        .or_else(|_| decrypt_legacy_value(secret, encrypted))
+}
+
+fn decrypt_legacy_value(secret: &str, encrypted: &str) -> AuthResult<String> {
     let cipher = Aes256Gcm::new(&derive_encryption_key(secret)?);
     let bytes = URL_SAFE_NO_PAD.decode(encrypted).map_err(|error| {
         AuthError::internal(format!(
