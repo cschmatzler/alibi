@@ -38,7 +38,7 @@ where
                 .await?
                 .is_cancelled()
             {
-                return Err(cancelled_by_hook("user creation"));
+                return Err(AuthError::UserCreationCancelled);
             }
         }
         if let Some(username) = create_user.username.as_mut() {

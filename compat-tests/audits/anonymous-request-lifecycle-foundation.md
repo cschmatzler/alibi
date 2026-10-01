@@ -17,8 +17,10 @@ extensions are discarded before that hook runs. No response body, request
 claim, or caller-selected user can construct the private session/context types.
 
 The actual common issuer records its original raw `S::User` and `S::Session`.
-Direct email signup records the actual created snapshots after its successful
-transaction. Anonymous issuance retains its original created user even if a
+Direct email signup records the actual created snapshots inside its transaction
+after successful session creation, before commit. A failed transaction cannot
+produce a completed-response consumer because the real session cookie is
+absent. Anonymous issuance retains its original created user even if a
 session lifecycle hook changes the stored user. Anonymous completed-response
 processing uses this original pair only when a real nonempty session cookie is
 present. Sensitive authorization still reads an authoritative stored session;

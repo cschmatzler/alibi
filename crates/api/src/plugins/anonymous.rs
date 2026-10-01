@@ -12,7 +12,7 @@ use rand::distributions::{Alphanumeric, DistString};
 use serde_json::json;
 
 use super::helpers::{
-    apply_default_role, completed_response_session, delete_session_cookie_headers,
+    apply_default_role, completed_response_session, delete_session_cookie_headers, get_cookie,
     issue_user_session, record_completed_session,
 };
 
@@ -111,7 +111,20 @@ impl AnonymousPlugin {
         create.is_anonymous = Some(true);
         create.email_verified = Some(false);
         apply_default_role(ctx, &mut create);
-        let user = ctx.database.create_user(create).await?;
+        let user = ctx
+            .database
+            .create_user(create)
+            .await
+            .map_err(|error| match error {
+                better_auth_core::AuthError::UserCreationCancelled => {
+                    better_auth_core::AuthError::Upstream {
+                        status: 500,
+                        code: "FAILED_TO_CREATE_USER",
+                        message: "Failed to create user",
+                    }
+                }
+                error => error,
+            })?;
         let meta = RequestMeta::from_request(req);
         let issued = issue_user_session(ctx, user.id().as_ref(), meta.ip_address, meta.user_agent)
             .await
@@ -132,13 +145,37 @@ impl AnonymousPlugin {
             200,
             &json!({"token":issued.session.token(),"user":ctx.user_view(&user)}),
         )?;
+        use better_auth_core::utils::cookie_utils::{
+            create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
+            sign_cookie_value, verify_cookie_value,
+        };
+        let preference_name = related_cookie_name(&ctx.config, "dont_remember");
+        let dont_remember = get_cookie(req, &preference_name)
+            .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
+            .is_some_and(|value| !value.is_empty());
         response.headers.append(
             "set-cookie",
-            better_auth_core::utils::cookie_utils::create_session_cookie(
-                issued.session.token(),
+            create_session_cookie_with_max_age(
+                Some(issued.session.token()),
+                if dont_remember {
+                    None
+                } else {
+                    Some(ctx.config.session.expires_in.num_seconds())
+                },
                 &ctx.config,
             ),
         );
+        if dont_remember {
+            response.headers.append(
+                "set-cookie",
+                create_session_like_cookie(
+                    &preference_name,
+                    &sign_cookie_value("true", &ctx.config.secret),
+                    None,
+                    &ctx.config,
+                ),
+            );
+        }
         Ok(response)
     }
 

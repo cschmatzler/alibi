@@ -56,6 +56,7 @@ use tokio::sync::Mutex;
 
 mod admin_banned_message_fixture;
 mod admin_permission_fixture;
+mod anonymous_fixture;
 mod api_key_background_fixture;
 mod api_key_generation_fixture;
 mod api_key_hook_fixture;
@@ -714,6 +715,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         admin_permission_fixture::router(&config, database.clone()).await?;
     let (social_provider_router, social_provider_reset) =
         social_provider_fixture::router(&config, database.clone()).await?;
+    let (anonymous_router, anonymous_reset) =
+        anonymous_fixture::router(&config, database.clone()).await?;
     let session_fields_router = session_fields_fixture::router(&config, database.clone()).await?;
     let api_key_generation_router =
         api_key_generation_fixture::router(&config, database.clone()).await?;
@@ -1133,9 +1136,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let database = database_for_reset.clone();
                 let social_provider_reset = social_provider_reset.clone();
                 let invitation_acceptance_reset = invitation_acceptance_reset.clone();
+                let anonymous_reset = anonymous_reset.clone();
                 async move {
                     social_provider_reset.reset().await;
                     invitation_acceptance_reset.reset().await;
+                    anonymous_reset.reset();
                     siwe_fixture::reset(&siwe_state).await;
                     multiple_session_counter.store(0, std::sync::atomic::Ordering::SeqCst);
                     registration_receipts.reset();
@@ -1735,6 +1740,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nest("/api/auth", auth_router)
         .with_state(auth)
         .merge(social_provider_router)
+        .merge(anonymous_router)
         .merge(membership_router)
         .merge(invitation_acceptance_router)
         .merge(verification_profile_router)
