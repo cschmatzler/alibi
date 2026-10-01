@@ -427,7 +427,9 @@
         "success": [
           "compact cache authenticates the signed token and complete payload while retaining revoked ordinary authority only until explicit bypass",
           "github link social creates an account that listAccounts returns",
-          "social sign-in preserves previously granted account scopes"
+          "social sign-in preserves previously granted account scopes",
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
         ],
         "rejection": [
           "social sign-in preserves previously granted account scopes"
@@ -437,7 +439,9 @@
         ],
         "state": [
           "compact cache authenticates the signed token and complete payload while retaining revoked ordinary authority only until explicit bypass",
-          "social sign-in preserves previously granted account scopes"
+          "social sign-in preserves previously granted account scopes",
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
         ]
       }
     },
@@ -1602,9 +1606,16 @@
       "implemented": true,
       "evidence": {
         "success": "delete user with a fresh session deletes the current account",
-        "rejection": null,
-        "authorization": null,
-        "state": "delete user with a fresh session deletes the current account"
+        "rejection": [
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
+        ],
+        "authorization": [
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
+        ],
+        "state": [
+          "delete user with a fresh session deletes the current account",
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
+        ]
       }
     },
     {
@@ -1854,20 +1865,29 @@
         "rejection": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
           "builtin social link authorization requires a session and retains configured scope additions",
-          "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE"
+          "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner"
         ],
         "authorization": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
           "builtin social link authorization requires a session and retains configured scope additions",
           "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
-          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner"
         ],
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
           "builtin social link authorization requires a session and retains configured scope additions",
           "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
-          "OAuth proxy linking follows the saved authenticated owner without creating any session"
+          "OAuth proxy linking follows the saved authenticated owner without creating any session",
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner"
         ]
       }
     },
@@ -2955,25 +2975,33 @@
           "refresh token returns a fresh token set",
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
-          "apple provider refresh rotates stored credentials and excludes foreign owners"
+          "apple provider refresh rotates stored credentials and excludes foreign owners",
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
         ],
         "rejection": [
           "account token routes reject conflicting and foreign account selectors",
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
           "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
-          "apple provider refresh rotates stored credentials and excludes foreign owners"
+          "apple provider refresh rotates stored credentials and excludes foreign owners",
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
         ],
         "authorization": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
-          "apple provider refresh rotates stored credentials and excludes foreign owners"
+          "apple provider refresh rotates stored credentials and excludes foreign owners",
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
         ],
         "state": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
           "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
-          "apple provider refresh rotates stored credentials and excludes foreign owners"
+          "apple provider refresh rotates stored credentials and excludes foreign owners",
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
         ]
       }
     },
@@ -3122,7 +3150,8 @@
           "last login policy preserves real cookie consent database updates and failed authentication ownership",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
-          "last login negative preserves real cookie consent database updates and failed authentication ownership"
+          "last login negative preserves real cookie consent database updates and failed authentication ownership",
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
         ],
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -3146,7 +3175,8 @@
           "last login policy preserves real cookie consent database updates and failed authentication ownership",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
-          "last login negative preserves real cookie consent database updates and failed authentication ownership"
+          "last login negative preserves real cookie consent database updates and failed authentication ownership",
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
         ],
         "authorization": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -3167,7 +3197,8 @@
           "last login policy preserves real cookie consent database updates and failed authentication ownership",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
-          "last login negative preserves real cookie consent database updates and failed authentication ownership"
+          "last login negative preserves real cookie consent database updates and failed authentication ownership",
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
         ],
         "state": [
           "official client signs in with imported TypeScript scrypt credentials",
@@ -3208,7 +3239,8 @@
           "last login policy preserves real cookie consent database updates and failed authentication ownership",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
-          "last login negative preserves real cookie consent database updates and failed authentication ownership"
+          "last login negative preserves real cookie consent database updates and failed authentication ownership",
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
         ]
       }
     },
@@ -3337,7 +3369,10 @@
           "apple JWKS rotation is observed on each signed token admission",
           "apple signed ID token rejects blank-subject without writes",
           "apple explicit empty client array rejects empty token audience without writes",
-          "Google default genuine cryptographic and claim negatives never mutate any principal"
+          "Google default genuine cryptographic and claim negatives never mutate any principal",
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner"
         ],
         "authorization": [
           "social sign-in rejects invalid callbackURL",
@@ -3368,7 +3403,10 @@
           "apple signed ID token js-trim profile and ownership",
           "apple signed ID token rejects blank-subject without writes",
           "apple explicit empty client array rejects empty token audience without writes",
-          "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields"
+          "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner"
         ],
         "state": [
           "builtin social authorization retains ordered default configured and requested scopes",
@@ -3422,7 +3460,10 @@
           "apple signed ID token rejects blank-subject without writes",
           "apple explicit empty client array rejects empty token audience without writes",
           "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
-          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots"
+          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner"
         ]
       }
     },
@@ -4238,10 +4279,27 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "github unlink account removes the linked github account",
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": [
+          "github unlink account removes the linked github account",
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
+        ],
+        "rejection": [
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
+        ],
+        "authorization": [
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
+        ],
+        "state": [
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
+        ]
       }
     },
     {

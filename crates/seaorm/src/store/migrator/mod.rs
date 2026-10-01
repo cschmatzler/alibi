@@ -32,6 +32,7 @@ impl MigratorTrait for AuthMigrator {
             Box::new(super::nullable_organization_metadata::NullableOrganizationMetadata),
             Box::new(super::organization_reference::DetachOrganizationReferences),
             Box::new(super::member_pair_multiplicity::MemberPairMultiplicity),
+            Box::new(super::account_key_multiplicity::AccountKeyMultiplicity),
         ]
     }
 

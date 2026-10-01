@@ -9,8 +9,12 @@ use axum::{
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::oauth::OAuthProvider;
-use better_auth::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
+use better_auth::plugins::{
+    AccountManagementPlugin, EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin,
+    UserManagementPlugin,
+};
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
+use better_auth_core::{CreateAccount, store::AccountStore};
 use better_auth_seaorm::sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set,
 };
@@ -149,12 +153,99 @@ pub(super) async fn router(
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(SessionManagementPlugin::new())
+                .plugin(AccountManagementPlugin::new())
+                .plugin(UserManagementPlugin::new().delete_user_enabled(true))
                 .plugin(OAuthPlugin::new().add_provider("gitlab", provider))
                 .build()
                 .await?,
         );
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
+    let credential_db = database.clone();
+    router = router.route(
+        "/__test/social-provider/clear-credential-password",
+        post(move |Json(body): Json<Value>| {
+            let db = credential_db.clone();
+            async move {
+                let id = body
+                    .get("accountId")
+                    .and_then(Value::as_str)
+                    .ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+                let row = account::Entity::find_by_id(id)
+                    .one(&db)
+                    .await
+                    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?
+                    .ok_or(axum::http::StatusCode::NOT_FOUND)?;
+                let mut active = row.into_active_model();
+                active.password = Set(None);
+                active.updated_at = Set(Utc::now());
+                drop(
+                    active
+                        .update(&db)
+                        .await
+                        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?,
+                );
+                Ok::<_, axum::http::StatusCode>(Json(json!({"status":true})))
+            }
+        }),
+    );
+    let duplicate_store = Arc::new(SeaOrmStore::<TestSchema>::new(
+        config.clone(),
+        database.clone(),
+    ));
+    let duplicate_db = database.clone();
+    router = router.route(
+        "/__test/social-provider/duplicate-account",
+        post(move |Json(body): Json<Value>| {
+            let store = duplicate_store.clone();
+            let db = duplicate_db.clone();
+            async move {
+                let id = body
+                    .get("accountId")
+                    .and_then(Value::as_str)
+                    .ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+                let owner = body
+                    .get("userId")
+                    .and_then(Value::as_str)
+                    .ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+                let row = account::Entity::find_by_id(id)
+                    .one(&db)
+                    .await
+                    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?
+                    .ok_or(axum::http::StatusCode::NOT_FOUND)?;
+                let created = store
+                    .create_account(CreateAccount {
+                        user_id: owner.to_owned(),
+                        account_id: row.account_id,
+                        provider_id: row.provider_id,
+                        access_token: row.access_token,
+                        refresh_token: row.refresh_token,
+                        id_token: row.id_token,
+                        access_token_expires_at: row.access_token_expires_at,
+                        refresh_token_expires_at: row.refresh_token_expires_at,
+                        scope: row.scope,
+                        password: row.password,
+                    })
+                    .await
+                    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                if let Some(timestamp) = body.get("createdAt").and_then(Value::as_str) {
+                    let date = DateTime::parse_from_rfc3339(timestamp)
+                        .map_err(|_| axum::http::StatusCode::BAD_REQUEST)?
+                        .with_timezone(&Utc);
+                    let mut active = created.clone().into_active_model();
+                    active.created_at = Set(date);
+                    active.updated_at = Set(date);
+                    drop(
+                        active
+                            .update(&db)
+                            .await
+                            .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?,
+                    );
+                }
+                Ok::<_, axum::http::StatusCode>(Json(json!({"status":true,"accountId":created.id})))
+            }
+        }),
+    );
     let importer = database.clone();
     router = router.route(
         "/__test/social-provider/import-tokens",
@@ -216,6 +307,22 @@ pub(super) async fn router(
             (Ok(users), Ok(accounts), Ok(sessions)) => Ok(Json(json!({
                 "users": users.into_iter().map(|row| json!({"id": row.id, "name": row.name, "email": row.email, "emailVerified": row.email_verified, "image": row.image, "createdAt": date(row.created_at), "updatedAt": date(row.updated_at)})).collect::<Vec<_>>(),
                 "accounts": accounts.into_iter().map(|row| json!({"id": row.id, "userId": row.user_id, "accountId": row.account_id, "providerId": row.provider_id, "accessToken": row.access_token, "refreshToken": row.refresh_token, "idToken": row.id_token, "scope": row.scope, "accessTokenExpiresAt": row.access_token_expires_at.map(date), "refreshTokenExpiresAt": row.refresh_token_expires_at.map(date), "createdAt": date(row.created_at), "updatedAt": date(row.updated_at)})).collect::<Vec<_>>(),
+                "sessions": sessions.into_iter().map(|row| json!({"id": row.id, "userId": row.user_id, "token": row.token, "expiresAt": date(row.expires_at), "createdAt": date(row.created_at), "updatedAt": date(row.updated_at), "ipAddress": row.ip_address, "userAgent": row.user_agent})).collect::<Vec<_>>(),
+                "receipts": observer.receipts.lock().await.clone(),
+            }))),
+            _ => Err(axum::http::StatusCode::INTERNAL_SERVER_ERROR),
+        }
+    }}));
+    let store = database.clone();
+    let observer = fixture.clone();
+    router = router.route("/__test/social-provider/duplicate-state", get(move || { let store = store.clone(); let observer = observer.clone(); async move {
+        let users = user::Entity::find().order_by_asc(user::Column::CreatedAt).all(&store).await;
+        let accounts = account::Entity::find().order_by_asc(account::Column::CreatedAt).all(&store).await;
+        let sessions = session::Entity::find().order_by_asc(session::Column::CreatedAt).all(&store).await;
+        match (users, accounts, sessions) {
+            (Ok(users), Ok(accounts), Ok(sessions)) => Ok(Json(json!({
+                "users": users.into_iter().map(|row| json!({"id": row.id, "name": row.name, "email": row.email, "emailVerified": row.email_verified, "image": row.image, "createdAt": date(row.created_at), "updatedAt": date(row.updated_at)})).collect::<Vec<_>>(),
+                "accounts": accounts.into_iter().map(|row| json!({"password":row.password,"id": row.id, "userId": row.user_id, "accountId": row.account_id, "providerId": row.provider_id, "accessToken": row.access_token, "refreshToken": row.refresh_token, "idToken": row.id_token, "scope": row.scope, "accessTokenExpiresAt": row.access_token_expires_at.map(date), "refreshTokenExpiresAt": row.refresh_token_expires_at.map(date), "createdAt": date(row.created_at), "updatedAt": date(row.updated_at)})).collect::<Vec<_>>(),
                 "sessions": sessions.into_iter().map(|row| json!({"id": row.id, "userId": row.user_id, "token": row.token, "expiresAt": date(row.expires_at), "createdAt": date(row.created_at), "updatedAt": date(row.updated_at), "ipAddress": row.ip_address, "userAgent": row.user_agent})).collect::<Vec<_>>(),
                 "receipts": observer.receipts.lock().await.clone(),
             }))),

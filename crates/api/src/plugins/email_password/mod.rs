@@ -953,11 +953,8 @@ async fn load_credential_password_hash(
     user: &impl AuthUser,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<String> {
-    ctx.database
-        .get_user_accounts(&user.id())
+    super::helpers::get_credential_account(ctx, user.id())
         .await?
-        .into_iter()
-        .find(|account| account.provider_id() == "credential" && account.password().is_some())
         .and_then(|account| account.password().map(str::to_owned))
         .ok_or(AuthError::InvalidCredentials)
 }

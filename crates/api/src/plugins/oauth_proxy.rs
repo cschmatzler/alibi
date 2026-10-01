@@ -483,7 +483,16 @@ impl OAuthProxyPlugin {
             .await
             {
                 Ok(()) => Ok(redirect(&payload.callback_url)),
-                Err(code) => error_redirect(error_url, &code, None),
+                Err(error) => {
+                    if error.is_ambiguous_account() {
+                        return Ok(AuthResponse::new(500));
+                    }
+                    let (code, description) = match &error {
+                        OAuthSignInError::Generic(message) => (message.clone(), None),
+                        _ => error.redirect_parts(),
+                    };
+                    error_redirect(error_url, &code, description)
+                }
             };
         }
         let outcome = match process_oauth_sign_in(
@@ -502,6 +511,11 @@ impl OAuthProxyPlugin {
         {
             Ok(outcome) => outcome,
             Err(error) => {
+                if error.is_ambiguous_account() {
+                    return Ok(
+                        crate::plugins::oauth::handlers::ambiguous_account_sign_in_response(ctx),
+                    );
+                }
                 if let OAuthSignInError::SessionAuth(error) = error {
                     return match error {
                         AuthError::SessionCreationCancelled => {

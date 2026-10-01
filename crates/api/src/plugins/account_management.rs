@@ -127,9 +127,6 @@ pub(in crate::plugins) async fn list_accounts_core(
         })
         .collect::<Vec<_>>();
 
-    let mut filtered = filtered;
-    filtered.sort_by_key(|account| account.created_at);
-
     Ok(filtered)
 }
 

@@ -121,12 +121,8 @@ pub(in crate::plugins) async fn delete_user_core(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<SuccessMessageResponse> {
     if let Some(password) = body.password.as_deref() {
-        let account = ctx
-            .database
-            .get_user_accounts(&user.id())
+        let account = crate::plugins::helpers::get_credential_account(ctx, user.id())
             .await?
-            .into_iter()
-            .find(|account| account.provider_id() == "credential" && account.password().is_some())
             .ok_or_else(|| AuthError::bad_request("Credential account not found"))?;
         let stored_hash = account
             .password()

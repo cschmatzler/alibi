@@ -1,5 +1,8 @@
 //! SeaORM-backed persistence implementation for built-in auth tables.
 
+mod account_key_multiplicity;
+#[cfg(test)]
+mod account_multiplicity_tests;
 mod accounts;
 mod api_key_numbers;
 mod api_key_usage_phases;

@@ -578,14 +578,19 @@ impl AccountStore<BundledSchema> for MemoryStore {
         provider: &str,
         provider_account_id: &str,
     ) -> AuthResult<Option<AccountView>> {
-        Ok(self
-            .lock()
-            .accounts
-            .values()
-            .find(|account| {
-                account.provider_id == provider && account.account_id == provider_account_id
-            })
-            .cloned())
+        let storage = self.lock();
+        let mut matches = storage.accounts.values().filter(|account| {
+            account.provider_id == provider && account.account_id == provider_account_id
+        });
+        let first = matches.next().cloned();
+        if matches.next().is_some() {
+            return Err(AuthError::Database(
+                crate::DatabaseError::AmbiguousAccount {
+                    provider: provider.to_owned(),
+                },
+            ));
+        }
+        Ok(first)
     }
 
     async fn get_user_accounts(&self, user_id: &str) -> AuthResult<Vec<AccountView>> {

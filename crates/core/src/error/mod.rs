@@ -331,6 +331,12 @@ impl AuthError {
 
 #[derive(Error, Debug)]
 pub enum DatabaseError {
+    /// Multiple physical rows share a provider identity; ownership is ambiguous.
+    #[error(
+        "Multiple accounts match the same accountId for provider {provider:?}. Resolve duplicate account identities before continuing."
+    )]
+    AmbiguousAccount { provider: String },
+
     #[error("Connection error: {0}")]
     Connection(String),
 
