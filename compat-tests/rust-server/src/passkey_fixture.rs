@@ -1,20 +1,20 @@
 //! Equivalent passkey configurations and actual SQLite observations.
 use crate::TestSchema;
 use axum::{
-    Json, Router,
     extract::Query,
     routing::{get, post},
+    Json, Router,
 };
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::{EmailPasswordPlugin, PasskeyPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
 use better_auth_seaorm::{
-    SeaOrmStore,
     sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement},
+    SeaOrmStore,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::Arc;
 
 #[derive(Deserialize)]
