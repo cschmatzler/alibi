@@ -567,6 +567,7 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
                             | AuthError::Database(_)
                             | AuthError::Serialization(_)
                             | AuthError::Plugin { .. }
+                            | AuthError::CallbackFailure(_)
                             | AuthError::Internal(_)
                             | AuthError::PasswordHash(_)
                             | AuthError::UserCreationCancelled

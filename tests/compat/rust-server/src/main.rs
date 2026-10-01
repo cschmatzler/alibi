@@ -11,6 +11,32 @@ mod organization_update_hooks_fixture;
 mod session_cookie_cache_fixture;
 mod team_fixture;
 
+// Bun's Response.json adds UTF-8 to private control responses. Public auth
+// responses are owned by the pinned runtime and must retain their own headers.
+async fn private_json_content_type(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let path = request.uri().path();
+    let private_control = path.starts_with("/__test/") && !path.starts_with("/__test/profiles/");
+    let mut response = next.run(request).await;
+    if private_control
+        && axum::body::HttpBody::size_hint(response.body())
+            .exact()
+            .is_some_and(|bytes| bytes > 0)
+        && response
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .is_some_and(|value| value == "application/json")
+    {
+        response.headers_mut().insert(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("application/json;charset=utf-8"),
+        );
+    }
+    response
+}
+
 use axum::{
     Json, Router,
     extract::Query,
@@ -1795,7 +1821,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             probe.clone(),
             organization_transport_probe::observe,
         ))
-        .merge(organization_transport_probe::router(probe));
+        .merge(organization_transport_probe::router(probe))
+        .layer(axum::middleware::from_fn(private_json_content_type));
 
     let addr = format!("0.0.0.0:{port}");
     println!("[rust-server] Listening on http://localhost:{port}");

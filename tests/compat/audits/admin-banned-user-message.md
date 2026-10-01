@@ -33,10 +33,42 @@ Only focused checks were run. No inventory, schema, migration, lockfile, harness
 
 ## Remaining boundaries
 
-* Actual ordinary JavaScript callback exceptions produce an empty HTTP500 body in the pinned sign-in and impersonation oracle. This Rust callback API returns `AuthError`; Internal and other internal framework errors retain their existing structured error mapping. No universal callback-exception wire parity is claimed, and no string-based or generic500 remapping was introduced. Explicit Upstream errors, including500, are deliberately preserved. The coordinator approved this bounded contract with the ordinary-exception gap retained.
+* Ordinary callback failures are now represented explicitly: an `Internal` returned by `AdminBannedUserMessage` becomes `AuthError::CallbackFailure`, which logs its private cause and emits an empty HTTP500 through both the native response abstraction and Axum. This conversion occurs only after the actual typed callback returns; schema validation, database reads and internal failures elsewhere retain their identities. Explicit Api/Upstream errors including500 preserve their full public response.
 * Actual HTTP probes confirm that the source guest-admin guard returns an empty JSON 401 body while native `require_session` currently surfaces structured SessionNotFound. An initial differential guest request exposed that preexisting wire gap; the final callback cases use a real authenticated foreign-user authorization denial and wrong-password rejection as skip controls. Guest wire normalization is not part of this feature.
 * Source factory timing versus Rust plugin initialization remains different; ordering against effects from plugins initialized earlier is not claimed. The native test proves ordering against the later application bootstrap and this plugin's transforms.
 * The source uses strict expiry `<`; the inherited native `<=` edge boundary remains unchanged and unproved at exact equality.
-* Other session-issuing plugins reuse the shared callback resolver, but their complete callback error response/redirect behavior is not newly claimed by these email/impersonation owners. Arbitrary custom schema entities, callback storage captures/transactions, callback mutation, concurrent user updates between the impersonation target lookup and the source hook’s separate user lookup, invalid non-string JS return values, and callback-created sessions are not covered by this bounded proof.
+* Email, username and impersonation ordinary callback failures are covered. An additional immutable compact-cache/anonymous profile proves a failed credential upgrade does not delete the genuine anonymous principal or its session. Cached cookies are issued and transmitted through failures; post-failure session identity is read with explicit disableCookieCache to verify physical authorization. Cached-projection and expired-ban cache behavior remain #221, rather than being normalized or claimed by this callback owner. Other issuing plugins retain their existing shared resolver and endpoint-specific error/redirect contracts. Arbitrary custom schema entities, callback storage captures/transactions, callback mutation, concurrent user updates between the impersonation target lookup and the source hook’s separate user lookup, invalid non-string JS return values, and callback-created sessions are not covered by this bounded proof.
 
 Independent review found that the Rust receipt observer filtered only email/profile, retaining old users' events across database resets. The existing primary owner now resets actual fixture storage, recreates the same email under a new stored user ID, and requires empty callback receipts. Both cases fail before the repair on two/four stale events (`/tmp/admin-banned-message-fixture-repeat-before.log`). Filtering by the actual current stored user ID, like the source observer, repairs both cases; 2 SDK owners / 308 assertions pass in `/tmp/admin-banned-message-fixture-repeat-final.log`. No callback decision or production result is fabricated by the observer.
+
+
+## Ordinary callback failure regression (#197)
+
+The existing official-client error owner now includes actual ordinary exceptions
+in the unchanged pinned fixture and `Internal` returns from the native application
+callback. It verifies empty raw HTTP500, complete SDK errors and unchanged target,
+owner and foreign user/account/session observations. Wrong passwords and foreign
+impersonation remain callback-skip controls; coded400/500 remain public-error
+controls. Real username sign-in reaches the same banned stored owner. The
+separate anonymous/compact configuration keeps its genuine issued session through
+a rejected upgrade and authenticates the original token afterward against physical
+storage. A deterministic application email generator prevents random identity
+shape differences from obscuring these observations.
+
+The exact pre-fix differential owner fails because native SDK errors contain
+`message: "Internal server error"`; the pinned empty response has no message.
+`/tmp/issue-197-regression-before-corrected.log` records39 passing admin owners and
+this one intended failure. Final `/tmp/issue-197-after.log` records41 passing admin
+scenarios /3602 assertions. Private Rust JSON control responses now match Bun's
+Response.json charset only for nonempty JSON bodies; public auth responses and
+intentionally empty control responses retain their own media type. Comparators,
+allowlists, source oracle and coverage floor are untouched. Independent review
+checked callback-local classification and permission/session-write ordering.
+
+The independent framework-neutral transport owner fails on nonempty response
+bytes when its response mapping is restored to the previous generic renderer
+(`/tmp/issue-197-native-transport-before.log`), then passes after the mapping is
+restored. It also protects ordinary internal-error JSON and explicit public500
+responses. Final native transport, typed application configuration, strict
+workspace lint and strict fixture Clippy pass in
+`/tmp/issue-197-native-lint-final.log`; TypeScript passes separately.

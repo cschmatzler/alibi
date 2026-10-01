@@ -283,7 +283,8 @@
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
           "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
           "phone signup binds integral and exponential JSON numbers to exact SQLite text",
-          "phone signup preserves raw JSON numeric bindings and rounded uniqueness"
+          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -343,7 +344,8 @@
           "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
           "phone signup binds integral and exponential JSON numbers to exact SQLite text",
           "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
-          "session reads refresh from persisted expiry and renew the signed cookie"
+          "session reads refresh from persisted expiry and renew the signed cookie",
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
         ]
       }
     },
@@ -1054,7 +1056,8 @@
           "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
           "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
           "admin impersonation legacy uses original actor permissions for admin targets and self sessions",
-          "admin impersonation no-base uses original actor permissions for admin targets and self sessions"
+          "admin impersonation no-base uses original actor permissions for admin targets and self sessions",
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
         ],
         "authorization": [
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
@@ -1086,7 +1089,8 @@
           "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
           "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
           "admin impersonation legacy uses original actor permissions for admin targets and self sessions",
-          "admin impersonation no-base uses original actor permissions for admin targets and self sessions"
+          "admin impersonation no-base uses original actor permissions for admin targets and self sessions",
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
         ]
       }
     },
@@ -2819,7 +2823,10 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": ["request password reset then reset password updates credentials", "request password reset masks nonexistent email"],
+        "success": [
+          "request password reset then reset password updates credentials",
+          "request password reset masks nonexistent email"
+        ],
         "rejection": null,
         "authorization": null,
         "state": null
@@ -2892,7 +2899,8 @@
           "anonymous official client issues repeats and deletes only its actual authenticated owner",
           "anonymous upgrade transfers original completed user and session snapshots before cleanup",
           "compact version-api issuance failure rolls email transaction back and does not link the authenticated anonymous account",
-          "compact version-ordinary issuance failure rolls email transaction back and does not link the authenticated anonymous account"
+          "compact version-ordinary issuance failure rolls email transaction back and does not link the authenticated anonymous account",
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
         ],
         "rejection": [
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
@@ -2905,7 +2913,8 @@
           "anonymous upgrade transfers original completed user and session snapshots before cleanup",
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
           "anonymous official client issues repeats and deletes only its actual authenticated owner",
-          "anonymous issuance inherits only a real signed browser-session preference"
+          "anonymous issuance inherits only a real signed browser-session preference",
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
         ]
       }
     },
@@ -2948,7 +2957,8 @@
           "core cookie origin validation uses canonical HTTP origin and rejects foreign authorities before session writes",
           "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
           "core redirect controls reject path controls while preserving encoded query and fragment values",
-          "core redirect controls reject authority-shaped paths while permitting owned safe paths"
+          "core redirect controls reject authority-shaped paths while permitting owned safe paths",
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
         ],
         "authorization": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -2982,7 +2992,8 @@
           "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
           "core redirect controls reject path controls while preserving encoded query and fragment values",
           "core redirect controls preserve whitespace absolute callbacks and explicit empty callbacks",
-          "core redirect controls reject authority-shaped paths while permitting owned safe paths"
+          "core redirect controls reject authority-shaped paths while permitting owned safe paths",
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
         ]
       }
     },
@@ -3098,7 +3109,8 @@
           "sign in with nonexistent username returns error",
           "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
           "core redirect controls reject path controls while preserving encoded query and fragment values",
-          "core redirect controls reject authority-shaped paths while permitting owned safe paths"
+          "core redirect controls reject authority-shaped paths while permitting owned safe paths",
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
         ],
         "authorization": [
           "sign in with nonexistent username returns error",
@@ -3110,7 +3122,8 @@
           "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
           "core redirect controls reject path controls while preserving encoded query and fragment values",
           "core redirect controls preserve whitespace absolute callbacks and explicit empty callbacks",
-          "core redirect controls reject authority-shaped paths while permitting owned safe paths"
+          "core redirect controls reject authority-shaped paths while permitting owned safe paths",
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
         ]
       }
     },

@@ -156,6 +156,7 @@ impl AnonymousPlugin {
                 | better_auth_core::AuthError::Database(_)
                 | better_auth_core::AuthError::Serialization(_)
                 | better_auth_core::AuthError::Plugin { .. }
+                | better_auth_core::AuthError::CallbackFailure(_)
                 | better_auth_core::AuthError::Internal(_)
                 | better_auth_core::AuthError::PasswordHash(_)
                 | better_auth_core::AuthError::Jwt(_)) => error,
@@ -196,6 +197,7 @@ impl AnonymousPlugin {
                 | better_auth_core::AuthError::Database(_)
                 | better_auth_core::AuthError::Serialization(_)
                 | better_auth_core::AuthError::Plugin { .. }
+                | better_auth_core::AuthError::CallbackFailure(_)
                 | better_auth_core::AuthError::Internal(_)
                 | better_auth_core::AuthError::PasswordHash(_)
                 | better_auth_core::AuthError::Jwt(_)) => cause,
@@ -279,6 +281,7 @@ impl AnonymousPlugin {
                     | better_auth_core::AuthError::Database(_)
                     | better_auth_core::AuthError::Serialization(_)
                     | better_auth_core::AuthError::Plugin { .. }
+                    | better_auth_core::AuthError::CallbackFailure(_)
                     | better_auth_core::AuthError::Internal(_)
                     | better_auth_core::AuthError::PasswordHash(_)
                     | better_auth_core::AuthError::Jwt(_)) => error,

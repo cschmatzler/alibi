@@ -1,13 +1,13 @@
 import { expect } from "bun:test";
 import { createAuthClient } from "better-auth/client";
-import { adminClient } from "better-auth/client/plugins";
+import { adminClient, anonymousClient, usernameClient } from "better-auth/client/plugins";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 
 function client(ctx: ScenarioContext, name: string, profile?: FixtureProfile) {
   return createAuthClient({
     baseURL: `${ctx.baseURL}${profile ? authProfilePath(profile) : "/api/auth"}`,
-    plugins: [adminClient()],
+    plugins: [adminClient(), anonymousClient(), usernameClient()],
     fetchOptions: { customFetchImpl: ctx.actor(name, profile).fetch },
   });
 }
@@ -21,6 +21,7 @@ async function signup(
   const result = await current.signUp.email({
     email,
     name,
+    username: name.replace("admin-banned-message", "ban").replaceAll("-", "_"),
     password: "password123",
     // The application field is not writable by clients. Its stored default must win.
     ...{ metadata: { supportCode: "forged-client-code" } },
@@ -175,7 +176,7 @@ for (const profile of [
       expect(rejectedState).toEqual(banned);
       let expectedFinalEvents = afterImpersonation;
       let serverError;
-      if (profile === "admin-banned-message-error") {
+      if (profile.startsWith("admin-banned-message-error")) {
         const serverBan = await owner.client.admin.banUser({
           userId: target.userId,
           banReason: "server application ban",
@@ -215,6 +216,55 @@ for (const profile of [
           serverAfter,
           events: expectedFinalEvents,
         };
+      }
+      let ordinaryError;
+      if (profile.startsWith("admin-banned-message-error")) {
+        const ordinaryBan = await owner.client.admin.banUser({
+          userId: target.userId,
+          banReason: "ordinary callback failure",
+        });
+        expect(ordinaryBan.error).toBeNull();
+        const before = await state(ctx, target.email);
+        const principalsBefore = await Promise.all(
+          [owner, target, foreign].map(({ userId }) => ctx.readUserState({ userId })),
+        );
+        const signin = await target.client.signIn.email({
+          email: target.email,
+          password: "password123",
+        });
+        const usernameSignin = await target.client.signIn.username({
+          username: `${profile}-target`.replace("admin-banned-message", "ban").replaceAll("-", "_"), password: "password123",
+        });
+        const impersonation = await owner.client.admin.impersonateUser({
+          userId: target.userId,
+        });
+        for (const result of [signin, usernameSignin, impersonation]) {
+          expect(result.data).toBeNull();
+          expect(result.error?.status).toBe(500);
+          expect(result.error).not.toHaveProperty("code");
+          expect(result.error).not.toHaveProperty("message");
+        }
+        // The raw response is independently observable even when the SDK synthesizes an error.
+        const raw = await ctx.rawRequest({
+          actor: "ordinary-raw",
+          path: `${authProfilePath(profile)}/sign-in/email`,
+          method: "POST",
+          json: { email: target.email, password: "password123" },
+        });
+        expect(raw.status).toBe(500);
+        expect(raw.body).toBeNull();
+        const after = await state(ctx, target.email);
+        expect(after).toEqual(before);
+        const principalsAfter = await Promise.all(
+          [owner, target, foreign].map(({ userId }) => ctx.readUserState({ userId })),
+        );
+        expect(principalsAfter).toEqual(principalsBefore);
+        expectedFinalEvents = await events(ctx, target.email, profile);
+        expect(expectedFinalEvents.events).toHaveLength(8);
+        for (const event of expectedFinalEvents.events.slice(4))
+          expect(event).toMatchObject({ userId: target.userId, banReason: "ordinary callback failure" });
+        ordinaryError = { ordinaryBan, before, principalsBefore, signin, usernameSignin, impersonation, raw,
+          after, principalsAfter, events: expectedFinalEvents };
       }
       const expiredBan = await owner.client.admin.banUser({
         userId: target.userId,
@@ -302,6 +352,7 @@ for (const profile of [
         afterImpersonation,
         rejectedState,
         serverError,
+        ordinaryError,
         expiredBan,
         expiredSignin,
         afterExpiredSignin,
@@ -317,6 +368,58 @@ for (const profile of [
         replacementEvents,
       };
     },
-    ["POST /admin/ban-user", "POST /admin/set-role", "POST /admin/impersonate-user", "POST /sign-in/email"],
+    ["POST /admin/ban-user", "POST /admin/set-role", "POST /admin/impersonate-user", "POST /sign-in/email", "POST /sign-in/username", "POST /sign-in/anonymous"],
   );
 }
+
+
+compatScenario(
+  "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
+  async (ctx) => {
+    const ordinaryProfile = "admin-banned-message-error";
+    const profile = "admin-banned-message-error-cache";
+    const owner = await signup(ctx, "composition-owner", ordinaryProfile);
+    const target = await signup(ctx, "composition-target", ordinaryProfile);
+    const foreign = await signup(ctx, "composition-foreign", ordinaryProfile);
+    const ban = await owner.client.admin.banUser({ userId: target.userId, banReason: "ordinary callback failure" });
+    expect(ban.error).toBeNull();
+    const before = await Promise.all([owner, target, foreign].map(({ email }) => state(ctx, email)));
+    const anonymousActor = client(ctx, "callback-anonymous", profile);
+    const anonymous = await anonymousActor.signIn.anonymous();
+    expect(anonymous.error).toBeNull();
+    if (!anonymous.data) throw new Error("anonymous session required");
+    expect(anonymous.data.user.isAnonymous).toBe(true);
+    const anonymousBefore = await ctx.readUserState({ userId: anonymous.data.user.id });
+    const cachedBefore = await anonymousActor.getSession({ query: { disableCookieCache: true } });
+    expect(cachedBefore.data?.session.token).toBe(anonymous.data.token);
+    const upgrade = await anonymousActor.signIn.email({ email: target.email, password: "password123" });
+    const username = await client(ctx, "callback-username", profile).signIn.username({ username: "composition_target", password: "password123" });
+    const impersonator = createAuthClient({
+      baseURL: `${ctx.baseURL}${authProfilePath(profile)}`,
+      plugins: [adminClient()],
+      fetchOptions: { customFetchImpl: ctx.actor("composition-owner", ordinaryProfile).fetch },
+    });
+    const impersonation = await impersonator.admin.impersonateUser({ userId: target.userId });
+    for (const result of [upgrade, username, impersonation]) {
+      expect(result.data).toBeNull();
+      expect(result.error?.status).toBe(500);
+      expect(result.error).not.toHaveProperty("message");
+      expect(result.error).not.toHaveProperty("code");
+    }
+    const anonymousAfter = await ctx.readUserState({ userId: anonymous.data.user.id });
+    expect(anonymousAfter).toEqual(anonymousBefore);
+    const cachedAfter = await anonymousActor.getSession({ query: { disableCookieCache: true } });
+    expect(cachedAfter.data?.session.token).toBe(anonymous.data.token);
+    expect(cachedAfter.data?.user.id).toBe(anonymous.data.user.id);
+    expect(cachedAfter.data?.user.isAnonymous).toBe(true);
+    const after = await Promise.all([owner, target, foreign].map(({ email }) => state(ctx, email)));
+    expect(after).toEqual(before);
+    const receipts = await events(ctx, target.email, profile);
+    expect(receipts.events).toHaveLength(3);
+    for (const event of receipts.events) expect(event).toMatchObject({ userId: target.userId, banReason: "ordinary callback failure" });
+    return { owner: owner.result, target: target.result, foreign: foreign.result, ban, before,
+      anonymous, anonymousBefore, cachedBefore, upgrade, username, impersonation,
+      anonymousAfter, cachedAfter, after, receipts };
+  },
+  ["POST /sign-in/email", "POST /sign-in/username", "POST /admin/impersonate-user", "POST /sign-in/anonymous", "GET /get-session"],
+);
