@@ -172,19 +172,69 @@ all previous requirements remain. No test-only production export or fake crypto
 is added. The external `$autoreview` and referenced OpenClaw testing/PR skills
 are unavailable; independent coordinator review accompanies executable proof.
 
-Final owner proof before the immutable canonical rerun: Source 9/9 with 1,542
-assertions; Source/native JWT, remote, numeric and session owners 36/36 with
-3,070 assertions. The two immediate pre-context regressions fail on untouched
-4557260e production with 124 assertions and pass after repair with 208. Actual
-143-route evidence preserves the rebased main's 2,674 requirements and adds
-59 measured public cells, for 2,733. Strict optional workspace/fixture Clippy
-and TypeScript checking pass.
+Final rebased owner proof on main `7eeeee5ff8157450fe9d441add79509644a33c3a`:
+Source 9/9 with 1,550 assertions; Source/native JWT, remote, numeric and session
+owners 36/36 with 3,078 assertions. Strict default and optional workspace Clippy,
+strict fixture Clippy, fixture build and TypeScript checking pass. All 143 routes
+and all main's 2,993 requirements remain, with 59 actual measured public cells
+added for 3,052. The two immediate pre-context regressions fail on untouched
+4557260e production with 124 assertions and pass after repair with 208.
 
-The earlier immutable 4557260e canonical ran all required stages up to the full
-SDK gate: default 794, feature 845, fixture 2, harness 70, Axum 36, endpoint 3
-and inventory 2 passed; SDK 753 passed and 21 failed with 58,342 assertions.
-Browser, documentation and coverage stages were unreached. All seven then-new
-keyring owners passed. A retained remote undefined-claim owner reported one raw
-default-expiration difference; its unchanged focused rerun passed 34 assertions.
-That unreproduced failure remains recorded, alongside the independently
-reproduced API-key Content-Type baseline and other existing gate failures.
+The immutable `cc99d7bf2ffa95470346da22efbb17708117f366` canonical passed default
+794, feature 845, fixture 2, harness 70, Axum 36, endpoints 3 and inventory 2,
+then failed full SDK: 754 passed / 22 failed, 58,550 assertions across 776 tests.
+Browser, documentation and coverage were unreached. This gate ran before the
+final main rebase and real later-second phase; it is not a full green result
+for the rebased head. Both new custom-cache/context owners passed in that gate.
+The exact failed owner names are retained below.
+
+The compact default-JWT owner failed raw trace 7's header token identity,
+while all its claim and SQL assertions passed. A genuine paired replay with an
+external read-only HTTP observer reproduced that exact mismatch: Source's
+cached header and retained token both had iat 1790892491 / exp 1790893391 and
+the same token hash. Native's cached header had those dates, while its later
+retained token had iat 1790892492 / exp 1790893392 and a different hash. A
+Source-only 60-attempt replay did not reproduce this compact mismatch; that
+negative result is retained. The owner now makes post-revocation issuance a
+real later second derived from the independently verified cached token's iat,
+asserting later iat, a new signed token and the default 900-second lifetime.
+Cached header and retained token are the only identical-principal JWT aliases
+in this owner; the stored bypass uses the actually changed user name. Complete
+raw observations and the identity comparator are unchanged.
+
+The earlier immutable `4557260e` canonical passed the same native/fixture gates
+and failed SDK with 753 passed / 21 failed and 58,342 assertions. Its remote
+undefined-claim owner reported raw default-expiration drift. The exact unchanged
+owner subsequently reproduced that same drift with the published Source
+compared to itself, on actual Source-only attempt 32 with 34 assertions; no
+native process, synthetic clock or comparison change was involved. That earlier
+failed gate remains reported. The cc99 gate passed this retained remote owner.
+Its additional trust-cleanup-disabled failure involved six ISO date observations
+with different elapsed-time offsets; it is not attributed to JWT by a focused
+retry. The API-key validator's ten Content-Type differences remain independently
+reproduced on original production. Other broad-gate failures remain explicit.
+
+Exact cc99 full-SDK failures:
+
+- request password reset then reset password updates credentials
+- reset password token cannot be reused
+- reset password callback redirects with token and preserves callbackURL query params
+- api-key server validators resolve issuing configuration and preserve explicit rejection errors
+- organization addition trusted role patches are unvalidated and before versus after errors retain exact writes
+- organization fixed membership policies retain falsy defaults and raw Number admission without read callbacks
+- application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation
+- OpenAPI openapi-default generates the complete configured document and reference frame
+- OpenAPI openapi-configured generates the complete configured document and reference frame
+- OpenAPI openapi-jwt generates the complete configured document and reference frame
+- OpenAPI openapi-username generates the complete configured document and reference frame
+- OpenAPI openapi-custom-schema generates the complete configured document and reference frame
+- OpenAPI openapi-plugins generates the complete configured document and reference frame
+- OpenAPI openapi-plugins-teams generates the complete configured document and reference frame
+- OpenAPI openapi-plugins-configured generates the complete configured document and reference frame
+- two-factor two-factor-trust-cleanup-disabled checks outer and inner trust syntax before deletion and cleanup
+- error page sanitizes script injection in error code
+- error page renders valid error code
+- core before responses stop endpoint writes and unknown routes cannot run hooks
+- generated lifecycle seed 12648430 profile default
+- generated lifecycle seed 12648430 profile session-no-refresh
+- generated lifecycle seed 12648430 profile session-deferred

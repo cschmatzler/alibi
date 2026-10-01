@@ -222,7 +222,14 @@ compatScenario("application JWT keyring compact cached principal owns get-sessio
   const bypass=await owner.getSession({query:{disableCookieCache:true,disableRefresh:true},fetchOptions:{onSuccess({response}){receipts.push(new Headers(response.headers));}}});expect(bypass.data!.user.name).toBe("Authoritative JWT Owner");
   const bypassChecked=await verified(receipts[2]!.get("set-auth-jwt")!,jwks.data!.keys as JWK[],ctx);expect(bypassChecked.payload).toMatchObject({name:"Authoritative JWT Owner"});
   const revoked=await ctx.rawRequest({path:"/__test/session-cookie-cache/control",method:"POST",json:{mode:"standard",action:"revoke",token:signup.data!.token}});expect(revoked.status).toBe(200);const revokedOwner=await ctx.readUserState({userId:signup.data!.user.id});expect((revokedOwner as any).sessions).toEqual([]);
+  // Default EdDSA tokens repeat for the same principal within one second.
+  // Make the post-revocation issuance a real later lifecycle phase, rather
+  // than coupling token identity to which backend crosses a clock boundary.
+  const cachedIat=z.number().int().parse(checked.payload.iat);
+  const remaining=(cachedIat+1)*1000-Date.now();expect(remaining).toBeLessThanOrEqual(1000);
+  if(remaining>0)await Bun.sleep(remaining+5);
   const retained=await owner.token();expect(retained.error).toBeNull();const retainedChecked=await verified(retained.data!.token,jwks.data!.keys as JWK[],ctx);expect(retainedChecked.payload).toMatchObject({id:signup.data!.user.id,name:"Original Cached JWT Owner",sub:signup.data!.user.id});
+  expect(retainedChecked.payload.iat!).toBeGreaterThan(cachedIat);expect(retained.data!.token).not.toBe(header!);expect(retainedChecked.payload.exp!-retainedChecked.payload.iat!).toBe(900);
   const beforeDenial=await state(ctx,mode),denied=await guest.token();expect(denied.error?.status).toBe(401);expect(await state(ctx,mode)).toEqual(beforeDenial);
   const cleared=await owner.getSession({query:{disableCookieCache:true,disableRefresh:true},fetchOptions:{onSuccess({response}){receipts.push(new Headers(response.headers));}}});expect(cleared.data).toBeNull();expect(receipts[3]!.get("set-auth-jwt")).toBeNull();
   const replay=await owner.token();expect(replay.error?.status).toBe(401);expect((await state(ctx,mode)).keys).toEqual(created.keys);expect(await ctx.readUserState({userId:signup.data!.user.id})).toEqual(revokedOwner);expect(await ctx.readUserState({userId:other.data!.user.id})).toEqual(foreignBefore);
