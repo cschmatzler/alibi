@@ -996,6 +996,7 @@ const server = Bun.serve({
         return jsonResponse({message:"unknown server operation"},{status:400});
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
+        passkeyRegistration.reset();
         passkeyAuthentication.reset();
         siweFixture.reset();
         multipleSessionFixture.reset();
