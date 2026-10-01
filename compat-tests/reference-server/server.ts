@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { organizationMemberAdditionFixture } from "./organization-member-addition-fixture";
 import { organizationTransportProbe } from "./organization-transport-probe";
 
 import { Database } from "bun:sqlite";
@@ -415,6 +416,7 @@ const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 const organizationCreationFixture = createOrganizationCreationFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationTransport = organizationTransportProbe();
 const organizationHooksFixture = organizationCreationHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
+const organizationAdditionFixture = organizationMemberAdditionFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationMemberRemovalFixture = organizationMemberRemovalHooksFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationMemberRoleFixture = organizationMemberRoleHooksFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationUpdateFixture = organizationUpdateHooksFixture(database, authOptions, `http://localhost:${PORT}`);
@@ -789,6 +791,12 @@ const server = Bun.serve({
       if(url.pathname==="/__test/organization-delete-hooks-state"&&request.method==="GET")return organizationDeletionFixture.state(url.searchParams.get("waitFor"));
       if(url.pathname==="/__test/organization-delete-hooks-server"&&request.method==="POST")return organizationDeletionFixture.server(await request.json() as Record<string,unknown>,request.headers);
       if(url.pathname==="/__test/organization-hooks-configure" && request.method==="POST")return organizationHooksFixture.configure(await request.json() as Record<string,unknown>);
+      for(const [name,profile] of organizationAdditionFixture.profiles)if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return profile.handler(request);
+      if(url.pathname==="/__test/organization-member-addition/configure"&&request.method==="POST")return organizationAdditionFixture.configure(await request.json() as Record<string,unknown>);
+      if(url.pathname==="/__test/organization-member-addition/release"&&request.method==="POST")return organizationAdditionFixture.release();
+      if(url.pathname==="/__test/organization-member-addition/state"&&request.method==="GET")return organizationAdditionFixture.state(url.searchParams.get("waitFor"));
+      if(url.pathname==="/__test/organization-member-addition/server"&&request.method==="POST")return organizationAdditionFixture.server(request);
+      if(url.pathname==="/__test/organization-member-addition/seed"&&request.method==="POST")return organizationAdditionFixture.seed(await request.json() as Record<string,unknown>);
       for(const [name,profile] of organizationMemberRemovalFixture.profiles)if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return profile.handler(request);
       if(url.pathname==="/__test/organization-member-removal-hooks-configure"&&request.method==="POST")return organizationMemberRemovalFixture.configure(await request.json() as Record<string,unknown>);
       if(url.pathname==="/__test/organization-member-removal-hooks-release"&&request.method==="POST")return organizationMemberRemovalFixture.release();

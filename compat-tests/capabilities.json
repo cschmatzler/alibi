@@ -1731,7 +1731,16 @@
           "organization creation rejected hooks retain exact earlier rows without selecting the current or sibling session",
           "organization creation after hooks retain immutable member snapshots after independent database mutation",
           "organization creation awaits async member hooks before team writes and session selection",
-          "organization trusted creation hook member overrides retain actor authority and original default team membership"
+          "organization trusted creation hook member overrides retain actor authority and original default team membership",
+          "organization trusted addition preserves raw role arrays and original target snapshots without selecting sessions",
+          "organization server addition rejects actual duplicate wrong-target and foreign-team guards before hooks then admits legitimate retry",
+          "organization server addition uses only real optional signed headers for active fallback and never grants a public caller override",
+          "organization server addition enforces all-row default and integer limits with zero and None falling back to100",
+          "organization addition awaits before hooks and preserves original user snapshots across independent mutation",
+          "organization addition trusted role patches are unvalidated and before versus after errors retain exact writes",
+          "organization addition genuine SQL failures retain source before member team and after phases with successful retries",
+          "organization addition team limits require actual headers and clean the original target page while preserving foreign sessions",
+          "organization addition retargeted trusted patches still roll back with captured original scope and cleanup SQL errors retain the new member"
         ],
         "rejection": [
           "organization creation static denial and negative limits preserve ownership while trusted creation bypasses only the allow policy",
@@ -1767,7 +1776,16 @@
           "organization creation policies and duplicate checks precede hooks while trusted creation has no request selection",
           "organization creation after hooks retain immutable member snapshots after independent database mutation",
           "organization creation awaits async member hooks before team writes and session selection",
-          "organization trusted creation hook member overrides retain actor authority and original default team membership"
+          "organization trusted creation hook member overrides retain actor authority and original default team membership",
+          "organization trusted addition preserves raw role arrays and original target snapshots without selecting sessions",
+          "organization server addition rejects actual duplicate wrong-target and foreign-team guards before hooks then admits legitimate retry",
+          "organization server addition uses only real optional signed headers for active fallback and never grants a public caller override",
+          "organization server addition enforces all-row default and integer limits with zero and None falling back to100",
+          "organization addition awaits before hooks and preserves original user snapshots across independent mutation",
+          "organization addition trusted role patches are unvalidated and before versus after errors retain exact writes",
+          "organization addition genuine SQL failures retain source before member team and after phases with successful retries",
+          "organization addition team limits require actual headers and clean the original target page while preserving foreign sessions",
+          "organization addition retargeted trusted patches still roll back with captured original scope and cleanup SQL errors retain the new member"
         ]
       }
     },

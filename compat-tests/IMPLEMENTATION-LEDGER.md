@@ -311,7 +311,7 @@ tree.
 | Following slice | Owner and dependencies | Evidence and status |
 | --- | --- | --- |
 | OTP background delivery | Phone owner; existing background completion interface and initiating request context | Frozen 9c7067d8: 71 SDK / 5,884; four default/observe/ignore/throw owners / 976, 19 native tests, real before-await/context failures. Coordinator and independent organization review clear. The new inventory adds 28 requirements without removing any. No next full-gate claim yet. |
-| Server-only organization member addition | Organization owner; captured addition callbacks, existing member/team operations | Nine primary differential owners / 1,562 and Source controls pass. Public trusted Rust helper and controlled private server fixture; no public add-member route. Author checks/review still pending. |
+| Server-only organization member addition | Organization owner; captured addition callbacks, existing member/team operations | Frozen a0c0996d: nine primary differential owners / 1,568 and Source controls; full organization/OpenAPI 122 / 10,318; 334 API and one real-SQLite public-helper owner pass. Coordinator and independent phone reviews clear. Trusted Rust helper/private fixture; no public add-member route. Eighteen setup-route lifecycle requirements enforce these nine owners; next gate pending. |
 | Unsupported-curve none enrollment | JWT owner; versioned private original-proof/pending-ceremony codec | 37 passkey SDK / 5,090 and repeated Source controls pass. Protocol parser/security review and frozen integration pending. No fake typed verifier output, proof rewriting, retry, dependency or schema changes. |
 
 The newly measured duplicate-member pair and duplicate-passkey credential

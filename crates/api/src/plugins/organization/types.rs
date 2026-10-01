@@ -115,6 +115,23 @@ impl RoleInput {
     }
 }
 
+/// Input to the privileged server-only member-admission operation.
+/// Roles are joined verbatim, including whitespace, duplicates and empty roles.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AddOrganizationMemberRequest {
+    #[serde(
+        rename = "userId",
+        default = "undefined_string",
+        deserialize_with = "deserialize_coercible_string"
+    )]
+    pub user_id: String,
+    pub role: RoleInput,
+    #[serde(rename = "organizationId")]
+    pub organization_id: Option<String>,
+    #[serde(rename = "teamId")]
+    pub team_id: Option<String>,
+}
+
 #[derive(Debug, Deserialize, Validate)]
 pub struct CreateOrganizationRequest {
     #[validate(length(min = 1, message = "Name is required"))]

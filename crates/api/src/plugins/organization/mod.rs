@@ -8,6 +8,11 @@ pub use lifecycle::{
     OrganizationDeleteContext, OrganizationDeletionHooks, OrganizationDraftContext,
     OrganizationMemberCreatePatch, OrganizationMemberDraftContext,
 };
+pub mod member_addition_lifecycle;
+pub use member_addition_lifecycle::{
+    OrganizationMemberAddedContext, OrganizationMemberAdditionContext,
+    OrganizationMemberAdditionDraft, OrganizationMemberAdditionHooks,
+};
 pub mod member_removal_lifecycle;
 pub mod member_role_lifecycle;
 pub use member_removal_lifecycle::{
@@ -84,7 +89,11 @@ pub struct OrganizationConfig {
     /// Awaited member removal callbacks over immutable original target rows.
     #[config(default = None, skip)]
     pub member_removal_hooks: Option<std::sync::Arc<dyn OrganizationMemberRemovalHooks>>,
-    /// Maximum members per organization (None = unlimited)
+    /// Awaited server-only addition callbacks over the target and raw organization.
+    #[config(default = None, skip)]
+    pub member_addition_hooks: Option<std::sync::Arc<dyn OrganizationMemberAdditionHooks>>,
+    /// Maximum members per organization (legacy HTTP consumers treat None as unlimited).
+    /// Server-only addition follows the pinned fallback: None or zero means 100.
     #[config(default = Some(100))]
     pub membership_limit: Option<usize>,
     /// Role assigned to organization creator (default: "owner")
@@ -132,6 +141,20 @@ pub struct OrganizationPlugin {
 }
 
 impl OrganizationPlugin {
+    /// Trusted server-only member admission. Explicit organization and target IDs
+    /// do not require a caller session; optional signed headers provide active
+    /// organization fallback and authority for a functional team-limit callback.
+    /// This helper never registers a public authentication route and does not run
+    /// builder-wide dispatch hooks or API-key virtual-session injection.
+    pub async fn add_member_with_headers<S: better_auth_core::AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        headers: &HashMap<String, String>,
+        body: &types::AddOrganizationMemberRequest,
+    ) -> AuthResult<types::BasicMemberResponse> {
+        handlers::member_addition::add_member(body, headers, &self.config, ctx).await
+    }
+
     /// Remove through a real signed-cookie session supplied by the application.
     /// This low-level helper shares HTTP business logic but does not execute
     /// builder-wide before/after dispatch hooks or API-key session injection.
