@@ -66,3 +66,5 @@ The unchanged final SDK owner also passes the repeated pinned Source-self run
 clean. No native mirror of the same mapper table was added: genuine provider HTTP,
 SDK, session and SQLite readback already own this regression at the stronger
 boundary.
+
+Coordinator independent review of frozen `6241e7dd` is clear for these normalized fields: original provider string IDs remain account subjects, actual token/profile transports and persisted sessions reach all eight cases, Number rounding precedes remainder, and the source raw-profile mutation boundary remains explicitly open. Six additive inventory requirements enforce real sign-in/callback/session consumers. The next canonical integration gate is pending.
