@@ -194,6 +194,12 @@ pub(super) async fn router(
         "two-factor-backup-encrypted",
         "two-factor-backup-invalid-length",
         "two-factor-backup-custom",
+        "two-factor-trust-fractional",
+        "two-factor-trust-zero-challenge",
+        "two-factor-trust-negative-challenge",
+        "two-factor-trust-zero",
+        "two-factor-trust-negative",
+        "two-factor-trust-cleanup-disabled",
     ] {
         let lockout = match name {
             "two-factor-lockout-fractional" => AccountLockoutConfig {
@@ -217,6 +223,9 @@ pub(super) async fn router(
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = base.clone().base_path(&path);
         config.app_name = "Fixture Auth".to_owned();
+        if name == "two-factor-trust-cleanup-disabled" {
+            config.verification.disable_cleanup = true;
+        }
         let store = SeaOrmStore::<TestSchema>::new(config.clone(), database.clone());
         let store = if name == "two-factor-skip-user-hook" {
             store.with_hooks(vec![Arc::new(RejectUserUpdate)])
@@ -239,6 +248,18 @@ pub(super) async fn router(
                 )
                 .plugin(SessionManagementPlugin::new())
                 .plugin(TwoFactorPlugin::with_config(TwoFactorConfig {
+                    two_factor_cookie_max_age: match name {
+                        "two-factor-trust-zero-challenge" => 0.0,
+                        "two-factor-trust-negative-challenge" => -0.25,
+                        name if name.starts_with("two-factor-trust-") => 600.75,
+                        _ => TwoFactorConfig::default().two_factor_cookie_max_age,
+                    },
+                    trust_device_max_age: match name {
+                        "two-factor-trust-zero" => 0.0,
+                        "two-factor-trust-negative" => -0.25,
+                        name if name.starts_with("two-factor-trust-") => 1200.875,
+                        _ => TwoFactorConfig::default().trust_device_max_age,
+                    },
                     allow_passwordless: matches!(
                         name,
                         "two-factor-passwordless" | "two-factor-passwordless-child-required"
@@ -256,7 +277,8 @@ pub(super) async fn router(
                     account_lockout: lockout,
                     skip_verification_on_enable: name.starts_with("two-factor-skip-")
                         || name.starts_with("two-factor-pending-")
-                        || name.starts_with("two-factor-backup-"),
+                        || name.starts_with("two-factor-backup-")
+                        || name.starts_with("two-factor-trust-"),
                     send_otp: Some(Arc::new(delivery.clone())),
                     ..backup
                 }))
