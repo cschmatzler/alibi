@@ -30,9 +30,9 @@ pub use better_auth_api::plugins::phone_number::{
 };
 pub use better_auth_api::plugins::{SiweConfig, SiwePlugin, siwe};
 
-pub use better_auth_api::plugins::open_api::{self, OpenApiConfig, OpenApiPlugin};
 pub use better_auth_api::plugins::api_key::{
     ApiKeyCallbackContext, ApiKeyDefaultPermissions, ApiKeyErrorMessage, ApiKeyGenerationOptions,
     ApiKeyGenerator, ApiKeyGetter, ApiKeyPermissions, ApiKeyValidator,
     DeleteExpiredApiKeysResponse,
 };
+pub use better_auth_api::plugins::open_api::{self, OpenApiConfig, OpenApiPlugin};
