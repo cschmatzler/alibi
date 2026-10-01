@@ -138,3 +138,96 @@ CASCADE behavior and is not runtime proved here. Concurrent application-schema
 changes during migration are outside this bounded installed-upgrade contract.
 No store API, handler, model, initial schema, dependency, lock or inventory
 changed in this follow-up.
+
+## Real SDK admission and consumer owners
+
+The separately reviewable SDK extension is based on master `8c0c8dc1` with the
+frozen storage prerequisite `0d0ba40c` and installed-FK guard `5324954f`.
+It changes only the existing private member-addition application fixtures,
+adds four literal configuration profiles, and adds three primary owners in
+`tests/organization-extensions/member-multiplicity.test.ts`. Existing primary
+owners, the comparator, default deadlines, production handlers, schemas, main
+fixture registrations, dependencies and inventories remain unchanged.
+
+The authoring contract is physical membership admission and its observable
+consumers. Earlier owners cannot reach duplicate rows because the old unique
+index rejects them. The native installed upgrade, application FK refusal/retry,
+and independently connected storage race retain their distinct boundaries;
+these SDK owners exercise the actual official client and unchanged published
+server-only helper, rather than replaying migration assertions.
+
+- A genuine trusted before-add patch retargets a new candidate to an existing
+  member, creates a second physical row with an `admin` role, and observes the
+  original callback authority and actual persisted result. The target retains
+  its first row's `member` authority; its role update is denied, as are foreign
+  role update and removal. The owner changes only the second ID to `owner` and
+  removes that ID while the original remains. Complete member/team/team-member
+  rows and dates prove scoped team-link removal and counter adjustment, retained
+  owner links, foreign team/user/session preservation, and an unchanged target
+  session selection. A real sequential retry rejects before any callback.
+- Real newer/older/newer admissions produce the complete repeated organization
+  output in physical membership order. Default and configured pages 2, 1 and 0
+  are checked against those full objects. An organization limit of three rejects
+  creation at three visible membership rows but allows actual creation/deletion
+  for each smaller page. Each profile uses the existing legitimate target
+  session through the official client's fetch transport. This isolates the
+  organization page contract: the measured Source zero-page profile cannot find
+  its credential account during a new password sign-in. Foreign organizations
+  and the full foreign user state remain unchanged.
+- Two ordinary admissions reach the actual application before callback after
+  both genuine prechecks. The application barrier returns no patch. Serial
+  release retains each full request/response transport and real callback SQL
+  snapshot while making neither insertion nor capacity decisions. Both distinct
+  IDs persist, member count/page and duplicate organization output are observed,
+  and a later sequential retry rejects without writes or callback receipts.
+  This proves overlapping admission without claiming arbitrary response
+  completion ordering or concurrent capacity enforcement.
+
+The optional private `full` state selector retains all bundled member, team and
+team-member columns, including dates and nullable fields. A nonnull physical
+`membershipKey` is independently checked against the actual SHA-256 tuple
+encoding, then retained losslessly as a token plus the original team/user
+components. This lets the existing identity graph compare generated inputs and
+outputs together; it adds no comparator exemption or opaque field suppression.
+Full actor user/account/session observations additionally protect ownership.
+
+Meaningful prior-production controls are preserved:
+`/tmp/organization-member-multiplicity-sdk-before-final.log` uses actual
+master `8c0c8dc1` production with only the equivalent fixture scaffold. All three
+owners fail at the intended duplicate insertion (500 instead of 200, including
+the second concurrent admission). A separate old-list consumer control retains
+both approved migrations but restores the previous production organization
+query. `/tmp/organization-member-multiplicity-old-list-before.log` fails all
+three owners on missing repeated organization rows, including the wrong
+older/newer ordering. No baseline result is represented as passing.
+
+The initial Source-self setup failure is retained in
+`/tmp/organization-member-multiplicity-source-self.log`: creating a new session
+through the zero-page profile fails credential lookup. After using the existing
+actual session, Source-to-Source passes all three owners with 370 assertions in
+`/tmp/organization-member-multiplicity-source-self-v2.log`. This is a fixture
+setup correction, not an authentication or page-policy exception.
+The first old-storage concurrency control attempted JSON decoding of its empty
+500 body; the final preserved before log records that actual response losslessly
+and fails specifically on status instead.
+
+Limits remain SQLite's physical row/page behavior with valid installed data and
+these configuration values. Arbitrary adapter query ordering, custom joined
+columns, dangling records, exotic page values, duplicate-pair application
+constraints and invitation phased acceptance remain separate boundaries.
+No role union, pair-level lock, deduplication, app-FK rewrite or generic
+custom-store semantics are introduced.
+
+Final focused SDK verification passes all three new owners with 370 assertions
+in `/tmp/organization-member-multiplicity-sdk-final.log`. The complete
+organization, organization-extension and OpenAPI family passes 125 scenarios
+with 10,688 assertions in
+`/tmp/organization-member-multiplicity-sdk-family-final.log`. Strict locked
+fixture Clippy, client TypeScript, Rust formatting and diff checks pass in
+`/tmp/organization-member-multiplicity-sdk-fixture-clippy-final.log`,
+`/tmp/organization-member-multiplicity-sdk-typecheck-final.log`, and
+`/tmp/organization-member-multiplicity-sdk-fmt-check.log`.
+The frozen storage/FK prerequisites retain their separately proved native
+61-test family and installed schema evidence above. No full canonical gate was
+run by this owner. All focused fixture processes were stopped by their runner;
+source trees, scripts and nonpassing evidence are preserved.
