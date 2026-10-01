@@ -4,8 +4,8 @@ use better_auth_core::{AuthError, AuthRequest, AuthResponse};
 use serde_json::{Value, json};
 
 use crate::plugins::organization::types::{
-    CreateOrganizationRequest, NullableStringField, SetActiveOrganizationRequest,
-    UpdateOrganizationData, UpdateOrganizationRequest,
+    CreateOrganizationRequest, DeleteOrganizationRequest, NullableStringField,
+    SetActiveOrganizationRequest, UpdateOrganizationData, UpdateOrganizationRequest,
 };
 
 fn response(status: u16, code: &str, message: impl Into<String>) -> AuthResponse {
@@ -225,6 +225,28 @@ pub(super) fn update(req: &AuthRequest) -> Result<UpdateOrganizationRequest, Aut
     Ok(UpdateOrganizationRequest {
         organization_id,
         data: fields,
+    })
+}
+
+pub(super) fn delete(req: &AuthRequest) -> Result<DeleteOrganizationRequest, AuthResponse> {
+    let decoded = decode(req)?;
+    object(decoded.as_ref(), "body")
+        .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
+    let value = decoded
+        .as_ref()
+        .and_then(|value| value.get("organizationId"));
+    let mut issues = Vec::new();
+    let id = string(
+        value,
+        "body.organizationId",
+        true,
+        false,
+        false,
+        &mut issues,
+    );
+    validate(issues)?;
+    Ok(DeleteOrganizationRequest {
+        organization_id: id.unwrap_or_default(),
     })
 }
 

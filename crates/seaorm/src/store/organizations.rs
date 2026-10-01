@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set,
+    TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -115,19 +116,22 @@ where
     }
 
     async fn delete_organization(&self, id: &str) -> AuthResult<()> {
-        // Organization-owned API keys reference the organization polymorphically
-        // and so have no foreign key to cascade from.
-        let _ = entities::api_key::Entity::delete_many()
-            .filter(entities::api_key::Column::ReferenceId.eq(id))
-            .exec(self.connection())
+        let transaction = self.connection().begin().await.map_err(map_db_err)?;
+        let _ = entities::member::Entity::delete_many()
+            .filter(entities::member::Column::OrganizationId.eq(id))
+            .exec(&transaction)
             .await
             .map_err(map_db_err)?;
-
-        Entity::delete_by_id(id.to_owned())
-            .exec(self.connection())
+        let _ = entities::invitation::Entity::delete_many()
+            .filter(entities::invitation::Column::OrganizationId.eq(id))
+            .exec(&transaction)
             .await
-            .map(|_| ())
-            .map_err(map_db_err)
+            .map_err(map_db_err)?;
+        let _ = Entity::delete_by_id(id.to_owned())
+            .exec(&transaction)
+            .await
+            .map_err(map_db_err)?;
+        transaction.commit().await.map_err(map_db_err)
     }
 
     async fn list_user_organizations(&self, user_id: &str) -> AuthResult<Vec<Organization>> {

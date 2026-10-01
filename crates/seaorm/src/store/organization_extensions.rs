@@ -1,5 +1,5 @@
 //! Install organization team and dynamic-role persistence for fresh and existing schemas.
-use super::entities::{invitation, organization, organization_role, team, team_member};
+use super::entities::{invitation, organization_role, team, team_member};
 use sea_orm::{EntityName, Schema};
 use sea_orm_migration::prelude::*;
 
@@ -72,13 +72,7 @@ impl MigrationTrait for OrganizationExtensions {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let schema = Schema::new(manager.get_connection().get_database_backend());
         let mut teams = schema.create_table_from_entity(team::Entity);
-        let _ = teams.if_not_exists().foreign_key(
-            ForeignKey::create()
-                .name("fk_team_organization")
-                .from(team::Entity, team::Column::OrganizationId)
-                .to(organization::Entity, organization::Column::Id)
-                .on_delete(ForeignKeyAction::Cascade),
-        );
+        let _ = teams.if_not_exists();
         manager.create_table(teams).await?;
         let mut members = schema.create_table_from_entity(team_member::Entity);
         let _ = members.if_not_exists().foreign_key(
@@ -90,16 +84,7 @@ impl MigrationTrait for OrganizationExtensions {
         );
         manager.create_table(members).await?;
         let mut roles = schema.create_table_from_entity(organization_role::Entity);
-        let _ = roles.if_not_exists().foreign_key(
-            ForeignKey::create()
-                .name("fk_organization_role_organization")
-                .from(
-                    organization_role::Entity,
-                    organization_role::Column::OrganizationId,
-                )
-                .to(organization::Entity, organization::Column::Id)
-                .on_delete(ForeignKeyAction::Cascade),
-        );
+        let _ = roles.if_not_exists();
         manager.create_table(roles).await?;
         if !manager
             .has_column(invitation::Entity.table_name(), "team_id")

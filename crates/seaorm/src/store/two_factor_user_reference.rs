@@ -12,9 +12,9 @@ impl MigrationTrait for TwoFactorUserReference {
         Some(false)
     }
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        super::user_reference::remove_user_reference(
+        super::user_reference::remove_auth_references(
             manager,
-            super::user_reference::UserReference::TwoFactor,
+            &[super::user_reference::AuthReference::TwoFactor],
         )
         .await
     }

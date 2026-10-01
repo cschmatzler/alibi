@@ -289,6 +289,9 @@ pub trait OrganizationStore: Send + Sync {
         id: &str,
         update: UpdateOrganization,
     ) -> AuthResult<Organization>;
+    /// Delete the organization and its members/invitations atomically.
+    /// Extension rows (teams, roles, API keys) and sessions are retained, matching
+    /// the pinned default adapter. Custom adapters own their constraint policy.
     async fn delete_organization(&self, id: &str) -> AuthResult<()>;
     async fn list_user_organizations(&self, user_id: &str) -> AuthResult<Vec<Organization>>;
 }

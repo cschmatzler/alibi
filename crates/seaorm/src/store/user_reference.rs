@@ -1,4 +1,4 @@
-//! Preserve installed application schemas while removing named auth-user references.
+//! Preserve installed application schemas while removing named auth references.
 //!
 //! Table and constraint names come exclusively from this closed enum; row values
 //! use SQL bindings. The shared implementation retains cancellation and rollback
@@ -10,65 +10,102 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseExecutor, Statement};
 use sea_orm_migration::prelude::*;
 
 #[derive(Clone, Copy)]
-pub(super) enum UserReference {
+pub(super) enum AuthReference {
     DeviceCode,
     TwoFactor,
+    TeamOrganization,
+    OrganizationRoleOrganization,
 }
-impl UserReference {
+impl AuthReference {
     fn table(self) -> &'static str {
         match self {
             Self::DeviceCode => "device_code",
             Self::TwoFactor => "two_factor",
+            Self::TeamOrganization => "team",
+            Self::OrganizationRoleOrganization => "organization_role",
+        }
+    }
+    fn column(self) -> &'static str {
+        match self {
+            Self::DeviceCode | Self::TwoFactor => "user_id",
+            Self::TeamOrganization | Self::OrganizationRoleOrganization => "organization_id",
+        }
+    }
+    fn parent(self) -> &'static str {
+        match self {
+            Self::DeviceCode | Self::TwoFactor => "users",
+            Self::TeamOrganization | Self::OrganizationRoleOrganization => "organization",
         }
     }
     fn constraint(self) -> &'static str {
         match self {
             Self::DeviceCode => "fk_device_code_user_id",
             Self::TwoFactor => "fk_two_factor_user_id",
+            Self::TeamOrganization => "fk_team_organization",
+            Self::OrganizationRoleOrganization => "fk_organization_role_organization",
         }
     }
     fn label(self) -> &'static str {
         match self {
             Self::DeviceCode => "Device",
             Self::TwoFactor => "Two-factor",
+            Self::TeamOrganization => "Organization team",
+            Self::OrganizationRoleOrganization => "Organization role",
         }
     }
 }
 
-pub(super) async fn remove_user_reference(
+pub(super) async fn remove_auth_references(
     manager: &SchemaManager<'_>,
-    target: UserReference,
+    targets: &[AuthReference],
 ) -> Result<(), DbErr> {
     let connection = manager.get_connection();
     match connection.get_database_backend() {
         DatabaseBackend::Postgres => {
-            let _ = connection
-                .execute_unprepared(&format!(
-                    "ALTER TABLE {} DROP CONSTRAINT IF EXISTS {}",
-                    target.table(),
-                    target.constraint()
-                ))
-                .await?;
+            use sea_orm::TransactionTrait;
+            let DatabaseExecutor::Connection(database) = connection else {
+                return Err(DbErr::Migration(
+                    "Auth references must be migrated outside an existing transaction".into(),
+                ));
+            };
+            let transaction = database.begin().await?;
+            for target in targets {
+                let _ = transaction
+                    .execute_unprepared(&format!(
+                        "ALTER TABLE {} DROP CONSTRAINT IF EXISTS {}",
+                        target.table(),
+                        target.constraint()
+                    ))
+                    .await?;
+            }
+            transaction.commit().await?;
             Ok(())
         }
         DatabaseBackend::Sqlite => {
-            let rows = connection
-                .query_all_raw(Statement::from_string(
-                    DatabaseBackend::Sqlite,
-                    format!("PRAGMA foreign_key_list('{}')", target.table()),
-                ))
-                .await?;
-            let mut found = false;
-            for row in rows {
-                found |= row.try_get::<String>("", "from")? == "user_id";
+            let mut found = Vec::new();
+            for target in targets {
+                let rows = connection
+                    .query_all_raw(Statement::from_string(
+                        DatabaseBackend::Sqlite,
+                        format!("PRAGMA foreign_key_list('{}')", target.table()),
+                    ))
+                    .await?;
+                for row in rows {
+                    if row.try_get::<String>("", "from")? == target.column()
+                        && row.try_get::<String>("", "table")? == target.parent()
+                    {
+                        found.push(*target);
+                        break;
+                    }
+                }
             }
-            if !found {
+            if found.is_empty() {
                 return Ok(());
             }
-            rebuild_sqlite_user_reference(manager, target).await
+            rebuild_sqlite_references(manager, &found).await
         }
         backend => Err(DbErr::Custom(format!(
-            "auth user-reference migration does not support {backend:?}"
+            "auth reference migration does not support {backend:?}"
         ))),
     }
 }
@@ -77,9 +114,9 @@ fn sqlx_error(error: sea_orm::sqlx::Error) -> DbErr {
     DbErr::Migration(format!("Auth user reference: {error}"))
 }
 
-async fn rebuild_sqlite_user_reference(
+async fn rebuild_sqlite_references(
     manager: &SchemaManager<'_>,
-    target: UserReference,
+    targets: &[AuthReference],
 ) -> Result<(), DbErr> {
     let DatabaseExecutor::Connection(database) = manager.get_connection() else {
         return Err(DbErr::Migration(
@@ -114,7 +151,7 @@ async fn rebuild_sqlite_user_reference(
         .execute(&mut *connection)
         .await
         .map_err(sqlx_error)?;
-    let result = rebuild_reference_transaction(&mut connection, target).await;
+    let result = rebuild_reference_transaction(&mut connection, targets).await;
     let _ = sea_orm::sqlx::query(&format!("PRAGMA foreign_keys = {foreign_keys}"))
         .execute(&mut *connection)
         .await
@@ -142,12 +179,13 @@ async fn rebuild_sqlite_user_reference(
 
 async fn rebuild_reference_transaction(
     connection: &mut SqliteConnection,
-    target: UserReference,
+    targets: &[AuthReference],
 ) -> Result<(), DbErr> {
     let mut transaction = connection.begin().await.map_err(sqlx_error)?;
-    let table = target.table();
-    let temporary = format!("{table}__user_reference");
     let outcome = async {
+      for target in targets {
+        let table = target.table();
+        let temporary = format!("{table}__user_reference");
         let sql: String = sea_orm::sqlx::query_scalar("SELECT sql FROM sqlite_schema WHERE type='table' AND name=?").bind(table).fetch_one(&mut *transaction).await.map_err(sqlx_error)?;
         let statements: Vec<String> = sea_orm::sqlx::query_scalar("SELECT sql FROM sqlite_schema WHERE tbl_name=? AND type IN ('index','trigger') AND sql IS NOT NULL ORDER BY type,name").bind(table).fetch_all(&mut *transaction).await.map_err(sqlx_error)?;
         let body = sql_tokens(&sql)?.into_iter().find(|span| sql[span.clone()].starts_with('(')).ok_or_else(|| DbErr::Migration("Missing auth table definition".to_owned()))?;
@@ -158,7 +196,14 @@ async fn rebuild_reference_transaction(
         for end in sql_tokens(definitions)?.into_iter().filter(|span| &definitions[span.clone()] == ",").map(|span| (span.start,span.end)).chain(std::iter::once((definitions.len(),definitions.len()))) {
             let definition = &definitions[start..end.0];
             let tokens = sql_tokens(definition)?;
-            let target = matches!(tokens.as_slice(), [constraint,name,foreign,key,..] if definition[constraint.clone()].eq_ignore_ascii_case("CONSTRAINT") && definition[name.clone()].trim_matches(['\"','\'','`','[',']']).eq_ignore_ascii_case(target.constraint()) && definition[foreign.clone()].eq_ignore_ascii_case("FOREIGN") && definition[key.clone()].eq_ignore_ascii_case("KEY"));
+            let target = matches!(tokens.as_slice(), [constraint,name,foreign,key,columns,references,parent,..]
+                if definition[constraint.clone()].eq_ignore_ascii_case("CONSTRAINT")
+                && definition[name.clone()].trim_matches(['\"','\'','`','[',']']).eq_ignore_ascii_case(target.constraint())
+                && definition[foreign.clone()].eq_ignore_ascii_case("FOREIGN")
+                && definition[key.clone()].eq_ignore_ascii_case("KEY")
+                && definition[columns.clone()].trim().trim_matches(['(',')',' ','\"','\'','`','[',']']).eq_ignore_ascii_case(target.column())
+                && definition[references.clone()].eq_ignore_ascii_case("REFERENCES")
+                && definition[parent.clone()].trim_matches(['\"','\'','`','[',']']).eq_ignore_ascii_case(target.parent()));
             if target { removed += 1; } else { kept.push(definition); }
             start = end.1;
         }
@@ -175,8 +220,9 @@ async fn rebuild_reference_transaction(
         let _ = sea_orm::sqlx::query(&format!("DROP TABLE \"{table}\"")).execute(&mut *transaction).await.map_err(sqlx_error)?;
         let _ = sea_orm::sqlx::query(&format!("ALTER TABLE \"{temporary}\" RENAME TO \"{table}\"")).execute(&mut *transaction).await.map_err(sqlx_error)?;
         for statement in statements { let _ = sea_orm::sqlx::query(&statement).execute(&mut *transaction).await.map_err(sqlx_error)?; }
+      }
         let violations = sea_orm::sqlx::query("PRAGMA foreign_key_check").fetch_all(&mut *transaction).await.map_err(sqlx_error)?;
-        if !violations.is_empty() { return Err(DbErr::Migration(format!("{} migration would invalidate foreign-key relationships",target.label()))); }
+        if !violations.is_empty() { return Err(DbErr::Migration(format!("{} migration would invalidate foreign-key relationships",targets.first().map_or("Auth", |target| target.label())))); }
         Ok(())
     }.await;
     match outcome {

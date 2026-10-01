@@ -215,6 +215,7 @@ pub(super) async fn profiles(
 ) -> AuthResult<Vec<TeamProfile>> {
     let mut profiles = Vec::new();
     for name in [
+        "org-deletion-disabled",
         "org-teams",
         "org-teams-no-default",
         "org-teams-limited",
@@ -233,6 +234,7 @@ pub(super) async fn profiles(
         }
         let dynamic = name == "org-teams-dynamic" || name.starts_with("org-roles-");
         let mut organization = OrganizationConfig {
+            disable_organization_deletion: name == "org-deletion-disabled",
             teams: TeamsConfig {
                 enabled: true,
                 create_default_team: name != "org-teams-no-default",
@@ -304,6 +306,10 @@ struct OrganizationQuery {
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case")]
 enum TeamOperation {
+    OrphanOrganization {
+        #[serde(rename = "organizationId")]
+        organization_id: String,
+    },
     ListUserInvitations {
         email: String,
     },
@@ -442,9 +448,11 @@ pub(super) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
         );
     }
     let operation_profiles = profiles.clone();
+    let operation_database = database.clone();
     router
         .route("/__test/organization-api", post(move |Json(body): Json<ServerRequest>| {
             let profiles = operation_profiles.clone();
+            let database = operation_database.clone();
             async move {
                 let name = body.profile.as_deref().unwrap_or("org-teams");
                 let Some(profile) = profiles.iter().find(|profile| profile.name == name) else {
@@ -452,6 +460,37 @@ pub(super) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                 };
                 let plugin = OrganizationPlugin::with_config(profile.config.clone());
                 let result = match body.operation {
+                    TeamOperation::OrphanOrganization { organization_id } => {
+                        async {
+                            if profile.auth.store().get_organization_by_id(&organization_id)
+                                .await?.is_none()
+                            {
+                                return Err(AuthError::bad_request("Organization not found"));
+                            }
+                            let mut connection = database.get_sqlite_connection_pool().acquire()
+                                .await.map_err(|error| AuthError::internal(error.to_string()))?;
+                            // A controlled legacy-row fixture operation; never return a
+                            // connection with altered enforcement after failure/cancellation.
+                            connection.close_on_drop();
+                            let enabled: i64 = better_auth_seaorm::sea_orm::sqlx::query_scalar(
+                                "PRAGMA foreign_keys",
+                            ).fetch_one(&mut *connection).await
+                                .map_err(|error| AuthError::internal(error.to_string()))?;
+                            let _ = better_auth_seaorm::sea_orm::sqlx::query("PRAGMA foreign_keys=OFF")
+                                .execute(&mut *connection).await
+                                .map_err(|error| AuthError::internal(error.to_string()))?;
+                            let result = better_auth_seaorm::sea_orm::sqlx::query(
+                                "DELETE FROM organization WHERE id=?",
+                            ).bind(&organization_id).execute(&mut *connection).await;
+                            let _ = better_auth_seaorm::sea_orm::sqlx::query(
+                                &format!("PRAGMA foreign_keys={enabled}"),
+                            ).execute(&mut *connection).await
+                                .map_err(|error| AuthError::internal(error.to_string()))?;
+                            connection.return_to_pool().await;
+                            let _ = result.map_err(|error| AuthError::internal(error.to_string()))?;
+                            Ok(json!({"removed":true}))
+                        }.await
+                    },
                     TeamOperation::ListUserInvitations { email } => {
                         plugin.list_user_invitations(profile.auth.context(), &email).await
                             .and_then(|invitations| serde_json::to_value(invitations).map_err(AuthError::from))
