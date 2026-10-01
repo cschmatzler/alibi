@@ -41,6 +41,16 @@ export function socialProviderFixture(base: BetterAuthOptions) {
       profiles.set(path, betterAuth(authOptions));
     }
   }
+  for (const mode of ["default", "configured", "disabled", "disabled-configured", "issuer", "issuer-slashes"]) {
+    const path = `/__test/profiles/social-gitlab-${mode}/api/auth`;
+    const authOptions: BetterAuthOptions = { ...base, basePath: path, plugins: [], socialProviders: { gitlab: {
+      clientId: "fixture-social-client", clientSecret: "fixture-social-secret",
+      ...(mode.startsWith("issuer") ? { issuer: `${base.baseURL}/__test/social-provider/gitlab${mode === "issuer-slashes" ? "///" : ""}` } : {}),
+      ...(mode === "configured" || mode === "disabled-configured" ? { scope: ["configured-scope"] } : {}),
+      ...(mode.startsWith("disabled") ? { disableDefaultScope: true } : {}),
+    } } };
+    profiles.set(path, betterAuth(authOptions));
+  }
   async function state() {
     const { adapter } = await profiles.get("/__test/profiles/social-discord-default/api/auth")!.$context;
     const [users, accounts, sessions] = await Promise.all([
@@ -57,6 +67,14 @@ export function socialProviderFixture(base: BetterAuthOptions) {
   }
   return { profiles, reset() { profile = {}; receipts.length = 0; }, async handle(request: Request) {
     const url = new URL(request.url);
+    if (url.pathname === "/__test/social-provider/gitlab/oauth/token" || url.pathname === "/__test/social-provider/gitlab/api/v4/user") {
+      const body = request.method === "POST" ? Object.fromEntries(new URLSearchParams(await request.text())) : null;
+      receipts.push({ path: url.pathname, method: request.method, authorization: request.headers.get("authorization"), contentType: request.headers.get("content-type"), body });
+      if (url.pathname.endsWith("/token")) return Response.json(body?.grant_type === "refresh_token"
+        ? { access_token: "fixture-gitlab-refreshed-access", refresh_token: "fixture-gitlab-refreshed-refresh", token_type: "Bearer", scope: "read_user refreshed-scope", expires_in: 1800 }
+        : { access_token: "fixture-gitlab-access", refresh_token: "fixture-gitlab-refresh", token_type: "Bearer", scope: "read_user issued-scope", expires_in: 3600 });
+      return Response.json(profile);
+    }
     if (url.pathname === "/__test/social-provider/profile" && request.method === "POST") {
       profile = await request.json(); return Response.json({ status: true, profile });
     }
