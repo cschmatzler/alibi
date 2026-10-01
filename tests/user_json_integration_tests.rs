@@ -32,7 +32,7 @@ async fn prepared_metadata_replacement_persists_the_edited_value() {
         name: Set("Prepared".into()),
         slug: Set("prepared-metadata".into()),
         logo: Set(None),
-        metadata: Set(prepared),
+        metadata: Set(Some(prepared)),
         created_at: Set(chrono::Utc::now()),
         updated_at: Set(chrono::Utc::now()),
         ..Default::default()
@@ -40,14 +40,15 @@ async fn prepared_metadata_replacement_persists_the_edited_value() {
     .insert(&db)
     .await
     .unwrap();
-    assert_eq!(inserted.metadata["version"], "edited");
-    let mut value: serde_json::Value = inserted.metadata.clone().into();
+    assert_eq!(inserted.metadata.as_ref().unwrap()["version"], "edited");
+    let mut value: serde_json::Value = inserted.metadata.clone().unwrap().into();
     value["version"] = serde_json::json!("updated");
     let mut active = inserted.into_active_model();
-    active.metadata =
-        Set(prepare_metadata_value(JsonMetadata::from(value), DbBackend::Sqlite).unwrap());
+    active.metadata = Set(Some(
+        prepare_metadata_value(JsonMetadata::from(value), DbBackend::Sqlite).unwrap(),
+    ));
     let updated = active.update(&db).await.unwrap();
-    assert_eq!(updated.metadata["version"], "updated");
+    assert_eq!(updated.metadata.as_ref().unwrap()["version"], "updated");
     let row = db
         .query_one_raw(Statement::from_sql_and_values(
             DbBackend::Sqlite,
