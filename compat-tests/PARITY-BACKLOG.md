@@ -141,3 +141,12 @@ admin query validation. Source UV/backup/origin policy, Unicode role normalizati
 member removal hooks and automatic API-key cleanup continue in priority order.
 Source callback deletion/no-row behavior, accepted filter arrays and all wider
 configuration/storage/provider boundaries remain accounted for as gaps.
+
+PRs #90–92 are now merged and their master tree equals the passing 460-scenario
+canonical tree: 24,072 SDK assertions, 41 harness / 317, two Chromium / 22 and
+79.0773% source lines (28,917 / 36,568). The next central gate covers reviewed
+Unicode incoming role normalization, hot module-global API-key automatic cleanup,
+and genuine typed WebAuthn authentication policy against current physical counter
+state. Member removal, single-row deferred deletion, UV-absent registration and
+accepted admin filter arrays remain priority follow-ups. Historical measurements
+above belong to their stated trees and do not describe current master.

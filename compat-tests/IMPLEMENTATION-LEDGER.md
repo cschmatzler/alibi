@@ -104,9 +104,9 @@ they do not establish all configuration or integration behavior.
 | Member-role normalization | SIWE owner; coordinator independent review | Existing invitation and membership storage | Merged PR #88 stores normalized string/array roles without dropping duplicates. Genuine before-failure and public readback pass. |
 | Member-role lifecycle hooks | SIWE owner; coordinator review; independent JWT-owner review | Optional-row member store and normalization | Merged PR #89 implements awaited callbacks, target-user snapshots and trusted patches. Six SDK owners / 434 and organization/OpenAPI 89 / 5,466 pass; native zero-row/SQL-error proofs pass. Connected canonical gate and required evidence pass; empty input and body/auth ordering follow in the next reviewed slice. |
 | Passkey authentication callbacks | JWT owner | Verified immutable authentication facts | Reviewed frozen 108cd739; coordinator and independent phone-owner review clear. Six genuine signed owners prove callback errors, consumption, full input identity and original verified session ownership despite trusted credential reassignment. Focused passkey 17 / 1,336 passes; next gate pending. |
-| Member-role input/auth ordering | SIWE owner | Member lifecycle hooks and existing nested-session policy | Reviewed frozen 2f62e75b; coordinator review clear, independent JWT-owner review pending. Five owners prove schema/media, empty-role/selector precedence, exact Unauthorized, actual row cleanup and sibling/foreign state. Organization/OpenAPI 94 / 6,044 passes. Next gate pending; nested middleware erases session-fetch errors upstream while later storage/hook errors remain visible. |
-| Repeated admin query validation | Coordinator; independent phone-owner review | Ordered query values across actual Axum/dispatch and route-local schemas | Reviewed frozen a4549d07. Source/self 1 / 90 and full admin 35 / 3,114 pass, along with native core/admin/Axum, strict Clippy and TypeScript. Before-repair flattening returned 401 instead of array validation 400. Next gate pending; accepted filter arrays and other query consumers remain separate. |
-| API-key automatic background cleanup | Phone owner | Hot owned task completion and module-global real-clock throttle | Implementation active. Source global admission, force bypass, generator order, ignored/throwing handlers and swallowed cleanup failures probed. No clock mutation or production pause seam is planned. |
+| Member-role input/auth ordering | SIWE owner | Member lifecycle hooks and existing nested-session policy | Reviewed frozen 2f62e75b; coordinator review clear, independent JWT-owner review pending. Five owners prove schema/media, empty-role/selector precedence, exact Unauthorized, actual row cleanup and sibling/foreign state. Organization/OpenAPI 94 / 6,044 passes. Merged PR #90; complete 460-scenario gate passed. Remaining: nested middleware erases session-fetch errors upstream while later storage/hook errors remain visible. |
+| Repeated admin query validation | Coordinator; independent phone-owner review | Ordered query values across actual Axum/dispatch and route-local schemas | Reviewed frozen a4549d07. Source/self 1 / 90 and full admin 35 / 3,114 pass, along with native core/admin/Axum, strict Clippy and TypeScript. Before-repair flattening returned 401 instead of array validation 400. Merged PR #91; complete 460-scenario gate passed. Remaining: accepted filter arrays and other query consumers remain separate. |
+| API-key automatic background cleanup | Phone owner; independent JWT-owner and coordinator review | Hot owned task completion and module-global real-clock throttle | Frozen c8bee0bf; API-key SDK 46 / 2,182, source controls 6 / 596, native 52 and strict build checks pass. Genuine old awaited response and generator-order failures preserved. Central integration gate pending; individual-row deferral is separate. |
 
 Full local compatibility/coverage gates and inventory mutations are serialized.
 Workers use separate worktrees, ports, databases and logs. Old unpublished dirty
@@ -172,3 +172,28 @@ The next integrated tree adds reviewed authentication callbacks, member-role
 HTTP input/cleanup and repeated admin query validation. Its full gate is pending.
 Unicode role normalization, source-compatible WebAuthn UV/backup/origin policies,
 member removal lifecycle and automatic API-key cleanup are active owners.
+
+## Delivered validation and current next wave
+
+PRs #90–92 are merged: verified passkey authentication callbacks, ordered
+member-role HTTP input/session semantics, and repeated admin query validation.
+Master b676a5fe is full-tree equal to the tested 3311ff51 integration. The full
+canonical gate passed 460 SDK scenarios / 24,072 assertions, 41 harness tests /
+317 assertions, two Chromium tests / 22 assertions and 79.0773% source lines
+(28,917 / 36,568). All native configurations, Rustls/Redis builds, TypeScript,
+strict Clippy and documentation checks passed.
+
+The next integration contains independently reviewed Unicode member-role input
+(2b8ca3dc), automatic API-key background cleanup (c8bee0bf), and typed Source
+passkey authentication policy (1f21591c). Unicode focused members pass 17 / 1,216;
+passkeys pass 24 / 2,164, including genuine signed UV/backup/origin negatives,
+replay and actual public counter increase/decrease. The existing locked core
+0.5.4 dependency is wired directly without any dependency version changes.
+Required evidence is additive and the raw exception list remains empty.
+
+Member removal is actively owned by the organization agent, with immutable
+callback snapshots and scoped transactional membership/team cleanup contracts.
+Deferred individual API-key deletion and UV-absent passkey registration follow
+the current frozen slices. The coordinator is investigating accepted admin
+filter arrays using the actual pinned SQLite runtime. These remain unresolved
+until implemented, independently reviewed and integrated through the full gate.
