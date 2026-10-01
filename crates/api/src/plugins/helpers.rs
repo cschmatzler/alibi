@@ -329,7 +329,7 @@ async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
     user_agent: Option<String>,
     overrides: Option<SessionOverrides>,
 ) -> Result<IssuedSession<S>, SessionIssueError> {
-    let mut user = ctx
+    let user = ctx
         .database
         .get_user_by_id(user_id)
         .await?
@@ -340,7 +340,7 @@ async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
             .ban_expires()
             .is_some_and(|expires| expires <= Utc::now())
         {
-            user = ctx
+            let _ = ctx
                 .database
                 .update_user(
                     user_id,

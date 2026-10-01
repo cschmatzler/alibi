@@ -26,6 +26,12 @@
         "rejection": "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
         "authorization": "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
         "state": null
+      },
+      "requiredEvidence": {
+        "success": [
+          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
+          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban"
+        ]
       }
     },
     {
@@ -148,6 +154,12 @@
           "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
           "phone signup binds integral and exponential JSON numbers to exact SQLite text",
           "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners"
+        ]
+      },
+      "requiredEvidence": {
+        "success": [
+          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
+          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban"
         ]
       }
     },
@@ -588,6 +600,16 @@
           "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
           "admin empty persisted and configured role fall back to the actual configured user grant"
         ]
+      },
+      "requiredEvidence": {
+        "success": [
+          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
+          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban"
+        ],
+        "state": [
+          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
+          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban"
+        ]
       }
     },
     {
@@ -652,6 +674,14 @@
         "rejection": null,
         "authorization": null,
         "state": "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization"
+      },
+      "requiredEvidence": {
+        "success": [
+          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban"
+        ],
+        "state": [
+          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban"
+        ]
       }
     },
     {
@@ -1687,6 +1717,14 @@
         "rejection": "admin create-user, set-role, set-user-password, and remove-user match TS",
         "authorization": "admin create-user, set-role, set-user-password, and remove-user match TS",
         "state": "official client signs in with imported TypeScript scrypt credentials"
+      },
+      "requiredEvidence": {
+        "success": [
+          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban"
+        ],
+        "state": [
+          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban"
+        ]
       }
     },
     {
