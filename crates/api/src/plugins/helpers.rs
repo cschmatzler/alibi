@@ -242,6 +242,7 @@ pub struct IssuedSession<S: better_auth_core::AuthSchema> {
 pub(crate) struct CompletedSession<S: better_auth_core::AuthSchema> {
     pub(crate) user: S::User,
     pub(crate) session: S::Session,
+    pub(crate) user_view: Option<better_auth_core::wire::UserView>,
 }
 
 pub(crate) fn record_completed_session<S: better_auth_core::AuthSchema>(
@@ -252,6 +253,29 @@ pub(crate) fn record_completed_session<S: better_auth_core::AuthSchema>(
         request.extensions.insert(CompletedSession::<S> {
             user: user.clone(),
             session: session.clone(),
+            user_view: None,
+        });
+    }
+}
+
+/// Retain a Source-defined callback projection after genuine session issuance.
+/// This cannot create a completion or replace its raw models/owner/token.
+pub(crate) fn record_completed_session_user_view<S: better_auth_core::AuthSchema>(
+    original_user: &S::User,
+    session: &S::Session,
+    view: better_auth_core::wire::UserView,
+) {
+    use better_auth_core::AuthSession;
+    if let Some(request) = better_auth_core::hooks::current_request_hook_context()
+        && let Some(completed) = request.extensions.get::<CompletedSession<S>>()
+        && completed.user.id() == original_user.id()
+        && view.id == original_user.id().as_ref()
+        && completed.session.token() == session.token()
+    {
+        request.extensions.insert(CompletedSession::<S> {
+            user: completed.user.clone(),
+            session: completed.session.clone(),
+            user_view: Some(view),
         });
     }
 }

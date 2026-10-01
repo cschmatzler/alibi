@@ -1,15 +1,17 @@
 import { Database } from "bun:sqlite";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError } from "better-auth/api";
-import { anonymous } from "better-auth/plugins";
+import { anonymous, emailOTP, magicLink, oneTap, phoneNumber } from "better-auth/plugins";
+import { passkey } from "@better-auth/passkey";
 import { getMigrations } from "better-auth/db/migration";
 
 /** Application identity/link callbacks; all receipts come from actual plugin calls. */
 export async function anonymousFixture(base: BetterAuthOptions, database: Database) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   const events: unknown[] = [];
+  const deliveries = new Map<string, unknown>();
   let sequence = 0;
-  const modes = ["standard", "disabled", "link-error", "user-cancel", "user-forbidden", "session-cancel", "session-forbidden", "snapshot", "invalid-email", "empty-name"];
+  const modes = ["standard", "disabled", "link-error", "user-cancel", "user-forbidden", "session-cancel", "session-forbidden", "snapshot", "invalid-email", "empty-name", "methods"];
   for (const mode of modes) {
     const path = `/__test/profiles/anonymous-${mode}/api/auth`;
     const options: BetterAuthOptions = {
@@ -17,6 +19,12 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
         clientId: "fixture-social-client", clientSecret: "fixture-social-secret",
         issuer: `${base.baseURL}/__test/social-provider/gitlab`,
       } },
+      ...(mode === "methods" ? { emailVerification: {
+        ...base.emailVerification, sendOnSignUp: false, autoSignInAfterVerification: true,
+        async sendVerificationEmail({ user, url, token }: { user: { email: string }; url: string; token: string }) {
+          deliveries.set(`verification:${user.email}`, { email: user.email, url, token });
+        },
+      } } : {}),
       databaseHooks: {
         user: { create: { before: async (user, context) => {
           if (context?.path !== "/sign-in/anonymous") return;
@@ -36,7 +44,14 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
           },
         } },
       },
-      plugins: [anonymous({
+      plugins: [...(mode === "methods" ? [
+        magicLink({ async sendMagicLink({ email, url, token, metadata }) { deliveries.set(`magic:${email}`, { email, url, token, metadata: metadata ?? null }); } }),
+        emailOTP({ async sendVerificationOTP({ email, otp, type }) { deliveries.set(`${type}:${email}`, { email, otp, type }); } }),
+        phoneNumber({ async sendOTP({ phoneNumber, code }) { deliveries.set(`phone:${phoneNumber}`, { phoneNumber, code }); }, signUpOnVerification: {
+          getTempEmail: (phone: string) => `${phone}@phone.fixture.test`, getTempName: (phone: string) => phone,
+        } }),
+        passkey(), oneTap({ clientId: "one-tap-plugin-client" }),
+      ] : []), anonymous({
         disableDeleteAnonymousUser: mode === "disabled",
         generateRandomEmail: () => mode === "invalid-email" ? "not an email" : `anonymous-${++sequence}@fixture.test`,
         generateName: async () => { await Promise.resolve(); return mode === "empty-name" ? "" : "Configured Anonymous"; },
@@ -47,10 +62,12 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
         },
       })],
     };
-    if (mode === "standard") { const { runMigrations } = await getMigrations(options); await runMigrations(); }
+    if (mode === "standard" || mode === "methods") { const { runMigrations } = await getMigrations(options); await runMigrations(); }
     profiles.set(path, betterAuth(options));
   }
-  return { profiles, reset() { sequence = 0; events.length = 0; }, async handle(request: Request) {
+  return { profiles, reset() { sequence = 0; events.length = 0; deliveries.clear(); }, async handle(request: Request) {
+    const url = new URL(request.url);
+    if (url.pathname === "/__test/anonymous/delivery") return Response.json(deliveries.get(url.searchParams.get("key") ?? "") ?? null);
     if (new URL(request.url).pathname !== "/__test/anonymous/state") return null;
     const { adapter } = await profiles.get("/__test/profiles/anonymous-standard/api/auth")!.$context;
     const [users, accounts, sessions] = await Promise.all([
