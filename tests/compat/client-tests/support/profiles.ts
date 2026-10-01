@@ -11,6 +11,7 @@ function variants<P extends string, S extends string>(prefix: P, suffixes: reado
  */
 export const FIXTURE_PROFILES = [
   "oauth-proxy",
+  "two-factor-pending-lookup", "two-factor-pending-lookup-disabled", "two-factor-pending-lookup-zero", "two-factor-pending-lookup-zero-disabled",
   ...variants("session-cache-", ["standard", "disabled", "version", "version-api", "version-ordinary", "zero", "nan", "fractional", "negative", "infinite", "negative-infinite", "date-version"] as const),
   ...variants("anonymous-", ["standard", "disabled", "link-error", "user-cancel", "user-forbidden", "session-cancel", "session-forbidden", "snapshot", "invalid-email", "empty-name", "methods"] as const),
   "admin-impersonation-privileged", "admin-impersonation-ordinary", "admin-impersonation-legacy", "admin-impersonation-no-base",
