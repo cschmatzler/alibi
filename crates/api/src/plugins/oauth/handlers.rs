@@ -52,7 +52,12 @@ fn generate_pkce() -> (String, String) {
     const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
     let mut random = thread_rng();
     let verifier: String = (0..128)
-        .map(|_| char::from(ALPHABET[random.gen_range(0..ALPHABET.len())]))
+        .filter_map(|_| {
+            ALPHABET
+                .get(random.gen_range(0..ALPHABET.len()))
+                .copied()
+                .map(char::from)
+        })
         .collect();
     let mut hasher = Sha256::new();
     hasher.update(verifier.as_bytes());
