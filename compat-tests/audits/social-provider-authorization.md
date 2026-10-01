@@ -23,7 +23,8 @@ Discord uses no PKCE in either authorization URL or authorization-code exchange.
 Its absent/empty prompt defaults to `none`. A configured permissions number is
 emitted only when effective scope contains the exact string `bot`; zero,
 fractional and nonfinite values use JS number strings, without scope trimming or
-deduplication. Existing authorization-parameter collision guards remain intact.
+deduplication. Existing configured authorization-parameter handling remains unchanged; native
+collision behavior is still an explicit gap.
 Visible URLs retain the actual fixed provider defaults, including Discord's
 `https://discord.com/api/oauth2/authorize`.
 
@@ -84,3 +85,5 @@ The 18 existing native account OAuth integration tests also pass after the polic
 change (`/tmp/social-authorization-native-siblings-final.log`). Investigation-only
 source files are preserved outside the feature tree under
 `/tmp/social-provider-investigation-artifacts/compat-tests/`.
+
+Independent phone-owner and coordinator review of frozen `efd9b2e6` is clear for the measured scope/configuration and genuine callback lifecycle. All eleven paths, pinned provider factories and shared authorization/token consumers were inspected. A misleading collision-guard claim was corrected above; unusual endpoint/configured-parameter collisions remain open. Fifteen additive inventory requirements anchor the real official-client consumers without removing prior evidence. The next integrated canonical gate remains pending.
