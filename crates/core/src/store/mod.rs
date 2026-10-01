@@ -521,7 +521,9 @@ pub enum ConsumeApiKeyResult {
         /// Milliseconds until the current rate-limit window ends.
         try_again_in: f64,
     },
-    /// The quota was exhausted. Non-refillable keys at zero quota are deleted.
+    /// The quota was exhausted. This outcome preserves the row and its counters.
+    /// The plugin owns deletion after an initial zero-quota snapshot; a loser
+    /// of concurrent final-quota consumption must not delete the credential.
     UsageExhausted,
 }
 
