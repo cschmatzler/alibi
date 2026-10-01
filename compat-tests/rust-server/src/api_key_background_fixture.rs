@@ -9,7 +9,8 @@ use axum::{
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::api_key::{
-    ApiKeyConfig, ApiKeyGenerationOptions, ApiKeyGenerator, RateLimitDefaults, VerifyApiKey,
+    ApiKeyConfig, ApiKeyErrorCode, ApiKeyGenerationOptions, ApiKeyGenerator,
+    ApiKeyVerificationError, RateLimitDefaults, VerifyApiKey,
 };
 use better_auth::plugins::{ApiKeyPlugin, EmailPasswordPlugin, SessionManagementPlugin};
 use better_auth::{
@@ -74,6 +75,34 @@ impl Application {
             let _ = receiver.await;
         }
         id
+    }
+    async fn begin_delete(&self, profile: &'static str, key_id: &str) -> usize {
+        let (id, receiver) = {
+            let mut state = self.state.lock().unwrap();
+            state.serial += 1;
+            state.active += 1;
+            let id = state.serial;
+            let receiver = if state.hold {
+                let (sender, receiver) = oneshot::channel();
+                state.blocked.insert(id, sender);
+                Some(receiver)
+            } else {
+                None
+            };
+            (id, receiver)
+        };
+        self.event(
+            json!({"kind":"row-delete-enter","profile":profile,"serial":id,"key":{"id":key_id}}),
+        );
+        if let Some(receiver) = receiver {
+            let _ = receiver.await;
+        }
+        id
+    }
+    fn finish_delete(&self, id: usize, success: bool) {
+        self.event(json!({"kind":"row-delete-complete","serial":id,"success":success}));
+        self.state.lock().unwrap().active -= 1;
+        self.changed.send_modify(|value| *value += 1);
     }
     fn finish(&self, id: usize, success: bool) {
         self.event(json!({"kind":"cleanup-complete","serial":id,"success":success}));
@@ -167,10 +196,13 @@ struct Control {
     #[serde(default)]
     count: usize,
     key_id: Option<String>,
+    remaining: Option<f64>,
+    serial: Option<usize>,
 }
 #[derive(Deserialize)]
 struct Verify {
     key: String,
+    permissions: Option<Value>,
 }
 #[derive(Deserialize)]
 struct Profile {
@@ -250,8 +282,12 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 },
                 "configure"=>{let mut state=application.state.lock().unwrap();state.hold=input.hold;state.observer=input.observer;state.generator=input.generator;},
                 "release"=>{
-                    let senders=std::mem::take(&mut application.state.lock().unwrap().blocked);
-                    for (_,sender) in senders {let _=sender.send(());}
+                    if let Some(serial)=input.serial {
+                        if let Some(sender)=application.state.lock().unwrap().blocked.remove(&serial) {let _=sender.send(());}
+                    } else {
+                        let senders=std::mem::take(&mut application.state.lock().unwrap().blocked);
+                        for (_,sender) in senders {let _=sender.send(());}
+                    }
                 },
                 "wait"=>application.wait(&input.kind,input.count).await,
                 "window"=>{
@@ -259,6 +295,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     tokio::time::sleep_until(tokio::time::Instant::from_std(anchor+Duration::from_millis(10020))).await;
                 },
                 "remaining"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET remaining=11 WHERE id=?",[input.key_id.unwrap().into()])).await.unwrap();},
+                "quota"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET remaining=? WHERE id=?",[input.remaining.unwrap().into(),input.key_id.unwrap().into()])).await.unwrap();},
                 "expire"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET expires_at=? WHERE id=?",["1970-01-01T00:00:00.000Z".into(),input.key_id.unwrap().into()])).await.unwrap();},
                 "veto"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"CREATE TRIGGER automatic_cleanup_veto BEFORE DELETE ON api_keys BEGIN SELECT RAISE(ABORT,'actual cleanup storage veto'); END")).await.unwrap();},
                 "restore"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"DROP TRIGGER IF EXISTS automatic_cleanup_veto")).await.unwrap();},
@@ -290,7 +327,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                             &VerifyApiKey {
                                 key: &input.key,
                                 config_id: None,
-                                permissions: None,
+                                permissions: input.permissions.as_ref(),
                             },
                             auth.context(),
                         )
@@ -299,8 +336,19 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                         Ok(key) => {
                             Json(json!({"valid":true,"error":null,"key":key})).into_response()
                         }
-                        Err(error) => Json(json!({"valid":false,"error":format!("{error:?}")}))
-                            .into_response(),
+                        Err(error) => {
+                            let body = match error {
+                                ApiKeyVerificationError::Validation(error) => serde_json::to_value(error).unwrap(),
+                                ApiKeyVerificationError::Internal(AuthError::Api {code,message,..}) => {
+                                    let mut body=json!({"message":message});
+                                    if let Some(code)=code {body["code"]=json!(code);}
+                                    body
+                                },
+                                ApiKeyVerificationError::Internal(AuthError::Upstream {code,message,..}) => json!({"code":code,"message":message}),
+                                ApiKeyVerificationError::Internal(_) => json!({"code":ApiKeyErrorCode::InvalidApiKey,"message":{"code":ApiKeyErrorCode::InvalidApiKey,"message":ApiKeyErrorCode::InvalidApiKey.message()}}),
+                            };
+                            Json(json!({"valid":false,"error":body,"key":null})).into_response()
+                        },
                     }
                 }
             },
