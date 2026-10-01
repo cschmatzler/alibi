@@ -1099,9 +1099,11 @@ async fn nullable_ban_expiry_patch_preserves_ban_and_other_principals()
             Some(expiry),
             "omitting an expiry must retain the stored date"
         );
-        for _ in 0..2 {
-            let clear: UpdateUser =
-                serde_json::from_value(json!({"banned":true,"ban_expires":null}))?;
+        for clear_input in [
+            json!({"banned":true,"ban_expires":null}),
+            json!({"ban_expires":null}),
+        ] {
+            let clear: UpdateUser = serde_json::from_value(clear_input)?;
             let encoded_clear = serde_json::to_value(&clear)?;
             assert_eq!(
                 encoded_clear.get("ban_expires"),
