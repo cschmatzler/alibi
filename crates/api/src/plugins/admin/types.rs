@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
-use validator::Validate;
 
 /// Role input accepted by TypeScript admin routes.
 #[derive(Debug, Clone, Deserialize)]
@@ -32,26 +31,22 @@ impl RoleInput {
 // Request types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct SetRoleRequest {
     #[serde(rename = "userId")]
-    #[validate(length(min = 1, message = "userId is required"))]
     pub user_id: String,
     pub role: RoleInput,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct GetUserQuery {
-    #[validate(length(min = 1, message = "id is required"))]
     pub id: String,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct CreateUserRequest {
-    #[validate(email(message = "Invalid email address"))]
     pub email: String,
     pub password: Option<String>,
-    #[validate(length(min = 1, message = "Name is required"))]
     pub name: String,
     pub role: Option<RoleInput>,
     #[serde(
@@ -61,26 +56,23 @@ pub(crate) struct CreateUserRequest {
     pub data: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct AdminUpdateUserRequest {
     #[serde(rename = "userId")]
-    #[validate(length(min = 1, message = "userId is required"))]
     pub user_id: String,
     #[serde(deserialize_with = "better_auth_core::utils::json::deserialize_map")]
     pub data: serde_json::Map<String, serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct UserIdRequest {
     #[serde(rename = "userId")]
-    #[validate(length(min = 1, message = "userId is required"))]
     pub user_id: String,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct BanUserRequest {
     #[serde(rename = "userId")]
-    #[validate(length(min = 1, message = "userId is required"))]
     pub user_id: String,
     #[serde(rename = "banReason")]
     pub ban_reason: Option<String>,
@@ -103,24 +95,21 @@ where
     Ok(duration)
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct RevokeSessionRequest {
     #[serde(rename = "sessionToken")]
-    #[validate(length(min = 1, message = "sessionToken is required"))]
     pub session_token: String,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct SetUserPasswordRequest {
     #[serde(rename = "userId")]
-    #[validate(length(min = 1, message = "userId is required"))]
     pub user_id: String,
     #[serde(rename = "newPassword")]
-    #[validate(length(min = 1, message = "newPassword is required"))]
     pub new_password: String,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize)]
 #[expect(
     dead_code,
     reason = "server-side HTTP route currently checks session user only"

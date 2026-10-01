@@ -185,7 +185,15 @@ pub(crate) async fn create_user_core(
     if let Some(role) = &requested_role {
         validate_role_input(role, config)?;
     }
-    if ctx.database.get_user_by_email(&body.email).await?.is_some() {
+    let email = body.email.to_lowercase();
+    if !super::validation::valid_email(&email) {
+        return Err(AuthError::Api {
+            status: 400,
+            code: Some("INVALID_EMAIL".into()),
+            message: "Invalid email".into(),
+        });
+    }
+    if ctx.database.get_user_by_email(&email).await?.is_some() {
         return Err(AuthError::bad_request(
             "User already exists. Use another email.",
         ));
@@ -206,7 +214,7 @@ pub(crate) async fn create_user_core(
         .unwrap_or_else(|| serde_json::json!({}));
 
     let create_user = better_auth_core::CreateUser::new()
-        .with_email(&body.email)
+        .with_email(&email)
         .with_name(&body.name)
         .with_role(role)
         .with_metadata(metadata);

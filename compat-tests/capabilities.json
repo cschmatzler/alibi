@@ -31,12 +31,14 @@
         "success": [
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
           "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
-          "admin stored timestamp precision survives official read, update and list without shifting dates"
+          "admin stored timestamp precision survives official read, update and list without shifting dates",
+          "admin creation validates email only after permission and literal role validation without inserting invalid owners"
         ],
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -47,7 +49,9 @@
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
-          "admin stored timestamp precision survives official read, update and list without shifting dates"
+          "admin stored timestamp precision survives official read, update and list without shifting dates",
+          "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner",
+          "admin creation validates email only after permission and literal role validation without inserting invalid owners"
         ]
       }
     },
@@ -65,7 +69,8 @@
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -76,7 +81,8 @@
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
-          "admin stored timestamp precision survives official read, update and list without shifting dates"
+          "admin stored timestamp precision survives official read, update and list without shifting dates",
+          "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner"
         ],
         "success": [
           "admin stored timestamp precision survives official read, update and list without shifting dates"
@@ -704,13 +710,21 @@
           "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "rejection": [
           "admin date mapping preserves genuine application hook API errors and unchanged owned state",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -732,27 +746,39 @@
       "requiredEvidence": {
         "success": [
           "admin create validates explicit and nested roles before lookup and persists legitimate array ownership",
-          "admin create-only grant cannot select explicit or nested roles and retains default creation"
+          "admin create-only grant cannot select explicit or nested roles and retains default creation",
+          "admin creation validates email only after permission and literal role validation without inserting invalid owners"
         ],
         "rejection": [
           "admin create validates explicit and nested roles before lookup and persists legitimate array ownership",
           "admin create-only grant cannot select explicit or nested roles and retains default creation",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state",
+          "admin creation validates email only after permission and literal role validation without inserting invalid owners"
         ],
         "authorization": [
           "admin create-only grant cannot select explicit or nested roles and retains default creation",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin creation validates email only after permission and literal role validation without inserting invalid owners"
         ],
         "state": [
           "admin create validates explicit and nested roles before lookup and persists legitimate array ownership",
           "admin create-only grant cannot select explicit or nested roles and retains default creation",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state",
+          "admin creation validates email only after permission and literal role validation without inserting invalid owners"
         ]
       }
     },
@@ -779,7 +805,12 @@
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state",
+          "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -789,7 +820,12 @@
         "state": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state",
+          "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner"
         ]
       }
     },
@@ -824,14 +860,22 @@
           "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "rejection": [
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "authorization": [
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
@@ -856,7 +900,11 @@
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -866,7 +914,16 @@
         "state": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
+        ],
+        "success": [
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row"
         ]
       }
     },
@@ -887,7 +944,11 @@
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -897,7 +958,11 @@
         "state": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ]
       }
     },
@@ -915,7 +980,11 @@
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -925,7 +994,11 @@
         "state": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ]
       }
     },
@@ -943,7 +1016,11 @@
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -953,7 +1030,11 @@
         "state": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ]
       }
     },
@@ -973,14 +1054,21 @@
           "admin unconfigured role table accepts empty role strings and arrays without inventing validation",
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin stored timestamp precision survives official read, update and list without shifting dates"
+          "admin stored timestamp precision survives official read, update and list without shifting dates",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row"
         ],
         "rejection": [
           "admin configured role values retain literal strings and array elements before any target mutation",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
-          "admin stored timestamp precision survives official read, update and list without shifting dates"
+          "admin stored timestamp precision survives official read, update and list without shifting dates",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "state": [
           "admin configured role values retain literal strings and array elements before any target mutation",
@@ -990,7 +1078,11 @@
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
-          "admin stored timestamp precision survives official read, update and list without shifting dates"
+          "admin stored timestamp precision survives official read, update and list without shifting dates",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -1014,7 +1106,11 @@
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -1024,7 +1120,11 @@
         "state": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ]
       }
     },
@@ -1045,7 +1145,8 @@
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -1055,7 +1156,8 @@
         "state": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ]
       }
     },
@@ -1079,12 +1181,20 @@
           "admin configured fractional negative and NaN defaults preserve persisted session ownership",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -1108,13 +1218,21 @@
           "admin configured role values retain literal strings and array elements before any target mutation",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "state": [
           "admin configured role values retain literal strings and array elements before any target mutation",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
