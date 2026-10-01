@@ -710,7 +710,7 @@ better_auth_core::impl_auth_plugin! {
     }
     extra {
         fn allowed_media_types(&self, route: &better_auth_core::AuthRoute) -> Vec<&'static str> {
-            if route.path == "/device/token" {
+            if route.path == "/device/code" {
                 vec!["application/json", "application/x-www-form-urlencoded"]
             } else {
                 vec!["application/json"]
