@@ -702,7 +702,9 @@ async fn test_change_email_success() {
     use better_auth::prelude::AuthRequest;
     use std::collections::HashMap;
 
-    let auth = create_test_auth_memory().await;
+    let mut config = test_config();
+    config.email_provider = Some(Arc::new(better_auth_core::email::ConsoleEmailProvider));
+    let auth = TestHarness::minimal_with_config(config).await.into_arc();
     let (_user_id, session_token) = create_test_user_and_session(Arc::clone(&auth)).await;
 
     let mut headers = HashMap::new();
@@ -732,14 +734,16 @@ async fn test_change_email_success() {
     assert!(data.get("message").is_none());
 }
 
-/// Integration test for change-email duplicate → 409
+/// Occupied mailbox changes preserve the same success shape as available addresses.
 // Upstream source: packages/better-auth/src/api/routes public endpoint handler matching this request path; adapted to the Rust integration endpoint case.
 #[tokio::test]
 async fn test_change_email_duplicate() {
     use better_auth::prelude::{AuthRequest, CreateUser};
     use std::collections::HashMap;
 
-    let auth = create_test_auth_memory().await;
+    let mut config = test_config();
+    config.email_provider = Some(Arc::new(better_auth_core::email::ConsoleEmailProvider));
+    let auth = TestHarness::minimal_with_config(config).await.into_arc();
 
     // Create first user
     let (_user_id, session_token) = create_test_user_and_session(Arc::clone(&auth)).await;
@@ -769,7 +773,21 @@ async fn test_change_email_duplicate() {
     );
 
     let response = auth.handle_request(request).await.unwrap();
-    assert_eq!(response.status, 422);
+    assert_eq!(response.status, 200);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&response.body).unwrap(),
+        serde_json::json!({"status":true})
+    );
+    assert_eq!(
+        auth.store()
+            .get_user_by_email("existing@test.com")
+            .await
+            .unwrap()
+            .unwrap()
+            .name
+            .as_deref(),
+        Some("Existing User")
+    );
 }
 
 /// Integration test for change-email unauthenticated → 401

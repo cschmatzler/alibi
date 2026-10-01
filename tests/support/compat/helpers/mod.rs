@@ -146,6 +146,11 @@ impl TestHarness {
         let config = test_config()
             .base_url("http://localhost:3000")
             .password_min_length(6);
+        Self::minimal_with_config(config).await
+    }
+
+    /// Build the minimal application with real public configuration overrides.
+    pub async fn minimal_with_config(config: AuthConfig) -> Self {
         let store = test_store(&config).await;
         let auth = AuthBuilder::<TestSchema>::new(config)
             .store(store)
@@ -504,7 +509,14 @@ pub async fn create_test_auth() -> TestAuth {
 }
 
 pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth {
-    let config = test_config();
+    build_test_auth(test_config(), options).await
+}
+
+pub async fn create_test_auth_with_config(config: AuthConfig) -> TestAuth {
+    build_test_auth(config, TestAuthOptions::default()).await
+}
+
+async fn build_test_auth(config: AuthConfig, options: TestAuthOptions) -> TestAuth {
     let store = test_store(&config).await;
     let organization_plugin = OrganizationPlugin::with_config(OrganizationConfig {
         creator_role: options

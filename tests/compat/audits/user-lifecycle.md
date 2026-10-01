@@ -117,5 +117,42 @@ does not claim that an earlier focused result is a complete canonical pass.
 The existing native success setup now configures the genuine public development
 email provider required by its claimed delivery capability. The existing cookie
 unit test imports its real public helper directly instead of depending on a
-removed production-only import. No duplicate private-core tests or production
-exports used only by tests were added.
+removed production-only import. The exact rebased canonical candidate then stopped at its native default gate:
+151 of 154 executed tests passed, out of 794 selected tests (640 not run), with
+three stale native change-email setups/expectations. Both integration success
+setups and the spec smoke now configure the real public development provider;
+the occupied-address expectation follows the independently proven Source
+privacy shape. Shared support accepts real AuthConfig overrides without
+changing default configurations or validators.
+
+The callback scope here is the complete currently supported initialized core
+and plugin user snapshot. AuthUser presently has no custom-user additional-field
+accessor; arbitrary custom hidden user columns belong to #184. Source ordinary
+verification hooks use adapter users while sensitive session callbacks use
+parsed session users, and those boundaries must remain distinct when custom
+schema support is implemented. No claim of arbitrary raw/custom user projection
+is made by this issue. No duplicate private-core tests or production exports
+used only by tests were added.
+
+The repaired native setups passed all four focused selections (the three
+canonical failures and the existing unit success) in
+`/tmp/issue186-native-expectations2.log`. An initial compilation of those setup
+edits used a nonexistent AuthConfig builder method; it was corrected to the
+actual public `email_provider` field before that successful run. The final
+restored and rebased native fixture also built successfully.
+
+A separate real HTTP probe retained the original issued token/cache bytes and
+revoked the actual physical session through the existing adapter control.
+Full stored rows confirmed an empty session table while the user and credential
+account remained. Independent stdlib HMAC checks verified both runtimes' signed
+tokens, compact-cache signatures and user/token relationships. Source ordinary
+update-user accepted the genuine cached authority, wrote the requested name and
+republished token/cache cookies; the current native ordinary handler rejected
+it with UNAUTHORIZED. Both denied a wrong signed-token signature without
+issuing cookies. A corrupt cache with the genuine revoked token was denied by
+both, with Source retaining its two observable cache-clearing headers. These
+artifacts are in `/tmp/issue186-source-cache-authority.json` and
+`/tmp/issue186-native-cache-authority.json`. This broader ordinary update-user
+cache authority/snapshot contract is recorded for the cache/update-user issues
+instead of claiming that #186 implements it. Sensitive change-email and
+deletion remain physically authoritative.
