@@ -473,7 +473,9 @@
           "last login policy preserves real cookie consent database updates and failed authentication ownership",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
-          "last login negative preserves real cookie consent database updates and failed authentication ownership"
+          "last login negative preserves real cookie consent database updates and failed authentication ownership",
+          "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -487,7 +489,8 @@
           "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority",
           "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
           "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
-          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle"
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage"
         ],
         "authorization": [
           "api-key shared headers select the first configured session",
@@ -499,7 +502,8 @@
           "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
           "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
           "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
-          "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields"
+          "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage"
         ],
         "state": [
           "Discord callback exchanges without PKCE and preserves current foreign and replay state",
@@ -557,7 +561,10 @@
           "last login policy preserves real cookie consent database updates and failed authentication ownership",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
-          "last login negative preserves real cookie consent database updates and failed authentication ownership"
+          "last login negative preserves real cookie consent database updates and failed authentication ownership",
+          "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session"
         ]
       }
     },
@@ -566,10 +573,35 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "JWT default JWKS token and get-session header carry the complete authenticated user",
-        "rejection": "JWT configured issuer audience lifetime and path header branches remain observable",
-        "authorization": null,
-        "state": "JWT rotation persists replacement keys and retains expired public keys only through grace"
+        "success": [
+          "JWT default JWKS token and get-session header carry the complete authenticated user",
+          "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
+          "application JWT keyring configured numeric date and duration expirations retain precise values and reject nonfinite options",
+          "application JWT keyring pinning resolved keys RSA modulus grace corruption and installed rows remain observable",
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
+          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys",
+          "application JWT keyring simultaneous first public requests create and persist both actual signing keys",
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session",
+          "application JWT keyring server-only signing and verification preserve an absent HTTP request and the real virtual endpoint context"
+        ],
+        "rejection": [
+          "JWT configured issuer audience lifetime and path header branches remain observable",
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
+          "application JWT keyring remote discovery refuses local JWKS without signing or writing any key store"
+        ],
+        "authorization": "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
+        "state": [
+          "JWT rotation persists replacement keys and retains expired public keys only through grace",
+          "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
+          "application JWT keyring configured numeric date and duration expirations retain precise values and reject nonfinite options",
+          "application JWT keyring pinning resolved keys RSA modulus grace corruption and installed rows remain observable",
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
+          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys",
+          "application JWT keyring simultaneous first public requests create and persist both actual signing keys",
+          "application JWT keyring remote discovery refuses local JWKS without signing or writing any key store",
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session",
+          "application JWT keyring server-only signing and verification preserve an absent HTTP request and the real virtual endpoint context"
+        ]
       }
     },
     {
@@ -584,12 +616,8 @@
           "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
           "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
         ],
-        "rejection": [
-          "social sign-in preserves previously granted account scopes"
-        ],
-        "authorization": [
-          "social sign-in preserves previously granted account scopes"
-        ],
+        "rejection": "social sign-in preserves previously granted account scopes",
+        "authorization": "social sign-in preserves previously granted account scopes",
         "state": [
           "compact cache authenticates the signed token and complete payload while retaining revoked ordinary authority only until explicit bypass",
           "social sign-in preserves previously granted account scopes",
@@ -726,9 +754,7 @@
         ],
         "rejection": null,
         "authorization": null,
-        "state": [
-          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
-        ]
+        "state": "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
       }
     },
     {
@@ -854,9 +880,7 @@
           "organization concurrent normal admissions pass real prechecks and retain both physical members",
           "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks"
         ],
-        "rejection": [
-          "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks"
-        ],
+        "rejection": "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks",
         "authorization": "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks",
         "state": [
           "organization concurrent normal admissions pass real prechecks and retain both physical members",
@@ -952,9 +976,7 @@
         ],
         "rejection": null,
         "authorization": null,
-        "state": [
-          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots"
-        ]
+        "state": "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots"
       }
     },
     {
@@ -1065,26 +1087,42 @@
           "JWT default JWKS token and get-session header carry the complete authenticated user",
           "JWT token middleware signs persisted refresh and browser preference branches",
           "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged",
-          "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures"
+          "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures",
+          "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
+          "application JWT keyring pinning resolved keys RSA modulus grace corruption and installed rows remain observable",
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
+          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys",
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session"
         ],
         "rejection": [
           "JWT default JWKS token and get-session header carry the complete authenticated user",
           "JWT session headers preserve original refresh expiry cleanup and exposed header order",
           "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged",
-          "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures"
+          "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures",
+          "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
+          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys"
         ],
         "authorization": [
           "JWT default JWKS token and get-session header carry the complete authenticated user",
           "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged",
           "JWT session headers preserve original refresh expiry cleanup and exposed header order",
-          "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures"
+          "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures",
+          "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
+          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys"
         ],
         "state": [
           "JWT rotation persists replacement keys and retains expired public keys only through grace",
           "JWT token middleware signs persisted refresh and browser preference branches",
           "JWT session headers preserve original refresh expiry cleanup and exposed header order",
           "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged",
-          "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures"
+          "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures",
+          "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
+          "application JWT keyring pinning resolved keys RSA modulus grace corruption and installed rows remain observable",
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
+          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys",
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session"
         ]
       }
     },
@@ -1695,9 +1733,7 @@
           "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
         ],
         "authorization": "api-key HTTP requests cannot select a different owner",
-        "state": [
-          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
-        ]
+        "state": "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
       }
     },
     {
@@ -1738,19 +1774,13 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": [
-          "anonymous official client issues repeats and deletes only its actual authenticated owner"
-        ],
+        "success": "anonymous official client issues repeats and deletes only its actual authenticated owner",
         "rejection": [
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
           "anonymous official client issues repeats and deletes only its actual authenticated owner"
         ],
-        "authorization": [
-          "anonymous official client issues repeats and deletes only its actual authenticated owner"
-        ],
-        "state": [
-          "anonymous official client issues repeats and deletes only its actual authenticated owner"
-        ]
+        "authorization": "anonymous official client issues repeats and deletes only its actual authenticated owner",
+        "state": "anonymous official client issues repeats and deletes only its actual authenticated owner"
       }
     },
     {
@@ -1759,12 +1789,8 @@
       "implemented": true,
       "evidence": {
         "success": "delete user with a fresh session deletes the current account",
-        "rejection": [
-          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
-        ],
-        "authorization": [
-          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
-        ],
+        "rejection": "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
+        "authorization": "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
         "state": [
           "delete user with a fresh session deletes the current account",
           "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
@@ -2461,9 +2487,7 @@
           "organization invitation validation, reject, and cancel flows match TS",
           "organization invitation creation stays permitted at capacity and admission checks recipient then membership policy before writes"
         ],
-        "state": [
-          "organization invitation creation stays permitted at capacity and admission checks recipient then membership policy before writes"
-        ]
+        "state": "organization invitation creation stays permitted at capacity and admission checks recipient then membership policy before writes"
       }
     },
     {
@@ -3043,16 +3067,10 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": [
-          "phone password reset consumes rejected proofs creates credentials and revokes configured sessions"
-        ],
-        "rejection": [
-          "phone endpoint schemas reject every malformed field before any state transition"
-        ],
+        "success": "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
+        "rejection": "phone endpoint schemas reject every malformed field before any state transition",
         "authorization": null,
-        "state": [
-          "phone password reset consumes rejected proofs creates credentials and revokes configured sessions"
-        ]
+        "state": "phone password reset consumes rejected proofs creates credentials and revokes configured sessions"
       }
     },
     {
@@ -3060,17 +3078,13 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": [
-          "phone password reset consumes rejected proofs creates credentials and revokes configured sessions"
-        ],
+        "success": "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
         "rejection": [
           "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
           "phone endpoint schemas reject every malformed field before any state transition"
         ],
         "authorization": null,
-        "state": [
-          "phone password reset consumes rejected proofs creates credentials and revokes configured sessions"
-        ]
+        "state": "phone password reset consumes rejected proofs creates credentials and revokes configured sessions"
       }
     },
     {
@@ -3087,9 +3101,7 @@
           "external phone OTP verification enforces provider binding and replaces local expiry policy"
         ],
         "authorization": null,
-        "state": [
-          "phone verification signs up a phone owner and preserves identity across new sessions"
-        ]
+        "state": "phone verification signs up a phone owner and preserves identity across new sessions"
       }
     },
     {
@@ -3108,9 +3120,7 @@
           "phone endpoint schemas reject every malformed field before any state transition",
           "anonymous phone verified login transfers only the actual anonymous owner and preserves rejected proof state"
         ],
-        "authorization": [
-          "phone updates bind the requester preserve its session and reject occupied numbers"
-        ],
+        "authorization": "phone updates bind the requester preserve its session and reject occupied numbers",
         "state": [
           "phone verification signs up a phone owner and preserves identity across new sessions",
           "phone updates bind the requester preserve its session and reject occupied numbers",
@@ -3265,9 +3275,7 @@
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
           "anonymous official client issues repeats and deletes only its actual authenticated owner"
         ],
-        "authorization": [
-          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state"
-        ],
+        "authorization": "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
         "state": [
           "anonymous upgrade transfers original completed user and session snapshots before cleanup",
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
@@ -3500,9 +3508,7 @@
           "phone endpoint schemas reject every malformed field before any state transition"
         ],
         "authorization": "phone password sign-in requires ownership proof before credentials and honors rememberMe",
-        "state": [
-          "phone password sign-in requires ownership proof before credentials and honors rememberMe"
-        ]
+        "state": "phone password sign-in requires ownership proof before credentials and honors rememberMe"
       }
     },
     {
@@ -3807,12 +3813,12 @@
           "cloudflare default credentials reach real token exchange refresh and owned persistence",
           "cloudflare encoded credentials reach real token exchange refresh and owned persistence",
           "cloudflare post credentials reach real token exchange refresh and owned persistence",
-          "cloudflare public credentials reach real token exchange refresh and owned persistence"
+          "cloudflare public credentials reach real token exchange refresh and owned persistence",
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
+          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys"
         ],
         "rejection": null,
-        "authorization": [
-          "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields"
-        ],
+        "authorization": "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
         "state": [
           "passkey registration authentication ownership and deletion round trip",
           "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
@@ -3825,7 +3831,9 @@
           "cloudflare default credentials reach real token exchange refresh and owned persistence",
           "cloudflare encoded credentials reach real token exchange refresh and owned persistence",
           "cloudflare post credentials reach real token exchange refresh and owned persistence",
-          "cloudflare public credentials reach real token exchange refresh and owned persistence"
+          "cloudflare public credentials reach real token exchange refresh and owned persistence",
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
+          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys"
         ]
       }
     },
@@ -3876,7 +3884,13 @@
           "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
-          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
+          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals",
+          "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
+          "application JWT keyring pinning resolved keys RSA modulus grace corruption and installed rows remain observable",
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
+          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys",
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session",
+          "application JWT keyring server-only signing and verification preserve an absent HTTP request and the real virtual endpoint context"
         ],
         "rejection": [
           "sign up with duplicate email returns error",
@@ -3945,7 +3959,13 @@
           "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
-          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
+          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals",
+          "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
+          "application JWT keyring pinning resolved keys RSA modulus grace corruption and installed rows remain observable",
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
+          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys",
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session",
+          "application JWT keyring server-only signing and verification preserve an absent HTTP request and the real virtual endpoint context"
         ]
       }
     },

@@ -89,7 +89,7 @@ impl Default for JwtKeyPairConfig {
 pub enum JwtExpiration {
     After(Duration),
     At(DateTime<Utc>),
-    Numeric(i64),
+    Numeric(f64),
 }
 
 impl Default for JwtExpiration {
@@ -126,7 +126,7 @@ impl JwtExpiration {
                 base + seconds
             }
             Self::At(date) => date.timestamp() as f64,
-            Self::Numeric(value) => *value as f64,
+            Self::Numeric(value) => *value,
         };
         JsValue::Number(timestamp)
     }
@@ -155,7 +155,7 @@ impl JwtExpiration {
                 base + seconds
             }
             Self::At(date) => date.timestamp() as f64,
-            Self::Numeric(value) => *value as f64,
+            Self::Numeric(value) => *value,
         };
         if timestamp.fract() == 0.0 && timestamp >= i64::MIN as f64 && timestamp < i64::MAX as f64 {
             json!(timestamp as i64)
@@ -204,6 +204,11 @@ pub struct JwtSession {
     /// hooks observe the original stored snapshot and omit this field.
     #[serde(rename = "needsRefresh", skip_serializing_if = "Option::is_none")]
     pub needs_refresh: Option<bool>,
+    /// The verified cache clock seen by a direct get-session response hook.
+    #[serde(rename = "updatedAt", skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 #[async_trait]
@@ -218,8 +223,16 @@ pub trait DefineJwtSubject: Send + Sync {
 
 #[async_trait]
 pub trait JwtKeyring: Send + Sync {
-    async fn keys(&self, request: Option<&AuthRequest>) -> AuthResult<Vec<Jwk>>;
-    async fn create_key(&self, key: CreateJwk, request: Option<&AuthRequest>) -> AuthResult<Jwk>;
+    async fn keys(&self, context: &JwtKeyringContext<'_>) -> AuthResult<Vec<Jwk>>;
+    async fn create_key(&self, key: CreateJwk, context: &JwtKeyringContext<'_>) -> AuthResult<Jwk>;
+}
+
+/// The real endpoint context supplied to application key storage. Server-only
+/// operations have a virtual endpoint path and may have no HTTP request.
+#[derive(Clone, Copy, Debug)]
+pub struct JwtKeyringContext<'a> {
+    pub path: &'a str,
+    pub request: Option<&'a AuthRequest>,
 }
 
 /// One property in an application-owned remote signing payload.
@@ -328,6 +341,10 @@ pub struct JwtSignOptions {
     pub signing_key_id: Option<String>,
     pub signing_algorithm: Option<JwtAlgorithm>,
     pub claims: Option<JwtClaimsConfig>,
+    /// Reuse a key selected before constructing the payload, for example when
+    /// its algorithm determines an OIDC token hash. This avoids another
+    /// storage read. Remote signers continue to own key selection.
+    pub resolved_key: Option<Arc<ResolvedJwtSigningKey>>,
 }
 
 /// A selected server signing key. Private material stays inside the plugin.
@@ -381,8 +398,18 @@ impl JwtPlugin {
         request: Option<&AuthRequest>,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<Vec<Jwk>> {
+        self.keys_at_path(request, request.map_or("virtual:", AuthRequest::path), ctx)
+            .await
+    }
+
+    async fn keys_at_path(
+        &self,
+        request: Option<&AuthRequest>,
+        path: &str,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<Vec<Jwk>> {
         match &self.config.keyring {
-            Some(keyring) => keyring.keys(request).await,
+            Some(keyring) => keyring.keys(&JwtKeyringContext { path, request }).await,
             None => ctx.database.list_jwks().await,
         }
     }
@@ -421,7 +448,17 @@ impl JwtPlugin {
             crv: config.algorithm.curve().map(str::to_owned),
         };
         match &self.config.keyring {
-            Some(keyring) => keyring.create_key(data, request).await,
+            Some(keyring) => {
+                keyring
+                    .create_key(
+                        data,
+                        &JwtKeyringContext {
+                            path: request.map_or("virtual:", AuthRequest::path),
+                            request,
+                        },
+                    )
+                    .await
+            }
             None => ctx.database.create_jwk(data).await,
         }
     }
@@ -499,13 +536,23 @@ impl JwtPlugin {
                 .iter()
                 .filter(live)
                 .find(|key| key_alg(key).is_ok_and(|alg| alg == primary))
-                .or_else(|| keys.iter().find(live))
                 .cloned()
             {
                 key
             } else {
-                minted_unpinned_key = true;
-                self.create_jwk(None, request, ctx).await?
+                // Source performs a separate fallback lookup. An application
+                // keyring can observe it or return a changed key set.
+                let mut fallback = self.keys(request, ctx).await?;
+                fallback.sort_by_key(|key| std::cmp::Reverse(key.created_at));
+                if let Some(key) = fallback
+                    .into_iter()
+                    .find(|key| key.expires_at.is_none_or(|expiry| expiry > Utc::now()))
+                {
+                    key
+                } else {
+                    minted_unpinned_key = true;
+                    self.create_jwk(None, request, ctx).await?
+                }
             }
         };
         if !minted_unpinned_key && key.expires_at.is_some_and(|expiry| expiry < Utc::now()) {
@@ -620,13 +667,19 @@ impl JwtPlugin {
         validation: AuthResult<()>,
     ) -> AuthResult<String> {
         let payload = self.default_claims(payload, options.claims.as_ref(), ctx)?;
-        let key = self
-            .resolve_signing_key(options, request, ctx)
-            .await?
-            .ok_or_else(|| AuthError::internal("No local JWT signing key"))?;
+        let resolved;
+        let key = if let Some(key) = options.resolved_key.as_deref() {
+            key
+        } else {
+            resolved = self
+                .resolve_signing_key(options, request, ctx)
+                .await?
+                .ok_or_else(|| AuthError::internal("No local JWT signing key"))?;
+            &resolved
+        };
         // Upstream resolves/mints the local key before JOSE validates claims.
         validation?;
-        Self::sign_resolved(payload, options, &key)
+        Self::sign_resolved(payload, options, key)
     }
 
     async fn sign_remote_jwt(
@@ -814,7 +867,7 @@ impl JwtPlugin {
             return Ok(None);
         };
         let Some(key) = self
-            .keys(request, ctx)
+            .keys_at_path(request, "virtual:", ctx)
             .await?
             .into_iter()
             .find(|key| key.id == kid)
@@ -874,14 +927,21 @@ impl JwtPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<String> {
-        let (user, session, needs_refresh) = ctx
-            .require_session_with_refresh_state(req)
+        let read = better_auth_core::cache::runtime::authenticated(ctx, req, false)
             .await
-            .map_err(|_error| unauthorized())?;
+            .map_err(|_error| unauthorized())?
+            .ok_or_else(unauthorized)?;
         let session = JwtSession {
-            user: ctx.user_view(&user),
-            session,
-            needs_refresh,
+            user: match read.user {
+                better_auth_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user),
+                better_auth_core::AuthenticatedUser::Cached(user) => *user,
+            },
+            // A virtual principal already carries its exact runtime snapshot;
+            // applying persisted-session output defaults would add fields.
+            session: req.virtual_session().cloned().unwrap_or(read.session),
+            needs_refresh: read.needs_refresh,
+            updated_at: None,
+            version: None,
         };
         self.sign_session_token(req, ctx, &session).await
     }
@@ -922,7 +982,7 @@ impl JwtPlugin {
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         if self.config.remote_url.is_some() {
-            return Ok(AuthResponse::new(404));
+            return Ok(AuthResponse::new(404).with_header("content-type", "application/json"));
         }
         let mut keys = self.keys(Some(req), ctx).await?;
         if keys.is_empty() {
@@ -998,11 +1058,11 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
     ) -> AuthResult<Option<AuthResponse>> {
         match (req.method(), req.path()) {
             (HttpMethod::Get, path) if path == self.config.jwks_path => {
-                Ok(Some(self.jwks(req, ctx).await?))
+                Ok(Some(self.jwks(req, ctx).await.map_err(public_jwt_error)?))
             }
             (HttpMethod::Get, "/token") => Ok(Some(AuthResponse::json(
                 200,
-                &json!({ "token": self.session_token(req, ctx).await? }),
+                &json!({ "token": self.session_token(req, ctx).await.map_err(public_jwt_error)? }),
             )?)),
             _ => Ok(None),
         }
@@ -1019,6 +1079,7 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
         let Some((user, session)) = req.session_hook_snapshot() else {
             return Ok(response);
         };
+        let cache = better_auth_core::cache::runtime::session_hook_cache_metadata(req);
         let token = self
             .sign_session_token(
                 req,
@@ -1027,9 +1088,12 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
                     user,
                     session,
                     needs_refresh: None,
+                    updated_at: cache.as_ref().map(|metadata| metadata.updated_at),
+                    version: cache.and_then(|metadata| metadata.version),
                 },
             )
-            .await?;
+            .await
+            .map_err(public_jwt_error)?;
         let mut expose = response
             .headers
             .get("access-control-expose-headers")
@@ -1053,6 +1117,19 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
                 .insert("access-control-expose-headers", expose.join(", ")),
         );
         Ok(response)
+    }
+}
+
+fn public_jwt_error(error: AuthError) -> AuthError {
+    match error {
+        AuthError::Config(_)
+        | AuthError::Database(_)
+        | AuthError::Serialization(_)
+        | AuthError::Plugin { .. }
+        | AuthError::Internal(_)
+        | AuthError::PasswordHash(_)
+        | AuthError::Jwt(_) => AuthError::CallbackFailure(Box::new(error)),
+        error => error,
     }
 }
 

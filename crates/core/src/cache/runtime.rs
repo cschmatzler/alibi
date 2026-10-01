@@ -9,6 +9,26 @@ use std::sync::Mutex;
 #[derive(Debug)]
 struct IssuancePreference(bool);
 
+/// Metadata from the authenticated cache snapshot retained by get-session
+/// response hooks. Nested middleware publishes its completed session instead.
+#[derive(Clone, Debug)]
+pub struct SessionHookCacheMetadata {
+    pub updated_at: f64,
+    pub version: Option<String>,
+}
+
+#[derive(Debug)]
+struct SessionHookCache(Option<SessionHookCacheMetadata>);
+
+/// Read the metadata attached to the actual authenticated hook snapshot.
+#[must_use]
+pub fn session_hook_cache_metadata(request: &AuthRequest) -> Option<SessionHookCacheMetadata> {
+    request
+        .extensions()
+        .get::<SessionHookCache>()
+        .and_then(|context| context.0.clone())
+}
+
 #[derive(Debug, Default)]
 struct PendingIssuance(Mutex<PendingData>);
 
@@ -392,6 +412,7 @@ pub async fn authenticated<S: AuthSchema>(
     request: &AuthRequest,
     direct: bool,
 ) -> AuthResult<Option<AuthenticatedRead<S>>> {
+    request.extensions().insert(SessionHookCache(None));
     if let Some(session) = request.virtual_session() {
         let Some(user) = ctx.database.get_user_by_id(&session.user_id).await? else {
             return Ok(None);
@@ -404,6 +425,12 @@ pub async fn authenticated<S: AuthSchema>(
         }));
     }
     if let Some(cache) = read(ctx, request).await? {
+        request
+            .extensions()
+            .insert(SessionHookCache(Some(SessionHookCacheMetadata {
+                updated_at: cache.updated_at,
+                version: cache.version.clone(),
+            })));
         request.set_session_hook_snapshot(cache.user.clone(), cache.session.clone());
         return Ok(Some(AuthenticatedRead {
             user: crate::AuthenticatedUser::Cached(Box::new(cache.user)),

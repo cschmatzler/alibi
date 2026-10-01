@@ -205,7 +205,7 @@ pub(super) async fn router(
                         let token = body.token.as_deref().ok_or_else(|| AuthError::bad_request("token is required"))?;
                         let Some(session) = auth.store().get_session(token).await? else { return Ok(Value::Null); };
                         let Some(user) = auth.store().get_user_by_id(session.user_id().as_ref()).await? else { return Ok(Value::Null); };
-                        Ok(json!(JwtSession {user:auth.context().user_view(&user),session:auth.context().session_view(&session),needs_refresh:None}))
+                        Ok(json!(JwtSession {user:auth.context().user_view(&user),session:auth.context().session_view(&session),needs_refresh:None,updated_at:None,version:None}))
                     }
                     _ => Err(AuthError::bad_request("invalid server operation")),
                 }

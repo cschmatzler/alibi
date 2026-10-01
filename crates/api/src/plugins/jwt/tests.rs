@@ -39,15 +39,15 @@ struct ApplicationKeyring {
 
 #[async_trait]
 impl JwtKeyring for ApplicationKeyring {
-    async fn keys(&self, _request: Option<&AuthRequest>) -> AuthResult<Vec<Jwk>> {
+    async fn keys(&self, _context: &JwtKeyringContext<'_>) -> AuthResult<Vec<Jwk>> {
         self.database.list_jwks().await
     }
     async fn create_key(
         &self,
         mut key: CreateJwk,
-        request: Option<&AuthRequest>,
+        context: &JwtKeyringContext<'_>,
     ) -> AuthResult<Jwk> {
-        if request.map(AuthRequest::path) != Some("/jwks") {
+        if context.request.map(AuthRequest::path) != Some("/jwks") {
             return Err(AuthError::forbidden(
                 "Application key provisioning requires its public key request",
             ));

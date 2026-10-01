@@ -228,7 +228,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
    let (auth,jwt)=profiles.get(body.profile.as_deref().unwrap_or("jwt-remote-raw")).ok_or_else(||AuthError::bad_request("unknown signer profile"))?;
    let mut payload=body.payload.ok_or_else(||AuthError::bad_request("payload is required"))?;
    if let JsValue::Object(fields)=&mut payload{for key in body.nan_fields{drop(fields.insert(key,JsValue::Number(f64::NAN)));}}
-   let options=JwtSignOptions{header:Some(body.header),signing_key_id:body.signing_key_id,signing_algorithm:body.signing_algorithm,claims:None};
+   let options=JwtSignOptions{header:Some(body.header),signing_key_id:body.signing_key_id,signing_algorithm:body.signing_algorithm,..Default::default()};
    Ok::<_,AuthError>(json!({"token":jwt.sign_jwt_json(&payload,&options,None,auth.context()).await?}))
   }.await;
   match operation{Ok(value)=>Json(value).into_response(),Err(error)=>failure(error)}
