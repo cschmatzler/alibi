@@ -23,4 +23,4 @@ case "$capability" in
   *) test_name="${capability//-/_}_client_compat" ;;
 esac
 export BETTER_AUTH_REQUIRE_REFERENCE_SERVER=1
-cargo test --locked --test client_compat_tests "$test_name" -- --ignored --nocapture
+cargo nextest run --locked --test client_compat_tests --run-ignored only --no-capture "$test_name"

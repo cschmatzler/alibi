@@ -47,7 +47,7 @@ controls. All source/runtime artifacts are reproducible with the canonical gate.
 
 ## Validation record
 
-Run `devenv test`, equivalently `devenv shell -- ./scripts/check.sh`, from the
+Run `devenv shell -- ./scripts/check.sh` from the
 integrated checkout. It serializes native/default/optional tests, strict Clippy,
 Rustls/Redis, locked fixture builds, TypeScript, SDK, harness negative controls,
 Chromium, alignment, Rustdoc and source coverage. Reports are generated under

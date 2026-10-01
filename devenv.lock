@@ -130,11 +130,11 @@
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1790860813,
-        "narHash": "sha256-Yl+FDPJSNVxRDsg9wx+gZ2Qi8sTBf0Zb1qI8QaoKzq8=",
+        "lastModified": 1790874268,
+        "narHash": "sha256-n/Pz9JVK/iJzWoIsIpetyk91Z8x9yT3KUJBFONp9tGw=",
         "ref": "refs/heads/main",
-        "rev": "657ff477e38d47f057f02de6be2ec19beaed3869",
-        "revCount": 8,
+        "rev": "3ed7d4c03987dd958f4626449b933ae80a755268",
+        "revCount": 9,
         "type": "git",
         "url": "ssh://git@github.com/cschmatzler/rust"
       },
