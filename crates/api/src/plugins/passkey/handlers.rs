@@ -8,8 +8,8 @@ use super::webauthn::{
     build_webauthn, challenge_cookie_name, create_challenge_cookie,
     credential_id_from_authentication, decode_challenge_cookie, decode_credential_id,
     extract_registration_metadata, finish_core_authentication, finish_core_registration,
-    generate_ts_user_handle, get_cookie_value, parse_stored_passkey, parse_transports_csv,
-    registration_options_json, resolve_origin, snapshot_passkey, transports_to_csv,
+    generate_ts_user_handle, get_cookie_value, parse_transports_csv, registration_options_json,
+    resolve_origin, snapshot_passkey, transports_to_csv,
 };
 use super::{PasskeyConfig, PasskeyRegistrationUser};
 use crate::plugins::StatusResponse;
@@ -245,7 +245,11 @@ pub(super) async fn generate_authenticate_options_core<U: AuthUser>(
         .map_err(|error| {
             AuthError::internal(format!("Failed to generate authenticate options: {error}"))
         })?;
-    let state = StoredAuthenticationState::Core { state };
+    let state = StoredAuthenticationState::CoreRaw {
+        challenge: base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(options.public_key.challenge.as_ref()),
+        state,
+    };
 
     let token = Uuid::new_v4().to_string();
     let expires_at = Utc::now() + Duration::seconds(config.challenge_ttl_secs);
@@ -347,9 +351,16 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
             policy,
             ..
         }) => {
-            match super::raw_none::register_raw_none(&registration, &body.response, policy, &origin)
+            match super::raw_none::register_raw_key(&registration, &body.response, policy, &origin)
             {
                 Ok(value) => value,
+                Err(WebauthnError::AttestationStatementSigInvalid) => {
+                    return response_code(
+                        400,
+                        "FAILED_TO_VERIFY_REGISTRATION",
+                        "Failed to verify registration",
+                    );
+                }
                 Err(_) => return passkey_registration_failure(),
             }
         }
@@ -673,41 +684,64 @@ pub(super) async fn verify_authentication_core(
         return passkey_not_found();
     };
 
-    let Ok(mut stored_passkey) = parse_stored_passkey(passkey.credential()) else {
+    let Ok(mut stored) =
+        serde_json::from_str::<super::raw_none::StoredCredential>(passkey.credential())
+    else {
         return passkey_authentication_failure();
     };
-    let Ok(webauthn) = build_webauthn(config, &ctx.config, &origin) else {
+    let Ok(counter) = u32::try_from(passkey.counter()) else {
         return passkey_authentication_failure();
     };
-
-    let authentication_result = match stored_state {
-        StoredAuthenticationState::Core { state } => {
-            let Ok(counter) = u32::try_from(passkey.counter()) else {
+    let authentication_result = match (&mut stored, stored_state) {
+        (
+            super::raw_none::StoredCredential::Raw(raw),
+            StoredAuthenticationState::CoreRaw { challenge, .. },
+        ) => super::raw_none::authenticate_raw(
+            raw,
+            &authentication,
+            &body.response,
+            &challenge,
+            &super::webauthn::resolve_rp_id(config, &ctx.config)?,
+            &origin,
+            counter,
+        ),
+        (super::raw_none::StoredCredential::Raw(_), _) => return passkey_authentication_failure(),
+        (super::raw_none::StoredCredential::Core(stored_passkey), state) => {
+            let Ok(webauthn) = build_webauthn(config, &ctx.config, &origin) else {
                 return passkey_authentication_failure();
             };
-            // Public saved counter is authoritative, even if application code
-            // changed it independently of the opaque verifier credential.
-            let mut current = webauthn_rs_core::proto::Credential::from(stored_passkey.clone());
-            current.counter = counter;
-            stored_passkey = current.into();
-            let Ok(core) = build_verification_core(config, &ctx.config, &origin) else {
-                return passkey_authentication_failure();
+            let result = match state {
+                StoredAuthenticationState::Core { state }
+                | StoredAuthenticationState::CoreRaw { state, .. } => {
+                    let mut current =
+                        webauthn_rs_core::proto::Credential::from(stored_passkey.clone());
+                    current.counter = counter;
+                    *stored_passkey = current.into();
+                    let Ok(core) = build_verification_core(config, &ctx.config, &origin) else {
+                        return passkey_authentication_failure();
+                    };
+                    finish_core_authentication(
+                        &core,
+                        &authentication,
+                        state,
+                        stored_passkey,
+                        counter,
+                        &origin,
+                    )
+                }
+                StoredAuthenticationState::Passkey { state } => {
+                    webauthn.finish_passkey_authentication(&authentication, &state)
+                }
+                StoredAuthenticationState::Discoverable { state } => {
+                    let discoverable_key = DiscoverableKey::from(stored_passkey.clone());
+                    webauthn.finish_discoverable_authentication(
+                        &authentication,
+                        state,
+                        &[discoverable_key],
+                    )
+                }
             };
-            finish_core_authentication(
-                &core,
-                &authentication,
-                state,
-                &stored_passkey,
-                counter,
-                &origin,
-            )
-        }
-        StoredAuthenticationState::Passkey { state } => {
-            webauthn.finish_passkey_authentication(&authentication, &state)
-        }
-        StoredAuthenticationState::Discoverable { state } => {
-            let discoverable_key = DiscoverableKey::from(stored_passkey.clone());
-            webauthn.finish_discoverable_authentication(&authentication, state, &[discoverable_key])
+            result.map(super::authentication::AuthenticationResult::Core)
         }
     };
     let authentication_result = match authentication_result {
@@ -755,14 +789,26 @@ pub(super) async fn verify_authentication_core(
         }
     }
 
-    if stored_passkey
-        .update_credential(&authentication_result)
-        .is_none()
-    {
-        return passkey_authentication_failure();
-    }
-
-    let Ok(snapshot) = snapshot_passkey(&stored_passkey) else {
+    let snapshot = match (&mut stored, &authentication_result) {
+        (
+            super::raw_none::StoredCredential::Core(passkey),
+            super::authentication::AuthenticationResult::Core(result),
+        ) => {
+            if passkey.update_credential(result).is_none() {
+                return passkey_authentication_failure();
+            }
+            snapshot_passkey(passkey)
+        }
+        (
+            super::raw_none::StoredCredential::Raw(raw),
+            super::authentication::AuthenticationResult::Raw(result),
+        ) => {
+            raw.apply_authentication(result);
+            raw.snapshot()
+        }
+        _ => return passkey_authentication_failure(),
+    };
+    let Ok(snapshot) = snapshot else {
         return passkey_authentication_failure();
     };
     match ctx

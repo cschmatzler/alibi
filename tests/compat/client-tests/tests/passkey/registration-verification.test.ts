@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+import { Cookie } from "tough-cookie";
 import { createAuthClient } from "better-auth/client";
 import { passkeyClient } from "@better-auth/passkey/client";
 import { decodeCBOR, decodePartialCBOR, encodeCBOR, type CBORType } from "@levischuck/tiny-cbor";
@@ -281,3 +282,65 @@ for(const profile of ["passkey-first-trusted-origin","passkey-first-configured-o
   }
   return {alternate,profile,signup:fixture.signup,foreignSignup:fixture.foreignSignup,enrollment:fixture.enrollment,observations,submitted:fixture.submitted()};
 },["POST /passkey/verify-registration"]);
+
+// Primary raw-key authority owner. Original COSE tags and signed bytes are
+// retained; typed siblings exercise the same state/callback lifecycle.
+for (const [attestation, algorithm, statementAlgorithm] of [
+  ["none","Ed25519Alg7",-7], ["none","Ed25519",-8], ["none","ES256",-7],
+  ["packed","Ed25519Alg7",-7], ["packed","Ed25519",-8], ["packed","ES256",-7],
+  ["packed","Ed25519Alg7",-8],
+] as const)
+compatScenario(`passkey raw authority ${algorithm} ${attestation}${attestation === "packed" && algorithm === "Ed25519Alg7" && statementAlgorithm === -8 ? " statement8" : ""} preserves signed tags and full lifecycle`, async ctx => {
+  const fixture = await setup(ctx), device = new Authenticator(algorithm);
+  const rows = async (userId: string) => { const result = await ctx.rawRequest({path:`/__test/passkey-registration-state?userId=${encodeURIComponent(userId)}`}); expect(result.status).toBe(200); return result.body; };
+  const foreignRows = await rows(fixture.foreignSignup.data!.user.id);
+  const outputs: any[] = [];
+  for (const failure of ["owner", "rp", "origin", "challenge", ...(attestation === "packed" ? ["signature", "short-signature"] : [])]) {
+    const options = await fixture.options();
+    const proof = device.register(failure === "challenge" ? {...options.data as object,challenge:"wrong-raw-authority-challenge"} : options.data, failure === "origin" ? "http://foreign.fixture.test" : ctx.baseURL,
+      {attestation,statementAlgorithm,userVerified:false,counter:25,...(failure === "rp" ? {rpId:"foreign.fixture.test"} : failure === "signature" ? {badSignature:true} : failure === "short-signature" ? {malformedSignature:true} : {})});
+    let cookies: string[] = [];
+    const result = await (failure === "owner" ? fixture.foreign : fixture.owner).$fetch("/passkey/verify-registration", {method:"POST",body:{response:proof,createSession:true},...(failure === "owner" ? {headers:fixture.foreignHeaders()} : {}),onResponse({response}){cookies=response.headers.getSetCookie();}});
+    expect(result.error).toMatchObject({status:failure === "owner" ? 401 : failure === "signature" || failure === "short-signature" && algorithm !== "ES256" ? 400 : 500});
+    expect(cookies).toEqual([]); const events=await fixture.events();expect(events).toHaveLength(1);expect(events[0]!.stage).toBe("resolved");
+    const replay=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response:proof,createSession:true}});expect(replay.error).toMatchObject({status:400,code:"CHALLENGE_NOT_FOUND"});expect(await fixture.events()).toEqual([]);
+    const state=await fixture.state(),ownerRows=await rows(fixture.signup.data!.user.id);expect(ownerRows).toEqual({rows:[]});expect(state).toEqual({passkeys:[],sessions:{count:0},challenges:{count:0}});
+    expect(await ctx.readUserState({userId:fixture.signup.data!.user.id})).toEqual(fixture.before);expect(await ctx.readUserState({userId:fixture.foreignSignup.data!.user.id})).toEqual(fixture.foreignBefore);expect(await rows(fixture.foreignSignup.data!.user.id)).toEqual(foreignRows);
+    outputs.push({failure,options,proof:registration(proof),result,cookies,events,replay,state,ownerRows});
+  }
+  const options=await fixture.options(), proof=device.register(options.data,ctx.baseURL,{attestation,statementAlgorithm,userVerified:false,counter:25});
+  const accepted=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response:proof,createSession:true,userId:fixture.foreignSignup.data!.user.id,context:"foreign-body-authority"}});expect(accepted.error).toBeNull();
+  const events=await fixture.events();expect(events).toHaveLength(2);expect(events[1]!.clientData).toEqual(proof);expect(events[1]).toMatchObject({userId:fixture.signup.data!.user.id,context:fixture.context,counter:25});
+  const saved=await rows(fixture.signup.data!.user.id);expect(saved).toMatchObject({rows:[{credentialID:proof.id,userId:fixture.signup.data!.user.id,counter:25}]});
+  const attestationObject=decodeCBOR(Uint8Array.from(Buffer.from(proof.response.attestationObject,"base64url"))) as Map<string,CBORType>;
+  const authData=attestationObject.get("authData") as Uint8Array;
+  const keyStart=55+Buffer.from(proof.id,"base64url").length;
+  expect(Buffer.from(authData.subarray(keyStart)).toString("base64")).toBe((saved as any).rows[0].publicKey);
+  const key=decodeCBOR(Uint8Array.from(Buffer.from((saved as any).rows[0].publicKey,"base64")));expect(key).toBeInstanceOf(Map);expect((key as Map<number,CBORType>).get(3)).toBe(algorithm === "Ed25519" ? -8 : -7);expect((key as Map<number,CBORType>).get(-1)).toBe(algorithm === "ES256" ? 1 : 6);
+  const current=await fixture.owner.getSession();expect(current.data?.user.id).toBe(fixture.signup.data!.user.id);expect(current.data?.session.token).toBe((accepted.data as any).session.token);
+  await fixture.owner.signOut();
+  const authClient=(actor:string)=>createAuthClient({baseURL:`${ctx.baseURL}${authProfilePath("passkey-auth-accept")}`,plugins:[passkeyClient()],fetchOptions:{customFetchImpl:(input,init)=>ctx.actor(actor,"passkey-auth-accept").fetch(input,init)}});
+  const auth=authClient("raw-authority-auth"),authForeign=authClient("raw-authority-foreign");
+  const authEvents=async()=>{const result=await ctx.rawRequest({path:"/__test/passkey-authentication-events"});expect(result.status).toBe(200);return result.body as any[];};
+  const assertions:any[]=[];
+  for(const failure of ["rp","origin","challenge","signature","short-signature","counter","success","stale-counter","next-success"]){
+    const before=await rows(fixture.signup.data!.user.id),ownerBefore=await ctx.readUserState({userId:fixture.signup.data!.user.id}),beforeEvents=await authEvents();
+    const challenge=await auth.$fetch("/passkey/generate-authenticate-options",{method:"GET"});expect(challenge.error).toBeNull();
+    const assertion={...device.authenticate(failure==="challenge"?{...challenge.data as object,challenge:"wrong-raw-auth-challenge"}:challenge.data,failure==="origin"?"http://foreign.fixture.test":ctx.baseURL,{userVerified:false,counter:failure==="counter"?25:failure==="next-success"?27:26,...(failure==="rp"?{rpId:"foreign.fixture.test"}:failure==="signature"?{badSignature:true}:failure==="short-signature"?{malformedSignature:true}:{})}),userId:fixture.foreignSignup.data!.user.id};
+    let cookies:string[]=[];const result=await auth.$fetch("/passkey/verify-authentication",{method:"POST",body:{response:assertion,userId:fixture.foreignSignup.data!.user.id},onResponse({response}){cookies=response.headers.getSetCookie();}});
+    const success=failure==="success"||failure==="next-success",afterEvents=await authEvents();let session:any=null;
+    if(success){
+      expect(result.error).toBeNull();expect(result.data).toMatchObject({user:{id:fixture.signup.data!.user.id},session:{userId:fixture.signup.data!.user.id}});expect(cookies.length).toBeGreaterThan(0);
+      expect(afterEvents).toHaveLength(beforeEvents.length+1);const event=afterEvents.at(-1);expect(event.clientData).toEqual(assertion);expect(event.facts).toMatchObject({newCounter:failure==="success"?26:27,credentialID:proof.id,userVerified:false,credentialDeviceType:"singleDevice",credentialBackedUp:false});expect(event.storedPasskey.counter).toBe(failure==="success"?25:26);expect(event.sessions).toEqual({count:0});expect(event.challenges).toEqual({count:0});
+      session=await auth.getSession();expect(session.data?.user.id).toBe(fixture.signup.data!.user.id);expect(session.data?.session.token).toBe((result.data as any).session.token);
+      await auth.signOut();
+    }else{
+      expect(result.error).toMatchObject({status:failure==="signature"||failure==="short-signature"&&algorithm!=="ES256"?401:400,code:"AUTHENTICATION_FAILED"});expect(cookies).toEqual([]);expect(afterEvents).toEqual(beforeEvents);expect(await rows(fixture.signup.data!.user.id)).toEqual(before);expect(await ctx.readUserState({userId:fixture.signup.data!.user.id})).toEqual(ownerBefore);
+    }
+    const replay=await auth.$fetch("/passkey/verify-authentication",{method:"POST",body:{response:assertion}});expect(replay.error).toMatchObject({status:400,code:"CHALLENGE_NOT_FOUND"});expect(await authEvents()).toEqual(afterEvents);
+    const after=await rows(fixture.signup.data!.user.id);if(success)expect(after).toEqual({rows:(before as any).rows.map((row:any)=>({...row,counter:failure==="success"?26:27}))});
+    expect(await rows(fixture.foreignSignup.data!.user.id)).toEqual(foreignRows);expect(await ctx.readUserState({userId:fixture.foreignSignup.data!.user.id})).toEqual(fixture.foreignBefore);expect(await authForeign.getSession()).toMatchObject({data:null});
+    assertions.push({failure,before,ownerBefore,challenge,assertion:authentication(assertion,options.data),result,cookies:cookies.map(raw=>{const cookie=Cookie.parse(raw);if(!cookie)throw new Error("Invalid issued cookie");return {key:cookie.key,token:cookie.value,path:cookie.path??null,domain:cookie.domain??null,httpOnly:cookie.httpOnly,secure:cookie.secure,sameSite:cookie.sameSite??null,maxAge:cookie.maxAge??null,expiresAt:cookie.maxAge===undefined&&cookie.expires instanceof Date?cookie.expires.toISOString():null,extensions:cookie.extensions??[]};}),events:afterEvents.map(event=>({...event,facts:{...event.facts,origin:{url:event.facts.origin}},clientData:authentication(event.clientData,options.data)})),session,replay,after});
+  }
+  return {algorithm,attestation,signup:fixture.signup,foreignSignup:fixture.foreignSignup,foreignBefore:fixture.foreignBefore,foreignRows,outputs,options,proof:registration(proof),accepted,events:events.map(row=>row.stage==="verified"?{...row,clientData:registration(row.clientData)}:row),saved,current,submitted:fixture.submitted(),assertions,final:await fixture.state()};
+},["POST /passkey/verify-registration","POST /passkey/verify-authentication"]);

@@ -90,6 +90,10 @@ pub(in crate::plugins) enum StoredCoreRegistrationState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub(in crate::plugins) enum StoredAuthenticationState {
+    CoreRaw {
+        state: AuthenticationState,
+        challenge: String,
+    },
     /// Source policy for newly issued ceremonies. Older variants remain readable.
     Core {
         state: AuthenticationState,
@@ -471,28 +475,6 @@ pub(super) fn decode_credential_id(credential_id: &str) -> AuthResult<Credential
         .or_else(|_| STANDARD.decode(credential_id))
         .map_err(|_error| AuthError::bad_request("Invalid passkey credential id"))?;
     Ok(bytes.into())
-}
-
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
-pub(super) fn parse_stored_passkey(serialized: &str) -> AuthResult<WebauthnPasskey> {
-    let stored =
-        serde_json::from_str::<super::raw_none::StoredCredential>(serialized).map_err(|error| {
-            AuthError::internal(format!("Failed to decode stored passkey: {error}"))
-        })?;
-    match stored {
-        super::raw_none::StoredCredential::Core(passkey) => Ok(passkey),
-        super::raw_none::StoredCredential::Raw(raw) => {
-            // None attestation admitted these raw facts without a usable key.
-            // Reject the original curve without inventing a Core credential.
-            if raw.has_unsupported_curve() {
-                Err(AuthError::bad_request("Unsupported stored OKP curve"))
-            } else {
-                Err(AuthError::internal("Invalid raw none credential"))
-            }
-        }
-    }
 }
 
 ///
