@@ -62,3 +62,5 @@ correctly failed those; it is not prerequisite success evidence. An attempted
 reference `tsc --noEmit` had no project configuration and printed compiler help;
 it is excluded, not reported as a reference type-check success. No full gate,
 inventory, lockfile or schema updates were performed in this worker slice.
+
+Independent phone-owner review of frozen `69678f0e` is clear: source database-before-cookie validation and consumption are preserved; only the exact local unauthenticated error changes, valid-signed absent-session cleanup is distinguished from missing/tampered cookies, and complete original/foreign persisted state and real issued token survive successful linking and replay. Nine additive inventory requirements anchor the actual link and callback consumers without removing prior evidence. The coordinator owns the next full gate.

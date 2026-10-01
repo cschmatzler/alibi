@@ -132,10 +132,19 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "banned users are denied email and social session creation",
-        "rejection": null,
+        "success": [
+          "banned users are denied email and social session creation",
+          "social linking rejects missing tampered and revoked sessions without changing owners",
+          "social callback rejects consumed database state while retaining the issued session and foreign state"
+        ],
+        "rejection": [
+          "social callback rejects consumed database state while retaining the issued session and foreign state"
+        ],
         "authorization": null,
-        "state": null
+        "state": [
+          "social linking rejects missing tampered and revoked sessions without changing owners",
+          "social callback rejects consumed database state while retaining the issued session and foreign state"
+        ]
       }
     },
     {
@@ -1614,10 +1623,19 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "github link social creates an account that listAccounts returns",
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": [
+          "github link social creates an account that listAccounts returns",
+          "social linking rejects missing tampered and revoked sessions without changing owners"
+        ],
+        "rejection": [
+          "social linking rejects missing tampered and revoked sessions without changing owners"
+        ],
+        "authorization": [
+          "social linking rejects missing tampered and revoked sessions without changing owners"
+        ],
+        "state": [
+          "social linking rejects missing tampered and revoked sessions without changing owners"
+        ]
       }
     },
     {
