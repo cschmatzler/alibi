@@ -39,7 +39,7 @@ Primary official-client evidence is `account-management/duplicates.test.ts`:
 
 - Same-owner and foreign-owner duplicates are real adapter inserts after genuine
   GitLab authorize/token/profile linking. Global sign-in and link denial preserve
-  every physical account/user/session. Replaying the consumed callback returns
+  every physical account/user/session. Replaying the consumed sign-in callback returns
   state_mismatch without another token/profile request or write. Own row-ID access,
   refresh and unlink work;
   foreign operations reach and fail the actual ownership guard while its other
@@ -71,9 +71,27 @@ Meaningful pre-fix failures are retained in
 second insert), `/tmp/issue-187-credential-before.log` (the native selector accepts
 the second password when Source rejects), and `/tmp/issue-187-direct-before.log`
 (the signed-token path returns JSON 500 instead of Source's 302). The focused
-final differential run is `/tmp/issue-187-final-primary-proof.log`: four owners,
-342 assertions. Stable-dependency exact-head checks and independent review are
-recorded with the final PR; focused evidence is not a complete canonical gate.
+final differential run on code/test head `4c86946697c9725aa0442a77d950ddeac9472a07`
+is `/tmp/issue-187-immutable-sdk-proof.log`: four owners, 342 assertions. Fixture
+build and strict all-target Clippy, TypeScript, default workspace 794 tests,
+feature workspace 845 tests, fixture 2 tests, harness 70 tests, Axum 36 tests,
+endpoint 3 tests and coverage inventory 2 tests passed on the stable dependencies.
+Independent coordinator production, migration, authorization and test review
+found no issue within this scope.
+
+The actual canonical `devenv shell -- bash scripts/check.sh` stopped at full SDK:
+717 passed and 22 failed; all four duplicate-account owners passed. Twenty failed
+owner names also fail in the independent issue #256 full run. The two additional
+trust-syntax failures contained only timestamp/lifetime drift under simultaneous
+gates; each unchanged owner passed separately with a 30-second harness timeout
+(318 assertions each). The comparator, assertions and Source remain unchanged.
+Logs are `/tmp/issue-187-canonical-exact.log` and
+`/tmp/issue-187-trust-syntax-individual.log`. Separately invoked Chromium tests
+(2), strict workspace docs and all 845 instrumented native tests passed.
+The original 75% coverage gate failed: native LCOV reports 27,924 / 38,035 lines
+(73.42%). `/tmp/issue-187-canonical-remaining.log` retains this failure; no coverage
+pass or complete canonical pass is claimed. GitHub's gate could not fetch the
+pinned private SSH development-shell input and stopped before executing tests.
 
 No comparison exception, oracle normalization, test-only production export,
 synthetic write receipt, or permissive ownership fallback is added. Private
