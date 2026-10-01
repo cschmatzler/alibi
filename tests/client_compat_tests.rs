@@ -269,6 +269,12 @@ async fn siwe_client_compat() {
 
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
+async fn two_factor_trust_client_compat() {
+    run_client_compat(&["tests/two-factor/trust-ttl.test.ts"]).await;
+}
+
+#[tokio::test]
+#[ignore = "starts external TS and Rust servers"]
 async fn two_factor_client_compat() {
     run_client_compat(&["tests/two-factor"]).await;
 }

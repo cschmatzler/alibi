@@ -368,19 +368,25 @@ pub(crate) async fn inspect_trusted_device(
     };
 
     let clear_header = create_clear_cookie(&cookie_name, &ctx.config);
-    let Some(signed_value) = verify_signed_cookie_value(&ctx.config.secret, &raw_cookie)? else {
+    let Some(signed_value) = verify_trusted_device_cookie_value(&ctx.config.secret, &raw_cookie)
+    else {
         return Ok(TrustedDeviceCheck {
             trusted: false,
-            set_cookie_headers: vec![clear_header],
+            set_cookie_headers: Vec::new(),
         });
     };
 
-    let Some((token, trust_identifier)) = signed_value.split_once('!') else {
+    // The source tests outer payload truthiness before expiring a cookie,
+    // then destructures only the first two components and ignores the rest.
+    let mut components = signed_value.split('!');
+    let token = components.next().unwrap_or_default();
+    let trust_identifier = components.next().unwrap_or_default();
+    if token.is_empty() || trust_identifier.is_empty() {
         return Ok(TrustedDeviceCheck {
             trusted: false,
             set_cookie_headers: vec![clear_header],
         });
-    };
+    }
 
     let expected_token = sign_value(
         &ctx.config.secret,
@@ -2195,6 +2201,30 @@ fn read_signed_cookie<S: better_auth_core::AuthSchema>(
         return Ok(None);
     };
     verify_signed_cookie_value(&ctx.config.secret, &raw_cookie)
+}
+
+// Better Call requires a nonempty payload and a 44-character padded outer
+// signature, while its atob accepts unused trailing Base64 bits. Keep this
+// source-specific decoder local to trusted proofs; other cookie owners retain
+// their shared decoder. HMAC verification remains constant-time.
+fn verify_trusted_device_cookie_value(secret: &str, signed_value: &str) -> Option<String> {
+    use base64::engine::{GeneralPurpose, GeneralPurposeConfig};
+
+    let decoded = urlencoding::decode(signed_value).ok()?;
+    let (payload, signature) = decoded.rsplit_once('.')?;
+    if payload.is_empty() || signature.len() != 44 || !signature.ends_with('=') {
+        return None;
+    }
+    let signature = GeneralPurpose::new(
+        &base64::alphabet::STANDARD,
+        GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
+    )
+    .decode(signature)
+    .ok()?;
+    let mut mac = <HmacSha256 as Mac>::new_from_slice(secret.as_bytes()).ok()?;
+    mac.update(payload.as_bytes());
+    mac.verify_slice(&signature).ok()?;
+    Some(payload.to_owned())
 }
 
 fn sign_cookie_value(secret: &str, value: &str) -> AuthResult<String> {
