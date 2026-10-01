@@ -74,6 +74,14 @@ impl<S> ApiKeyStore for SeaOrmStore<S>
 where
     S: AuthSchema + Send + Sync,
 {
+    async fn consume_api_key_usage_from_snapshot(
+        &self,
+        observed: &ApiKey,
+        global_rate_limit_enabled: bool,
+    ) -> AuthResult<ConsumeApiKeyResult> {
+        self.consume_usage_phases(observed, global_rate_limit_enabled)
+            .await
+    }
     async fn create_api_key(&self, input: CreateApiKey) -> AuthResult<ApiKey> {
         let now = Utc::now();
         ActiveModel {

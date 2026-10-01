@@ -472,6 +472,15 @@ impl<S: AuthSchema> TwoFactorStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> ApiKeyStore for PluginStore<S> {
+    async fn consume_api_key_usage_from_snapshot(
+        &self,
+        observed: &ApiKey,
+        global_rate_limit_enabled: bool,
+    ) -> AuthResult<ConsumeApiKeyResult> {
+        self.inner
+            .consume_api_key_usage_from_snapshot(observed, global_rate_limit_enabled)
+            .await
+    }
     async fn create_api_key(&self, input: CreateApiKey) -> AuthResult<ApiKey> {
         self.inner.create_api_key(input).await
     }

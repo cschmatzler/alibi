@@ -231,6 +231,7 @@ struct Control {
     remaining: Option<f64>,
     serial: Option<usize>,
     dates: Option<HashMap<String, String>>,
+    phase: Option<String>,
 }
 #[derive(Deserialize)]
 struct Verify {
@@ -250,10 +251,12 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     };
     let mut router = Router::new();
     let mut profiles = HashMap::new();
-    for (name, defer_updates) in [
-        ("api-key-automatic", false),
-        ("api-key-automatic-deferred", true),
-        ("api-key-automatic-other", true),
+    for (name, defer_updates, rate_enabled) in [
+        ("api-key-automatic", false, false),
+        ("api-key-automatic-deferred", true, false),
+        ("api-key-automatic-other", true, false),
+        ("api-key-usage-rate", false, true),
+        ("api-key-usage-rate-deferred", true, true),
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let config = base
@@ -265,7 +268,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             defer_updates,
             custom_key_generator: Some(Arc::new(application.clone())),
             rate_limit: RateLimitDefaults {
-                enabled: false,
+                enabled: rate_enabled,
                 ..Default::default()
             },
             ..Default::default()
@@ -335,7 +338,14 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 },
                 "remaining"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET remaining=11 WHERE id=?",[input.key_id.unwrap().into()])).await.unwrap();},
                 "quota"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET remaining=? WHERE id=?",[input.remaining.unwrap().into(),input.key_id.unwrap().into()])).await.unwrap();},
-                "refill"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET remaining=0,refill_amount=3,refill_interval=60000,last_refill_at=? WHERE id=?",["1970-01-01T00:00:00.000Z".into(),input.key_id.unwrap().into()])).await.unwrap();},
+                "refill"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET remaining=0,refill_amount=3,refill_interval=60000,last_refill_at=? WHERE id=?",[chrono::DateTime::<chrono::Utc>::UNIX_EPOCH.into(),input.key_id.unwrap().into()])).await.unwrap();},
+                "phase-refill"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE api_keys SET remaining=0,refill_amount=3,refill_interval=60000,last_refill_at=?,last_request=NULL,request_count=0,rate_limit_enabled=1,rate_limit_max=3,rate_limit_time_window=60000 WHERE id=?",[chrono::DateTime::<chrono::Utc>::UNIX_EPOCH.into(),input.key_id.unwrap().into()])).await.unwrap();},
+                "usage-veto"=>{
+                    let condition=match input.phase.as_deref(){Some("rate")=>"NEW.request_count<>OLD.request_count",Some("final")=>"NEW.remaining IS OLD.remaining AND NEW.request_count IS OLD.request_count AND NEW.last_request IS OLD.last_request AND NEW.last_refill_at IS OLD.last_refill_at",_=>panic!("actual phase required")};
+                    database.execute_raw(Statement::from_string(DbBackend::Sqlite,format!("CREATE TRIGGER usage_phase_veto BEFORE UPDATE ON api_keys WHEN OLD.name='phase-target' AND ({condition}) BEGIN SELECT RAISE(ABORT,'actual phase storage veto'); END"))).await.unwrap();
+                },
+                "usage-restore"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"DROP TRIGGER IF EXISTS usage_phase_veto")).await.unwrap();database.execute_raw(Statement::from_string(DbBackend::Sqlite,"DROP TRIGGER IF EXISTS usage_current_read")).await.unwrap();},
+                "usage-current-read"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"CREATE TRIGGER usage_current_read AFTER UPDATE ON api_keys WHEN OLD.name='phase-target' AND NEW.last_request IS NOT OLD.last_request AND NEW.updated_at IS OLD.updated_at BEGIN UPDATE api_keys SET remaining=77,name='current-row' WHERE id=NEW.id; END")).await.unwrap();},
                 "timestamps"=>{
                     let key_id=input.key_id.unwrap();
                     assert!(database.query_one_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"SELECT id FROM api_keys WHERE id=?",[key_id.clone().into()])).await.unwrap().is_some(),"actual API key required");

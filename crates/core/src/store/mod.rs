@@ -510,6 +510,21 @@ pub trait ApiKeyStore: Send + Sync {
         id: &str,
         global_rate_limit_enabled: bool,
     ) -> AuthResult<ConsumeApiKeyResult>;
+
+    /// Consume usage from the validated database snapshot with Source write phases.
+    /// Quota/refill and rate claims are independently guarded atomic writes;
+    /// successful earlier writes survive a later storage failure. Finally touch
+    /// updated_at and return the current row. This is distinct from the combined
+    /// transactional operation above and cannot be supplied by delegating to it.
+    async fn consume_api_key_usage_from_snapshot(
+        &self,
+        _observed: &ApiKey,
+        _global_rate_limit_enabled: bool,
+    ) -> AuthResult<ConsumeApiKeyResult> {
+        Err(AuthError::internal(
+            "snapshot-aware API key consumption is unsupported by this store",
+        ))
+    }
 }
 
 /// Outcome of an atomic API key usage consumption.

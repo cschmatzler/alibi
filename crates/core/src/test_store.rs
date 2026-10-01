@@ -880,6 +880,13 @@ mod factor_extension_contract_tests {
 
 #[async_trait]
 impl ApiKeyStore for MemoryStore {
+    async fn consume_api_key_usage_from_snapshot(
+        &self,
+        _observed: &ApiKey,
+        _global_rate_limit_enabled: bool,
+    ) -> AuthResult<ConsumeApiKeyResult> {
+        Err(AuthError::internal("unsupported test-store operation"))
+    }
     async fn create_api_key(&self, _input: CreateApiKey) -> AuthResult<ApiKey> {
         Err(AuthError::internal("unsupported test-store operation"))
     }

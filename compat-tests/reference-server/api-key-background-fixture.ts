@@ -30,7 +30,7 @@ export async function apiKeyBackgroundFixture(
       listeners.add(listener); listener();
     });
   }
-  const createAuth = (path: string, deferUpdates: boolean) => betterAuth({
+  const createAuth = (path: string, deferUpdates: boolean, rateEnabled: boolean) => betterAuth({
       ...options, basePath: path,
       advanced: {
         ...options.advanced,
@@ -51,7 +51,7 @@ export async function apiKeyBackgroundFixture(
       },
       plugins: [username(), apiKey({
         deferUpdates, enableSessionForAPIKeys: true,
-        rateLimit: { enabled: false },
+        rateLimit: { enabled: rateEnabled },
         customKeyGenerator({ length, prefix }) {
           event({ kind: "generator", length, prefix: prefix ?? null });
           if (generator === "throw") throw new Error("application generator rejected");
@@ -60,13 +60,15 @@ export async function apiKeyBackgroundFixture(
       })],
     });
   const profiles = new Map<string, ReturnType<typeof createAuth>>();
-  for (const [name, deferUpdates] of [
-    ["api-key-automatic", false],
-    ["api-key-automatic-deferred", true],
-    ["api-key-automatic-other", true],
+  for (const [name, deferUpdates, rateEnabled] of [
+    ["api-key-automatic", false, false],
+    ["api-key-automatic-deferred", true, false],
+    ["api-key-automatic-other", true, false],
+    ["api-key-usage-rate", false, true],
+    ["api-key-usage-rate-deferred", true, true],
   ] as const) {
     const path = `/__test/profiles/${name}/api/auth`;
-    const auth = createAuth(path, deferUpdates);
+    const auth = createAuth(path, deferUpdates, rateEnabled);
     const context = await auth.$context;
     const incrementOne = context.adapter.incrementOne.bind(context.adapter);
     context.adapter.incrementOne = <T>(input: Parameters<typeof incrementOne>[0]): Promise<T | null> => {
@@ -174,6 +176,14 @@ export async function apiKeyBackgroundFixture(
             database.query('UPDATE apikey SET createdAt=?,updatedAt=?,lastRequest=?,lastRefillAt=?,expiresAt=? WHERE id=?').run(...values,input.keyId);
             break;
           }
+          case "phase-refill": database.query('UPDATE apikey SET remaining=0,refillAmount=3,refillInterval=60000,lastRefillAt=?,lastRequest=NULL,requestCount=0,rateLimitEnabled=1,rateLimitMax=3,rateLimitTimeWindow=60000 WHERE id=?').run(new Date(0).toISOString(),input.keyId);break;
+          case "usage-veto": {
+            const condition=input.phase==='rate' ? 'NEW.requestCount<>OLD.requestCount' : input.phase==='final' ? 'NEW.remaining IS OLD.remaining AND NEW.requestCount IS OLD.requestCount AND NEW.lastRequest IS OLD.lastRequest AND NEW.lastRefillAt IS OLD.lastRefillAt' : null;
+            if(!condition)throw new Error('actual phase required');
+            database.exec(`CREATE TRIGGER usage_phase_veto BEFORE UPDATE ON apikey WHEN OLD.name='phase-target' AND (${condition}) BEGIN SELECT RAISE(ABORT,'actual phase storage veto'); END`);break;
+          }
+          case "usage-restore": database.exec('DROP TRIGGER IF EXISTS usage_phase_veto');database.exec('DROP TRIGGER IF EXISTS usage_current_read');break;
+          case "usage-current-read": database.exec("CREATE TRIGGER usage_current_read AFTER UPDATE ON apikey WHEN OLD.name='phase-target' AND NEW.lastRequest IS NOT OLD.lastRequest AND NEW.updatedAt IS OLD.updatedAt BEGIN UPDATE apikey SET remaining=77,name='current-row' WHERE id=NEW.id; END");break;
           case "expire": database.query('UPDATE apikey SET expiresAt=? WHERE id=?').run(new Date(0).toISOString(), input.keyId); break;
           case "veto": database.exec("CREATE TRIGGER automatic_cleanup_veto BEFORE DELETE ON apikey BEGIN SELECT RAISE(ABORT,'actual cleanup storage veto'); END"); break;
           case "restore": database.exec("DROP TRIGGER IF EXISTS automatic_cleanup_veto"); break;
