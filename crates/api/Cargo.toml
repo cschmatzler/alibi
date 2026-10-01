@@ -32,6 +32,7 @@ cookie = { workspace = true }
 
 # Data structures
 uuid = { workspace = true }
+indexmap = { workspace = true }
 
 # Crypto
 sha2 = { workspace = true }

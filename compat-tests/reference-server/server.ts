@@ -4,6 +4,7 @@ import { Database } from "bun:sqlite";
 import { openApiProfiles } from "./open-api-fixture";
 import { passkey } from "@better-auth/passkey";
 import { betterAuth, type BetterAuthPlugin } from "better-auth";
+import { createApiKeyGenerationFixture } from "./api-key-generation-fixture";
 import { createApiKeyHookFixture } from "./api-key-hook-fixture";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { createTwoFactorPolicyFixture } from "./two-factor-policy-fixture";
@@ -404,6 +405,8 @@ const organizationDeletionFixture = organizationDeletionHooksFixture(database, a
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
+const apiKeyGenerationFixture = createApiKeyGenerationFixture(database, authOptions);
+verificationProfiles.set(apiKeyGenerationFixture.path, apiKeyGenerationFixture.auth);
 const apiKeyHookFixture = createApiKeyHookFixture(database, authOptions);
 verificationProfiles.set(apiKeyHookFixture.path, apiKeyHookFixture.auth);
 for (const [path, instance] of siweFixture.profiles) verificationProfiles.set(path, instance);
@@ -892,6 +895,8 @@ const server = Bun.serve({
       if (url.pathname === "/__test/api-key/update" && request.method === "POST") {
         return jsonResponse(await auth.api.updateApiKey({ body: await readJson(request) }));
       }
+      const apiKeyGenerationControl = await apiKeyGenerationFixture.control(request);
+      if (apiKeyGenerationControl) return apiKeyGenerationControl;
       const apiKeyHookControl = await apiKeyHookFixture.control(request);
       if (apiKeyHookControl) return apiKeyHookControl;
       if (url.pathname === "/__test/api-key/verify" && request.method === "POST") {

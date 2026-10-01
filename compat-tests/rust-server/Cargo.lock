@@ -541,6 +541,7 @@ dependencies = [
  "ed25519-dalek",
  "hkdf",
  "hmac",
+ "indexmap 2.13.0",
  "jsonwebtoken",
  "k256",
  "nonzero_ext",
