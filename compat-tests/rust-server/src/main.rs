@@ -703,7 +703,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
     let passkey_router = passkey_fixture::router(&config, database.clone()).await?;
-    let registration_router =
+    let (registration_router, registration_receipts) =
         passkey_registration_fixture::router(&config, database.clone()).await?;
     let siwe_state = siwe_fixture::state();
     let siwe_profile_router =
@@ -1081,6 +1081,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/__test/reset-state",
             post(move || {
+                let registration_receipts = registration_receipts.clone();
                 let passkey_auth_events = passkey_auth_events.clone();
                 let backup_receipts = backup_receipts.clone();
                 let phone_controls = phone_controls.clone();
@@ -1101,6 +1102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 async move {
                     siwe_fixture::reset(&siwe_state).await;
                     multiple_session_counter.store(0, std::sync::atomic::Ordering::SeqCst);
+                    registration_receipts.reset();
                     passkey_auth_events.lock().unwrap().clear();
                     backup_receipts.reset();
                     if let Err(error) = reset_database_state(&database).await {

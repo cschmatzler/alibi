@@ -157,6 +157,7 @@ export function passkeyRegistrationFixture(
   }
   return {
     profiles,
+    reset() { events.length = 0; },
     async handle(request: Request): Promise<Response | null> {
       const path = new URL(request.url).pathname;
       if (path === "/__test/passkey-registration-events")

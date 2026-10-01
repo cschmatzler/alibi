@@ -37,7 +37,7 @@ use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Default)]
-struct Enrollment(Arc<Mutex<Vec<Value>>>);
+pub(super) struct Enrollment(Arc<Mutex<Vec<Value>>>);
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Proof {
@@ -89,6 +89,9 @@ fn read_proof(ctx: &PasskeyRegistrationContext<'_>) -> AuthResult<Proof> {
     Ok(proof)
 }
 impl Enrollment {
+    pub(super) fn reset(&self) {
+        self.0.lock().unwrap().clear();
+    }
     fn record(&self, event: Value) {
         self.0.lock().unwrap().push(event);
     }
@@ -233,7 +236,7 @@ struct Issue {
 pub(super) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
-) -> AuthResult<Router> {
+) -> AuthResult<(Router, Enrollment)> {
     let enrollment = Enrollment::default();
     let mut router = Router::new();
     let mut first = None;
@@ -267,6 +270,7 @@ pub(super) async fn router(
         }
     }
     let auth = first.unwrap();
+    let reset = enrollment.clone();
     router=router.route("/__test/passkey-enrollment",post(move |headers:HeaderMap,Json(body):Json<Issue>| {
         let auth=auth.clone(); async move {
             let outcome:AuthResult<_>=async {
@@ -289,5 +293,5 @@ pub(super) async fn router(
             }
         }
     })).route("/__test/passkey-registration-events",get(move ||{let enrollment=enrollment.clone();async move {Json(json!({"events":std::mem::take(&mut *enrollment.0.lock().unwrap())}))}}));
-    Ok(router)
+    Ok((router, reset))
 }
