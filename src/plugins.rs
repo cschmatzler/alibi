@@ -9,7 +9,7 @@ pub use better_auth_api::plugins::two_factor::{
 };
 pub use better_auth_api::plugins::user_management::SendChangeEmailConfirmation;
 pub use better_auth_api::plugins::{
-    AccountManagementPlugin, AdminConfig, AdminPlugin, ApiKeyConfig, ApiKeyPlugin,
+    AccountManagementPlugin, AdminBannedUserMessage, AdminBannedUserMessageHandler, AdminConfig, AdminPlugin, ApiKeyConfig, ApiKeyPlugin,
     ChangeEmailConfig, DeleteUserConfig, DeviceAuthorizationPlugin, EmailPasswordConfig,
     EmailPasswordPlugin, EmailVerificationConfig, EmailVerificationHook, EmailVerificationPlugin,
     OrganizationConfig, OrganizationPlugin, PasskeyConfig, PasskeyPlugin, PasswordManagementConfig,

@@ -52,6 +52,7 @@ mod invitation_fixture;
 mod jwt_fixture;
 mod lifecycle_fixture;
 mod magic_profiles;
+mod admin_banned_message_fixture;
 mod multiple_session_fixture;
 mod one_time_token_fixture;
 mod open_api_fixture;
@@ -658,6 +659,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         multiple_session_counter.clone(),
     )
     .await?;
+    let admin_banned_message_router = admin_banned_message_fixture::router(&config, database.clone()).await?;
     let admin_permission_router =
         admin_permission_fixture::router(&config, database.clone()).await?;
     let session_fields_router = session_fields_fixture::router(&config, database.clone()).await?;
@@ -1626,6 +1628,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(session_profile_router)
         .merge(multiple_session_router)
         .merge(admin_permission_router)
+        .merge(admin_banned_message_router)
         .merge(session_fields_router)
         .merge(open_api_router)
         .merge(otp_router)

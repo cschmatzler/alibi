@@ -188,7 +188,7 @@ pub(crate) mod test_helpers {
 }
 
 pub use account_management::AccountManagementPlugin;
-pub use admin::{AdminConfig, AdminPlugin, RolePermissions};
+pub use admin::{AdminBannedUserMessage, AdminBannedUserMessageHandler, AdminConfig, AdminPlugin, RolePermissions};
 pub use api_key::{ApiKeyConfig, ApiKeyPlugin};
 pub use better_auth_core::PasswordHasher;
 pub use device_authorization::DeviceAuthorizationPlugin;

@@ -283,6 +283,19 @@ pub fn admin_banned_user_message(
         .map(ToOwned::to_owned)
 }
 
+/// Resolve an awaited application message from the actual stored user entity.
+pub(crate) async fn resolve_admin_banned_user_message<S: better_auth_core::AuthSchema>(
+    ctx: &AuthContext<S>,
+    user: &S::User,
+) -> AuthResult<String> {
+    if let Some(policy) = ctx.extensions.get::<super::admin::BannedUserMessagePolicy>() {
+        return policy.message(user).await;
+    }
+    Ok(admin_banned_user_message(ctx).unwrap_or_else(|| {
+        "You have been banned from this application. Please contact support if you believe this is an error.".to_string()
+    }))
+}
+
 /// Issue a session for the given user, applying admin-plugin ban semantics
 /// when the admin plugin is enabled.
 pub async fn issue_user_session<S: better_auth_core::AuthSchema>(
@@ -354,9 +367,7 @@ async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
                 .await?;
         } else {
             return Err(SessionIssueError::Banned {
-                message: admin_banned_user_message(ctx).unwrap_or_else(|| {
-                    "You have been banned from this application. Please contact support if you believe this is an error.".to_string()
-                }),
+                message: resolve_admin_banned_user_message(ctx, &user).await?,
             });
         }
     }
