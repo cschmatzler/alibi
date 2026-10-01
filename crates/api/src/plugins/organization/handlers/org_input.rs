@@ -4,8 +4,9 @@ use better_auth_core::{AuthError, AuthRequest, AuthResponse};
 use serde_json::{Value, json};
 
 use crate::plugins::organization::types::{
-    CreateOrganizationRequest, DeleteOrganizationRequest, NullableStringField,
-    SetActiveOrganizationRequest, UpdateOrganizationData, UpdateOrganizationRequest,
+    CreateOrganizationRequest, DeleteOrganizationRequest, NullableStringField, RoleInput,
+    SetActiveOrganizationRequest, UpdateMemberRoleRequest, UpdateOrganizationData,
+    UpdateOrganizationRequest,
 };
 
 fn response(status: u16, code: &str, message: impl Into<String>) -> AuthResponse {
@@ -319,4 +320,54 @@ pub(in crate::plugins::organization) fn validate_trusted_create(
             message: issues.join("; "),
         })
     }
+}
+
+pub(super) fn member_role_update(
+    req: &AuthRequest,
+) -> Result<UpdateMemberRoleRequest, AuthResponse> {
+    let decoded = decode(req)?;
+    object(decoded.as_ref(), "body")
+        .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
+    let get = |key| decoded.as_ref().and_then(|value| value.get(key));
+    let role = match get("role") {
+        Some(JsValue::String(value)) => Some(RoleInput::One(value.clone())),
+        Some(JsValue::Array(values)) => values
+            .iter()
+            .map(|value| value.as_str().map(str::to_owned))
+            .collect::<Option<Vec<_>>>()
+            .map(RoleInput::Many),
+        _ => None,
+    };
+    let mut issues = Vec::new();
+    if role.is_none() {
+        issues.push("[body.role] Invalid input".to_owned());
+    }
+    let member_id = string(
+        get("memberId"),
+        "body.memberId",
+        true,
+        false,
+        false,
+        &mut issues,
+    );
+    let organization_id = string(
+        get("organizationId"),
+        "body.organizationId",
+        false,
+        false,
+        false,
+        &mut issues,
+    );
+    validate(issues)?;
+    Ok(UpdateMemberRoleRequest {
+        role: role.ok_or_else(|| response(400, "VALIDATION_ERROR", "[body.role] Invalid input"))?,
+        member_id: member_id.ok_or_else(|| {
+            response(
+                400,
+                "VALIDATION_ERROR",
+                expected("body.memberId", "string", get("memberId")),
+            )
+        })?,
+        organization_id,
+    })
 }

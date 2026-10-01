@@ -1,5 +1,6 @@
 import { expect } from "bun:test";
 import { z } from "zod";
+import { Cookie } from "tough-cookie";
 import { createTracingFetch, type TraceEntry } from "../../support/trace";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 const row = z.object({ id: z.string() }).passthrough();
@@ -123,6 +124,33 @@ compatScenario("organization member role callbacks use the target user and norma
  expect(denied.error).toMatchObject({status:403});expect(await state(ctx)).toEqual(beforeDenied);
  return {observations,denied:ctx.snapshot(denied),beforeDenied};
 },["POST /organization/update-member-role"]);
+
+compatScenario("organization member role revoked and expired sessions preserve cleanup and sibling authority",async ctx=>{
+ const {owner,target,foreign,org,member}=await setup(ctx,"role-input-session"),actors=[owner,target,foreign];
+ const ownerSibling=ctx.actor("role-input-owner-sibling","org-member-role-hooks");expect((await ownerSibling.client.signIn.email({email:owner.email,password:"password123"})).error).toBeNull();
+ const current=await owner.client.getSession();expect(current.error).toBeNull();const token=z.string().parse(current.data?.session.token);
+ await configure(ctx,"record");const beforeRevocation=await fullState(ctx,actors),userState=z.object({sessions:z.array(row)}).passthrough();const revokedId=z.string().parse(userState.parse(beforeRevocation.users[0]).sessions.find(session=>session.token===token)?.id);
+ const revoked=await ownerSibling.client.revokeSession({token});expect(revoked.error).toBeNull();const afterRevocation=await fullState(ctx,actors);
+ expect(afterRevocation.hooks).toEqual({...beforeRevocation.hooks,snapshot:{...beforeRevocation.hooks.snapshot,sessions:beforeRevocation.hooks.snapshot.sessions.filter(session=>session.id!==revokedId)}});
+ expect(afterRevocation.users).toEqual(beforeRevocation.users.map(value=>{const parsed=userState.parse(value);return {...parsed,sessions:parsed.sessions.filter(session=>session.token!==token)};}));
+ async function rejected(){
+  const response=await owner.fetch(`${ctx.baseURL}/__test/profiles/org-member-role-hooks/api/auth/organization/update-member-role`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({organizationId:org.id,memberId:member.id,role:"admin"})});
+  expect(response.status).toBe(401);const body=await response.json();expect(body).toEqual({code:"UNAUTHORIZED",message:"Unauthorized"});
+  const cookies=response.headers.getSetCookie().map(value=>Cookie.parse(value));const sessionCookie=cookies.find(cookie=>cookie?.key==="better-auth.session_token");expect(sessionCookie).toBeDefined();expect(sessionCookie?.value).toBe("");expect(sessionCookie?.maxAge).toBe(0);expect(sessionCookie?.path).toBe("/");expect(sessionCookie?.httpOnly).toBe(true);
+  return {status:response.status,body};
+ }
+ const revokedResult=await rejected();expect(await fullState(ctx,actors)).toEqual(afterRevocation);expect((await ownerSibling.client.getSession()).data?.user.id).toBe(owner.userId);
+ const signin=await owner.client.signIn.email({email:owner.email,password:"password123"});expect(signin.error).toBeNull();const expiryToken=z.string().parse(signin.data?.token);
+ const expiry=await ctx.rawRequest({path:"/__test/expire-session",method:"POST",json:{token:expiryToken,expiresAt:"2000-01-01T00:00:00.000Z"}});expect(expiry.status).toBe(200);expect(expiry.body).toEqual({updated:1});
+ const beforeExpiry=await fullState(ctx,actors),expiredResult=await rejected(),afterExpiry=await fullState(ctx,actors);
+ const expiredId=z.string().parse(userState.parse(beforeExpiry.users[0]).sessions.find(session=>session.token===expiryToken)?.id);
+ expect(afterExpiry.hooks).toEqual({...beforeExpiry.hooks,snapshot:{...beforeExpiry.hooks.snapshot,sessions:beforeExpiry.hooks.snapshot.sessions.filter(session=>session.id!==expiredId)}});
+ expect(afterExpiry.users).toEqual(beforeExpiry.users.map(value=>{const parsed=userState.parse(value);return {...parsed,sessions:parsed.sessions.filter(session=>session.token!==expiryToken)};}));
+ expect((await ownerSibling.client.getSession()).data?.user.id).toBe(owner.userId);
+ const retrySignin=await owner.client.signIn.email({email:owner.email,password:"password123"});expect(retrySignin.error).toBeNull();const retry=await update(owner,org.id,member.id,"admin");expect(retry.error).toBeNull();const afterRetry=await fullState(ctx,actors);expect(afterRetry.hooks.receipts.map(receipt=>receipt.phase)).toEqual(["before-role","after-role"]);expect(afterRetry.hooks.snapshot.members.find(memberRow=>memberRow.id===member.id)).toHaveProperty("role","admin");
+ expect(afterRetry.users.slice(1)).toEqual(afterExpiry.users.slice(1));expect(afterRetry.hooks.snapshot.organizations).toEqual(afterExpiry.hooks.snapshot.organizations);expect(afterRetry.hooks.snapshot.users).toEqual(afterExpiry.hooks.snapshot.users);expect(afterRetry.hooks.snapshot.members.filter(memberRow=>memberRow.id!==member.id)).toEqual(afterExpiry.hooks.snapshot.members.filter(memberRow=>memberRow.id!==member.id));const retryToken=z.string().parse(retrySignin.data?.token),retryId=z.string().parse(userState.parse(afterRetry.users[0]).sessions.find(session=>session.token===retryToken)?.id);expect(afterRetry.hooks.snapshot.sessions.filter(session=>session.id!==retryId)).toEqual(afterExpiry.hooks.snapshot.sessions);
+ return {beforeRevocation,revoked:ctx.snapshot(revoked),afterRevocation,revokedResult,beforeExpiry,expiredResult,afterExpiry,retrySignin:ctx.snapshot(retrySignin),retry:ctx.snapshot(retry),afterRetry};
+},["POST /organization/update-member-role"]);
 compatScenario("organization member role callback errors distinguish no write from a committed role change",async ctx=>{
  const {owner,org,member}=await setup(ctx,"role-errors"),observations=[];
  for(const phase of ["before-role","after-role"]){await configure(ctx,`reject-${phase}`);const before=await state(ctx),result=await update(owner,org.id,member.id);
@@ -163,4 +191,61 @@ compatScenario("organization member role update awaits async callback before cha
  finally{const release=await createTracingFetch(ctx.baseURL,"role-hook-release",trace)("/__test/organization-member-role-hooks-release",{method:"POST"});expect(release.status).toBe(200);expect(await release.json()).toEqual({released:true});}
  const result=await pending;ctx.recordTransport(trace);expect(result.error).toBeNull();const after=await state(ctx);expect(after.receipts.map(row=>row.phase)).toEqual(["before-role","after-role"]);expect(after.snapshot.members.find(row=>row.id===member.id)).toHaveProperty("role","admin");stable(before,after,member.id);
  return {before,paused,result:ctx.snapshot(result),after};
+},["POST /organization/update-member-role"]);
+
+async function fullState(ctx:ScenarioContext,actors:Actor[]) {
+ const users=[];for(const actor of actors){const response=await ctx.rawRequest({path:`/__test/user-state?userId=${encodeURIComponent(actor.userId)}`});expect(response.status).toBe(200);users.push(response.body);}
+ return {hooks:await state(ctx),users};
+}
+async function rawRole(ctx:ScenarioContext,actor:ReturnType<ScenarioContext["actor"]>,body:string,media="application/json") {
+ const response=await actor.fetch(`${ctx.baseURL}/__test/profiles/org-member-role-hooks/api/auth/organization/update-member-role`,{method:"POST",headers:{"content-type":media},body});
+ const text=await response.text();return {status:response.status,empty:text.length===0,body:text?JSON.parse(text):null};
+}
+compatScenario("organization member role empty input rejects before callbacks and preserves actual full owned and foreign state",async ctx=>{
+ const {owner,target,foreign,org,member}=await setup(ctx,"role-input-empty"),actors=[owner,target,foreign];await configure(ctx,"record");const before=await fullState(ctx,actors),observations=[];
+ for(const role of [""," , , ",[],[""," "]]) {
+  const response=await rawRole(ctx,owner,JSON.stringify({organizationId:org.id,memberId:member.id,role}));expect(response).toEqual({status:400,empty:true,body:null});expect(await fullState(ctx,actors)).toEqual(before);observations.push({role,response});
+ }
+ const retry=await update(owner,org.id,member.id,"admin");expect(retry.error).toBeNull();const after=await fullState(ctx,actors);expect(after.hooks.receipts.map(row=>row.phase)).toEqual(["before-role","after-role"]);expect(after.hooks.snapshot.members.find(row=>row.id===member.id)).toHaveProperty("role","admin");stable(before.hooks,after.hooks,member.id);expect(after.users).toEqual(before.users);
+ return {before,observations,retry:ctx.snapshot(retry),after};
+},["POST /organization/update-member-role"]);
+compatScenario("organization member role ordered union and field validation runs before guest authentication without side effects",async ctx=>{
+ const {owner,target,foreign,org,member}=await setup(ctx,"role-input-schema"),actors=[owner,target,foreign];await configure(ctx,"record");const before=await fullState(ctx,actors),guest=ctx.actor("schema-guest","org-member-role-hooks"),observations=[];
+ const valid={organizationId:org.id,memberId:member.id};
+ for(const [body,message] of [
+  [{...valid,role:null},"[body.role] Invalid input"],
+  [{...valid,role:1},"[body.role] Invalid input"],
+  [{...valid,role:{}},"[body.role] Invalid input"],
+  [{...valid,role:[1]},"[body.role] Invalid input"],
+  [{},"[body.role] Invalid input; [body.memberId] Invalid input: expected string, received undefined"],
+  [{role:true,memberId:null,organizationId:null},"[body.role] Invalid input; [body.memberId] Invalid input: expected string, received null; [body.organizationId] Invalid input: expected string, received null"],
+  [{role:"admin",memberId:1,organizationId:false},"[body.memberId] Invalid input: expected string, received number; [body.organizationId] Invalid input: expected string, received boolean"],
+ ] as const){
+  const response=await rawRole(ctx,guest,JSON.stringify(body));expect(response.status).toBe(400);expect(response.body).toEqual({code:"VALIDATION_ERROR",message});expect(await fullState(ctx,actors)).toEqual(before);observations.push(response);
+ }
+ const validGuest=await rawRole(ctx,guest,JSON.stringify({...valid,role:"admin",userId:owner.userId}));expect(validGuest.status).toBe(401);expect(validGuest.body).toEqual({code:"UNAUTHORIZED",message:"Unauthorized"});expect(await fullState(ctx,actors)).toEqual(before);
+ const denied=await update(target,org.id,member.id,"admin");expect(denied.error).toMatchObject({status:403});expect(await fullState(ctx,actors)).toEqual(before);
+ return {before,observations,validGuest,denied:ctx.snapshot(denied)};
+},["POST /organization/update-member-role"]);
+compatScenario("organization member role media and malformed JSON rejection precede authentication with a valid retry",async ctx=>{
+ const {owner,target,foreign,org,member}=await setup(ctx,"role-input-media"),actors=[owner,target,foreign];await configure(ctx,"record");const before=await fullState(ctx,actors),guest=ctx.actor("media-guest","org-member-role-hooks"),observations=[];
+ for(const [body,media,status,error] of [
+  ["{","application/json",400,{code:"BAD_REQUEST",message:"Invalid JSON in request body"}],
+  [JSON.stringify({organizationId:org.id,memberId:member.id,role:"admin"}),"text/plain",415,{code:"UNSUPPORTED_MEDIA_TYPE",message:'Content-Type "text/plain" is not allowed. Allowed types: application/json'}],
+  ["role=admin","application/x-www-form-urlencoded",415,{code:"UNSUPPORTED_MEDIA_TYPE",message:'Content-Type "application/x-www-form-urlencoded" is not allowed. Allowed types: application/json'}],
+ ] as const){const response=await rawRole(ctx,guest,body,media);expect(response.status).toBe(status);expect(response.body).toEqual(error);expect(await fullState(ctx,actors)).toEqual(before);observations.push(response);}
+ const retry=await rawRole(ctx,owner,JSON.stringify({organizationId:org.id,memberId:member.id,role:"admin"}),"APPLICATION/JSON; charset=utf-8");expect(retry.status).toBe(200);expect(retry.body).toHaveProperty("role","admin");const after=await fullState(ctx,actors);expect(after.hooks.receipts.map(row=>row.phase)).toEqual(["before-role","after-role"]);stable(before.hooks,after.hooks,member.id);expect(after.users).toEqual(before.users);
+ return {before,observations,retry,after};
+},["POST /organization/update-member-role"]);
+compatScenario("organization member role selectors retain source empty-role precedence and literal whitespace IDs",async ctx=>{
+ const {owner,target,foreign,org,member,sibling}=await setup(ctx,"role-input-selector"),actors=[owner,target,foreign];await configure(ctx,"record");const before=await fullState(ctx,actors),observations=[];
+ for(const [actor,organizationId,role,status,body] of [
+  [sibling,undefined,"",400,null],
+  [sibling,undefined,[],400,{code:"NO_ACTIVE_ORGANIZATION",message:"No active organization"}],
+  [sibling,"","admin",400,{code:"NO_ACTIVE_ORGANIZATION",message:"No active organization"}],
+  [owner," ","admin",400,{code:"MEMBER_NOT_FOUND",message:"Member not found"}],
+  [owner,` ${org.id} `,"admin",400,{code:"MEMBER_NOT_FOUND",message:"Member not found"}],
+ ] as const){const response=await rawRole(ctx,actor,JSON.stringify({memberId:member.id,organizationId,role}));expect(response.status).toBe(status);expect(response.body).toEqual(body);if(body===null)expect(response.empty).toBe(true);expect(await fullState(ctx,actors)).toEqual(before);observations.push(response);}
+ const retry=await rawRole(ctx,owner,JSON.stringify({memberId:member.id,organizationId:"",role:"admin"}));expect(retry.status).toBe(200);expect(retry.body).toHaveProperty("organizationId",org.id);const after=await fullState(ctx,actors);expect(after.hooks.receipts.map(row=>row.phase)).toEqual(["before-role","after-role"]);stable(before.hooks,after.hooks,member.id);expect(after.users).toEqual(before.users);
+ return {before,observations,retry,after};
 },["POST /organization/update-member-role"]);
