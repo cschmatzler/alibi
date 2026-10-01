@@ -518,7 +518,13 @@ pub async fn handle_remove_member(
         Err(resp) => return Ok(resp),
     };
     let (user, session) = super::extension_common::session(req, ctx).await?;
-    let response = remove_member_core(&body, &user, &session, config, ctx).await?;
+    let response = match remove_member_core(&body, &user, &session, config, ctx).await {
+        Ok(response) => response,
+        // The pinned HTTP endpoint returns an empty 500 for uncaught adapter
+        // failures. Keep explicit application errors and nested auth unchanged.
+        Err(AuthError::Database(_)) => return Ok(AuthResponse::new(500)),
+        Err(error) => return Err(error),
+    };
     Ok(AuthResponse::json(200, &response)?)
 }
 
