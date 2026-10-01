@@ -31,6 +31,21 @@
         "success": [
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
           "expired ban impersonation returns original target snapshot while persistent authorization and session state unban"
+        ],
+        "rejection": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "authorization": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "state": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
         ]
       }
     },
@@ -43,6 +58,23 @@
         "rejection": null,
         "authorization": null,
         "state": null
+      },
+      "requiredEvidence": {
+        "rejection": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "authorization": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "state": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ]
       }
     },
     {
@@ -628,10 +660,21 @@
           "admin invalid configured dates fail before writes without changing issued owner or target sessions",
           "admin date mapping preserves genuine application hook API errors and unchanged owned state",
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
         ],
         "rejection": [
-          "admin date mapping preserves genuine application hook API errors and unchanged owned state"
+          "admin date mapping preserves genuine application hook API errors and unchanged owned state",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "authorization": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
         ]
       }
     },
@@ -652,14 +695,23 @@
         ],
         "rejection": [
           "admin create validates explicit and nested roles before lookup and persists legitimate array ownership",
-          "admin create-only grant cannot select explicit or nested roles and retains default creation"
+          "admin create-only grant cannot select explicit or nested roles and retains default creation",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
         ],
         "authorization": [
-          "admin create-only grant cannot select explicit or nested roles and retains default creation"
+          "admin create-only grant cannot select explicit or nested roles and retains default creation",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
         ],
         "state": [
           "admin create validates explicit and nested roles before lookup and persists legitimate array ownership",
-          "admin create-only grant cannot select explicit or nested roles and retains default creation"
+          "admin create-only grant cannot select explicit or nested roles and retains default creation",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
         ]
       }
     },
@@ -682,6 +734,21 @@
       "requiredEvidence": {
         "success": [
           "admin create validates explicit and nested roles before lookup and persists legitimate array ownership"
+        ],
+        "rejection": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "authorization": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "state": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
         ]
       }
     },
@@ -713,15 +780,24 @@
           "admin invalid configured dates fail before writes without changing issued owner or target sessions",
           "admin date mapping preserves genuine application hook API errors and unchanged owned state",
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
         ],
         "rejection": [
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
         ],
         "authorization": [
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
         ]
       }
     },
@@ -734,6 +810,23 @@
         "rejection": null,
         "authorization": null,
         "state": null
+      },
+      "requiredEvidence": {
+        "rejection": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "authorization": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "state": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ]
       }
     },
     {
@@ -748,6 +841,23 @@
         ],
         "authorization": "admin deletion revokes target credentials and sessions while rejecting other principals",
         "state": "admin deletion revokes target credentials and sessions while rejecting other principals"
+      },
+      "requiredEvidence": {
+        "rejection": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "authorization": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "state": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ]
       }
     },
     {
@@ -759,6 +869,23 @@
         "rejection": null,
         "authorization": null,
         "state": null
+      },
+      "requiredEvidence": {
+        "rejection": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "authorization": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "state": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ]
       }
     },
     {
@@ -770,6 +897,23 @@
         "rejection": null,
         "authorization": null,
         "state": null
+      },
+      "requiredEvidence": {
+        "rejection": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "authorization": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "state": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ]
       }
     },
     {
@@ -790,13 +934,24 @@
           "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
         ],
         "rejection": [
-          "admin configured role values retain literal strings and array elements before any target mutation"
+          "admin configured role values retain literal strings and array elements before any target mutation",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
         ],
         "state": [
           "admin configured role values retain literal strings and array elements before any target mutation",
           "admin unconfigured role table accepts empty role strings and arrays without inventing validation",
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "authorization": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
         ]
       }
     },
@@ -809,6 +964,23 @@
         "rejection": null,
         "authorization": null,
         "state": null
+      },
+      "requiredEvidence": {
+        "rejection": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "authorization": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "state": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ]
       }
     },
     {
@@ -823,6 +995,23 @@
         "rejection": null,
         "authorization": null,
         "state": "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization"
+      },
+      "requiredEvidence": {
+        "rejection": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "authorization": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "state": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ]
       }
     },
     {
@@ -842,7 +1031,20 @@
         ],
         "state": [
           "admin zero duration and empty reason use source defaults while owned sessions transition",
-          "admin configured fractional negative and NaN defaults preserve persisted session ownership"
+          "admin configured fractional negative and NaN defaults preserve persisted session ownership",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "rejection": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "authorization": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
         ]
       }
     },
@@ -858,10 +1060,21 @@
       },
       "requiredEvidence": {
         "rejection": [
-          "admin configured role values retain literal strings and array elements before any target mutation"
+          "admin configured role values retain literal strings and array elements before any target mutation",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
         ],
         "state": [
-          "admin configured role values retain literal strings and array elements before any target mutation"
+          "admin configured role values retain literal strings and array elements before any target mutation",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
+        "authorization": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
         ]
       }
     },
