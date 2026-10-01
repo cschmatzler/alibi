@@ -51,3 +51,7 @@ Its future merge with OTP must retain that slice's enable-method schema and
 body-before-authoritative ordering. Global before-request hooks, including
 API-key quota/invalid-key handling, retain their own existing ordering and are
 not newly claimed by this route-local correction.
+
+## Integrated validation
+
+Forward integration with configured OTP retains the enable method schema and inherited password policy. Independent review is clear. The complete canonical gate passed: 316 SDK scenarios / 10,762 assertions, 39 harness tests / 243 assertions, two Chromium tests / 22 assertions, and 79.38% source coverage (25,562 / 32,203). Log: `/tmp/two-factor-disable-validation-reviewed-canonical.log`. PR #47; all earlier required evidence remains.
