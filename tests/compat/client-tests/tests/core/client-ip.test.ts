@@ -5,6 +5,7 @@ import { createAuthClient } from "better-auth/client";
 import { deviceAuthorizationClient } from "better-auth/client/plugins";
 import { createConnection } from "node:net";
 import { passkeyClient } from "@better-auth/passkey/client";
+import { apiKeyClient } from "@better-auth/api-key/client";
 import { Authenticator } from "../../support/authenticator";
 
 type Row = { id: string; token: string; userId: string; ipAddress: string | null; userAgent: string | null; expiresAt: string; createdAt: string; updatedAt: string };
@@ -305,3 +306,25 @@ compatScenario("client IP trusted admin impersonation retains operator and forei
   expect(await sessions(ctx)).toEqual(before);expect(await ctx.readUserState({userId:other.data!.user.id})).toEqual(foreignState);
   return {admin:ctx.snapshot(admin),signup:ctx.snapshot(signup),other:ctx.snapshot(other),before,foreignState,denied:ctx.snapshot(denied),impersonated:ctx.snapshot(impersonated),current:ctx.snapshot(current),after,stop:ctx.snapshot(stop),final:await sessions(ctx),foreignAfter:await ctx.readUserState({userId:other.data!.user.id})};
 },["POST /admin/impersonate-user","POST /admin/stop-impersonating"]);
+
+for(const profile of ["client-ip-trusted","client-ip-ordered","client-ip-disabled"] as const) compatScenario(`client IP ${profile} API-key virtual principals keep nullable metadata and override foreign cookies`,async ctx=>{
+  const owner=ctx.actor("owner",profile),foreign=ctx.actor("foreign","client-ip-full");
+  const signup=await owner.client.signUp.email({email:ctx.uniqueEmail("virtual-ip-owner"),name:"Owner",password:"Password123!"});expect(signup.error).toBeNull();
+  let cookies:string[]=[];
+  const other=await foreign.client.signUp.email({email:ctx.uniqueEmail("virtual-ip-foreign"),name:"Foreign",password:"Password123!"},{onSuccess({response}){cookies=response.headers.getSetCookie();}});expect(other.error).toBeNull();
+  const cookie=cookies.find(value=>value.startsWith("better-auth.session_token="))?.split(";")[0];expect(cookie).toBeDefined();
+  const client=createAuthClient({baseURL:ctx.baseURL,plugins:[apiKeyClient()],fetchOptions:{customFetchImpl:owner.fetch}});
+  const created=await client.apiKey.create({name:"Configured virtual principal"});expect(created.error).toBeNull();
+  const key=created.data!;
+  const before=await sessions(ctx),ownerState=await ctx.readUserState({userId:signup.data!.user.id}),foreignState=await ctx.readUserState({userId:other.data!.user.id});
+  const headers={"x-api-key":key.key,cookie:cookie!,"x-forwarded-for":"203.0.113.99, 198.51.100.225, 10.2.3.4","x-client-ip":"198.51.100.226","user-agent":"virtual-browser"};
+  const current=await ctx.actor("machine",profile).client.getSession({fetchOptions:{headers}});expect(current.error).toBeNull();
+  expect(current.data!.user.id).toBe(signup.data!.user.id);
+  expect(current.data!.session).toMatchObject({id:key.id,userId:signup.data!.user.id,token:key.key,userAgent:"virtual-browser",ipAddress:profile==="client-ip-disabled"?null:profile==="client-ip-ordered"?"198.51.100.226":"198.51.100.225"});
+  const nullable=await wireRequest(ctx,authProfilePath(profile)+"/get-session",[["x-api-key",key.key],["Cookie",cookie!]]);
+  expect(nullable.status).toBe(200);expect(nullable.body).toMatchObject({user:{id:signup.data!.user.id},session:{id:key.id,userId:signup.data!.user.id,token:key.key,ipAddress:null,userAgent:null}});
+  expect(await sessions(ctx)).toEqual(before);expect(await ctx.readUserState({userId:signup.data!.user.id})).toEqual(ownerState);expect(await ctx.readUserState({userId:other.data!.user.id})).toEqual(foreignState);
+  const invalid=await ctx.actor("invalid-machine",profile).client.getSession({fetchOptions:{headers:{...headers,"x-api-key":"invalid-short-key"}}});expect(invalid.error?.status).toBe(403);
+  expect(await sessions(ctx)).toEqual(before);expect(await ctx.readUserState({userId:other.data!.user.id})).toEqual(foreignState);
+  return {signup:ctx.snapshot(signup),other:ctx.snapshot(other),created:ctx.snapshot(created),before,ownerState,foreignState,current:ctx.snapshot(current),nullable,invalid:ctx.snapshot(invalid),after:await sessions(ctx),ownerAfter:await ctx.readUserState({userId:signup.data!.user.id}),foreignAfter:await ctx.readUserState({userId:other.data!.user.id})};
+},["POST /api-key/create","GET /get-session"]);

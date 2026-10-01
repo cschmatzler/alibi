@@ -4,8 +4,8 @@ use axum::{Json, Router, routing::get};
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::{
-    AdminPlugin, DeviceAuthorizationPlugin, EmailPasswordPlugin, EmailVerificationPlugin,
-    PasskeyPlugin, SessionManagementPlugin,
+    AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin, EmailPasswordPlugin,
+    EmailVerificationPlugin, PasskeyPlugin, SessionManagementPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
 use better_auth_core::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute};
@@ -116,6 +116,11 @@ pub(super) async fn router(
                 .plugin(DeviceAuthorizationPlugin::new())
                 .plugin(PasskeyPlugin::new())
                 .plugin(AdminPlugin::new())
+                .plugin(
+                    ApiKeyPlugin::builder()
+                        .enable_session_for_api_keys(true)
+                        .build(),
+                )
                 .plugin(
                     EmailVerificationPlugin::new()
                         .auto_sign_in_after_verification(true)

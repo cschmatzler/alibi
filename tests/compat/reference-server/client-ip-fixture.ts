@@ -6,6 +6,7 @@ import { getMigrations } from "better-auth/db/migration";
 import { createAuthEndpoint } from "better-auth/api";
 import { passkey } from "@better-auth/passkey";
 import { admin } from "better-auth/plugins";
+import { apiKey } from "@better-auth/api-key";
 
 export async function createClientIpFixture(base: BetterAuthOptions, database: Database) {
   const policies = {
@@ -31,7 +32,7 @@ export async function createClientIpFixture(base: BetterAuthOptions, database: D
       basePath: `/__test/profiles/${profile}/api/auth`,
       advanced: { ...base.advanced, ipAddress: policy },
       emailVerification: { ...base.emailVerification, autoSignInAfterVerification: true },
-      plugins: [deviceAuthorization(), passkey(), admin(), {
+      plugins: [deviceAuthorization(), passkey(), admin(), apiKey({enableSessionForAPIKeys:true}), {
         id: "client-ip-application",
         endpoints: {
           rateEmpty: createAuthEndpoint("/client-ip-rate-empty", { method: "GET" }, async ctx => ctx.json({ok:true})),
