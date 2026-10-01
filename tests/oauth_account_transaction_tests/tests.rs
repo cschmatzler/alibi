@@ -18,7 +18,12 @@ async fn rejected_account_insert_rolls_back_new_oauth_user_and_retry_commits_bin
         .unwrap();
     _ = database.execute_raw(Statement::from_string(DbBackend::Sqlite, "CREATE TRIGGER reject_oauth_account BEFORE INSERT ON accounts WHEN NEW.provider_id = 'google' BEGIN SELECT RAISE(FAIL, 'account insert veto'); END".to_owned())).await.unwrap();
     let rejected = auth.handle_request(request()).await.unwrap();
-    assert_eq!(rejected.status, 403);
+    assert_eq!(rejected.status, 401);
+    let failure: serde_json::Value = serde_json::from_slice(&rejected.body).unwrap();
+    assert_eq!(
+        failure.get("code").and_then(serde_json::Value::as_str),
+        Some("OAUTH_LINK_ERROR")
+    );
     assert!(
         !rejected
             .headers
