@@ -570,33 +570,24 @@ mod verification {
 #[path = "legacy_schema_integration_tests/tests.rs"]
 mod tests;
 
-use std::borrow::Cow;
-
 use better_auth::plugins::{
     AccountManagementPlugin, EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin,
 };
-
 use better_auth::prelude::{
     AuthAccount, AuthRequest, AuthSession, AuthUser, AuthVerification, CreateAccount,
     CreateSession, CreateUser, CreateVerification, HttpMethod, UpdateAccount, UpdateUser,
 };
-
 use better_auth::{AuthConfig, AuthError, AuthResult, AuthSchema, BetterAuth};
-
 use better_auth_seaorm::sea_orm;
-
 use better_auth_seaorm::sea_orm::entity::prelude::*;
-
 use better_auth_seaorm::sea_orm::{ActiveValue::NotSet, ActiveValue::Set, ConnectionTrait, Schema};
-
 use better_auth_seaorm::{
     Database, DatabaseConnection, SeaOrmAccountModel, SeaOrmSessionModel, SeaOrmStore,
     SeaOrmUserModel, SeaOrmVerificationModel,
 };
-
 use chrono::{DateTime, Utc};
-
 use serde_json::json;
+use std::borrow::Cow;
 
 #[derive(Debug)]
 pub struct LegacySchema;

@@ -1,26 +1,17 @@
 use super::*;
-
 use crate::store::{bundled_schema::BundledSchema, migrator::run_migrations};
-
 use better_auth_core::AuthConfig;
-
 use better_auth_core::entity::{AuthSession, AuthUser};
-
 use better_auth_core::store::{
     InvitationStore, MemberStore, OrganizationRoleStore, OrganizationStore, SessionStore, UserStore,
 };
-
 use better_auth_core::types::{
     CreateInvitation, CreateMember, CreateOrganization, CreateOrganizationRole, CreateSession,
     CreateUser, InvitationStatus, OrganizationRoleSelector, UpdateOrganizationRole,
 };
-
 use chrono::Duration;
-
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
-
 use std::sync::Arc;
-
 use tokio::{sync::Barrier, task::JoinSet};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

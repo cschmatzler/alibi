@@ -1,11 +1,9 @@
 #[cfg(test)]
 mod tests;
 
-use sea_orm::{ConnectionTrait, DatabaseBackend};
-
-use sea_orm_migration::prelude::*;
-
 use super::entities::api_key;
+use sea_orm::{ConnectionTrait, DatabaseBackend};
+use sea_orm_migration::prelude::*;
 
 pub(super) struct ApiKeyNumbers;
 

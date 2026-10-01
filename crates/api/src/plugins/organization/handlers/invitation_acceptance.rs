@@ -1,31 +1,22 @@
 use super::extension_common::org_error;
-/// Source acceptance claims before its subsequent membership transaction.
-use std::sync::Arc;
-
 use super::invitation::require_verified_invitation_email;
-
 use crate::plugins::organization::extensions::TeamLimitContext;
-
 use crate::plugins::organization::types::{
     AcceptInvitationRequest, AcceptInvitationResponse, BasicMemberResponse, OrganizationResponse,
 };
-
 use crate::plugins::organization::{
     OrganizationConfig, OrganizationInvitationAcceptanceContext,
     OrganizationInvitationAcceptedContext,
 };
-
 use better_auth_core::entity::{AuthInvitation, AuthSession, AuthUser};
-
 use better_auth_core::store::transaction;
-
 use better_auth_core::types::AddTeamMemberResult;
-
 use better_auth_core::wire::InvitationView;
-
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, CreateMember, InvitationStatus,
 };
+/// Source acceptance claims before its subsequent membership transaction.
+use std::sync::Arc;
 
 /// Keep only headers emitted by this accepted request's lifecycle removable.
 #[derive(Clone)]

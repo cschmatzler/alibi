@@ -20,16 +20,10 @@ mod compat;
 #[path = "compat_endpoint_tests/tests.rs"]
 mod tests;
 
-use std::collections::HashSet;
-
 use better_auth::prelude::CreateAccount;
-
 use compat::helpers::*;
-
 use compat::schema::extract_success_schema;
-
 use compat::shapes::check_camel_case_fields;
-
 use compat::validation::{DiffKind, ShapeDiff, json_type_name};
-
 use compat::validator::{EndpointResult, SpecValidator};
+use std::collections::HashSet;

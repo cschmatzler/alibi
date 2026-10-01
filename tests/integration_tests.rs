@@ -22,13 +22,9 @@ mod compat;
 mod tests;
 
 use better_auth::BetterAuth;
-
 use better_auth_core::entity::AuthUser;
-
 use better_auth_core::store::UserStore;
-
 use compat::helpers::*;
-
 use std::sync::Arc;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

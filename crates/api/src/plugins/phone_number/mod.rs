@@ -11,15 +11,10 @@ mod tests;
 mod types;
 
 use async_trait::async_trait;
-
 use better_auth_core::{AuthContext, AuthRequest, AuthResult, AuthSchema};
-
 use chrono::Duration;
-
 use std::sync::Arc;
-
 pub use types::{PhoneNumberVerification, PhoneOtpDelivery};
-
 pub(in crate::plugins) use types::{parse_signup_phone, reject_verified_input};
 
 #[async_trait]

@@ -17,7 +17,5 @@ mod compat;
 mod tests;
 
 use better_auth::prelude::{CreateUser, UpdateUser};
-
 use compat::helpers::*;
-
 use serde_json::json;

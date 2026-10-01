@@ -1,38 +1,7 @@
-use base64::Engine;
-
-use better_auth_core::entity::{AuthPasskey, AuthSession, AuthUser, AuthVerification};
-
-use better_auth_core::types::UpdatePasskeyAuthentication;
-
-use better_auth_core::wire::PasskeyView;
-
-use better_auth_core::{AuthContext, AuthError, AuthResult, CreatePasskey, CreateVerification};
-
-use chrono::{Duration, Utc};
-
-use serde_json::{Value, json};
-
-use uuid::Uuid;
-
-use webauthn_rs::prelude::{DiscoverableKey, PublicKeyCredential, RegisterPublicKeyCredential};
-
-use webauthn_rs_core::{
-    error::WebauthnError,
-    proto::{
-        AttestationConveyancePreference, COSEAlgorithm, RequestRegistrationExtensions,
-        UserVerificationPolicy,
-    },
-};
-
-use crate::plugins::StatusResponse;
-
-use crate::plugins::helpers::{SessionIssueError, issue_user_session};
-
 use super::types::{
     DeletePasskeyRequest, PasskeyResponse, SessionResponse, UpdatePasskeyRequest,
     VerifyAuthenticationRequest, VerifyRegistrationRequest,
 };
-
 use super::webauthn::{
     StoredAuthenticationState, StoredCoreRegistrationState, StoredRegistrationState,
     StoredRegistrationVerifier, authentication_options_json, build_verification_core,
@@ -42,8 +11,25 @@ use super::webauthn::{
     generate_ts_user_handle, get_cookie_value, parse_stored_passkey, parse_transports_csv,
     registration_options_json, resolve_origin, snapshot_passkey, transports_to_csv,
 };
-
 use super::{PasskeyConfig, PasskeyRegistrationUser};
+use crate::plugins::StatusResponse;
+use crate::plugins::helpers::{SessionIssueError, issue_user_session};
+use base64::Engine;
+use better_auth_core::entity::{AuthPasskey, AuthSession, AuthUser, AuthVerification};
+use better_auth_core::types::UpdatePasskeyAuthentication;
+use better_auth_core::wire::PasskeyView;
+use better_auth_core::{AuthContext, AuthError, AuthResult, CreatePasskey, CreateVerification};
+use chrono::{Duration, Utc};
+use serde_json::{Value, json};
+use uuid::Uuid;
+use webauthn_rs::prelude::{DiscoverableKey, PublicKeyCredential, RegisterPublicKeyCredential};
+use webauthn_rs_core::{
+    error::WebauthnError,
+    proto::{
+        AttestationConveyancePreference, COSEAlgorithm, RequestRegistrationExtensions,
+        UserVerificationPolicy,
+    },
+};
 
 pub(super) type PasskeyHandlerResult<T> = AuthResult<PasskeyHandlerOutcome<T>>;
 

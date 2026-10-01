@@ -1,13 +1,11 @@
-use std::collections::HashMap;
-use std::fmt::Write;
-
-use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use chrono::Duration;
-
 use super::*;
 use crate::plugins::test_helpers;
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use better_auth_core::{CreatePasskey, CreateUser, HttpMethod};
+use chrono::Duration;
+use std::collections::HashMap;
+use std::fmt::Write;
 
 fn passkey_plugin() -> PasskeyPlugin {
     PasskeyPlugin::new()

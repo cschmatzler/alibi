@@ -1,5 +1,4 @@
 use serde::{Deserialize, Deserializer, Serialize};
-
 use validator::Validate;
 
 /// Request body for `POST /request-password-reset`.

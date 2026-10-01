@@ -5,7 +5,6 @@ mod tests;
 
 #[cfg(test)]
 use sea_orm::{DatabaseBackend, Statement};
-
 use sea_orm_migration::prelude::*;
 
 pub(super) struct DeviceCodeUserReference;

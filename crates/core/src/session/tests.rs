@@ -1,15 +1,9 @@
 use super::*;
-
 use crate::entity::AuthSession;
-
 use crate::test_store::{BundledSchema, test_config, test_database};
-
 use crate::types::AuthRequest;
-
 use crate::types::HttpMethod;
-
 use crate::wire::SessionView;
-
 use chrono::Duration;
 
 fn test_manager() -> SessionManager<BundledSchema> {

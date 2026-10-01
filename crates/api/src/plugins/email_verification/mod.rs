@@ -7,30 +7,18 @@ pub(super) mod types;
 #[cfg(test)]
 mod tests;
 
-use async_trait::async_trait;
-
-use chrono::Duration;
-
-use std::future::Future;
-
-use std::pin::Pin;
-
-use std::sync::Arc;
-
-use better_auth_core::AuthUser;
-
-use better_auth_core::wire::UserView;
-
-use better_auth_core::{AuthContext, AuthError, AuthResult};
-
-use better_auth_core::{AuthRequest, AuthResponse};
-
-use better_auth_core::utils::cookie_utils::create_session_cookie;
-
 use super::StatusResponse;
-
+use async_trait::async_trait;
+use better_auth_core::AuthUser;
+use better_auth_core::utils::cookie_utils::create_session_cookie;
+use better_auth_core::wire::UserView;
+use better_auth_core::{AuthContext, AuthError, AuthResult};
+use better_auth_core::{AuthRequest, AuthResponse};
+use chrono::Duration;
 use handlers::{send_verification_email_core, verification_url, verify_email_core};
-
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 use types::{SendVerificationEmailRequest, VerifyEmailQuery, VerifyEmailResult};
 
 /// Trait for custom email sending logic.

@@ -1,11 +1,10 @@
 //! Generated upstream `OpenAPI` loading, `$ref` resolution, and schema types.
 
+use oas3::spec::{ObjectOrReference, ObjectSchema, SchemaType, SchemaTypeSet};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
-
-use oas3::spec::{ObjectOrReference, ObjectSchema, SchemaType, SchemaTypeSet};
 
 // ---------------------------------------------------------------------------
 // Types

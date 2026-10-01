@@ -1,24 +1,18 @@
 //! Anonymous accounts and their cleanup when a proven account replaces them.
 
-use std::sync::Arc;
-
-use async_trait::async_trait;
-
-use better_auth_core::wire::{SessionView, UserView};
-
-use better_auth_core::{
-    AuthContext, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
-    AuthSchema, AuthSession, AuthUser, BeforeRequestAction, CreateUser, HttpMethod, RequestMeta,
-};
-
-use rand::distributions::{Alphanumeric, DistString};
-
-use serde_json::json;
-
 use super::helpers::{
     apply_default_role, completed_response_session, delete_session_cookie_headers, get_cookie,
     issue_user_session, record_completed_session, response_has_session_cookie,
 };
+use async_trait::async_trait;
+use better_auth_core::wire::{SessionView, UserView};
+use better_auth_core::{
+    AuthContext, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
+    AuthSchema, AuthSession, AuthUser, BeforeRequestAction, CreateUser, HttpMethod, RequestMeta,
+};
+use rand::distributions::{Alphanumeric, DistString};
+use serde_json::json;
+use std::sync::Arc;
 
 /// Application-owned generation of anonymous display names and email addresses.
 #[async_trait]

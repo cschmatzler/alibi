@@ -1,27 +1,17 @@
+use super::entities::wallet_address;
+use super::{SeaOrmStore, map_db_err};
+use crate::schema::{AuthSchema, SeaOrmUserModel};
 use async_trait::async_trait;
-
+use better_auth_core::error::{AuthError, AuthResult};
 use better_auth_core::store::WalletAddressStore;
-
 use better_auth_core::{AuthUser, CreateWalletAddress, WalletAddress};
-
 use chrono::Utc;
-
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect, Set,
     SqliteTransactionMode, TransactionOptions, TransactionTrait,
 };
-
 use sea_orm_migration::SchemaManager;
-
 use uuid::Uuid;
-
-use super::entities::wallet_address;
-
-use super::{SeaOrmStore, map_db_err};
-
-use crate::schema::{AuthSchema, SeaOrmUserModel};
-
-use better_auth_core::error::{AuthError, AuthResult};
 
 #[async_trait]
 impl<S> WalletAddressStore for SeaOrmStore<S>

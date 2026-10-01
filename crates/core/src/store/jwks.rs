@@ -1,7 +1,5 @@
 use crate::error::{AuthError, AuthResult};
-
 use crate::types::{CreateJwk, Jwk};
-
 use async_trait::async_trait;
 
 #[async_trait]

@@ -28,9 +28,7 @@ mod compat;
 mod tests;
 
 use better_auth::prelude::AuthUser;
-
 use compat::helpers::*;
-
 use serde_json::json;
 
 // ---------------------------------------------------------------------------

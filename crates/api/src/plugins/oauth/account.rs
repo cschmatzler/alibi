@@ -1,26 +1,19 @@
-use better_auth_core::entity::AuthAccount;
-
-use better_auth_core::{
-    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, UpdateAccount,
-};
-
-use chrono::Utc;
-
 use super::encryption::{encrypt_token_set, maybe_decrypt};
-
 use super::handlers::{
     create_account_cookie_header, decode_account_cookie, fetch_user_info_from_provider,
     refresh_tokens_via_provider,
 };
-
 use super::providers::{OAuthConfig, OAuthTokenSet, OAuthUserInfoRequest};
-
 use super::state::AccountCookiePayload;
-
 use super::types::{
     AccessTokenResponse, AccountInfoAccount, AccountInfoResponse, AccountInfoUser,
     RefreshTokenResponse,
 };
+use better_auth_core::entity::AuthAccount;
+use better_auth_core::{
+    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, UpdateAccount,
+};
+use chrono::Utc;
 
 enum AccountSelection {
     Id(String),

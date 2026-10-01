@@ -1,12 +1,4 @@
 //! Privileged server-only admission; intentionally no public HTTP route.
-use std::collections::HashMap;
-
-use better_auth_core::{
-    AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, CreateMember,
-    entity::{AuthSession, AuthUser},
-    types::{AddTeamMemberResult, HttpMethod},
-};
-
 use super::extension_common::org_error;
 use crate::plugins::organization::{
     OrganizationConfig, OrganizationMemberAddedContext, OrganizationMemberAdditionContext,
@@ -14,6 +6,12 @@ use crate::plugins::organization::{
     extensions::TeamLimitContext,
     types::{AddOrganizationMemberRequest, BasicMemberResponse, OrganizationResponse},
 };
+use better_auth_core::{
+    AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, CreateMember,
+    entity::{AuthSession, AuthUser},
+    types::{AddTeamMemberResult, HttpMethod},
+};
+use std::collections::HashMap;
 
 #[expect(
     clippy::as_conversions,

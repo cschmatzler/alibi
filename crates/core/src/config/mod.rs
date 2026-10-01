@@ -106,13 +106,9 @@ pub mod core_paths {
 mod tests;
 
 use crate::email::EmailProvider;
-
 use crate::error::AuthError;
-
 use chrono::Duration;
-
 use std::collections::HashMap;
-
 use std::sync::Arc;
 
 /// Main configuration for `BetterAuth`

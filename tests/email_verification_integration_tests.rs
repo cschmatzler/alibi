@@ -9,28 +9,20 @@
 #[path = "email_verification_integration_tests/tests.rs"]
 mod tests;
 
-use std::sync::{Arc, Mutex};
-
 use async_trait::async_trait;
-
 use better_auth::plugins::user_management::{SendChangeEmailConfirmation, UserInfo};
-
 use better_auth::plugins::{
     EmailPasswordPlugin, EmailVerificationConfig, EmailVerificationPlugin, SendVerificationEmail,
     UserManagementPlugin,
 };
-
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-
 use better_auth_core::wire::UserView;
-
 use better_auth_core::{
     AuthAccount, AuthError, AuthRequest, AuthResponse, AuthResult, AuthUser, HttpMethod,
 };
-
 use better_auth_seaorm::{Database, SeaOrmStore};
-
 use serde_json::{Value, json};
+use std::sync::{Arc, Mutex};
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 

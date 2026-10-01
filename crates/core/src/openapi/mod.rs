@@ -46,16 +46,12 @@ mod user_annotations;
 #[cfg(test)]
 mod tests;
 
+use crate::{AuthConfig, AuthPlugin, AuthSchema, HttpMethod};
 pub use metadata::{
     OpenApiEndpoint, OpenApiField, OpenApiModel, OpenApiRegistry, PluginOpenApiMetadata,
 };
-
-use crate::{AuthConfig, AuthPlugin, AuthSchema, HttpMethod};
-
 use serde::Serialize;
-
 use serde_json::{Value, json};
-
 use std::collections::{BTreeMap, HashSet};
 
 #[derive(Debug, Serialize)]

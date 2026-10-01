@@ -3,37 +3,25 @@
 #[cfg(test)]
 mod tests;
 
-use std::sync::Arc;
-
+use super::authentication_helpers::{JsonField, RequestBody, parse_body};
+use super::helpers::{get_cookie, response_session};
 use async_trait::async_trait;
-
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-
 use better_auth_core::utils::cookie_utils::{
     create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
     sign_cookie_value, verify_cookie_value,
 };
-
 use better_auth_core::wire::{SessionView, UserView};
-
 use better_auth_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, AuthSession, AuthVerification, CreateVerification, HttpMethod,
 };
-
 use chrono::{Duration, Utc};
-
 use rand::{rngs::OsRng, seq::SliceRandom};
-
 use serde::{Deserialize, Serialize};
-
 use serde_json::json;
-
 use sha2::{Digest, Sha256};
-
-use super::authentication_helpers::{JsonField, RequestBody, parse_body};
-
-use super::helpers::{get_cookie, response_session};
+use std::sync::Arc;
 
 /// The authenticated account and session represented by a one-time token.
 #[derive(Clone, Debug, Serialize)]

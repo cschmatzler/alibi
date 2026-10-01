@@ -1,12 +1,8 @@
-use chrono::{DateTime, Utc};
-
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-use std::borrow::Cow;
-
-use uuid::Uuid;
-
 use crate::entity::{AuthInvitation, AuthMember, AuthOrganization};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::borrow::Cow;
+use uuid::Uuid;
 
 /// Organization entity - matches `OpenAPI` schema
 #[derive(Debug, Clone, Serialize, Deserialize)]

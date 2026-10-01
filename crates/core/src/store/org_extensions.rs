@@ -1,15 +1,11 @@
 //! Optional organization team and persisted-role storage contracts.
 use crate::error::{AuthError, AuthResult};
-
 use crate::types_org::{
     AddTeamMemberResult, CreateOrganizationRole, CreateTeam, OrganizationRole,
     OrganizationRoleSelector, Team, TeamMember, UpdateOrganizationRole, UpdateTeam,
 };
-
 use async_trait::async_trait;
-
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-
 use sha2::{Digest, Sha256};
 
 #[async_trait]

@@ -1,20 +1,15 @@
 //! `SeaORM` model bindings for Better Auth schemas.
 
+use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
+use better_auth_core::error::AuthResult;
+pub use better_auth_core::schema::AuthSchema;
+use better_auth_core::types::{
+    CreateAccount, CreateSession, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
+};
 use chrono::{DateTime, Utc};
-
 use sea_orm::{
     ActiveModelBehavior, ActiveModelTrait, ColumnTrait, EntityTrait, FromQueryResult,
     IntoActiveModel, Value,
-};
-
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
-
-use better_auth_core::error::AuthResult;
-
-pub use better_auth_core::schema::AuthSchema;
-
-use better_auth_core::types::{
-    CreateAccount, CreateSession, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
 };
 
 pub trait SeaOrmUserModel:

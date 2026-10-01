@@ -13,25 +13,16 @@
 #[path = "database_hooks_tests/tests.rs"]
 mod tests;
 
-use std::sync::atomic::{AtomicBool, Ordering};
-
-use std::sync::{Arc, Mutex};
-
 use async_trait::async_trait;
-
 use better_auth::error::{AuthResult, DatabaseError};
-
 use better_auth::plugins::EmailPasswordPlugin;
-
 use better_auth::prelude::{AuthRequest, AuthUser, CreateUser, HttpMethod};
-
 use better_auth::{AuthBuilder, AuthConfig};
-
 use better_auth_seaorm::sea_orm::sea_query::{Alias, ColumnDef, Expr, ExprTrait, Query, Table};
-
 use better_auth_seaorm::sea_orm::{ConnectionTrait, Database, DatabaseConnection};
-
 use better_auth_seaorm::{HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 

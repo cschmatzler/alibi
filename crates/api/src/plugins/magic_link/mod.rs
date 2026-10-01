@@ -3,31 +3,22 @@
 #[cfg(test)]
 mod tests;
 
-use async_trait::async_trait;
-
-use better_auth_core::{
-    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthUser,
-    CreateUser, CreateVerification,
-};
-
-use chrono::{Duration, Utc};
-
-use rand::{Rng, rngs::OsRng};
-
-use serde::{Deserialize, Serialize};
-
-use serde_json::json;
-
-use std::sync::Arc;
-
-use url::Url;
-
 use super::authentication_helpers::{
     JsonField, JsonFieldKind, RequestBody, parse_body, redirect, revoke_unproven_access,
     session_response,
 };
-
 use super::token_crypto::hash_token;
+use async_trait::async_trait;
+use better_auth_core::{
+    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthUser,
+    CreateUser, CreateVerification,
+};
+use chrono::{Duration, Utc};
+use rand::{Rng, rngs::OsRng};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::sync::Arc;
+use url::Url;
 
 /// Delivery data. Debug omits the token, URL and arbitrary delivery metadata.
 #[derive(Clone, Serialize)]

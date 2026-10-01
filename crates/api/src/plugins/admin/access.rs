@@ -1,8 +1,7 @@
 //! Permission helpers for the admin plugin.
 
-use std::collections::HashMap;
-
 use super::AdminConfig;
+use std::collections::HashMap;
 
 /// Role-based permission grants for the admin plugin.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

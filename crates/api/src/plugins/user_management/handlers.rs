@@ -1,15 +1,13 @@
-use chrono::{Duration, Utc};
-
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
-use better_auth_core::utils::password as password_utils;
-use better_auth_core::{AuthContext, AuthError, AuthResult, StatusResponse, UpdateUser};
-
 use super::types::{ChangeEmailRequest, DeleteUserRequest};
 use super::{UserInfo, UserManagementConfig};
 use crate::plugins::email_verification::EmailVerificationConfig;
 use crate::plugins::email_verification::handlers::verification_url;
 use crate::plugins::email_verification::token::create_email_verification_token;
 use better_auth_core::SuccessMessageResponse;
+use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
+use better_auth_core::utils::password as password_utils;
+use better_auth_core::{AuthContext, AuthError, AuthResult, StatusResponse, UpdateUser};
+use chrono::{Duration, Utc};
 
 /// Send an email using the configured email provider, logging on failure.
 pub(super) async fn send_email_or_log(

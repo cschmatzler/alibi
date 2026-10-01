@@ -1,11 +1,9 @@
 //! Delivery scheduling for the already persisted one-time password.
-use std::{future::Future, sync::Arc};
-
+use super::SendTwoFactorOtp;
 use better_auth_core::{
     AuthError, AuthResult, BackgroundTaskCompletion, BackgroundTaskHandler, wire::UserView,
 };
-
-use super::SendTwoFactorOtp;
+use std::{future::Future, sync::Arc};
 
 ///
 /// # Errors

@@ -6,6 +6,13 @@ mod jwks;
 
 mod wallets;
 
+use crate::error::{AuthError, AuthResult};
+use crate::schema::AuthSchema;
+use crate::types::{
+    AddTeamMemberResult, CreateJwk, CreateOrganizationRole, CreateTeam, CreateWalletAddress, Jwk,
+    OrganizationRole, OrganizationRoleSelector, Team, TeamMember, UpdateOrganizationRole,
+    UpdateTeam, WalletAddress,
+};
 use crate::types::{
     ApiKey, CreateAccount, CreateApiKey, CreateDeviceCode, CreateInvitation, CreateMember,
     CreateOrganization, CreatePasskey, CreateSession, CreateTwoFactor, CreateUser,
@@ -13,39 +20,18 @@ use crate::types::{
     Organization, Passkey, TwoFactor, UpdateAccount, UpdateApiKey, UpdateDeviceCode,
     UpdateOrganization, UpdatePasskeyAuthentication, UpdateTwoFactor, UpdateUser,
 };
-
 use async_trait::async_trait;
-
-use std::sync::Arc;
-
-use std::any::Any;
-
-use std::future::Future;
-
-use std::pin::Pin;
-
-pub use org_extensions::{OrganizationRoleStore, TeamStore, team_membership_key};
-
-pub use jwks::JwkStore;
-
-pub use wallets::WalletAddressStore;
-
-use crate::error::{AuthError, AuthResult};
-
-use crate::schema::AuthSchema;
-
-pub use cache::{CacheAdapter, MemoryCacheAdapter};
-
 #[cfg(feature = "redis-cache")]
 pub use cache::RedisAdapter;
-
+pub use cache::{CacheAdapter, MemoryCacheAdapter};
+pub use jwks::JwkStore;
+pub use org_extensions::{OrganizationRoleStore, TeamStore, team_membership_key};
+use std::any::Any;
 use std::collections::BTreeSet;
-
-use crate::types::{
-    AddTeamMemberResult, CreateJwk, CreateOrganizationRole, CreateTeam, CreateWalletAddress, Jwk,
-    OrganizationRole, OrganizationRoleSelector, Team, TeamMember, UpdateOrganizationRole,
-    UpdateTeam, WalletAddress,
-};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+pub use wallets::WalletAddressStore;
 
 pub(crate) type UserCreateTransform =
     Arc<dyn Fn(CreateUser) -> AuthResult<CreateUser> + Send + Sync>;

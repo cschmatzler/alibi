@@ -91,23 +91,15 @@ mod uuid_verification {
 }
 
 use super::*;
-
 use crate::hooks::{HookControl, SeaOrmHookContext, SeaOrmHooks};
-
 use crate::store::{
     bundled_schema::BundledSchema, entities::verification, migrator::run_migrations,
 };
-
 use better_auth_core::AuthConfig;
-
 use sea_orm::{ConnectOptions, Database, DatabaseConnection, PaginatorTrait};
-
 use std::sync::Arc;
-
 use std::sync::atomic::{AtomicUsize, Ordering};
-
 use tokio::sync::Barrier;
-
 use tokio::task::JoinSet;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

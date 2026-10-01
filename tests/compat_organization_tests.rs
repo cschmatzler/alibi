@@ -20,12 +20,8 @@ mod compat;
 #[path = "compat_organization_tests/tests.rs"]
 mod tests;
 
-use std::collections::HashSet;
-
 use compat::helpers::*;
-
 use compat::schema::OpenApiProfile;
-
 use compat::shapes::check_camel_case_fields;
-
 use compat::validator::SpecValidator;
+use std::collections::HashSet;

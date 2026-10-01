@@ -1,5 +1,4 @@
 use crate::plugins::authentication_helpers::{JsonField, JsonFieldKind, RequestBody};
-
 use serde::{Deserialize, Serialize};
 
 /// Code scope. Codes issued for one operation cannot authorize another.

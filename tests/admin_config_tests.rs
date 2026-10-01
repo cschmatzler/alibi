@@ -10,20 +10,14 @@
 mod tests;
 
 use async_trait::async_trait;
-
 use better_auth::plugins::{AdminConfig, AdminPlugin, RolePermissions};
-
 use better_auth::{AuthBuilder, AuthConfig};
-
 use better_auth_core::store::{SessionStore, UserStore};
-
 use better_auth_core::{
     AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthUser,
     CreateSession, CreateUser,
 };
-
 use better_auth_seaorm::{Database, SeaOrmStore};
-
 use std::{collections::HashMap, sync::Arc};
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

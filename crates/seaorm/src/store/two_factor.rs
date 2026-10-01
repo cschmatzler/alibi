@@ -1,27 +1,17 @@
+use super::entities::two_factor::{ActiveModel, Column, Entity};
+use super::{SeaOrmStore, map_db_err};
+use crate::schema::AuthSchema;
 use async_trait::async_trait;
-
+use better_auth_core::error::AuthResult;
+use better_auth_core::store::TwoFactorStore;
+use better_auth_core::types::{CreateTwoFactor, TwoFactor, UpdateTwoFactor};
 use chrono::{DateTime, Utc};
-
 use sea_orm::sea_query::{Alias, Expr, ExprTrait, Query};
-
 use sea_orm::{
     ColumnTrait, EntityTrait, Iterable, QueryFilter, QuerySelect, QueryTrait, Select, Set,
     UpdateMany,
 };
-
 use uuid::Uuid;
-
-use better_auth_core::store::TwoFactorStore;
-
-use crate::schema::AuthSchema;
-
-use better_auth_core::types::{CreateTwoFactor, TwoFactor, UpdateTwoFactor};
-
-use super::entities::two_factor::{ActiveModel, Column, Entity};
-
-use super::{SeaOrmStore, map_db_err};
-
-use better_auth_core::error::AuthResult;
 
 #[async_trait]
 impl<S> TwoFactorStore for SeaOrmStore<S>

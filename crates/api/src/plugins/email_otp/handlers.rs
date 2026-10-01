@@ -1,16 +1,3 @@
-use better_auth_core::{
-    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthUser,
-    AuthVerification, CreateAccount, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
-};
-use chrono::Utc;
-use rand::{Rng, rngs::OsRng};
-use serde_json::{Value, json};
-
-use crate::plugins::authentication_helpers::{
-    find_verification, parse_body, parse_email, prepare_additional_user_fields,
-    revoke_unproven_access, session_response,
-};
-
 use super::{
     EmailOtpDelivery, EmailOtpPlugin, EmailOtpType, OtpResendStrategy,
     helpers::{expired_otp, invalid_otp, too_many_attempts, user_not_found},
@@ -19,6 +6,17 @@ use super::{
         SendRequest, SignInRequest, VerifyRequest, identifier, split_value,
     },
 };
+use crate::plugins::authentication_helpers::{
+    find_verification, parse_body, parse_email, prepare_additional_user_fields,
+    revoke_unproven_access, session_response,
+};
+use better_auth_core::{
+    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthUser,
+    AuthVerification, CreateAccount, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
+};
+use chrono::Utc;
+use rand::{Rng, rngs::OsRng};
+use serde_json::{Value, json};
 
 impl EmailOtpPlugin {
     ///

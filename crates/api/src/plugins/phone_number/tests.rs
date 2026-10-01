@@ -1,14 +1,10 @@
 use super::*;
-
 use crate::plugins::test_helpers;
-
 use better_auth_core::{
     AuthError, AuthPlugin, AuthResponse, AuthSession, AuthUser, AuthVerification, CreateAccount,
     CreateUser, CreateVerification, HttpMethod,
 };
-
 use serde_json::{Value, json};
-
 use std::sync::Mutex;
 
 #[derive(Default)]

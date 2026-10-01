@@ -10,26 +10,17 @@
 mod tests;
 
 use async_trait::async_trait;
-
 use better_auth::plugins::OAuthPlugin;
-
 use better_auth::plugins::oauth::{
     OAuthIdTokenVerifier, OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
     OAuthUserInfoResponse,
 };
-
 use better_auth::{AuthBuilder, AuthConfig};
-
 use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
-
 use better_auth_core::{AuthRequest, HttpMethod};
-
 use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
-
 use better_auth_seaorm::{Database, SeaOrmStore};
-
 use serde_json::json;
-
 use std::sync::Arc;
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

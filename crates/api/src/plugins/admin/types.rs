@@ -1,8 +1,6 @@
-use std::collections::HashMap;
-
 use chrono::{DateTime, SecondsFormat, Utc};
-
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Role input accepted by TypeScript admin routes.
 #[derive(Debug, Clone, Deserialize)]

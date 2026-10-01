@@ -1,5 +1,4 @@
 use super::*;
-
 use std::io::Write;
 
 /// Test passkey registration and authentication option generation endpoints.

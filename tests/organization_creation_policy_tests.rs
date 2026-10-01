@@ -10,27 +10,16 @@
 mod tests;
 
 use async_trait::async_trait;
-
 use better_auth::plugins::organization::{OrganizationConfig, OrganizationCreationPolicy};
-
 use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin};
-
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-
 use better_auth_core::utils::cookie_utils::create_session_cookie;
-
 use better_auth_core::wire::UserView;
-
 use better_auth_core::{AuthRequest, AuthResponse, AuthResult, HttpMethod};
-
 use better_auth_seaorm::sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-
 use better_auth_seaorm::store::entities::{member, organization, session};
-
 use better_auth_seaorm::{Database, SeaOrmStore};
-
 use serde_json::{Value, json};
-
 use std::sync::Arc;
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

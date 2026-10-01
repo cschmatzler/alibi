@@ -3,35 +3,24 @@ pub(super) mod types;
 #[cfg(test)]
 mod tests;
 
-use chrono::{Duration, Utc};
-
-use rand::RngCore;
-
-use rand::distributions::{Alphanumeric, DistString};
-
-use std::fmt;
-
-use std::future::Future;
-
-use std::pin::Pin;
-
-use std::sync::Arc;
-
-use url::Url;
-
 use crate::plugins::helpers::{SessionIssueError, issue_user_session};
-
 use better_auth_core::entity::{AuthSession, AuthUser};
-
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateDeviceCode, RequestMeta,
     UpdateDeviceCode,
 };
-
+use chrono::{Duration, Utc};
+use rand::RngCore;
+use rand::distributions::{Alphanumeric, DistString};
+use std::fmt;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 use types::{
     DeviceActionRequest, DeviceActionResponse, DeviceCodeRequest, DeviceCodeResponse,
     DeviceErrorResponse, DeviceTokenRequest, DeviceTokenResponse, DeviceVerifyResponse,
 };
+use url::Url;
 
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 

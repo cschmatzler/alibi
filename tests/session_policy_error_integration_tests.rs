@@ -13,23 +13,15 @@ mod policy_store;
 mod tests;
 
 use better_auth::plugins::SessionManagementPlugin;
-
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-
 use better_auth_core::store::{SessionStore, UserStore};
-
 use better_auth_core::{
     AuthRequest, AuthResponse, AuthSession, AuthUser, CreateSession, CreateUser, HttpMethod,
 };
-
 use better_auth_seaorm::{Database, SeaOrmStore};
-
 use chrono::{Duration, Utc};
-
 use policy_store::{PolicyStore, Schema};
-
 use serde_json::{Value, json};
-
 use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicUsize, Ordering},

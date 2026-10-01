@@ -19,35 +19,23 @@
 mod tests;
 
 use async_trait::async_trait;
-
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
-
-use better_auth_core::store::AuthStore;
-
-use better_auth_core::{
-    AccountConfig, AccountLinkingConfig, AuthConfig, AuthContext, AuthPlugin, AuthRequest,
-    CreateAccount, CreateUser, CreateVerification, HttpMethod, SessionManager,
-};
-
-use better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema as TestSchema;
-
-use better_auth_seaorm::{Database, SeaOrmStore};
-
 use better_auth_api::AccountManagementPlugin;
-
 use better_auth_api::OAuthPlugin;
-
 use better_auth_api::plugins::oauth::encryption::{decrypt_token, encrypt_token, maybe_encrypt};
-
 use better_auth_api::plugins::oauth::{
     OAuthConfig, OAuthProvider, OAuthRefreshTokenHandler, OAuthTokenSet, OAuthUserInfo,
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
-
+use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
+use better_auth_core::store::AuthStore;
+use better_auth_core::{
+    AccountConfig, AccountLinkingConfig, AuthConfig, AuthContext, AuthPlugin, AuthRequest,
+    CreateAccount, CreateUser, CreateVerification, HttpMethod, SessionManager,
+};
+use better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema as TestSchema;
+use better_auth_seaorm::{Database, SeaOrmStore};
 use chrono::{Duration, Utc};
-
 use serde_json::json;
-
 use std::sync::Arc;
 
 const TEST_SECRET: &str = "test-secret-key-that-is-at-least-32-characters-long";

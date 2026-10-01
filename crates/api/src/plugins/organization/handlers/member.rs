@@ -1,28 +1,18 @@
 use super::page::OrganizationPageError;
-
-use crate::plugins::organization::membership_policy::{read_page_limit, truthy_number};
-
-use better_auth_core::entity::{AuthMember, AuthOrganization, AuthSession, AuthUser};
-
-use better_auth_core::error::{AuthError, AuthResult};
-
-use better_auth_core::plugin::AuthContext;
-
-use better_auth_core::store::MemberPageQuery;
-
-use better_auth_core::types::{AuthRequest, AuthResponse};
-
-use std::collections::HashMap;
-
 use super::{require_session, resolve_organization_id};
-
 use crate::plugins::organization::OrganizationConfig;
-
+use crate::plugins::organization::membership_policy::{read_page_limit, truthy_number};
 use crate::plugins::organization::types::{
     BasicMemberResponse, GetActiveMemberRoleQuery, GetActiveMemberRoleResponse, ListMembersQuery,
     ListMembersResponse, MemberResponse, OrganizationMemberRemovalSnapshot, RemoveMemberRequest,
     RemovedMemberResponse, UpdateMemberRoleRequest,
 };
+use better_auth_core::entity::{AuthMember, AuthOrganization, AuthSession, AuthUser};
+use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::plugin::AuthContext;
+use better_auth_core::store::MemberPageQuery;
+use better_auth_core::types::{AuthRequest, AuthResponse};
+use std::collections::HashMap;
 
 fn has_role(member: &impl AuthMember, role: &str) -> bool {
     member

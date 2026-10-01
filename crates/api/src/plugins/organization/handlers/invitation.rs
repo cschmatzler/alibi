@@ -1,26 +1,18 @@
-use better_auth_core::entity::{
-    AuthInvitation, AuthMember, AuthOrganization, AuthSession, AuthUser,
-};
-
-use better_auth_core::error::{AuthError, AuthResult};
-
-use better_auth_core::plugin::AuthContext;
-
-use better_auth_core::types::{AuthRequest, AuthResponse, CreateInvitation, InvitationStatus};
-
-use better_auth_core::wire::InvitationView;
-
-use std::collections::HashMap;
-
 use super::{require_session, resolve_organization_id};
-
 use crate::plugins::organization::OrganizationConfig;
-
 use crate::plugins::organization::types::{
     AcceptInvitationRequest, AcceptInvitationResponse, BasicMemberResponse,
     CancelInvitationRequest, GetInvitationQuery, GetInvitationResponse, InviteMemberRequest,
     ListInvitationsQuery, RejectInvitationRequest, UserInvitationResponse,
 };
+use better_auth_core::entity::{
+    AuthInvitation, AuthMember, AuthOrganization, AuthSession, AuthUser,
+};
+use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::plugin::AuthContext;
+use better_auth_core::types::{AuthRequest, AuthResponse, CreateInvitation, InvitationStatus};
+use better_auth_core::wire::InvitationView;
+use std::collections::HashMap;
 
 impl crate::plugins::organization::OrganizationPlugin {
     /// List pending invitations for an email through a trusted server-side call.

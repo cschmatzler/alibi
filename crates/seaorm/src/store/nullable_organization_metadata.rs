@@ -1,7 +1,6 @@
 //! Preserve SQL NULL organization metadata in fresh and installed schemas.
 
 use super::nullable_user_flags::sql_tokens;
-
 use sea_orm::sqlx::{Connection, Row, SqliteConnection};
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseExecutor};
 use sea_orm_migration::prelude::*;

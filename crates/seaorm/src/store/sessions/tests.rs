@@ -1,17 +1,10 @@
 use super::*;
-
 use crate::hooks::{HookControl, SeaOrmHookContext, SeaOrmHooks};
-
 use crate::store::{bundled_schema::BundledSchema, migrator::run_migrations};
-
 use better_auth_core::store::UserStore;
-
 use better_auth_core::{AuthConfig, AuthSession, CreateUser};
-
 use chrono::Duration;
-
 use sea_orm::Database;
-
 use std::sync::{Arc, Mutex};
 
 struct TokenHook {

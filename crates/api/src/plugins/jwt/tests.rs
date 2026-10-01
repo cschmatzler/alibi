@@ -5,9 +5,7 @@
 )]
 
 use super::*;
-
 use crate::plugins::test_helpers;
-
 use better_auth_core::CreateUser;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

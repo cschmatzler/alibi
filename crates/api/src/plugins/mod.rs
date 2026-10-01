@@ -55,21 +55,14 @@ pub mod user_management;
 #[cfg(test)]
 pub(in crate::plugins) mod test_helpers {
 
-    use std::collections::HashMap;
-
-    use std::sync::Arc;
-
     use better_auth_core::config::AuthConfig;
-
     use better_auth_core::wire::{SessionView, UserView};
-
     use better_auth_core::{AuthContext, AuthRequest, CreateSession, CreateUser, HttpMethod};
-
     use better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
-
     use better_auth_seaorm::{Database, SeaOrmStore};
-
     use chrono::{Duration, Utc};
+    use std::collections::HashMap;
+    use std::sync::Arc;
 
     pub type TestDatabase = dyn better_auth_core::store::AuthStore<BundledSchema>;
 
@@ -216,57 +209,40 @@ pub(in crate::plugins) mod test_helpers {
     }
 }
 
-use serde::{Deserialize, Serialize};
-
 pub use account_management::AccountManagementPlugin;
-
 pub use admin::{
     AdminBannedUserMessage, AdminBannedUserMessageHandler, AdminConfig, AdminPlugin,
     RolePermissions,
 };
-
+pub use anonymous::{AnonymousConfig, AnonymousPlugin};
 pub use api_key::{ApiKeyConfig, ApiKeyPlugin};
-
 pub use better_auth_core::PasswordHasher;
-
 pub use device_authorization::DeviceAuthorizationPlugin;
-
 pub use email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
-
 pub use email_password::{EmailPasswordConfig, EmailPasswordPlugin};
-
 pub use email_verification::{
     EmailVerificationConfig, EmailVerificationHook, EmailVerificationPlugin, SendVerificationEmail,
 };
-
 pub use magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
-
 pub use organization::{
     OrganizationConfig, OrganizationCreatePatch, OrganizationCreatedContext,
     OrganizationCreationHooks, OrganizationDraftContext, OrganizationMemberCreatePatch,
     OrganizationMemberDraftContext, OrganizationPlugin,
 };
-
 pub use passkey::{PasskeyConfig, PasskeyPlugin};
-
 pub use password_management::{
     PasswordManagementConfig, PasswordManagementPlugin, SendResetPassword,
 };
-
+use serde::{Deserialize, Serialize};
 pub use session_management::SessionManagementPlugin;
-
 pub use siwe::{SiweConfig, SiwePlugin};
-
 pub use two_factor::{
     SendTwoFactorOtp, TwoFactorBackupCipher, TwoFactorBackupStorage, TwoFactorConfig,
     TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage, TwoFactorPlugin,
 };
-
 pub use user_management::{
     ChangeEmailConfig, DeleteUserConfig, UserManagementConfig, UserManagementPlugin,
 };
-
-pub use anonymous::{AnonymousConfig, AnonymousPlugin};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(in crate::plugins) struct StatusResponse {

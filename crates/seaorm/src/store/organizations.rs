@@ -1,29 +1,18 @@
+use super::entities;
+use super::entities::organization::{ActiveModel, Column, Entity, JsonMetadata, Model};
+use super::{SeaOrmStore, map_db_err};
+use crate::schema::AuthSchema;
 use async_trait::async_trait;
-
+use better_auth_core::error::AuthResult;
+use better_auth_core::store::OrganizationStore;
+use better_auth_core::{CreateOrganization, Organization, UpdateOrganization};
 use chrono::Utc;
-
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DbBackend, DbErr, EntityTrait, IntoActiveModel, QueryFilter,
     QuerySelect, Set, TransactionTrait,
 };
-
 use std::collections::HashMap;
-
 use uuid::Uuid;
-
-use better_auth_core::store::OrganizationStore;
-
-use crate::schema::AuthSchema;
-
-use super::entities;
-
-use super::entities::organization::{ActiveModel, Column, Entity, JsonMetadata, Model};
-
-use super::{SeaOrmStore, map_db_err};
-
-use better_auth_core::error::AuthResult;
-
-use better_auth_core::{CreateOrganization, Organization, UpdateOrganization};
 
 #[async_trait]
 impl<S> OrganizationStore for SeaOrmStore<S>

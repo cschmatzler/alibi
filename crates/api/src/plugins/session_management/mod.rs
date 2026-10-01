@@ -1,27 +1,17 @@
 #[cfg(test)]
 mod tests;
 
-use async_trait::async_trait;
-
-use serde::{Deserialize, Serialize};
-
-use better_auth_core::entity::{AuthSession, AuthUser};
-
-use better_auth_core::wire::SessionView;
-
-use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
-
-use better_auth_core::{AuthError, AuthResult};
-
-use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
-
 use super::StatusResponse;
-
 use super::authentication_helpers::{JsonField, RequestBody, parse_body};
-
 use super::helpers::{admin_plugin_enabled, delete_session_cookie_headers};
-
+use async_trait::async_trait;
 use better_auth_core::SuccessResponse;
+use better_auth_core::entity::{AuthSession, AuthUser};
+use better_auth_core::wire::SessionView;
+use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
+use better_auth_core::{AuthError, AuthResult};
+use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
+use serde::{Deserialize, Serialize};
 
 /// Session management plugin for handling session operations
 pub struct SessionManagementPlugin {
@@ -125,15 +115,12 @@ impl SessionManagementPlugin {
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         use super::authentication_helpers::{json_type, validation_response};
-
         use better_auth_core::field_policy::{FieldInputError, SessionFields};
-
-        use better_auth_core::utils::json::JsValue;
-
         use better_auth_core::utils::cookie_utils::{
             create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
             sign_cookie_value, verify_cookie_value,
         };
+        use better_auth_core::utils::json::JsValue;
 
         if req.body.is_some() {
             let content_type = req

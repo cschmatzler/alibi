@@ -19,32 +19,21 @@ mod harness_tests {
     }
 }
 
-use std::collections::{BTreeMap, BTreeSet};
-
-use std::sync::Mutex;
-
-use std::time::Duration;
-
-use better_auth::BetterAuth;
-
-use better_auth::prelude::{CreateAccount, CreateVerification};
-
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
-
-use reqwest::StatusCode;
-
-use serde::Serialize;
-
-use serde_json::Value;
-
-use tokio::sync::Mutex as TokioMutex;
-
 use super::helpers::{
     ResetSenderMode, TestAuthOptions, create_test_auth, create_test_auth_with_options,
     get_with_auth, post_json, take_reset_password_token, unique_email,
 };
-
+use better_auth::BetterAuth;
+use better_auth::prelude::{CreateAccount, CreateVerification};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use reqwest::StatusCode;
+use serde::Serialize;
+use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
+use std::sync::Mutex;
+use std::time::Duration;
+use tokio::sync::Mutex as TokioMutex;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 

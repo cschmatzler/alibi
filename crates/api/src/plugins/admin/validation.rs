@@ -1,8 +1,6 @@
 //! Route-local HTTP schemas from the pinned admin endpoints.
 use better_auth_core::{AuthRequest, AuthResponse, utils::json::JsValue};
-
 use serde::de::DeserializeOwned;
-
 use serde_json::json;
 
 #[derive(Clone, Copy)]

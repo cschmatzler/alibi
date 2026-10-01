@@ -8,15 +8,11 @@
 //! Implement these traits manually for any custom types used inside the auth
 //! runtime.
 
-use std::borrow::Cow;
-
-use chrono::{DateTime, Utc};
-
-use serde::Serialize;
-
 use crate::types::InvitationStatus;
-
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use serde::Serialize;
+use std::borrow::Cow;
 
 /// Trait representing a user entity.
 ///

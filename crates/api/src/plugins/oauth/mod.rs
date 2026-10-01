@@ -13,25 +13,19 @@ pub(in crate::plugins) mod state;
 mod types;
 
 use async_trait::async_trait;
-
 use better_auth_core::AuthResult;
-
 use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
-
 use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
-
 pub(in crate::plugins) use handlers::{
     OAuthProcessPolicy, OAuthSignInError, create_account_cookie_header, process_oauth_sign_in,
 };
-
-pub(in crate::plugins) use state::{
-    CapturedOAuthServerContext, OAuthServerContext, RecoveredOAuthServerContext,
-};
-
 pub use providers::{
     OAuthAuthorizationPolicy, OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthConfig,
     OAuthIdTokenVerifier, OAuthProvider, OAuthRefreshTokenHandler, OAuthScopeOrder, OAuthTokenSet,
     OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+};
+pub(in crate::plugins) use state::{
+    CapturedOAuthServerContext, OAuthServerContext, RecoveredOAuthServerContext,
 };
 
 pub struct OAuthPlugin {

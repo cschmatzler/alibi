@@ -1,15 +1,11 @@
-use std::collections::HashMap;
-
-use better_auth_core::{AuthContext, AuthResult, CreateApiKey, UpdateApiKey};
-
 use super::ApiKeyPlugin;
-
 use super::types::{
     ApiKeyView, CreateKeyRequest, CreateKeyResponse, DeleteKeyRequest, ListKeysQuery,
     ListKeysResponse, UpdateKeyRequest,
 };
-
 use crate::plugins::helpers;
+use better_auth_core::{AuthContext, AuthResult, CreateApiKey, UpdateApiKey};
+use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Core functions -- framework-agnostic business logic

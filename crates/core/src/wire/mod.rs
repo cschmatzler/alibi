@@ -7,18 +7,14 @@
 #[cfg(test)]
 mod tests;
 
-use chrono::{DateTime, Utc};
-
-use serde::{Deserialize, Serialize, Serializer};
-
-use std::borrow::Cow;
-
 use crate::entity::{
     AuthAccount, AuthApiKey, AuthInvitation, AuthOrganization, AuthPasskey, AuthSession, AuthUser,
     AuthVerification,
 };
-
 use crate::types::InvitationStatus;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize, Serializer};
+use std::borrow::Cow;
 
 /// Public user response shape.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

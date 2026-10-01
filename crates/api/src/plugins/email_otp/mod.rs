@@ -16,15 +16,10 @@ mod types;
 mod tests;
 
 use async_trait::async_trait;
-
 use better_auth_core::{AuthContext, AuthRequest, AuthResponse, AuthResult};
-
 use chrono::Duration;
-
 use std::sync::Arc;
-
 pub use storage::{EmailOtpCodec, EmailOtpStorage};
-
 pub use types::{EmailOtpDelivery, EmailOtpType, OtpResendStrategy};
 
 /// Delivers a code to its intended mailbox. The default notification policy

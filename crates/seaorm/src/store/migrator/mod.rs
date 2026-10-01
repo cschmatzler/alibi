@@ -3,16 +3,13 @@
 #[cfg(test)]
 mod tests;
 
-use sea_orm::EntityName;
-
-use sea_orm::sea_query::IntoIden;
-
-use sea_orm_migration::prelude::*;
-
 use super::entities::{
     account, api_key, device_code, invitation, member, organization, passkey, session, two_factor,
     user, verification,
 };
+use sea_orm::EntityName;
+use sea_orm::sea_query::IntoIden;
+use sea_orm_migration::prelude::*;
 
 #[derive(Debug)]
 pub struct AuthMigrator;

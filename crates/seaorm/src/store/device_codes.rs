@@ -1,16 +1,13 @@
+use super::entities::device_code::{ActiveModel, Column, Entity};
+use super::{SeaOrmStore, map_db_err};
+use crate::schema::AuthSchema;
 use async_trait::async_trait;
+use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::store::DeviceCodeStore;
+use better_auth_core::types::{CreateDeviceCode, DeviceCode, UpdateDeviceCode};
 use sea_orm::sea_query::Expr;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set};
 use uuid::Uuid;
-
-use better_auth_core::store::DeviceCodeStore;
-
-use crate::schema::AuthSchema;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::types::{CreateDeviceCode, DeviceCode, UpdateDeviceCode};
-
-use super::entities::device_code::{ActiveModel, Column, Entity};
-use super::{SeaOrmStore, map_db_err};
 
 #[async_trait]
 impl<S> DeviceCodeStore for SeaOrmStore<S>

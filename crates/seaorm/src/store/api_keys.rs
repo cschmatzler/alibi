@@ -2,28 +2,19 @@
 #[path = "api_key_concurrency_tests.rs"]
 mod concurrency_tests;
 
+use super::entities::api_key::{ActiveModel, Column, Entity};
+use super::{SeaOrmStore, map_db_err, parse_optional_rfc3339};
+use crate::schema::AuthSchema;
 use async_trait::async_trait;
-
+use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::store::{ApiKeyStore, ConsumeApiKeyResult};
+use better_auth_core::types::{ApiKey, CreateApiKey, UpdateApiKey};
 use chrono::Utc;
-
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
     QuerySelect, Set, SqliteTransactionMode, TransactionOptions, TransactionTrait,
 };
-
 use uuid::Uuid;
-
-use better_auth_core::store::{ApiKeyStore, ConsumeApiKeyResult};
-
-use crate::schema::AuthSchema;
-
-use super::entities::api_key::{ActiveModel, Column, Entity};
-
-use super::{SeaOrmStore, map_db_err, parse_optional_rfc3339};
-
-use better_auth_core::error::{AuthError, AuthResult};
-
-use better_auth_core::types::{ApiKey, CreateApiKey, UpdateApiKey};
 
 #[async_trait]
 impl<S> ApiKeyStore for SeaOrmStore<S>

@@ -2,21 +2,14 @@
     unused_crate_dependencies,
     reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
 )]
-use std::fs;
-
-use std::path::{Path, PathBuf};
-
-use std::process::{Command, Stdio};
-
 use chrono::Utc;
-
 use clap::{Parser, ValueEnum};
-
 use serde::Serialize;
-
 use serde_json::Value;
-
+use std::fs;
 use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 

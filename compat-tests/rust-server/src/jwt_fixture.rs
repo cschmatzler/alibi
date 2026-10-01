@@ -1,5 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
-
+use crate::TestSchema;
 use axum::{
     Json, Router,
     body::Bytes,
@@ -28,8 +27,7 @@ use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
 use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
-
-use crate::TestSchema;
+use std::{collections::HashMap, sync::Arc};
 
 type Auth = Arc<BetterAuth<TestSchema>>;
 

@@ -1,19 +1,11 @@
 use super::*;
-
 use crate::plugins::test_helpers::{create_test_config, create_user_and_session};
-
 use better_auth_core::types::{CreateMember, CreateTeam, Team, TeamMember};
-
 use better_auth_core::wire::{SessionView, UserView};
-
 use better_auth_core::{AuthError, AuthInitContext, AuthSession, CreateUser};
-
 use better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
-
 use chrono::Duration;
-
 use serde::de::DeserializeOwned;
-
 use serde_json::{Value, json};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

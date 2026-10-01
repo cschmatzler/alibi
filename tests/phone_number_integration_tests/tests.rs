@@ -188,10 +188,8 @@ async fn signup_phone_fields_require_the_plugin_and_cannot_claim_verification() 
 #[tokio::test]
 async fn numeric_phone_signup_uses_actual_adapter_text_coercion() {
     use better_auth::plugins::EmailPasswordPlugin;
-
-    use better_auth_core::{AuthRequest, HttpMethod};
-
     use better_auth_core::store::NumericTextInput;
+    use better_auth_core::{AuthRequest, HttpMethod};
 
     let config = AuthConfig::new("phone-numeric-fixture-secret-minimum-32-characters");
     let database = Database::connect("sqlite::memory:").await.unwrap();

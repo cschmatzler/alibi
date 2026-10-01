@@ -1,13 +1,12 @@
 //! Pinned organization request schemas, validated before authentication.
-use better_auth_core::utils::json::JsValue;
-use better_auth_core::{AuthError, AuthRequest, AuthResponse};
-use serde_json::{Value, json};
-
 use crate::plugins::organization::types::{
     CreateOrganizationRequest, DeleteOrganizationRequest, NullableStringField, RemoveMemberRequest,
     RoleInput, SetActiveOrganizationRequest, UpdateMemberRoleRequest, UpdateOrganizationData,
     UpdateOrganizationRequest,
 };
+use better_auth_core::utils::json::JsValue;
+use better_auth_core::{AuthError, AuthRequest, AuthResponse};
+use serde_json::{Value, json};
 
 fn response(status: u16, code: &str, message: impl Into<String>) -> AuthResponse {
     AuthResponse::json(status, &json!({"code":code,"message":message.into()}))

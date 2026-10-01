@@ -1,5 +1,4 @@
-use std::sync::{Arc, Mutex};
-
+use super::TestSchema;
 use async_trait::async_trait;
 use axum::{
     Json, Router,
@@ -12,8 +11,7 @@ use better_auth_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, BeforeRequestAction,
 };
 use serde_json::{Value, json};
-
-use super::TestSchema;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Default)]
 pub(super) struct LifecycleFixture(Arc<Mutex<Vec<Value>>>);

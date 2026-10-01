@@ -21,11 +21,8 @@ mod compat;
 mod tests;
 
 use better_auth::prelude::{AuthUser, UpdateUser};
-
 use chrono::{Duration, Utc};
-
 use compat::helpers::*;
-
 use serde_json::json;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

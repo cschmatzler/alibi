@@ -1,19 +1,13 @@
 #[cfg(test)]
 mod tests;
 
-use async_trait::async_trait;
-
-use std::collections::HashMap;
-
-use std::sync::Mutex;
-
-use std::time::{Duration, Instant};
-
 use super::Middleware;
-
 use crate::error::AuthResult;
-
 use crate::types::{AuthRequest, AuthResponse};
+use async_trait::async_trait;
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 /// Configuration for the rate limiting middleware.
 #[derive(Debug, Clone)]

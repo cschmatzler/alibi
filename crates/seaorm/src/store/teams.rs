@@ -2,30 +2,20 @@
 #[path = "team_tests.rs"]
 mod tests;
 
+use super::entities::{invitation, team, team_member};
+use super::{SeaOrmStore, map_db_err};
+use crate::schema::{AuthSchema, SeaOrmUserModel};
 use async_trait::async_trait;
-
+use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::store::{TeamStore, team_membership_key};
+use better_auth_core::types::{AddTeamMemberResult, CreateTeam, Team, TeamMember, UpdateTeam};
 use chrono::Utc;
-
 use sea_orm::ExprTrait;
-
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
     QueryOrder, QuerySelect, Set, SqliteTransactionMode, TransactionOptions, TransactionTrait,
 };
-
-use super::entities::{invitation, team, team_member};
-
-use super::{SeaOrmStore, map_db_err};
-
-use crate::schema::{AuthSchema, SeaOrmUserModel};
-
-use better_auth_core::store::{TeamStore, team_membership_key};
-
-use better_auth_core::types::{AddTeamMemberResult, CreateTeam, Team, TeamMember, UpdateTeam};
-
 use uuid::Uuid;
-
-use better_auth_core::error::{AuthError, AuthResult};
 
 impl<S> SeaOrmStore<S>
 where

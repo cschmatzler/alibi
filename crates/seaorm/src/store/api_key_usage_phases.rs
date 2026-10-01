@@ -1,22 +1,17 @@
 //! Source database usage writes are guarded separately, not one transaction.
-use better_auth_core::store::ConsumeApiKeyResult;
-
-use chrono::{DateTime, Utc};
-
-use sea_orm::{
-    ColumnTrait, DbBackend, EntityTrait, QueryFilter,
-    sea_query::{Expr, ExprTrait},
-};
-
 use super::{
     SeaOrmStore,
     entities::api_key::{Column, Entity},
     map_db_err,
 };
-
-use better_auth_core::{ApiKey, AuthError, AuthResult};
-
 use crate::schema::AuthSchema;
+use better_auth_core::store::ConsumeApiKeyResult;
+use better_auth_core::{ApiKey, AuthError, AuthResult};
+use chrono::{DateTime, Utc};
+use sea_orm::{
+    ColumnTrait, DbBackend, EntityTrait, QueryFilter,
+    sea_query::{Expr, ExprTrait},
+};
 
 impl<S: AuthSchema> SeaOrmStore<S> {
     #[expect(

@@ -13,29 +13,23 @@ pub(super) mod webauthn;
 #[cfg(test)]
 mod tests;
 
-use better_auth_core::{AuthContext, AuthError, AuthResult};
-
-use better_auth_core::{AuthRequest, AuthResponse};
-
-use better_auth_core::utils::cookie_utils::create_session_cookie;
-
 pub use authentication::{
     AuthenticationResult, PasskeyAuthenticationAfterVerification, PasskeyAuthenticationConfig,
     PasskeyAuthenticationContext, VerifiedPasskeyAuthentication,
 };
-
-pub use registration::{
-    PasskeyRegistrationAfterVerification, PasskeyRegistrationConfig, PasskeyRegistrationContext,
-    PasskeyRegistrationOverride, PasskeyRegistrationUser, PasskeyUserResolver,
-    VerifiedPasskeyRegistration,
-};
-
+use better_auth_core::utils::cookie_utils::create_session_cookie;
+use better_auth_core::{AuthContext, AuthError, AuthResult};
+use better_auth_core::{AuthRequest, AuthResponse};
 use handlers::{
     PasskeyHandlerOutcome, delete_passkey_core, generate_authenticate_options_core,
     generate_register_options_core, list_user_passkeys_core, update_passkey_core,
     verify_authentication_core, verify_registration_core,
 };
-
+pub use registration::{
+    PasskeyRegistrationAfterVerification, PasskeyRegistrationConfig, PasskeyRegistrationContext,
+    PasskeyRegistrationOverride, PasskeyRegistrationUser, PasskeyUserResolver,
+    VerifiedPasskeyRegistration,
+};
 use types::{
     DeletePasskeyRequest, UpdatePasskeyRequest, VerifyAuthenticationRequest,
     VerifyRegistrationRequest,

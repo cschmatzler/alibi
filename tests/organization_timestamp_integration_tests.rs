@@ -12,21 +12,13 @@ mod tests;
 use better_auth::plugins::organization::types::{
     BasicMemberResponse, CreatedOrganizationResponse, MemberResponse, OrganizationResponse,
 };
-
 use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin};
-
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-
 use better_auth_core::{AuthRequest, CreateInvitation, HttpMethod};
-
 use better_auth_seaorm::sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
-
 use better_auth_seaorm::store::entities::{invitation, member, organization};
-
 use better_auth_seaorm::{Database, SeaOrmStore};
-
 use chrono::{DateTime, Utc};
-
 use serde_json::{Value, json};
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

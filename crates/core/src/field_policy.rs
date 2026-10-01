@@ -1,10 +1,7 @@
 //! Application and plugin field policies at the session input boundary.
 use crate::utils::json::JsValue;
-
 use indexmap::{IndexMap, IndexSet};
-
 use serde_json::Value;
-
 use std::{fmt, sync::Arc};
 
 /// Values retain JavaScript numbers until the actual database binding.

@@ -1,9 +1,8 @@
 //! Optional SIWE wallet persistence. Wallets are concrete plugin records and do
 //! not add an associated entity to application-owned core schemas.
 
-use async_trait::async_trait;
-
 use crate::{AuthError, AuthResult, CreateWalletAddress, WalletAddress};
+use async_trait::async_trait;
 
 #[async_trait]
 pub trait WalletAddressStore: Send + Sync {

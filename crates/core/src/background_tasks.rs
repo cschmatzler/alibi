@@ -1,7 +1,6 @@
 //! Application observation of already running background work.
-use std::{future::Future, pin::Pin};
-
 use crate::AuthResult;
+use std::{future::Future, pin::Pin};
 
 /// Completion of an already started owned task.
 /// Dropping this observation does not cancel its underlying work. Applications

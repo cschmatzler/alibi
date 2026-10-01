@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
 use better_auth_core::utils::username::{
     UsernameValidationError, normalize_username_fields, validate_username,
 };
-
 use better_auth_core::{
     AuthConfig, AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse,
     AuthResult, AuthRoute, AuthSchema, AuthStore, BeforeRequestAction, EmailProvider,
@@ -16,6 +13,7 @@ use better_auth_core::{
         CsrfMiddleware, Middleware, RateLimitConfig, RateLimitMiddleware,
     },
 };
+use std::sync::Arc;
 
 pub struct BetterAuth<S: AuthSchema> {
     config: Arc<AuthConfig>,

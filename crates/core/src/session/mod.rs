@@ -1,21 +1,14 @@
 #[cfg(test)]
 mod tests;
 
-use chrono::Utc;
-
-use std::sync::Arc;
-
 use crate::config::AuthConfig;
-
 use crate::entity::{AuthSession, AuthUser};
-
 use crate::error::AuthResult;
-
 use crate::schema::AuthSchema;
-
 use crate::store::AuthStore;
-
 use crate::types::CreateSession;
+use chrono::Utc;
+use std::sync::Arc;
 
 /// Controls whether a persistent session read may write to its store.
 #[derive(Debug, Clone, Copy)]

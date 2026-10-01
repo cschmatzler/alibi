@@ -3,9 +3,7 @@
 //! Extracted to avoid duplicating common patterns across plugins (DRY).
 
 use better_auth_core::entity::{AuthAccount, AuthUser};
-
 use better_auth_core::{AuthContext, AuthError, AuthRequest, AuthResult, CreateUser, UpdateUser};
-
 use chrono::Utc;
 
 /// Result of issuing a real session for a user.

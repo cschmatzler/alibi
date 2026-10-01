@@ -1,5 +1,4 @@
 use super::*;
-
 use std::io::Write;
 
 /// Test the complete auth flow: signup -> signin -> get-session -> signout.

@@ -13,7 +13,6 @@
 mod tests;
 
 use std::fs;
-
 use std::path::PathBuf;
 
 fn repo_file(path: &str) -> PathBuf {

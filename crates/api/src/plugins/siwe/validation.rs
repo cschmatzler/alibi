@@ -1,7 +1,6 @@
+use crate::plugins::authentication_helpers::is_valid_email;
 use better_auth_core::{AuthRequest, AuthResponse};
 use serde_json::{Map, Value, json};
-
-use crate::plugins::authentication_helpers::is_valid_email;
 
 #[derive(Debug)]
 pub(super) struct VerifyBody {

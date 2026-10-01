@@ -2,21 +2,14 @@
 #[path = "generate/tests.rs"]
 mod tests;
 
-use std::fs;
-
-use std::path::PathBuf;
-
-use std::process::ExitCode;
-
-use clap::{Parser, Subcommand};
-
 use better_auth_schema_registry::{self as registry, EntityRole, ExtraEntitySchema, FieldDef};
-
+use clap::{Parser, Subcommand};
 use proc_macro2::TokenStream;
-
 use quote::{format_ident, quote};
-
+use std::fs;
 use std::io::Write;
+use std::path::PathBuf;
+use std::process::ExitCode;
 
 #[derive(Parser)]
 #[command(name = "better-auth-rs", about = "CLI tools for better-auth-rs")]

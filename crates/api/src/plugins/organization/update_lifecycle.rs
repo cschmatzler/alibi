@@ -1,10 +1,9 @@
 //! Awaited update callbacks with immutable validated input and authority snapshots.
+use super::types::CreatedOrganizationResponse;
 use async_trait::async_trait;
 use better_auth_core::utils::json::JsValue;
 use better_auth_core::{AuthResult, Member, UpdateOrganization, wire::UserView};
 use indexmap::IndexMap;
-
-use super::types::CreatedOrganizationResponse;
 
 /// Original validated patch; the source supplies this instead of a stored row.
 #[derive(Debug, Clone)]

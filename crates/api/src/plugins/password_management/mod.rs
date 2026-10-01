@@ -5,33 +5,21 @@ pub(super) mod types;
 #[cfg(test)]
 mod tests;
 
-use async_trait::async_trait;
-
-use std::future::Future;
-
-use std::pin::Pin;
-
-use std::sync::Arc;
-
-use better_auth_core::AuthSession;
-
-use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
-
-use better_auth_core::{AuthError, AuthResult};
-
-use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
-
-use better_auth_core::RequestMeta;
-
-use better_auth_core::utils::password::PasswordHasher;
-
 use super::StatusResponse;
-
+use async_trait::async_trait;
+use better_auth_core::AuthSession;
+use better_auth_core::RequestMeta;
+use better_auth_core::utils::password::PasswordHasher;
+use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
+use better_auth_core::{AuthError, AuthResult};
+use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 use handlers::{
     change_password_core, request_password_reset_core, reset_password_core,
     reset_password_token_core, verify_password_core,
 };
-
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 use types::{
     ChangePasswordRequest, RequestPasswordResetRequest, ResetPasswordRequest,
     ResetPasswordTokenQuery, ResetPasswordTokenResult, VerifyPasswordRequest,

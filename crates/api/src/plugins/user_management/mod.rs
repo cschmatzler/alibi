@@ -6,23 +6,14 @@ pub(super) mod types;
 mod tests;
 
 use async_trait::async_trait;
-
-use chrono::Duration;
-
-use std::sync::Arc;
-
 use better_auth_core::entity::AuthUser;
-
 use better_auth_core::wire::{SessionView, UserView};
-
 use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
-
 use better_auth_core::{AuthError, AuthResult};
-
 use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
-
+use chrono::Duration;
 use handlers::{change_email_core, delete_user_callback_core, delete_user_core};
-
+use std::sync::Arc;
 use types::{ChangeEmailRequest, DeleteUserRequest, TokenQuery};
 
 // ---------------------------------------------------------------------------

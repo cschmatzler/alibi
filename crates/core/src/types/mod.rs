@@ -1,18 +1,6 @@
 #[cfg(test)]
 mod tests;
 
-use chrono::{DateTime, Utc};
-
-use serde::{Deserialize, Serialize};
-
-use std::collections::HashMap;
-
-use std::ops::Index;
-
-use std::sync::{Arc, Mutex};
-
-use validator::Validate;
-
 // Re-export organization types
 pub use super::types_org::{
     AddTeamMemberResult, CreateInvitation, CreateMember, CreateOrganization,
@@ -20,14 +8,18 @@ pub use super::types_org::{
     OrganizationPermissions, OrganizationRole, OrganizationRoleSelector, Team, TeamMember,
     UpdateOrganization, UpdateOrganizationRole, UpdateTeam,
 };
-
 pub use super::types_plugin::{
     ApiKey, CreateApiKey, CreateDeviceCode, CreateJwk, CreatePasskey, CreateTwoFactor,
     CreateWalletAddress, DeviceCode, Jwk, Passkey, TwoFactor, UpdateApiKey, UpdateDeviceCode,
     UpdatePasskey, UpdatePasskeyAuthentication, UpdateTwoFactor, WalletAddress,
 };
-
 use crate::utils::normalize_user_email;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::ops::Index;
+use std::sync::{Arc, Mutex};
+use validator::Validate;
 
 /// HTTP method enumeration
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -13,25 +13,20 @@
 mod tests;
 
 use async_trait::async_trait;
-
 use better_auth::plugins::organization::{
     OrganizationConfig, OrganizationMemberAddedContext, OrganizationMemberAdditionHooks,
     OrganizationPlugin,
     types::{AddOrganizationMemberRequest, RoleInput},
 };
-
 use better_auth::{AuthConfig, AuthError, AuthResult};
-
 use better_auth_core::{
     AuthContext, CreateOrganization, CreateUser,
     store::{MemberStore, OrganizationStore, UserStore},
 };
-
 use better_auth_seaorm::{
     Database, SeaOrmStore,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
-
 use std::{collections::HashMap, sync::Arc};
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

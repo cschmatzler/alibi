@@ -1,8 +1,7 @@
+use better_auth_core::{AuthError, AuthResult};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
-
-use better_auth_core::{AuthError, AuthResult};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(in crate::plugins) struct EmailVerificationClaims {

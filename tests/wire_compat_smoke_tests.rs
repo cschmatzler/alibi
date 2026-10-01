@@ -15,5 +15,4 @@ mod compat;
 mod tests;
 
 use compat::dual_server::*;
-
 use compat::helpers::*;

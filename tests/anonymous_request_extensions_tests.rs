@@ -14,25 +14,18 @@
 mod tests;
 
 use async_trait::async_trait;
-
 use better_auth::plugins::EmailPasswordPlugin;
-
 use better_auth::{AuthBuilder, AuthConfig};
-
 use better_auth_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, BeforeRequestAction,
     CreateUser, HttpMethod,
 };
-
 use better_auth_seaorm::{Database, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore};
-
 use serde_json::{Value, json};
-
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
 };
-
 use tokio::sync::Barrier;
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

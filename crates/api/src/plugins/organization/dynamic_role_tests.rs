@@ -1,17 +1,11 @@
 use super::extension_tests::{actor, assert_error, body, call, configured_context, id};
-
 use super::*;
-
 use crate::plugins::test_helpers::create_test_config;
-
 use better_auth_core::types::{
     CreateMember, CreateOrganizationRole, OrganizationPermissions, OrganizationRoleSelector,
 };
-
 use better_auth_core::wire::SessionView;
-
 use better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
-
 use serde_json::{Value, json};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

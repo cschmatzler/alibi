@@ -1,20 +1,13 @@
-use jsonwebtoken::errors::ErrorKind;
-
+use super::token::{create_email_verification_token, decode_email_verification_token};
+use super::types::{SendVerificationEmailRequest, VerifyEmailQuery, VerifyEmailResult};
+use super::{EmailVerificationConfig, StatusResponse};
 use crate::plugins::helpers::{
     SessionIssueError, issue_user_session, record_completed_session_user_view,
 };
-
 use better_auth_core::wire::{SessionView, UserView};
-
 use better_auth_core::{AuthContext, AuthError, AuthResult, UpdateUser};
-
 use better_auth_core::{AuthSession, AuthUser};
-
-use super::token::{create_email_verification_token, decode_email_verification_token};
-
-use super::types::{SendVerificationEmailRequest, VerifyEmailQuery, VerifyEmailResult};
-
-use super::{EmailVerificationConfig, StatusResponse};
+use jsonwebtoken::errors::ErrorKind;
 
 pub(in crate::plugins) fn verification_url(
     config: &better_auth_core::AuthConfig,

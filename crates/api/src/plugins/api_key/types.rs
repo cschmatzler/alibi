@@ -1,13 +1,8 @@
 use super::ApiKeyPermissions;
-
 use better_auth_core::utils::json::JsValue;
-
 pub(in crate::plugins) use better_auth_core::wire::ApiKeyView;
-
 use better_auth_core::{AuthRequest, AuthResponse};
-
 use serde::{Deserialize, Deserializer, Serialize};
-
 use validator::Validate;
 
 /// API key creation parameters for HTTP and trusted server callers.

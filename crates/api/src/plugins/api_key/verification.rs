@@ -1,19 +1,14 @@
-use better_auth_core::entity::AuthUser;
-
-use better_auth_core::store::ConsumeApiKeyResult;
-
-use better_auth_core::wire::{ApiKeyView, SessionView};
-
-use better_auth_core::{
-    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, BeforeRequestAction,
-};
-
-use serde::Serialize;
-
 use super::{
     ApiKeyCallbackContext, ApiKeyConfig, ApiKeyErrorCode, ApiKeyPlugin, ApiKeyReferences,
     config_id_matches,
 };
+use better_auth_core::entity::AuthUser;
+use better_auth_core::store::ConsumeApiKeyResult;
+use better_auth_core::wire::{ApiKeyView, SessionView};
+use better_auth_core::{
+    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, BeforeRequestAction,
+};
+use serde::Serialize;
 
 /// Inputs for server-only API key verification. Verification consumes one use.
 pub struct VerifyApiKey<'a> {

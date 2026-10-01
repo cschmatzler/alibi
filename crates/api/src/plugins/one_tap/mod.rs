@@ -1,30 +1,20 @@
 //! Google One Tap authentication with verified Google ID tokens.
 use crate::plugins::authentication_helpers::{JsonField, RequestBody, parse_body};
-
 use crate::plugins::oauth::{
     OAuthConfig, OAuthProcessPolicy, OAuthSignInError, OAuthTokenSet, OAuthUserInfo,
     process_oauth_sign_in,
 };
-
 use async_trait::async_trait;
-
 use base64::Engine;
-
 use better_auth_core::utils::json::{JsValue, parse_value};
-
 use better_auth_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
     HttpMethod,
 };
-
 use chrono::Utc;
-
 use jsonwebtoken::{Algorithm, DecodingKey};
-
 use serde::{Deserialize, Serialize};
-
 use serde_json::{Value, json};
-
 use std::sync::Arc;
 
 const GOOGLE_JWKS_URL: &str = "https://www.googleapis.com/oauth2/v3/certs";
