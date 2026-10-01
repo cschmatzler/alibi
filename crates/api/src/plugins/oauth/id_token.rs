@@ -131,6 +131,9 @@ pub(super) async fn verify_provider_token(
     token: &str,
     nonce: Option<&str>,
 ) -> bool {
+    if provider.disable_id_token_sign_in {
+        return false;
+    }
     if let Some(verifier) = &provider.verify_id_token {
         return verifier
             .verify_id_token(token, nonce)

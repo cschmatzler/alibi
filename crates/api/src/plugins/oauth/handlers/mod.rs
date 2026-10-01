@@ -44,19 +44,6 @@ pub(in crate::plugins) enum OAuthSignInError {
 }
 
 impl OAuthSignInError {
-    fn into_auth_error(self) -> AuthError {
-        match self {
-            Self::Generic(message) => AuthError::forbidden(message),
-            Self::SessionAuth(error) => AuthError::forbidden(error.to_string()),
-            Self::Banned(message) => AuthError::banned_user(message),
-            Self::EmailNotVerified => AuthError::Upstream {
-                status: 403,
-                code: "EMAIL_NOT_VERIFIED",
-                message: "Email not verified",
-            },
-        }
-    }
-
     pub(in crate::plugins) fn redirect_parts(&self) -> (String, Option<&str>) {
         match self {
             // Upstream turns a plain internal error string into the `error`
@@ -203,7 +190,13 @@ fn build_authorization_url(
         .map_err(|error| AuthError::internal(format!("Invalid auth URL: {error}")))?;
     _ = url
         .query_pairs_mut()
-        .append_pair("response_type", "code")
+        .append_pair(
+            "response_type",
+            provider
+                .authorization
+                .as_ref()
+                .map_or("code", |policy| policy.response_type.as_str()),
+        )
         .append_pair("client_id", &provider.client_id)
         .append_pair("state", state);
     if provider.authorization.is_none() || !effective_scopes.is_empty() {
@@ -223,6 +216,13 @@ fn build_authorization_url(
             .append_pair("code_challenge", code_challenge);
     }
     if let Some(policy) = &provider.authorization {
+        if let Some(mode) = policy
+            .response_mode
+            .as_deref()
+            .filter(|mode| !mode.is_empty())
+        {
+            _ = url.query_pairs_mut().append_pair("response_mode", mode);
+        }
         if let Some(prompt) = policy
             .prompt
             .as_deref()
@@ -1118,7 +1118,9 @@ async fn sign_in_with_id_token_core(
     meta: &better_auth_core::RequestMeta,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<SocialSignInResponse> {
-    if provider.verify_id_token.is_none() && provider.id_token.is_none() {
+    if provider.disable_id_token_sign_in
+        || provider.verify_id_token.is_none() && provider.id_token.is_none()
+    {
         return Err(AuthError::Upstream {
             status: 404,
             code: "ID_TOKEN_NOT_SUPPORTED",
@@ -1181,7 +1183,23 @@ async fn sign_in_with_id_token_core(
         ctx,
     )
     .await
-    .map_err(OAuthSignInError::into_auth_error)?;
+    .map_err(|error| match error {
+        OAuthSignInError::EmailNotVerified => AuthError::Upstream {
+            status: 403,
+            code: "EMAIL_NOT_VERIFIED",
+            message: "Email not verified",
+        },
+        OAuthSignInError::Generic(message) | OAuthSignInError::Banned(message) => AuthError::Api {
+            status: 401,
+            code: Some("OAUTH_LINK_ERROR".into()),
+            message,
+        },
+        OAuthSignInError::SessionAuth(error) => AuthError::Api {
+            status: 401,
+            code: Some("OAUTH_LINK_ERROR".into()),
+            message: error.to_string(),
+        },
+    })?;
 
     Ok(SocialSignInResponse {
         url: None,
@@ -1203,7 +1221,9 @@ async fn link_with_id_token_core(
     session: &impl AuthSession,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<SocialSignInResponse> {
-    if provider.verify_id_token.is_none() && provider.id_token.is_none() {
+    if provider.disable_id_token_sign_in
+        || provider.verify_id_token.is_none() && provider.id_token.is_none()
+    {
         return Err(AuthError::Upstream {
             status: 404,
             code: "ID_TOKEN_NOT_SUPPORTED",

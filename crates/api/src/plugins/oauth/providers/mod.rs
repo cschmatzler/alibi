@@ -249,6 +249,8 @@ pub struct OAuthProvider {
     /// Application override takes precedence over the trusted built-in JWKS policy.
     pub verify_id_token: Option<Arc<dyn OAuthIdTokenVerifier>>,
     pub id_token: Option<super::id_token::OAuthIdTokenConfig>,
+    /// Disable the complete ID-token branch, including an application verifier override.
+    pub disable_id_token_sign_in: bool,
     pub disable_implicit_sign_up: bool,
     pub disable_sign_up: bool,
     pub override_user_info_on_sign_in: bool,
@@ -266,6 +268,8 @@ pub enum OAuthScopeOrder {
 #[derive(Debug, Clone)]
 pub struct OAuthAuthorizationPolicy {
     pub configured_scopes: Vec<String>,
+    pub response_type: String,
+    pub response_mode: Option<String>,
     pub disable_default_scopes: bool,
     pub scope_order: OAuthScopeOrder,
     pub pkce: bool,
@@ -280,6 +284,8 @@ impl Default for OAuthAuthorizationPolicy {
     fn default() -> Self {
         Self {
             configured_scopes: Vec::new(),
+            response_type: "code".into(),
+            response_mode: None,
             disable_default_scopes: false,
             scope_order: OAuthScopeOrder::ConfiguredThenRequested,
             pkce: true,
@@ -324,6 +330,7 @@ impl OAuthProvider {
             refresh_access_token: None,
             verify_id_token: None,
             id_token: None,
+            disable_id_token_sign_in: false,
             disable_implicit_sign_up: false,
             disable_sign_up: false,
             override_user_info_on_sign_in: false,
@@ -396,6 +403,7 @@ impl OAuthProvider {
             refresh_access_token: None,
             verify_id_token: None,
             id_token: None,
+            disable_id_token_sign_in: false,
             disable_implicit_sign_up: false,
             disable_sign_up: false,
             override_user_info_on_sign_in: false,
@@ -447,6 +455,7 @@ impl OAuthProvider {
             refresh_access_token: None,
             verify_id_token: None,
             id_token: None,
+            disable_id_token_sign_in: false,
             disable_implicit_sign_up: false,
             disable_sign_up: false,
             override_user_info_on_sign_in: false,
@@ -477,6 +486,7 @@ impl OAuthProvider {
             refresh_access_token: None,
             verify_id_token: None,
             id_token: None,
+            disable_id_token_sign_in: false,
             disable_implicit_sign_up: false,
             disable_sign_up: false,
             override_user_info_on_sign_in: false,
