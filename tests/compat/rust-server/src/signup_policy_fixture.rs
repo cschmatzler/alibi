@@ -174,6 +174,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         "signup-required",
         "signup-custom",
         "signup-policy",
+        "signup-zero-policy",
         "signup-username",
         "signup-otp",
         "signup-background",
@@ -196,6 +197,9 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             password_management =
                 password_management.reset_token_expiry(chrono::Duration::seconds(90));
         }
+        if name == "signup-zero-policy" {
+            password_management = password_management.reset_token_expiry(chrono::Duration::zero());
+        }
         let mut builder = AuthBuilder::<TestSchema>::new(config.clone())
             .store(SeaOrmStore::<TestSchema>::new(config, database.clone()).with_hooks(vec![app.clone()]))
             .rate_limit(RateLimitConfig { enabled: false, ..Default::default() })
@@ -205,8 +209,8 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 enable_username: name == "signup-username",
                 auto_sign_in: !["signup-no-auto", "signup-custom", "signup-username", "signup-background"].contains(&name),
                 require_email_verification: ["signup-required", "signup-otp"].contains(&name),
-                password_min_length: if name == "signup-policy" {10} else {8},
-                password_max_length: if name == "signup-policy" {20} else {128},
+                password_min_length: if name == "signup-zero-policy" {0} else if name == "signup-policy" {10} else {8},
+                password_max_length: if name == "signup-zero-policy" {0} else if name == "signup-policy" {20} else {128},
                 password_hasher: Some(app.clone()),
                 on_existing_user_signup: Some({let app=app.clone(); Arc::new(move |user, request| {
                     let app=app.clone(); Box::pin(async move {

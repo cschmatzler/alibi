@@ -62,8 +62,9 @@ pub struct EmailPasswordConfig {
     /// Whether to enable the username schema, signup hooks, and endpoints.
     pub enable_username: bool,
     pub require_email_verification: bool,
+    /// Minimum UTF-16 password length. Zero uses the default of 8.
     pub password_min_length: usize,
-    /// Maximum password length (default: 128).
+    /// Maximum UTF-16 password length. Zero uses the default of 128.
     pub password_max_length: usize,
     /// Whether to automatically sign in the user after sign-up (default: true).
     /// When false, sign-up returns the user but doesn't create a session.
@@ -72,6 +73,24 @@ pub struct EmailPasswordConfig {
     pub password_hasher: Option<Arc<dyn PasswordHasher>>,
     pub on_existing_user_signup: Option<Arc<ExistingUserSignupCallback>>,
     pub custom_synthetic_user: Option<Arc<CustomSyntheticUserCallback>>,
+}
+
+impl EmailPasswordConfig {
+    const fn effective_min_length(&self) -> usize {
+        if self.password_min_length == 0 {
+            8
+        } else {
+            self.password_min_length
+        }
+    }
+
+    const fn effective_max_length(&self) -> usize {
+        if self.password_max_length == 0 {
+            128
+        } else {
+            self.password_max_length
+        }
+    }
 }
 
 impl std::fmt::Debug for EmailPasswordConfig {
@@ -707,7 +726,10 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
     }
 
     async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
-        ctx.extensions.insert(self.config.clone());
+        let mut config = self.config.clone();
+        config.password_min_length = config.effective_min_length();
+        config.password_max_length = config.effective_max_length();
+        ctx.extensions.insert(config);
         if self.config.enable_username {
             drop(
                 ctx.metadata
@@ -853,8 +875,8 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
 
     password_utils::validate_password(
         &body.password,
-        config.password_min_length,
-        config.password_max_length,
+        config.effective_min_length(),
+        config.effective_max_length(),
         ctx,
     )?;
 
@@ -1146,7 +1168,7 @@ pub(in crate::plugins) async fn sign_in_core(
             message: "Invalid email",
         });
     }
-    if body.password.encode_utf16().count() > config.password_max_length {
+    if body.password.encode_utf16().count() > config.effective_max_length() {
         return Err(AuthError::bad_request("Password too long"));
     }
     let user = ctx

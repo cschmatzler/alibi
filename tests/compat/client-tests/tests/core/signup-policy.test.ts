@@ -376,6 +376,29 @@ async function requestReset(ctx:ScenarioContext,profile:FixtureProfile,email:str
   expect(state.verifications.find(row=>row.identifier===`reset-password:${delivery.token}`)?.value).toBe((delivery.user as Row).id);
   return {configured,requested,state,delivery,token:String(delivery.token)};
 }
+compatScenario("zero password options initialize the default bounds and one-hour reset proof across real signup sign-in and reset",async ctx=>{
+  const profile="signup-zero-policy",other=await foreign(ctx),owner=ctx.actor("owner",profile),email=ctx.uniqueEmail("zero-password-policy");
+  const configured=await control(ctx,{operation:"mode",mode:"normal"}),signup=await owner.client.signUp.email({email,name:"Effective Default Password",password:"password"});
+  expect(signup.error).toBeNull();const before=await read(ctx,profile),credential=before.accounts.find(row=>row.userId===signup.data!.user.id)!;
+  expect(await verifyPassword({hash:String(credential.password),password:"password"})).toBe(true);
+  const observations=[];
+  for(const [password,code] of [["a".repeat(7),"PASSWORD_TOO_SHORT"],["a".repeat(129),"PASSWORD_TOO_LONG"]] as const){
+    const configured=await control(ctx,{operation:"mode",mode:"normal"}),result=await ctx.actor(code,profile).client.signUp.email({email:ctx.uniqueEmail(code),name:"Rejected Default Bound",password});
+    expect(result.error).toMatchObject({status:400,code});const after=await read(ctx,profile);expect(rows(after)).toEqual(rows(before));expect(after.events).toEqual([]);
+    observations.push({password,configured,result,after:observed(after)});
+  }
+  const signin=await ctx.actor("signin",profile).client.signIn.email({email,password:"password"});expect(signin.error).toBeNull();expect(signin.data?.user.id).toBe(signup.data!.user.id);
+  const reset=await requestReset(ctx,profile,email),proof=reset.state.verifications.find(row=>row.identifier===`reset-password:${reset.token}`)!;
+  expect(Date.parse(String(proof.expiresAt))-Date.parse(String(proof.createdAt))).toBeGreaterThanOrEqual(3_599_000);expect(Date.parse(String(proof.expiresAt))-Date.parse(String(proof.createdAt))).toBeLessThanOrEqual(3_600_000);
+  const shortMode=await control(ctx,{operation:"mode",mode:"normal"}),short=await owner.client.resetPassword({newPassword:"a".repeat(7),token:reset.token});expect(short.error).toMatchObject({status:400,code:"PASSWORD_TOO_SHORT"});
+  const retained=await read(ctx,profile);expect(rows(retained)).toEqual(rows(reset.state));expect(retained.events).toEqual([]);
+  const resetMode=await control(ctx,{operation:"mode",mode:"normal"}),result=await owner.client.resetPassword({newPassword:"new-pass",token:reset.token});expect(result.error).toBeNull();
+  const after=await read(ctx,profile);expect(after.users).toEqual(reset.state.users);expect(after.sessions).toEqual(reset.state.sessions);expect(after.verifications.filter(row=>row.identifier===`reset-password:${reset.token}`)).toEqual([]);
+  expect(await verifyPassword({hash:String(after.accounts.find(row=>row.userId===signup.data!.user.id)!.password),password:"new-pass"})).toBe(true);expect(after.events.map(row=>row.stage)).toEqual(["hash-enter","hash-result","password-reset"]);
+  const replay=await owner.client.resetPassword({newPassword:"new-pass",token:reset.token});expect(replay.error?.code).toBe("INVALID_TOKEN");const login=await ctx.actor("new-password",profile).client.signIn.email({email,password:"new-pass"});expect(login.error).toBeNull();
+  expect(await ctx.readUserState({userId:other.result.data!.user.id})).toEqual(other.state);
+  return {foreign:other,configured,signup,before:observed(before),observations,signin,reset:{...reset,state:observed(reset.state)},shortMode,short,retained:observed(retained),resetMode,result,after:observed(after),replay,login};
+},["POST /sign-up/email","POST /sign-in/email","POST /request-password-reset","POST /reset-password"]);
 compatScenario("reset password checks token presence and initialized UTF-16 bounds before consuming its configured ninety-second proof",async ctx=>{
   const profile="signup-policy",other=await foreign(ctx),owner=ctx.actor("owner",profile),email=ctx.uniqueEmail("reset-bounds");
   const signup=await owner.client.signUp.email({email,name:"Reset Bounds",password:"originalPassword123"});expect(signup.error).toBeNull();

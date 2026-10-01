@@ -11,7 +11,7 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
   let releaseExisting: (() => void) | undefined;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   for (const name of ["signup-standard", "signup-disabled", "signup-password-disabled",
-    "signup-no-auto", "signup-required", "signup-custom", "signup-policy",
+    "signup-no-auto", "signup-required", "signup-custom", "signup-policy", "signup-zero-policy",
     "signup-username", "signup-otp", "signup-background"]) {
     const basePath = `/__test/profiles/${name}/api/auth`;
     const requireEmailVerification = name === "signup-required" || name === "signup-otp";
@@ -48,9 +48,9 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
         ...shared.emailAndPassword,
         enabled: name !== "signup-password-disabled",
         disableSignUp: name === "signup-disabled", autoSignIn, requireEmailVerification,
-        minPasswordLength: name === "signup-policy" ? 10 : 8,
-        maxPasswordLength: name === "signup-policy" ? 20 : 128,
-        resetPasswordTokenExpiresIn: name === "signup-policy" ? 90 : 3600,
+        minPasswordLength: name === "signup-zero-policy" ? 0 : name === "signup-policy" ? 10 : 8,
+        maxPasswordLength: name === "signup-zero-policy" ? 0 : name === "signup-policy" ? 20 : 128,
+        resetPasswordTokenExpiresIn: name === "signup-zero-policy" ? 0 : name === "signup-policy" ? 90 : 3600,
         revokeSessionsOnPasswordReset: name === "signup-policy",
         password: {
           async hash(password) {
