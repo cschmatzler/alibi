@@ -332,25 +332,36 @@ fn parse_token_response(token_data: serde_json::Value) -> AuthResult<OAuthTokenS
         .get("id_token")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let access_token_expires_at = token_data
-        .get("expires_in")
-        .and_then(serde_json::Value::as_i64)
-        .map(|secs| Utc::now() + Duration::seconds(secs));
-    let refresh_token_expires_at = token_data
-        .get("refresh_token_expires_in")
-        .and_then(serde_json::Value::as_i64)
-        .map(|secs| Utc::now() + Duration::seconds(secs));
-    let scopes = token_data
-        .get("scope")
-        .and_then(|v| v.as_str())
-        .map(|scope| {
-            scope
-                .split([',', ' '])
-                .filter(|value| !value.is_empty())
-                .map(String::from)
-                .collect()
-        })
-        .unwrap_or_default();
+    let expiry = |field: &str| -> Option<chrono::DateTime<Utc>> {
+        let value = token_data.get(field)?;
+        let seconds = match value {
+            serde_json::Value::Number(number) => number.as_f64().filter(|value| *value != 0.0)?,
+            serde_json::Value::String(value) if !value.is_empty() => {
+                value.trim().parse::<f64>().ok()?
+            }
+            _ => return None,
+        };
+        let timestamp = Utc::now().timestamp_millis() as f64 + seconds * 1000.0;
+        if !timestamp.is_finite() || timestamp.abs() > 8_640_000_000_000_000.0 {
+            return None;
+        }
+        chrono::DateTime::from_timestamp_millis(timestamp.trunc() as i64)
+    };
+    let access_token_expires_at = expiry("expires_in");
+    let refresh_token_expires_at = expiry("refresh_token_expires_in");
+    let scopes = match token_data.get("scope") {
+        Some(serde_json::Value::String(scope)) => {
+            scope.split_whitespace().map(String::from).collect()
+        }
+        Some(serde_json::Value::Array(scopes)) => scopes
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(String::from)
+            .collect(),
+        _ => Vec::new(),
+    };
 
     Ok(OAuthTokenSet {
         token_type: token_data
