@@ -59,6 +59,8 @@ Full local compatibility/coverage gates and inventory mutations are serialized.
 Workers use separate worktrees, ports, databases and logs. Old unpublished dirty
 prototypes are preserved; only reviewed family-scoped changes are extracted.
 
+| Two-factor OTP configuration | Phone owner; coordinator integration; independent phone-owner forward review | Plain/hash/encrypted/custom storage, configured generation/expiry/attempts, OTP enrollment and passwordless interaction have real SDK and persisted-state evidence. Full canonical gate passed: 316 SDK / 10,748 assertions, 39 harness / 243, two Chromium / 22, 79.38% source lines (25,562 / 32,203). PR #46; factor/backup interoperability and guest disable ordering remain separate prepared slices. |
+
 ## Remaining success gaps and route families
 
 All eight originally reported routes now have real successful-flow evidence.

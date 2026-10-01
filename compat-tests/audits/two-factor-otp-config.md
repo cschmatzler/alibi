@@ -134,3 +134,7 @@ separate work. Arbitrary invalid/extreme generation settings, including the
 source's nonterminating sub-half-character random buffer, and dates outside
 Chrono's range are not claimed. OTP method plus passwordless configuration
 requires the coordinator's forward parser merge and focused review.
+
+## Integrated validation
+
+Forward integration preserves inherited password schemas, method-before-issuer validation, configured session fields, and all existing inventory requirements. Independent forward review is clear. The canonical gate passed on this tree: 316 SDK scenarios / 10,748 assertions, 39 harness tests / 243 assertions, two Chromium tests / 22 assertions, and 79.38% source line coverage (25,562 / 32,203). Full log: `/tmp/two-factor-otp-reviewed-canonical.log`. Combined passwordless enrollment evidence is recorded in [the interaction audit](two-factor-otp-passwordless.md). PR #46.
