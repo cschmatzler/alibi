@@ -78,7 +78,7 @@ export function createTwoFactorPolicyFixture(base: Parameters<typeof betterAuth>
       if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return auth.handler(request);
     }
     if (url.pathname !== "/__test/two-factor-policy" || request.method !== "POST") return;
-    const body = await request.json() as { userId?: unknown; count?: unknown; verified?: unknown; expireLock?: unknown; deliveryEmail?: unknown; credentialState?: unknown; emptyCredentialPassword?: unknown; pendingState?: unknown; pendingKey?: unknown; importFactor?: unknown; backupProfile?: unknown; viewBackupCodes?: unknown };
+    const body = await request.json() as { userId?: unknown; count?: unknown; verified?: unknown; expireLock?: unknown; deliveryEmail?: unknown; credentialState?: unknown; emptyCredentialPassword?: unknown; pendingState?: unknown; pendingKey?: unknown; importFactor?: unknown; backupProfile?: unknown; viewBackupCodes?: unknown; trustIdentifier?: unknown };
     if (typeof body.deliveryEmail === "string") return Response.json(deliveries.get(body.deliveryEmail) ?? null);
     if (typeof body.userId !== "string") return Response.json({ message: "userId required" }, { status: 400 });
     if (
@@ -103,6 +103,10 @@ export function createTwoFactorPolicyFixture(base: Parameters<typeof betterAuth>
       const key=typeof body.pendingKey === "string" ? body.pendingKey : (database.query("SELECT identifier FROM verification WHERE value=? AND identifier LIKE '2fa-%'").get(body.userId) as {identifier:string}|null)?.identifier;
       const record=(identifier:string)=>database.query("SELECT value FROM verification WHERE identifier=?").get(identifier) as {value:string}|null;
       return Response.json({key:key??null,challenge:key?Boolean(record(key)):false,attempts:key?record(`2fa-attempts-${key}`)?.value??null:null,otpExists:key?Boolean(record(`2fa-otp-${key}`)):false,trustCount:(database.query("SELECT count(*) AS n FROM verification WHERE value=? AND identifier LIKE 'trust-device-%'").get(body.userId) as {n:number}).n});
+    }
+    if (typeof body.trustIdentifier === "string") {
+      database.query("UPDATE verification SET value=? WHERE identifier=?").run(body.userId, body.trustIdentifier);
+      return Response.json({ status: true });
     }
     if (body.emptyCredentialPassword === true) database.query("UPDATE account SET password='' WHERE userId=? AND providerId='credential'").run(body.userId);
     if (body.credentialState === true) return Response.json(database.query("SELECT userId,providerId,password FROM account WHERE userId=? ORDER BY providerId").all(body.userId).map(row => { const account=row as {userId:string;providerId:string;password:string|null}; return {userId:account.userId,providerId:account.providerId,hasPassword:Boolean(account.password)}; }));

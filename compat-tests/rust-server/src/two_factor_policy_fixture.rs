@@ -346,6 +346,19 @@ async fn control(
             .into_response();
     };
     let value = value.as_ref().unwrap();
+    if let Some(identifier) = value.get("trustIdentifier").and_then(JsValue::as_str) {
+        return match database
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                "UPDATE verifications SET value=? WHERE identifier=?",
+                [user_id.into(), identifier.into()],
+            ))
+            .await
+        {
+            Ok(_) => Json(json!({"status":true})).into_response(),
+            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
+    }
     if value.get("viewBackupCodes").and_then(JsValue::as_bool) == Some(true) {
         let Some(profile) = value.get("backupProfile").and_then(JsValue::as_str) else {
             return StatusCode::BAD_REQUEST.into_response();

@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+import { createHmac } from "node:crypto";
 import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { Cookie } from "tough-cookie";
@@ -314,4 +315,542 @@ for (const [profile, challengeAge, trustAge] of [
     },
     ["POST /sign-in/email", "POST /two-factor/verify-otp"],
   );
+}
+
+// The key belongs only to the equivalent fixture applications. Public handlers
+// issue the original proofs; independent crypto changes their authenticated
+// syntax without giving the production owner a test-only proof generator.
+const fixtureSecret = [
+  "compat",
+  "test",
+  "only",
+  "key",
+  "not",
+  "real",
+  "minimum",
+  "32chars",
+].join("-");
+const signedTrustValue = (value: string) =>
+  encodeURIComponent(
+    `${value}.${createHmac("sha256", fixtureSecret).update(value).digest("base64")}`,
+  );
+const userBoundTrustToken = (userId: string, identifier: string) =>
+  createHmac("sha256", fixtureSecret)
+    .update(`${userId}!${identifier}`)
+    .digest("base64url");
+
+for (const profile of [
+  "two-factor-skip-verification",
+  "two-factor-trust-cleanup-disabled",
+] as const) {
+  const exercise = async (
+    ctx: Context,
+    stage: "syntax" | "lookup" | "rotation",
+  ) => {
+    const history: Cookie[] = [];
+    const client = (actor: string) =>
+      createAuthClient({
+        baseURL: `${ctx.baseURL}${authProfilePath(profile)}`,
+        plugins: [twoFactorClient()],
+        fetchOptions: {
+          customFetchImpl: ctx.actor(actor, profile).fetch,
+          onSuccess: (context) => {
+            for (const header of context.response.headers.getSetCookie()) {
+              const cookie = Cookie.parse(header);
+              if (cookie) history.push(cookie);
+            }
+          },
+        },
+      });
+    const owner = client("trust-owner"),
+      foreign = client("trust-foreign"),
+      password = "password123";
+    const email = ctx.uniqueEmail("invalid-trust"),
+      foreignEmail = ctx.uniqueEmail("invalid-trust-foreign");
+    const created = await owner.signUp.email({
+      email,
+      password,
+      name: "Trust Owner",
+    });
+    const other = await foreign.signUp.email({
+      email: foreignEmail,
+      password,
+      name: "Foreign Trust Owner",
+    });
+    expect(created.error).toBeNull();
+    expect(other.error).toBeNull();
+    if (!created.data || !other.data) throw new Error("real owners required");
+    const userId = created.data.user.id,
+      foreignId = other.data.user.id;
+    const enroll = async (selected: typeof owner) => {
+      const result = await selected.twoFactor.enable({ password });
+      expect(result.error).toBeNull();
+      const data = z
+        .object({
+          method: z.literal("totp"),
+          totpURI: z.string(),
+          backupCodes: z.array(z.string()),
+        })
+        .parse(result.data);
+      return {
+        error: result.error,
+        method: data.method,
+        backupCount: data.backupCodes.length,
+      };
+    };
+    const enabled = await enroll(owner),
+      foreignEnabled = await enroll(foreign);
+    expect((await owner.signOut()).error).toBeNull();
+    expect((await foreign.signOut()).error).toBeNull();
+    const initialState = await ctx.readUserState({ userId }),
+      foreignState = await ctx.readUserState({ userId: foreignId });
+    expect(
+      z.object({ sessions: z.array(z.unknown()) }).parse(initialState)
+        .sessions,
+    ).toEqual([]);
+    expect(
+      z.object({ sessions: z.array(z.unknown()) }).parse(foreignState)
+        .sessions,
+    ).toEqual([]);
+    const latest = (suffix: string) => {
+      const cookie = history.findLast((cookie) =>
+        cookie.key.endsWith(suffix),
+      );
+      if (!cookie || !cookie.value)
+        throw new Error(`actual ${suffix} cookie required`);
+      return cookie;
+    };
+    const expiredCookie = (cookie: Cookie) => {
+      expect(cookie.value).toBe("");
+      expect(cookie.secure).toBe(false);
+      expect(cookie.domain).toBeNull();
+      cookieAttributes(cookie, 0);
+    };
+    const pendingRows = async (
+      selected: typeof owner,
+      expectedUserId: string,
+    ) => {
+      const cookie = latest(".two_factor"),
+        key = payload(cookie);
+      const challenge = await readRows(ctx, key),
+        attempts = await readRows(ctx, `2fa-attempts-${key}`);
+      expect(challenge).toHaveLength(1);
+      expect(attempts).toHaveLength(1);
+      expect(challenge[0]?.value).toBe(expectedUserId);
+      expect(attempts[0]?.value).toBe("0");
+      expect(attempts[0]?.expiresAt).toBe(challenge[0]?.expiresAt);
+      expect(await readRows(ctx, `2fa-otp-${key}`)).toEqual([]);
+      return { key, selected, challenge, attempts };
+    };
+    const complete = async (
+      pending: Awaited<ReturnType<typeof pendingRows>>,
+    ) => {
+      expect((await pending.selected.twoFactor.sendOtp({})).error).toBeNull();
+      const delivery = await ctx.rawRequest({
+        path: "/__test/two-factor-policy",
+        method: "POST",
+        json: { deliveryEmail: email },
+      });
+      const code = z.object({ otp: z.string() }).parse(delivery.body).otp;
+      const verified = await pending.selected.twoFactor.verifyOtp({
+        code,
+        trustDevice: true,
+      });
+      expect(verified.error).toBeNull();
+      expect(verified.data?.user.id).toBe(userId);
+      expect(await readRows(ctx, pending.key)).toEqual([]);
+      const afterAttempts = await readRows(
+        ctx,
+        `2fa-attempts-${pending.key}`,
+      );
+      expect(afterAttempts).toHaveLength(1);
+      expect(afterAttempts[0]?.value).toBe("0");
+      expect(afterAttempts[0]?.expiresAt).toBe(
+        pending.challenge[0]?.expiresAt,
+      );
+      expect(await readRows(ctx, `2fa-otp-${pending.key}`)).toEqual([]);
+      const cookie = latest(".trust_device"),
+        value = payload(cookie),
+        identifier = value.split("!")[1];
+      if (!identifier) throw new Error("actual trust identifier required");
+      expect(value.split("!")[0]).toBe(
+        userBoundTrustToken(userId, identifier),
+      );
+      const rows = await readRows(ctx, identifier);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.value).toBe(userId);
+      cookieAttributes(
+        cookie,
+        profile.endsWith("cleanup-disabled") ? 1200.875 : 2592000,
+      );
+      const state = await ctx.readUserState({ userId });
+      expect(
+        z
+          .object({
+            sessions: z.array(
+              z.object({ token: z.string(), userId: z.string() }),
+            ),
+          })
+          .parse(state).sessions,
+      ).toEqual([
+        expect.objectContaining({ token: verified.data?.token, userId }),
+      ]);
+      expect(await ctx.readUserState({ userId: foreignId })).toEqual(
+        foreignState,
+      );
+      expect((await owner.signOut()).error).toBeNull();
+      return {
+        verified,
+        cookie,
+        value,
+        identifier,
+        rows,
+        state,
+        afterAttempts,
+      };
+    };
+    const initialCookieOffset = history.length;
+    const signin = await owner.signIn.email({ email, password });
+    expect(
+      history
+        .slice(initialCookieOffset)
+        .filter((cookie) => cookie.key.endsWith(".trust_device")),
+    ).toEqual([]);
+    expect(signin.data).toMatchObject({ twoFactorRedirect: true });
+    const firstPending = await pendingRows(owner, userId),
+      issued = await complete(firstPending);
+    const ownerBaseline = await ctx.readUserState({ userId });
+    const expiredIdentifier = ctx.uniqueToken("invalid-trust-cleanup");
+    expect(
+      (
+        await ctx.rawRequest({
+          path: "/__test/verification-state",
+          method: "POST",
+          json: {
+            action: "seed",
+            identifier: expiredIdentifier,
+            value: foreignId,
+            expiresAt: "2020-01-01T00:00:00.000Z",
+          },
+        })
+      ).status,
+    ).toBe(200);
+    const expiredBaseline = await readRows(ctx, expiredIdentifier);
+    const trustPair = (value: string) => `${issued.cookie.key}=${value}`;
+    const common = {
+      created,
+      other,
+      enabled,
+      foreignEnabled,
+      initialState,
+      foreignState,
+      signin,
+      verified: issued.verified,
+      originalTrust: projectRows(issued.rows),
+      ownerBaseline,
+    };
+    const observations: unknown[] = [];
+    let lastPending: Awaited<ReturnType<typeof pendingRows>> | undefined;
+    const rejected = async (
+      name: string,
+      value: string,
+      shouldClear: boolean,
+      expectedRows = issued.rows,
+    ) => {
+      const start = history.length;
+      const result = await owner.signIn.email(
+        { email, password },
+        { headers: { cookie: trustPair(value) } },
+      );
+      expect(result.error).toBeNull();
+      expect(result.data).toMatchObject({
+        twoFactorRedirect: true,
+        twoFactorMethods: ["totp", "otp"],
+      });
+      const deletion = history
+        .slice(start)
+        .filter((cookie) => cookie.key === issued.cookie.key);
+      expect(deletion).toHaveLength(shouldClear ? 1 : 0);
+      if (deletion[0]) {
+        expiredCookie(deletion[0]);
+      }
+      lastPending = await pendingRows(owner, userId);
+      expect(await ctx.readUserState({ userId })).toEqual(ownerBaseline);
+      expect(await ctx.readUserState({ userId: foreignId })).toEqual(
+        foreignState,
+      );
+      expect(await readRows(ctx, issued.identifier)).toEqual(expectedRows);
+      observations.push({
+        name,
+        result,
+        challenge: projectRows(lastPending.challenge),
+        attempts: lastPending.attempts.map((row) => ({
+          ...row,
+          identifier: { token: row.identifier },
+        })),
+      });
+      return lastPending;
+    };
+    if (stage === "syntax") {
+      const decoded = decodeURIComponent(issued.cookie.value),
+        signatureOffset = decoded.lastIndexOf("."),
+        signature = decoded.slice(signatureOffset + 1);
+      const badSignature = encodeURIComponent(
+        `${issued.value}.${signature[0] === "A" ? "B" : "A"}${signature.slice(1)}`,
+      );
+      for (const [name, value, clear] of [
+        ["invalid-outer-hmac", badSignature, false],
+        ["missing-outer-signature", encodeURIComponent(issued.value), false],
+        ["signed-empty-payload", signedTrustValue(""), false],
+        [
+          "invalid-inner-hmac",
+          signedTrustValue(`wrong!${issued.identifier}`),
+          true,
+        ],
+        ["missing-components", signedTrustValue("unstructured"), true],
+        ["empty-token", signedTrustValue(`!${issued.identifier}`), true],
+        [
+          "empty-identifier",
+          signedTrustValue(`${userBoundTrustToken(userId, "")}!`),
+          true,
+        ],
+      ] as const) {
+        await rejected(name, value, clear);
+        expect(await readRows(ctx, expiredIdentifier)).toEqual(expiredBaseline);
+      }
+      return ctx.snapshot({ ...common, observations });
+    }
+    const startForeign = history.length;
+    const wrongOwner = await foreign.signIn.email(
+      { email: foreignEmail, password },
+      { headers: { cookie: trustPair(issued.cookie.value) } },
+    );
+    expect(wrongOwner.data).toMatchObject({ twoFactorRedirect: true });
+    const foreignDeletion = history
+      .slice(startForeign)
+      .filter((cookie) => cookie.key === issued.cookie.key);
+    expect(foreignDeletion).toHaveLength(1);
+    if (!foreignDeletion[0])
+      throw new Error("real foreign deletion required");
+    expiredCookie(foreignDeletion[0]);
+    const foreignPending = await pendingRows(foreign, foreignId);
+    expect(await ctx.readUserState({ userId })).toEqual(ownerBaseline);
+    expect(await ctx.readUserState({ userId: foreignId })).toEqual(
+      foreignState,
+    );
+    expect(await readRows(ctx, issued.identifier)).toEqual(issued.rows);
+    expect(await readRows(ctx, expiredIdentifier)).toEqual(expiredBaseline);
+    if (stage === "lookup") {
+      const mutateOwner = async (ownerId: string) => {
+        expect(
+          (
+            await ctx.rawRequest({
+              path: "/__test/two-factor-policy",
+              method: "POST",
+              json: { userId: ownerId, trustIdentifier: issued.identifier },
+            })
+          ).status,
+        ).toBe(200);
+      };
+      await mutateOwner(foreignId);
+      const changedOwner = await readRows(ctx, issued.identifier);
+      expect(changedOwner).toEqual(
+        issued.rows.map((row) => ({ ...row, value: foreignId })),
+      );
+      await rejected(
+        "changed-stored-owner",
+        issued.cookie.value,
+        true,
+        changedOwner,
+      );
+      expect(await readRows(ctx, expiredIdentifier)).toEqual(
+        profile.endsWith("cleanup-disabled") ? expiredBaseline : [],
+      );
+      await mutateOwner(userId);
+      const absent = ctx.uniqueToken("missing-issued-trust");
+      const missing = await rejected(
+        "authenticated-missing-record",
+        signedTrustValue(`${userBoundTrustToken(userId, absent)}!${absent}`),
+        true,
+      );
+      expect(await readRows(ctx, absent)).toEqual([]);
+      expect(await readRows(ctx, expiredIdentifier)).toEqual(
+        profile.endsWith("cleanup-disabled") ? expiredBaseline : [],
+      );
+      const second = await complete(missing);
+      await expireVerification(ctx, second.identifier);
+      const expiredTrust = await readRows(ctx, second.identifier);
+      await rejected("expired-real-issued-proof", second.cookie.value, true);
+      const expiryRows = await readRows(ctx, second.identifier);
+      expect(expiryRows).toEqual(
+        profile.endsWith("cleanup-disabled") ? expiredTrust : [],
+      );
+      expect(await readRows(ctx, foreignPending.key)).toEqual(
+        foreignPending.challenge,
+      );
+      return ctx.snapshot({
+        ...common,
+        observations,
+        wrongOwner,
+        foreignChallenge: projectRows(foreignPending.challenge),
+        changedOwner: projectRows(changedOwner),
+        secondVerified: second.verified,
+        completedAttempts: second.afterAttempts.map((row) => ({
+          ...row,
+          identifier: { token: row.identifier },
+        })),
+        expiryRows: projectRows(expiryRows),
+      });
+    }
+    // Preserve a genuine preceding owner challenge independently of the
+    // foreign challenge while the original issued proof rotates twice.
+    await rejected(
+      "preceding-owner-challenge",
+      signedTrustValue(`wrong!${issued.identifier}`),
+      true,
+    );
+    expect(await readRows(ctx, expiredIdentifier)).toEqual(expiredBaseline);
+    const extra = await owner.signIn.email(
+      { email, password },
+      {
+        headers: {
+          cookie: trustPair(
+            signedTrustValue(`${issued.value}!ignored!components`),
+          ),
+        },
+      },
+    );
+    expect(extra.error).toBeNull();
+    expect(extra.data).not.toHaveProperty("twoFactorRedirect");
+    expect(extra.data?.user.id).toBe(userId);
+    const rotatedCookie = latest(".trust_device"),
+      rotatedKey = payload(rotatedCookie).split("!")[1];
+    if (!rotatedKey) throw new Error("real rotated identifier required");
+    expect(rotatedKey).not.toBe(issued.identifier);
+    expect(await readRows(ctx, issued.identifier)).toEqual([]);
+    const rotation = await readRows(ctx, rotatedKey);
+    expect(rotation).toHaveLength(1);
+    expect(rotation[0]?.value).toBe(userId);
+    cookieAttributes(
+      rotatedCookie,
+      profile.endsWith("cleanup-disabled") ? 1200.875 : 2592000,
+    );
+    const finalState = await ctx.readUserState({ userId });
+    expect(
+      z
+        .object({
+          sessions: z.array(
+            z.object({ token: z.string(), userId: z.string() }),
+          ),
+        })
+        .parse(finalState).sessions,
+    ).toEqual([
+      expect.objectContaining({ token: extra.data?.token, userId }),
+    ]);
+    // Better Call's actual atob accepts unused trailing Base64 bits while
+    // requiring the outer signature's exact 44-character padded shape.
+    const rotatedRaw = decodeURIComponent(rotatedCookie.value);
+    const alphabet =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const signaturePosition = rotatedRaw.length - 2;
+    const character = rotatedRaw[signaturePosition];
+    if (!character) throw new Error("actual padded signature required");
+    const aliasCharacter = alphabet[alphabet.indexOf(character) + 1];
+    if (!aliasCharacter) throw new Error("actual unused-bit alias required");
+    const aliasRaw =
+      rotatedRaw.slice(0, signaturePosition) +
+      aliasCharacter +
+      rotatedRaw.slice(signaturePosition + 1);
+    const signatureOf = (value: string) =>
+      value.slice(value.lastIndexOf(".") + 1);
+    expect(signatureOf(aliasRaw)).toHaveLength(44);
+    expect(signatureOf(aliasRaw).endsWith("=")).toBe(true);
+    expect(Buffer.from(signatureOf(aliasRaw), "base64")).toEqual(
+      Buffer.from(signatureOf(rotatedRaw), "base64"),
+    );
+    const aliasValue = encodeURIComponent(aliasRaw);
+    const alias = await owner.signIn.email(
+      { email, password },
+      { headers: { cookie: trustPair(aliasValue) } },
+    );
+    expect(alias.error).toBeNull();
+    expect(alias.data).not.toHaveProperty("twoFactorRedirect");
+    expect(alias.data?.user.id).toBe(userId);
+    expect(await readRows(ctx, rotatedKey)).toEqual([]);
+    const aliasCookie = latest(".trust_device"),
+      aliasKey = payload(aliasCookie).split("!")[1];
+    if (!aliasKey) throw new Error("actual alias rotation required");
+    expect(aliasKey).not.toBe(rotatedKey);
+    const aliasRows = await readRows(ctx, aliasKey);
+    expect(aliasRows).toHaveLength(1);
+    expect(aliasRows[0]?.value).toBe(userId);
+    cookieAttributes(
+      aliasCookie,
+      profile.endsWith("cleanup-disabled") ? 1200.875 : 2592000,
+    );
+    const aliasState = await ctx.readUserState({ userId });
+    expect(
+      z
+        .object({
+          sessions: z.array(
+            z.object({ token: z.string(), userId: z.string() }),
+          ),
+        })
+        .parse(aliasState).sessions,
+    ).toEqual([
+      expect.objectContaining({ token: extra.data?.token, userId }),
+      expect.objectContaining({ token: alias.data?.token, userId }),
+    ]);
+    const replayStart = history.length;
+    const aliasReplay = await owner.signIn.email(
+      { email, password },
+      { headers: { cookie: trustPair(aliasValue) } },
+    );
+    expect(aliasReplay.data).toMatchObject({ twoFactorRedirect: true });
+    const replayCookies = history
+      .slice(replayStart)
+      .filter((cookie) => cookie.key === issued.cookie.key);
+    expect(replayCookies).toHaveLength(1);
+    if (!replayCookies[0]) throw new Error("actual replay deletion required");
+    expiredCookie(replayCookies[0]);
+    const replayPending = await pendingRows(owner, userId);
+    expect(await ctx.readUserState({ userId })).toEqual(aliasState);
+    expect(await readRows(ctx, aliasKey)).toEqual(aliasRows);
+    expect(await ctx.readUserState({ userId: foreignId })).toEqual(
+      foreignState,
+    );
+    expect(await readRows(ctx, foreignPending.key)).toEqual(
+      foreignPending.challenge,
+    );
+    if (!lastPending)
+      throw new Error("actual last pending challenge required");
+    expect(await readRows(ctx, lastPending.key)).toEqual(
+      lastPending.challenge,
+    );
+    return ctx.snapshot({
+      ...common,
+      observations,
+      wrongOwner,
+      foreignChallenge: projectRows(foreignPending.challenge),
+      extra,
+      rotation: projectRows(rotation),
+      finalState,
+      alias,
+      aliasRows: projectRows(aliasRows),
+      aliasState,
+      aliasReplay,
+      replayChallenge: projectRows(replayPending.challenge),
+    });
+  };
+  for (const [stage, behavior] of [
+    ["syntax", "checks outer and inner trust syntax before deletion and cleanup"],
+    ["lookup", "checks authenticated trust ownership missing rows expiry and cleanup"],
+    ["rotation", "rotates real trust proofs accepts HMAC aliases and rejects replay"],
+  ] as const) {
+    compatScenario(
+      `two-factor ${profile} ${behavior}`,
+      (ctx) => exercise(ctx, stage),
+      ["POST /sign-in/email", "POST /two-factor/verify-otp"],
+    );
+  }
 }

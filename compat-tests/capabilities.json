@@ -2237,7 +2237,13 @@
           "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state",
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "two-factor two-factor-skip-verification checks outer and inner trust syntax before deletion and cleanup",
+          "two-factor two-factor-skip-verification checks authenticated trust ownership missing rows expiry and cleanup",
+          "two-factor two-factor-skip-verification rotates real trust proofs accepts HMAC aliases and rejects replay",
+          "two-factor two-factor-trust-cleanup-disabled checks outer and inner trust syntax before deletion and cleanup",
+          "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
+          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay"
         ],
         "state": [
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
@@ -2250,7 +2256,13 @@
           "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state",
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "two-factor two-factor-skip-verification checks outer and inner trust syntax before deletion and cleanup",
+          "two-factor two-factor-skip-verification checks authenticated trust ownership missing rows expiry and cleanup",
+          "two-factor two-factor-skip-verification rotates real trust proofs accepts HMAC aliases and rejects replay",
+          "two-factor two-factor-trust-cleanup-disabled checks outer and inner trust syntax before deletion and cleanup",
+          "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
+          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay"
         ],
         "rejection": [
           "admin zero duration and empty reason use source defaults while owned sessions transition",
@@ -2837,7 +2849,13 @@
           "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor authenticated OTP success rotates its real owner session after code consumption"
+          "two-factor authenticated OTP success rotates its real owner session after code consumption",
+          "two-factor two-factor-skip-verification checks outer and inner trust syntax before deletion and cleanup",
+          "two-factor two-factor-skip-verification checks authenticated trust ownership missing rows expiry and cleanup",
+          "two-factor two-factor-skip-verification rotates real trust proofs accepts HMAC aliases and rejects replay",
+          "two-factor two-factor-trust-cleanup-disabled checks outer and inner trust syntax before deletion and cleanup",
+          "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
+          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay"
         ],
         "state": [
           "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
@@ -2847,7 +2865,13 @@
           "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
           "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
-          "two-factor authenticated OTP success rotates its real owner session after code consumption"
+          "two-factor authenticated OTP success rotates its real owner session after code consumption",
+          "two-factor two-factor-skip-verification checks outer and inner trust syntax before deletion and cleanup",
+          "two-factor two-factor-skip-verification checks authenticated trust ownership missing rows expiry and cleanup",
+          "two-factor two-factor-skip-verification rotates real trust proofs accepts HMAC aliases and rejects replay",
+          "two-factor two-factor-trust-cleanup-disabled checks outer and inner trust syntax before deletion and cleanup",
+          "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
+          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay"
         ],
         "rejection": [
           "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
