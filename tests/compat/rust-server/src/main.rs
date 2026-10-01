@@ -21,7 +21,12 @@ async fn private_json_content_type(
     let private_control = path.starts_with("/__test/") && !path.starts_with("/__test/profiles/");
     let mut response = next.run(request).await;
     if private_control
-        && response.headers().get(axum::http::header::CONTENT_TYPE)
+        && axum::body::HttpBody::size_hint(response.body())
+            .exact()
+            .is_some_and(|bytes| bytes > 0)
+        && response
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
             .is_some_and(|value| value == "application/json")
     {
         response.headers_mut().insert(
