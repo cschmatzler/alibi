@@ -407,7 +407,7 @@ async fn revoke_all_user_sessions() {
     assert_eq!(count, 2);
 
     let sessions = mgr.list_user_sessions(user.id()).await.unwrap();
-    assert!(sessions.is_empty());
+    assert_eq!(sessions, Vec::<SessionView>::new());
 }
 
 // Rust-specific surface: `SessionManager` and its token/session helper APIs are public Rust APIs with no direct TS analogue.

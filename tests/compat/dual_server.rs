@@ -14,7 +14,10 @@ mod harness_tests {
                 serde_json::json!([1, {"ok": null}]),
             ),
         ] {
-            assert!(!compare_shapes(&json_shape(&left), &json_shape(&right), "").is_empty());
+            assert_ne!(
+                compare_shapes(&json_shape(&left), &json_shape(&right), ""),
+                Vec::<String>::new()
+            );
         }
     }
 }

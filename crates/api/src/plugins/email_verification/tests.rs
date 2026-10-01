@@ -427,12 +427,13 @@ async fn external_verification_proofs_enforce_signature_algorithm_and_numeric_da
             .unwrap()
             .unwrap();
         assert!(!persisted.email_verified());
-        assert!(
+        assert_eq!(
             ctx.database
                 .get_user_sessions(&user.id())
                 .await
                 .unwrap()
-                .is_empty()
+                .len(),
+            0
         );
     }
 }
@@ -466,12 +467,13 @@ async fn externally_signed_verification_without_dates_or_matching_audience_is_ac
         .unwrap()
         .unwrap();
     assert!(persisted.email_verified());
-    assert!(
+    assert_eq!(
         ctx.database
             .get_user_sessions(&user.id())
             .await
             .unwrap()
-            .is_empty()
+            .len(),
+        0
     );
 }
 
@@ -1433,12 +1435,13 @@ async fn unauthenticated_verification_email_has_fixed_floor_for_all_mailbox_stat
         assert_eq!(after.as_ref().map(AuthUser::email_verified), existing);
         if let Some(user) = user {
             assert_eq!(after.as_ref().unwrap().id(), user.id());
-            assert!(
+            assert_eq!(
                 ctx.database
                     .get_user_sessions(&user.id())
                     .await
                     .unwrap()
-                    .is_empty()
+                    .len(),
+                0
             );
         }
     }

@@ -185,12 +185,13 @@ async fn notification_failure_preserves_phone_authentication_gates_and_issued_pr
             .value(),
         initial.code
     );
-    assert!(
+    assert_eq!(
         ctx.database
             .get_user_sessions(&user_id)
             .await
             .unwrap()
-            .is_empty()
+            .len(),
+        0
     );
     assert_eq!(
         post(
@@ -357,12 +358,13 @@ async fn phone_signup_and_replay_preserve_verification_identity_and_session() {
             .user_id(),
         user.id()
     );
-    assert!(
+    assert_eq!(
         ctx.database
             .get_user_accounts(&user.id())
             .await
             .unwrap()
-            .is_empty()
+            .len(),
+        0
     );
     assert_eq!(
         post(
@@ -541,12 +543,13 @@ async fn required_verification_precedes_password_and_nonremembered_session_expir
             .get("token"),
         Some(&Value::Null)
     );
-    assert!(
+    assert_eq!(
         ctx.database
             .get_user_sessions(&user_id)
             .await
             .unwrap()
-            .is_empty()
+            .len(),
+        0
     );
     assert_eq!(
         post(
@@ -649,12 +652,13 @@ async fn phone_credentials_reject_another_users_signed_trust_before_authenticati
     let body: Value = serde_json::from_slice(&response.body).unwrap();
     assert_eq!(body.get("twoFactorRedirect"), Some(&json!(true)));
     assert!(body.get("token").is_none());
-    assert!(
+    assert_eq!(
         ctx.database
             .get_user_sessions(&user_id)
             .await
             .unwrap()
-            .is_empty()
+            .len(),
+        0
     );
     assert_eq!(
         ctx.database
@@ -1110,12 +1114,13 @@ async fn verification_callback_observes_owner_and_rejection_prevents_session_iss
         .unwrap()
         .unwrap();
     assert_eq!(user_2.phone_number_verified(), Some(true));
-    assert!(
+    assert_eq!(
         ctx.database
             .get_user_sessions(&user_2.id())
             .await
             .unwrap()
-            .is_empty()
+            .len(),
+        0
     );
     assert!(
         ctx.database

@@ -413,7 +413,7 @@ async fn test_delete_passkey_non_owner_is_unauthorized() {
 
     let response = plugin.handle_delete_passkey(&req, &ctx).await.unwrap();
     assert_eq!(response.status, 401);
-    assert!(response.body.is_empty());
+    assert_eq!(response.body.len(), 0);
     let preserved = ctx
         .database
         .get_passkey_by_id(&passkey.id)

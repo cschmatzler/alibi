@@ -1306,6 +1306,7 @@ async fn mark_factor_verified(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
     clippy::cast_sign_loss,
+    clippy::suboptimal_flops,
     reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
 )]
 async fn send_otp_core(

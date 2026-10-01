@@ -97,7 +97,7 @@ async fn username_disabled_signup_ignores_additional_input_and_excludes_username
         let req = AuthRequest::new(HttpMethod::Post, format!("/api/auth{path}"));
         let response = auth.handle_request(req).await.unwrap();
         assert_eq!(response.status, 404);
-        assert!(response.body.is_empty());
+        assert_eq!(response.body.len(), 0);
     }
 }
 
@@ -167,12 +167,13 @@ async fn notification_failure_commits_signup_but_direct_delivery_reports_the_err
             .len(),
         1
     );
-    assert!(
+    assert_eq!(
         auth.store()
             .get_user_sessions(&user.id())
             .await
             .unwrap()
-            .is_empty()
+            .len(),
+        0
     );
     assert_eq!(sender.calls.lock().unwrap().len(), 1);
 
@@ -185,12 +186,13 @@ async fn notification_failure_commits_signup_but_direct_delivery_reports_the_err
     assert_eq!(denied.status, 403, "{denied_body}");
     assert_eq!(denied_body.get("code"), Some(&json!("EMAIL_NOT_VERIFIED")));
     assert_eq!(sender.calls.lock().unwrap().len(), 2);
-    assert!(
+    assert_eq!(
         auth.store()
             .get_user_sessions(&user.id())
             .await
             .unwrap()
-            .is_empty()
+            .len(),
+        0
     );
 
     let (direct, direct_body) =

@@ -166,7 +166,7 @@ async fn unknown_paths_and_methods_cannot_dispatch_plugin_hooks() {
             .await
             .unwrap();
         assert_eq!(response.status, 404);
-        assert!(response.body.is_empty());
+        assert_eq!(response.body.len(), 0);
         assert!(!response.headers.contains_key("x-before"));
         assert!(!response.headers.contains_key("x-after"));
     }

@@ -163,7 +163,7 @@ fn radix_number(digits: &str, radix: u32, bits_per_digit: usize) -> Option<f64> 
     };
     let significant = digits.get(first_nonzero..)?;
     let first = *significant.first()?;
-    let first_bits = (u32::BITS - first.leading_zeros()) as usize;
+    let first_bits = first.bit_width() as usize;
     let bit_length = first_bits + (significant.len() - 1) * bits_per_digit;
     if bit_length > 1024 {
         return Some(f64::INFINITY);

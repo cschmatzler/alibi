@@ -661,12 +661,13 @@ async fn existing_unverified_account_loses_password_oauth_and_old_sessions() {
         .unwrap()
         .unwrap();
     assert!(promoted.email_verified());
-    assert!(
+    assert_eq!(
         ctx.database
             .get_user_accounts(&user.id())
             .await
             .unwrap()
-            .is_empty()
+            .len(),
+        0
     );
     assert!(
         ctx.database

@@ -346,7 +346,7 @@ async fn manual_numeric_session_schema_fails_closed_for_unbound_configured_field
         .await
         .expect("fail-closed response");
     assert_eq!(rejected.status, 500);
-    assert!(rejected.body.is_empty());
+    assert_eq!(rejected.body, Vec::<u8>::new());
     let after = auth
         .store()
         .get_session(token)

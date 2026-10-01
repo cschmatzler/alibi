@@ -130,7 +130,7 @@ async fn public_numeric_pages_bind_raw_limits_and_keep_insertion_order_filtered_
     let returned = store.list_users_by_ids_page(&ids, -1.0).await?;
     assert_eq!(returned.len(), 2);
     assert!(returned.iter().all(|user| ids.contains(&user.id)));
-    assert!(store.list_users_by_ids_page(&ids, -0.0).await?.is_empty());
+    assert_eq!(store.list_users_by_ids_page(&ids, -0.0).await?.len(), 0);
     assert_eq!(store.list_users_by_ids_page(&ids, 1.0).await?.len(), 1);
     for limit in [1.5, f64::INFINITY, f64::NAN] {
         assert!(matches!(

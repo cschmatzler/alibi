@@ -28,7 +28,7 @@ impl GenerateOneTimeToken for CustomGenerator {
         request: Option<&AuthRequest>,
     ) -> AuthResult<String> {
         assert_eq!(request.map(AuthRequest::path), None);
-        assert!(!session.user.id.is_empty());
+        assert_ne!(session.user.id.len(), 0);
         Ok("custom-generated-token".to_owned())
     }
 }
