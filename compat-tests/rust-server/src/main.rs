@@ -814,12 +814,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let totp_router = two_factor_totp_fixture::router(&config, reset_database.clone()).await?;
     let backup_receipts = two_factor_policy_fixture::BackupReceipts::default();
-    let policy_router = two_factor_policy_fixture::router(
-        &config,
-        reset_database.clone(),
-        backup_receipts.clone(),
-    )
-    .await?;
+    let policy_router =
+        two_factor_policy_fixture::router(&config, reset_database.clone(), backup_receipts.clone())
+            .await?;
     let two_factor_otp_router =
         two_factor_otp_fixture::router(&config, reset_database.clone()).await?;
     let ott_router = one_time_token_fixture::router(&config, reset_database.clone()).await?;
