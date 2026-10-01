@@ -750,7 +750,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key_background_fixture::router(&config, database.clone()).await?;
     let api_key_hook_router = api_key_hook_fixture::router(&config, database.clone()).await?;
     let multiple_session_counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let bearer_router = bearer_fixture::router(&config, database.clone(), multiple_session_counter.clone()).await?;
+    let bearer_router =
+        bearer_fixture::router(&config, database.clone(), multiple_session_counter.clone()).await?;
     let multiple_session_router = multiple_session_fixture::router(
         &config,
         database.clone(),

@@ -4,6 +4,8 @@ pub mod admin;
 
 pub mod anonymous;
 
+pub mod bearer;
+
 pub mod api_key;
 
 pub(in crate::plugins) mod authentication_helpers;
@@ -216,6 +218,7 @@ pub use admin::{
 };
 pub use anonymous::{AnonymousConfig, AnonymousPlugin};
 pub use api_key::{ApiKeyConfig, ApiKeyPlugin};
+pub use bearer::{BearerConfig, BearerPlugin};
 pub use better_auth_core::PasswordHasher;
 pub use device_authorization::DeviceAuthorizationPlugin;
 pub use email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};

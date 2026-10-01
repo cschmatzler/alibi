@@ -9,6 +9,7 @@ pub use better_auth_api::plugins::api_key::{
     ApiKeyGenerator, ApiKeyGetter, ApiKeyPermissions, ApiKeyValidator,
     DeleteExpiredApiKeysResponse,
 };
+pub use better_auth_api::plugins::bearer::{self, BearerConfig, BearerPlugin};
 pub use better_auth_api::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
 pub use better_auth_api::plugins::email_verification::SendVerificationEmail;
 pub use better_auth_api::plugins::magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};

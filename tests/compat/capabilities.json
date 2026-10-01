@@ -284,7 +284,10 @@
           "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
           "phone signup binds integral and exponential JSON numbers to exact SQLite text",
           "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
-          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
+          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -295,7 +298,10 @@
           "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
           "api-key awaited individual exhausted deletion waits for actual adapter release and rejects without observer registration",
           "api-key deferred individual storage failure resolves caught completion retains the exact row and awaited retry preserves failure then deletes only its owner",
-          "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority"
+          "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority",
+          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle"
         ],
         "authorization": [
           "api-key shared headers select the first configured session",
@@ -303,7 +309,10 @@
           "api-key background handler failures preserve consumed usage running cleanup and genuine application 403",
           "api-key deferred individual expired deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
           "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
-          "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority"
+          "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority",
+          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle"
         ],
         "state": [
           "Discord callback exchanges without PKCE and preserves current foreign and replay state",
@@ -345,7 +354,10 @@
           "phone signup binds integral and exponential JSON numbers to exact SQLite text",
           "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
           "session reads refresh from persisted expiry and renew the signed cookie",
-          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
+          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle"
         ]
       }
     },
@@ -3017,7 +3029,10 @@
           "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor two-factor-trust-negative-challenge retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-zero-challenge retains configured cookie and database lifetimes through real trust and challenge state"
+          "two-factor two-factor-trust-zero-challenge retains configured cookie and database lifetimes through real trust and challenge state",
+          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle"
         ],
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -3064,7 +3079,10 @@
           "core redirect controls reject path controls while preserving encoded query and fragment values",
           "core redirect controls preserve whitespace absolute callbacks and explicit empty callbacks",
           "core redirect controls reject authority-shaped paths while permitting owned safe paths",
-          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
+          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle"
         ]
       }
     },
@@ -3203,10 +3221,20 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "github social sign-in redirects existing users to callbackURL",
+        "success": [
+          "github social sign-in redirects existing users to callbackURL",
+          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle"
+        ],
         "rejection": null,
         "authorization": null,
-        "state": "passkey registration authentication ownership and deletion round trip"
+        "state": [
+          "passkey registration authentication ownership and deletion round trip",
+          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle"
+        ]
       }
     },
     {
@@ -3232,7 +3260,10 @@
           "compact zero raw max-age preserves actual writer lifetime and header flooring",
           "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
           "phone signup binds integral and exponential JSON numbers to exact SQLite text",
-          "phone signup preserves raw JSON numeric bindings and rounded uniqueness"
+          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
+          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle"
         ],
         "rejection": [
           "sign up with duplicate email returns error",
@@ -3253,7 +3284,10 @@
           "official client signs in with imported TypeScript scrypt credentials",
           "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
           "phone signup binds integral and exponential JSON numbers to exact SQLite text",
-          "phone signup preserves raw JSON numeric bindings and rounded uniqueness"
+          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
+          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle"
         ]
       }
     },

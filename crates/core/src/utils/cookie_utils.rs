@@ -84,7 +84,13 @@ pub fn verify_cookie_value(value: &str, secret: &str) -> Option<String> {
         .decode_utf8()
         .ok()?;
     let (payload, signature) = decoded.rsplit_once('.')?;
-    let signature = STANDARD.decode(signature).ok()?;
+    // Better Call's atob verifier discards unused bits before padding. They
+    // do not change the authenticated HMAC bytes or weaken signature checks.
+    let decoder = base64::engine::GeneralPurpose::new(
+        &base64::alphabet::STANDARD,
+        base64::engine::GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
+    );
+    let signature = decoder.decode(signature).ok()?;
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).ok()?;
     mac.update(payload.as_bytes());
     mac.verify_slice(&signature).ok()?;

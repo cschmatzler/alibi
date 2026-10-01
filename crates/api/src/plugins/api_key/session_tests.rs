@@ -100,7 +100,7 @@ async fn test_virtual_session_creates_no_db_session() {
         BeforeRequestAction::InjectSession { session: session_2 } => {
             assert_eq!(session_2.user_id, fixture_user.id);
         }
-        BeforeRequestAction::Respond(_) => {
+        BeforeRequestAction::Respond(_) | BeforeRequestAction::ReplaceHeaders { .. } => {
             panic!("Expected InjectSession, got Respond");
         }
     }
@@ -179,7 +179,7 @@ async fn test_virtual_session_on_get_session() {
                 user.id
             );
         }
-        BeforeRequestAction::InjectSession { .. } => {
+        BeforeRequestAction::InjectSession { .. } | BeforeRequestAction::ReplaceHeaders { .. } => {
             panic!("Expected Respond for /get-session, got InjectSession");
         }
     }
