@@ -93,6 +93,7 @@ mod api_key_background_fixture;
 mod api_key_generation_fixture;
 mod api_key_hook_fixture;
 mod apple_provider_fixture;
+mod atlassian_provider_fixture;
 mod device_fixture;
 mod google_id_token_fixture;
 mod invitation_fixture;
@@ -777,6 +778,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let admin_permission_router =
         admin_permission_fixture::router(&config, database.clone()).await?;
     let (oauth_proxy_router, oauth_proxy_reset) = oauth_proxy_fixture::router(&config).await?;
+    let (atlassian_router, atlassian_reset) =
+        atlassian_provider_fixture::router(&config, database.clone()).await?;
     let (apple_router, apple_reset) =
         apple_provider_fixture::router(&config, database.clone()).await?;
     let (social_provider_router, social_provider_reset) =
@@ -1214,12 +1217,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let github_profile = github_profile_for_reset.clone();
                 let social_id_token_valid = social_id_token_valid_for_reset.clone();
                 let database = database_for_reset.clone();
+                let atlassian_reset=atlassian_reset.clone();
                 let apple_reset = apple_reset.clone();
                 let social_provider_reset = social_provider_reset.clone();
                 let oauth_proxy_reset = oauth_proxy_reset.clone();
                 let invitation_acceptance_reset = invitation_acceptance_reset.clone();
                 let anonymous_reset = anonymous_reset.clone();
                 async move {
+                    atlassian_reset.reset().await;
                     apple_reset.reset().await;
                     social_provider_reset.reset().await;
                     if let Err(error) = oauth_proxy_reset.reset().await {
@@ -1827,6 +1832,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(deletion_hooks_router)
         .nest("/api/auth", auth_router)
         .with_state(auth)
+        .merge(atlassian_router)
         .merge(apple_router)
         .merge(social_provider_router)
         .merge(oauth_proxy_router)

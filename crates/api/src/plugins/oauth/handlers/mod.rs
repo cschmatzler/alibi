@@ -235,9 +235,15 @@ fn build_authorization_url(
     if provider.authorization.is_none() || !effective_scopes.is_empty() {
         _ = url.query_pairs_mut().append_pair("scope", &scope_str);
     }
-    _ = url
-        .query_pairs_mut()
-        .append_pair("redirect_uri", callback_url);
+    _ = url.query_pairs_mut().append_pair(
+        "redirect_uri",
+        provider
+            .authorization
+            .as_ref()
+            .and_then(|policy| policy.redirect_uri.as_deref())
+            .filter(|uri| !uri.is_empty())
+            .unwrap_or(callback_url),
+    );
     if provider
         .authorization
         .as_ref()
@@ -411,6 +417,12 @@ pub(in crate::plugins) async fn validate_authorization_code_via_provider(
     code_verifier: Option<&str>,
     device_id: Option<&str>,
 ) -> AuthResult<OAuthTokenSet> {
+    let redirect_uri = provider
+        .authorization
+        .as_ref()
+        .and_then(|policy| policy.redirect_uri.as_deref())
+        .filter(|uri| !uri.is_empty())
+        .unwrap_or(redirect_uri);
     let mut form: Vec<(&str, &str)> = vec![
         ("grant_type", "authorization_code"),
         ("code", code),

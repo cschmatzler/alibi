@@ -155,7 +155,25 @@
           "apple token transport preserves array-scope expiry and scope",
           "apple token transport preserves comma-scope expiry and scope",
           "apple provider refresh rotates stored credentials and excludes foreign owners",
-          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots"
+          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
+          "atlassian absent token expiry has no fabricated default",
+          "atlassian actual userinfo empty-name mapping and callback replay",
+          "atlassian actual userinfo mapped mapping and callback replay",
+          "atlassian actual userinfo missing-image mapping and callback replay",
+          "atlassian actual userinfo missing-name mapping and callback replay",
+          "atlassian actual userinfo named mapping and callback replay",
+          "atlassian actual userinfo null-image mapping and callback replay",
+          "atlassian actual userinfo null-name mapping and callback replay",
+          "atlassian actual userinfo numeric-image mapping and callback replay",
+          "atlassian actual userinfo numeric-name mapping and callback replay",
+          "atlassian actual userinfo numeric-subject mapping and callback replay",
+          "atlassian actual userinfo zero-image mapping and callback replay",
+          "atlassian actual userinfo zero-name mapping and callback replay",
+          "atlassian configured redirect URI is retained in token exchange",
+          "atlassian explicit signup admits disabled implicit signup",
+          "atlassian fractional token expiry has no fabricated default",
+          "atlassian refresh rotates owned credentials and local logout revokes session",
+          "atlassian zero token expiry has no fabricated default"
         ],
         "rejection": [
           "social callback rejects consumed database state while retaining the issued session and foreign state",
@@ -166,7 +184,25 @@
           "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
           "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
           "apple real code exchange persists tokens and consumes callback state",
-          "apple rejects wrong provider and callback state without creating identities"
+          "apple rejects wrong provider and callback state without creating identities",
+          "atlassian actual userinfo empty-name mapping and callback replay",
+          "atlassian actual userinfo mapped mapping and callback replay",
+          "atlassian actual userinfo missing-image mapping and callback replay",
+          "atlassian actual userinfo missing-name mapping and callback replay",
+          "atlassian actual userinfo named mapping and callback replay",
+          "atlassian actual userinfo null-image mapping and callback replay",
+          "atlassian actual userinfo null-name mapping and callback replay",
+          "atlassian actual userinfo numeric-image mapping and callback replay",
+          "atlassian actual userinfo numeric-name mapping and callback replay",
+          "atlassian actual userinfo numeric-subject mapping and callback replay",
+          "atlassian actual userinfo zero-image mapping and callback replay",
+          "atlassian actual userinfo zero-name mapping and callback replay",
+          "atlassian rejects empty-subject without foreign writes",
+          "atlassian rejects missing-subject without foreign writes",
+          "atlassian rejects null-subject without foreign writes",
+          "atlassian rejects userinfo-status without foreign writes",
+          "atlassian unsupported ID token and invalid provider/state produce no requests",
+          "atlassian mapped invalid subjects reach application mapper before denial"
         ],
         "authorization": [
           "social linking rejects missing tampered and revoked sessions without changing any principal",
@@ -175,7 +211,25 @@
           "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
           "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
           "apple real code exchange persists tokens and consumes callback state",
-          "apple rejects wrong provider and callback state without creating identities"
+          "apple rejects wrong provider and callback state without creating identities",
+          "atlassian actual userinfo empty-name mapping and callback replay",
+          "atlassian actual userinfo mapped mapping and callback replay",
+          "atlassian actual userinfo missing-image mapping and callback replay",
+          "atlassian actual userinfo missing-name mapping and callback replay",
+          "atlassian actual userinfo named mapping and callback replay",
+          "atlassian actual userinfo null-image mapping and callback replay",
+          "atlassian actual userinfo null-name mapping and callback replay",
+          "atlassian actual userinfo numeric-image mapping and callback replay",
+          "atlassian actual userinfo numeric-name mapping and callback replay",
+          "atlassian actual userinfo numeric-subject mapping and callback replay",
+          "atlassian actual userinfo zero-image mapping and callback replay",
+          "atlassian actual userinfo zero-name mapping and callback replay",
+          "atlassian rejects empty-subject without foreign writes",
+          "atlassian rejects missing-subject without foreign writes",
+          "atlassian rejects null-subject without foreign writes",
+          "atlassian rejects userinfo-status without foreign writes",
+          "atlassian unsupported ID token and invalid provider/state produce no requests",
+          "atlassian mapped invalid subjects reach application mapper before denial"
         ],
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -195,7 +249,25 @@
           "apple token transport preserves array-scope expiry and scope",
           "apple token transport preserves comma-scope expiry and scope",
           "apple provider refresh rotates stored credentials and excludes foreign owners",
-          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots"
+          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
+          "atlassian absent token expiry has no fabricated default",
+          "atlassian actual userinfo empty-name mapping and callback replay",
+          "atlassian actual userinfo mapped mapping and callback replay",
+          "atlassian actual userinfo missing-image mapping and callback replay",
+          "atlassian actual userinfo missing-name mapping and callback replay",
+          "atlassian actual userinfo named mapping and callback replay",
+          "atlassian actual userinfo null-image mapping and callback replay",
+          "atlassian actual userinfo null-name mapping and callback replay",
+          "atlassian actual userinfo numeric-image mapping and callback replay",
+          "atlassian actual userinfo numeric-name mapping and callback replay",
+          "atlassian actual userinfo numeric-subject mapping and callback replay",
+          "atlassian actual userinfo zero-image mapping and callback replay",
+          "atlassian actual userinfo zero-name mapping and callback replay",
+          "atlassian configured redirect URI is retained in token exchange",
+          "atlassian fractional token expiry has no fabricated default",
+          "atlassian unverified email gate stores account without issuing session",
+          "atlassian zero token expiry has no fabricated default",
+          "atlassian mapped invalid subjects reach application mapper before denial"
         ]
       }
     },
@@ -2977,7 +3049,8 @@
           "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
           "apple provider refresh rotates stored credentials and excludes foreign owners",
           "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "atlassian refresh rotates owned credentials and local logout revokes session"
         ],
         "rejection": [
           "account token routes reject conflicting and foreign account selectors",
@@ -2986,7 +3059,8 @@
           "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
           "apple provider refresh rotates stored credentials and excludes foreign owners",
           "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "atlassian refresh rotates owned credentials and local logout revokes session"
         ],
         "authorization": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
@@ -3001,7 +3075,8 @@
           "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
           "apple provider refresh rotates stored credentials and excludes foreign owners",
           "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "atlassian refresh rotates owned credentials and local logout revokes session"
         ]
       }
     },
@@ -3378,7 +3453,31 @@
           "apple profile mapping receives supplied name and cannot replace raw subject",
           "apple signed ID token js-trim profile and ownership",
           "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
-          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots"
+          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
+          "atlassian absent token expiry has no fabricated default",
+          "atlassian actual userinfo empty-name mapping and callback replay",
+          "atlassian actual userinfo mapped mapping and callback replay",
+          "atlassian actual userinfo missing-image mapping and callback replay",
+          "atlassian actual userinfo missing-name mapping and callback replay",
+          "atlassian actual userinfo named mapping and callback replay",
+          "atlassian actual userinfo null-image mapping and callback replay",
+          "atlassian actual userinfo null-name mapping and callback replay",
+          "atlassian actual userinfo numeric-image mapping and callback replay",
+          "atlassian actual userinfo numeric-name mapping and callback replay",
+          "atlassian actual userinfo numeric-subject mapping and callback replay",
+          "atlassian actual userinfo zero-image mapping and callback replay",
+          "atlassian actual userinfo zero-name mapping and callback replay",
+          "atlassian configured redirect URI is retained in token exchange",
+          "atlassian explicit signup admits disabled implicit signup",
+          "atlassian fractional token expiry has no fabricated default",
+          "atlassian published configured authorization audience scopes and PKCE",
+          "atlassian published configured-endpoint authorization audience scopes and PKCE",
+          "atlassian published default authorization audience scopes and PKCE",
+          "atlassian published disabled-configured authorization audience scopes and PKCE",
+          "atlassian published disabled-scope authorization audience scopes and PKCE",
+          "atlassian refresh rotates owned credentials and local logout revokes session",
+          "atlassian zero token expiry has no fabricated default",
+          "atlassian mapped invalid subjects reach application mapper before denial"
         ],
         "rejection": [
           "social sign-in rejects invalid callbackURL",
@@ -3400,7 +3499,8 @@
           "Google default genuine cryptographic and claim negatives never mutate any principal",
           "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
           "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner"
+          "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner",
+          "atlassian unsupported ID token and invalid provider/state produce no requests"
         ],
         "authorization": [
           "social sign-in rejects invalid callbackURL",
@@ -3491,7 +3591,24 @@
           "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
           "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
           "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner"
+          "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner",
+          "atlassian absent token expiry has no fabricated default",
+          "atlassian actual userinfo empty-name mapping and callback replay",
+          "atlassian actual userinfo mapped mapping and callback replay",
+          "atlassian actual userinfo missing-image mapping and callback replay",
+          "atlassian actual userinfo missing-name mapping and callback replay",
+          "atlassian actual userinfo named mapping and callback replay",
+          "atlassian actual userinfo null-image mapping and callback replay",
+          "atlassian actual userinfo null-name mapping and callback replay",
+          "atlassian actual userinfo numeric-image mapping and callback replay",
+          "atlassian actual userinfo numeric-name mapping and callback replay",
+          "atlassian actual userinfo numeric-subject mapping and callback replay",
+          "atlassian actual userinfo zero-image mapping and callback replay",
+          "atlassian actual userinfo zero-name mapping and callback replay",
+          "atlassian configured redirect URI is retained in token exchange",
+          "atlassian fractional token expiry has no fabricated default",
+          "atlassian unverified email gate stores account without issuing session",
+          "atlassian zero token expiry has no fabricated default"
         ]
       }
     },
@@ -3542,7 +3659,8 @@
           "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
           "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
           "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
-          "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures"
+          "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures",
+          "atlassian refresh rotates owned credentials and local logout revokes session"
         ],
         "rejection": null,
         "authorization": [
@@ -3554,7 +3672,8 @@
           "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
           "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
           "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
-          "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures"
+          "remote JWT authentication signing retains authoritative owner issuer audience revocation and callback failures",
+          "atlassian refresh rotates owned credentials and local logout revokes session"
         ]
       }
     },
