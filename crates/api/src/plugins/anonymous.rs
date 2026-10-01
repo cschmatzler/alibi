@@ -372,7 +372,12 @@ impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
                     &AnonymousLink {
                         anonymous_user: ctx.user_view(&old_user),
                         anonymous_session: ctx.session_view(&old_session),
-                        new_user: ctx.user_view(&issued.user),
+                        new_user: issued
+                            .user_view
+                            .as_ref()
+                            .filter(|view| view.id == issued.user.id().as_ref())
+                            .cloned()
+                            .unwrap_or_else(|| ctx.user_view(&issued.user)),
                         new_session: ctx.session_view(&issued.session),
                     },
                     req,

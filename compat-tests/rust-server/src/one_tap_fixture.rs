@@ -27,6 +27,9 @@ use std::{
 use tokio::sync::Mutex;
 const JWKS: &str = include_str!("../../fixtures/one-tap/jwks.json");
 struct LocalKeys(String);
+pub(super) fn local_keys(base_url: &str) -> Arc<dyn GoogleJwksSource> {
+    Arc::new(LocalKeys(format!("{base_url}/__test/one-tap/jwks")))
+}
 #[async_trait]
 impl GoogleJwksSource for LocalKeys {
     async fn fetch_keys(&self) -> Result<Vec<Value>, String> {

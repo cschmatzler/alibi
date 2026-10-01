@@ -1,6 +1,8 @@
 use jsonwebtoken::errors::ErrorKind;
 
-use crate::plugins::helpers::{SessionIssueError, issue_user_session};
+use crate::plugins::helpers::{
+    SessionIssueError, issue_user_session, record_completed_session_user_view,
+};
 use better_auth_core::wire::{SessionView, UserView};
 use better_auth_core::{AuthContext, AuthError, AuthResult, UpdateUser};
 use better_auth_core::{AuthSession, AuthUser};
@@ -164,17 +166,18 @@ fn verification_error(
     }
 }
 
-pub(super) async fn verify_email_core<U, S>(
+pub(super) async fn verify_email_core<U, S, A>(
     query: &VerifyEmailQuery,
     current_session: Option<(U, S)>,
     config: &EmailVerificationConfig,
     ip_address: Option<String>,
     user_agent: Option<String>,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<A>,
 ) -> AuthResult<VerifyEmailResult>
 where
     U: AuthUser,
     S: AuthSession,
+    A: better_auth_core::AuthSchema,
 {
     let current_session =
         current_session.map(|(user, session)| (ctx.user_view(&user), ctx.session_view(&session)));
@@ -383,28 +386,23 @@ where
     }
 
     let session_token = if config.auto_sign_in_after_verification {
-        if let Some((session_user, session)) = current_session {
-            if session_user.email().unwrap_or_default() == claims.email {
+        match current_session {
+            Some((session_user, session))
+                if session_user.email().unwrap_or_default() == claims.email =>
+            {
                 Some(session.token().to_string())
-            } else {
-                Some(
-                    issue_user_session(ctx, &user.id(), ip_address, user_agent)
-                        .await
-                        .map_err(SessionIssueError::into_auth_error)?
-                        .session
-                        .token()
-                        .to_string(),
-                )
             }
-        } else {
-            Some(
-                issue_user_session(ctx, &user.id(), ip_address, user_agent)
+            _ => {
+                let issued = issue_user_session(ctx, &user.id(), ip_address, user_agent)
                     .await
-                    .map_err(SessionIssueError::into_auth_error)?
-                    .session
-                    .token()
-                    .to_string(),
-            )
+                    .map_err(SessionIssueError::into_auth_error)?;
+                // Source publishes the original lookup snapshot with only the
+                // verification flag changed, even though the stored row is newer.
+                let mut original_view = ctx.user_view(&user);
+                original_view.email_verified = true;
+                record_completed_session_user_view::<A>(&user, &issued.session, original_view);
+                Some(issued.session.token().to_string())
+            }
         }
     } else {
         None

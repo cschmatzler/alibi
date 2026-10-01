@@ -1,14 +1,23 @@
 //! Application-owned anonymous identity/link handlers and actual stored-state observer.
 use crate::TestSchema;
 use async_trait::async_trait;
-use axum::{routing::get, Json, Router};
+use axum::{extract::Query, routing::get, Json, Router};
 use better_auth::{
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{
         anonymous::{AnonymousConfig, AnonymousIdentity, AnonymousLink, LinkAnonymousAccount},
+        email_otp::{EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, SendEmailOtp},
+        email_verification::SendVerificationEmail,
+        magic_link::{MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, SendMagicLink},
         oauth::OAuthProvider,
-        AnonymousPlugin, EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin,
+        one_tap::{OneTapClientId, OneTapConfig, OneTapPlugin},
+        phone_number::{
+            PhoneNumberConfig, PhoneNumberPlugin, PhoneOtpDelivery, PhoneSignupIdentity,
+            SendPhoneOtp,
+        },
+        AnonymousPlugin, EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, PasskeyPlugin,
+        SessionManagementPlugin,
     },
     AuthBuilder, AuthConfig, AuthError, AuthResult,
 };
@@ -20,6 +29,7 @@ use better_auth_seaorm::{
 };
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc, Mutex,
@@ -29,16 +39,83 @@ use std::sync::{
 pub(super) struct Fixture {
     sequence: Arc<AtomicUsize>,
     events: Arc<Mutex<Vec<Value>>>,
+    deliveries: Arc<Mutex<HashMap<String, Value>>>,
 }
 impl Fixture {
     pub(super) fn reset(&self) {
         self.sequence.store(0, Ordering::SeqCst);
         self.events.lock().expect("anonymous receipt lock").clear();
+        self.deliveries
+            .lock()
+            .expect("anonymous delivery lock")
+            .clear();
     }
 }
 struct Application {
     mode: &'static str,
     fixture: Fixture,
+}
+impl Application {
+    fn deliver(&self, key: String, value: Value) {
+        let _ = self
+            .fixture
+            .deliveries
+            .lock()
+            .expect("anonymous delivery lock")
+            .insert(key, value);
+    }
+}
+#[async_trait]
+impl SendMagicLink for Application {
+    async fn send(&self, value: &MagicLinkDelivery) -> AuthResult<()> {
+        self.deliver(format!("magic:{}", value.email), json!({"email":value.email,"url":value.url,"token":value.token,"metadata":value.metadata}));
+        Ok(())
+    }
+}
+#[async_trait]
+impl SendEmailOtp for Application {
+    async fn send(&self, value: &EmailOtpDelivery) -> AuthResult<()> {
+        self.deliver(
+            format!("{}:{}", value.otp_type.as_str(), value.email),
+            json!({"email":value.email,"otp":value.otp,"type":value.otp_type.as_str()}),
+        );
+        Ok(())
+    }
+}
+#[async_trait]
+impl SendPhoneOtp for Application {
+    async fn send(&self, value: &PhoneOtpDelivery) -> AuthResult<()> {
+        self.deliver(
+            format!("phone:{}", value.phone_number),
+            json!({"phoneNumber":value.phone_number,"code":value.code}),
+        );
+        Ok(())
+    }
+}
+impl PhoneSignupIdentity for Application {
+    fn temporary_email(&self, phone: &str) -> String {
+        format!("{phone}@phone.fixture.test")
+    }
+    fn temporary_name(&self, phone: &str) -> Option<String> {
+        Some(phone.into())
+    }
+}
+#[async_trait]
+impl SendVerificationEmail for Application {
+    async fn send(
+        &self,
+        user: &better_auth_core::wire::UserView,
+        url: &str,
+        token: &str,
+    ) -> AuthResult<()> {
+        if let Some(email) = user.email.as_ref() {
+            self.deliver(
+                format!("verification:{email}"),
+                json!({"email":email,"url":url,"token":token}),
+            );
+        }
+        Ok(())
+    }
 }
 #[async_trait]
 impl AnonymousIdentity for Application {
@@ -179,6 +256,7 @@ pub(super) async fn router(
         "snapshot",
         "invalid-email",
         "empty-name",
+        "methods",
     ] {
         let path = format!("/__test/profiles/anonymous-{mode}/api/auth");
         let settings = config.clone().base_path(&path);
@@ -191,27 +269,74 @@ pub(super) async fn router(
             "fixture-social-secret",
             &format!("{}/__test/social-provider/gitlab", config.base_url),
         );
-        let auth = Arc::new(
-            AuthBuilder::<TestSchema>::new(settings.clone())
-                .store(
-                    SeaOrmStore::<TestSchema>::new(settings, database.clone())
-                        .with_hooks(vec![Arc::new(Hooks { mode })]),
-                )
-                .rate_limit(RateLimitConfig::new().enabled(false))
-                .plugin(EmailPasswordPlugin::new().enable_username(false))
-                .plugin(SessionManagementPlugin::new())
-                .plugin(OAuthPlugin::new().add_provider("gitlab", provider))
-                .plugin(AnonymousPlugin::with_config(AnonymousConfig {
-                    identity: Some(application.clone()),
-                    on_link_account: Some(application),
-                    disable_delete_anonymous_user: mode == "disabled",
+        let mut builder = AuthBuilder::<TestSchema>::new(settings.clone())
+            .store(
+                SeaOrmStore::<TestSchema>::new(settings, database.clone())
+                    .with_hooks(vec![Arc::new(Hooks { mode })]),
+            )
+            .rate_limit(RateLimitConfig::new().enabled(false))
+            .plugin(EmailPasswordPlugin::new().enable_username(false))
+            .plugin(SessionManagementPlugin::new())
+            .plugin(OAuthPlugin::new().add_provider("gitlab", provider))
+            .plugin(AnonymousPlugin::with_config(AnonymousConfig {
+                identity: Some(application.clone()),
+                on_link_account: Some(application.clone()),
+                disable_delete_anonymous_user: mode == "disabled",
+                ..Default::default()
+            }));
+        if mode == "methods" {
+            builder = builder
+                .plugin(MagicLinkPlugin::new(MagicLinkConfig {
+                    send_magic_link: Some(application.clone()),
                     ..Default::default()
                 }))
-                .build()
-                .await?,
-        );
+                .plugin(EmailOtpPlugin::new(EmailOtpConfig {
+                    send_verification_otp: Some(application.clone()),
+                    ..Default::default()
+                }))
+                .plugin(PhoneNumberPlugin::new(PhoneNumberConfig {
+                    send_otp: Some(application.clone()),
+                    sign_up_on_verification: Some(application.clone()),
+                    ..Default::default()
+                }))
+                .plugin(
+                    EmailVerificationPlugin::new()
+                        .send_on_sign_up(false)
+                        .auto_sign_in_after_verification(true)
+                        .custom_send_verification_email(application),
+                )
+                .plugin(PasskeyPlugin::new())
+                .plugin(OneTapPlugin::with_config(OneTapConfig {
+                    client_id: Some(OneTapClientId::Single("one-tap-plugin-client".into())),
+                    jwks_source: Some(crate::one_tap_fixture::local_keys(&config.base_url)),
+                    ..Default::default()
+                }));
+        }
+        let auth = Arc::new(builder.build().await?);
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
+    let delivery = fixture.clone();
+    router = router.route(
+        "/__test/anonymous/delivery",
+        get(move |Query(query): Query<HashMap<String, String>>| {
+            let delivery = delivery.clone();
+            async move {
+                Json(
+                    query
+                        .get("key")
+                        .and_then(|key| {
+                            delivery
+                                .deliveries
+                                .lock()
+                                .expect("anonymous delivery lock")
+                                .get(key)
+                                .cloned()
+                        })
+                        .unwrap_or(Value::Null),
+                )
+            }
+        }),
+    );
     let observer = fixture.clone();
     router = router.route("/__test/anonymous/state", get(move || {
         let database = database.clone(); let observer = observer.clone(); async move {
