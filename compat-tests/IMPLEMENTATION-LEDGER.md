@@ -12,6 +12,27 @@ username-availability/two-factor-disable flows. Wider pinned parity work resumes
 after these priorities are complete. OAuth authorization server, MCP,
 CIMD, SSO, SCIM, Stripe, i18n, Expo and Electron are excluded from this work.
 
+## Current integration checkpoint (2026-10-01)
+
+Delivered master `a3a9f568` includes PRs #114–116: raw-none COSE decoding,
+admin impersonation authority and physical duplicate memberships. Its tree is
+identical to validated `f2e16ec5`: 543 SDK scenarios / 36,788 assertions,
+42 harness tests / 344 assertions, two Chromium tests / 22 assertions and
+78.788518% source lines (29,864 / 37,904). There are 1,724 required evidence
+entries; the four missing route identities remain unresolved.
+
+| Pending slice | Owner / review | Dependencies | Evidence / unresolved work |
+| --- | --- | --- | --- |
+| OAuth rejection, scopes and Discord profile (#117–119) | Coordinator / Phone review | Delivered OAuth account fixes | Native, Source-self and differential owners pass; strict fields, scopes, PKCE and complete account ownership remain observed. Combined gate pending. |
+| Membership limits and raw pagination (#120) | Phone / SIWE review | Physical duplicate memberships | Five bounded scenarios / 608 assertions retain fixed/resolved numeric policies and genuine SQL pages. Source-self passes; no comparison tolerance changed. Combined gate pending. |
+| Core callback URLs and HTTP base origin (#121) | Coordinator / SIWE review | Existing origin/ceremony guards | Three differential owners / 526 assertions plus all 30 core scenarios / 878 assertions; native custom-scheme contract retained. Combined gate pending. |
+| OAuth wire protocol and GitLab (#122–123) | JWT / coordinator review | Core origin and authorization policies | OAuth family 25 / 2,108; Source-self 5 / 914, native 18 and actual raw state issuance/consumption/replay probes. Internal state-key encoding remains explicitly bounded. |
+| Staged invitation acceptance (#124) | Phone / SIWE review; coordinator integration | Membership policy / storage CAS | Primary 23 / 2,532; organization family 145 / 12,850, API 335, SeaORM 64, manual schema 7 and two driver checks. Cache cookies and additional adapters remain bounded. |
+| Account-list timestamp precision | Phone / coordinator integration | Existing millisecond date serializer | The attempted 558-scenario gate passed 557 but exposed official-client parsing of six-digit account timestamps. Deterministic production regression and repair are in progress; that run is not a passing gate. |
+| Anonymous authentication | JWT / coordinator contracts | Typed request-local completed snapshots and authenticated OAuth context | Public cloned-request isolation controls pass; implementation and cross-method lifecycle proof continue. |
+| Session cookie cache | SIWE audit | Generic cached-user snapshot / physical authorization contracts | Six actual Source format/preference profiles, revocation, bypass and tamper probes; native implementation remains. |
+| Encrypted OAuth persistence | Coordinator | GitLab local provider and pinned public crypto | Actual Source proves XChaCha20 access/refresh persistence, plaintext ID tokens and guarded plaintext reads. Differential controls and implementation continue. |
+
 ## Integrated baseline
 
 Master `ae4aa46` includes scrypt-only password interoperability (Argon2 support
