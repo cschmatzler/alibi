@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use chrono::Utc;
+use sea_orm::sea_query::{Expr, ExprTrait};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
     IntoActiveModel, QueryFilter, QuerySelect, TransactionTrait,
@@ -265,11 +266,71 @@ where
         Ok(())
     }
 
-    async fn list_users(&self, params: ListUsersParams) -> AuthResult<(Vec<S::User>, usize)> {
-        let models = <S::User as SeaOrmUserModel>::Entity::find()
-            .all(self.connection())
-            .await
-            .map_err(map_db_err)?;
+    async fn list_users(&self, mut params: ListUsersParams) -> AuthResult<(Vec<S::User>, usize)> {
+        use better_auth_core::UserFilterValue;
+        let mut query = <S::User as SeaOrmUserModel>::Entity::find();
+        if let Some(value) = &params.filter_value {
+            let operator = params.filter_operator.as_deref().unwrap_or("eq");
+            if matches!(value, UserFilterValue::Multiple(_)) || matches!(operator, "in" | "not_in")
+            {
+                let field = params
+                    .filter_field
+                    .as_deref()
+                    .filter(|field| !field.is_empty())
+                    .unwrap_or("email");
+                let column = S::User::list_users_column(field).ok_or_else(|| {
+                    AuthError::bad_request("User filter field has no configured column")
+                })?;
+                let operands = match value {
+                    UserFilterValue::Multiple(values) => values.as_slice(),
+                    UserFilterValue::Scalar(value) if operator != "in" => {
+                        std::slice::from_ref(value)
+                    }
+                    UserFilterValue::Scalar(_) => {
+                        return Err(AuthError::bad_request("Value must be an array"));
+                    }
+                };
+                // The upstream schema transform coerces a scalar string on a
+                // boolean field before the adapter binds it. Array operands
+                // retain their original strings. The actual model column type
+                // also supports custom boolean fields and physical renames.
+                let bindings: Vec<sea_orm::Value> = if matches!(value, UserFilterValue::Scalar(_))
+                    && matches!(
+                        column.def().get_column_type(),
+                        sea_orm::sea_query::ColumnType::Boolean
+                    ) {
+                    operands
+                        .iter()
+                        .map(|value| (value == "true").into())
+                        .collect()
+                } else {
+                    operands.iter().cloned().map(Into::into).collect()
+                };
+                let tuple = || Expr::tuple(bindings.iter().cloned().map(Expr::val));
+                let condition = match operator {
+                    "in" => column.is_in(bindings.iter().cloned()),
+                    "not_in" => column.is_not_in(bindings.iter().cloned()),
+                    // The pinned adapter interpolates the complete array's
+                    // comma-joined value into a bound LIKE pattern. Actual SQL
+                    // retains backend case, wildcard and NULL semantics.
+                    "contains" => column.like(format!("%{}%", operands.join(","))),
+                    "starts_with" => column.like(format!("{}%", operands.join(","))),
+                    "ends_with" => column.like(format!("%{}", operands.join(","))),
+                    "eq" => Expr::col(column).eq(tuple()),
+                    "ne" => Expr::col(column).ne(tuple()),
+                    "lt" => Expr::col(column).lt(tuple()),
+                    "lte" => Expr::col(column).lte(tuple()),
+                    "gt" => Expr::col(column).gt(tuple()),
+                    "gte" => Expr::col(column).gte(tuple()),
+                    _ => return Err(AuthError::bad_request("Unsupported user filter operator")),
+                };
+                query = query.filter(condition);
+                // Only this already executed filter is removed from the common
+                // paging/search helper; other fields and total remain intact.
+                params.filter_value = None;
+            }
+        }
+        let models = query.all(self.connection()).await.map_err(map_db_err)?;
 
         Ok(better_auth_core::user_query::apply_list_users(
             models, &params,

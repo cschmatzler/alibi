@@ -369,7 +369,10 @@ impl AdminPlugin {
             sort_by: req.query.get("sortBy").cloned(),
             sort_direction: req.query.get("sortDirection").cloned(),
             filter_field: req.query.get("filterField").cloned(),
-            filter_value: req.query.get("filterValue").cloned(),
+            filter_value: req.query_values("filterValue").map(|values| match values {
+                [value] => better_auth_core::UserFilterValue::Scalar(value.clone()),
+                values => better_auth_core::UserFilterValue::Multiple(values.to_vec()),
+            }),
             filter_operator: req.query.get("filterOperator").cloned(),
         };
         let response = list_users_core(&query, ctx).await?;

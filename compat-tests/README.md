@@ -168,3 +168,12 @@ ENS behavior, bans, and overlapping verification. Run
 The [SIWE implementation audit](audits/siwe.md) records the pinned runtime's
 global nonce contract and remaining storage/schema/provider boundaries.
 OpenAPI/reference whole-document proof and remaining configuration branches are tracked in [the OpenAPI audit](audits/open-api.md).
+
+Native user-list filters accept `UserFilterValue::Scalar(String)` or
+`UserFilterValue::Multiple(Vec<String>)`; existing scalar native callers can use
+`filter_value: Some("value".into())`. SeaORM binds array filters to actual model
+columns. `AuthEntity` derives bindings for declared application fields, including
+physical column renames. Manual `SeaOrmUserModel` implementations can override
+`list_users_column` to add typed plugin/application columns. See the
+[admin array-filter audit](audits/admin-array-filters.md) for actual SQL, SDK,
+custom-model and authorization evidence and the remaining adapter boundaries.

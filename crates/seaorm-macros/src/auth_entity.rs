@@ -112,6 +112,7 @@ pub(crate) fn derive_auth_entity(input: &DeriveInput) -> TokenStream {
             ident,
             &has,
             &optional,
+            fields,
             &extra_not_set,
             &seaorm_root,
             &core_root,
@@ -135,10 +136,57 @@ fn gen_user(
     ident: &Ident,
     has: &dyn Fn(&str) -> bool,
     optional: &dyn Fn(&str) -> bool,
+    fields: &syn::FieldsNamed,
     extras: &[TokenStream],
     seaorm_root: &TokenStream,
     core_root: &TokenStream,
 ) -> TokenStream {
+    let mut list_columns = Vec::new();
+    for field in &fields.named {
+        let Some(name) = field.ident.as_ref() else {
+            continue;
+        };
+        let text = name.to_string();
+        let text = text.trim_start_matches("r#");
+        let mut parts = text.split('_');
+        let mut camel = parts.next().unwrap_or_default().to_owned();
+        for part in parts {
+            let mut letters = part.chars();
+            if let Some(first) = letters.next() {
+                camel.extend(first.to_uppercase());
+            }
+            camel.extend(letters);
+        }
+        let mut enum_name = None;
+        for attribute in field
+            .attrs
+            .iter()
+            .filter(|attribute| attribute.path().is_ident("sea_orm"))
+        {
+            let parsed = attribute.parse_nested_meta(|meta| {
+                if meta.path.is_ident("enum_name") {
+                    let value = meta.value()?.parse::<LitStr>()?;
+                    enum_name = Some(syn::parse_str::<Ident>(&value.value())?);
+                } else {
+                    // Consume other SeaORM values while preserving bare flags.
+                    let _: Option<syn::Expr> = meta.value().and_then(|value| value.parse()).ok();
+                }
+                Ok(())
+            });
+            if let Err(error) = parsed {
+                return error.to_compile_error();
+            }
+        }
+        let column = match enum_name {
+            Some(column) => quote! { Some(Column::#column) },
+            // Let SeaORM own its identifier/case rules. FromStr recognizes the
+            // generated column's Rust snake/camel aliases even when SQL names
+            // use column_name or model-level rename_all. Raw prefixes are not
+            // part of the application field name.
+            None => quote! { <Column as ::std::str::FromStr>::from_str(#text).ok() },
+        };
+        list_columns.push(quote! { #camel => #column, });
+    }
     // AuthUser trait — plugin fields return defaults when absent
     let username_impl = if has("username") {
         quote! { fn username(&self) -> Option<&str> { self.username.as_deref() } }
@@ -285,6 +333,9 @@ fn gen_user(
             #prepare_json_metadata
             fn name_column() -> Self::Column { Column::Name }
             fn created_at_column() -> Self::Column { Column::CreatedAt }
+            fn list_users_column(field: &str) -> Option<Self::Column> {
+                match field { #(#list_columns)* _ => None }
+            }
             fn parse_id(id: &str) -> #core_root::AuthResult<Self::Id> {
                 Ok(id.to_string())
             }
