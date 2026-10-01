@@ -27,6 +27,12 @@ issued/read/persisted surrogate cuts failed the prefix relationship. The final
 owner passes, including single-side tampering and matching invalid bytes/hash
 corruption on both sides. Plain and hashed storage modes are both valid; a mode
 change on just one side fails, while equal modes still require real derivation.
+Each negative control asserts its owning mismatch path and reason. Replacing an
+issuance with the real foreign credential must fail independent hash derivation;
+missing issuance must fail that derivation rather than merely field presence.
+Application metadata cannot supply the public prefix proof. Matching invalid
+storage type, hash, bytes and readback on both sides still fail their independent
+checks. These controls were tightened only after the frozen canonical gate ended.
 
 All 71 harness owners pass with 754 assertions, and the client TypeScript check
 passes. The first full harness attempt had one environment failure because this
@@ -42,8 +48,31 @@ pass. Both runs execute 2,624 assertions. Logs are
 process runs in that proof. It retains the full observations and all raw traces;
 the #204 production changes are not prerequisites for these actual Source calls.
 
-The canonical gate will be executed on the committed immutable head, and its
-actual terminal result will be reported separately from these focused passes.
+The actual canonical gate on immutable `c17ad1092b417fd6d530208f93157fdf56976b9e`
+completed with exit 100. Default tests 794/794, optional tests 845/845, fixture
+tests 2/2, harness 71/71 (754 assertions), Axum 36/36, endpoints 3/3, inventory
+2/2, and default/optional strict checks passed. The full SDK ran 883 tests with
+879 passing, four failing, and 64,100 assertions. The exact failures were:
+
+- `api-key server validators resolve issuing configuration and preserve explicit rejection errors`
+- `generated lifecycle seed 12648430 profile default`
+- `generated lifecycle seed 12648430 profile session-no-refresh`
+- `generated lifecycle seed 12648430 profile session-deferred`
+
+These are the independently observed existing validator transport and generated
+lifecycle failures. The complete gate is not green; later docs and coverage
+stages were not reached. Its unchanged full log is `/tmp/issue271-canonical.log`.
+
+After that gate terminated, the branch was rebased onto actual main
+`b394636ed978fd42adf7a863e0ed87afcc93d256` and the negative diagnostics above
+were tightened. The rebased harness again passes all 71 owners with 754
+assertions, and the client TypeScript check passes. Those focused checks do not
+replace or change the recorded earlier canonical result.
+The unchanged Source-only six-owner proof also passes again with 2,630
+assertions after #204 added six exact callback-error assertions. Its log is
+`/tmp/issue271-source-rebased.log`; the earlier identical before/after captures
+with 2,624 assertions remain recorded above.
+
 The skill's OpenClaw/Crabbox/autoreview tools and scripts are unavailable; actual
 repository checks and independent root review are reported without claiming
 those unavailable checks ran.

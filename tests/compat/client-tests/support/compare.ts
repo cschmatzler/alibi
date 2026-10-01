@@ -221,6 +221,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           : plaintext !== undefined && value.key === createHash("sha256").update(plaintext).digest("base64url") ? "hashed" : undefined;
         if (mode === undefined) fail(`${path}.key`, "SQLite API-key storage is not derived from its observed issuance");
         let units: number | null | undefined;
+        if (value.startType !== "text" && value.startType !== "null") fail(`${path}.startType`, "SQLite API-key storage type is neither text nor null");
         if (value.startType === "null" && value.start === null && value.startHex === "") units = null;
         else if (value.startType === "text" && typeof value.start === "string" && typeof value.startHex === "string" && /^(?:[0-9A-Fa-f]{2})*$/.test(value.startHex)) {
           const bytes = Buffer.from(value.startHex, "hex");
