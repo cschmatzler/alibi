@@ -165,7 +165,8 @@ production fails at duplicate-fmt acceptance in
 whole passkey family 37 / 5,710 assertions pass. Twelve native tests, production
 strict Clippy, locked fixture build and client TypeScript pass. Nineteen inventory
 requirements are additive; all earlier requirements remain enforced. Phone-owner
-independent review and the next canonical integration gate are still pending.
+independent review of the decoder is clear; it found a current-request-origin
+blocker repaired below. The next canonical integration gate is pending.
 
 Exotic COSE values may reencode to different bytes in Source while this raw codec
 retains original key bytes; that public-key normalization capability remains
@@ -249,3 +250,5 @@ and diff checks pass. The two prior-code before logs remain nonpassing evidence;
 no full canonical gate, lock or inventory edits were made by this owner.
 All focused application processes were stopped; frozen917 and the earlier SDK
 storage/evidence freezes remain unchanged.
+
+Coordinator independently reviewed frozen origin repair `6dd6a9bd`: only the already-resolved current verification origin enters the raw verifier; persisted challenge, RP and owner authority remain intact. The two complete SDK owners distinguish default and explicit-origin configurations, both mismatch directions, genuine owner rejection, callback proof, single-use challenge and actual bound SQL rows. Meaningful frozen917 failures and configured controls establish the defect independently. No global trusted-origin change is included. Eight additional inventory requirements cover both owners without removing the prior nineteen or any earlier evidence.

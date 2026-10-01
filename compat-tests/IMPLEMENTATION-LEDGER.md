@@ -312,7 +312,7 @@ tree.
 | --- | --- | --- |
 | OTP background delivery | Phone owner; existing background completion interface and initiating request context | Frozen 9c7067d8: 71 SDK / 5,884; four default/observe/ignore/throw owners / 976, 19 native tests, real before-await/context failures. Coordinator and independent organization review clear. The inventory adds 28 requirements without removing any. Delivered PR #112 after the measured 530-scenario gate below. |
 | Server-only organization member addition | Organization owner; captured addition callbacks, existing member/team operations | Frozen a0c0996d: nine primary differential owners / 1,568 and Source controls; full organization/OpenAPI 122 / 10,318; 334 API and one real-SQLite public-helper owner pass. Coordinator and independent phone reviews clear. Trusted Rust helper/private fixture; no public add-member route. Eighteen setup-route lifecycle requirements enforce these nine owners. Delivered PR #113 after the measured 530-scenario gate below. |
-| Unsupported-curve none enrollment | JWT owner; versioned private original-proof/pending-ceremony codec | Frozen 36208658 has 37 passkey SDK / 5,168 and repeated Source controls. Independent review found genuine CBOR decoder divergences; repair and expanded original-proof controls are active. Unpublished until resolved and gated. No fake typed verifier output, proof rewriting, retry, dependency or schema changes. |
+| Unsupported-curve none enrollment | JWT owner; versioned private original-proof/pending-ceremony codec | PR #114 includes the measured decoder repair plus current-request-origin correction. Six raw owners and whole passkey 39 / 6,450, twelve native tests, meaningful decoder/origin before failures and repeated Source controls pass. Independent decoder and coordinator origin reviews clear; next canonical gate pending. Twenty-seven additive requirements enforce the owners. No fake typed verifier output, proof rewriting, retry, dependency or schema changes. |
 
 The newly measured duplicate-member pair and duplicate-passkey credential
 admission differ from Native unique constraints. They are separate shared
@@ -337,6 +337,5 @@ The next storage slice preserves physical duplicate member identities and pages.
 Its installed-upgrade review found a genuine dependent composite-FK break;
 frozen guard 5324954f now refuses before writes and proves application-owned
 member-ID migration followed by successful retry (61 native storage tests).
-Its official-client lifecycle extension is active with the phone owner.
-The passkey slice is independently repairing measured duplicate-map, number,
-tag and text decoder behavior rather than broadening comparison exceptions.
+PR #116 includes three real SDK lifecycle owners / 370 assertions and whole organization 125 / 10,688. Independent storage, migration and SDK review is clear; twenty-three additive requirements and the next canonical gate are pending.
+The passkey slice repairs measured duplicate-map, number, tag, text and current-request-origin behavior with intact strict comparisons. PR #115 adds four genuine admin-target/self impersonation permission owners / 226 assertions (whole admin 40 / 3,464), twenty-five additive requirements and clear independent review. All three PRs await the next integrated canonical gate.

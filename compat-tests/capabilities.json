@@ -2301,7 +2301,9 @@
           "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
           "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
-          "passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks"
+          "passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks",
+          "passkey raw none passkey-first-trusted-origin verifies current request origin and configured precedence",
+          "passkey raw none passkey-first-configured-origin verifies current request origin and configured precedence"
         ],
         "rejection": [
           "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
@@ -2320,7 +2322,9 @@
           "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
           "passkey Ed25519Curve8 packed self attestation rejects genuine false and malformed signatures before callback enrollment or session",
           "passkey raw curve8 none admission validates the actual ceremony before callback persistence and owner issuance",
-          "passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks"
+          "passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks",
+          "passkey raw none passkey-first-trusted-origin verifies current request origin and configured precedence",
+          "passkey raw none passkey-first-configured-origin verifies current request origin and configured precedence"
         ],
         "authorization": [
           "passkey foreign owner, expired challenge and wrong ceremony retire the actual persisted generation",
@@ -2328,7 +2332,9 @@
           "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
           "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
           "passkey registration rejects actual packed signature failures malformed proofs flags origins and wrong owner before writes",
-          "passkey raw curve8 none admission validates the actual ceremony before callback persistence and owner issuance"
+          "passkey raw curve8 none admission validates the actual ceremony before callback persistence and owner issuance",
+          "passkey raw none passkey-first-trusted-origin verifies current request origin and configured precedence",
+          "passkey raw none passkey-first-configured-origin verifies current request origin and configured precedence"
         ],
         "state": [
           "passkey registration authentication ownership and deletion round trip",
@@ -2351,7 +2357,9 @@
           "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
           "passkey Ed25519Curve8 packed self attestation rejects genuine false and malformed signatures before callback enrollment or session",
           "passkey raw curve8 none admission validates the actual ceremony before callback persistence and owner issuance",
-          "passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks"
+          "passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks",
+          "passkey raw none passkey-first-trusted-origin verifies current request origin and configured precedence",
+          "passkey raw none passkey-first-configured-origin verifies current request origin and configured precedence"
         ]
       }
     },
