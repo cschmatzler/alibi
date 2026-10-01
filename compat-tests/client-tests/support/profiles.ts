@@ -1,5 +1,6 @@
 /** Explicit equivalent configurations of the pinned runtime. */
 export type FixtureProfile =
+  | "oauth-proxy"
   | `session-cache-${"standard" | "disabled" | "version" | "version-api" | "version-ordinary" | "zero" | "nan" | "fractional" | "negative" | "infinite" | "negative-infinite" | "date-version"}`
   | `anonymous-${"standard" | "disabled" | "link-error" | "user-cancel" | "user-forbidden" | "session-cancel" | "session-forbidden" | "snapshot" | "invalid-email" | "empty-name" | "methods"}`
   | "admin-impersonation-privileged" | "admin-impersonation-ordinary" | "admin-impersonation-legacy" | "admin-impersonation-no-base"

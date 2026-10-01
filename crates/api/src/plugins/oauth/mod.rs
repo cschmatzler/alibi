@@ -7,12 +7,12 @@ use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 mod account;
 mod account_cookie;
 pub mod encryption;
-mod handlers;
+pub(crate) mod handlers;
 pub(crate) use handlers::{
     OAuthProcessPolicy, OAuthSignInError, create_account_cookie_header, process_oauth_sign_in,
 };
 mod providers;
-mod state;
+pub(crate) mod state;
 pub(crate) use state::{
     CapturedOAuthServerContext, OAuthServerContext, RecoveredOAuthServerContext,
 };
@@ -109,7 +109,9 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
 /// Check if the path matches `/callback/{provider}` (with optional query string).
 fn path_matches_callback(path: &str) -> bool {
     let path_without_query = path.split('?').next().unwrap_or(path);
-    path_without_query.starts_with("/callback/") && path_without_query.len() > "/callback/".len()
+    path_without_query
+        .strip_prefix("/callback/")
+        .is_some_and(|provider| !provider.is_empty() && !provider.contains('/'))
 }
 
 /// Extract the provider name from `/callback/{provider}?...`.

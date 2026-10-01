@@ -67,6 +67,7 @@ mod jwt_fixture;
 mod lifecycle_fixture;
 mod magic_profiles;
 mod multiple_session_fixture;
+mod oauth_proxy_fixture;
 mod one_tap_fixture;
 mod one_time_token_fixture;
 mod open_api_fixture;
@@ -714,6 +715,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         admin_banned_message_fixture::router(&config, database.clone()).await?;
     let admin_permission_router =
         admin_permission_fixture::router(&config, database.clone()).await?;
+    let (oauth_proxy_router, oauth_proxy_reset) = oauth_proxy_fixture::router(&config).await?;
     let (social_provider_router, social_provider_reset) =
         social_provider_fixture::router(&config, database.clone()).await?;
     let (anonymous_router, anonymous_reset) =
@@ -1138,10 +1140,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let social_id_token_valid = social_id_token_valid_for_reset.clone();
                 let database = database_for_reset.clone();
                 let social_provider_reset = social_provider_reset.clone();
+                let oauth_proxy_reset = oauth_proxy_reset.clone();
                 let invitation_acceptance_reset = invitation_acceptance_reset.clone();
                 let anonymous_reset = anonymous_reset.clone();
                 async move {
                     social_provider_reset.reset().await;
+                    if let Err(error) = oauth_proxy_reset.reset().await {
+                        return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"message":error.to_string()})));
+                    }
                     invitation_acceptance_reset.reset().await;
                     anonymous_reset.reset();
                     siwe_fixture::reset(&siwe_state).await;
@@ -1743,6 +1749,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nest("/api/auth", auth_router)
         .with_state(auth)
         .merge(social_provider_router)
+        .merge(oauth_proxy_router)
         .merge(anonymous_router)
         .merge(membership_router)
         .merge(invitation_acceptance_router)

@@ -143,7 +143,11 @@
           "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
           "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
           "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
-          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie"
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
+          "OAuth proxy linking follows the saved authenticated owner without creating any session",
+          "OAuth proxy restoration and session failures preserve exact stages rows and retry",
+          "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
+          "OAuth proxy exchanges on production then consumes preview state for only the provider owner"
         ],
         "rejection": [
           "social callback rejects consumed database state while retaining the issued session and foreign state",
@@ -178,12 +182,22 @@
     {
       "route": "GET /callback/{}/oauth-proxy",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": [
+          "OAuth proxy linking follows the saved authenticated owner without creating any session",
+          "OAuth proxy restoration and session failures preserve exact stages rows and retry",
+          "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
+          "OAuth proxy exchanges on production then consumes preview state for only the provider owner"
+        ],
+        "rejection": "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
+        "authorization": "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
+        "state": [
+          "OAuth proxy linking follows the saved authenticated owner without creating any session",
+          "OAuth proxy restoration and session failures preserve exact stages rows and retry",
+          "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
+          "OAuth proxy exchanges on production then consumes preview state for only the provider owner"
+        ]
       }
     },
     {
@@ -415,12 +429,12 @@
     {
       "route": "GET /oauth-proxy-callback",
       "upstream": true,
-      "implemented": false,
+      "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
+        "rejection": "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
+        "authorization": "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
+        "state": "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion"
       }
     },
     {
@@ -1752,7 +1766,8 @@
           "social linking rejects missing tampered and revoked sessions without changing owners",
           "builtin social link authorization requires a session and retains configured scope additions",
           "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
-          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "OAuth proxy linking follows the saved authenticated owner without creating any session"
         ],
         "rejection": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -1769,7 +1784,8 @@
           "social linking rejects missing tampered and revoked sessions without changing owners",
           "builtin social link authorization requires a session and retains configured scope additions",
           "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
-          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "OAuth proxy linking follows the saved authenticated owner without creating any session"
         ]
       }
     },
@@ -3042,7 +3058,10 @@
           "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
           "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
           "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
-          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie"
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
+          "OAuth proxy restoration and session failures preserve exact stages rows and retry",
+          "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
+          "OAuth proxy exchanges on production then consumes preview state for only the provider owner"
         ],
         "rejection": "social sign-in rejects invalid callbackURL",
         "authorization": "social sign-in rejects invalid callbackURL",
@@ -3056,7 +3075,10 @@
           "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
           "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
           "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
-          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie"
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
+          "OAuth proxy restoration and session failures preserve exact stages rows and retry",
+          "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
+          "OAuth proxy exchanges on production then consumes preview state for only the provider owner"
         ]
       }
     },

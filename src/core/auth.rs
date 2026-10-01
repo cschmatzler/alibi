@@ -267,6 +267,9 @@ impl<S: AuthSchema> BetterAuth<S> {
                 response = AuthResponse::new(500);
                 _ = req.take_response_headers();
             }
+            if better_auth_api::plugins::oauth_proxy::take_unhandled_error(&req) {
+                run_after_hooks = false;
+            }
             let mut nested_headers = req.take_response_headers();
             for (name, value) in response.headers {
                 if name.eq_ignore_ascii_case("set-cookie") {
