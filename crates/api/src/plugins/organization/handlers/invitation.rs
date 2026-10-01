@@ -129,10 +129,11 @@ pub(crate) async fn invite_member_core(
             .count_pending_organization_invitations(&org_id)
             .await? as usize;
         if pending_count >= limit {
-            return Err(AuthError::bad_request(format!(
-                "Pending invitation limit of {} reached",
-                limit
-            )));
+            return Err(AuthError::Upstream {
+                status: 403,
+                code: "INVITATION_LIMIT_REACHED",
+                message: "Invitation limit reached",
+            });
         }
     }
 
