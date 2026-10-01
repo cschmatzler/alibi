@@ -419,3 +419,93 @@ async fn test_update_passkey_non_owner_is_unauthorized() {
         .unwrap();
     assert_eq!(preserved.name.as_deref(), Some("Other Key"));
 }
+
+/// Previously persisted ceremonies keep both their codec and original Required policy.
+#[test]
+fn legacy_registration_challenge_keeps_original_verification_policy()
+-> Result<(), Box<dyn std::error::Error>> {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    use p256::elliptic_curve::sec1::ToEncodedPoint;
+    use serde_cbor_2::Value as Cbor;
+    use sha2::{Digest, Sha256};
+    use std::collections::BTreeMap;
+    use webauthn_rs::prelude::RegisterPublicKeyCredential;
+
+    let config = super::PasskeyConfig {
+        rp_id: "localhost".into(),
+        origin: "http://localhost:3100".into(),
+        ..Default::default()
+    };
+    let webauthn = super::webauthn::build_webauthn(
+        &config,
+        &better_auth_core::AuthConfig::default(),
+        &config.origin,
+    )?;
+    let (options, legacy) = webauthn.start_passkey_registration(
+        uuid::Uuid::new_v4(),
+        "Legacy owner",
+        "Legacy owner",
+        None,
+    )?;
+    // This is the old externally persisted protocol, with a real library state.
+    let stored = serde_json::to_string(&serde_json::json!({
+        "user_id": "legacy-owner", "user": null, "context": "old-context", "state": legacy,
+    }))?;
+    let decoded: super::webauthn::StoredRegistrationState = serde_json::from_str(&stored)?;
+    assert_eq!(decoded.user_id, "legacy-owner");
+    assert_eq!(decoded.context.as_deref(), Some("old-context"));
+    let super::webauthn::StoredRegistrationVerifier::Legacy(state) = decoded.state else {
+        panic!("Old challenge changed verifier policy");
+    };
+    let secret = p256::SecretKey::random(&mut rand::thread_rng());
+    let point = secret.public_key().to_encoded_point(false);
+    let key = Cbor::Map(BTreeMap::from([
+        (Cbor::Integer(1), Cbor::Integer(2)),
+        (Cbor::Integer(3), Cbor::Integer(-7)),
+        (Cbor::Integer(-1), Cbor::Integer(1)),
+        (
+            Cbor::Integer(-2),
+            Cbor::Bytes(point.x().ok_or("missing generated X coordinate")?.to_vec()),
+        ),
+        (
+            Cbor::Integer(-3),
+            Cbor::Bytes(point.y().ok_or("missing generated Y coordinate")?.to_vec()),
+        ),
+    ]));
+    let credential_id = b"actual-legacy-credential";
+    let client_data = serde_json::to_vec(&serde_json::json!({
+        "type": "webauthn.create", "challenge": options.public_key.challenge,
+        "origin": config.origin, "crossOrigin": false,
+    }))?;
+    for verified in [true, false] {
+        let mut auth_data = Sha256::digest(config.rp_id.as_bytes()).to_vec();
+        auth_data.push(if verified { 0x45 } else { 0x41 });
+        auth_data.extend_from_slice(&[0; 20]);
+        auth_data.extend_from_slice(&u16::try_from(credential_id.len())?.to_be_bytes());
+        auth_data.extend_from_slice(credential_id);
+        auth_data.extend_from_slice(&serde_cbor_2::to_vec(&key)?);
+        let attestation = Cbor::Map(BTreeMap::from([
+            (Cbor::Text("fmt".into()), Cbor::Text("none".into())),
+            (Cbor::Text("attStmt".into()), Cbor::Map(BTreeMap::new())),
+            (Cbor::Text("authData".into()), Cbor::Bytes(auth_data)),
+        ]));
+        let response: RegisterPublicKeyCredential = serde_json::from_value(serde_json::json!({
+            "id": URL_SAFE_NO_PAD.encode(credential_id), "rawId": URL_SAFE_NO_PAD.encode(credential_id),
+            "type": "public-key", "clientExtensionResults": {}, "response": {
+                "clientDataJSON": URL_SAFE_NO_PAD.encode(&client_data),
+                "attestationObject": URL_SAFE_NO_PAD.encode(serde_cbor_2::to_vec(&attestation)?),
+                "transports": ["internal"],
+            },
+        }))?;
+        let result = webauthn.finish_passkey_registration(&response, &state);
+        if verified {
+            assert_eq!(result?.cred_id().as_ref(), credential_id);
+        } else {
+            assert!(matches!(
+                result,
+                Err(webauthn_rs_core::error::WebauthnError::UserNotVerified)
+            ));
+        }
+    }
+    Ok(())
+}
