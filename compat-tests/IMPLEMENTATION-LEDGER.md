@@ -312,7 +312,7 @@ tree.
 | --- | --- | --- |
 | OTP background delivery | Phone owner; existing background completion interface and initiating request context | Frozen 9c7067d8: 71 SDK / 5,884; four default/observe/ignore/throw owners / 976, 19 native tests, real before-await/context failures. Coordinator and independent organization review clear. The inventory adds 28 requirements without removing any. Delivered PR #112 after the measured 530-scenario gate below. |
 | Server-only organization member addition | Organization owner; captured addition callbacks, existing member/team operations | Frozen a0c0996d: nine primary differential owners / 1,568 and Source controls; full organization/OpenAPI 122 / 10,318; 334 API and one real-SQLite public-helper owner pass. Coordinator and independent phone reviews clear. Trusted Rust helper/private fixture; no public add-member route. Eighteen setup-route lifecycle requirements enforce these nine owners. Delivered PR #113 after the measured 530-scenario gate below. |
-| Unsupported-curve none enrollment | JWT owner; versioned private original-proof/pending-ceremony codec | PR #114 includes the measured decoder repair plus current-request-origin correction. Six raw owners and whole passkey 39 / 6,450, twelve native tests, meaningful decoder/origin before failures and repeated Source controls pass. Independent decoder and coordinator origin reviews clear; next canonical gate pending. Twenty-seven additive requirements enforce the owners. No fake typed verifier output, proof rewriting, retry, dependency or schema changes. |
+| Unsupported-curve none enrollment | JWT owner; versioned private original-proof/pending-ceremony codec | PR #114 includes the measured decoder repair plus current-request-origin correction. Six raw owners and whole passkey 39 / 6,450, twelve native tests, meaningful decoder/origin before failures and repeated Source controls pass. Independent decoder and coordinator origin reviews clear; delivered PR #114 after the measured 543-scenario gate below. Twenty-seven additive requirements enforce the owners. No fake typed verifier output, proof rewriting, retry, dependency or schema changes. |
 
 The newly measured duplicate-member pair and duplicate-passkey credential
 admission differ from Native unique constraints. They are separate shared
@@ -337,5 +337,24 @@ The next storage slice preserves physical duplicate member identities and pages.
 Its installed-upgrade review found a genuine dependent composite-FK break;
 frozen guard 5324954f now refuses before writes and proves application-owned
 member-ID migration followed by successful retry (61 native storage tests).
-PR #116 includes three real SDK lifecycle owners / 370 assertions and whole organization 125 / 10,688. Independent storage, migration and SDK review is clear; twenty-three additive requirements and the next canonical gate are pending.
-The passkey slice repairs measured duplicate-map, number, tag, text and current-request-origin behavior with intact strict comparisons. PR #115 adds four genuine admin-target/self impersonation permission owners / 226 assertions (whole admin 40 / 3,464), twenty-five additive requirements and clear independent review. All three PRs await the next integrated canonical gate.
+PR #116 includes three real SDK lifecycle owners / 370 assertions and whole organization 125 / 10,688. Independent storage, migration and SDK review is clear; twenty-three additive requirements and the measured 543-scenario gate below passed; delivered PR #116.
+The passkey slice repairs measured duplicate-map, number, tag, text and current-request-origin behavior with intact strict comparisons. PR #115 adds four genuine admin-target/self impersonation permission owners / 226 assertions (whole admin 40 / 3,464), twenty-five additive requirements and clear independent review. All three PRs #114–116 are merged after the complete gate below.
+
+
+The passkey, admin impersonation and physical organization membership integration
+`f2e16ec5` passed the complete canonical gate: **543 SDK scenarios / 36,788
+assertions**, 42 harness tests / 344 assertions, two Chromium tests / 22
+assertions, and **78.788518% source lines (29,864 / 37,904)**. All default and
+optional configurations, Rustls/Redis builds, strict Clippy, locked fixtures,
+TypeScript, documentation and unchanged coverage floor passed. The inventory
+enforces 1,724 requirements without removing any. PRs #114–116 are merged;
+master `a3a9f568` is full-tree equal to that tested integration.
+
+| Following slice | Owner and dependencies | Evidence and status |
+| --- | --- | --- |
+| OAuth rejection wire | JWT owner; coordinator and independent phone review | PR #117: genuine owner linking and consumed state replay, missing/tampered/revoked cookie controls, Source2/88, OAuth17/118, native18 and nine additive requirements. Review clear; next canonical gate pending. |
+| Built-in social authorization | JWT owner; OAuth rejection prerequisite | PR #118: actual Google/GitHub/Discord scope ordering, defaults/prompt/permissions, token-form receipts and saved account/session lifecycle. Source4/900 and OAuth21/1,018; independent review clear; fifteen additive requirements. Next gate pending. |
+| Discord normalized profile defaults | JWT owner; local genuine provider transport | PR #119: eight real callback/profile/session transitions, animated/null avatar and large-ID Number rounding, foreign isolation; Source1/264 and OAuth22/1,282. Coordinator review clear; six additive requirements. Raw account-info mutation/coercion boundaries remain open; next gate pending. |
+| Membership policy and raw pages | Organization owner; physical membership storage and FK guard | Single fixed/resolver policy, independent member/user pages and actual SQL numeric bindings. Four SDK owners, real native storage and meaningful wrong-fallback/sort/binding controls; independent review clear, final freeze/integration in progress. Custom callback fields, advanced joins and non-SQLite runtime remain open. |
+| Invitation acceptance transitions | Phone owner; membership admission policy and generic transaction/CAS contracts | Actual source probes distinguish committed accepted status, rollback/reset veto, API versus ordinary-error cookies, duplicate/concurrent admission and after-hook persistence. Isolated implementation active; no completed parity claim. |
+| Core origin and callback URLs | Coordinator; unchanged trusted-origin guard and session helpers | Actual Source controls prove canonical HTTP origin and safe relative paths; email/username callback responses repaired. Focused differential and broader core SDK pass. Exact WebAuthn origin interaction proof and independent review in progress. Configured wildcard/custom-scheme matching remains an explicit followup. |
