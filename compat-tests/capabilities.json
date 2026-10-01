@@ -592,6 +592,14 @@
         "rejection": null,
         "authorization": null,
         "state": null
+      },
+      "requiredEvidence": {
+        "success": [
+          "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners"
+        ],
+        "state": [
+          "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners"
+        ]
       }
     },
     {
@@ -2138,6 +2146,14 @@
           "passkey registration authentication ownership and deletion round trip",
           "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
           "passkey rejected cryptographic attempts consume challenges without credential or session writes"
+        ]
+      },
+      "requiredEvidence": {
+        "success": [
+          "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners"
+        ],
+        "state": [
+          "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners"
         ]
       }
     },
