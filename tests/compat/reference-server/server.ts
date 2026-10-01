@@ -2,7 +2,7 @@
 import { createRemoteJwtFixture } from "./jwt-remote-fixture";
 import { createLastLoginMethodFixture } from "./last-login-method-fixture";
 import { createSetPasswordFixture } from "./set-password-fixture";
-import { createTwoFactorPendingLookupFixture } from "./two-factor-pending-lookup-fixture";
+import { createDispatchFixture } from "./dispatch-fixture";import { createTwoFactorPendingLookupFixture } from "./two-factor-pending-lookup-fixture";
 import { createBearerFixture } from "./bearer-fixture";
 import { sessionCookieCacheFixture } from "./session-cookie-cache-fixture";
 import { organizationMembershipPolicyFixture } from "./organization-membership-policy-fixture";
@@ -431,6 +431,7 @@ const adminBannedMessageFixture = createAdminBannedMessageFixture(authOptions, d
 const adminPermissionFixture = createAdminPermissionFixture(authOptions, database);
 const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 const bearerFixture = createBearerFixture(authOptions);
+const dispatchFixture = createDispatchFixture(authOptions);
 const organizationCreationFixture = createOrganizationCreationFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationTransport = organizationTransportProbe();
 const organizationHooksFixture = organizationCreationHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
@@ -469,6 +470,7 @@ for (const [path, instance] of adminBannedMessageFixture.profiles) verificationP
 for (const [path, instance] of adminPermissionFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of multipleSessionFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of bearerFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of dispatchFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of passkeyRegistration.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of passkeyAuthentication.profiles) verificationProfiles.set(path, instance);
 for (const name of ["email-verification-required", "email-verification-no-signup-mail", "email-verification-failing-notifications"]) {
@@ -922,6 +924,8 @@ const server = Bun.serve({
       const siweResponse = await siweFixture.handle(request);
       if (siweResponse) return siweResponse;
 
+      const dispatchControl = dispatchFixture.handle(request);
+      if (dispatchControl) return dispatchControl;
       if (url.pathname === "/__test/lifecycle" && request.method === "GET") {
         const email = url.searchParams.get("email");
         const user = email ? await authContext.internalAdapter.findUserByEmail(email, {includeAccounts:true}) : null;
