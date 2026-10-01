@@ -6,13 +6,14 @@ use async_trait::async_trait;
 use better_auth_core::wire::{SessionView, UserView};
 use better_auth_core::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
-    AuthSchema, AuthSession, AuthUser, CreateUser, HttpMethod, RequestMeta,
+    AuthSchema, AuthSession, AuthUser, BeforeRequestAction, CreateUser, HttpMethod, RequestMeta,
 };
 use rand::distributions::{Alphanumeric, DistString};
 use serde_json::json;
 
 use super::helpers::{
-    apply_default_role, delete_session_cookie_headers, issue_user_session, response_session,
+    apply_default_role, completed_response_session, delete_session_cookie_headers,
+    issue_user_session, record_completed_session,
 };
 
 /// Application-owned generation of anonymous display names and email addresses.
@@ -61,10 +62,10 @@ impl AnonymousPlugin {
         Self { config }
     }
 
-    async fn sign_in(
+    async fn sign_in<S: AuthSchema>(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl AuthSchema>,
+        ctx: &AuthContext<S>,
     ) -> AuthResult<AuthResponse> {
         if let Some((current, _)) = anonymous_session(req, ctx).await
             && current.is_anonymous() == Some(true)
@@ -124,9 +125,12 @@ impl AnonymousPlugin {
                 }
                 cause => cause,
             })?;
+        // The created row is Source's original new-user snapshot, even if a
+        // lifecycle hook subsequently changes the database during session creation.
+        record_completed_session::<S>(&user, &issued.session);
         let mut response = AuthResponse::json(
             200,
-            &json!({"token":issued.session.token(),"user":ctx.user_view(&issued.user)}),
+            &json!({"token":issued.session.token(),"user":ctx.user_view(&user)}),
         )?;
         response.headers.append(
             "set-cookie",
@@ -201,6 +205,40 @@ async fn anonymous_session<S: AuthSchema>(
     ctx.require_session(&read).await.ok()
 }
 
+async fn resolve_anonymous_session<S: AuthSchema>(
+    req: &AuthRequest,
+    ctx: &AuthContext<S>,
+) -> AuthResult<Option<(S::User, SessionView)>> {
+    if let Some((user, session)) = anonymous_session(req, ctx).await
+        && user.is_anonymous() == Some(true)
+    {
+        return Ok(Some((user, session)));
+    }
+    let Some(context) = req
+        .extensions()
+        .get::<super::oauth::RecoveredOAuthServerContext>()
+    else {
+        return Ok(None);
+    };
+    let Some(user) = ctx
+        .database
+        .get_user_by_id(&context.0.anonymous_user_id)
+        .await?
+    else {
+        return Ok(None);
+    };
+    if user.is_anonymous() != Some(true) {
+        return Ok(None);
+    }
+    let session = ctx
+        .database
+        .get_user_sessions(&context.0.anonymous_user_id)
+        .await?
+        .into_iter()
+        .find(|session| session.expires_at() > chrono::Utc::now());
+    Ok(session.map(|session| (user, ctx.session_view(&session))))
+}
+
 fn error(status: u16, code: &'static str, message: &'static str) -> AuthResponse {
     better_auth_core::AuthError::Upstream {
         status,
@@ -242,6 +280,24 @@ impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
             _ => Ok(None),
         }
     }
+    async fn before_request(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<BeforeRequestAction>> {
+        if req.path() == "/sign-in/social"
+            && let Some((user, _)) = anonymous_session(req, ctx).await
+            && user.is_anonymous() == Some(true)
+        {
+            req.extensions()
+                .insert(super::oauth::CapturedOAuthServerContext(
+                    super::oauth::OAuthServerContext {
+                        anonymous_user_id: user.id().into_owned(),
+                    },
+                ));
+        }
+        Ok(None)
+    }
     async fn after_request(
         &self,
         req: &AuthRequest,
@@ -264,10 +320,10 @@ impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
         if !matches {
             return Ok(response);
         }
-        let Some(issued) = response_session(ctx, &response).await? else {
+        let Some(issued) = completed_response_session(req, ctx, &response) else {
             return Ok(response);
         };
-        let Some((old_user, old_session)) = anonymous_session(req, ctx).await else {
+        let Some((old_user, old_session)) = resolve_anonymous_session(req, ctx).await? else {
             return Ok(response);
         };
         if old_user.is_anonymous() != Some(true) {

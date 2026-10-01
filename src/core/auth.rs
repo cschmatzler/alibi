@@ -231,7 +231,7 @@ impl<S: AuthSchema> BetterAuth<S> {
     /// into standardized JSON responses via [`AuthError::to_auth_response`],
     /// producing `{ "message": "..." }` with the appropriate HTTP status code.
     pub async fn handle_request(&self, req: AuthRequest) -> AuthResult<AuthResponse> {
-        // Reset caller-supplied session context and queued response headers.
+        // Reset caller-supplied session context, typed extensions and queued headers.
         // Only trusted handlers and hooks may establish them during dispatch.
         let query_pairs = req
             .query

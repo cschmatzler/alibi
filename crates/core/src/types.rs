@@ -47,6 +47,38 @@ pub struct AuthRequest {
     response_headers: Arc<Mutex<Headers>>,
     /// The original store snapshot retained for completed-handler hooks.
     session_hook_snapshot: Arc<Mutex<Option<(crate::wire::UserView, crate::wire::SessionView)>>>,
+    extensions: RequestExtensions,
+}
+
+/// Typed state shared only by trusted handlers in one request dispatch.
+///
+/// Request clones share these values. Public dispatch starts with a fresh
+/// instance, so fields supplied by an embedding caller never become authority.
+#[derive(Clone, Default)]
+pub struct RequestExtensions(Arc<Mutex<crate::plugin::ContextExtensions>>);
+
+impl std::fmt::Debug for RequestExtensions {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RequestExtensions")
+            .finish_non_exhaustive()
+    }
+}
+
+impl RequestExtensions {
+    pub fn insert<T: std::any::Any + Send + Sync>(&self, value: T) {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(value);
+    }
+
+    pub fn get<T: std::any::Any + Send + Sync>(&self) -> Option<Arc<T>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get()
+    }
 }
 
 /// Metadata extracted from an incoming request for session creation.
@@ -378,6 +410,7 @@ impl AuthRequest {
             virtual_session: None,
             response_headers: Arc::new(Mutex::new(Headers::new())),
             session_hook_snapshot: Arc::new(Mutex::new(None)),
+            extensions: RequestExtensions::default(),
         }
     }
 
@@ -401,6 +434,7 @@ impl AuthRequest {
             virtual_session: None,
             response_headers: Arc::new(Mutex::new(Headers::new())),
             session_hook_snapshot: Arc::new(Mutex::new(None)),
+            extensions: RequestExtensions::default(),
         }
     }
 
@@ -443,6 +477,12 @@ impl AuthRequest {
 
     pub fn header(&self, name: &str) -> Option<&String> {
         self.headers.get(name)
+    }
+
+    /// Typed values established by trusted hooks and handlers in this dispatch.
+    /// Caller-supplied values are discarded at every public dispatch boundary.
+    pub fn extensions(&self) -> &RequestExtensions {
+        &self.extensions
     }
 
     /// Forward a header emitted by a nested server handler to the final response.
