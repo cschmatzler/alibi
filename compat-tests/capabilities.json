@@ -138,22 +138,30 @@
           "social callback rejects consumed database state while retaining the issued session and foreign state",
           "Discord callback exchanges without PKCE and preserves current foreign and replay state",
           "Discord profile defaults persist original provider owners names and avatar URLs",
-          "social linking rejects missing tampered and revoked sessions without changing any principal"
+          "social linking rejects missing tampered and revoked sessions without changing any principal",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults"
         ],
         "rejection": [
           "social callback rejects consumed database state while retaining the issued session and foreign state",
           "Discord callback exchanges without PKCE and preserves current foreign and replay state",
-          "social linking rejects missing tampered and revoked sessions without changing any principal"
+          "social linking rejects missing tampered and revoked sessions without changing any principal",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults"
         ],
         "authorization": [
-          "social linking rejects missing tampered and revoked sessions without changing any principal"
+          "social linking rejects missing tampered and revoked sessions without changing any principal",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults"
         ],
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
           "social callback rejects consumed database state while retaining the issued session and foreign state",
           "Discord callback exchanges without PKCE and preserves current foreign and replay state",
           "Discord profile defaults persist original provider owners names and avatar URLs",
-          "social linking rejects missing tampered and revoked sessions without changing any principal"
+          "social linking rejects missing tampered and revoked sessions without changing any principal",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults"
         ]
       }
     },
@@ -1609,14 +1617,21 @@
       "evidence": {
         "success": [
           "get access token refreshes expired token",
-          "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials"
+          "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
         ],
         "rejection": [
           "account token routes reject conflicting and foreign account selectors",
-          "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials"
+          "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
         ],
-        "authorization": null,
-        "state": "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials"
+        "authorization": [
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
+        ],
+        "state": [
+          "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
+        ]
       }
     },
     {
@@ -1649,19 +1664,26 @@
         "success": [
           "github link social creates an account that listAccounts returns",
           "social linking rejects missing tampered and revoked sessions without changing owners",
-          "builtin social link authorization requires a session and retains configured scope additions"
+          "builtin social link authorization requires a session and retains configured scope additions",
+          "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
         ],
         "rejection": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
-          "builtin social link authorization requires a session and retains configured scope additions"
+          "builtin social link authorization requires a session and retains configured scope additions",
+          "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE"
         ],
         "authorization": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
-          "builtin social link authorization requires a session and retains configured scope additions"
+          "builtin social link authorization requires a session and retains configured scope additions",
+          "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
         ],
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
-          "builtin social link authorization requires a session and retains configured scope additions"
+          "builtin social link authorization requires a session and retains configured scope additions",
+          "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
         ]
       }
     },
@@ -2585,10 +2607,20 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "refresh token returns a fresh token set",
-        "rejection": "account token routes reject conflicting and foreign account selectors",
-        "authorization": null,
-        "state": null
+        "success": [
+          "refresh token returns a fresh token set",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
+        ],
+        "rejection": [
+          "account token routes reject conflicting and foreign account selectors",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
+        ],
+        "authorization": [
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
+        ],
+        "state": [
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
+        ]
       }
     },
     {
@@ -2791,7 +2823,10 @@
           "builtin social authorization retains ordered default configured and requested scopes",
           "Discord authorization conditions JS permissions on effective bot scope and defaults prompt",
           "Discord callback exchanges without PKCE and preserves current foreign and replay state",
-          "Discord profile defaults persist original provider owners names and avatar URLs"
+          "Discord profile defaults persist original provider owners names and avatar URLs",
+          "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults"
         ],
         "rejection": "social sign-in rejects invalid callbackURL",
         "authorization": "social sign-in rejects invalid callbackURL",
@@ -2799,7 +2834,10 @@
           "builtin social authorization retains ordered default configured and requested scopes",
           "Discord authorization conditions JS permissions on effective bot scope and defaults prompt",
           "Discord callback exchanges without PKCE and preserves current foreign and replay state",
-          "Discord profile defaults persist original provider owners names and avatar URLs"
+          "Discord profile defaults persist original provider owners names and avatar URLs",
+          "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults"
         ]
       }
     },

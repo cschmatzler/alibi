@@ -118,3 +118,10 @@ authorization parameters, unusual token/ID-token/expiry payloads, custom schema
 projections and broader storage-codec interoperability remain explicit separate
 boundaries. No schema, dependency, lockfile, inventory, coverage or full-gate
 change is included.
+
+Coordinator independent review is clear at 41a772b3: pinned factory/endpoint
+construction, actual provider HTTP receipts and unmodified raw profile, signed
+link authority, scope/token persistence, replay and physical-record probes were
+inspected. Twenty-nine additive requirements retain all previous evidence; no
+internal identifier field is disguised by SDK normalization. Full integrated
+validation is pending the next frozen gate.
