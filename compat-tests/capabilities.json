@@ -1441,7 +1441,8 @@
           "organization set-active returns exact stored metadata text and changes only the current token selection",
           "organization set-active emits null for absent metadata and retains real membership and session scope",
           "organization set-active respects blank selector precedence and writes cookies only for actual selection updates",
-          "organization set-active clears only the denied current token and validates guest bodies before authentication"
+          "organization set-active clears only the denied current token and validates guest bodies before authentication",
+          "organization selection and clearing honor only the first verified dont-remember preference"
         ],
         "rejection": [
           "organization set-active respects blank selector precedence and writes cookies only for actual selection updates",
@@ -1452,7 +1453,8 @@
           "organization set-active returns exact stored metadata text and changes only the current token selection",
           "organization set-active emits null for absent metadata and retains real membership and session scope",
           "organization set-active respects blank selector precedence and writes cookies only for actual selection updates",
-          "organization set-active clears only the denied current token and validates guest bodies before authentication"
+          "organization set-active clears only the denied current token and validates guest bodies before authentication",
+          "organization selection and clearing honor only the first verified dont-remember preference"
         ]
       }
     },
