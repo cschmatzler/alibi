@@ -1,10 +1,14 @@
-import { createHash } from "node:crypto";
+import { sessionSchema, userSchema } from "@better-auth/core/db";
+import { safeJSONParse } from "@better-auth/core/utils/json";
+import { z } from "zod";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { normalizeClientValue } from "./normalize";
 
 /** A safe diagnostic without response secrets. */
 export type Difference = { readonly path: string; readonly reason: string };
 /** Explicit fixture origins and scenario clocks used to compare runtime output. */
 export type ComparisonContext = {
+  readonly compactSessionCacheSecret?: string;
   readonly leftBaseURL: string;
   readonly rightBaseURL: string;
   readonly leftOAuthURL?: string | undefined;
@@ -150,6 +154,48 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     if (record(value)) return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableJSON(value[key])}`).join(",")}}`;
     return JSON.stringify(value) ?? "undefined";
   }
+  const cachePayloadSchema = z.looseObject({session: sessionSchema.loose(), user: userSchema.loose(), updatedAt: z.number(), version: z.string().optional()});
+  function authenticatedCompactCache(value: Record<string, unknown>, start: number, finish: number | undefined): boolean {
+    if (!context.compactSessionCacheSecret || Object.keys(value).sort().join(",") !== "decoded,effectiveMaxAgeSeconds,envelope,observedAt,token"
+      || typeof value.effectiveMaxAgeSeconds !== "number" || !value.effectiveMaxAgeSeconds
+      || typeof value.token !== "string" || !/^[A-Za-z0-9_-]+$/.test(value.token)
+      || !record(value.envelope) || Object.keys(value.envelope).sort().join(",") !== "expiresAt,session,signature"
+      || typeof value.observedAt !== "number" || !Number.isFinite(value.observedAt)
+      || value.observedAt < start || value.observedAt > (finish ?? start)) return false;
+    try {
+      const bytes = Buffer.from(value.token, "base64url");
+      if (bytes.toString("base64url") !== value.token) return false;
+      const text = new TextDecoder("utf-8", {fatal:true}).decode(bytes);
+      if (JSON.stringify(JSON.parse(text)) !== text || JSON.stringify(value.envelope) !== text) return false;
+      const raw = value.envelope;
+      if (!record(raw.session) || typeof raw.session.updatedAt !== "number" || !Number.isFinite(raw.session.updatedAt)
+        || raw.session.updatedAt > value.observedAt || typeof raw.signature !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(raw.signature)) return false;
+      const signature = Buffer.from(raw.signature, "base64url");
+      const mac = (payload:Record<string,unknown>,expiresAt:unknown) => createHmac("sha256",context.compactSessionCacheSecret!)
+        .update(JSON.stringify({...payload,expiresAt})).digest();
+      const expected = mac(raw.session,raw.expiresAt);
+      if (signature.toString("base64url") !== raw.signature || signature.length !== expected.length || !timingSafeEqual(signature,expected)) return false;
+      const clip = (value:number) => Number.isFinite(value) && Math.abs(value)<=8.64e15 ? Math.trunc(value) : NaN;
+      const age = value.effectiveMaxAgeSeconds;
+      const earliest = clip(raw.session.updatedAt+age*1000), latest = clip(value.observedAt+age*1000);
+      if (Number.isNaN(earliest) || Number.isNaN(latest)) {
+        if (raw.expiresAt !== null) return false;
+      } else if (typeof raw.expiresAt !== "number" || !Number.isInteger(raw.expiresAt) || raw.expiresAt < earliest || raw.expiresAt > latest) return false;
+      // Independent Source decoder contract: Date revival precedes its HMAC
+      // and loose payload schema; complete passthrough fields remain observable.
+      const revived = safeJSONParse(text);
+      if (!record(revived) || !record(revived.session)) return false;
+      const parsed = cachePayloadSchema.safeParse(revived.session);
+      const valid = typeof revived.expiresAt === "number" && Number.isFinite(revived.expiresAt)
+        && timingSafeEqual(signature,mac(revived.session,revived.expiresAt))
+        && parsed.success && revived.expiresAt >= value.observedAt
+        && parsed.data.session.expiresAt.getTime() >= value.observedAt;
+      return valid ? stableJSON(normalizeClientValue(parsed.data)) === stableJSON(value.decoded) : value.decoded === null;
+    } catch { return false; }
+  }
+  function cacheClock(a: number, b: number, path: string) {
+    if (a !== b && Math.abs((a-context.leftStartedAt)-(b-context.rightStartedAt)) > 1500) fail(path,"compact cache timestamp differs");
+  }
   const leftEncryptedClaims = new Map<string, string>(), rightEncryptedClaims = new Map<string, string>();
   function rememberEncryptedClaims(value: Record<string, unknown>, seen: Map<string, string>, path: string) {
     const token = String(value.token), claims = stableJSON(value.payload), previous = seen.get(token);
@@ -208,7 +254,10 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     } catch { return undefined; }
   }
 
-  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false, urlQueryContext: "url" | "query" | undefined = undefined, adminFilterUrl = false) {
+  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false, urlQueryContext: "url" | "query" | undefined = undefined, adminFilterUrl = false, compactCache = false) {
+    if (compactCache && typeof a === "number" && typeof b === "number" && /\.compactSessionCache\.(?:envelope\.expiresAt|(?:envelope\.session|decoded)\.updatedAt)$/.test(`.${path}`)) {
+      cacheClock(a,b,path); return;
+    }
     if (typeof a === "string" && typeof b === "string" && !traceShape(path)
       && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path)) {
       if (key === "teamId" && (a.includes(",") || b.includes(","))) {
@@ -267,10 +316,30 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     }
     if (Array.isArray(a) && Array.isArray(b)) {
       if (a.length !== b.length) fail(path, "array length differs");
-      a.forEach((child, index) => visit(child, b[index], `${path ? `${path}.` : ""}${index}`, key, false, applicationData || jwtPayload, false, false, urlQueryContext, adminFilterUrl));
+      a.forEach((child, index) => visit(child, b[index], `${path ? `${path}.` : ""}${index}`, key, false, applicationData || jwtPayload, false, false, urlQueryContext, adminFilterUrl, compactCache));
       return;
     }
     if (record(a) && record(b)) {
+      if (key === "compactSessionCache") {
+        if (applicationData || traceShape(path) || /(?:^|\.)applicationData(?:\.|$)/.test(path)) {
+          if (stableJSON(a) !== stableJSON(b)) fail(path,"application compact-cache-shaped data differs literally");
+          return;
+        }
+        if (!authenticatedCompactCache(a,context.leftStartedAt,context.leftFinishedAt)
+          || !authenticatedCompactCache(b,context.rightStartedAt,context.rightFinishedAt)) {
+          if (stableJSON(a) !== stableJSON(b)) fail(path,"unverified compact cache observation differs literally");
+          return;
+        }
+        const leftEnvelope = a.envelope as Record<string,unknown>, rightEnvelope = b.envelope as Record<string,unknown>;
+        const leftPayload = leftEnvelope.session as Record<string,unknown>, rightPayload = rightEnvelope.session as Record<string,unknown>;
+        if (!Object.is(a.effectiveMaxAgeSeconds,b.effectiveMaxAgeSeconds)) fail(path,"compact cache effective lifetime differs");
+        identity(String(a.token),String(b.token),`${path}.token`,"token");
+        cacheClock(Number(a.observedAt),Number(b.observedAt),`${path}.observedAt`);
+        visit(leftEnvelope.expiresAt,rightEnvelope.expiresAt,`${path}.envelope.expiresAt`,"expiresAt",false,false,false,false,undefined,false,true);
+        visit(leftPayload,rightPayload,`${path}.envelope.session`,"",false,false,false,false,undefined,false,true);
+        visit(a.decoded,b.decoded,`${path}.decoded`,"",false,false,false,false,undefined,false,true);
+        return;
+      }
       if (key === "accountCookie" && !applicationData && !traceShape(path)) {
         if (!encryptedAccountCookie(a) || !encryptedAccountCookie(b)) {
           fail(path, "authenticated encrypted account-cookie envelope differs");
@@ -355,7 +424,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           // use the existing graph. Arity, order, duplicates and URL fields stay.
           visit(a.filterValue, b.filterValue, childPath, "id", false, false, false, false, "query");
         }
-        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData, false, false, urlQueryContext === "query" || (urlQueryContext === "url" && childKey === "query") ? "query" : undefined, adminFilterUrl);
+        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData, false, false, urlQueryContext === "query" || (urlQueryContext === "url" && childKey === "query") ? "query" : undefined, adminFilterUrl, compactCache);
       }
       return;
     }
