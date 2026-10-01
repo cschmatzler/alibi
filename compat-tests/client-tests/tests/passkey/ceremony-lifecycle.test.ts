@@ -208,6 +208,7 @@ compatScenario(
       replay: ctx.snapshot(replay),
     };
   },
+  ["POST /passkey/verify-registration", "POST /passkey/verify-authentication"],
 );
 
 function client(ctx: ScenarioContext, actor: string, profile?: FixtureProfile) {
@@ -444,6 +445,7 @@ compatScenario(
       finalState,
     };
   },
+  ["POST /passkey/verify-registration", "POST /passkey/verify-authentication"],
 );
 
 compatScenario(
@@ -565,6 +567,7 @@ compatScenario(
       finalState,
     };
   },
+  ["POST /passkey/verify-registration"],
 );
 
 compatScenario(
@@ -644,4 +647,5 @@ compatScenario(
     }
     return results;
   },
+  ["POST /passkey/verify-registration", "GET /passkey/generate-register-options"],
 );
