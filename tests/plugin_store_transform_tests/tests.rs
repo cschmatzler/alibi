@@ -317,3 +317,161 @@ async fn enabled_plugin_defaults_preserve_explicit_flags_and_existing_nulls() {
         ]
     );
 }
+
+#[tokio::test]
+async fn session_callbacks_observe_real_commit_and_finalized_transforms_but_never_sql_rollback() {
+    use better_auth_core::{AuthSession, store::SessionStore};
+    use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+    let (config, raw) = store().await;
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let auth = AuthBuilder::new(config.clone())
+        .store_arc(Arc::<SeaOrmStore<Schema>>::clone(&raw))
+        .plugin(UserTransforms)
+        .plugin(SessionLifecyclePlugin(Arc::new(CommittedSessionObserver {
+            raw: Arc::clone(&raw),
+            seen: Arc::clone(&seen),
+            fail: false,
+        })))
+        .build()
+        .await
+        .unwrap();
+    let mut input = CreateUser::new().with_email("commit-owner@lifecycle.fixture.test");
+    input.phone_number = Some("+12025550199".into());
+    input.phone_number_verified = Some(true);
+    let owner = auth.store().create_user(input).await.unwrap();
+    let ordinary = auth
+        .store()
+        .create_session(session_input(owner.id().to_string(), "ordinary-session"))
+        .await
+        .unwrap();
+    assert_eq!(seen.lock().unwrap().as_slice(), &[ordinary.token()]);
+    let actual = raw.get_user_by_id(&owner.id()).await.unwrap().unwrap();
+    assert_eq!(actual.phone_number(), None);
+    assert_eq!(actual.phone_number_verified(), Some(false));
+
+    let owner_id = owner.id().to_string();
+    let committed = transaction(auth.store().as_ref(), |tx| {
+        Box::pin(async move {
+            tx.create_session(session_input(owner_id, "committed-session"))
+                .await
+        })
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        seen.lock().unwrap().as_slice(),
+        &[ordinary.token(), committed.token()]
+    );
+    let _trigger = raw.connection().execute_raw(Statement::from_string(DbBackend::Sqlite,
+        "CREATE TRIGGER reject_lifecycle_user BEFORE INSERT ON users WHEN NEW.email='sql-rejected@lifecycle.fixture.test' BEGIN SELECT RAISE(ABORT,'application rejected insert'); END"
+    )).await.unwrap();
+    let before = raw.get_user_sessions(&owner.id()).await.unwrap();
+    let owner_id = owner.id().to_string();
+    let rejected: AuthResult<()> = transaction(auth.store().as_ref(), |tx| {
+        Box::pin(async move {
+            drop(
+                tx.create_session(session_input(owner_id, "rolled-back-session"))
+                    .await?,
+            );
+            drop(
+                tx.create_user(CreateUser::new().with_email("sql-rejected@lifecycle.fixture.test"))
+                    .await?,
+            );
+            Ok(())
+        })
+    })
+    .await;
+    assert!(matches!(rejected, Err(AuthError::Database(_))));
+    assert!(
+        raw.get_session("rolled-back-session")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        raw.get_user_by_email("sql-rejected@lifecycle.fixture.test")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let after = raw.get_user_sessions(&owner.id()).await.unwrap();
+    assert_eq!(
+        before
+            .iter()
+            .map(better_auth_core::AuthSession::token)
+            .collect::<Vec<_>>(),
+        after
+            .iter()
+            .map(better_auth_core::AuthSession::token)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        seen.lock().unwrap().as_slice(),
+        &[ordinary.token(), committed.token()]
+    );
+
+    let failure = AuthBuilder::new(config)
+        .store_arc(Arc::<SeaOrmStore<Schema>>::clone(&raw))
+        .plugin(SessionLifecyclePlugin(Arc::new(CommittedSessionObserver {
+            raw: Arc::clone(&raw),
+            seen: Arc::clone(&seen),
+            fail: true,
+        })))
+        .build()
+        .await
+        .unwrap();
+    let owner_id = owner.id().to_string();
+    let result = transaction(failure.store().as_ref(), |tx| {
+        Box::pin(async move {
+            tx.create_session(session_input(owner_id, "persisted-before-callback-error"))
+                .await
+        })
+    })
+    .await;
+    assert!(matches!(result, Err(AuthError::Internal(_))));
+    assert!(
+        raw.get_session("persisted-before-callback-error")
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(
+        seen.lock().unwrap().last().unwrap(),
+        "persisted-before-callback-error"
+    );
+}
+
+#[tokio::test]
+async fn last_login_database_tracking_requires_actual_request_context_for_trusted_store_calls() {
+    use better_auth::plugins::LastLoginMethodConfig;
+    use better_auth::plugins::LastLoginMethodPlugin;
+    let (config, raw) = store().await;
+    let auth = AuthBuilder::new(config)
+        .store_arc(Arc::<SeaOrmStore<Schema>>::clone(&raw))
+        .plugin(LastLoginMethodPlugin::with_config(LastLoginMethodConfig {
+            store_in_database: true,
+            ..Default::default()
+        }))
+        .build()
+        .await
+        .unwrap();
+    let user = auth
+        .store()
+        .create_user(CreateUser::new().with_email("server-owner@tracking.fixture.test"))
+        .await
+        .unwrap();
+    drop(
+        auth.store()
+            .create_session(session_input(user.id().to_string(), "trusted-session"))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        raw.get_user_by_id(&user.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .last_login_method(),
+        None
+    );
+}

@@ -21,6 +21,8 @@ pub mod email_verification;
 pub mod helpers;
 
 pub mod jwt;
+pub mod last_login_method;
+pub use last_login_method::{LastLoginMethodConfig, LastLoginMethodPlugin};
 
 pub mod magic_link;
 

@@ -171,3 +171,5 @@ export async function createSiweFixture(database: Database, base: BetterAuthOpti
   }
   return {profiles,handle,reset:()=>{counter=0;enteredVerifier=null;releaseVerifier=null;nonceOverride=null;verifierMode="verify";ensMode="resolve";rpcMode="verify";inputs.length=0;lookups.length=0;rpcCalls.length=0;database.query("DELETE FROM walletAddress").run();}};
 }
+
+export function verifyFixtureEip191(message:string,signature:string,address:string){return recover(digest(message),signature)===address;}

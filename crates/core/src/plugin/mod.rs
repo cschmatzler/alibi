@@ -235,10 +235,20 @@ macro_rules! impl_auth_plugin {
     };
 }
 
-/// Route definition for plugins
+/// The admitted endpoint's logical callback path and matched path parameters.
+/// Original request bytes and URI remain in the request itself.
+#[derive(Clone, Debug, Default)]
+pub struct ResolvedEndpoint {
+    pub path: String,
+    pub params: HashMap<String, String>,
+}
+
+/// Route definition for plugins.
 #[derive(Debug, Clone)]
 pub struct AuthRoute {
     pub path: String,
+    /// Logical callback template when it differs from native routing syntax.
+    pub context_path: Option<String>,
     pub method: HttpMethod,
     /// Identifier used as the `OpenAPI` `operationId` for this route.
     pub operation_id: String,
@@ -271,9 +281,16 @@ impl AuthRoute {
     ) -> Self {
         Self {
             path: path.into(),
+            context_path: None,
             method,
             operation_id: operation_id.into(),
         }
+    }
+
+    #[must_use]
+    pub fn with_context_path(mut self, path: impl Into<String>) -> Self {
+        self.context_path = Some(path.into());
+        self
     }
 
     #[must_use]
@@ -353,6 +370,23 @@ impl<S: AuthSchema> AuthInitContext<S> {
         self.extensions.insert(transforms);
     }
 
+    /// Register an adapter lifecycle callback for each committed session creation.
+    /// Transactional creations defer callbacks until commit and discard them on
+    /// rollback. A callback error propagates after persistence, as for other
+    /// adapter after callbacks. Trusted server operations have no request context.
+    pub fn register_session_created_hook(
+        &mut self,
+        callback: Arc<dyn crate::store::SessionCreatedHook<S>>,
+    ) {
+        let mut callbacks = self
+            .extensions
+            .get::<crate::store::SessionCreatedCallbacks<S>>()
+            .map(|value| (*value).clone())
+            .unwrap_or_default();
+        callbacks.callbacks.push(callback);
+        self.extensions.insert(callbacks);
+    }
+
     /// Finalize the instance's store without mutating a shared underlying adapter.
     #[must_use]
     pub fn database_with_registered_transforms(&self) -> Arc<dyn AuthStore<S>> {
@@ -361,13 +395,23 @@ impl<S: AuthSchema> AuthInitContext<S> {
             .get::<crate::store::UserTransforms>()
             .map(|value| (*value).clone())
             .unwrap_or_default();
+        let session_callbacks = self
+            .extensions
+            .get::<crate::store::SessionCreatedCallbacks<S>>()
+            .map(|value| (*value).clone())
+            .unwrap_or_default();
         let fields = self.extensions.get::<crate::field_policy::SessionFields>();
-        if transforms.creates.is_empty() && transforms.updates.is_empty() && fields.is_none() {
+        if transforms.creates.is_empty()
+            && transforms.updates.is_empty()
+            && session_callbacks.callbacks.is_empty()
+            && fields.is_none()
+        {
             return Arc::clone(&self.database);
         }
         Arc::new(crate::store::PluginStore::new(
             Arc::clone(&self.database),
             transforms,
+            session_callbacks,
             fields.map(|fields| (*fields).clone()).unwrap_or_default(),
             self.extensions
                 .get::<crate::field_policy::SessionAdapterFields>()

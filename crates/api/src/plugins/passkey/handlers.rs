@@ -635,13 +635,13 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
-pub(super) async fn verify_authentication_core(
+pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
     body: &VerifyAuthenticationRequest,
     req: &better_auth_core::AuthRequest,
     config: &PasskeyConfig,
     ip_address: Option<String>,
     user_agent: Option<String>,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<S>,
 ) -> PasskeyHandlerResult<(Value, String)> {
     let Some(origin) = resolve_origin(config, req) else {
         return response_message(400, "origin missing");
@@ -843,6 +843,15 @@ pub(super) async fn verify_authentication_core(
         Ok(issued) => issued.session,
         Err(error) => return Err(error),
     };
+
+    let Some(user) = ctx.database.get_user_by_id(&verified_owner).await? else {
+        return response_message(500, "User not found");
+    };
+    super::super::helpers::record_completed_session_user_view::<S>(
+        &user,
+        &session,
+        ctx.user_view(&user),
+    );
 
     Ok(PasskeyHandlerOutcome::Success((
         serde_json::to_value(SessionResponse {

@@ -165,10 +165,10 @@ impl MultiSessionPlugin {
         Ok(AuthResponse::json(200, &values)?)
     }
 
-    async fn select(
+    async fn select<S: AuthSchema>(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl AuthSchema>,
+        ctx: &AuthContext<S>,
         revoke: bool,
     ) -> AuthResult<AuthResponse> {
         let body: SessionTokenRequest = match parse_body(req) {
@@ -244,6 +244,7 @@ impl MultiSessionPlugin {
             &json!({"session":ctx.session_view(&session),"user":ctx.user_view(&user)}),
         )?;
         Self::set_active_cookie(req, ctx, session.token(), &mut response);
+        super::helpers::record_completed_session::<S>(&user, &session);
         Ok(response)
     }
 }

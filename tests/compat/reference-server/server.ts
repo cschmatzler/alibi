@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { createLastLoginMethodFixture } from "./last-login-method-fixture";
 import { createTwoFactorPendingLookupFixture } from "./two-factor-pending-lookup-fixture";
 import { createBearerFixture } from "./bearer-fixture";
 import { sessionCookieCacheFixture } from "./session-cookie-cache-fixture";
@@ -436,6 +437,7 @@ const organizationInvitationFixture = organizationInvitationAcceptanceFixture(da
 const organizationAdditionFixture = organizationMemberAdditionFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationMemberRemovalFixture = organizationMemberRemovalHooksFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationMemberRoleFixture = organizationMemberRoleHooksFixture(database, authOptions, `http://localhost:${PORT}`);
+const lastLoginMethodFixture = await createLastLoginMethodFixture(authOptions, database);
 const twoFactorPendingLookupFixture = await createTwoFactorPendingLookupFixture(authOptions, database);
 const organizationUpdateFixture = organizationUpdateHooksFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationDeletionFixture = organizationDeletionHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
@@ -932,6 +934,12 @@ const server = Bun.serve({
         return jsonResponse({ ok: true, oauthBaseURL, upstreamVersion: INSTALLED_BETTER_AUTH_VERSION });
       }
 
+      for(const [name,auth] of lastLoginMethodFixture.profiles){
+        const path=`/__test/profiles/${name}/api/auth`;
+        if(url.pathname===path||url.pathname.startsWith(`${path}/`))return auth.handler(request);
+      }
+      const lastLoginControl=await lastLoginMethodFixture.handle(request);
+      if(lastLoginControl)return lastLoginControl;
       for (const [name,profile] of jwtProfiles) {
         const path = `/__test/profiles/${name}/api/auth`;
         if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return profile.auth.handler(request);
