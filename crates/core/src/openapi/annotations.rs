@@ -99,7 +99,11 @@ pub fn plugin_metadata(plugin: &str, routes: &[AuthRoute]) -> PluginOpenApiMetad
                 },
                 &route.path,
             )
-            .unwrap_or_else(|| endpoint(&route.path)),
+            .or_else(|| endpoint(&route.path))
+            .unwrap_or_else(|| OpenApiEndpoint {
+                operation_id: Some(route.operation_id.clone()),
+                ..Default::default()
+            }),
         ));
     }
     if let Some(models) = super::source_models::models(plugin) {
@@ -162,29 +166,29 @@ pub fn core_routes() -> Vec<AuthRoute> {
 fn response(description: &str, schema: Value) -> Value {
     json!({"description":description,"content":{"application/json":{"schema":schema}}})
 }
-fn endpoint(path: &str) -> OpenApiEndpoint {
+fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
     if path == crate::core_paths::OPENAPI_SPEC {
-        return OpenApiEndpoint {
+        return Some(OpenApiEndpoint {
             native_extension: true,
             ..Default::default()
-        };
+        });
     }
     if let Some(metadata) = super::sign_in_annotations::endpoint(path)
         .or_else(|| super::oauth_annotations::endpoint(path))
     {
-        return metadata;
+        return Some(metadata);
     }
     if let Some(metadata) = super::user_annotations::endpoint(path) {
-        return metadata;
+        return Some(metadata);
     }
     if let Some(metadata) = super::account_annotations::endpoint(path)
         .or_else(|| super::password_annotations::endpoint(path))
         .or_else(|| super::email_annotations::endpoint(path))
     {
-        return metadata;
+        return Some(metadata);
     }
     if let Some(metadata) = super::session_annotations::endpoint(path) {
-        return metadata;
+        return Some(metadata);
     }
     let mut metadata = OpenApiEndpoint::default();
     match path {
@@ -221,7 +225,7 @@ fn endpoint(path: &str) -> OpenApiEndpoint {
             // reflects a direct object, so its generated parameter list is empty.
             let _ = metadata.responses.insert("200".into(),response("Success",json!({"type":["object","null"],"properties":{"session":{"$ref":"#/components/schemas/Session"},"user":{"$ref":"#/components/schemas/User"}},"required":["session","user"]})));
         }
-        _ => {}
+        _ => return None,
     }
-    metadata
+    Some(metadata)
 }

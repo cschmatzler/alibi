@@ -132,7 +132,20 @@ async fn test_openapi_spec_includes_core_and_plugin_routes() {
         .to_value()
         .expect("OpenAPI spec should serialize to JSON");
 
-    assert!(spec["paths"]["/ok"]["get"]["operationId"].is_string());
+    // The pinned /ok metadata omits an operationId; its actual registration
+    // retains the Rust routing identifier independently of document policy.
+    assert!(
+        auth.registered_routes()
+            .iter()
+            .any(|route| route.method == HttpMethod::Get
+                && route.path == "/ok"
+                && route.operation_id == "ok")
+    );
+    assert_eq!(
+        spec["paths"]["/ok"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]["properties"]
+            ["ok"]["type"],
+        "boolean"
+    );
     assert_eq!(
         spec["paths"]["/route-test"]["get"]["operationId"],
         "route_test"

@@ -38,11 +38,15 @@ async fn runtime_routes_match_capability_inventory() {
     assert!(
         registered
             .iter()
-            .any(|route| route.path == better_auth_core::core_paths::OPENAPI_SPEC)
+            .any(|route| route.method == better_auth_core::HttpMethod::Get
+                && route.path == better_auth_core::core_paths::OPENAPI_SPEC)
     );
     let actual: BTreeSet<String> = registered
         .into_iter()
-        .filter(|route| route.path != better_auth_core::core_paths::OPENAPI_SPEC)
+        .filter(|route| {
+            !(route.method == better_auth_core::HttpMethod::Get
+                && route.path == better_auth_core::core_paths::OPENAPI_SPEC)
+        })
         .map(|route| {
             format!(
                 "{} {}",
