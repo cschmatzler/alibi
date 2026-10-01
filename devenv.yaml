@@ -3,5 +3,3 @@ inputs:
     url: git+ssh://git@github.com/cschmatzler/rust
   nixpkgs:
     follows: rust-style/nixpkgs
-imports:
-  - ./devenv-project.nix
