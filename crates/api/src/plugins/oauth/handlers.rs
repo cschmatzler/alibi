@@ -712,6 +712,24 @@ async fn process_oauth_sign_in(
                 .map_err(|error| error.to_string())?;
         }
 
+        if linking.update_user_info_on_link {
+            match ctx
+                .database
+                .update_user(
+                    &linked_user.id(),
+                    UpdateUser {
+                        name: user_info.name.clone(),
+                        image: user_info.image.clone(),
+                        ..Default::default()
+                    },
+                )
+                .await
+            {
+                Ok(updated) => linked_user = updated,
+                Err(error) => tracing::warn!(%error, "Could not update user info on account link"),
+            }
+        }
+
         if provider.override_user_info_on_sign_in {
             linked_user =
                 ctx.database
