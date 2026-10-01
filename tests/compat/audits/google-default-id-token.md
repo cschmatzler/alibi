@@ -34,9 +34,7 @@ Final post-review full OAuth/One Tap proof: `/tmp/issue-228-final-retained-proof
 61 controls / 4,458 assertions. Native OAuth owners: 12/12. Strict workspace default
 and optional/all-target Clippy, fixture Clippy and client TypeScript pass. Independent
 production, authorization and primary-owner review found no remaining bounded
-findings after the explicit audience precedence repair. The canonical integrated
-gate and Apple shared-policy synchronization remain pending; focused proof is not
-a complete gate claim.
+findings after the explicit audience precedence repair. Apple shared policy was synchronized onto merged main `230231df`. Fresh integrated Google, Apple and One Tap controls pass 73/73 / 2,104 assertions (`/tmp/issue228-rebased-proof.log`), native account OAuth and transactional owners pass 19/19, and strict default/optional workspace and fixture Clippy, formatting and TypeScript pass. This focused integration is not a complete canonical gate claim: Apple's recorded full SDK run retained 21 baseline failures, and hosted jobs cannot start because of the account billing limit.
 
 The owner-boundary regression covers a public default, signature admission,
 configuration, identity ownership and session/token lifecycle. No private helper
