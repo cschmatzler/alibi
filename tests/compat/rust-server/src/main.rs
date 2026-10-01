@@ -1864,9 +1864,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("READY");
 
     let listener = TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
 
     Ok(())
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut terminate = signal(SignalKind::terminate()).expect("register fixture SIGTERM");
+        tokio::select! {
+            _ = terminate.recv() => {},
+            _ = tokio::signal::ctrl_c() => {},
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        drop(tokio::signal::ctrl_c().await);
+    }
 }
 
 /// The pinned upstream release this fixture claims parity with; the harness

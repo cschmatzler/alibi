@@ -34,7 +34,24 @@ impl ManagedChild {
 impl Drop for ManagedChild {
     fn drop(&mut self) {
         if matches!(self.child.try_wait(), Ok(None)) {
-            drop(self.child.kill());
+            // A normal fixture exit flushes LLVM counters from actual HTTP
+            // execution. Keep cleanup bounded, including failed SDK runs.
+            #[cfg(unix)]
+            if Command::new("kill")
+                .args(["-TERM", &self.child.id().to_string()])
+                .status()
+                .is_ok_and(|status| status.success())
+            {
+                let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                while matches!(self.child.try_wait(), Ok(None))
+                    && std::time::Instant::now() < deadline
+                {
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+            }
+            if matches!(self.child.try_wait(), Ok(None)) {
+                drop(self.child.kill());
+            }
         }
         drop(self.child.wait());
     }
@@ -98,14 +115,25 @@ fn start_reference_server(port: u16) -> ManagedChild {
 }
 
 fn build_rust_compat_server() -> PathBuf {
-    let output = Command::new("cargo")
-        .args([
-            "build",
-            "--locked",
-            "--manifest-path",
-            "tests/compat/rust-server/Cargo.toml",
-            "--message-format=json-render-diagnostics",
-        ])
+    let mut command = Command::new("cargo");
+    if let Some(target_dir) = std::env::var_os("BETTER_AUTH_COMPAT_COVERAGE_TARGET_DIR") {
+        let _ = command.env("CARGO_TARGET_DIR", target_dir);
+        // The LLVM wrapper instruments this workspace's dependencies, but the
+        // standalone fixture also needs its own profiler runtime at link time.
+        let _ = command.arg("rustc");
+    } else {
+        let _ = command.arg("build");
+    }
+    let _ = command.args([
+        "--locked",
+        "--manifest-path",
+        "tests/compat/rust-server/Cargo.toml",
+        "--message-format=json-render-diagnostics",
+    ]);
+    if std::env::var_os("BETTER_AUTH_COMPAT_COVERAGE_TARGET_DIR").is_some() {
+        let _ = command.args(["--", "-C", "instrument-coverage"]);
+    }
+    let output = command
         .current_dir(project_root())
         .stderr(Stdio::inherit())
         .output()
