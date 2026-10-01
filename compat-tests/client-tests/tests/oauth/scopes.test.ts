@@ -157,4 +157,5 @@ compatScenario(
       foreignSession,
     };
   },
+  ["GET /list-accounts"],
 );

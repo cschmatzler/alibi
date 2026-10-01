@@ -178,7 +178,8 @@ assertions, 42 harness / 344, two Chromium / 22 and 78.788518% source lines
 (29,864 / 37,904). PRs #114–116 are merged. Reviewed PRs #117–124 remain pending
 their combined canonical gate; focused proof does not substitute for that gate.
 An attempted 558-scenario run passed 557 and exposed six-digit account-list
-timestamp parsing by the official client. The production repair is in progress;
-the failed run is retained and no comparison tolerance changes. Invitation
+timestamp parsing by the official client. The reviewed production repair (#125)
+passes deterministic Source-self/differential and family checks; the failed run
+is retained and no comparison tolerance changes. Invitation
 staging, GitLab, core callback origins and membership policy are integrated next.
 Anonymous authentication and cookie-cache/encrypted-token contracts continue.
