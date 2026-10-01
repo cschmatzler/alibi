@@ -34,6 +34,12 @@ fn response_message<T>(status: u16, message: &str) -> PasskeyHandlerResult<T> {
     ))
 }
 
+fn response_code<T>(status: u16, code: &str, message: &str) -> PasskeyHandlerResult<T> {
+    Ok(PasskeyHandlerOutcome::Response(
+        better_auth_core::AuthResponse::json(status, &json!({ "code": code, "message": message }))?,
+    ))
+}
+
 fn challenge_not_found<T>() -> PasskeyHandlerResult<T> {
     Ok(PasskeyHandlerOutcome::Response(
         better_auth_core::AuthResponse::json(
@@ -68,15 +74,19 @@ fn generation_origin(
 }
 
 fn passkey_registration_failure<T>() -> PasskeyHandlerResult<T> {
-    response_message(500, "Failed to verify registration")
+    response_code(
+        500,
+        "FAILED_TO_VERIFY_REGISTRATION",
+        "Failed to verify registration",
+    )
 }
 
 fn passkey_authentication_failure<T>() -> PasskeyHandlerResult<T> {
-    response_message(400, "Authentication failed")
+    response_code(400, "AUTHENTICATION_FAILED", "Authentication failed")
 }
 
 fn passkey_not_found<T>() -> PasskeyHandlerResult<T> {
-    response_message(403, "Passkey not found")
+    response_code(401, "PASSKEY_NOT_FOUND", "Passkey not found")
 }
 
 pub(super) async fn generate_register_options_core(
@@ -250,16 +260,29 @@ pub(super) async fn verify_registration_core(
         Err(_) => return challenge_not_found(),
     };
 
-    let Some(verification) = ctx.database.get_verification_by_identifier(&token).await? else {
-        return response_null(400);
+    let Some(verification) = ctx
+        .database
+        .consume_verification_by_identifier(&token)
+        .await?
+    else {
+        return challenge_not_found();
     };
 
     let stored_state: StoredRegistrationState = match serde_json::from_str(verification.value()) {
         Ok(state) => state,
+        Err(_)
+            if serde_json::from_str::<StoredAuthenticationState>(verification.value()).is_ok() =>
+        {
+            return challenge_not_found();
+        }
         Err(_) => return passkey_registration_failure(),
     };
     if stored_state.user_id != user.id() {
-        return response_message(403, "You are not allowed to register this passkey");
+        return response_code(
+            401,
+            "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY",
+            "You are not allowed to register this passkey",
+        );
     }
 
     let registration: RegisterPublicKeyCredential =
@@ -314,15 +337,6 @@ pub(super) async fn verify_registration_core(
         Err(_) => return passkey_registration_failure(),
     };
 
-    if ctx
-        .database
-        .delete_verification(verification.id().as_ref())
-        .await
-        .is_err()
-    {
-        return passkey_registration_failure();
-    }
-
     Ok(PasskeyHandlerOutcome::Success(serde_json::to_value(
         PasskeyView::from(&passkey),
     )?))
@@ -348,12 +362,19 @@ pub(super) async fn verify_authentication_core(
         Err(_) => return challenge_not_found(),
     };
 
-    let Some(verification) = ctx.database.get_verification_by_identifier(&token).await? else {
+    let Some(verification) = ctx
+        .database
+        .consume_verification_by_identifier(&token)
+        .await?
+    else {
         return challenge_not_found();
     };
 
     let stored_state: StoredAuthenticationState = match serde_json::from_str(verification.value()) {
         Ok(state) => state,
+        Err(_) if serde_json::from_str::<StoredRegistrationState>(verification.value()).is_ok() => {
+            return challenge_not_found();
+        }
         Err(_) => return passkey_authentication_failure(),
     };
     let authentication: PublicKeyCredential = match serde_json::from_value(body.response.clone()) {
@@ -393,6 +414,9 @@ pub(super) async fn verify_authentication_core(
     };
     let authentication_result = match authentication_result {
         Ok(result) => result,
+        Err(webauthn_rs::prelude::WebauthnError::AuthenticationFailure) => {
+            return response_code(401, "AUTHENTICATION_FAILED", "Authentication failed");
+        }
         Err(_) => return passkey_authentication_failure(),
     };
 
@@ -432,15 +456,6 @@ pub(super) async fn verify_authentication_core(
     else {
         return response_message(500, "User not found");
     };
-
-    if ctx
-        .database
-        .delete_verification(verification.id().as_ref())
-        .await
-        .is_err()
-    {
-        return passkey_authentication_failure();
-    }
 
     let session = match issue_user_session(ctx, &user.id(), ip_address, user_agent)
         .await

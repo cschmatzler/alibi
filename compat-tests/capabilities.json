@@ -545,10 +545,13 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "passkey client surface matches TS for options and management errors",
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": [
+          "passkey client surface matches TS for options and management errors",
+          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions"
+        ],
+        "rejection": "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
+        "authorization": "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
+        "state": "passkey registration freshness rejects before consumption and freshAge zero permits old sessions"
       }
     },
     {
@@ -1904,10 +1907,22 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "passkey registration authentication ownership and deletion round trip",
-        "rejection": "passkey registration authentication ownership and deletion round trip",
-        "authorization": null,
-        "state": "passkey registration authentication ownership and deletion round trip"
+        "success": [
+          "passkey registration authentication ownership and deletion round trip",
+          "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
+          "passkey rejected cryptographic attempts consume challenges without credential or session writes"
+        ],
+        "rejection": [
+          "passkey registration authentication ownership and deletion round trip",
+          "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
+          "passkey rejected cryptographic attempts consume challenges without credential or session writes"
+        ],
+        "authorization": "passkey rejected cryptographic attempts consume challenges without credential or session writes",
+        "state": [
+          "passkey registration authentication ownership and deletion round trip",
+          "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
+          "passkey rejected cryptographic attempts consume challenges without credential or session writes"
+        ]
       }
     },
     {
@@ -1915,10 +1930,29 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "passkey registration authentication ownership and deletion round trip",
-        "rejection": null,
-        "authorization": null,
-        "state": "passkey registration authentication ownership and deletion round trip"
+        "success": [
+          "passkey registration authentication ownership and deletion round trip",
+          "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
+          "passkey rejected cryptographic attempts consume challenges without credential or session writes",
+          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions"
+        ],
+        "rejection": [
+          "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
+          "passkey rejected cryptographic attempts consume challenges without credential or session writes",
+          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
+          "passkey foreign owner, expired challenge and wrong ceremony retire the actual persisted generation"
+        ],
+        "authorization": [
+          "passkey foreign owner, expired challenge and wrong ceremony retire the actual persisted generation",
+          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions"
+        ],
+        "state": [
+          "passkey registration authentication ownership and deletion round trip",
+          "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
+          "passkey rejected cryptographic attempts consume challenges without credential or session writes",
+          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
+          "passkey foreign owner, expired challenge and wrong ceremony retire the actual persisted generation"
+        ]
       }
     },
     {
