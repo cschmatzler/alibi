@@ -750,6 +750,26 @@ impl MemberStore for MemoryStore {
     async fn delete_member(&self, _member_id: &str) -> AuthResult<()> {
         Ok(())
     }
+    async fn delete_member_with_context(
+        &self,
+        _member_id: &str,
+        _organization_id: &str,
+        _user_id: &str,
+        _remove_team_members: bool,
+    ) -> AuthResult<()> {
+        Err(AuthError::NotImplemented(
+            "Contextual member deletion is not supported by this test store".into(),
+        ))
+    }
+    async fn list_organization_members_page(
+        &self,
+        _organization_id: &str,
+        _limit: usize,
+    ) -> AuthResult<Vec<Member>> {
+        Err(AuthError::NotImplemented(
+            "Unsorted member pages are not supported by this test store".into(),
+        ))
+    }
     async fn list_organization_members(&self, _org_id: &str) -> AuthResult<Vec<Member>> {
         Ok(Vec::new())
     }

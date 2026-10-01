@@ -365,8 +365,18 @@ pub struct InvitationResponse<I: Serialize> {
 }
 
 #[derive(Debug, Serialize)]
-pub struct RemovedMemberResponse {
-    pub member: MemberResponse,
+pub struct RemovedMemberResponse<M = MemberResponse> {
+    pub member: M,
+}
+
+/// The original removed member. Email selection retains the joined minimal
+/// user; ID selection omits that join, matching the source adapter projection.
+#[derive(Debug, Clone, Serialize)]
+pub struct OrganizationMemberRemovalSnapshot {
+    #[serde(flatten)]
+    pub member: better_auth_core::Member,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<MemberUserView>,
 }
 
 #[derive(Debug, Serialize)]

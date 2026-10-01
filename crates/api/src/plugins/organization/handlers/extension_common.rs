@@ -55,6 +55,10 @@ pub fn org_error(status: u16, code: &'static str) -> AuthError {
         "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION" => "User is not a member of the organization",
         "USER_IS_NOT_A_MEMBER_OF_THE_TEAM" => "User is not a member of the team",
         "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_MEMBER" => "You are not allowed to update this member",
+        "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER" => "You are not allowed to delete this member",
+        "YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER" => {
+            "You cannot leave the organization as the only owner"
+        }
         "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_TEAM_MEMBER" => {
             "You are not allowed to create a new member"
         }

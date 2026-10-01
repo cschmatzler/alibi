@@ -9,8 +9,8 @@ use super::{require_session, resolve_organization_id};
 use crate::plugins::organization::OrganizationConfig;
 use crate::plugins::organization::types::{
     BasicMemberResponse, GetActiveMemberRoleQuery, GetActiveMemberRoleResponse, ListMembersQuery,
-    ListMembersResponse, MemberResponse, RemoveMemberRequest, RemovedMemberResponse,
-    UpdateMemberRoleRequest,
+    ListMembersResponse, MemberResponse, OrganizationMemberRemovalSnapshot, RemoveMemberRequest,
+    RemovedMemberResponse, UpdateMemberRoleRequest,
 };
 
 fn has_role(member: &impl AuthMember, role: &str) -> bool {
@@ -21,8 +21,17 @@ fn has_role(member: &impl AuthMember, role: &str) -> bool {
         .any(|candidate| candidate == role)
 }
 
-// Pinned update-member-role normalizes new inputs with ECMAScript String.trim.
-// Keep this separate from other endpoints and stored membership-role parsing.
+// Source update inputs and the removal requester-owner guard use JS trim.
+// Other stored role checks and generic RoleInput normalization remain separate.
+fn js_role_trim(role: &str) -> &str {
+    role.trim_matches(|character| {
+        matches!(character,
+            '\u{0009}'..='\u{000D}' | '\u{0020}' | '\u{00A0}' | '\u{1680}' |
+            '\u{2000}'..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{202F}' |
+            '\u{205F}' | '\u{3000}' | '\u{FEFF}')
+    })
+}
+
 fn normalized_update_roles(role: &super::super::types::RoleInput) -> Vec<&str> {
     let inputs = match role {
         super::super::types::RoleInput::One(role) => std::slice::from_ref(role),
@@ -31,14 +40,7 @@ fn normalized_update_roles(role: &super::super::types::RoleInput) -> Vec<&str> {
     inputs
         .iter()
         .flat_map(|role| role.split(','))
-        .map(|role| {
-            role.trim_matches(|character| {
-                matches!(character,
-                    '\u{0009}'..='\u{000D}' | '\u{0020}' | '\u{00A0}' | '\u{1680}' |
-                    '\u{2000}'..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{202F}' |
-                    '\u{205F}' | '\u{3000}' | '\u{FEFF}')
-            })
-        })
+        .map(js_role_trim)
         .filter(|role| !role.is_empty())
         .collect()
 }
@@ -168,83 +170,132 @@ pub(crate) async fn remove_member_core(
     session: &impl AuthSession,
     config: &OrganizationConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<RemovedMemberResponse> {
-    let org_id =
-        resolve_organization_id(body.organization_id.as_deref(), None, session, ctx).await?;
+) -> AuthResult<RemovedMemberResponse<OrganizationMemberRemovalSnapshot>> {
+    let org_id = body
+        .organization_id
+        .as_deref()
+        .filter(|id| !id.is_empty())
+        .or(session.active_organization_id())
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| super::extension_common::org_error(400, "NO_ACTIVE_ORGANIZATION"))?;
 
     let requester_member = ctx
         .database
-        .get_member(&org_id, &user.id())
+        .get_member(org_id, &user.id())
         .await?
-        .ok_or_else(|| AuthError::bad_request("Member not found"))?;
+        .ok_or_else(|| super::extension_common::org_error(400, "MEMBER_NOT_FOUND"))?;
 
-    let target_member = if body.member_id_or_email.contains('@') {
+    let by_email = body.member_id_or_email.contains('@');
+    let target_member = if by_email {
         let target_user = ctx
             .database
             .get_user_by_email(&body.member_id_or_email)
             .await?
-            .ok_or_else(|| AuthError::bad_request("Member not found"))?;
+            .filter(|target| {
+                target.email() == Some(body.member_id_or_email.to_lowercase().as_str())
+            })
+            .ok_or_else(|| super::extension_common::org_error(400, "MEMBER_NOT_FOUND"))?;
         ctx.database
-            .get_member(&org_id, &target_user.id())
+            .get_member(org_id, &target_user.id())
             .await?
-            .ok_or_else(|| AuthError::bad_request("Member not found"))?
+            .ok_or_else(|| super::extension_common::org_error(400, "MEMBER_NOT_FOUND"))?
     } else {
-        let target_member = ctx
-            .database
+        ctx.database
             .get_member_by_id(&body.member_id_or_email)
             .await?
-            .ok_or_else(|| AuthError::bad_request("Member not found"))?;
-        if target_member.organization_id() != org_id {
-            return Err(AuthError::bad_request("Member not found"));
-        }
-        target_member
+            .ok_or_else(|| super::extension_common::org_error(400, "MEMBER_NOT_FOUND"))?
     };
 
+    let creator_role = config.effective_creator_role();
+    if target_member
+        .role()
+        .split(',')
+        .any(|role| role == creator_role)
+    {
+        if !requester_member
+            .role()
+            .split(',')
+            .map(js_role_trim)
+            .any(|role| role == creator_role)
+        {
+            return Err(super::extension_common::org_error(
+                400,
+                "YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER",
+            ));
+        }
+        let page = ctx
+            .database
+            .list_organization_members_page(
+                org_id,
+                config
+                    .membership_limit
+                    .filter(|limit| *limit != 0)
+                    .unwrap_or(100),
+            )
+            .await?;
+        if page
+            .iter()
+            .filter(|candidate| candidate.role().split(',').any(|role| role == creator_role))
+            .count()
+            <= 1
+        {
+            return Err(super::extension_common::org_error(
+                400,
+                "YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER",
+            ));
+        }
+    }
+    if !super::extension_common::has_action(
+        requester_member.role(),
+        "member",
+        "delete",
+        config,
+        ctx,
+        org_id,
+    )
+    .await?
+    {
+        return Err(super::extension_common::org_error(
+            401,
+            "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER",
+        ));
+    }
+    if target_member.organization_id() != org_id {
+        return Err(super::extension_common::org_error(400, "MEMBER_NOT_FOUND"));
+    }
+    let _organization = ctx
+        .database
+        .get_organization_by_id(org_id)
+        .await?
+        .ok_or_else(|| super::extension_common::org_error(400, "ORGANIZATION_NOT_FOUND"))?;
     let target_user = ctx
         .database
         .get_user_by_id(&target_member.user_id())
         .await?
-        .ok_or_else(|| AuthError::bad_request("User not found"))?;
-
+        .ok_or_else(|| AuthError::Api {
+            status: 400,
+            code: None,
+            message: "User not found".into(),
+        })?;
     let is_self_removal = target_member.user_id() == user.id();
-
-    if !is_self_removal
-        && !super::extension_common::has_action(
-            requester_member.role(),
-            "member",
-            "delete",
-            config,
-            ctx,
-            &org_id,
-        )
-        .await?
-    {
-        return Err(AuthError::forbidden(
-            "You don't have permission to remove members",
-        ));
-    }
-
-    if has_role(&target_member, config.effective_creator_role()) {
-        let all_members = ctx.database.list_organization_members(&org_id).await?;
-        let owner_count = all_members
-            .iter()
-            .filter(|candidate| has_role(*candidate, config.effective_creator_role()))
-            .count();
-
-        if owner_count <= 1 {
-            return Err(AuthError::bad_request(
-                "You cannot leave the organization as the only owner",
-            ));
-        }
-    }
-
     let response = RemovedMemberResponse {
-        member: MemberResponse::from_member_and_user(&target_member, &target_user),
+        member: OrganizationMemberRemovalSnapshot {
+            user: by_email
+                .then(|| better_auth_core::entity::MemberUserView::from_user(&target_user)),
+            member: target_member.clone(),
+        },
     };
 
-    ctx.database.delete_member(&target_member.id()).await?;
+    ctx.database
+        .delete_member_with_context(
+            &target_member.id(),
+            org_id,
+            &target_member.user_id(),
+            config.teams.enabled,
+        )
+        .await?;
 
-    if is_self_removal && session.active_organization_id() == Some(&org_id) {
+    if is_self_removal && session.active_organization_id() == Some(org_id) {
         let _ = ctx
             .database
             .update_session_active_organization(session.token(), None)
@@ -445,11 +496,11 @@ pub async fn handle_remove_member(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
-    let (user, session) = require_session(req, ctx).await?;
-    let body: RemoveMemberRequest = match better_auth_core::validate_request_body(req) {
+    let body = match super::org_input::member_remove(req) {
         Ok(v) => v,
         Err(resp) => return Ok(resp),
     };
+    let (user, session) = super::extension_common::session(req, ctx).await?;
     let response = remove_member_core(&body, &user, &session, config, ctx).await?;
     Ok(AuthResponse::json(200, &response)?)
 }

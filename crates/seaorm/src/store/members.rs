@@ -203,6 +203,53 @@ where
             .map_err(map_db_err)
     }
 
+    async fn delete_member_with_context(
+        &self,
+        member_id: &str,
+        organization_id: &str,
+        user_id: &str,
+        remove_team_members: bool,
+    ) -> AuthResult<()> {
+        let transaction = self
+            .connection()
+            .begin_with_options(sea_orm::TransactionOptions {
+                sqlite_transaction_mode: Some(sea_orm::SqliteTransactionMode::Immediate),
+                ..Default::default()
+            })
+            .await
+            .map_err(map_db_err)?;
+        _ = Entity::delete_by_id(member_id.to_owned())
+            .exec(&transaction)
+            .await
+            .map_err(map_db_err)?;
+        if remove_team_members {
+            use super::entities::team;
+            let rooms = team::Entity::find()
+                .filter(team::Column::OrganizationId.eq(organization_id))
+                .limit(self.config().advanced.database.default_find_many_limit as u64)
+                .lock_exclusive()
+                .all(&transaction)
+                .await
+                .map_err(map_db_err)?;
+            super::teams::release_owned_team_members(&transaction, user_id, rooms).await?;
+        }
+        transaction.commit().await.map_err(map_db_err)
+    }
+
+    async fn list_organization_members_page(
+        &self,
+        organization_id: &str,
+        limit: usize,
+    ) -> AuthResult<Vec<Member>> {
+        Entity::find()
+            .filter(Column::OrganizationId.eq(organization_id))
+            .limit(limit as u64)
+            .all(self.connection())
+            .await
+            .map(|models| models.iter().map(Member::from).collect())
+            .map_err(map_db_err)
+    }
+
     async fn query_organization_members(
         &self,
         params: &ListOrganizationMembersParams,
