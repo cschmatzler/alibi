@@ -219,4 +219,5 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback", "POST /get-access-token"],
 );

@@ -92,6 +92,7 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );
 compatScenario(
   "One Tap required email verification commits identity before delivery and session",
@@ -164,6 +165,7 @@ compatScenario(
       final: { ...final, jwksFetches: final.jwksFetches - initial.jwksFetches },
     };
   },
+  ["POST /one-tap/callback"],
 );
 compatScenario(
   "One Tap explicit signup mail suppression preserves verification denial side effects",
@@ -194,6 +196,7 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );
 compatScenario(
   "One Tap implicit linking applies configured profile sync and preserves local identity",
@@ -283,6 +286,7 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );
 compatScenario(
   "One Tap ID token storage honors encryption and retained-account configurations",
@@ -371,6 +375,7 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );
 
 compatScenario(
@@ -430,6 +435,7 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );
 compatScenario(
   "One Tap retains the upstream user snapshot during email verification upgrades",
@@ -496,4 +502,5 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );

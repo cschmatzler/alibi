@@ -110,6 +110,7 @@ compatScenario(
       after: { ...after, jwksFetches: after.jwksFetches - initial.jwksFetches },
     };
   },
+  ["POST /one-tap/callback"],
 );
 compatScenario(
   "One Tap disabled signup preserves existing account ownership",
@@ -158,6 +159,7 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );
 compatScenario(
   "One Tap verifies raw JavaScript payload numbers and literal private keys",
@@ -214,6 +216,7 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );
 
 compatScenario(
@@ -253,4 +256,5 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );

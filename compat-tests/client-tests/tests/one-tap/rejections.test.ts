@@ -109,6 +109,7 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );
 compatScenario(
   "One Tap callback origin and request validation precede Google JWKS reads",
@@ -165,4 +166,5 @@ compatScenario(
     expect(persisted.sessions).toEqual(initial.sessions);
     return { forbidden, rejected, persisted: { ...persisted, jwksFetches: 0 } };
   },
+  ["POST /one-tap/callback"],
 );
