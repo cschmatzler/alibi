@@ -142,7 +142,11 @@ pub(super) async fn generate_register_options_core(
             AuthError::internal(format!("Failed to generate register options: {error}"))
         })?
         .attestation(AttestationConveyancePreference::None)
-        .credential_algorithms(COSEAlgorithm::secure_algs())
+        .credential_algorithms(vec![
+            COSEAlgorithm::EDDSA,
+            COSEAlgorithm::ES256,
+            COSEAlgorithm::RS256,
+        ])
         .require_resident_key(false)
         .user_verification_policy(UserVerificationPolicy::Preferred)
         .reject_synchronised_authenticators(false)
@@ -337,8 +341,8 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
             };
             match finish_core_registration(&core, &registration, state, &origin) {
                 Ok(passkey) => passkey,
-                // A validly encoded, cryptographically false signature makes
-                // Source's verifier return false; malformed proofs throw instead.
+                // Source returns false for an invalid signature, including an
+                // invalid Ed25519 length; malformed ES256 DER throws instead.
                 Err(WebauthnError::AttestationStatementSigInvalid) => {
                     return response_code(
                         400,

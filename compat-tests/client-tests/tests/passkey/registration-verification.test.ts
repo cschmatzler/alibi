@@ -21,11 +21,19 @@ function registration(value: any): any {
   }
   return {...value,response:{...value.response,clientDataJSON:{...clientData,origin:{url:clientData.origin}},attestationObject:cbor(decoded)}};
 }
+function authentication(value:any,options:any):any {
+  const clientData=JSON.parse(Buffer.from(value.response.clientDataJSON,"base64url").toString());
+  expect(Buffer.from(JSON.stringify(clientData)).toString("base64url")).toBe(value.response.clientDataJSON);
+  expect(value.response.userHandle).toBe(options.user.id);
+  const generatedId=Buffer.from(value.response.userHandle,"base64url").toString();expect(Buffer.from(generatedId).toString("base64url")).toBe(value.response.userHandle);
+  return {...value,response:{...value.response,clientDataJSON:{...clientData,origin:{url:clientData.origin}},userHandle:{id:value.response.userHandle,decoded:{id:generatedId}},signature:{token:value.response.signature}}};
+}
 async function setup(ctx:ScenarioContext){
-  const requests:any[]=[];
+  const requests:any[]=[],authenticationRequests:any[]=[];
   const make=(name:string)=>createAuthClient({baseURL:`${ctx.baseURL}${authProfilePath("passkey-first")}`,plugins:[passkeyClient()],fetchOptions:{customFetchImpl:async(input,init)=>{
     const request=new Request(input,init);
     if(new URL(request.url).pathname.endsWith("/passkey/verify-registration"))requests.push(await request.clone().json());
+    if(new URL(request.url).pathname.endsWith("/passkey/verify-authentication"))authenticationRequests.push(await request.clone().json());
     return ctx.actor(name,"passkey-first").fetch(request);
   }}});
   const owner=make("registration-owner"),foreign=make("registration-foreign");
@@ -40,12 +48,12 @@ async function setup(ctx:ScenarioContext){
   let challengeCookies:string[]=[];const options=async()=>{const result=await owner.$fetch("/passkey/generate-register-options",{method:"GET",query:{context},onSuccess({response}){challengeCookies=response.headers.getSetCookie();}});expect(result.error).toBeNull();return result;};
   const foreignHeaders=()=>({cookie:[...foreignCookies,...challengeCookies].map(cookie=>cookie.split(";")[0]).join("; ")});
   const submitted=()=>requests.map(row=>({...row,response:registration(row.response)}));
-  return {owner,foreign,signup,foreignSignup,context,enrollment,before,foreignBefore,events,state,options,requests,submitted,foreignHeaders};
+  return {owner,foreign,signup,foreignSignup,context,enrollment,before,foreignBefore,events,state,options,requests,authenticationRequests,submitted,foreignHeaders};
 }
-for(const mode of ["none-uv-absent","packed-uv-absent","packed-uv-absent-backed"] as const)compatScenario(`passkey ${mode} registration verifies genuine credential before callback session and signed authentication`,async ctx=>{
-  const fixture=await setup(ctx),options=await fixture.options(),device=new Authenticator();
+for(const mode of ["none-uv-absent","packed-uv-absent","packed-uv-absent-backed","eddsa-none-uv-absent","eddsa-packed-uv-absent"] as const)compatScenario(`passkey ${mode} registration verifies genuine credential before callback session and signed authentication`,async ctx=>{
+  const fixture=await setup(ctx),options=await fixture.options(),registrationOptions=options.data,device=new Authenticator(mode.startsWith("eddsa")?"Ed25519":"ES256");
   const backed=mode.endsWith("backed");
-  const response={...device.register(options.data,ctx.baseURL,{userVerified:false,attestation:mode.startsWith("packed")?"packed":"none",backupEligible:backed,backedUp:backed}),applicationMarker:"original-registration-proof",userId:fixture.foreignSignup.data!.user.id};
+  const response={...device.register(options.data,ctx.baseURL,{userVerified:false,attestation:mode.includes("packed")?"packed":"none",backupEligible:backed,backedUp:backed}),applicationMarker:"original-registration-proof",userId:fixture.foreignSignup.data!.user.id};
   const accepted=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response,createSession:true,context:"forged-context",userId:fixture.foreignSignup.data!.user.id}});expect(accepted.error).toBeNull();
   expect(accepted.data).toMatchObject({userId:fixture.signup.data!.user.id,credentialID:response.id,counter:0,deviceType:backed?"multiDevice":"singleDevice",backedUp:backed,user:{id:fixture.signup.data!.user.id},session:{userId:fixture.signup.data!.user.id}});
   const events=await fixture.events();expect(events).toHaveLength(2);expect(events[1]).toMatchObject({stage:"verified",context:fixture.context,userId:fixture.signup.data!.user.id,counter:0,deviceType:backed?"multiDevice":"singleDevice",backedUp:backed});
@@ -61,21 +69,35 @@ for(const mode of ["none-uv-absent","packed-uv-absent","packed-uv-absent-backed"
   const authenticatedCurrent=await fixture.owner.getSession();expect(authenticatedCurrent.data?.user.id).toBe(fixture.signup.data!.user.id);
   const authenticatedSession=z.object({session:z.object({id:z.string(),token:z.string()})}).parse(authenticated.data);expect(authenticatedCurrent.data?.session.id).toBe(authenticatedSession.session.id);expect(authenticatedCurrent.data?.session.token).toBe(authenticatedSession.session.token);
   const authenticatedList=await fixture.owner.$fetch("/passkey/list-user-passkeys",{method:"GET"});expect(authenticatedList.data).toMatchObject([{credentialID:response.id,userId:fixture.signup.data!.user.id,counter:1,deviceType:backed?"multiDevice":"singleDevice",backedUp:backed}]);
+  const authenticationFailures=[];
+  if(mode==="eddsa-packed-uv-absent"){
+    const beforeFailure=await fixture.state(),ownerBeforeFailure=await ctx.readUserState({userId:fixture.signup.data!.user.id});
+    for(const failure of ["signature","signature-length"] as const){
+      const options=await fixture.owner.$fetch("/passkey/generate-authenticate-options",{method:"GET"});expect(options.error).toBeNull();
+      const proof=device.authenticate(options.data,ctx.baseURL,{userVerified:false,counter:2,...(failure==="signature"?{badSignature:true}:{malformedSignature:true})});
+      const denied=await fixture.owner.$fetch("/passkey/verify-authentication",{method:"POST",body:{response:proof}});expect(denied.error).toMatchObject({status:401,code:"AUTHENTICATION_FAILED"});
+      const replay=await fixture.owner.$fetch("/passkey/verify-authentication",{method:"POST",body:{response:proof}});expect(replay.error).toMatchObject({status:400,code:"CHALLENGE_NOT_FOUND"});
+      const state=await fixture.state();expect(state).toEqual(beforeFailure);expect(await ctx.readUserState({userId:fixture.signup.data!.user.id})).toEqual(ownerBeforeFailure);
+      const original=fixture.authenticationRequests.at(-2);expect(original).toEqual({response:proof});expect(fixture.authenticationRequests.at(-1)).toEqual(original);
+      expect(Buffer.from(proof.response.signature,"base64url")).toHaveLength(failure==="signature"?64:1);
+      authenticationFailures.push({failure,options,proof:authentication(proof,registrationOptions),denied,replay,state});
+    }
+  }
   const ownerAfter=await ctx.readUserState({userId:fixture.signup.data!.user.id});
   const after=await fixture.state();expect(after).toMatchObject({passkeys:[{userId:fixture.signup.data!.user.id,counter:1}],sessions:{count:1},challenges:{count:0}});
   const foreignAfter=await ctx.readUserState({userId:fixture.foreignSignup.data!.user.id});expect(foreignAfter).toEqual(fixture.foreignBefore);
-  return {signup:fixture.signup,foreignSignup:fixture.foreignSignup,enrollment:fixture.enrollment,options,before:fixture.before,accepted,current,listed,events:events.map(row=>row.stage==="verified"?{...row,clientData:registration(row.clientData)}:row),submitted:fixture.submitted(),replay,enrolled,challenge,authenticated,authenticatedCurrent,authenticatedList,ownerAfter,after,foreignBefore:fixture.foreignBefore,foreignAfter};
+  return {signup:fixture.signup,foreignSignup:fixture.foreignSignup,enrollment:fixture.enrollment,options,before:fixture.before,accepted,current,listed,events:events.map(row=>row.stage==="verified"?{...row,clientData:registration(row.clientData)}:row),submitted:fixture.submitted(),replay,enrolled,challenge,authenticated,authenticatedCurrent,authenticatedList,authenticationFailures,authenticationSubmitted:fixture.authenticationRequests.map(row=>({...row,response:authentication(row.response,registrationOptions)})),ownerAfter,after,foreignBefore:fixture.foreignBefore,foreignAfter};
 },["POST /passkey/verify-registration","POST /passkey/verify-authentication"]);
 
 compatScenario("passkey registration rejects actual packed signature failures malformed proofs flags origins and wrong owner before writes",async ctx=>{
   const fixture=await setup(ctx),device=new Authenticator(),outputs=[];
-  for(const mode of ["signature","signature-der","presence","backup-flags","rp","origin-host","origin-port","origin-case","challenge","malformed-key","foreign-owner"] as const){
+  for(const mode of ["signature","signature-der","presence","backup-flags","rp","origin-host","origin-port","origin-case","challenge","malformed-key","foreign-owner","eddsa-signature","eddsa-signature-length","eddsa-foreign-owner"] as const){
     const options=await fixture.options();
-    const flags={attestation:"packed" as const,...(mode==="signature"?{badSignature:true}:mode==="signature-der"?{malformedSignature:true}:mode==="presence"?{userPresent:false}:mode==="backup-flags"?{backedUp:true}:mode==="rp"?{rpId:"foreign.fixture.test"}:mode==="malformed-key"?{malformedKey:true}:{})};
+    const flags={attestation:"packed" as const,...((mode==="signature"||mode==="eddsa-signature")?{badSignature:true}:(mode==="signature-der"||mode==="eddsa-signature-length")?{malformedSignature:true}:mode==="presence"?{userPresent:false}:mode==="backup-flags"?{backedUp:true}:mode==="rp"?{rpId:"foreign.fixture.test"}:mode==="malformed-key"?{malformedKey:true}:{})};
     const origin=mode==="origin-host"?"http://foreign.fixture.test":mode==="origin-port"?ctx.baseURL.replace(/:\d+$/,":1"):mode==="origin-case"?ctx.baseURL.replace("localhost","LOCALHOST"):ctx.baseURL;
-    const response=device.register(mode==="challenge"?{...options.data as object,challenge:"wrong-registration-challenge"}:options.data,origin,flags);
-    let cookies:string[]=[];const result=await(mode==="foreign-owner"?fixture.foreign:fixture.owner).$fetch("/passkey/verify-registration",{method:"POST",body:{response,createSession:true},...(mode==="foreign-owner"?{headers:fixture.foreignHeaders()}:{}),onResponse({response}){cookies=response.headers.getSetCookie();}});
-    expect(result.error).toMatchObject({status:mode==="signature"?400:mode==="foreign-owner"?401:500,code:mode==="foreign-owner"?"YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY":"FAILED_TO_VERIFY_REGISTRATION"});expect(cookies).toEqual([]);
+    const response=(mode.startsWith("eddsa")?new Authenticator("Ed25519"):device).register(mode==="challenge"?{...options.data as object,challenge:"wrong-registration-challenge"}:options.data,origin,flags);
+    let cookies:string[]=[];const result=await(mode.endsWith("foreign-owner")?fixture.foreign:fixture.owner).$fetch("/passkey/verify-registration",{method:"POST",body:{response,createSession:true},...(mode.endsWith("foreign-owner")?{headers:fixture.foreignHeaders()}:{}),onResponse({response}){cookies=response.headers.getSetCookie();}});
+    expect(result.error).toMatchObject({status:(mode==="signature"||mode.startsWith("eddsa-signature"))?400:mode.endsWith("foreign-owner")?401:500,code:mode.endsWith("foreign-owner")?"YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY":"FAILED_TO_VERIFY_REGISTRATION"});expect(cookies).toEqual([]);
     const events=await fixture.events();expect(events).toHaveLength(1);expect(events[0]).toMatchObject({stage:"resolved",context:fixture.context,userId:fixture.signup.data!.user.id});
     const replay=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response,createSession:true}});expect(replay.error).toMatchObject({status:400,code:"CHALLENGE_NOT_FOUND"});expect(await fixture.events()).toEqual([]);
     const state=await fixture.state();expect(state).toEqual({passkeys:[],sessions:{count:0},challenges:{count:0}});
