@@ -80,26 +80,56 @@ pub(crate) async fn create_organization_core(
         .await?
         .is_some()
     {
-        return Err(AuthError::bad_request("Organization already exists"));
+        return Err(super::extension_common::org_error(
+            400,
+            "ORGANIZATION_ALREADY_EXISTS",
+        ));
     }
 
-    let org_data = CreateOrganization {
+    let mut org_data = CreateOrganization {
         id: None,
         name: body.name.clone(),
         slug: body.slug.clone(),
         logo: body.logo.clone(),
         metadata: body.metadata.clone(),
     };
+    if let Some(hooks) = &config.creation_hooks {
+        let context = super::super::lifecycle::OrganizationDraftContext {
+            organization: org_data.clone(),
+            user: callback_user.clone(),
+        };
+        if let Some(patch) = hooks.before_create(&context).await? {
+            patch.apply(&mut org_data);
+        }
+    }
 
     let organization = ctx.database.create_organization(org_data).await?;
 
-    let member_data = CreateMember {
+    let mut member_data = CreateMember {
         organization_id: organization.id().to_string(),
         user_id: user.id().to_string(),
         role: config.effective_creator_role().to_owned(),
     };
+    if let Some(hooks) = &config.creation_hooks {
+        let context = super::super::lifecycle::OrganizationMemberDraftContext {
+            organization: organization.clone(),
+            member: member_data.clone(),
+            user: callback_user.clone(),
+        };
+        if let Some(patch) = hooks.before_add_member(&context).await? {
+            patch.apply(&mut member_data);
+        }
+    }
 
     let member = ctx.database.create_member(member_data).await?;
+    let created_context = super::super::lifecycle::OrganizationCreatedContext {
+        organization: organization.clone(),
+        member: member.clone(),
+        user: callback_user,
+    };
+    if let Some(hooks) = &config.creation_hooks {
+        hooks.after_add_member(&created_context).await?;
+    }
     let member_response = BasicMemberResponse::from_member(&member);
     let default_team_id = if config.teams.enabled && config.teams.create_default_team {
         let mut data = better_auth_core::types::CreateTeam {
@@ -145,6 +175,9 @@ pub(crate) async fn create_organization_core(
         None
     };
 
+    if let Some(hooks) = &config.creation_hooks {
+        hooks.after_create(&created_context).await?;
+    }
     Ok(CreateOrganizationResponse {
         organization: CreatedOrganizationResponse::from_organization(&organization),
         members: vec![member_response],
@@ -791,6 +824,7 @@ mod tests {
             allow_user_to_create_organization: true,
             organization_limit: None,
             creation_policy: None,
+            creation_hooks: None,
             membership_limit: Some(100),
             creator_role: "owner".to_string(),
             invitation_expires_in: 60 * 60 * 48,

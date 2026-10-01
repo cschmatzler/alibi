@@ -198,7 +198,11 @@ pub use email_verification::{
     EmailVerificationConfig, EmailVerificationHook, EmailVerificationPlugin, SendVerificationEmail,
 };
 pub use magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
-pub use organization::{OrganizationConfig, OrganizationPlugin};
+pub use organization::{
+    OrganizationConfig, OrganizationCreatePatch, OrganizationCreatedContext,
+    OrganizationCreationHooks, OrganizationDraftContext, OrganizationMemberCreatePatch,
+    OrganizationMemberDraftContext, OrganizationPlugin,
+};
 pub use passkey::{PasskeyConfig, PasskeyPlugin};
 pub use password_management::{
     PasswordManagementConfig, PasswordManagementPlugin, SendResetPassword,

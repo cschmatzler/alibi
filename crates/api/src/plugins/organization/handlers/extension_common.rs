@@ -29,6 +29,7 @@ pub fn org_error(status: u16, code: &'static str) -> AuthError {
         }
         "NO_ACTIVE_ORGANIZATION" => "No active organization",
         "ORGANIZATION_NOT_FOUND" => "Organization not found",
+        "ORGANIZATION_ALREADY_EXISTS" => "Organization already exists",
         "TEAM_NOT_FOUND" => "Team not found",
         "YOU_ARE_NOT_ALLOWED_TO_INVITE_USERS_TO_THIS_ORGANIZATION" => {
             "You are not allowed to invite users to this organization"
