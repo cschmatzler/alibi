@@ -566,6 +566,7 @@ dependencies = [
  "uuid",
  "validator",
  "webauthn-rs",
+ "webauthn-rs-core",
 ]
 
 [[package]]
