@@ -270,6 +270,13 @@ impl<S: AuthSchema> OrganizationStore for PluginStore<S> {
     ) -> AuthResult<Organization> {
         self.inner.update_organization(id, update).await
     }
+    async fn update_organization_if_present(
+        &self,
+        id: &str,
+        update: UpdateOrganization,
+    ) -> AuthResult<Option<Organization>> {
+        self.inner.update_organization_if_present(id, update).await
+    }
     async fn delete_organization(&self, id: &str) -> AuthResult<()> {
         self.inner.delete_organization(id).await
     }

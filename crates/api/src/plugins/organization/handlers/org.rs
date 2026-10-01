@@ -187,11 +187,12 @@ pub(crate) async fn create_organization_core(
 
 pub(crate) async fn update_organization_core(
     body: &UpdateOrganizationRequest,
+    raw_metadata: Option<indexmap::IndexMap<String, better_auth_core::utils::json::JsValue>>,
     user: &impl AuthUser,
     session: &impl AuthSession,
     config: &OrganizationConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<CreatedOrganizationResponse> {
+) -> AuthResult<Option<CreatedOrganizationResponse>> {
     let org_id = body
         .organization_id
         .as_deref()
@@ -228,22 +229,56 @@ pub(crate) async fn update_organization_core(
         && let Some(existing) = ctx.database.get_organization_by_slug(new_slug).await?
         && existing.id() != org_id
     {
-        return Err(AuthError::bad_request("Organization slug already taken"));
+        return Err(super::extension_common::org_error(
+            400,
+            "ORGANIZATION_SLUG_ALREADY_TAKEN",
+        ));
     }
 
-    let update_data = UpdateOrganization {
+    let mut update_data = UpdateOrganization {
         name: body.data.name.clone(),
         slug: body.data.slug.clone(),
         logo: body.data.logo.clone(),
         metadata: body.data.metadata.clone(),
     };
 
+    if let Some(hooks) = &config.update_hooks {
+        let original = super::super::OrganizationUpdateContext {
+            organization: super::super::OrganizationUpdateInput {
+                name: update_data.name.clone(),
+                slug: update_data.slug.clone(),
+                logo: update_data.logo.clone(),
+                metadata: raw_metadata,
+            },
+            user: ctx.user_view(user),
+            member,
+        };
+        if let Some(patch) = hooks.before_update(&original).await? {
+            patch.apply(&mut update_data)?;
+        }
+        let organization = ctx
+            .database
+            .update_organization_if_present(&org_id, update_data)
+            .await?
+            .as_ref()
+            .map(CreatedOrganizationResponse::from_organization);
+        hooks
+            .after_update(&super::super::OrganizationUpdatedContext {
+                organization: organization.clone(),
+                user: original.user,
+                member: original.member,
+            })
+            .await?;
+        return Ok(organization);
+    }
     let updated = ctx
         .database
         .update_organization(&org_id, update_data)
         .await?;
 
-    Ok(CreatedOrganizationResponse::from_organization(&updated))
+    Ok(Some(CreatedOrganizationResponse::from_organization(
+        &updated,
+    )))
 }
 
 pub(crate) async fn delete_organization_core(
@@ -630,7 +665,7 @@ pub async fn handle_update_organization(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
-    let body = match super::org_input::update(req) {
+    let (body, raw_metadata) = match super::org_input::update(req) {
         Ok(v) => v,
         Err(resp) => return Ok(resp),
     };
@@ -644,7 +679,8 @@ pub async fn handle_update_organization(
         }
         Err(error) => return Err(error),
     };
-    let updated = update_organization_core(&body, &user, &session, config, ctx).await?;
+    let updated =
+        update_organization_core(&body, raw_metadata, &user, &session, config, ctx).await?;
     Ok(AuthResponse::json(200, &updated)?)
 }
 
@@ -889,6 +925,7 @@ mod tests {
             organization_limit: None,
             creation_policy: None,
             creation_hooks: None,
+            update_hooks: None,
             deletion_hooks: None,
             membership_limit: Some(100),
             creator_role: "owner".to_string(),
