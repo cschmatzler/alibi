@@ -191,3 +191,65 @@ async fn account_rollback_refuses_duplicates_then_restores_uniqueness_without_ro
     assert_ne!(restored.id, original.id);
     Ok(())
 }
+
+#[tokio::test]
+async fn independent_connections_admit_duplicate_account_rows_without_selecting_an_owner()
+-> TestResult {
+    let path = std::env::temp_dir().join(format!(
+        "account-multiplicity-{}.sqlite",
+        uuid::Uuid::new_v4()
+    ));
+    let url = format!("sqlite://{}?mode=rwc", path.display());
+    let first_db = Database::connect(&url).await?;
+    AuthMigrator::up(&first_db, None).await?;
+    let config = AuthConfig::new("independent-account-admission-secret");
+    let first = SeaOrmStore::<BundledSchema>::new(config.clone(), first_db.clone());
+    let second_db = Database::connect(&url).await?;
+    let second = SeaOrmStore::<BundledSchema>::new(config, second_db.clone());
+    let owner = first
+        .create_user(CreateUser::new().with_email("concurrent@account-pair.test"))
+        .await?;
+    let foreign = first
+        .create_user(CreateUser::new().with_email("foreign@account-pair.test"))
+        .await?;
+    let mut peer_input = account(&foreign.id);
+    peer_input.account_id = "independent-foreign-identity".into();
+    let peer = first.create_account(peer_input).await?;
+    let (left, right) = tokio::join!(
+        first.create_account(account(&owner.id)),
+        second.create_account(account(&owner.id))
+    );
+    let left = left?;
+    let right = right?;
+    assert_ne!(left.id, right.id);
+    let rows = first.get_user_accounts(&owner.id).await?;
+    assert_eq!(rows.len(), 2);
+    for expected in [left, right] {
+        assert_eq!(
+            serde_json::to_value(
+                second
+                    .get_user_accounts(&owner.id)
+                    .await?
+                    .into_iter()
+                    .find(|row| row.id == expected.id)
+            )?,
+            serde_json::to_value(Some(expected))?
+        );
+    }
+    assert!(matches!(
+        second
+            .get_account("gitlab", "shared-provider-identity")
+            .await,
+        Err(better_auth_core::AuthError::Database(
+            better_auth_core::DatabaseError::AmbiguousAccount { .. }
+        ))
+    ));
+    assert_eq!(
+        serde_json::to_value(first.get_user_accounts(&foreign.id).await?)?,
+        serde_json::to_value(vec![peer])?
+    );
+    first_db.close().await?;
+    second_db.close().await?;
+    std::fs::remove_file(path)?;
+    Ok(())
+}

@@ -241,7 +241,9 @@ impl OneTapPlugin {
         let outcome = match result {
             Ok(outcome) => outcome,
             Err(OAuthSignInError::AccountLookup(_)) => {
-                return Ok(crate::plugins::oauth::handlers::ambiguous_account_sign_in_response(ctx));
+                return Ok(
+                    crate::plugins::oauth::handlers::ambiguous_account_sign_in_response(ctx),
+                );
             }
             Err(OAuthSignInError::Generic(error)) => return message(401, &error),
             Err(OAuthSignInError::SessionAuth(error)) => return message(401, &error.to_string()),
