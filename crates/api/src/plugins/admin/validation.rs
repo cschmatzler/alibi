@@ -261,49 +261,70 @@ pub(super) fn body<T: DeserializeOwned + 'static>(req: &AuthRequest) -> Result<T
 
 pub(super) fn get_user(req: &AuthRequest) -> Result<super::types::GetUserQuery, AuthResponse> {
     let _ = parse(req)?;
-    req.query
-        .get("id")
-        .map(|id| super::types::GetUserQuery { id: id.clone() })
-        .ok_or_else(|| schema_error(vec![expected("query.id", "string", None)]))
+    match req.query_values("id") {
+        Some([id]) => Ok(super::types::GetUserQuery { id: id.clone() }),
+        Some(_) => Err(schema_error(vec![
+            "[query.id] Invalid input: expected string, received array".into(),
+        ])),
+        None => Err(schema_error(vec![expected("query.id", "string", None)])),
+    }
 }
 pub(super) fn list_users(req: &AuthRequest) -> Result<(), AuthResponse> {
     let _ = parse(req)?;
     let mut issues = Vec::new();
+    // Query arrays are materialized by repeated names before the endpoint
+    // schema. Retain schema field order, including string/number unions.
     for (field, options) in [
-        ("searchField", &["email", "name"][..]),
+        ("searchValue", None),
+        ("searchField", Some(&["email", "name"][..])),
         (
             "searchOperator",
-            &["contains", "starts_with", "ends_with"][..],
+            Some(&["contains", "starts_with", "ends_with"][..]),
         ),
-        ("sortDirection", &["asc", "desc"][..]),
+        ("limit", None),
+        ("offset", None),
+        ("sortBy", None),
+        ("sortDirection", Some(&["asc", "desc"][..])),
+        ("filterField", None),
         (
             "filterOperator",
-            &[
-                "eq",
-                "ne",
-                "lt",
-                "lte",
-                "gt",
-                "gte",
-                "in",
-                "not_in",
-                "contains",
-                "starts_with",
-                "ends_with",
-            ][..],
+            Some(
+                &[
+                    "eq",
+                    "ne",
+                    "lt",
+                    "lte",
+                    "gt",
+                    "gte",
+                    "in",
+                    "not_in",
+                    "contains",
+                    "starts_with",
+                    "ends_with",
+                ][..],
+            ),
         ),
     ] {
-        if let Some(value) = req.query.get(field)
-            && !options.contains(&value.as_str())
-        {
-            issues.push(format!(
-                "[query.{field}] Invalid option: expected one of {}",
-                options
-                    .iter()
-                    .map(|value| format!("\"{value}\""))
-                    .collect::<Vec<_>>()
-                    .join("|")
-            ));
+        let Some(values) = req.query_values(field) else {
+            continue;
+        };
+        if let Some(options) = options {
+            if !matches!(values, [value] if options.contains(&value.as_str())) {
+                issues.push(format!(
+                    "[query.{field}] Invalid option: expected one of {}",
+                    options
+                        .iter()
+                        .map(|value| format!("\"{value}\""))
+                        .collect::<Vec<_>>()
+                        .join("|")
+                ));
+            }
+        } else if values.len() != 1 {
+            issues.push(if matches!(field, "limit" | "offset") {
+                format!("[query.{field}] Invalid input")
+            } else {
+                format!("[query.{field}] Invalid input: expected string, received array")
+            });
         }
     }
     if issues.is_empty() {

@@ -32,18 +32,21 @@
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
           "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
           "admin stored timestamp precision survives official read, update and list without shifting dates",
-          "admin creation validates email only after permission and literal role validation without inserting invalid owners"
+          "admin creation validates email only after permission and literal role validation without inserting invalid owners",
+          "admin repeated query fields retain arrays and reject before authentication without selecting a different owner"
         ],
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
-          "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner"
+          "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner",
+          "admin repeated query fields retain arrays and reject before authentication without selecting a different owner"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin repeated query fields retain arrays and reject before authentication without selecting a different owner"
         ],
         "state": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -51,7 +54,8 @@
           "admin revoked session rejects every valid guest operation without changing owned state",
           "admin stored timestamp precision survives official read, update and list without shifting dates",
           "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner",
-          "admin creation validates email only after permission and literal role validation without inserting invalid owners"
+          "admin creation validates email only after permission and literal role validation without inserting invalid owners",
+          "admin repeated query fields retain arrays and reject before authentication without selecting a different owner"
         ]
       }
     },
@@ -70,7 +74,8 @@
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
-          "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner"
+          "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner",
+          "admin repeated query fields retain arrays and reject before authentication without selecting a different owner"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -82,7 +87,8 @@
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
           "admin stored timestamp precision survives official read, update and list without shifting dates",
-          "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner"
+          "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner",
+          "admin repeated query fields retain arrays and reject before authentication without selecting a different owner"
         ],
         "success": [
           "admin stored timestamp precision survives official read, update and list without shifting dates"

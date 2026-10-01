@@ -233,8 +233,19 @@ impl<S: AuthSchema> BetterAuth<S> {
     pub async fn handle_request(&self, req: AuthRequest) -> AuthResult<AuthResponse> {
         // Reset caller-supplied session context and queued response headers.
         // Only trusted handlers and hooks may establish them during dispatch.
+        let query_pairs = req
+            .query
+            .keys()
+            .flat_map(|name| {
+                req.query_values(name)
+                    .into_iter()
+                    .flatten()
+                    .map(|value| (name.clone(), value.clone()))
+            })
+            .collect::<Vec<_>>();
         let mut req =
             AuthRequest::from_parts(req.method, req.path, req.headers, req.body, req.query);
+        req.set_query_pairs(query_pairs);
 
         let request_context = RequestHookContext::from_request(&req);
         with_request_hook_context_value(request_context, async {
