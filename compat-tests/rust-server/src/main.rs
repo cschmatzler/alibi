@@ -1,8 +1,8 @@
 mod organization_creation_fixture;
 mod organization_creation_hooks_fixture;
 mod organization_deletion_hooks_fixture;
-mod organization_transport_probe;
 mod organization_member_role_hooks_fixture;
+mod organization_transport_probe;
 mod organization_update_hooks_fixture;
 mod team_fixture;
 
