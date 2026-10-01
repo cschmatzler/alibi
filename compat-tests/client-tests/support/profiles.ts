@@ -2,7 +2,7 @@
 export type FixtureProfile =
   | "org-creation-denied" | "org-creation-limit" | "org-creation-negative" | "org-creation-infinity" | "org-creation-nan" | "org-creation-callback" | "org-creation-founder" | "org-creation-empty-role" | "admin-duration-hook-error" | "admin-duration-zero" | "admin-duration-fractional" | "admin-duration-negative" | "admin-duration-invalid" | "admin-duration-nan" | "admin-role-manager" | "admin-role-creator" | "admin-standard" | "admin-deny-all" | "admin-exact-role" | "admin-empty-role" | "org-creation-hooks" | "org-creation-hooks-no-team" | "org-creation-hooks-denied"
   | "multi-session" | "multi-session-limited"
-  | "two-factor-otp-plain" | "two-factor-otp-hashed" | "two-factor-otp-encrypted" | "two-factor-otp-custom-hash" | "two-factor-otp-custom-cipher"
+  | "two-factor-otp-zero" | "two-factor-otp-negative" | "two-factor-otp-plain" | "two-factor-otp-hashed" | "two-factor-otp-encrypted" | "two-factor-otp-custom-hash" | "two-factor-otp-custom-cipher"
   | "two-factor-pending-session-cancel" | "two-factor-pending-session-forbidden"
   | "two-factor-skip-session-cancel" | "two-factor-skip-session-forbidden"
   | "two-factor-skip-user-hook"

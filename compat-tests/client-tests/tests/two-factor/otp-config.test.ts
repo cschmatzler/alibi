@@ -103,3 +103,26 @@ compatScenario("two-factor OTP resends retain generations until the newest code 
   const consumed=await control({identifier:latest.row.identifier});expect(consumed.row).toBeNull();expect(consumed.generations).toBe(0);const state=z.object({twoFactorExists:z.boolean(),sessions:z.array(z.object({token:z.string()}))}).parse(await ctx.readUserState({userId:signup.data.user.id}));expect(state.sessions).toHaveLength(1);expect(state.sessions[0]?.token).toBe(success[0]?.data?.token);expect(state.twoFactorExists).toBe(false);
   return ctx.snapshot({signup,enabled,success:success[0],denied:denied[0],state,generations:[first.generations,latest.generations,consumed.generations]});
 }, ["POST /two-factor/enable", "POST /two-factor/send-otp", "POST /two-factor/verify-otp"]);
+
+
+compatScenario("two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation", async ctx => {
+  const observations = [];
+  for (const profile of ["two-factor-otp-zero", "two-factor-otp-negative"] as const) {
+    const client = (name:string) => createAuthClient({baseURL:`${ctx.baseURL}${authProfilePath(profile)}`,plugins:[twoFactorClient()],fetchOptions:{customFetchImpl:ctx.actor(name,profile).fetch}});
+    const owner = client("owner"), guest = client("guest"), email = ctx.uniqueEmail(profile);
+    const denied = await guest.twoFactor.sendOtp({}); expect(denied.error?.code).toBe("INVALID_TWO_FACTOR_COOKIE");
+    const signup = await owner.signUp.email({email,password:"password123",name:"Nonpositive OTP Owner"});
+    expect(signup.error).toBeNull(); if (!signup.data) throw new Error("owner required");
+    const original = await owner.getSession(), before = await ctx.readUserState({userId:signup.data.user.id});
+    const malformed = await ctx.actor("owner",profile).fetch(`${ctx.baseURL}${authProfilePath(profile)}/two-factor/send-otp`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({trustDevice:null})});
+    expect(malformed.status).toBe(400); const malformedBody = await malformed.json(); expect(malformedBody).toMatchObject({code:"VALIDATION_ERROR"});
+    const failed = await owner.twoFactor.sendOtp({}); expect(failed.error?.status).toBe(500);
+    const actual = await ctx.rawRequest({path:"/__test/two-factor-otp-config",method:"POST",json:{profile,email}});
+    expect(actual.status).toBe(200); const stored = controlSchema.parse(actual.body);
+    expect(stored).toEqual({delivery:null,row:null,generations:0,receipts:[]});
+    expect(await ctx.readUserState({userId:signup.data.user.id})).toEqual(before);
+    const current = await owner.getSession(); expect(current.data?.session.token).toBe(original.data?.session.token); expect(current.data?.user.twoFactorEnabled).toBe(false);
+    observations.push({profile,denied,signup,original,malformedBody,failed,stored,current,before});
+  }
+  return ctx.snapshot(observations);
+}, ["POST /two-factor/send-otp"]);
