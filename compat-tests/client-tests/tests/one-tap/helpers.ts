@@ -1,7 +1,8 @@
 import { expect } from "bun:test";
 import { createAuthClient } from "better-auth/client";
+import { symmetricDecodeJWT } from "better-auth/crypto";
 import { oneTapClient } from "better-auth/client/plugins";
-import { CompactSign, importPKCS8 } from "jose";
+import { CompactSign, importPKCS8, decodeProtectedHeader } from "jose";
 import { sign } from "node:crypto";
 import { Cookie } from "tough-cookie";
 import { z } from "zod";
@@ -89,6 +90,23 @@ export async function state(ctx: ScenarioContext) {
   expect(result.status).toBe(200);
   return stateSchema.parse(result.body);
 }
+const accountPayloadSchema = z
+  .object({
+    id: z.string(),
+    userId: z.string(),
+    providerId: z.string(),
+    accountId: z.string(),
+    idToken: z.string().nullable().optional(),
+    scope: z.string().nullable().optional(),
+    accessToken: z.string().nullable().optional(),
+    refreshToken: z.string().nullable().optional(),
+  })
+  .passthrough();
+const accountCookieSchema = z.object({
+  token: z.string(),
+  header: z.record(z.string(), z.unknown()),
+  payload: accountPayloadSchema,
+});
 const successSchema = z.object({
   token: z.string(),
   user: z
@@ -114,6 +132,7 @@ export async function oneTap(
     | undefined;
   let received: unknown;
   let sessionMaxAge: number | null = null;
+  let accountCookie: z.infer<typeof accountCookieSchema> | null = null;
   const browser = {
     document: {},
     googleScriptInitialized: true,
@@ -152,7 +171,23 @@ export async function oneTap(
     await client.oneTap({
       callbackURL,
       fetchOptions: {
-        onSuccess(context) {
+        async onSuccess(context) {
+          const account = context.response.headers
+            .getSetCookie()
+            .map((value) => Cookie.parse(value))
+            .find((cookie) => cookie?.key.endsWith("account_data"));
+          if (account) {
+            const token = decodeURIComponent(account.value);
+            accountCookie = accountCookieSchema.parse({
+              token,
+              header: decodeProtectedHeader(token),
+              payload: await symmetricDecodeJWT(
+                token,
+                "compat-test-only-key-not-real-minimum-32chars",
+                "better-auth-account",
+              ),
+            });
+          }
           const cookie = context.response.headers
             .getSetCookie()
             .map((value) => Cookie.parse(value))
@@ -171,6 +206,7 @@ export async function oneTap(
       response: received,
       location: browser.location.href,
       sessionMaxAge,
+      accountCookie,
     };
   } finally {
     if (original) Object.defineProperty(globalThis, "window", original);
@@ -191,6 +227,7 @@ export const responseSchema = z.object({
   }),
   location: z.string(),
   sessionMaxAge: z.number().nullable(),
+  accountCookie: accountCookieSchema.nullable(),
 });
 export async function successful(
   ctx: ScenarioContext,

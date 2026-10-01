@@ -71,24 +71,34 @@ pub(crate) struct AccountCookiePayload {
     pub provider_id: String,
     #[serde(rename = "accountId")]
     pub account_id: String,
-    #[serde(rename = "accessToken", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "accessToken")]
     pub access_token: Option<String>,
-    #[serde(rename = "refreshToken", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "refreshToken")]
     pub refresh_token: Option<String>,
-    #[serde(rename = "idToken", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "idToken")]
     pub id_token: Option<String>,
     #[serde(
         rename = "accessTokenExpiresAt",
-        skip_serializing_if = "Option::is_none"
+        serialize_with = "better_auth_core::utils::datetime::serialize_optional"
     )]
     pub access_token_expires_at: Option<chrono::DateTime<Utc>>,
     #[serde(
         rename = "refreshTokenExpiresAt",
-        skip_serializing_if = "Option::is_none"
+        serialize_with = "better_auth_core::utils::datetime::serialize_optional"
     )]
     pub refresh_token_expires_at: Option<chrono::DateTime<Utc>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
+    pub password: Option<String>,
+    #[serde(
+        rename = "createdAt",
+        serialize_with = "better_auth_core::utils::datetime::serialize_optional"
+    )]
+    pub created_at: Option<chrono::DateTime<Utc>>,
+    #[serde(
+        rename = "updatedAt",
+        serialize_with = "better_auth_core::utils::datetime::serialize_optional"
+    )]
+    pub updated_at: Option<chrono::DateTime<Utc>>,
 }
 
 impl AccountCookiePayload {
@@ -104,6 +114,9 @@ impl AccountCookiePayload {
             access_token_expires_at: account.access_token_expires_at(),
             refresh_token_expires_at: account.refresh_token_expires_at(),
             scope: account.scope().map(str::to_string),
+            password: account.password().map(str::to_string),
+            created_at: Some(account.created_at()),
+            updated_at: Some(account.updated_at()),
         }
     }
 }
@@ -119,14 +132,6 @@ struct StateCookieClaims {
 struct StatePayloadClaims {
     #[serde(flatten)]
     payload: OAuthStatePayload,
-    exp: usize,
-    iat: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct AccountCookieClaims {
-    #[serde(flatten)]
-    payload: AccountCookiePayload,
     exp: usize,
     iat: usize,
 }
@@ -205,32 +210,14 @@ pub(crate) fn create_account_cookie_value(
     payload: &AccountCookiePayload,
     max_age: Duration,
 ) -> AuthResult<String> {
-    let now = Utc::now();
-    let claims = AccountCookieClaims {
-        payload: payload.clone(),
-        exp: (now + max_age).timestamp() as usize,
-        iat: now.timestamp() as usize,
-    };
-    Ok(encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
-    )?)
+    super::account_cookie::encode(secret, payload, max_age)
 }
 
 pub(crate) fn decode_account_cookie_value(
     secret: &str,
     token: &str,
 ) -> AuthResult<AccountCookiePayload> {
-    let mut validation = Validation::new(Algorithm::HS256);
-    validation.validate_exp = true;
-    Ok(decode::<AccountCookieClaims>(
-        token,
-        &DecodingKey::from_secret(secret.as_bytes()),
-        &validation,
-    )?
-    .claims
-    .payload)
+    super::account_cookie::decode(secret, token)
 }
 
 pub(crate) fn get_cookie(req: &AuthRequest, name: &str) -> Option<String> {

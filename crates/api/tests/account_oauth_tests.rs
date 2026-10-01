@@ -26,10 +26,9 @@ use better_auth_api::OAuthPlugin;
 use better_auth_api::plugins::oauth::encryption::{decrypt_token, encrypt_token, maybe_encrypt};
 use better_auth_api::plugins::oauth::{
     OAuthConfig, OAuthProvider, OAuthRefreshTokenHandler, OAuthTokenSet, OAuthUserInfo,
+    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use chrono::{Duration, Utc};
-use jsonwebtoken::{EncodingKey, Header, encode};
-use serde::Serialize;
 
 use serde_json::json;
 
@@ -188,64 +187,102 @@ impl OAuthRefreshTokenHandler for RotatingRefreshHandler {
     }
 }
 
-#[derive(Serialize)]
-struct TestAccountCookieClaims<'a> {
-    #[serde(rename = "id", skip_serializing_if = "Option::is_none")]
-    id: Option<String>,
-    #[serde(rename = "userId")]
-    user_id: String,
-    #[serde(rename = "providerId")]
-    provider_id: &'a str,
-    #[serde(rename = "accountId")]
-    account_id: &'a str,
-    #[serde(rename = "accessToken", skip_serializing_if = "Option::is_none")]
-    access_token: Option<&'a str>,
-    #[serde(rename = "refreshToken", skip_serializing_if = "Option::is_none")]
-    refresh_token: Option<&'a str>,
-    #[serde(rename = "idToken", skip_serializing_if = "Option::is_none")]
-    id_token: Option<&'a str>,
-    #[serde(
-        rename = "accessTokenExpiresAt",
-        skip_serializing_if = "Option::is_none"
-    )]
-    access_token_expires_at: Option<chrono::DateTime<Utc>>,
-    #[serde(
-        rename = "refreshTokenExpiresAt",
-        skip_serializing_if = "Option::is_none"
-    )]
-    refresh_token_expires_at: Option<chrono::DateTime<Utc>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    scope: Option<&'a str>,
-    exp: usize,
-    iat: usize,
+#[derive(Clone)]
+struct CookieIssuerProfile(OAuthUserInfo);
+#[async_trait]
+impl OAuthUserInfoHandler for CookieIssuerProfile {
+    async fn get_user_info(
+        &self,
+        _: OAuthUserInfoRequest,
+    ) -> Result<OAuthUserInfoResponse, String> {
+        Ok(OAuthUserInfoResponse {
+            user: self.0.clone(),
+            data: json!({}),
+        })
+    }
 }
 
-fn encode_account_cookie(
+/// Issue the production encrypted cookie through the OAuth callback lifecycle.
+async fn issue_account_cookie(
     account: &impl AuthAccount,
+    db: &Arc<dyn AuthStore<TestSchema>>,
+    config: &Arc<AuthConfig>,
     access_token: Option<&str>,
     refresh_token: Option<&str>,
     access_token_expires_at: Option<chrono::DateTime<Utc>>,
 ) -> String {
-    let now = Utc::now();
-    encode(
-        &Header::default(),
-        &TestAccountCookieClaims {
-            id: Some(account.id().to_string()),
-            user_id: account.user_id().to_string(),
-            provider_id: account.provider_id(),
-            account_id: account.account_id(),
-            access_token,
-            refresh_token,
-            id_token: account.id_token(),
-            access_token_expires_at,
-            refresh_token_expires_at: account.refresh_token_expires_at(),
-            scope: account.scope(),
-            exp: (now + Duration::minutes(5)).timestamp() as usize,
-            iat: now.timestamp() as usize,
-        },
-        &EncodingKey::from_secret(TEST_SECRET.as_bytes()),
-    )
-    .unwrap()
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    ensure_local_proxy_bypass();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://localhost:{}", listener.local_addr().unwrap().port());
+    let token_body = json!({
+        "access_token":access_token, "refresh_token":refresh_token, "token_type":"Bearer",
+        "expires_in":access_token_expires_at.map(|date| (date-Utc::now()).num_seconds()),
+    })
+    .to_string();
+    tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = [0; 4096];
+        stream.read(&mut request).await.unwrap();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            token_body.len(),
+            token_body
+        );
+        stream.write_all(response.as_bytes()).await.unwrap();
+    });
+    let user = db
+        .get_user_by_id(&account.user_id().to_string())
+        .await
+        .unwrap()
+        .unwrap();
+    let mut provider = make_test_provider(&url);
+    provider.get_user_info = Some(Arc::new(CookieIssuerProfile(OAuthUserInfo {
+        id: account.account_id().to_owned(),
+        email: user.email().unwrap().to_owned(),
+        name: user.name().map(str::to_owned),
+        image: None,
+        email_verified: true,
+    })));
+    let mut oauth_config = OAuthConfig::default();
+    oauth_config
+        .providers
+        .insert(account.provider_id().to_owned(), provider);
+    let plugin = OAuthPlugin::with_config(oauth_config);
+    let mut issuer_config = (**config).clone();
+    issuer_config.account.skip_state_cookie_check = true;
+    let ctx = AuthContext::new(Arc::new(issuer_config), db.clone());
+    let state = uuid::Uuid::new_v4().to_string();
+    db.create_verification(CreateVerification {
+        identifier:format!("oauth:{state}"),
+        value:json!({"callbackURL":"http://localhost:3000", "codeVerifier":"native-cookie-verifier", "expiresAt":(Utc::now()+Duration::minutes(10)).timestamp_millis()}).to_string(),
+        expires_at:Utc::now()+Duration::minutes(10),
+    }).await.unwrap();
+    let mut req = AuthRequest::new(
+        HttpMethod::Get,
+        format!("/callback/{}", account.provider_id()),
+    );
+    req.query.insert("state".into(), state);
+    req.query
+        .insert("code".into(), "native-cookie-authorization-code".into());
+    let response = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
+    assert_eq!(response.status, 302);
+    assert_eq!(
+        response.headers.get("Location").map(String::as_str),
+        Some("http://localhost:3000")
+    );
+    response
+        .headers
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("set-cookie"))
+        .find_map(|(_, value)| {
+            value
+                .split(';')
+                .next()?
+                .strip_prefix("better-auth.account_data=")
+                .map(str::to_owned)
+        })
+        .expect("authenticated callback must issue the account cookie")
 }
 
 fn set_session_and_account_cookies(
@@ -607,12 +644,15 @@ async fn test_refresh_token_persists_rotated_tokens_for_cookie_matched_account()
     )
     .await;
     let account = db.get_user_accounts(&user_id).await.unwrap().remove(0);
-    let account_cookie = encode_account_cookie(
+    let account_cookie = issue_account_cookie(
         &account,
+        &db,
+        &config,
         Some("old-access-token"),
         Some("old-refresh-token"),
         Some(Utc::now() + Duration::minutes(30)),
-    );
+    )
+    .await;
 
     let ctx = AuthContext::new(config.clone(), db.clone());
     let mut oauth_config = OAuthConfig::default();
@@ -687,12 +727,15 @@ async fn test_get_access_token_refresh_persists_rotated_tokens_for_cookie_matche
     )
     .await;
     let account = db.get_user_accounts(&user_id).await.unwrap().remove(0);
-    let account_cookie = encode_account_cookie(
+    let account_cookie = issue_account_cookie(
         &account,
+        &db,
+        &config,
         Some("expired-access-token"),
         Some("old-refresh-token"),
         Some(Utc::now() - Duration::seconds(10)),
-    );
+    )
+    .await;
 
     let ctx = AuthContext::new(config.clone(), db.clone());
     let mut oauth_config = OAuthConfig::default();
@@ -891,12 +934,15 @@ async fn test_get_access_token_rejects_cookie_for_the_wrong_user() {
         .await
         .unwrap();
 
-    let account_cookie = encode_account_cookie(
+    let account_cookie = issue_account_cookie(
         &cookie_account,
+        &db,
+        &config,
         cookie_account.access_token(),
         cookie_account.refresh_token(),
         cookie_account.access_token_expires_at(),
-    );
+    )
+    .await;
 
     let ctx = AuthContext::new(config.clone(), db.clone());
     let mut oauth_config = OAuthConfig::default();

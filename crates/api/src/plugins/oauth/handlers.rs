@@ -741,6 +741,9 @@ pub(crate) async fn process_oauth_sign_in(
                         .refresh_token_expires_at
                         .or_else(|| existing_account.refresh_token_expires_at()),
                     scope: existing_account.scope().map(str::to_string),
+                    password: existing_account.password().map(str::to_string),
+                    created_at: Some(existing_account.created_at()),
+                    updated_at: Some(existing_account.updated_at()),
                 });
 
         return Ok(ProcessOAuthUserResult {
