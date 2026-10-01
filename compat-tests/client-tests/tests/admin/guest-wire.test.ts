@@ -292,5 +292,6 @@ for (const mode of ["missing", "tampered", "revoked"] as const) {
         after: await readAll(),
       };
     },
+    ["GET /admin/get-user", "GET /admin/list-users", "POST /admin/ban-user", "POST /admin/create-user", "POST /admin/has-permission", "POST /admin/impersonate-user", "POST /admin/list-user-sessions", "POST /admin/remove-user", "POST /admin/revoke-user-session", "POST /admin/revoke-user-sessions", "POST /admin/set-role", "POST /admin/set-user-password", "POST /admin/stop-impersonating", "POST /admin/unban-user", "POST /admin/update-user"],
   );
 }
