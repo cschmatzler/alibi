@@ -305,5 +305,6 @@ for (const profile of [
         foreignAfter,
       };
     },
+    ["POST /admin/ban-user", "POST /admin/set-role", "POST /admin/impersonate-user", "POST /sign-in/email"],
   );
 }

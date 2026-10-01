@@ -615,7 +615,9 @@
           "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
           "admin zero duration and empty reason use source defaults while owned sessions transition",
           "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions",
-          "admin configured fractional negative and NaN defaults preserve persisted session ownership"
+          "admin configured fractional negative and NaN defaults preserve persisted session ownership",
+          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
         ],
         "state": [
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
@@ -624,7 +626,9 @@
           "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions",
           "admin configured fractional negative and NaN defaults preserve persisted session ownership",
           "admin invalid configured dates fail before writes without changing issued owner or target sessions",
-          "admin date mapping preserves genuine application hook API errors and unchanged owned state"
+          "admin date mapping preserves genuine application hook API errors and unchanged owned state",
+          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
         ],
         "rejection": [
           "admin date mapping preserves genuine application hook API errors and unchanged owned state"
@@ -698,14 +702,26 @@
         "success": [
           "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
           "admin zero duration and empty reason use source defaults while owned sessions transition",
-          "admin configured fractional negative and NaN defaults preserve persisted session ownership"
+          "admin configured fractional negative and NaN defaults preserve persisted session ownership",
+          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
         ],
         "state": [
           "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
           "admin zero duration and empty reason use source defaults while owned sessions transition",
           "admin configured fractional negative and NaN defaults preserve persisted session ownership",
           "admin invalid configured dates fail before writes without changing issued owner or target sessions",
-          "admin date mapping preserves genuine application hook API errors and unchanged owned state"
+          "admin date mapping preserves genuine application hook API errors and unchanged owned state",
+          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
+        ],
+        "rejection": [
+          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
+        ],
+        "authorization": [
+          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
         ]
       }
     },
@@ -769,14 +785,18 @@
       "requiredEvidence": {
         "success": [
           "admin configured role values retain literal strings and array elements before any target mutation",
-          "admin unconfigured role table accepts empty role strings and arrays without inventing validation"
+          "admin unconfigured role table accepts empty role strings and arrays without inventing validation",
+          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
         ],
         "rejection": [
           "admin configured role values retain literal strings and array elements before any target mutation"
         ],
         "state": [
           "admin configured role values retain literal strings and array elements before any target mutation",
-          "admin unconfigured role table accepts empty role strings and arrays without inventing validation"
+          "admin unconfigured role table accepts empty role strings and arrays without inventing validation",
+          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
         ]
       }
     },
@@ -1839,7 +1859,9 @@
           "two-factor two-factor-trust-negative-challenge retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state"
+          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state",
+          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
         ],
         "state": [
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
@@ -1850,11 +1872,19 @@
           "two-factor two-factor-trust-negative-challenge retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state"
+          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state",
+          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
         ],
         "rejection": [
           "admin zero duration and empty reason use source defaults while owned sessions transition",
-          "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions"
+          "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions",
+          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
+        ],
+        "authorization": [
+          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
         ]
       }
     },
