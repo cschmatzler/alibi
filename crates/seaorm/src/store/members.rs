@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect, Select, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, DbErr, EntityTrait, IntoActiveModel, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, Select, Set, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -141,6 +141,27 @@ where
             .await
             .map(|model| Member::from(&model))
             .map_err(map_db_err)
+    }
+
+    async fn update_member_role_if_present(
+        &self,
+        member_id: &str,
+        role: &str,
+    ) -> AuthResult<Option<Member>> {
+        let Some(model) = Entity::find_by_id(member_id.to_owned())
+            .one(self.connection())
+            .await
+            .map_err(map_db_err)?
+        else {
+            return Ok(None);
+        };
+        let mut active = model.into_active_model();
+        active.role = Set(role.to_owned());
+        match active.update(self.connection()).await {
+            Ok(model) => Ok(Some(Member::from(&model))),
+            Err(DbErr::RecordNotUpdated) => Ok(None),
+            Err(error) => Err(map_db_err(error)),
+        }
     }
 
     async fn delete_member(&self, member_id: &str) -> AuthResult<()> {

@@ -332,6 +332,51 @@ pub(crate) async fn update_member_role_core(
         )));
     }
 
+    if let Some(hooks) = &config.member_role_hooks {
+        let organization = ctx
+            .database
+            .get_organization_by_id(&org_id)
+            .await?
+            .ok_or_else(|| super::extension_common::org_error(400, "ORGANIZATION_NOT_FOUND"))?;
+        let target_user = ctx
+            .database
+            .get_user_by_id(&target_member.user_id)
+            .await?
+            .ok_or_else(|| AuthError::Api {
+                status: 400,
+                code: None,
+                message: "User not found".into(),
+            })?;
+        let original = super::super::OrganizationMemberRoleContext {
+            new_role: new_role.clone(),
+            user: ctx.user_view(&target_user),
+            organization: super::super::types::OrganizationResponse::from_stored_organization(
+                &organization,
+            )?,
+            member: target_member,
+        };
+        let role = hooks
+            .before_update(&original)
+            .await?
+            .and_then(|patch| patch.role)
+            .filter(|role| !role.is_empty())
+            .unwrap_or(new_role);
+        let updated = ctx
+            .database
+            .update_member_role_if_present(&body.member_id, &role)
+            .await?
+            .ok_or_else(|| super::extension_common::org_error(400, "MEMBER_NOT_FOUND"))?;
+        hooks
+            .after_update(&super::super::OrganizationMemberRoleUpdatedContext {
+                previous_role: original.member.role,
+                member: updated.clone(),
+                user: original.user,
+                organization: original.organization,
+            })
+            .await?;
+        return Ok(BasicMemberResponse::from_member(&updated));
+    }
+
     let updated = ctx
         .database
         .update_member_role(&body.member_id, &new_role)

@@ -26,7 +26,7 @@ use serde_json::{json, Map, Value};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify};
 
-async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
+pub(super) async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
     let mut value = Map::new();
     for (name, sql, columns) in [
         ("organizations", "SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id", &["id","name","slug","logo","metadata"][..]),

@@ -299,6 +299,15 @@ impl<S: AuthSchema> MemberStore for PluginStore<S> {
     async fn update_member_role(&self, member_id: &str, role: &str) -> AuthResult<Member> {
         self.inner.update_member_role(member_id, role).await
     }
+    async fn update_member_role_if_present(
+        &self,
+        member_id: &str,
+        role: &str,
+    ) -> AuthResult<Option<Member>> {
+        self.inner
+            .update_member_role_if_present(member_id, role)
+            .await
+    }
     async fn delete_member(&self, member_id: &str) -> AuthResult<()> {
         self.inner.delete_member(member_id).await
     }

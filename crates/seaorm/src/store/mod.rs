@@ -10,6 +10,8 @@ pub mod entities;
 mod identity_fields;
 mod invitations;
 mod jwks;
+#[cfg(test)]
+mod member_role_tests;
 mod members;
 mod migrator;
 mod nullable_organization_metadata;

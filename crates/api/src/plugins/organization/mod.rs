@@ -8,6 +8,11 @@ pub use lifecycle::{
     OrganizationDeleteContext, OrganizationDeletionHooks, OrganizationDraftContext,
     OrganizationMemberCreatePatch, OrganizationMemberDraftContext,
 };
+pub mod member_role_lifecycle;
+pub use member_role_lifecycle::{
+    OrganizationMemberRoleContext, OrganizationMemberRoleHooks, OrganizationMemberRolePatch,
+    OrganizationMemberRoleUpdatedContext,
+};
 pub mod rbac;
 pub mod types;
 pub mod update_lifecycle;
@@ -69,6 +74,9 @@ pub struct OrganizationConfig {
     /// Awaited update callbacks over validated input and original authority.
     #[config(default = None, skip)]
     pub update_hooks: Option<std::sync::Arc<dyn OrganizationUpdateHooks>>,
+    /// Awaited member role callbacks with immutable target snapshots.
+    #[config(default = None, skip)]
+    pub member_role_hooks: Option<std::sync::Arc<dyn OrganizationMemberRoleHooks>>,
     /// Maximum members per organization (None = unlimited)
     #[config(default = Some(100))]
     pub membership_limit: Option<usize>,

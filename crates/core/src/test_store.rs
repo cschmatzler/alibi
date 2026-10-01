@@ -738,6 +738,15 @@ impl MemberStore for MemoryStore {
     async fn update_member_role(&self, _member_id: &str, _role: &str) -> AuthResult<Member> {
         Err(AuthError::internal("unsupported test-store operation"))
     }
+    async fn update_member_role_if_present(
+        &self,
+        _member_id: &str,
+        _role: &str,
+    ) -> AuthResult<Option<Member>> {
+        Err(AuthError::NotImplemented(
+            "Optional member role updates are not supported by this test store".into(),
+        ))
+    }
     async fn delete_member(&self, _member_id: &str) -> AuthResult<()> {
         Ok(())
     }
