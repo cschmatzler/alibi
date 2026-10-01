@@ -146,3 +146,20 @@ shared inventory/lock finalization, and publication belong to the coordinator.
   are not inferred. Session fields now have explicit policy integration and proof;
   arbitrary custom enum schemas and every plugin-specific metadata option remain
   separate configuration branches.
+
+## Integrated review and canonical validation
+
+The coordinator registered the actual OpenAPI plugin in the native inventory
+fixture and changed route enumeration to the public registered-route snapshot,
+independent of documentation filters. Only the exact GET native embedding route
+is outside the pinned upstream HTTP inventory. A meaningful retained native
+contract exposed lost custom Rust plugin operation identifiers; the metadata
+fallback is repaired while the source `/ok` operationId omission is preserved.
+Independent SIWE-owner review of both repairs is clear.
+
+The final canonical gate passed on 2026-10-01: 327 SDK scenarios / 11,256
+assertions, 39 harness tests / 243 assertions, two Chromium tests / 22 assertions,
+all native/optional-feature/Rustls/Redis/TypeScript/documentation checks, and
+79.95% source lines (26,998 / 33,768). The capability report has 143 routes,
+five unimplemented identities and zero implemented routes without success
+evidence. This is bounded document/reference parity, not full runtime parity.

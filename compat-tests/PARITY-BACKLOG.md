@@ -8,7 +8,7 @@ Wider pinned parity work follows these priorities. Excluded external integration
 packages will receive no implementation work. Prepared unmerged work remains
 separate from delivered capabilities.
 
-This snapshot describes merged `origin/master` through PR #48 (nullable ban-expiry storage),
+This snapshot describes merged `origin/master` through PR #49 (OpenAPI/reference),
 not the older, dirty coordinator worktree. The reference remains Better Auth
 1.7.6. The [upstream audit](audits/upstream-target.md) records source locations
 and wider boundaries. An audit gap means equivalence has not been established;
@@ -28,7 +28,7 @@ it is not automatically a confirmed defect or wholly missing implementation.
 | Configured session updates | Real application columns, configured validation/defaults/transforms, current-token updates and hooks passed independent review and the full gate: 277 SDK scenarios, 78.97% source coverage. | Merged PR #40; secondary/stateless/cache modes, output transforms, asynchronous validators and wider adapter types remain gaps. |
 | Two-factor policy storage | Nullable verification/failure/lock fields and atomic exact-row operations passed the integrated gate: 274 SDK scenarios, 78.96% source coverage. | Merged PR #39; dependent enforcement merged PR #41 after the full gate and independent review (292 SDK scenarios, 79.29% source coverage). Passwordless policies merged PR #43 after the full gate: 302 SDK scenarios and 79.33% source coverage. OTP method/storage policy passed independent review and the full gate in PR #46: 316 SDK scenarios and 79.38% source coverage. Guest disable validation ordering passed the full gate in PR #47; factor/backup interoperability remains a separate prepared slice. |
 | TOTP configuration | Exact URI/issuer/default/disabled behavior and trusted UTF-8-secret generation passed independent review and the canonical gate: 274 SDK scenarios, 78.97% source coverage. | Merged PR #38; OTP storage and trust policy remain selected work. |
-| OpenAPI and reference page | Frozen generator, source metadata, reference page and complete default/custom-session documents; eleven scenarios / 494 assertions pass. | Complete dependencies, notably update-session, independent review, integration and publication. |
+| OpenAPI and reference page | Complete default/configured documents, actual session-field models, source metadata and reference HTML passed independent review and the full gate: 327 SDK scenarios, 79.95% source coverage. | PR #49; minimal-builder automatic core registration, broader custom entities and additional plugin configuration remain explicit gaps. |
 | One Tap | Frozen implementation with local RSA Google JWKS, configuration and lifecycle evidence. All 14 complete-token official-client scenarios / 664 assertions pass. | Comparator prerequisite passed the full gate in PR #45; integrate shared OAuth prerequisites, complete review/gate and publish. |
 | SIWE | Merged PR #25; full canonical gate passed with 238 SDK scenarios and 78.65% source coverage. | Nonstandard media/legacy-date/custom-storage boundaries are documented, not new selected tasks. |
 
@@ -40,9 +40,9 @@ it is not automatically a confirmed defect or wholly missing implementation.
 
 | OAuth proxy | Production OAuth credentials serving preview/development hosts with encrypted, origin-bound profile transfer. | Actual pinned multi-server flow investigated; implementation remains. |
 | OAuth popup | Popup login and secure browser completion messaging. | Missing from the original route profiles; audit only. |
-| One Tap and OpenAPI | See the local work table above. | Unmerged capabilities still count as missing on master. |
+| One Tap | See the local work table above. | Unmerged capability still counts as missing on master. |
 
-The merged inventory has seven missing method/path identities after multiple sessions landed. All eight originally reported implemented routes now have successful-flow
+The merged inventory has five missing method/path identities after multiple sessions landed. All eight originally reported implemented routes now have successful-flow
 evidence, with actual ownership and persisted state checks. Wider configuration
 branches remain separate gaps.
 Multiple sessions are merged PR #31 with 262 SDK scenarios and 79.30% source coverage.
