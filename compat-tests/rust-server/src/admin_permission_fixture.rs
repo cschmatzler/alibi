@@ -1,9 +1,9 @@
 //! Actual immutable admin role policy configurations.
 use crate::TestSchema;
 use axum::{
-    Json, Router,
     extract::{Query, State},
     routing::get,
+    Json, Router,
 };
 use better_auth::__private_core::store::{AccountStore, SessionStore, UserStore};
 use better_auth::integrations::axum::AxumIntegration;
@@ -15,7 +15,7 @@ use better_auth::plugins::{
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
 use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Arc};
 
 struct ApplicationDateErrors;
