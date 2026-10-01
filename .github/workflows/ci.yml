@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
-    branches: [master]
+    branches: [main]
 
 permissions:
   contents: read
@@ -51,7 +51,7 @@ jobs:
           key: rust-sources-v2-${{ runner.os }}-${{ hashFiles('devenv.nix', 'devenv.lock', 'Cargo.lock', 'tests/compat/rust-server/Cargo.lock') }}
           restore-keys: rust-sources-v2-${{ runner.os }}-
       - name: Run the complete test gate
-        run: devenv test
+        run: devenv shell -- ./scripts/check.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

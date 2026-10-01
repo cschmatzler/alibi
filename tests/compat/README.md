@@ -29,14 +29,17 @@ referenced from `tests/fixtures/` with `include_str!`.
 ## Full gate
 
 ```bash
-devenv test
+devenv shell -- ./scripts/check.sh
 # Equivalent inside the development shell, and in CI:
-full-check
+./scripts/check.sh
 ```
 
-This runs formatting, strict Clippy, all workspace unit/integration/doc tests,
+This runs formatting, strict Clippy, all workspace unit/integration tests,
 feature builds, TypeScript type checking, harness negative controls, the
 complete SDK scenario directory, Chromium tests, docs, and LLVM line coverage.
+Rust unit and integration tests run with `cargo nextest run`, including the
+compatibility server and LLVM coverage (`cargo llvm-cov nextest`). Doctests
+are excluded from the test gate.
 Every dual-server comparison runs through the official client against both
 fixture servers on allocated ports started and stopped by the Rust orchestrator;
 there is no in-process shape-only comparison layer with tolerated differences. Default and `axum,seaorm2,redis-cache` configurations are tested;
@@ -47,8 +50,8 @@ and persisted user identity throughout the fixture lifetime.
 Missing reference dependencies or an unavailable server fail this gate.
 
 The shared Rust style supplies nextest, Clippy, rustfmt, and Mr. Boxington.
-The style input is private and requires GitHub SSH access. `devenv test` runs
-its strict Rust gate followed by the compatibility gate. `devenv.lock` pins all
+The style input is private and requires GitHub SSH access. `scripts/check.sh`
+combines the Rust and compatibility gates. `devenv.lock` pins all
 tools, including Bun and Chromium. Update the style with `devenv update rust-style`.
 Outside devenv, run `bunx playwright install --with-deps chromium` in
 `client-tests/` before browser checks.
@@ -243,8 +246,8 @@ To update the inventory deliberately after adding routes or tests:
 ```bash
 mkdir -p coverage
 bun tests/compat/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json
-BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo test --test compat_coverage_tests
-BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo test --test client_compat_tests full_client_compat -- --ignored --nocapture
+BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo nextest run --test compat_coverage_tests
+BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo nextest run --test client_compat_tests full_client_compat --run-ignored only --no-capture
 ```
 
 Review the resulting `capabilities.json` diff, especially removed requirements.
@@ -262,10 +265,10 @@ Run these in `devenv shell` after installing both projects with
 ```bash
 bun run --cwd tests/compat/client-tests typecheck
 bun test --cwd tests/compat/client-tests harness
-cargo test --test client_compat_tests passkey_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests browser_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests organization_teams_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests organization_dynamic_roles_client_compat -- --ignored --nocapture
+cargo nextest run --test client_compat_tests passkey_client_compat --run-ignored only --no-capture
+cargo nextest run --test client_compat_tests browser_client_compat --run-ignored only --no-capture
+cargo nextest run --test client_compat_tests organization_teams_client_compat --run-ignored only --no-capture
+cargo nextest run --test client_compat_tests organization_dynamic_roles_client_compat --run-ignored only --no-capture
 ./scripts/alignment-check.sh
 ```
 
@@ -275,7 +278,7 @@ and Rust servers; configure `AUTH_BASE_URL_TS` and `AUTH_BASE_URL_RUST`.
 
 ## One-time tokens
 
-`devenv shell -- cargo test --test client_compat_tests one_time_token_client_compat -- --ignored --nocapture` runs the official client against the pinned TypeScript and Rust fixtures. Four explicit profiles exercise plain and hashed storage, no-cookie consumption, server-only issuance and response headers. The scenarios assert stored session ownership, expiry, revocation, replay and newest-generation invalidation.
+`devenv shell -- cargo nextest run --test client_compat_tests one_time_token_client_compat --run-ignored only --no-capture` runs the official client against the pinned TypeScript and Rust fixtures. Four explicit profiles exercise plain and hashed storage, no-cookie consumption, server-only issuance and response headers. The scenarios assert stored session ownership, expiry, revocation, replay and newest-generation invalidation.
 
 This database-backed integration uses persisted sessions and verification records. Secondary-storage-only sessions remain a separate integration boundary.
 
@@ -317,7 +320,7 @@ SIWE checks use the official `siweClient`, independent signed EIP-191 messages,
 and a local ERC-1271 JSON-RPC provider. They compare wallet/account/session
 ownership, nonce expiry and single use, email reservation, callback context,
 ENS behavior, bans, and overlapping verification. Run
-`devenv shell -- cargo test --test client_compat_tests siwe_client_compat -- --ignored --nocapture`.
+`devenv shell -- cargo nextest run --test client_compat_tests siwe_client_compat --run-ignored only --no-capture`.
 The [SIWE implementation audit](audits/siwe.md) records the pinned runtime's
 global nonce contract and remaining storage/schema/provider boundaries.
 OpenAPI/reference whole-document proof and remaining configuration branches are tracked in [the OpenAPI audit](audits/open-api.md).

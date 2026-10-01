@@ -8,14 +8,14 @@ bun install --cwd tests/compat/reference-server --frozen-lockfile
 bun install --cwd tests/compat/client-tests --frozen-lockfile
 cargo fmt --all -- --check
 cargo fmt --manifest-path tests/compat/rust-server/Cargo.toml -- --check
-lint --locked
-lint --locked --features axum,seaorm2,redis-cache
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo clippy --workspace --all-targets --locked --features axum,seaorm2,redis-cache -- -D warnings
 cargo check -p better-auth --locked --no-default-features --features rustls,axum,seaorm2,redis-cache
 mkdir -p coverage
 bun tests/compat/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json
-cargo test --workspace --locked
-cargo test --locked --manifest-path tests/compat/rust-server/Cargo.toml
-cargo test --workspace --locked --features axum,seaorm2,redis-cache
+cargo nextest run --workspace --locked
+cargo nextest run --locked --manifest-path tests/compat/rust-server/Cargo.toml
+cargo nextest run --workspace --locked --features axum,seaorm2,redis-cache
 bun run --cwd tests/compat/client-tests typecheck
 bun test --cwd tests/compat/client-tests harness
 ./scripts/alignment-check.sh

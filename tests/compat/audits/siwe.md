@@ -101,15 +101,15 @@ custom numeric-ID schema using `"0001"` to refer to owner `"1"`.
 
 ## Focused validation and review
 
-- `cargo test -p better-auth-api siwe`: independent golden Unicode signature and
+- `cargo nextest run -p better-auth-api siwe`: independent golden Unicode signature and
   signed preference/session-lifetime tests.
-- `cargo test -p better-auth-seaorm wallet_`: owner/deletion rollback and
+- `cargo nextest run -p better-auth-seaorm wallet_`: owner/deletion rollback and
   installed-schema migration/default tests.
-- `cargo test --features seaorm2 --test legacy_schema_integration_tests
+- `cargo nextest run --features seaorm2 --test legacy_schema_integration_tests
   numeric_user_schema_cleans_team`: custom numeric ID regression, observed to
   fail before canonical cleanup and pass after it.
-- `cargo test --test client_compat_tests siwe_client_compat -- --ignored
-  --nocapture`: official SDK, unchanged reference, exact wire/cookies and
+- `cargo nextest run --test client_compat_tests siwe_client_compat --run-ignored only
+  --no-capture`: official SDK, unchanged reference, exact wire/cookies and
   persisted identity graph across eleven named scenarios (724 assertions).
 - Client TypeScript checking and strict production/fixture Clippy.
 

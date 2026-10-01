@@ -147,7 +147,7 @@ Allow it once, then run the complete test gate:
 
 ```bash
 direnv allow
-devenv test
+devenv shell -- ./scripts/check.sh
 ```
 
 You can also enter the environment manually with `devenv shell`.

@@ -34,8 +34,8 @@ if [[ "$skip_build" != "true" ]]; then
   cargo build --manifest-path tests/compat/rust-server/Cargo.toml
 fi
 
-cargo test --features axum --test axum_integration_tests
-cargo test --test compat_endpoint_tests -- --nocapture
-cargo test --test compat_coverage_tests -- --nocapture
-cargo test --test client_compat_tests full_client_compat -- --ignored --nocapture
-cargo test --test client_compat_tests browser_client_compat -- --ignored --nocapture
+cargo nextest run --features axum --test axum_integration_tests
+cargo nextest run --test compat_endpoint_tests --no-capture
+cargo nextest run --test compat_coverage_tests --no-capture
+cargo nextest run --test client_compat_tests --run-ignored only --no-capture full_client_compat
+cargo nextest run --test client_compat_tests --run-ignored only --no-capture browser_client_compat
