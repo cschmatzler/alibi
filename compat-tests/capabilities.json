@@ -2083,10 +2083,29 @@
       },
       "requiredEvidence": {
         "success": [
-          "organization member role updates normalize string and array input without deduplicating roles"
+          "organization member role updates normalize string and array input without deduplicating roles",
+          "organization member role callbacks use the target user and normalized initial role with source patch fallback",
+          "organization member role after callback keeps original target snapshots across independent writes",
+          "organization member role update awaits async callback before changing the stored role"
         ],
         "state": [
-          "organization member role updates normalize string and array input without deduplicating roles"
+          "organization member role updates normalize string and array input without deduplicating roles",
+          "organization member role callbacks use the target user and normalized initial role with source patch fallback",
+          "organization member role callback errors distinguish no write from a committed role change",
+          "organization member role validation and foreign authorization reject before any callback or write",
+          "organization member role after callback keeps original target snapshots across independent writes",
+          "organization member role before callback deletion yields actual missing-member rejection without after callback",
+          "organization member role update awaits async callback before changing the stored role"
+        ],
+        "rejection": [
+          "organization member role callbacks use the target user and normalized initial role with source patch fallback",
+          "organization member role callback errors distinguish no write from a committed role change",
+          "organization member role validation and foreign authorization reject before any callback or write",
+          "organization member role before callback deletion yields actual missing-member rejection without after callback"
+        ],
+        "authorization": [
+          "organization member role callbacks use the target user and normalized initial role with source patch fallback",
+          "organization member role validation and foreign authorization reject before any callback or write"
         ]
       }
     },
