@@ -77,6 +77,7 @@ mod session_fields_fixture;
 mod session_profiles;
 mod siwe_fixture;
 mod sqlite_fixture;
+mod two_factor_delivery_fixture;
 mod two_factor_otp_fixture;
 mod two_factor_policy_fixture;
 mod two_factor_totp_fixture;
@@ -868,6 +869,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
     let two_factor_otp_router =
         two_factor_otp_fixture::router(&config, reset_database.clone()).await?;
+    let delivery_router =
+        two_factor_delivery_fixture::router(&config, reset_database.clone()).await?;
     let ott_router = one_time_token_fixture::router(&config, reset_database.clone()).await?;
     let open_api_router = open_api_fixture::router(&config, reset_database.clone()).await?;
 
@@ -1667,6 +1670,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(totp_router)
         .merge(policy_router)
         .merge(two_factor_otp_router)
+        .merge(delivery_router)
         .merge(ott_router)
         .merge(jwt_router)
         .merge(device_profiles)
