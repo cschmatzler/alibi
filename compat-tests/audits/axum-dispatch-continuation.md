@@ -112,3 +112,17 @@ boundary from this HTTP lifetime capability.
   `/tmp/axum-dispatch-fixture-clippy-final.log`.
 
 Coordinator owns independent review, full gates, inventory and publication.
+
+## Integrated runtime-transition fixture regression
+
+The integrated canonical gate exposed an intermittent SQLite fixture failure in
+the runtime-transition owner. Repetition reproduced it at iteration42; tracing
+confirmed `no such table: users` after shutdown closed the final in-memory
+connection. The owner now uses an isolated SQLite file while retaining actual
+second-runtime HTTP and persisted-user assertions. Other transport owners still
+use their original databases. No production transport behavior changed.
+
+The four native transport owners pass, and150 consecutive isolated-file runtime
+transitions pass (`/tmp/transport-runtime-file-fix.log`,
+`/tmp/transport-runtime-file-repeat.log`). The failing diagnostic is retained in
+`/tmp/transport-runtime-traced-repeat.log`. Full canonical proof remains pending.

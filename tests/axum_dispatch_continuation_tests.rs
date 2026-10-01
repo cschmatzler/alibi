@@ -118,7 +118,16 @@ impl AuthPlugin<Schema> for Application {
 async fn auth(
     observations: Arc<Observations>,
 ) -> (Arc<BetterAuth<Schema>>, Arc<SeaOrmStore<Schema>>) {
-    let database = Database::connect("sqlite::memory:").await.unwrap();
+    auth_with_database(
+        observations,
+        Database::connect("sqlite::memory:").await.unwrap(),
+    )
+    .await
+}
+async fn auth_with_database(
+    observations: Arc<Observations>,
+    database: better_auth_seaorm::DatabaseConnection,
+) -> (Arc<BetterAuth<Schema>>, Arc<SeaOrmStore<Schema>>) {
     better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .unwrap();
@@ -177,7 +186,26 @@ fn request(path: &str, email: &str) -> Request {
 #[test]
 fn router_construction_is_lazy_and_completed_router_can_move_between_runtimes() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let (auth, _store) = runtime.block_on(auth(Arc::default()));
+    // SQLite memory databases can vanish when runtime shutdown closes the
+    // final pooled connection. Keep this transport owner independent of that
+    // database lifetime by using an isolated, persisted file.
+    struct DatabaseFile(std::path::PathBuf);
+    impl Drop for DatabaseFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    let database_file = DatabaseFile(std::env::temp_dir().join(format!(
+        "better-auth-router-runtime-{}.sqlite",
+        uuid::Uuid::new_v4()
+    )));
+    let (auth, _store) = runtime.block_on(async {
+        let database =
+            Database::connect(format!("sqlite://{}?mode=rwc", database_file.0.display()))
+                .await
+                .unwrap();
+        auth_with_database(Arc::default(), database).await
+    });
     assert!(tokio::runtime::Handle::try_current().is_err());
     let router = Router::new()
         .nest("/auth", auth.clone().axum_router())
@@ -197,7 +225,16 @@ fn router_construction_is_lazy_and_completed_router_can_move_between_runtimes() 
             "second-runtime@transport.fixture.test",
         )))
         .unwrap();
-    assert_eq!(second.status(), StatusCode::CREATED);
+    let second_status = second.status();
+    let second_body = next_runtime
+        .block_on(axum::body::to_bytes(second.into_body(), 4096))
+        .unwrap();
+    assert_eq!(
+        second_status,
+        StatusCode::CREATED,
+        "{}",
+        String::from_utf8_lossy(&second_body)
+    );
     assert_eq!(
         next_runtime
             .block_on(_store.get_user_by_email("second-runtime@transport.fixture.test"))
