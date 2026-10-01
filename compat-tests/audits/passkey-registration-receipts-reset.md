@@ -27,7 +27,7 @@ Rust-to-Rust reset passes 14 assertions in
 `/tmp/passkey-registration-receipts-reset-rust-self.log`. Actual dual-runtime reset
 and registration owners pass the same 582 assertions in
 `/tmp/passkey-registration-source-sdk-final.log`. The whole passkey family passes
-29 / 2746 in `/tmp/passkey-registration-source-family-final.log`. Required client
+29 / 2782 in `/tmp/passkey-registration-source-family-final.log`. Required client
 TypeScript and fixture strict Clippy pass separately. Optional standalone reference
 strict checking finds the same preexisting Auth generic-map variance at line132 on
 both frozen1f parent and this tree; `/tmp/passkey-registration-source-reference-
