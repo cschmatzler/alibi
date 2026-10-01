@@ -3,6 +3,11 @@ use better_auth_core::{AuthRequest, AuthResponse};
 
 use better_auth_core::utils::cookie_utils::create_session_cookie;
 
+mod authentication;
+pub use authentication::{
+    AuthenticationResult, PasskeyAuthenticationAfterVerification, PasskeyAuthenticationConfig,
+    PasskeyAuthenticationContext, VerifiedPasskeyAuthentication,
+};
 pub(super) mod handlers;
 mod registration;
 pub(super) mod types;
@@ -40,6 +45,8 @@ pub struct PasskeyConfig {
     pub challenge_ttl_secs: i64,
     #[config(default = PasskeyRegistrationConfig::default())]
     pub registration: PasskeyRegistrationConfig,
+    #[config(default = PasskeyAuthenticationConfig::default())]
+    pub authentication: PasskeyAuthenticationConfig,
 }
 
 // -- Plugin --
