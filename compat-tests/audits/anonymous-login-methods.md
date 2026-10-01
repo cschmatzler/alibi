@@ -92,4 +92,14 @@ the raw model supplied to cache-version callbacks or the cache payload producer.
 Source's signed-email pre-update cache projection needs its own composition
 contract; no synthetic raw model is supplied here. Cache publication must still
 complete before publishing a completed session, as agreed with its owner.
-No dependencies, locks, schema, inventory or full gate changed.
+Coordinator integration on top of the complete anonymous, encrypted OAuth and
+admin scheduling stack also passes the core/email family: 51 owners / 1,846
+assertions (`/tmp/anonymous-login-methods-reviewed-family.log`), with a rebuilt
+current fixture and client TypeScript checks. Independent review of the frozen
+feature is clear. The inventory adds 21 actual measured primary-route
+requirements and preserves every earlier requirement. The magic-link wrong
+proof redirects with 302; its full denial and unchanged state are observed,
+but generic transport classification does not count that redirect as rejection
+evidence. No dependency, lock or schema changes are introduced. This slice
+still awaits its own next integrated canonical gate; the preceding 591-owner
+gate does not include these seven owners.

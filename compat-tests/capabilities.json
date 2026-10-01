@@ -360,10 +360,16 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "magic links deliver metadata and authenticate a new user with one-time consumption",
+        "success": [
+          "magic links deliver metadata and authenticate a new user with one-time consumption",
+          "anonymous magic verified login transfers only the actual anonymous owner and preserves rejected proof state"
+        ],
         "rejection": "magic links reject malformed bodies callbacks and missing query tokens before consumption",
         "authorization": "magic-link redirect validates origin before consuming and chooses the new-user callback",
-        "state": "magic links deliver metadata and authenticate a new user with one-time consumption"
+        "state": [
+          "magic links deliver metadata and authenticate a new user with one-time consumption",
+          "anonymous magic verified login transfers only the actual anonymous owner and preserves rejected proof state"
+        ]
       }
     },
     {
@@ -818,10 +824,22 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "change email for a verified user requires old-email confirmation first",
-        "rejection": "verify email rejects untrusted callbackURL",
-        "authorization": "verify email rejects untrusted callbackURL",
-        "state": "required email verification issues proof without a session and gates sign-in until verification"
+        "success": [
+          "change email for a verified user requires old-email confirmation first",
+          "anonymous email-verification verified login transfers only the actual anonymous owner and preserves rejected proof state"
+        ],
+        "rejection": [
+          "verify email rejects untrusted callbackURL",
+          "anonymous email-verification verified login transfers only the actual anonymous owner and preserves rejected proof state"
+        ],
+        "authorization": [
+          "verify email rejects untrusted callbackURL",
+          "anonymous email-verification verified login transfers only the actual anonymous owner and preserves rejected proof state"
+        ],
+        "state": [
+          "required email verification issues proof without a session and gates sign-in until verification",
+          "anonymous email-verification verified login transfers only the actual anonymous owner and preserves rejected proof state"
+        ]
       }
     },
     {
@@ -1621,10 +1639,19 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "email OTP check preserves the code until email verification consumes it",
-        "rejection": "email OTP check preserves the code until email verification consumes it",
+        "success": [
+          "email OTP check preserves the code until email verification consumes it",
+          "anonymous email-otp-verification verified login transfers only the actual anonymous owner and preserves rejected proof state"
+        ],
+        "rejection": [
+          "email OTP check preserves the code until email verification consumes it",
+          "anonymous email-otp-verification verified login transfers only the actual anonymous owner and preserves rejected proof state"
+        ],
         "authorization": null,
-        "state": "email OTP check preserves the code until email verification consumes it"
+        "state": [
+          "email OTP check preserves the code until email verification consumes it",
+          "anonymous email-otp-verification verified login transfers only the actual anonymous owner and preserves rejected proof state"
+        ]
       }
     },
     {
@@ -1770,11 +1797,13 @@
         "success": [
           "One Tap official client binds verified Google accounts and persisted sessions",
           "One Tap disabled signup preserves existing account ownership",
-          "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials"
+          "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials",
+          "anonymous one-tap verified login transfers only the actual anonymous owner and preserves rejected proof state"
         ],
         "rejection": [
           "One Tap cryptographic and Google claim rejections leave identities unchanged",
-          "One Tap callback origin and request validation precede Google JWKS reads"
+          "One Tap callback origin and request validation precede Google JWKS reads",
+          "anonymous one-tap verified login transfers only the actual anonymous owner and preserves rejected proof state"
         ],
         "authorization": [
           "One Tap disabled signup preserves existing account ownership",
@@ -1796,7 +1825,8 @@
           "One Tap implicit linking applies configured profile sync and preserves local identity",
           "One Tap ID token storage honors encryption and retained-account configurations",
           "One Tap preserves the signed browser-session preference cookie",
-          "One Tap retains the upstream user snapshot during email verification upgrades"
+          "One Tap retains the upstream user snapshot during email verification upgrades",
+          "anonymous one-tap verified login transfers only the actual anonymous owner and preserves rejected proof state"
         ]
       }
     },
@@ -2485,7 +2515,8 @@
           "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication",
           "passkey eddsa-none-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges"
+          "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges",
+          "anonymous passkey verified login transfers only the actual anonymous owner and preserves rejected proof state"
         ],
         "rejection": [
           "passkey registration authentication ownership and deletion round trip",
@@ -2507,7 +2538,8 @@
           "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
           "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
-          "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges"
+          "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges",
+          "anonymous passkey verified login transfers only the actual anonymous owner and preserves rejected proof state"
         ],
         "authorization": [
           "passkey rejected cryptographic attempts consume challenges without credential or session writes",
@@ -2542,7 +2574,8 @@
           "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
           "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
-          "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges"
+          "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges",
+          "anonymous passkey verified login transfers only the actual anonymous owner and preserves rejected proof state"
         ]
       }
     },
@@ -2695,11 +2728,13 @@
         "success": [
           "phone verification signs up a phone owner and preserves identity across new sessions",
           "phone updates bind the requester preserve its session and reject occupied numbers",
-          "external phone OTP verification enforces provider binding and replaces local expiry policy"
+          "external phone OTP verification enforces provider binding and replaces local expiry policy",
+          "anonymous phone verified login transfers only the actual anonymous owner and preserves rejected proof state"
         ],
         "rejection": [
           "phone OTP rejects foreign numbers exhausted attempts expiry and disabled signup",
-          "phone endpoint schemas reject every malformed field before any state transition"
+          "phone endpoint schemas reject every malformed field before any state transition",
+          "anonymous phone verified login transfers only the actual anonymous owner and preserves rejected proof state"
         ],
         "authorization": [
           "phone updates bind the requester preserve its session and reject occupied numbers"
@@ -2707,7 +2742,8 @@
         "state": [
           "phone verification signs up a phone owner and preserves identity across new sessions",
           "phone updates bind the requester preserve its session and reject occupied numbers",
-          "external phone OTP verification enforces provider binding and replaces local expiry policy"
+          "external phone OTP verification enforces provider binding and replaces local expiry policy",
+          "anonymous phone verified login transfers only the actual anonymous owner and preserves rejected proof state"
         ]
       }
     },
@@ -2902,10 +2938,19 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "email OTP signs up a verified user and consumes its scoped code once",
-        "rejection": "email OTP signs up a verified user and consumes its scoped code once",
+        "success": [
+          "email OTP signs up a verified user and consumes its scoped code once",
+          "anonymous email-otp verified login transfers only the actual anonymous owner and preserves rejected proof state"
+        ],
+        "rejection": [
+          "email OTP signs up a verified user and consumes its scoped code once",
+          "anonymous email-otp verified login transfers only the actual anonymous owner and preserves rejected proof state"
+        ],
         "authorization": null,
-        "state": "email OTP signs up a verified user and consumes its scoped code once"
+        "state": [
+          "email OTP signs up a verified user and consumes its scoped code once",
+          "anonymous email-otp verified login transfers only the actual anonymous owner and preserves rejected proof state"
+        ]
       }
     },
     {
