@@ -83,10 +83,6 @@ fn joined_role(role: &RoleInput) -> String {
 }
 
 fn validate_role_input(role: &RoleInput, config: &AdminConfig) -> AuthResult<()> {
-    if role.is_empty() {
-        return Err(AuthError::bad_request("role is required"));
-    }
-
     let Some(roles) = &config.roles else {
         return Ok(());
     };
@@ -140,19 +136,36 @@ pub(crate) async fn get_user_core(
     Ok(AdminUserView::from(&user))
 }
 
+fn requested_create_role(body: &CreateUserRequest) -> AuthResult<Option<RoleInput>> {
+    if let Some(role) = &body.role {
+        return Ok(Some(role.clone()));
+    }
+    body.data
+        .as_ref()
+        .and_then(|data| data.get("role"))
+        .map(|value| {
+            serde_json::from_value::<RoleInput>(value.clone())
+                .map_err(|_| AuthError::bad_request(MESSAGE_INVALID_ROLE_TYPE))
+        })
+        .transpose()
+}
+
 pub(crate) async fn create_user_core(
     body: &CreateUserRequest,
     config: &AdminConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<UserResponse<AdminUserView>> {
+    let requested_role = requested_create_role(body)?;
+    if let Some(role) = &requested_role {
+        validate_role_input(role, config)?;
+    }
     if ctx.database.get_user_by_email(&body.email).await?.is_some() {
         return Err(AuthError::bad_request(
             "User already exists. Use another email.",
         ));
     }
 
-    let role = body
-        .role
+    let role = requested_role
         .as_ref()
         .map(joined_role)
         .unwrap_or_else(|| config.default_role.clone());
@@ -160,7 +173,10 @@ pub(crate) async fn create_user_core(
     let metadata = body
         .data
         .clone()
-        .map(serde_json::Value::Object)
+        .map(|mut data| {
+            let _ = data.remove("role");
+            serde_json::Value::Object(data)
+        })
         .unwrap_or_else(|| serde_json::json!({}));
 
     let create_user = better_auth_core::CreateUser::new()

@@ -391,7 +391,7 @@ const { runMigrations } = await getMigrations(authOptions);
 await runMigrations();
 const sessionFieldsFixture=await createSessionFieldsFixture(database,authOptions,`http://localhost:${PORT}`);
 const siweFixture = await createSiweFixture(database, authOptions, `http://localhost:${PORT}`);
-const adminPermissionFixture = createAdminPermissionFixture(authOptions);
+const adminPermissionFixture = createAdminPermissionFixture(authOptions, database);
 const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 const organizationCreationFixture = createOrganizationCreationFixture(database, authOptions, `http://localhost:${PORT}`);
 
@@ -955,6 +955,9 @@ const server = Bun.serve({
         if (typeof body.createdAt === "string") database.query('UPDATE session SET createdAt = ? WHERE token = ?').run(new Date(body.createdAt).toISOString(), body.token);
         return jsonResponse({ updated: result.changes });
       }
+
+      const adminRoleStateResponse = adminPermissionFixture.handle(request);
+      if (adminRoleStateResponse) return adminRoleStateResponse;
 
       if (url.pathname === "/__test/user-state" && request.method === "GET") {
         const userId = url.searchParams.get("userId");
