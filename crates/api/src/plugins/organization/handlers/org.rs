@@ -435,7 +435,9 @@ pub(crate) async fn set_active_organization_core(
         .await?
         .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
 
-    Ok(Some(OrganizationResponse::from_organization(&organization)))
+    Ok(Some(OrganizationResponse::from_stored_organization(
+        &organization,
+    )?))
 }
 
 pub(crate) async fn leave_organization_core(

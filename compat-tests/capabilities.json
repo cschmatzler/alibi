@@ -1436,10 +1436,17 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "organization core lifecycle matches TS",
+        "success": [
+          "organization core lifecycle matches TS",
+          "organization set-active returns exact stored metadata text and changes only the current token selection",
+          "organization set-active emits null for absent metadata and retains real membership and session scope"
+        ],
         "rejection": null,
         "authorization": null,
-        "state": null
+        "state": [
+          "organization set-active returns exact stored metadata text and changes only the current token selection",
+          "organization set-active emits null for absent metadata and retains real membership and session scope"
+        ]
       }
     },
     {
@@ -1468,7 +1475,8 @@
           "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations",
           "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs",
           "organization logo patches preserve omitted fields, clear SQL null, and enforce authenticated ownership",
-          "organization blank update selectors use only the current token selection and preserve other organizations"
+          "organization blank update selectors use only the current token selection and preserve other organizations",
+          "organization set-active returns exact stored metadata text and changes only the current token selection"
         ],
         "rejection": [
           "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
@@ -1492,7 +1500,8 @@
           "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations",
           "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs",
           "organization logo patches preserve omitted fields, clear SQL null, and enforce authenticated ownership",
-          "organization blank update selectors use only the current token selection and preserve other organizations"
+          "organization blank update selectors use only the current token selection and preserve other organizations",
+          "organization set-active returns exact stored metadata text and changes only the current token selection"
         ]
       }
     },
