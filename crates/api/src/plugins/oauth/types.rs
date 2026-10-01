@@ -57,6 +57,7 @@ pub(super) struct OAuthIdTokenRequest {
     #[validate(length(min = 1, message = "Token is required"))]
     pub token: String,
     pub nonce: Option<String>,
+    pub user: Option<super::providers::OAuthCallbackUserPayload>,
     #[serde(rename = "accessToken")]
     pub access_token: Option<String>,
     #[serde(rename = "refreshToken")]

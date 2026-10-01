@@ -44,19 +44,6 @@ pub(in crate::plugins) enum OAuthSignInError {
 }
 
 impl OAuthSignInError {
-    fn into_auth_error(self) -> AuthError {
-        match self {
-            Self::Generic(message) => AuthError::forbidden(message),
-            Self::SessionAuth(error) => AuthError::forbidden(error.to_string()),
-            Self::Banned(message) => AuthError::banned_user(message),
-            Self::EmailNotVerified => AuthError::Upstream {
-                status: 403,
-                code: "EMAIL_NOT_VERIFIED",
-                message: "Email not verified",
-            },
-        }
-    }
-
     pub(in crate::plugins) fn redirect_parts(&self) -> (String, Option<&str>) {
         match self {
             // Upstream turns a plain internal error string into the `error`
@@ -170,6 +157,16 @@ fn build_authorization_url(
     code_challenge: &str,
     login_hint: Option<&str>,
 ) -> AuthResult<String> {
+    if provider
+        .authorization
+        .as_ref()
+        .is_some_and(|policy| policy.require_client_secret)
+        && (provider.client_id.is_empty() || provider.client_secret.is_empty())
+    {
+        return Err(AuthError::config(
+            "Client ID and client secret are required",
+        ));
+    }
     let effective_scopes: Vec<&str> = provider.authorization.as_ref().map_or_else(
         || {
             scopes.map_or_else(
@@ -203,7 +200,13 @@ fn build_authorization_url(
         .map_err(|error| AuthError::internal(format!("Invalid auth URL: {error}")))?;
     _ = url
         .query_pairs_mut()
-        .append_pair("response_type", "code")
+        .append_pair(
+            "response_type",
+            provider
+                .authorization
+                .as_ref()
+                .map_or("code", |policy| policy.response_type.as_str()),
+        )
         .append_pair("client_id", &provider.client_id)
         .append_pair("state", state);
     if provider.authorization.is_none() || !effective_scopes.is_empty() {
@@ -223,6 +226,13 @@ fn build_authorization_url(
             .append_pair("code_challenge", code_challenge);
     }
     if let Some(policy) = &provider.authorization {
+        if let Some(mode) = policy
+            .response_mode
+            .as_deref()
+            .filter(|mode| !mode.is_empty())
+        {
+            _ = url.query_pairs_mut().append_pair("response_mode", mode);
+        }
         if let Some(prompt) = policy
             .prompt
             .as_deref()
@@ -248,7 +258,12 @@ fn build_authorization_url(
             _ = url.query_pairs_mut().append_pair("permissions", &value);
         }
     }
-    if let Some(login_hint) = login_hint {
+    if let Some(login_hint) = login_hint.filter(|_| {
+        provider
+            .authorization
+            .as_ref()
+            .is_none_or(|policy| policy.login_hint)
+    }) {
         _ = url.query_pairs_mut().append_pair("login_hint", login_hint);
     }
     for (key, value) in &provider.authorization_params {
@@ -317,25 +332,36 @@ fn parse_token_response(token_data: serde_json::Value) -> AuthResult<OAuthTokenS
         .get("id_token")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let access_token_expires_at = token_data
-        .get("expires_in")
-        .and_then(serde_json::Value::as_i64)
-        .map(|secs| Utc::now() + Duration::seconds(secs));
-    let refresh_token_expires_at = token_data
-        .get("refresh_token_expires_in")
-        .and_then(serde_json::Value::as_i64)
-        .map(|secs| Utc::now() + Duration::seconds(secs));
-    let scopes = token_data
-        .get("scope")
-        .and_then(|v| v.as_str())
-        .map(|scope| {
-            scope
-                .split([',', ' '])
-                .filter(|value| !value.is_empty())
-                .map(String::from)
-                .collect()
-        })
-        .unwrap_or_default();
+    let expiry = |field: &str| -> Option<chrono::DateTime<Utc>> {
+        let value = token_data.get(field)?;
+        let seconds = match value {
+            serde_json::Value::Number(number) => number.as_f64().filter(|value| *value != 0.0)?,
+            serde_json::Value::String(value) if !value.is_empty() => {
+                value.trim().parse::<f64>().ok()?
+            }
+            _ => return None,
+        };
+        let timestamp = Utc::now().timestamp_millis() as f64 + seconds * 1000.0;
+        if !timestamp.is_finite() || timestamp.abs() > 8_640_000_000_000_000.0 {
+            return None;
+        }
+        chrono::DateTime::from_timestamp_millis(timestamp.trunc() as i64)
+    };
+    let access_token_expires_at = expiry("expires_in");
+    let refresh_token_expires_at = expiry("refresh_token_expires_in");
+    let scopes = match token_data.get("scope") {
+        Some(serde_json::Value::String(scope)) => {
+            scope.split_whitespace().map(String::from).collect()
+        }
+        Some(serde_json::Value::Array(scopes)) => scopes
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(String::from)
+            .collect(),
+        _ => Vec::new(),
+    };
 
     Ok(OAuthTokenSet {
         token_type: token_data
@@ -877,7 +903,8 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
                 id_token: token_bundle.id_token,
                 access_token_expires_at: tokens.access_token_expires_at,
                 refresh_token_expires_at: tokens.refresh_token_expires_at,
-                scope: (!tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
+                scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
+                    .then(|| tokens.scopes.join(",")),
                 password: None,
             })
             .await
@@ -982,7 +1009,8 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
             id_token: token_bundle.id_token,
             access_token_expires_at: tokens.access_token_expires_at,
             refresh_token_expires_at: tokens.refresh_token_expires_at,
-            scope: (!tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
+            scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
+                .then(|| tokens.scopes.join(",")),
             password: None,
         };
         // OAuth registration commits its identity and provider binding together.
@@ -1071,7 +1099,8 @@ pub(in crate::plugins) async fn complete_link_social(
                         id_token: token_bundle.id_token,
                         access_token_expires_at: tokens.access_token_expires_at,
                         refresh_token_expires_at: tokens.refresh_token_expires_at,
-                        scope: (!tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
+                        scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
+                            .then(|| tokens.scopes.join(",")),
                         ..Default::default()
                     },
                 )
@@ -1101,7 +1130,8 @@ pub(in crate::plugins) async fn complete_link_social(
                 id_token: token_bundle.id_token,
                 access_token_expires_at: tokens.access_token_expires_at,
                 refresh_token_expires_at: tokens.refresh_token_expires_at,
-                scope: (!tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
+                scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
+                    .then(|| tokens.scopes.join(",")),
                 password: None,
             })
             .await
@@ -1118,16 +1148,23 @@ async fn sign_in_with_id_token_core(
     meta: &better_auth_core::RequestMeta,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<SocialSignInResponse> {
-    let verifier = provider
-        .verify_id_token
-        .as_ref()
-        .ok_or_else(|| AuthError::not_found("id_token not supported"))?;
-    let valid = verifier
-        .verify_id_token(&id_token.token, id_token.nonce.as_deref())
+    if provider.disable_id_token_sign_in
+        || provider.verify_id_token.is_none() && provider.id_token.is_none()
+    {
+        return Err(AuthError::Upstream {
+            status: 404,
+            code: "ID_TOKEN_NOT_SUPPORTED",
+            message: "id_token not supported",
+        });
+    }
+    if !super::id_token::verify_provider_token(provider, &id_token.token, id_token.nonce.as_deref())
         .await
-        .map_err(AuthError::internal)?;
-    if !valid {
-        return Err(AuthError::forbidden("Invalid token"));
+    {
+        return Err(AuthError::Upstream {
+            status: 401,
+            code: "INVALID_TOKEN",
+            message: "Invalid token",
+        });
     }
 
     let user_info = fetch_user_info_from_provider(
@@ -1140,11 +1177,24 @@ async fn sign_in_with_id_token_core(
                 .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
             scopes: id_token.scopes.clone().unwrap_or_default(),
             id_token: Some(id_token.token.clone()),
+            user: id_token.user.clone(),
             ..Default::default()
         },
     )
     .await
-    .map_err(|_error| AuthError::forbidden("Failed to get user info"))?;
+    .map_err(|_error| AuthError::Upstream {
+        status: 401,
+        code: "FAILED_TO_GET_USER_INFO",
+        message: "Failed to get user info",
+    })?;
+
+    if user_info.user.email.is_empty() {
+        return Err(AuthError::Upstream {
+            status: 401,
+            code: "USER_EMAIL_NOT_FOUND",
+            message: "User email not found",
+        });
+    }
 
     let outcome = process_oauth_sign_in(
         &body.provider,
@@ -1152,8 +1202,6 @@ async fn sign_in_with_id_token_core(
         &user_info.user,
         &OAuthTokenSet {
             access_token: id_token.access_token.clone(),
-            refresh_token: id_token.refresh_token.clone(),
-            scopes: id_token.scopes.clone().unwrap_or_default(),
             id_token: Some(id_token.token.clone()),
             ..Default::default()
         },
@@ -1163,7 +1211,23 @@ async fn sign_in_with_id_token_core(
         ctx,
     )
     .await
-    .map_err(OAuthSignInError::into_auth_error)?;
+    .map_err(|error| match error {
+        OAuthSignInError::EmailNotVerified => AuthError::Upstream {
+            status: 403,
+            code: "EMAIL_NOT_VERIFIED",
+            message: "Email not verified",
+        },
+        OAuthSignInError::Generic(message) | OAuthSignInError::Banned(message) => AuthError::Api {
+            status: 401,
+            code: Some("OAUTH_LINK_ERROR".into()),
+            message,
+        },
+        OAuthSignInError::SessionAuth(error) => AuthError::Api {
+            status: 401,
+            code: Some("OAUTH_LINK_ERROR".into()),
+            message: error.to_string(),
+        },
+    })?;
 
     Ok(SocialSignInResponse {
         url: None,
@@ -1185,16 +1249,23 @@ async fn link_with_id_token_core(
     session: &impl AuthSession,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<SocialSignInResponse> {
-    let verifier = provider
-        .verify_id_token
-        .as_ref()
-        .ok_or_else(|| AuthError::not_found("id_token not supported"))?;
-    let valid = verifier
-        .verify_id_token(&id_token.token, id_token.nonce.as_deref())
+    if provider.disable_id_token_sign_in
+        || provider.verify_id_token.is_none() && provider.id_token.is_none()
+    {
+        return Err(AuthError::Upstream {
+            status: 404,
+            code: "ID_TOKEN_NOT_SUPPORTED",
+            message: "id_token not supported",
+        });
+    }
+    if !super::id_token::verify_provider_token(provider, &id_token.token, id_token.nonce.as_deref())
         .await
-        .map_err(AuthError::internal)?;
-    if !valid {
-        return Err(AuthError::forbidden("Invalid token"));
+    {
+        return Err(AuthError::Upstream {
+            status: 401,
+            code: "INVALID_TOKEN",
+            message: "Invalid token",
+        });
     }
 
     let response = fetch_user_info_from_provider(
@@ -1207,14 +1278,23 @@ async fn link_with_id_token_core(
                 .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
             scopes: id_token.scopes.clone().unwrap_or_default(),
             id_token: Some(id_token.token.clone()),
+            user: id_token.user.clone(),
             ..Default::default()
         },
     )
     .await
-    .map_err(|_error| AuthError::forbidden("Failed to get user info"))?;
+    .map_err(|_error| AuthError::Upstream {
+        status: 401,
+        code: "FAILED_TO_GET_USER_INFO",
+        message: "Failed to get user info",
+    })?;
 
     if response.user.email.is_empty() {
-        return Err(AuthError::forbidden("User email not found"));
+        return Err(AuthError::Upstream {
+            status: 401,
+            code: "USER_EMAIL_NOT_FOUND",
+            message: "User email not found",
+        });
     }
 
     let existing_accounts = ctx.database.get_user_accounts(&session.user_id()).await?;

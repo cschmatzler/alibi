@@ -6,6 +6,8 @@ pub mod encryption;
 
 pub(in crate::plugins) mod handlers;
 
+pub(in crate::plugins) mod id_token;
+
 mod providers;
 
 pub(in crate::plugins) mod state;
@@ -19,10 +21,15 @@ use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 pub(in crate::plugins) use handlers::{
     OAuthProcessPolicy, OAuthSignInError, create_account_cookie_header, process_oauth_sign_in,
 };
+pub use id_token::{
+    HttpOAuthJwksSource, OAuthIdTokenConfig, OAuthJwksSelection, OAuthJwksSource,
+    OAuthNonceComparison,
+};
 pub use providers::{
-    OAuthAuthorizationPolicy, OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthConfig,
-    OAuthIdTokenVerifier, OAuthProvider, OAuthRefreshTokenHandler, OAuthScopeOrder, OAuthTokenSet,
-    OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    AppleOptions, OAuthAuthorizationPolicy, OAuthCallbackUserName, OAuthCallbackUserPayload,
+    OAuthConfig, OAuthIdTokenVerifier, OAuthProvider, OAuthRefreshTokenHandler, OAuthScopeOrder,
+    OAuthTokenSet, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
+    OAuthUserInfoResponse,
 };
 pub(in crate::plugins) use state::{
     CapturedOAuthServerContext, OAuthServerContext, RecoveredOAuthServerContext,

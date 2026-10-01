@@ -1,3 +1,6 @@
+mod apple;
+pub use apple::AppleOptions;
+
 #[cfg(test)]
 mod tests;
 
@@ -37,13 +40,14 @@ pub struct OAuthUserInfo {
     pub email_verified: bool,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct OAuthCallbackUserPayload {
     pub name: Option<OAuthCallbackUserName>,
     pub email: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OAuthCallbackUserName {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
@@ -245,7 +249,11 @@ pub struct OAuthProvider {
     pub map_user_info: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
     pub get_user_info: Option<Arc<dyn OAuthUserInfoHandler>>,
     pub refresh_access_token: Option<Arc<dyn OAuthRefreshTokenHandler>>,
+    /// Application override takes precedence over the trusted built-in JWKS policy.
     pub verify_id_token: Option<Arc<dyn OAuthIdTokenVerifier>>,
+    pub id_token: Option<super::id_token::OAuthIdTokenConfig>,
+    /// Disable the complete ID-token branch, including an application verifier override.
+    pub disable_id_token_sign_in: bool,
     pub disable_implicit_sign_up: bool,
     pub disable_sign_up: bool,
     pub override_user_info_on_sign_in: bool,
@@ -263,6 +271,10 @@ pub enum OAuthScopeOrder {
 #[derive(Debug, Clone)]
 pub struct OAuthAuthorizationPolicy {
     pub configured_scopes: Vec<String>,
+    pub response_type: String,
+    pub response_mode: Option<String>,
+    pub require_client_secret: bool,
+    pub login_hint: bool,
     pub disable_default_scopes: bool,
     pub scope_order: OAuthScopeOrder,
     pub pkce: bool,
@@ -277,6 +289,10 @@ impl Default for OAuthAuthorizationPolicy {
     fn default() -> Self {
         Self {
             configured_scopes: Vec::new(),
+            response_type: "code".into(),
+            response_mode: None,
+            require_client_secret: false,
+            login_hint: true,
             disable_default_scopes: false,
             scope_order: OAuthScopeOrder::ConfiguredThenRequested,
             pkce: true,
@@ -320,6 +336,8 @@ impl OAuthProvider {
             get_user_info: None,
             refresh_access_token: None,
             verify_id_token: None,
+            id_token: None,
+            disable_id_token_sign_in: false,
             disable_implicit_sign_up: false,
             disable_sign_up: false,
             override_user_info_on_sign_in: false,
@@ -328,6 +346,9 @@ impl OAuthProvider {
 
     #[must_use]
     pub fn with_client_ids(mut self, client_ids: Vec<String>) -> Self {
+        if let Some(policy) = self.id_token.as_mut() {
+            policy.client_ids = Some(client_ids.clone());
+        }
         let mut ids = client_ids.into_iter();
         self.client_id = ids.next().unwrap_or_default();
         self.additional_client_ids = ids.collect();
@@ -391,6 +412,8 @@ impl OAuthProvider {
             get_user_info: None,
             refresh_access_token: None,
             verify_id_token: None,
+            id_token: None,
+            disable_id_token_sign_in: false,
             disable_implicit_sign_up: false,
             disable_sign_up: false,
             override_user_info_on_sign_in: false,
@@ -441,6 +464,8 @@ impl OAuthProvider {
             ))),
             refresh_access_token: None,
             verify_id_token: None,
+            id_token: None,
+            disable_id_token_sign_in: false,
             disable_implicit_sign_up: false,
             disable_sign_up: false,
             override_user_info_on_sign_in: false,
@@ -470,6 +495,8 @@ impl OAuthProvider {
             get_user_info: None,
             refresh_access_token: None,
             verify_id_token: None,
+            id_token: None,
+            disable_id_token_sign_in: false,
             disable_implicit_sign_up: false,
             disable_sign_up: false,
             override_user_info_on_sign_in: false,
