@@ -263,7 +263,7 @@ pub(crate) async fn remove_member_core(
     if target_member.organization_id() != org_id {
         return Err(super::extension_common::org_error(400, "MEMBER_NOT_FOUND"));
     }
-    let _organization = ctx
+    let organization = ctx
         .database
         .get_organization_by_id(org_id)
         .await?
@@ -285,6 +285,19 @@ pub(crate) async fn remove_member_core(
             member: target_member.clone(),
         },
     };
+    let original = if let Some(hooks) = &config.member_removal_hooks {
+        let original = super::super::OrganizationMemberRemovalContext {
+            member: response.member.clone(),
+            user: ctx.user_view(&target_user),
+            organization: super::super::types::OrganizationResponse::from_stored_organization(
+                &organization,
+            )?,
+        };
+        hooks.before_remove(&original).await?;
+        Some(original)
+    } else {
+        None
+    };
 
     ctx.database
         .delete_member_with_context(
@@ -300,6 +313,10 @@ pub(crate) async fn remove_member_core(
             .database
             .update_session_active_organization(session.token(), None)
             .await?;
+    }
+
+    if let (Some(hooks), Some(original)) = (&config.member_removal_hooks, original) {
+        hooks.after_remove(&original).await?;
     }
 
     Ok(response)

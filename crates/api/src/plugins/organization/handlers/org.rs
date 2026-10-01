@@ -927,6 +927,7 @@ mod tests {
             creation_hooks: None,
             update_hooks: None,
             member_role_hooks: None,
+            member_removal_hooks: None,
             deletion_hooks: None,
             membership_limit: Some(100),
             creator_role: "owner".to_string(),

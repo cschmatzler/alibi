@@ -8,7 +8,11 @@ pub use lifecycle::{
     OrganizationDeleteContext, OrganizationDeletionHooks, OrganizationDraftContext,
     OrganizationMemberCreatePatch, OrganizationMemberDraftContext,
 };
+pub mod member_removal_lifecycle;
 pub mod member_role_lifecycle;
+pub use member_removal_lifecycle::{
+    OrganizationMemberRemovalContext, OrganizationMemberRemovalHooks,
+};
 pub use member_role_lifecycle::{
     OrganizationMemberRoleContext, OrganizationMemberRoleHooks, OrganizationMemberRolePatch,
     OrganizationMemberRoleUpdatedContext,
@@ -77,6 +81,9 @@ pub struct OrganizationConfig {
     /// Awaited member role callbacks with immutable target snapshots.
     #[config(default = None, skip)]
     pub member_role_hooks: Option<std::sync::Arc<dyn OrganizationMemberRoleHooks>>,
+    /// Awaited member removal callbacks over immutable original target rows.
+    #[config(default = None, skip)]
+    pub member_removal_hooks: Option<std::sync::Arc<dyn OrganizationMemberRemovalHooks>>,
     /// Maximum members per organization (None = unlimited)
     #[config(default = Some(100))]
     pub membership_limit: Option<usize>,
@@ -125,6 +132,24 @@ pub struct OrganizationPlugin {
 }
 
 impl OrganizationPlugin {
+    /// Remove through a real signed-cookie session supplied by the application.
+    /// This low-level helper shares HTTP business logic but does not execute
+    /// builder-wide before/after dispatch hooks or API-key session injection.
+    pub async fn remove_member_with_headers<S: better_auth_core::AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        headers: &HashMap<String, String>,
+        body: &types::RemoveMemberRequest,
+    ) -> AuthResult<types::RemovedMemberResponse<types::OrganizationMemberRemovalSnapshot>> {
+        let mut resolution = AuthRequest::new(HttpMethod::Post, "/organization/remove-member");
+        resolution.headers = headers
+            .iter()
+            .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
+            .collect();
+        let (user, session) = handlers::extension_common::session(&resolution, ctx).await?;
+        handlers::member::remove_member_core(body, &user, &session, &self.config, ctx).await
+    }
+
     /// Delete using an actual signed-cookie session from supplied headers, without
     /// manufacturing an HTTP request for lifecycle callbacks. This low-level
     /// plugin helper does not execute builder-wide before/after dispatch hooks;
