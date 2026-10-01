@@ -31,6 +31,7 @@ async fn runtime_routes_match_capability_inventory() {
         multi_session_enabled: true,
         one_tap_enabled: true,
         anonymous_enabled: true,
+        oauth_proxy_enabled: true,
         ..Default::default()
     })
     .await;

@@ -197,3 +197,23 @@ The normal account OAuth public native consumers also pass 18 tests in
 `/tmp/oauth-proxy-review-account-native-final.log`, protecting the unchanged
 nonproxy projections. An attempted OneTap native lib selector finds zero tests;
 that setup invocation is not counted as validation.
+
+
+## Integrated dispatch and required route evidence
+
+The coordinator integrated the immutable feature and review correction with the
+stateful compact-cache prerequisite. Dispatch consumes both private suppression
+markers independently, retaining cache ordinary-error header discard and proxy
+ordinary-error hook suppression. Exact integration review is clear.
+
+Fresh integrated actual fixtures pass 29 owners / 1,898 assertions across compact
+cache, both anonymous families and proxy (`/tmp/wrapup-final-cache-proxy-integration.log`).
+The inventory enables the real proxy plugin and changes only the two completion
+routes' implemented flags. It adds 26 actually qualified requirements, preserves
+all previous requirements and all 143 route identities, and uses genuine 403
+origin controls for both completion routes. The final canonical gate is owned by
+the coordinator; this focused result is not a complete-gate claim.
+
+Remaining proxy configurations are tracked in [issue #227](https://github.com/cschmatzler/better-auth-rs/issues/227).
+Shared lifecycle, state codecs and rotation are #181, #189 and #176; account
+cookie variants are #230. Default database-state completion is implemented.
