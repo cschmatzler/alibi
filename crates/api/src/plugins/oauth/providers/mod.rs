@@ -387,7 +387,10 @@ impl OAuthProvider {
                 "profile".to_owned(),
                 "openid".to_owned(),
             ],
-            authorization: Some(OAuthAuthorizationPolicy::default()),
+            authorization: Some(OAuthAuthorizationPolicy {
+                require_client_secret: true,
+                ..Default::default()
+            }),
             authorization_params: vec![("include_granted_scopes".to_owned(), "true".to_owned())],
             map_user_info: Some(|v| {
                 Ok(OAuthUserInfo {
@@ -399,7 +402,7 @@ impl OAuthProvider {
                     email: v
                         .get("email")
                         .and_then(|v| v.as_str())
-                        .ok_or("missing email")?
+                        .unwrap_or_default()
                         .to_owned(),
                     name: v.get("name").and_then(|v| v.as_str()).map(String::from),
                     image: v.get("picture").and_then(|v| v.as_str()).map(String::from),
@@ -412,7 +415,7 @@ impl OAuthProvider {
             get_user_info: None,
             refresh_access_token: None,
             verify_id_token: None,
-            id_token: None,
+            id_token: Some(super::id_token::OAuthIdTokenConfig::google()),
             disable_id_token_sign_in: false,
             disable_implicit_sign_up: false,
             disable_sign_up: false,
