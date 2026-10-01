@@ -7,7 +7,7 @@ use better_auth_core::types::{CreateAccount, UpdateAccount};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
 };
 
 impl<S> SeaOrmStore<S>
@@ -73,12 +73,19 @@ where
         provider: &str,
         provider_account_id: &str,
     ) -> AuthResult<Option<S::Account>> {
-        <S::Account as SeaOrmAccountModel>::Entity::find()
+        let mut accounts = <S::Account as SeaOrmAccountModel>::Entity::find()
             .filter(<S::Account as SeaOrmAccountModel>::provider_id_column().eq(provider))
             .filter(<S::Account as SeaOrmAccountModel>::account_id_column().eq(provider_account_id))
-            .one(self.connection())
+            .limit(2)
+            .all(self.connection())
             .await
-            .map_err(map_db_err)
+            .map_err(map_db_err)?;
+        if accounts.len() > 1 {
+            return Err(better_auth_core::AuthError::Database(
+                better_auth_core::DatabaseError::AmbiguousAccount { provider: provider.to_owned() },
+            ));
+        }
+        Ok(accounts.pop())
     }
 
     async fn get_user_accounts(&self, user_id: &str) -> AuthResult<Vec<S::Account>> {

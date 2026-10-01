@@ -75,6 +75,15 @@ export function socialProviderFixture(base: BetterAuthOptions) {
         : { ...(profile.fixtureTokens === true ? { id_token: "fixture-encrypted-id" } : {}), access_token: "fixture-gitlab-access", refresh_token: "fixture-gitlab-refresh", token_type: "Bearer", scope: "read_user issued-scope", expires_in: 3600 });
       return Response.json(profile);
     }
+    if (url.pathname === "/__test/social-provider/duplicate-account" && request.method === "POST") {
+      const body=await request.json() as {accountId:string,userId:string};
+      const {adapter,internalAdapter}=await profiles.get("/__test/profiles/social-gitlab-issuer/api/auth")!.$context;
+      const row=await adapter.findOne<Record<string,unknown>>({model:"account",where:[{field:"id",value:body.accountId}]});
+      if(!row)return Response.json({message:"Account not found"},{status:404});
+      const {id,createdAt,updatedAt,...fields}=row;
+      const created=await internalAdapter.createAccount({...fields,userId:body.userId} as Parameters<typeof internalAdapter.createAccount>[0]);
+      return Response.json({status:true,accountId:created.id});
+    }
     if (url.pathname === "/__test/social-provider/import-tokens" && request.method === "POST") {
       const body = await request.json() as {accountId: string; userId: string; accessToken?: string | null; refreshToken?: string | null; idToken?: string | null};
       const { adapter, internalAdapter } = await profiles.get("/__test/profiles/social-gitlab-encrypted/api/auth")!.$context;
