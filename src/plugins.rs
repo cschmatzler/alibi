@@ -46,3 +46,7 @@ pub use better_auth_api::plugins::passkey::{
 pub use better_auth_api::plugins::one_tap::{
     self, GoogleJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin,
 };
+
+pub use better_auth_api::plugins::anonymous::{
+    self, AnonymousConfig, AnonymousIdentity, AnonymousLink, AnonymousPlugin, LinkAnonymousAccount,
+};

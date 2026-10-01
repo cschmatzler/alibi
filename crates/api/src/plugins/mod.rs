@@ -1,5 +1,6 @@
 pub mod account_management;
 pub mod admin;
+pub mod anonymous;
 pub mod api_key;
 pub(crate) mod authentication_helpers;
 pub mod device_authorization;
@@ -220,3 +221,5 @@ pub use two_factor::{
 pub use user_management::{
     ChangeEmailConfig, DeleteUserConfig, UserManagementConfig, UserManagementPlugin,
 };
+
+pub use anonymous::{AnonymousConfig, AnonymousPlugin};
