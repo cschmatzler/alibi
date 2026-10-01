@@ -237,13 +237,28 @@
           "api-key automatic middleware observe admits one concurrent cleanup and retains both credential owners",
           "api-key automatic middleware ignore admits one concurrent cleanup and retains both credential owners",
           "api-key background handler failures preserve consumed usage running cleanup and genuine application 403",
-          "api-key trusted deferred verification catches actual cleanup errors and forced retry bypasses the shared throttle"
+          "api-key trusted deferred verification catches actual cleanup errors and forced retry bypasses the shared throttle",
+          "api-key deferred individual expired deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
+          "api-key deferred individual exhausted deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
+          "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
+          "api-key awaited individual exhausted deletion waits for actual adapter release and rejects without observer registration",
+          "api-key deferred individual storage failure resolves caught completion retains the exact row and awaited retry preserves failure then deletes only its owner",
+          "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority"
         ],
         "rejection": [
-          "api-key background handler failures preserve consumed usage running cleanup and genuine application 403"
+          "api-key background handler failures preserve consumed usage running cleanup and genuine application 403",
+          "api-key deferred individual expired deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
+          "api-key deferred individual exhausted deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
+          "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
+          "api-key awaited individual exhausted deletion waits for actual adapter release and rejects without observer registration",
+          "api-key deferred individual storage failure resolves caught completion retains the exact row and awaited retry preserves failure then deletes only its owner",
+          "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority"
         ],
         "authorization": [
-          "api-key background handler failures preserve consumed usage running cleanup and genuine application 403"
+          "api-key background handler failures preserve consumed usage running cleanup and genuine application 403",
+          "api-key deferred individual expired deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
+          "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
+          "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority"
         ]
       }
     },

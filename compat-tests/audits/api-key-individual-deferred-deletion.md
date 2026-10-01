@@ -64,7 +64,7 @@ transport, application receipts and stored rows/dates remain in the comparison.
 
 Deferred expiry/exhaustion returns its rejection while the row still exists and
 while all user/account/session state is unchanged. Ignore mode then releases actual
-deletion, preserves the complete foreign row and denies retired-key replay.
+deletion, preserves every observed physical foreign-key field and complete observed foreign owner/account/session state and denies retired-key replay.
 Awaited owners observe the real gate, retained row/state and no response/completion
 registration until release. SQL ABORT owners prove caught fulfillment and retained
 rows, an awaited retry's genuine failure, then removal of just the selected key
