@@ -10,7 +10,7 @@ function variants<P extends string, S extends string>(prefix: P, suffixes: reado
  * profile parity scenario proves that both fixture servers serve each entry.
  */
 export const FIXTURE_PROFILES = [
-  "social-apple-default", "social-apple-configured", "social-apple-disabled-scope", "social-apple-disabled-configured", "social-apple-bundle", "social-apple-audience", "social-apple-client-array", "social-apple-disabled-idtoken", "social-apple-signup-disabled", "social-apple-implicit-disabled", "social-apple-encrypted", "social-apple-mapped",
+  "social-apple-default", "social-apple-configured", "social-apple-disabled-scope", "social-apple-disabled-configured", "social-apple-bundle", "social-apple-audience", "social-apple-client-array", "social-apple-disabled-idtoken", "social-apple-signup-disabled", "social-apple-implicit-disabled", "social-apple-encrypted", "social-apple-mapped", "social-apple-empty-clients",
   "oauth-proxy",
   "two-factor-pending-lookup", "two-factor-pending-lookup-disabled", "two-factor-pending-lookup-zero", "two-factor-pending-lookup-zero-disabled",
   ...variants("session-cache-", ["standard", "disabled", "version", "version-api", "version-ordinary", "zero", "nan", "fractional", "negative", "infinite", "negative-infinite", "date-version"] as const),

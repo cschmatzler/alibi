@@ -59,8 +59,10 @@ impl OAuthProvider {
     }
     #[must_use]
     pub fn apple_with_options(options: AppleOptions) -> Self {
+        let client_ids = options.client_ids.clone();
         let mut clients = options.client_ids.into_iter();
         let mut verification = OAuthIdTokenConfig::apple();
+        verification.client_ids = Some(client_ids);
         verification.audience = options
             .audience
             .filter(|values| !values.is_empty())
@@ -135,9 +137,7 @@ impl OAuthUserInfoHandler for AppleUserInfo {
                     name.first_name.unwrap_or_default(),
                     name.last_name.unwrap_or_default()
                 )
-                .trim_matches(|character: char| {
-                    character.is_whitespace() || character == '\u{feff}'
-                })
+                .trim_matches(js_whitespace)
                 .to_owned(),
             )
         } else {
@@ -161,7 +161,9 @@ impl OAuthUserInfoHandler for AppleUserInfo {
         };
         let id = match profile.get("sub") {
             Some(JsValue::String(value))
-                if !value.trim().is_empty() && value != "null" && value != "undefined" =>
+                if !value.trim_matches(js_whitespace).is_empty()
+                    && value != "null"
+                    && value != "undefined" =>
             {
                 value.clone()
             }
@@ -203,4 +205,8 @@ impl OAuthUserInfoHandler for AppleUserInfo {
         };
         Ok(OAuthUserInfoResponse { user, data })
     }
+}
+
+fn js_whitespace(character: char) -> bool {
+    (character.is_whitespace() && character != '\u{85}') || character == '\u{feff}'
 }

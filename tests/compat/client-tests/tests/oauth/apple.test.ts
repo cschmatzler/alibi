@@ -15,7 +15,7 @@ async function receipts(ctx: ScenarioContext) {
   return rows.map(row => ({...row, body:row.body?.code_verifier ? {...row.body, code_verifier:{token:row.body.code_verifier,length:row.body.code_verifier.length}} : row.body}));
 }
 async function proof(ctx: ScenarioContext, claims: Record<string, unknown> = {}, wrong = false) {
-  return credential({iss: "https://appleid.apple.com", aud: "fixture-social-client", sub: ctx.uniqueToken("apple-subject"), email: ctx.uniqueEmail("apple"), email_verified: "true", name: "JWT Apple Name", ...claims}, {}, wrong);
+  return credential({iss: "https://appleid.apple.com", aud: "fixture-social-client", sub: ctx.uniqueToken("apple-subject"), email: ctx.uniqueEmail("apple"), email_verified: "true", name: "JWT Apple Name", picture:"https://images.example.invalid/ignored-jwt-picture.png", ...claims}, {}, wrong);
 }
 async function control(ctx: ScenarioContext, value: Record<string, unknown>) {
   const result = await ctx.rawRequest({path: "/__test/apple/control", method: "POST", json: value});
@@ -40,7 +40,7 @@ for (const mode of ["default", "configured", "disabled-scope", "disabled-configu
   });
 }
 
-for (const mapping of ["named", "numeric-name", "zero-name", "missing-name", "null-name", "empty-name", "supplied-name", "numeric", "missing-email", "null-email", "unverified", "false-string"] as const) {
+for (const mapping of ["named", "numeric-name", "zero-name", "missing-name", "null-name", "empty-name", "supplied-name", "js-trim", "numeric", "missing-email", "null-email", "unverified", "false-string"] as const) {
   compatScenario(`apple signed ID token ${mapping} profile and ownership`, async ctx => {
     const foreign = ctx.actor("foreign");
     const foreignSignup = await foreign.client.signUp.email({email: ctx.uniqueEmail("foreign"), password:"Password123!", name:"Foreign Owner"});
@@ -49,7 +49,7 @@ for (const mapping of ["named", "numeric-name", "zero-name", "missing-name", "nu
     const claims = mapping === "numeric-name" ? {name:7} : mapping === "zero-name" ? {name:0} : mapping === "missing-name" ? {name:undefined} : mapping === "null-name" ? {name:null} : mapping === "empty-name" ? {name:""} : mapping === "numeric" ? {sub: 42} : mapping === "missing-email" ? {email: undefined} : mapping === "null-email" ? {email:null} : mapping === "unverified" ? {email_verified:false} : mapping === "false-string" ? {email_verified:"false"} : {};
     const token = await proof(ctx, claims);
     const actor = ctx.actor("apple", "social-apple-default");
-    const result = await actor.client.signIn.social({provider:"apple", idToken:{token, ...(mapping === "supplied-name" ? {user:{name:{firstName:"Ada",lastName:"Apple"}}} : {})}});
+    const result = await actor.client.signIn.social({provider:"apple", idToken:{token, ...(mapping === "supplied-name" ? {user:{name:{firstName:"Ada",lastName:"Apple"}}} : mapping === "js-trim" ? {user:{name:{firstName:"\uFEFF\u0085Ada\u0085\uFEFF",lastName:""}}} : {})}});
     const after = await state(ctx);
     if (mapping.endsWith("email")) {
       expect(result.error?.code).toBe("USER_EMAIL_NOT_FOUND");
@@ -63,7 +63,8 @@ for (const mapping of ["named", "numeric-name", "zero-name", "missing-name", "nu
       expect(after.accounts.find(row => row.id === before.accounts[0]!.id)).toEqual(before.accounts[0]);
       expect(after.sessions.find(row => row.id === before.sessions[0]!.id)).toEqual(before.sessions[0]);
       const owner = after.users.find(row => row.id !== before.users[0]!.id)!;
-      expect(owner.name).toBe(mapping === "numeric-name" ? "7" : mapping === "zero-name" ? "" : mapping === "supplied-name" ? "Ada Apple" : ["missing-name","null-name","empty-name"].includes(mapping) ? "" : "JWT Apple Name");
+      expect(owner.name).toBe(mapping === "js-trim" ? "\u0085Ada\u0085" : mapping === "numeric-name" ? "7" : mapping === "zero-name" ? "" : mapping === "supplied-name" ? "Ada Apple" : ["missing-name","null-name","empty-name"].includes(mapping) ? "" : "JWT Apple Name");
+      expect(owner.image).toBeNull();
       expect(owner.emailVerified).toBe(!["unverified","false-string"].includes(mapping));
       const account = after.accounts.find(row => row.userId === owner.id)!;
       expect(account.providerId).toBe("apple");
@@ -74,16 +75,16 @@ for (const mapping of ["named", "numeric-name", "zero-name", "missing-name", "nu
   });
 }
 
-for (const variant of ["signature", "issuer", "audience", "expired", "old", "nonce", "subject", "disabled", "implicit-disabled"] as const) {
+for (const variant of ["signature", "issuer", "audience", "expired", "old", "nonce", "subject", "blank-subject", "disabled", "implicit-disabled"] as const) {
   compatScenario(`apple signed ID token rejects ${variant} without writes`, async ctx => {
-    const claims = variant === "issuer" ? {iss:"https://untrusted.invalid"} : variant === "audience" ? {aud:"foreign-client"} : variant === "expired" ? {exp:issuedAt-10} : variant === "old" ? {iat:issuedAt-7200} : variant === "nonce" ? {nonce:"foreign-nonce"} : variant === "subject" ? {sub:null} : {};
+    const claims = variant === "issuer" ? {iss:"https://untrusted.invalid"} : variant === "audience" ? {aud:"foreign-client"} : variant === "expired" ? {exp:issuedAt-10} : variant === "old" ? {iat:issuedAt-7200} : variant === "nonce" ? {nonce:"foreign-nonce"} : variant === "blank-subject" ? {sub:"\uFEFF "} : variant === "subject" ? {sub:null} : {};
     const token = await proof(ctx, claims, variant === "signature");
     const profile: FixtureProfile = variant === "disabled" ? "social-apple-disabled-idtoken" : variant === "implicit-disabled" ? "social-apple-implicit-disabled" : "social-apple-default";
     const actor = ctx.actor("apple", profile);
     const before = await state(ctx);
     const result = await actor.client.signIn.social({provider:"apple",idToken:{token,...(variant === "nonce" ? {nonce:"requested-nonce"} : {})}});
     expect(result.error).not.toBeNull();
-    expect(result.error?.code).toBe(variant === "disabled" ? "ID_TOKEN_NOT_SUPPORTED" : variant === "implicit-disabled" ? "OAUTH_LINK_ERROR" : variant === "subject" ? "FAILED_TO_GET_USER_INFO" : "INVALID_TOKEN");
+    expect(result.error?.code).toBe(variant === "disabled" ? "ID_TOKEN_NOT_SUPPORTED" : variant === "implicit-disabled" ? "OAUTH_LINK_ERROR" : ["subject","blank-subject"].includes(variant) ? "FAILED_TO_GET_USER_INFO" : "INVALID_TOKEN");
     const after = await state(ctx);
     expect(after).toEqual(before);
     return {result:ctx.snapshot(result), before, after, receipts:await receipts(ctx)};
@@ -239,4 +240,14 @@ compatScenario("apple rejects wrong provider and callback state without creating
   expect(await state(ctx)).toEqual(before);
   expect(await receipts(ctx)).toEqual([]);
   return {wrongProvider:ctx.snapshot(wrongProvider),start:ctx.snapshot(start),invalid:{status:invalid.status,location:invalid.headers.get("location"),body:await invalid.text()},before,after:await state(ctx),receipts:await receipts(ctx)};
+});
+
+compatScenario("apple explicit empty client array rejects empty token audience without writes", async ctx => {
+  const actor = ctx.actor("apple","social-apple-empty-clients");
+  const token = await proof(ctx,{aud:""});
+  const before = await state(ctx);
+  const result = await actor.client.signIn.social({provider:"apple",idToken:{token}});
+  expect(result.error?.code).toBe("INVALID_TOKEN");
+  expect(await state(ctx)).toEqual(before);
+  return {result:ctx.snapshot(result),before,after:await state(ctx),receipts:await receipts(ctx)};
 });

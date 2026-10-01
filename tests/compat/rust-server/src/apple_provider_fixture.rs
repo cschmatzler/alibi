@@ -45,6 +45,7 @@ pub(super) async fn router(
         "implicit-disabled",
         "encrypted",
         "mapped",
+        "empty-clients",
     ] {
         let path = format!("/__test/profiles/social-apple-{mode}/api/auth");
         let mut settings = config.clone().base_path(&path);
@@ -86,7 +87,13 @@ pub(super) async fn router(
                 })
             });
         }
+        if mode == "empty-clients" {
+            options.client_ids.clear();
+        }
         let mut provider = OAuthProvider::apple_with_options(options);
+        if mode == "bundle" || mode == "audience" {
+            provider = provider.with_client_ids(vec!["fixture-builder-client".into()]);
+        }
         provider.token_url = format!("{}/__test/apple/token", config.base_url);
         provider.disable_sign_up = mode == "signup-disabled";
         provider.disable_implicit_sign_up = mode == "implicit-disabled";

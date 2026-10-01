@@ -3205,7 +3205,8 @@
           "apple signed configured client-array admission",
           "apple signed configured explicit-signup admission",
           "apple JWKS rotation is observed on each signed token admission",
-          "apple profile mapping receives supplied name and cannot replace raw subject"
+          "apple profile mapping receives supplied name and cannot replace raw subject",
+          "apple signed ID token js-trim profile and ownership"
         ],
         "rejection": [
           "social sign-in rejects invalid callbackURL",
@@ -3221,7 +3222,9 @@
           "apple signed ID token missing-email profile and ownership",
           "apple signed ID token null-email profile and ownership",
           "apple rejects wrong provider and callback state without creating identities",
-          "apple JWKS rotation is observed on each signed token admission"
+          "apple JWKS rotation is observed on each signed token admission",
+          "apple signed ID token rejects blank-subject without writes",
+          "apple explicit empty client array rejects empty token audience without writes"
         ],
         "authorization": [
           "social sign-in rejects invalid callbackURL",
@@ -3248,7 +3251,10 @@
           "apple signed ID token rejects implicit-disabled without writes",
           "apple JWKS rotation is observed on each signed token admission",
           "apple profile mapping receives supplied name and cannot replace raw subject",
-          "apple rejects wrong provider and callback state without creating identities"
+          "apple rejects wrong provider and callback state without creating identities",
+          "apple signed ID token js-trim profile and ownership",
+          "apple signed ID token rejects blank-subject without writes",
+          "apple explicit empty client array rejects empty token audience without writes"
         ],
         "state": [
           "builtin social authorization retains ordered default configured and requested scopes",
@@ -3297,7 +3303,10 @@
           "apple signed configured explicit-signup admission",
           "apple JWKS rotation is observed on each signed token admission",
           "apple profile mapping receives supplied name and cannot replace raw subject",
-          "apple rejects wrong provider and callback state without creating identities"
+          "apple rejects wrong provider and callback state without creating identities",
+          "apple signed ID token js-trim profile and ownership",
+          "apple signed ID token rejects blank-subject without writes",
+          "apple explicit empty client array rejects empty token audience without writes"
         ]
       }
     },

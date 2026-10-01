@@ -23,10 +23,10 @@ export function appleProviderFixture(base: BetterAuthOptions) {
     return previousFetch(input, init);
   }) as typeof fetch;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
-  for (const mode of ["default", "configured", "disabled-scope", "disabled-configured", "bundle", "audience", "client-array", "disabled-idtoken", "signup-disabled", "implicit-disabled", "encrypted", "mapped"]) {
+  for (const mode of ["default", "configured", "disabled-scope", "disabled-configured", "bundle", "audience", "client-array", "disabled-idtoken", "signup-disabled", "implicit-disabled", "encrypted", "mapped", "empty-clients"]) {
     const path = `/__test/profiles/social-apple-${mode}/api/auth`;
     profiles.set(path, betterAuth({...base, basePath: path, plugins: [], ...(mode === "encrypted" ? {account: {...base.account, encryptOAuthTokens: true}} : {}), socialProviders: {apple: {
-      clientId: mode === "client-array" ? ["fixture-social-client", "fixture-apple-secondary"] : "fixture-social-client",
+      clientId: mode === "empty-clients" ? [] : mode === "client-array" ? ["fixture-social-client", "fixture-apple-secondary"] : ["bundle","audience"].includes(mode) ? ["fixture-builder-client"] : "fixture-social-client",
       clientSecret: "fixture-social-secret",
       ...(mode === "mapped" ? {mapProfileToUser: (profile: Record<string,unknown>) => ({name:`Mapped ${profile.name}`,email:"mapped-apple@example.invalid",emailVerified:false,image:"https://images.example.invalid/mapped-apple.png"})} : {}),
       ...(["configured", "disabled-configured"].includes(mode) ? {scope: ["configured-scope"]} : {}),
