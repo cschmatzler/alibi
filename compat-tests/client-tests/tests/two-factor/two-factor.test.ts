@@ -6,6 +6,7 @@ import { z } from "zod";
 import { organizationActor } from "../organization/helpers";
 import { generateCurrentTotp, redactTwoFactorPayload } from "./totp-helper";
 import { compatScenario } from "../../support/scenario";
+import { disableGuestValidation } from "./disable-validation";
 
 function twoFactorActor(
   ctx: Parameters<Parameters<typeof compatScenario>[1]>[0],
@@ -224,6 +225,7 @@ compatScenario("two-factor disable deletes factor and trust state and rotates th
   expect(stateBefore.twoFactorExists).toBe(true);
 
   const ownerBeforeRejections = await ctx.readUserState({ userId });
+  const guestValidation = await disableGuestValidation(ctx);
   const unauthenticated = await twoFactorActor(ctx, "guest").twoFactor.disable({ password });
   expect(unauthenticated.error).toMatchObject({ status: 401 });
   const wrongPassword = await client.twoFactor.disable({ password: "incorrect-password" });
@@ -271,7 +273,7 @@ compatScenario("two-factor disable deletes factor and trust state and rotates th
   expect(sessionAfterSignIn.data?.user.twoFactorEnabled).toBe(false);
   return {
     enrolled: ctx.snapshot(enrolled), signIn: ctx.snapshot(signIn), trusted: ctx.snapshot(trusted), organization: ctx.snapshot(organization),
-    before: ctx.snapshot(before), unauthenticated: ctx.snapshot(unauthenticated), wrongPassword: ctx.snapshot(wrongPassword), wrongUser: ctx.snapshot(wrongUser), unchanged: ctx.snapshot(unchanged),
+    before: ctx.snapshot(before), guestValidation, unauthenticated: ctx.snapshot(unauthenticated), wrongPassword: ctx.snapshot(wrongPassword), wrongUser: ctx.snapshot(wrongUser), unchanged: ctx.snapshot(unchanged),
     disable: ctx.snapshot(disable), after: ctx.snapshot(after), factorExistsAfter: afterState.twoFactorExists,
     trustRecordsAfter: trustAfter, revoked: ctx.snapshot(revoked), replayDisable: ctx.snapshot(replayDisable), removedFactor: ctx.snapshot(removedFactor),
     passwordOnly: ctx.snapshot(passwordOnly), sessionAfterSignIn: ctx.snapshot(sessionAfterSignIn),

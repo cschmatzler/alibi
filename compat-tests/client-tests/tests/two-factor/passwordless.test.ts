@@ -5,6 +5,7 @@ import { z } from "zod";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { generateCurrentTotp } from "./totp-helper";
+import { disableGuestValidation } from "./disable-validation";
 
 function clientFor(ctx: ScenarioContext, profile: FixtureProfile, name="owner") {
   return createAuthClient({baseURL:`${ctx.baseURL}${authProfilePath(profile)}`,plugins:[twoFactorClient()],fetchOptions:{customFetchImpl:ctx.actor(name,profile).fetch}});
@@ -58,11 +59,14 @@ compatScenario("two-factor passwordless social owner completes real enrollment, 
   const foreignCode=await foreign.client.twoFactor.verifyBackupCode({code:codes[0]!}); expect(foreignCode.error?.code).toBe("INVALID_BACKUP_CODE");
   expect(await ctx.readUserState({userId:foreign.userId})).toEqual(foreignBefore);
   const backup=await owner.client.twoFactor.verifyBackupCode({code:codes[0]!}); expect(backup.error).toBeNull(); expect(backup.data?.user.id).toBe(owner.userId);
+  const beforeGuests=await ctx.readUserState({userId:owner.userId});
+  const guestValidation=await disableGuestValidation(ctx,profile);
+  expect(await ctx.readUserState({userId:owner.userId})).toEqual(beforeGuests);
   const disabled=await owner.client.twoFactor.disable({}); expect(disabled.error).toBeNull();
   const final=await owner.client.getSession(); expect(final.data?.user.id).toBe(owner.userId); expect(final.data?.user.twoFactorEnabled).toBe(false); expect(final.data?.session.token).not.toBe(current.data?.session.token);
   const persisted=z.object({twoFactorExists:z.boolean(),sessions:z.array(z.object({token:z.string(),userId:z.string()}))}).parse(await ctx.readUserState({userId:owner.userId}));
   expect(persisted.twoFactorExists).toBe(false); expect(persisted.sessions).toHaveLength(1); expect(persisted.sessions[0]).toMatchObject({token:final.data?.session.token,userId:owner.userId});
-  return ctx.snapshot({signup:owner.result,mixed,social,enrollment:redactFactor(enabled),verified,current,uri:redactFactor(uri),regenerated:redactFactor(regenerated),oldCode,foreignCode,backup,disabled,final,persisted});
+  return ctx.snapshot({signup:owner.result,mixed,social,enrollment:redactFactor(enabled),verified,current,uri:redactFactor(uri),regenerated:redactFactor(regenerated),oldCode,foreignCode,backup,guestValidation,disabled,final,persisted});
 }, ["POST /two-factor/enable", "POST /two-factor/disable", "POST /two-factor/get-totp-uri", "POST /two-factor/generate-backup-codes", "POST /two-factor/verify-totp", "POST /two-factor/verify-backup-code"]);
 
 compatScenario("two-factor passwordless option retains password ownership for mixed social and credential accounts",async ctx=>{
