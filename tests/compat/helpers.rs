@@ -274,6 +274,7 @@ fn mock_oauth_plugin() -> OAuthPlugin {
                 "email".to_string(),
                 "profile".to_string(),
             ],
+            authorization: None,
             authorization_params: Vec::new(),
             map_user_info: Some(|_value| {
                 Ok(OAuthUserInfo {
