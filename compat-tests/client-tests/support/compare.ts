@@ -155,6 +155,12 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     if (record(value)) return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableJSON(value[key])}`).join(",")}}`;
     return JSON.stringify(value) ?? "undefined";
   }
+  function exactCacheCopy(a: unknown, b: unknown): boolean {
+    if (Array.isArray(a)) return Array.isArray(b) && a.length === b.length && a.every((child,index) => exactCacheCopy(child,b[index]));
+    if (record(a)) return record(b) && Object.keys(a).length === Object.keys(b).length
+      && Object.entries(a).every(([key,child]) => Object.hasOwn(b,key) && exactCacheCopy(child,b[key]));
+    return Object.is(a,b);
+  }
   const cachePayloadSchema = z.looseObject({session: sessionSchema.loose(), user: userSchema.loose(), updatedAt: z.number(), version: z.string().optional()});
   function compactCookieHeaders(value: Record<string,unknown>): {name:string;attributes:string;tombstone:boolean}[] | undefined {
     if (!Object.hasOwn(value,"rawCookies")) return [];
@@ -197,7 +203,8 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       const bytes = Buffer.from(value.token, "base64url");
       if (bytes.toString("base64url") !== value.token) return false;
       const text = new TextDecoder("utf-8", {fatal:true}).decode(bytes);
-      if (JSON.stringify(JSON.parse(text)) !== text || JSON.stringify(value.envelope) !== text) return false;
+      const parsedEnvelope: unknown = JSON.parse(text);
+      if (JSON.stringify(parsedEnvelope) !== text || JSON.stringify(value.envelope) !== text || !exactCacheCopy(parsedEnvelope,value.envelope)) return false;
       const raw = value.envelope;
       if (!record(raw.session) || typeof raw.session.updatedAt !== "number" || !Number.isFinite(raw.session.updatedAt)
         || raw.session.updatedAt > value.observedAt || typeof raw.signature !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(raw.signature)) return false;
@@ -221,7 +228,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
         && timingSafeEqual(signature,mac(revived.session,revived.expiresAt))
         && parsed.success && revived.expiresAt >= value.observedAt
         && parsed.data.session.expiresAt.getTime() >= value.observedAt;
-      return valid ? stableJSON(normalizeClientValue(parsed.data)) === stableJSON(value.decoded) : value.decoded === null;
+      return valid ? exactCacheCopy(normalizeClientValue(parsed.data),value.decoded) : value.decoded === null;
     } catch { return false; }
   }
   function cacheClock(a: number, b: number, path: string) {

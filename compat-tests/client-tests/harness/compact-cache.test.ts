@@ -62,3 +62,18 @@ test('genuine published negative and nonfinite cache expiry preserves authentica
   expect(compareValues(values(left),{...values(right),compactSessionCache:forged},context(left,right)).length).toBeGreaterThan(0);
  }
 });
+
+test('compact authentication rejects declared nonfinite copies of the actual nullable JSON claims',async()=>{
+ const left=await observe('http://localhost:3100'),right=await observe('http://localhost:3200');
+ expect(left.compactSessionCache.envelope.session.user.image).toBeNull();
+ expect(right.compactSessionCache.envelope.session.user.image).toBeNull();
+ for(const invalid of [Infinity,-Infinity,NaN,undefined]) for(const field of ['envelope','decoded','both']) {
+  const wrongCopy=(value:typeof left)=>{
+   const atom:Atom=structuredClone(value.compactSessionCache);
+   if(field!=='decoded')atom.envelope.session.user.image=invalid;
+   if(field!=='envelope')atom.decoded.user.image=invalid;
+   return {...values(value),compactSessionCache:atom};
+  };
+  expect(compareValues(wrongCopy(left),wrongCopy(right),context(left,right)).length).toBeGreaterThan(0);
+ }
+});

@@ -107,3 +107,34 @@ No dependencies, locks, capability requirements, comparator exceptions or
 coverage rules change. SDK cookie-cache lifecycle evidence remains the separate
 production owner's responsibility; the coordinator owns independent review,
 integration and the full canonical gate.
+
+## Exact copy integrity follow-up
+
+A focused independent copy control demonstrated that `JSON.stringify` alone
+could equate an invented Infinity claim with the actual authenticated null
+claim. Two real published signup cookies have nullable image:null in both their
+raw envelopes and public decoder results. Changing only the declared copies on
+both observations to Infinity previously earned authenticated comparison and
+incorrectly returned no difference. The intended failure is retained in
+`/tmp/compact-cookie-cache-copy-integrity-before.log` (expected a difference,
+actual none). Ciphertext, signature and the actual published values are unchanged
+in that control.
+
+Recognition now also requires recursive `Object.is` equality with the ordinary
+parsed envelope and normalized published schema result. Field presence, arrays,
+null, signed zero and primitive types remain exact; stringify omission and
+nonfinite-to-null coercion cannot establish authenticity. The existing owning
+harness adds envelope-only, decoder-only and combined invented Infinity,
+-Infinity, NaN and undefined copies. Invalid declared observations compare
+literally, so independent authentic ciphertexts cannot hide the malformed copy.
+No parser, production fixture, tolerance or normalizer changes are introduced.
+
+Final follow-up verification passes 48 harness tests / 515 assertions and
+TypeScript checking in
+`/tmp/compact-cookie-cache-copy-integrity-harness-final-v3.log` and
+`/tmp/compact-cookie-cache-copy-integrity-typecheck-final-v3.log`. The initial
+negative-control TypeScript assignment diagnostic was repaired using the
+existing deliberately invalid-copy Atom test type; an earlier wrong-path setup
+command is retained without a passing claim. The original freeze remains intact,
+and this three-file correction is separately reviewable for coordinator
+integration.
