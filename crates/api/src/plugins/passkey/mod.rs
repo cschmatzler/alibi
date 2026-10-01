@@ -9,6 +9,7 @@ pub use authentication::{
     PasskeyAuthenticationContext, VerifiedPasskeyAuthentication,
 };
 pub(super) mod handlers;
+mod raw_none;
 mod registration;
 pub(super) mod types;
 pub(super) mod webauthn;

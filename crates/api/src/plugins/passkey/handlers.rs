@@ -165,7 +165,15 @@ pub(super) async fn generate_register_options_core(
         user_id: user.id.clone(),
         user: Some(user.clone()),
         context: requested_context.map(str::to_owned),
-        state: StoredRegistrationVerifier::Source(StoredCoreRegistrationState::Core { state }),
+        state: StoredRegistrationVerifier::Source(StoredCoreRegistrationState::CoreRawNone {
+            policy: super::raw_none::RawNonePolicy {
+                challenge: base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .encode(options.public_key.challenge.as_ref()),
+                rp_id: super::webauthn::resolve_rp_id(config, &ctx.config)?,
+                origin: generation_origin(config, ctx),
+            },
+            state,
+        }),
     })?;
     let _ = ctx
         .database
@@ -323,44 +331,72 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
             Err(_) => return passkey_registration_failure(),
         };
 
-    let verified_passkey = match &stored_state.state {
-        StoredRegistrationVerifier::Legacy(state) => {
-            let webauthn = match build_webauthn(config, &ctx.config, &origin) {
-                Ok(webauthn) => webauthn,
-                Err(_) => return passkey_registration_failure(),
-            };
-            match webauthn.finish_passkey_registration(&registration, state) {
-                Ok(passkey) => passkey,
-                Err(_) => return passkey_registration_failure(),
-            }
-        }
-        StoredRegistrationVerifier::Source(StoredCoreRegistrationState::Core { state }) => {
-            let core = match build_verification_core(config, &ctx.config, &origin) {
-                Ok(core) => core,
-                Err(_) => return passkey_registration_failure(),
-            };
-            match finish_core_registration(&core, &registration, state, &origin) {
-                Ok(passkey) => passkey,
-                // Source returns false for an invalid signature, including an
-                // invalid Ed25519 length; malformed ES256 DER throws instead.
-                Err(WebauthnError::AttestationStatementSigInvalid) => {
-                    return response_code(
-                        400,
-                        "FAILED_TO_VERIFY_REGISTRATION",
-                        "Failed to verify registration",
-                    );
+    let raw_registration = match &stored_state.state {
+        StoredRegistrationVerifier::Source(StoredCoreRegistrationState::CoreRawNone {
+            policy,
+            ..
+        }) => match super::raw_none::register_raw_none(&registration, &body.response, policy) {
+            Ok(value) => value,
+            Err(_) => return passkey_registration_failure(),
+        },
+        _ => None,
+    };
+    let (snapshot, metadata, credential_id) = if let Some(raw) = raw_registration {
+        let metadata = super::webauthn::RegisteredPasskeyMetadata {
+            public_key: base64::engine::general_purpose::STANDARD.encode(raw.public_key()),
+            aaguid: Some(uuid::Uuid::from_bytes(raw.aaguid()).to_string()),
+        };
+        (
+            raw.snapshot()?,
+            metadata,
+            super::raw_none::raw_credential_id(&raw),
+        )
+    } else {
+        let verified_passkey = match &stored_state.state {
+            StoredRegistrationVerifier::Legacy(state) => {
+                let webauthn = match build_webauthn(config, &ctx.config, &origin) {
+                    Ok(webauthn) => webauthn,
+                    Err(_) => return passkey_registration_failure(),
+                };
+                match webauthn.finish_passkey_registration(&registration, state) {
+                    Ok(passkey) => passkey,
+                    Err(_) => return passkey_registration_failure(),
                 }
-                Err(_) => return passkey_registration_failure(),
             }
-        }
-    };
-    let snapshot = match snapshot_passkey(&verified_passkey) {
-        Ok(snapshot) => snapshot,
-        Err(_) => return passkey_registration_failure(),
-    };
-    let metadata = match extract_registration_metadata(&registration) {
-        Ok(metadata) => metadata,
-        Err(_) => return passkey_registration_failure(),
+            StoredRegistrationVerifier::Source(
+                StoredCoreRegistrationState::Core { state }
+                | StoredCoreRegistrationState::CoreRawNone { state, .. },
+            ) => {
+                let core = match build_verification_core(config, &ctx.config, &origin) {
+                    Ok(core) => core,
+                    Err(_) => return passkey_registration_failure(),
+                };
+                match finish_core_registration(&core, &registration, state, &origin) {
+                    Ok(passkey) => passkey,
+                    // Source returns false for an invalid signature, including an
+                    // invalid Ed25519 length; malformed ES256 DER throws instead.
+                    Err(WebauthnError::AttestationStatementSigInvalid) => {
+                        return response_code(
+                            400,
+                            "FAILED_TO_VERIFY_REGISTRATION",
+                            "Failed to verify registration",
+                        );
+                    }
+                    Err(_) => return passkey_registration_failure(),
+                }
+            }
+        };
+        let snapshot = match snapshot_passkey(&verified_passkey) {
+            Ok(snapshot) => snapshot,
+            Err(_) => return passkey_registration_failure(),
+        };
+        let metadata = match extract_registration_metadata(&registration) {
+            Ok(metadata) => metadata,
+            Err(_) => return passkey_registration_failure(),
+        };
+        let credential_id = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(verified_passkey.cred_id().as_ref());
+        (snapshot, metadata, credential_id)
     };
 
     let transports = registration.response.transports.as_ref().map(|transports| {
@@ -371,8 +407,6 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
     });
 
     use super::registration::{PasskeyRegistrationContext, VerifiedPasskeyRegistration, trim_name};
-    let credential_id = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .encode(verified_passkey.cred_id().as_ref());
     let verified = VerifiedPasskeyRegistration {
         credential_id: credential_id.clone(),
         public_key: base64::engine::general_purpose::STANDARD

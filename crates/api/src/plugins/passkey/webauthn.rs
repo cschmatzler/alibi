@@ -77,7 +77,13 @@ pub(crate) enum StoredRegistrationVerifier {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub(crate) enum StoredCoreRegistrationState {
-    Core { state: RegistrationState },
+    Core {
+        state: RegistrationState,
+    },
+    CoreRawNone {
+        state: RegistrationState,
+        policy: super::raw_none::RawNonePolicy,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -424,8 +430,22 @@ pub(super) fn decode_credential_id(credential_id: &str) -> AuthResult<Credential
 }
 
 pub(super) fn parse_stored_passkey(serialized: &str) -> AuthResult<WebauthnPasskey> {
-    serde_json::from_str(serialized)
-        .map_err(|error| AuthError::internal(format!("Failed to decode stored passkey: {error}")))
+    let stored =
+        serde_json::from_str::<super::raw_none::StoredCredential>(serialized).map_err(|error| {
+            AuthError::internal(format!("Failed to decode stored passkey: {error}"))
+        })?;
+    match stored {
+        super::raw_none::StoredCredential::Core(passkey) => Ok(passkey),
+        super::raw_none::StoredCredential::Raw(raw) => {
+            // None attestation admitted these raw facts without a usable key.
+            // Reject the original curve without inventing a Core credential.
+            if raw.has_unsupported_curve() {
+                Err(AuthError::bad_request("Unsupported stored OKP curve"))
+            } else {
+                Err(AuthError::internal("Invalid raw none credential"))
+            }
+        }
+    }
 }
 
 pub(super) fn extract_passkey_snapshot_fields(value: &Value) -> AuthResult<(u64, bool, bool)> {

@@ -1,7 +1,7 @@
 import { expect } from "bun:test";
 import { createAuthClient } from "better-auth/client";
 import { passkeyClient } from "@better-auth/passkey/client";
-import { decodeCBOR, encodeCBOR, type CBORType } from "@levischuck/tiny-cbor";
+import { decodeCBOR, decodePartialCBOR, encodeCBOR, type CBORType } from "@levischuck/tiny-cbor";
 import { z } from "zod";
 import { Authenticator } from "../../support/authenticator";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
@@ -11,15 +11,19 @@ import { authProfilePath } from "../../support/profiles";
 function registration(value: any): any {
   const clientData=JSON.parse(Buffer.from(value.response.clientDataJSON,"base64url").toString());
   expect(Buffer.from(JSON.stringify(clientData)).toString("base64url")).toBe(value.response.clientDataJSON);
-  const encoded=Buffer.from(value.response.attestationObject,"base64url");const decoded=decodeCBOR(Uint8Array.from(encoded));
-  expect(Buffer.from(encodeCBOR(decoded)).equals(encoded)).toBe(true);
+  const encoded=Buffer.from(value.response.attestationObject,"base64url");let decoded:CBORType,length:number;
+  try{[decoded,length]=decodePartialCBOR(Uint8Array.from(encoded),0);}catch{
+    expect(Buffer.from(encoded.toString("base64"),"base64").equals(encoded)).toBe(true);
+    return {...value,response:{...value.response,clientDataJSON:{...clientData,origin:{url:clientData.origin}},attestationObject:{bytes:encoded.toString("base64")}}};
+  }
+  const prefix=Buffer.from(encodeCBOR(decoded)),canonical=prefix.length===length&&encoded.subarray(0,length).equals(prefix),remainder=encoded.subarray(length);if(canonical){expect(prefix.length).toBe(length);expect(encoded.subarray(0,length).equals(prefix)).toBe(true);expect(Buffer.concat([prefix,remainder]).equals(encoded)).toBe(true);}else{expect(Buffer.from(encoded.toString("base64"),"base64").equals(encoded)).toBe(true);expect(Buffer.concat([encoded.subarray(0,length),remainder]).equals(encoded)).toBe(true);}
   function cbor(value: CBORType, key?:string|number):unknown {
     if(value instanceof Map)return [...value].map(([key,child])=>[key,cbor(child,key)]);
     if(value instanceof Uint8Array)return key==="sig"?{token:Buffer.from(value).toString("base64url")}:Buffer.from(value).toString("base64");
     if(Array.isArray(value))return value.map(child=>cbor(child));
     return value;
   }
-  return {...value,response:{...value.response,clientDataJSON:{...clientData,origin:{url:clientData.origin}},attestationObject:cbor(decoded)}};
+  return {...value,response:{...value.response,clientDataJSON:{...clientData,origin:{url:clientData.origin}},attestationObject:!canonical?{cbor:cbor(decoded),bytes:encoded.toString("base64")}:remainder.length?{cbor:cbor(decoded),trailingBytes:remainder.toString("base64")}:cbor(decoded)}};
 }
 function authentication(value:any,options:any):any {
   const clientData=JSON.parse(Buffer.from(value.response.clientDataJSON,"base64url").toString());
@@ -107,22 +111,37 @@ compatScenario("passkey registration rejects actual packed signature failures ma
   return {signup:fixture.signup,foreignSignup:fixture.foreignSignup,enrollment:fixture.enrollment,before:fixture.before,foreignBefore:fixture.foreignBefore,outputs,submitted:fixture.submitted(),after:await ctx.readUserState({userId:fixture.signup.data!.user.id}),foreignAfter:await ctx.readUserState({userId:fixture.foreignSignup.data!.user.id})};
 },["POST /passkey/verify-registration"]);
 
-compatScenario("passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",async ctx=>{
-  const fixture=await setup(ctx),options=await fixture.options(),device=new Authenticator("Ed448");
-  const proof={...device.register(options.data,ctx.baseURL,{userVerified:false}),userId:fixture.foreignSignup.data!.user.id};
-  const accepted=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response:proof,createSession:true,userId:fixture.foreignSignup.data!.user.id,context:"foreign-context"}});expect(accepted.error).toBeNull();expect(accepted.data).toMatchObject({userId:fixture.signup.data!.user.id,credentialID:proof.id,counter:0,user:{id:fixture.signup.data!.user.id},session:{userId:fixture.signup.data!.user.id}});
+for(const algorithm of ["Ed448","Ed25519Curve8"] as const)compatScenario(`passkey ${algorithm} none enrollment retains original owner while genuine and invalid signed authentication reject before writes`,async ctx=>{
+  const fixture=await setup(ctx),options=await fixture.options(),device=new Authenticator(algorithm);
+  const initialCounter=algorithm==="Ed25519Curve8"?25:0;
+  const proof={...device.register(options.data,ctx.baseURL,{userVerified:false,counter:initialCounter}),userId:fixture.foreignSignup.data!.user.id};
+  if(algorithm==="Ed25519Curve8"){
+    const attestation=decodeCBOR(Uint8Array.from(Buffer.from(proof.response.attestationObject,"base64url")));if(!(attestation instanceof Map))throw new Error("actual attestation required");
+    const data=Buffer.from(attestation.get("authData") as Uint8Array);data[32]=data[32]!|0x80;
+    attestation.set("authData",Buffer.concat([data,Buffer.from(encodeCBOR(new Map([["application",new Map([["flag",true]])]])))]));
+    proof.response.attestationObject=Buffer.concat([Buffer.from(encodeCBOR(attestation)),Buffer.from([0])]).toString("base64url");
+    const clientData=JSON.parse(Buffer.from(proof.response.clientDataJSON,"base64url").toString());clientData.tokenBinding={status:"supported"};proof.response.clientDataJSON=Buffer.from(JSON.stringify(clientData)).toString("base64url");
+  }
+  const accepted=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response:proof,createSession:true,userId:fixture.foreignSignup.data!.user.id,context:"foreign-context"}});expect(accepted.error).toBeNull();expect(accepted.data).toMatchObject({userId:fixture.signup.data!.user.id,credentialID:proof.id,counter:initialCounter,user:{id:fixture.signup.data!.user.id},session:{userId:fixture.signup.data!.user.id}});
+  if(algorithm==="Ed25519Curve8"){
+    const [decoded]=decodePartialCBOR(Uint8Array.from(Buffer.from(proof.response.attestationObject,"base64url")),0);const attestation=decoded as Map<string,CBORType>;
+    const data=Buffer.from(attestation.get("authData") as Uint8Array),start=55+data.readUInt16BE(53),[rawKey]=decodePartialCBOR(Uint8Array.from(data.subarray(start)),0);
+    if(!(rawKey instanceof Map))throw new Error("actual raw key required");expect(rawKey.get(1)).toBe(1);expect(rawKey.get(3)).toBe(-8);expect(rawKey.get(-1)).toBe(8);
+    expect(Buffer.from(z.object({publicKey:z.string()}).parse(accepted.data).publicKey,"base64")).toEqual(Buffer.from(encodeCBOR(rawKey)));
+    expect(accepted.data).not.toHaveProperty("credential");
+  }
   const events=await fixture.events();expect(events).toHaveLength(2);expect(events[1]).toMatchObject({stage:"verified",userId:fixture.signup.data!.user.id,context:fixture.context});expect(events[1]!.clientData).toEqual(fixture.requests[0].response);expect(fixture.requests[0]).toEqual({response:proof,createSession:true,userId:fixture.foreignSignup.data!.user.id,context:"foreign-context"});
   const current=await fixture.owner.getSession();expect(current.data?.user.id).toBe(fixture.signup.data!.user.id);const issued=z.object({session:z.object({id:z.string(),token:z.string()})}).parse(accepted.data);expect(current.data?.session.id).toBe(issued.session.id);expect(current.data?.session.token).toBe(issued.session.token);
-  const listed=await fixture.owner.$fetch("/passkey/list-user-passkeys",{method:"GET"});expect(listed.data).toMatchObject([{credentialID:proof.id,userId:fixture.signup.data!.user.id,counter:0}]);
+  const listed=await fixture.owner.$fetch("/passkey/list-user-passkeys",{method:"GET"});expect(listed.data).toMatchObject([{credentialID:proof.id,userId:fixture.signup.data!.user.id,counter:initialCounter}]);
   const replay=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response:proof,createSession:true}});expect(replay.error).toMatchObject({status:400,code:"CHALLENGE_NOT_FOUND"});expect(await fixture.events()).toEqual([]);
-  await fixture.owner.signOut();const enrolled=await fixture.state(),ownerBefore=await ctx.readUserState({userId:fixture.signup.data!.user.id});expect(enrolled).toMatchObject({passkeys:[{userId:fixture.signup.data!.user.id,counter:0}],sessions:{count:0},challenges:{count:0}});
+  await fixture.owner.signOut();const enrolled=await fixture.state(),ownerBefore=await ctx.readUserState({userId:fixture.signup.data!.user.id});expect(enrolled).toMatchObject({passkeys:[{userId:fixture.signup.data!.user.id,counter:initialCounter}],sessions:{count:0},challenges:{count:0}});
   const authenticator=createAuthClient({baseURL:`${ctx.baseURL}${authProfilePath("passkey-auth-accept")}`,plugins:[passkeyClient()],fetchOptions:{customFetchImpl:async(input,init)=>{
     const request=new Request(input,init);if(new URL(request.url).pathname.endsWith("/passkey/verify-authentication"))fixture.authenticationRequests.push(await request.clone().json());return ctx.actor("ed448-authentication","passkey-auth-accept").fetch(request);
   }}});
   const attempts=[];
   for(const mode of ["genuine","signature","length"] as const){
     const challenge=await authenticator.$fetch("/passkey/generate-authenticate-options",{method:"GET"});expect(challenge.error).toBeNull();
-    const assertion=device.authenticate(challenge.data,ctx.baseURL,{userVerified:false,counter:1,...(mode==="signature"?{badSignature:true}:mode==="length"?{malformedSignature:true}:{})});expect(Buffer.from(assertion.response.signature,"base64url")).toHaveLength(mode==="length"?1:114);
+    const assertion=device.authenticate(challenge.data,ctx.baseURL,{userVerified:false,counter:initialCounter+1,...(mode==="signature"?{badSignature:true}:mode==="length"?{malformedSignature:true}:{})});expect(Buffer.from(assertion.response.signature,"base64url")).toHaveLength(mode==="length"?1:algorithm==="Ed448"?114:64);
     let cookies:string[]=[];const denied=await authenticator.$fetch("/passkey/verify-authentication",{method:"POST",body:{response:assertion},onResponse({response}){cookies=response.headers.getSetCookie();}});expect(denied.error).toMatchObject({status:400,code:"AUTHENTICATION_FAILED"});expect(cookies).toEqual([]);
     const replay=await authenticator.$fetch("/passkey/verify-authentication",{method:"POST",body:{response:assertion}});expect(replay.error).toMatchObject({status:400,code:"CHALLENGE_NOT_FOUND"});expect(fixture.authenticationRequests.at(-2)).toEqual({response:assertion});expect(fixture.authenticationRequests.at(-1)).toEqual({response:assertion});expect(await fixture.events()).toEqual([]);
     const authenticationEvents=await ctx.rawRequest({path:"/__test/passkey-authentication-events"});expect(authenticationEvents.status).toBe(200);expect(authenticationEvents.body).toEqual([]);
@@ -132,11 +151,11 @@ compatScenario("passkey Ed448 none enrollment retains original owner while genui
   return {signup:fixture.signup,foreignSignup:fixture.foreignSignup,enrollment:fixture.enrollment,options,accepted,current,listed,events:events.map(row=>row.stage==="verified"?{...row,clientData:registration(row.clientData)}:row),submitted:fixture.submitted(),replay,enrolled,ownerBefore,attempts,authenticationSubmitted:fixture.authenticationRequests.map(row=>({...row,response:authentication(row.response,options.data)})),ownerAfter:await ctx.readUserState({userId:fixture.signup.data!.user.id}),foreignBefore:fixture.foreignBefore,foreignAfter:await ctx.readUserState({userId:fixture.foreignSignup.data!.user.id})};
 },["POST /passkey/verify-registration","POST /passkey/verify-authentication"]);
 
-compatScenario("passkey Ed448 packed self attestation rejects genuine false and malformed signatures before callback enrollment or session",async ctx=>{
-  const fixture=await setup(ctx),device=new Authenticator("Ed448"),attempts=[];
+for(const algorithm of ["Ed448","Ed25519Curve8"] as const)compatScenario(`passkey ${algorithm} packed self attestation rejects genuine false and malformed signatures before callback enrollment or session`,async ctx=>{
+  const fixture=await setup(ctx),device=new Authenticator(algorithm),attempts=[];
   for(const mode of ["genuine","signature","length"] as const){
     const options=await fixture.options(),proof=device.register(options.data,ctx.baseURL,{userVerified:false,attestation:"packed",...(mode==="signature"?{badSignature:true}:mode==="length"?{malformedSignature:true}:{})});
-    const attestation=decodeCBOR(Uint8Array.from(Buffer.from(proof.response.attestationObject,"base64url")));if(!(attestation instanceof Map))throw new Error("actual attestation map required");const statement=attestation.get("attStmt");if(!(statement instanceof Map))throw new Error("actual statement map required");const signature=statement.get("sig");if(!(signature instanceof Uint8Array))throw new Error("actual signature bytes required");expect(signature).toHaveLength(mode==="length"?1:114);
+    const attestation=decodeCBOR(Uint8Array.from(Buffer.from(proof.response.attestationObject,"base64url")));if(!(attestation instanceof Map))throw new Error("actual attestation map required");const statement=attestation.get("attStmt");if(!(statement instanceof Map))throw new Error("actual statement map required");const signature=statement.get("sig");if(!(signature instanceof Uint8Array))throw new Error("actual signature bytes required");expect(signature).toHaveLength(mode==="length"?1:algorithm==="Ed448"?114:64);
     let cookies:string[]=[];const denied=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response:proof,createSession:true},onResponse({response}){cookies=response.headers.getSetCookie();}});expect(denied.error).toMatchObject({status:500,code:"FAILED_TO_VERIFY_REGISTRATION"});expect(cookies).toEqual([]);
     const events=await fixture.events();expect(events).toHaveLength(1);expect(events[0]).toMatchObject({stage:"resolved",userId:fixture.signup.data!.user.id,context:fixture.context});expect(fixture.requests.at(-1)).toEqual({response:proof,createSession:true});
     const replay=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response:proof,createSession:true}});expect(replay.error).toMatchObject({status:400,code:"CHALLENGE_NOT_FOUND"});expect(await fixture.events()).toEqual([]);
@@ -144,4 +163,63 @@ compatScenario("passkey Ed448 packed self attestation rejects genuine false and 
     attempts.push({mode,options,denied,cookies,events,replay,state});
   }
   return {signup:fixture.signup,foreignSignup:fixture.foreignSignup,enrollment:fixture.enrollment,before:fixture.before,foreignBefore:fixture.foreignBefore,attempts,submitted:fixture.submitted(),ownerAfter:await ctx.readUserState({userId:fixture.signup.data!.user.id}),foreignAfter:await ctx.readUserState({userId:fixture.foreignSignup.data!.user.id})};
+},["POST /passkey/verify-registration"]);
+
+compatScenario("passkey raw curve8 none admission validates the actual ceremony before callback persistence and owner issuance",async ctx=>{
+  const fixture=await setup(ctx),device=new Authenticator("Ed25519Curve8"),attempts=[];
+  for(const mode of ["presence","backup-flags","rp","origin-case","challenge","client-type","token-binding","statement","statement-null","outer-indefinite","statement-indefinite","key-nonminimal","authdata-tail","extensions-tail","extensions-missing","extensions-scalar","extensions-array-numbers","credential-type","foreign-owner","expired"] as const){
+    const options=await fixture.options();
+    const proof=device.register(mode==="challenge"?{...options.data as object,challenge:"wrong-raw-none-challenge"}:options.data,mode==="origin-case"?ctx.baseURL.replace("localhost","LOCALHOST"):ctx.baseURL,{userVerified:false,...(mode==="presence"?{userPresent:false}:mode==="backup-flags"?{backedUp:true}:mode==="rp"?{rpId:"foreign.fixture.test"}:{})});
+    const attestation=decodeCBOR(Uint8Array.from(Buffer.from(proof.response.attestationObject,"base64url"))) as Map<string,CBORType>;
+    let data=Buffer.from(attestation.get("authData") as Uint8Array);
+    if(mode==="key-nonminimal"){const start=55+data.readUInt16BE(53)+8;expect(data[start]).toBe(0x58);expect(data[start+1]).toBe(32);data=Buffer.concat([data.subarray(0,start),Buffer.from([0x59,0,32]),data.subarray(start+2)]);}
+    if(mode==="authdata-tail")data=Buffer.concat([data,Buffer.from([0])]);
+    if(mode.startsWith("extensions")){
+      data[32]=data[32]!|0x80;
+      if(mode!=="extensions-missing")data=Buffer.concat([data,Buffer.from(encodeCBOR(mode==="extensions-scalar"?9:mode==="extensions-array-numbers"?[9]:new Map([["application",true]])))]);
+      if(mode==="extensions-tail")data=Buffer.concat([data,Buffer.from([0])]);
+    }
+    attestation.set("authData",data);
+    if(mode==="statement")attestation.set("attStmt",new Map([["unexpected",true]]));
+    if(mode==="statement-null")attestation.set("attStmt",null);
+    proof.response.attestationObject=Buffer.from(encodeCBOR(attestation)).toString("base64url");
+    if(mode==="outer-indefinite"){const encoded=Buffer.from(proof.response.attestationObject,"base64url");expect(encoded[0]).toBe(0xa3);proof.response.attestationObject=Buffer.concat([Buffer.from([0xbf]),encoded.subarray(1),Buffer.from([0xff])]).toString("base64url");}
+    if(mode==="statement-indefinite"){const encoded=Buffer.from(proof.response.attestationObject,"base64url"),label=Buffer.from(encodeCBOR("attStmt")),start=encoded.indexOf(label)+label.length;expect(encoded[start]).toBe(0xa0);proof.response.attestationObject=Buffer.concat([encoded.subarray(0,start),Buffer.from([0x9f,0xff]),encoded.subarray(start+1)]).toString("base64url");}
+    const cd=JSON.parse(Buffer.from(proof.response.clientDataJSON,"base64url").toString());
+    if(mode==="client-type")cd.type="webauthn.get";
+    if(mode==="token-binding")cd.tokenBinding={status:"unexpected"};
+    proof.response.clientDataJSON=Buffer.from(JSON.stringify(cd)).toString("base64url");
+    if(mode==="credential-type")proof.type="password";
+    let expired:unknown=null;
+    if(mode==="expired"){
+      const clock=await ctx.rawRequest({path:"/__test/passkey-challenge-clock",method:"POST",json:{expiresAt:"2000-01-01T00:00:00.000Z"}});expect(clock.status).toBe(200);expect(clock.body).toEqual({updated:true});expired=clock;
+    }
+    let cookies:string[]=[];
+    const denied=await(mode==="foreign-owner"?fixture.foreign:fixture.owner).$fetch("/passkey/verify-registration",{method:"POST",body:{response:proof,createSession:true},...(mode==="foreign-owner"?{headers:fixture.foreignHeaders()}:{}),onResponse({response}){cookies=response.headers.getSetCookie();}});
+    expect(denied.error,mode).toMatchObject({status:mode==="foreign-owner"?401:mode==="expired"?400:500,code:mode==="foreign-owner"?"YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY":mode==="expired"?"CHALLENGE_NOT_FOUND":"FAILED_TO_VERIFY_REGISTRATION"});expect(cookies).toEqual([]);
+    const events=await fixture.events();expect(events).toHaveLength(1);expect(events[0]).toMatchObject({stage:"resolved",context:fixture.context,userId:fixture.signup.data!.user.id});expect(fixture.requests.at(-1)).toEqual({response:proof,createSession:true});
+    const replay=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response:proof,createSession:true}});expect(replay.error).toMatchObject({status:400,code:"CHALLENGE_NOT_FOUND"});expect(await fixture.events()).toEqual([]);
+    const state=await fixture.state();expect(state).toEqual({passkeys:[],sessions:{count:0},challenges:{count:0}});expect(await ctx.readUserState({userId:fixture.signup.data!.user.id})).toEqual(fixture.before);expect(await ctx.readUserState({userId:fixture.foreignSignup.data!.user.id})).toEqual(fixture.foreignBefore);
+    attempts.push({mode,options,expired,denied,cookies,events,replay,state});
+  }
+  return {signup:fixture.signup,foreignSignup:fixture.foreignSignup,enrollment:fixture.enrollment,before:fixture.before,foreignBefore:fixture.foreignBefore,attempts,submitted:fixture.submitted(),ownerAfter:await ctx.readUserState({userId:fixture.signup.data!.user.id}),foreignAfter:await ctx.readUserState({userId:fixture.foreignSignup.data!.user.id})};
+},["POST /passkey/verify-registration"]);
+
+compatScenario("passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks",async ctx=>{
+  const fixture=await setup(ctx),outputs=[];
+  for(const mode of ["statement-array","statement-string","statement-number"] as const){
+    const options=await fixture.options(),proof=new Authenticator("Ed25519Curve8",Buffer.from(`compat-raw-none-${mode}`)).register(options.data,ctx.baseURL,{userVerified:false});
+    const attestation=decodeCBOR(Uint8Array.from(Buffer.from(proof.response.attestationObject,"base64url"))) as Map<string,CBORType>;
+    const data=Buffer.from(attestation.get("authData") as Uint8Array);data[32]=data[32]!|0x80;
+    attestation.set("authData",Buffer.concat([data,Buffer.from(encodeCBOR(mode==="statement-array"?[["application",true]]:mode==="statement-string"?"ab":new Map([["application",new Map([["flag",true]])]])))]));
+    attestation.set("attStmt",mode==="statement-array"?["unexpected"]:mode==="statement-string"?"unexpected":9);
+    proof.response.attestationObject=Buffer.from(encodeCBOR(attestation)).toString("base64url");
+    const result=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response:proof,createSession:true}});expect(result.error,mode).toBeNull();expect(result.data).toMatchObject({userId:fixture.signup.data!.user.id,credentialID:proof.id,counter:0,user:{id:fixture.signup.data!.user.id},session:{userId:fixture.signup.data!.user.id}});
+    const events=await fixture.events();expect(events).toHaveLength(2);expect(events[1]).toMatchObject({stage:"verified",userId:fixture.signup.data!.user.id,context:fixture.context});expect(events[1]!.clientData).toEqual(proof);expect(fixture.requests.at(-1)).toEqual({response:proof,createSession:true});
+    const current=await fixture.owner.getSession(),issued=z.object({session:z.object({id:z.string(),token:z.string()})}).parse(result.data);expect(current.data?.session.id).toBe(issued.session.id);expect(current.data?.session.token).toBe(issued.session.token);expect(current.data?.user.id).toBe(fixture.signup.data!.user.id);
+    const replay=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response:proof,createSession:true}});expect(replay.error).toMatchObject({status:400,code:"CHALLENGE_NOT_FOUND"});expect(await fixture.events()).toEqual([]);
+    await fixture.owner.signOut();const state=await fixture.state();const stored=z.object({passkeys:z.array(z.object({userId:z.string(),counter:z.number()})),sessions:z.object({count:z.number()}),challenges:z.object({count:z.number()})}).parse(state);expect(stored.passkeys).toHaveLength(outputs.length+1);expect(stored.passkeys.every(row=>row.userId===fixture.signup.data!.user.id&&row.counter===0)).toBe(true);expect(stored.sessions).toEqual({count:0});expect(stored.challenges).toEqual({count:0});expect(await ctx.readUserState({userId:fixture.signup.data!.user.id})).toEqual(fixture.before);expect(await ctx.readUserState({userId:fixture.foreignSignup.data!.user.id})).toEqual(fixture.foreignBefore);
+    outputs.push({mode,options,result,events:events.map(row=>row.stage==="verified"?{...row,clientData:registration(row.clientData)}:row),current,replay,state});
+  }
+  return {signup:fixture.signup,foreignSignup:fixture.foreignSignup,enrollment:fixture.enrollment,before:fixture.before,foreignBefore:fixture.foreignBefore,outputs,submitted:fixture.submitted(),ownerAfter:await ctx.readUserState({userId:fixture.signup.data!.user.id}),foreignAfter:await ctx.readUserState({userId:fixture.foreignSignup.data!.user.id})};
 },["POST /passkey/verify-registration"]);
