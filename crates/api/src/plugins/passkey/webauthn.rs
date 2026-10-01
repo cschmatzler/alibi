@@ -22,8 +22,8 @@ use webauthn_rs_core::{
     error::WebauthnError,
     internals::AuthenticatorData,
     proto::{
-        Authentication, AuthenticationResult, AuthenticationState, Credential, RegistrationState,
-        UserVerificationPolicy,
+        Authentication, AuthenticationResult, AuthenticationState, COSEKeyType, Credential,
+        EDDSACurve, Registration, RegistrationState, UserVerificationPolicy,
     },
 };
 
@@ -179,6 +179,29 @@ pub(super) fn finish_core_registration(
     if client_data.get("origin").and_then(|origin| origin.as_str()) != Some(origin) {
         return Err(WebauthnError::InvalidRPOrigin);
     }
+    // Source's packed self-attestation verifier accepts only Ed25519 OKP.
+    // None attestation still permits a genuine Ed448 credential to enroll.
+    let attestation: serde_cbor_2::Value =
+        serde_cbor_2::from_slice(registration.response.attestation_object.as_ref())?;
+    if let serde_cbor_2::Value::Map(object) = &attestation
+        && object.get(&serde_cbor_2::Value::Text("fmt".into()))
+            == Some(&serde_cbor_2::Value::Text("packed".into()))
+        && let Some(serde_cbor_2::Value::Map(statement)) =
+            object.get(&serde_cbor_2::Value::Text("attStmt".into()))
+        && !statement.contains_key(&serde_cbor_2::Value::Text("x5c".into()))
+        && let Some(serde_cbor_2::Value::Bytes(bytes)) =
+            object.get(&serde_cbor_2::Value::Text("authData".into()))
+    {
+        let data = AuthenticatorData::<Registration>::try_from(bytes.as_slice())?;
+        if let Some(acd) = data.acd
+            && let serde_cbor_2::Value::Map(key) = acd.credential_pk
+            && key.get(&serde_cbor_2::Value::Integer(1)) == Some(&serde_cbor_2::Value::Integer(1))
+            && key.get(&serde_cbor_2::Value::Integer(3)) == Some(&serde_cbor_2::Value::Integer(-8))
+            && key.get(&serde_cbor_2::Value::Integer(-1)) != Some(&serde_cbor_2::Value::Integer(6))
+        {
+            return Err(WebauthnError::COSEKeyEDDSAInvalidCurve);
+        }
+    }
     // The original attestation bytes are verified once, without weaker retries.
     core.register_credential(registration, state, None)
         .map(WebauthnPasskey::from)
@@ -208,6 +231,11 @@ pub(super) fn finish_core_authentication(
         return Err(WebauthnError::CredentialMayNotBeHardwareBound);
     }
     let mut credential = Credential::from(stored_passkey.clone());
+    // Source rejects unsupported stored OKP curves before its signature check.
+    if matches!(&credential.cred.key, COSEKeyType::EC_OKP(key) if key.curve != EDDSACurve::ED25519)
+    {
+        return Err(WebauthnError::COSEKeyEDDSAInvalidCurve);
+    }
     // Only verifier policy fields are normalized on this disposable clone.
     // Neither the key/ID nor the original verified owner comes from the request.
     credential.registration_policy = UserVerificationPolicy::Preferred;

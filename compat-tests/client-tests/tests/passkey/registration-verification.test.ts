@@ -106,3 +106,42 @@ compatScenario("passkey registration rejects actual packed signature failures ma
   }
   return {signup:fixture.signup,foreignSignup:fixture.foreignSignup,enrollment:fixture.enrollment,before:fixture.before,foreignBefore:fixture.foreignBefore,outputs,submitted:fixture.submitted(),after:await ctx.readUserState({userId:fixture.signup.data!.user.id}),foreignAfter:await ctx.readUserState({userId:fixture.foreignSignup.data!.user.id})};
 },["POST /passkey/verify-registration"]);
+
+compatScenario("passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",async ctx=>{
+  const fixture=await setup(ctx),options=await fixture.options(),device=new Authenticator("Ed448");
+  const proof={...device.register(options.data,ctx.baseURL,{userVerified:false}),userId:fixture.foreignSignup.data!.user.id};
+  const accepted=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response:proof,createSession:true,userId:fixture.foreignSignup.data!.user.id,context:"foreign-context"}});expect(accepted.error).toBeNull();expect(accepted.data).toMatchObject({userId:fixture.signup.data!.user.id,credentialID:proof.id,counter:0,user:{id:fixture.signup.data!.user.id},session:{userId:fixture.signup.data!.user.id}});
+  const events=await fixture.events();expect(events).toHaveLength(2);expect(events[1]).toMatchObject({stage:"verified",userId:fixture.signup.data!.user.id,context:fixture.context});expect(events[1]!.clientData).toEqual(fixture.requests[0].response);expect(fixture.requests[0]).toEqual({response:proof,createSession:true,userId:fixture.foreignSignup.data!.user.id,context:"foreign-context"});
+  const current=await fixture.owner.getSession();expect(current.data?.user.id).toBe(fixture.signup.data!.user.id);const issued=z.object({session:z.object({id:z.string(),token:z.string()})}).parse(accepted.data);expect(current.data?.session.id).toBe(issued.session.id);expect(current.data?.session.token).toBe(issued.session.token);
+  const listed=await fixture.owner.$fetch("/passkey/list-user-passkeys",{method:"GET"});expect(listed.data).toMatchObject([{credentialID:proof.id,userId:fixture.signup.data!.user.id,counter:0}]);
+  const replay=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response:proof,createSession:true}});expect(replay.error).toMatchObject({status:400,code:"CHALLENGE_NOT_FOUND"});expect(await fixture.events()).toEqual([]);
+  await fixture.owner.signOut();const enrolled=await fixture.state(),ownerBefore=await ctx.readUserState({userId:fixture.signup.data!.user.id});expect(enrolled).toMatchObject({passkeys:[{userId:fixture.signup.data!.user.id,counter:0}],sessions:{count:0},challenges:{count:0}});
+  const authenticator=createAuthClient({baseURL:`${ctx.baseURL}${authProfilePath("passkey-auth-accept")}`,plugins:[passkeyClient()],fetchOptions:{customFetchImpl:async(input,init)=>{
+    const request=new Request(input,init);if(new URL(request.url).pathname.endsWith("/passkey/verify-authentication"))fixture.authenticationRequests.push(await request.clone().json());return ctx.actor("ed448-authentication","passkey-auth-accept").fetch(request);
+  }}});
+  const attempts=[];
+  for(const mode of ["genuine","signature","length"] as const){
+    const challenge=await authenticator.$fetch("/passkey/generate-authenticate-options",{method:"GET"});expect(challenge.error).toBeNull();
+    const assertion=device.authenticate(challenge.data,ctx.baseURL,{userVerified:false,counter:1,...(mode==="signature"?{badSignature:true}:mode==="length"?{malformedSignature:true}:{})});expect(Buffer.from(assertion.response.signature,"base64url")).toHaveLength(mode==="length"?1:114);
+    let cookies:string[]=[];const denied=await authenticator.$fetch("/passkey/verify-authentication",{method:"POST",body:{response:assertion},onResponse({response}){cookies=response.headers.getSetCookie();}});expect(denied.error).toMatchObject({status:400,code:"AUTHENTICATION_FAILED"});expect(cookies).toEqual([]);
+    const replay=await authenticator.$fetch("/passkey/verify-authentication",{method:"POST",body:{response:assertion}});expect(replay.error).toMatchObject({status:400,code:"CHALLENGE_NOT_FOUND"});expect(fixture.authenticationRequests.at(-2)).toEqual({response:assertion});expect(fixture.authenticationRequests.at(-1)).toEqual({response:assertion});expect(await fixture.events()).toEqual([]);
+    const authenticationEvents=await ctx.rawRequest({path:"/__test/passkey-authentication-events"});expect(authenticationEvents.status).toBe(200);expect(authenticationEvents.body).toEqual([]);
+    const state=await fixture.state();expect(state).toEqual(enrolled);expect(await ctx.readUserState({userId:fixture.signup.data!.user.id})).toEqual(ownerBefore);expect(await ctx.readUserState({userId:fixture.foreignSignup.data!.user.id})).toEqual(fixture.foreignBefore);
+    attempts.push({mode,challenge,assertion:authentication(assertion,options.data),denied,cookies,replay,authenticationEvents,state});
+  }
+  return {signup:fixture.signup,foreignSignup:fixture.foreignSignup,enrollment:fixture.enrollment,options,accepted,current,listed,events:events.map(row=>row.stage==="verified"?{...row,clientData:registration(row.clientData)}:row),submitted:fixture.submitted(),replay,enrolled,ownerBefore,attempts,authenticationSubmitted:fixture.authenticationRequests.map(row=>({...row,response:authentication(row.response,options.data)})),ownerAfter:await ctx.readUserState({userId:fixture.signup.data!.user.id}),foreignBefore:fixture.foreignBefore,foreignAfter:await ctx.readUserState({userId:fixture.foreignSignup.data!.user.id})};
+},["POST /passkey/verify-registration","POST /passkey/verify-authentication"]);
+
+compatScenario("passkey Ed448 packed self attestation rejects genuine false and malformed signatures before callback enrollment or session",async ctx=>{
+  const fixture=await setup(ctx),device=new Authenticator("Ed448"),attempts=[];
+  for(const mode of ["genuine","signature","length"] as const){
+    const options=await fixture.options(),proof=device.register(options.data,ctx.baseURL,{userVerified:false,attestation:"packed",...(mode==="signature"?{badSignature:true}:mode==="length"?{malformedSignature:true}:{})});
+    const attestation=decodeCBOR(Uint8Array.from(Buffer.from(proof.response.attestationObject,"base64url")));if(!(attestation instanceof Map))throw new Error("actual attestation map required");const statement=attestation.get("attStmt");if(!(statement instanceof Map))throw new Error("actual statement map required");const signature=statement.get("sig");if(!(signature instanceof Uint8Array))throw new Error("actual signature bytes required");expect(signature).toHaveLength(mode==="length"?1:114);
+    let cookies:string[]=[];const denied=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response:proof,createSession:true},onResponse({response}){cookies=response.headers.getSetCookie();}});expect(denied.error).toMatchObject({status:500,code:"FAILED_TO_VERIFY_REGISTRATION"});expect(cookies).toEqual([]);
+    const events=await fixture.events();expect(events).toHaveLength(1);expect(events[0]).toMatchObject({stage:"resolved",userId:fixture.signup.data!.user.id,context:fixture.context});expect(fixture.requests.at(-1)).toEqual({response:proof,createSession:true});
+    const replay=await fixture.owner.$fetch("/passkey/verify-registration",{method:"POST",body:{response:proof,createSession:true}});expect(replay.error).toMatchObject({status:400,code:"CHALLENGE_NOT_FOUND"});expect(await fixture.events()).toEqual([]);
+    const state=await fixture.state();expect(state).toEqual({passkeys:[],sessions:{count:0},challenges:{count:0}});expect(await ctx.readUserState({userId:fixture.signup.data!.user.id})).toEqual(fixture.before);expect(await ctx.readUserState({userId:fixture.foreignSignup.data!.user.id})).toEqual(fixture.foreignBefore);
+    attempts.push({mode,options,denied,cookies,events,replay,state});
+  }
+  return {signup:fixture.signup,foreignSignup:fixture.foreignSignup,enrollment:fixture.enrollment,before:fixture.before,foreignBefore:fixture.foreignBefore,attempts,submitted:fixture.submitted(),ownerAfter:await ctx.readUserState({userId:fixture.signup.data!.user.id}),foreignAfter:await ctx.readUserState({userId:fixture.foreignSignup.data!.user.id})};
+},["POST /passkey/verify-registration"]);
