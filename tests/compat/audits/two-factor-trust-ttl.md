@@ -38,8 +38,9 @@ attributes and actual database expiry differences independently of production
 helpers. Challenge and attempt rows have the same exact expiry and original
 owner/counter. Positive challenges complete through real SMS-free OTP delivery;
 zero challenges have no delivery after browser expiry. Negative challenge
-requests stop at their cookie and persisted-date observations, because the
-source's expired-challenge snapshot policy is separately tracked.
+requests stop at their cookie and persisted-date observations. The separate
+[pending lookup owner](two-factor-pending-lookup.md) now covers the source's
+expired-challenge snapshot policy through explicitly transmitted issued cookies.
 
 Actual trust flows check owner-bound persisted sessions, unchanged foreign-owner
 state, successful identifier rotation, rejection of the retired proof, forced
@@ -72,8 +73,8 @@ Nonfinite dates and dates outside chrono's supported range fail closed, but thei
 full upstream error-wire behavior is not claimed. The 400-day serializer limit
 is retained; extreme date/cookie configurations are not an allocation or date
 parity claim. Duplicate installed identifiers and all adapter-hook side-effect
-ordering are not proven here. Expired pending-challenge lookup ordering remains
-separate. Authenticated OTP session-hook cancellation is approved as the next
+ordering are not proven here. Expired pending-challenge lookup ordering is covered by the separate
+[pending lookup owner](two-factor-pending-lookup.md). Authenticated OTP session-hook cancellation is approved as the next
 separate route-local capability. The independent backup-fixture reset repair is
 owned separately; this branch does not change reset wiring or callback receipts.
 

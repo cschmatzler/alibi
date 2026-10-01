@@ -10,6 +10,7 @@ mod organization_transport_probe;
 mod organization_update_hooks_fixture;
 mod session_cookie_cache_fixture;
 mod team_fixture;
+mod two_factor_pending_lookup_fixture;
 
 // Bun's Response.json adds UTF-8 to private control responses. Public auth
 // responses are owned by the pinned runtime and must retain their own headers.
@@ -704,6 +705,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         organization_member_removal_hooks_fixture::router(&config, database.clone()).await?;
     let member_role_hooks_router =
         organization_member_role_hooks_fixture::router(&config, database.clone()).await?;
+    let pending_lookup_router =
+        two_factor_pending_lookup_fixture::router(&config, database.clone()).await?;
     let update_hooks_router =
         organization_update_hooks_fixture::router(&config, database.clone()).await?;
     let creation_hooks_router =
@@ -1785,6 +1788,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(creation_router)
         .merge(creation_hooks_router)
         .merge(update_hooks_router)
+        .merge(pending_lookup_router)
         .merge(member_role_hooks_router)
         .merge(member_addition_router)
         .merge(member_removal_hooks_router)

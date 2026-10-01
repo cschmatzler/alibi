@@ -1675,19 +1675,12 @@ async fn resolve_two_factor_state<S: better_auth_core::AuthSchema>(
     let identifier = read_signed_cookie(req, TWO_FACTOR_COOKIE_SUFFIX, ctx)
         .filter(|identifier| !identifier.is_empty())
         .ok_or_else(|| AuthError::authentication_failed("Invalid two factor cookie"))?;
-    let verification = ctx
-        .database
-        .get_verification_by_identifier(&identifier)
+    // Preserve the newest lookup snapshot across optional global cleanup.
+    // Expiry is enforced by the later atomic attempt/challenge consumption,
+    // after the source's user lookup and factor-specific checks.
+    let verification = super::authentication_helpers::find_verification(ctx, &identifier)
         .await?
         .ok_or_else(|| AuthError::authentication_failed("Invalid two factor cookie"))?;
-    if verification.expires_at() <= Utc::now() {
-        ctx.database
-            .delete_verification(verification.id().as_ref())
-            .await?;
-        return Err(AuthError::authentication_failed(
-            "Invalid two factor cookie",
-        ));
-    }
 
     let user = ctx
         .database

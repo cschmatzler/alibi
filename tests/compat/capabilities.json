@@ -3398,7 +3398,25 @@
           "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor",
-          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
+          "two-factor pending totp expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ],
         "rejection": [
           "disabled TOTP rejects generator and verification before touching owner factor state",
@@ -3545,7 +3563,13 @@
           "two-factor default OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor observe OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor ignore OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
-          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors"
+          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor pending otp expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ],
         "rejection": [
           "two-factor OTP enable uses an authoritative owner, validates method before password verification and succeeds with disabled TOTP without a factor",
@@ -3560,7 +3584,13 @@
           "two-factor default OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor observe OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor ignore OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
-          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors"
+          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor pending otp expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ],
         "state": [
           "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code",
@@ -3582,7 +3612,13 @@
           "two-factor default OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor observe OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor ignore OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
-          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors"
+          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor pending otp expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ]
       }
     },
@@ -3603,7 +3639,13 @@
           "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
-          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
+          "two-factor pending backup expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ],
         "rejection": [
           "two-factor verify-backup-code signs the user in and consumes the used code",
@@ -3620,12 +3662,24 @@
           "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
-          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
+          "two-factor pending backup expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ],
         "authorization": [
           "two-factor verify-backup-code signs the user in and consumes the used code",
           "two-factor pending backup session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
-          "two-factor pending backup preserves an identical-message application Forbidden after consumption"
+          "two-factor pending backup preserves an identical-message application Forbidden after consumption",
+          "two-factor pending backup expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ],
         "state": [
           "two-factor challenge budget spans factors and invalidates the exhausted challenge before a valid code",
@@ -3642,7 +3696,13 @@
           "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
-          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
+          "two-factor pending backup expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending backup newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ]
       }
     },
@@ -3678,7 +3738,13 @@
           "two-factor default OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor observe OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor ignore OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
-          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors"
+          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor pending otp expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ],
         "rejection": [
           "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
@@ -3700,7 +3766,13 @@
           "two-factor default OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor observe OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor ignore OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
-          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors"
+          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor pending otp expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ],
         "authorization": [
           "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
@@ -3708,7 +3780,13 @@
           "two-factor pending otp preserves an identical-message application Forbidden after consumption",
           "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
           "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
-          "two-factor authenticated OTP success rotates its real owner session after code consumption"
+          "two-factor authenticated OTP success rotates its real owner session after code consumption",
+          "two-factor pending otp expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ],
         "state": [
           "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code",
@@ -3740,7 +3818,13 @@
           "two-factor default OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor observe OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor ignore OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
-          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors"
+          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor pending otp expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ]
       }
     },
@@ -3760,7 +3844,13 @@
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
           "two-factor passwordless option retains password ownership for mixed social and credential accounts",
           "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation",
-          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
+          "two-factor pending totp expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ],
         "rejection": [
           "disabled TOTP rejects generator and verification before touching owner factor state",
@@ -3770,11 +3860,23 @@
           "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
           "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code",
           "two-factor pending totp session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
-          "two-factor pending totp preserves an identical-message application Forbidden after consumption"
+          "two-factor pending totp preserves an identical-message application Forbidden after consumption",
+          "two-factor pending totp expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ],
         "authorization": [
           "two-factor pending totp session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
-          "two-factor pending totp preserves an identical-message application Forbidden after consumption"
+          "two-factor pending totp preserves an identical-message application Forbidden after consumption",
+          "two-factor pending totp expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ],
         "state": [
           "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership",
@@ -3789,7 +3891,13 @@
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
           "two-factor passwordless option retains password ownership for mixed social and credential accounts",
           "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation",
-          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
+          "two-factor pending totp expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending totp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ]
       }
     },

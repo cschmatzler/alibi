@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { createTwoFactorPendingLookupFixture } from "./two-factor-pending-lookup-fixture";
 import { sessionCookieCacheFixture } from "./session-cookie-cache-fixture";
 import { organizationMembershipPolicyFixture } from "./organization-membership-policy-fixture";
 import { organizationInvitationAcceptanceFixture } from "./organization-invitation-acceptance-fixture";
@@ -431,6 +432,7 @@ const organizationInvitationFixture = organizationInvitationAcceptanceFixture(da
 const organizationAdditionFixture = organizationMemberAdditionFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationMemberRemovalFixture = organizationMemberRemovalHooksFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationMemberRoleFixture = organizationMemberRoleHooksFixture(database, authOptions, `http://localhost:${PORT}`);
+const twoFactorPendingLookupFixture = await createTwoFactorPendingLookupFixture(authOptions, database);
 const organizationUpdateFixture = organizationUpdateHooksFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationDeletionFixture = organizationDeletionHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
 const passkeyRegistration = passkeyRegistrationFixture(authOptions);
@@ -841,6 +843,8 @@ const server = Bun.serve({
       if(url.pathname==="/__test/organization-member-role-hooks-configure"&&request.method==="POST")return organizationMemberRoleFixture.configure(await request.json() as Record<string,unknown>);
       if(url.pathname==="/__test/organization-member-role-hooks-release"&&request.method==="POST")return organizationMemberRoleFixture.release();
       if(url.pathname==="/__test/organization-member-role-hooks-state"&&request.method==="GET")return organizationMemberRoleFixture.state(url.searchParams.get("waitFor"));
+      for(const [name,auth] of twoFactorPendingLookupFixture.profiles)if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return auth.handler(request);
+      if(url.pathname==="/__test/two-factor-pending-lookup" && request.method==="POST")return twoFactorPendingLookupFixture.control(await request.json() as Record<string,unknown>);
       if(url.pathname.startsWith("/__test/profiles/org-update-hooks/api/auth/"))return organizationUpdateFixture.auth.handler(request);
       if(url.pathname==="/__test/organization-update-hooks-configure" && request.method==="POST")return organizationUpdateFixture.configure(await request.json() as Record<string,unknown>);
       if(url.pathname==="/__test/organization-update-storage" && request.method==="POST")return organizationUpdateFixture.storage(await request.json() as Record<string,unknown>);
