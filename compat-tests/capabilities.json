@@ -216,7 +216,11 @@
           "api-key api-key-usage-rate rate SQL failure retains genuine prior quota phases and owner-safe retry",
           "api-key api-key-usage-rate final SQL failure retains genuine prior quota phases and owner-safe retry",
           "api-key api-key-usage-rate-deferred rate SQL failure retains genuine prior quota phases and owner-safe retry",
-          "api-key api-key-usage-rate-deferred final SQL failure retains genuine prior quota phases and owner-safe retry"
+          "api-key api-key-usage-rate-deferred final SQL failure retains genuine prior quota phases and owner-safe retry",
+          "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
+          "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
+          "admin impersonation legacy uses original actor permissions for admin targets and self sessions",
+          "admin impersonation no-base uses original actor permissions for admin targets and self sessions"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -900,7 +904,10 @@
           "admin zero duration and empty reason use source defaults while owned sessions transition",
           "admin configured fractional negative and NaN defaults preserve persisted session ownership",
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
+          "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
+          "admin impersonation legacy uses original actor permissions for admin targets and self sessions"
         ],
         "rejection": [
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
@@ -911,14 +918,22 @@
           "admin missing malformed schemas reject before session cleanup and preserve every owned row",
           "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
           "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
-          "admin JSON and media rejection precedes authenticated permissions and retains session state"
+          "admin JSON and media rejection precedes authenticated permissions and retains session state",
+          "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
+          "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
+          "admin impersonation legacy uses original actor permissions for admin targets and self sessions",
+          "admin impersonation no-base uses original actor permissions for admin targets and self sessions"
         ],
         "authorization": [
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
+          "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
+          "admin impersonation legacy uses original actor permissions for admin targets and self sessions",
+          "admin impersonation no-base uses original actor permissions for admin targets and self sessions"
         ],
         "state": [
           "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
@@ -935,7 +950,11 @@
           "admin missing malformed schemas reject before session cleanup and preserve every owned row",
           "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
           "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
-          "admin JSON and media rejection precedes authenticated permissions and retains session state"
+          "admin JSON and media rejection precedes authenticated permissions and retains session state",
+          "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
+          "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
+          "admin impersonation legacy uses original actor permissions for admin targets and self sessions",
+          "admin impersonation no-base uses original actor permissions for admin targets and self sessions"
         ]
       }
     },
@@ -1159,7 +1178,10 @@
       "evidence": {
         "success": [
           "admin impersonation restores the original admin session and hides impersonated sessions",
-          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization"
+          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
+          "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
+          "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
+          "admin impersonation legacy uses original actor permissions for admin targets and self sessions"
         ],
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -1177,7 +1199,10 @@
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
-          "admin JSON and media rejection precedes authenticated permissions and retains session state"
+          "admin JSON and media rejection precedes authenticated permissions and retains session state",
+          "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
+          "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
+          "admin impersonation legacy uses original actor permissions for admin targets and self sessions"
         ]
       }
     },

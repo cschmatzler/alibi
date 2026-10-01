@@ -61,6 +61,10 @@ pub(super) async fn router(
 ) -> AuthResult<Router> {
     let mut router = Router::new();
     for name in [
+        "admin-impersonation-privileged",
+        "admin-impersonation-ordinary",
+        "admin-impersonation-legacy",
+        "admin-impersonation-no-base",
         "admin-standard",
         "admin-deny-all",
         "admin-exact-role",
@@ -89,6 +93,21 @@ pub(super) async fn router(
                 ("user".into(), RolePermissions::new().allow("user", ["get"])),
                 ("".into(), RolePermissions::new().allow("user", ["get"])),
             ])
+        } else if name.starts_with("admin-impersonation-") {
+            let actions = match name {
+                "admin-impersonation-privileged" => {
+                    vec!["set-role", "impersonate", "impersonate-admins"]
+                }
+                "admin-impersonation-no-base" => vec!["set-role", "impersonate-admins"],
+                _ => vec!["set-role", "impersonate"],
+            };
+            HashMap::from([
+                (
+                    "operator".into(),
+                    RolePermissions::new().allow("user", actions),
+                ),
+                ("admin".into(), RolePermissions::new()),
+            ])
         } else if name == "admin-empty-role" {
             HashMap::from([("user".into(), RolePermissions::new().allow("user", ["get"]))])
         } else {
@@ -109,6 +128,7 @@ pub(super) async fn router(
                 .plugin(TwoFactorPlugin::new())
                 .plugin(AdminPlugin::with_config(AdminConfig {
                     default_role: match name {
+                        name if name.starts_with("admin-impersonation-") => "operator",
                         "admin-role-manager" => "manager",
                         "admin-role-creator" => "creator",
                         "admin-exact-role" => "user, admin",
@@ -116,7 +136,9 @@ pub(super) async fn router(
                         _ => "admin",
                     }
                     .into(),
+                    allow_impersonating_admins: name == "admin-impersonation-legacy",
                     roles: match name {
+                        name if name.starts_with("admin-impersonation-") => Some(roles),
                         "admin-empty-role" | "admin-role-manager" | "admin-role-creator" => {
                             Some(roles)
                         }

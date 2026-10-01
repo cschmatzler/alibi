@@ -465,23 +465,29 @@ pub(crate) async fn unban_user_core(
 pub(crate) async fn impersonate_user_core(
     body: &UserIdRequest,
     admin_user_id: impl AsRef<str>,
+    admin_role: Option<&str>,
     ip_address: Option<&str>,
     user_agent: Option<&str>,
     config: &AdminConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> Result<(SessionUserResponse<SessionView, UserView>, String), AdminDateOperationError> {
-    if body.user_id == admin_user_id.as_ref() {
-        return Err(AuthError::bad_request("Cannot impersonate yourself").into());
-    }
-
     let target = ctx
         .database
         .get_user_by_id(&body.user_id)
         .await?
         .ok_or_else(|| AuthError::not_found(MESSAGE_USER_NOT_FOUND))?;
 
-    if !config.allow_impersonating_admins
-        && target_is_admin(Some(&body.user_id), target.role(), config)
+    if target_is_admin(Some(&body.user_id), target.role(), config)
+        && !config.allow_impersonating_admins
+        && !has_permission(
+            Some(admin_user_id.as_ref()),
+            admin_role,
+            config,
+            &std::collections::HashMap::from([(
+                "user".to_owned(),
+                vec!["impersonate-admins".to_owned()],
+            )]),
+        )
     {
         return Err(AuthError::forbidden(MESSAGE_CANNOT_IMPERSONATE_ADMINS).into());
     }

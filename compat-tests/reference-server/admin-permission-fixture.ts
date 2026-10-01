@@ -10,10 +10,14 @@ export function createAdminPermissionFixture(
   database: Database,
 ) {
   const access = createAccessControl({
-    user: ["get", "create", "set-role", "update"],
+    user: ["get", "create", "set-role", "update", "impersonate", "impersonate-admins"],
   });
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   for (const name of [
+    "admin-impersonation-privileged",
+    "admin-impersonation-ordinary",
+    "admin-impersonation-legacy",
+    "admin-impersonation-no-base",
     "admin-standard",
     "admin-deny-all",
     "admin-exact-role",
@@ -100,7 +104,9 @@ export function createAdminPermissionFixture(
               ? { defaultBanExpiresIn: NaN, impersonationSessionDuration: NaN }
               : {}),
             defaultRole:
-              name === "admin-role-manager"
+              name.startsWith("admin-impersonation-")
+                ? "operator"
+                : name === "admin-role-manager"
                 ? "manager"
                 : name === "admin-role-creator"
                   ? "creator"
@@ -121,6 +127,13 @@ export function createAdminPermissionFixture(
                   },
                 }
               : {}),
+            ...(name.startsWith("admin-impersonation-") ? {
+              roles: {
+                operator: access.newRole({user: name === "admin-impersonation-privileged" ? ["set-role", "impersonate", "impersonate-admins"] : name === "admin-impersonation-no-base" ? ["set-role", "impersonate-admins"] : ["set-role", "impersonate"]}),
+                admin: access.newRole({user: []}),
+              },
+              ...(name === "admin-impersonation-legacy" ? {allowImpersonatingAdmins: true} : {}),
+            } : {}),
             ...(name === "admin-deny-all" ? { roles: {} } : {}),
             ...(name === "admin-empty-role"
               ? { roles: { user: access.newRole({ user: ["get"] }) } }

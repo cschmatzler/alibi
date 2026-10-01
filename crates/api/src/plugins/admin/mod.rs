@@ -450,6 +450,7 @@ impl AdminPlugin {
         let (response, token) = match impersonate_user_core(
             &body,
             user.id.as_str(),
+            user.role.as_deref(),
             req.headers
                 .get("x-forwarded-for")
                 .map(|value| value.as_str()),
