@@ -222,7 +222,7 @@ delegate_store!(PasskeyStore, {
         &self,
         id: &str,
         update: UpdatePasskeyAuthentication,
-    ) -> AuthResult<Passkey>;
+    ) -> AuthResult<Option<Passkey>>;
     async fn update_passkey_name(&self, id: &str, name: &str) -> AuthResult<Passkey>;
     async fn delete_passkey(&self, id: &str) -> AuthResult<()>;
 });

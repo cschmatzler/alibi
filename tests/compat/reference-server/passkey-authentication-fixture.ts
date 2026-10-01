@@ -8,7 +8,7 @@ import { passkey } from "@better-auth/passkey";
 export function passkeyAuthenticationFixture(database: Database, options: Parameters<typeof betterAuth>[0], baseURL: string) {
   const events: unknown[] = [];
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
-  for (const mode of ["accept", "forbidden", "public-error", "internal-error", "mutation"] as const) {
+  for (const mode of ["accept", "forbidden", "public-error", "internal-error", "mutation", "deletion", "failed-deletion"] as const) {
     const name = `passkey-auth-${mode}`;
     const path = `/__test/profiles/${name}/api/auth`;
     const instance = betterAuth({ ...options, basePath: path, plugins: [passkey({ rpID: "localhost", origin: baseURL, authentication: { afterVerification: async ({ ctx, verification, clientData }) => {
@@ -18,6 +18,16 @@ export function passkeyAuthenticationFixture(database: Database, options: Parame
       const sessions = database.query('SELECT COUNT(*) AS count FROM session WHERE "userId" = ?').get((row as { userId: string }).userId);
       const challenges = database.query("SELECT COUNT(*) AS count FROM verification").get();
       events.push({ profile: name, path: ctx.path, facts: verification.authenticationInfo, clientData, storedPasskey: row, sessions, challenges });
+      if (mode === "deletion" || mode === "failed-deletion") {
+        if (mode === "failed-deletion") database.run(`CREATE TEMP TRIGGER reject_callback_delete BEFORE DELETE ON passkey BEGIN SELECT RAISE(ABORT, 'Application deletion failed'); END`);
+        try {
+          await ctx.context.adapter.delete({ model: "passkey", where: [{ field: "id", value: (row as { id: string }).id }] });
+          const remaining = await ctx.context.adapter.findOne({ model: "passkey", where: [{ field: "id", value: (row as { id: string }).id }] });
+          if (remaining) throw new Error("Verified credential deletion required");
+        } finally {
+          if (mode === "failed-deletion") database.run("DROP TRIGGER reject_callback_delete");
+        }
+      }
       if (mode === "mutation") {
         const foreign = await ctx.context.adapter.findOne({ model: "user", where: [{ field: "name", value: "Foreign" }] }) as { id: string } | null;
         if (!foreign) throw new Error("Actual foreign application user required");

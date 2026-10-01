@@ -583,7 +583,7 @@ impl<S: AuthSchema> PasskeyStore for PluginStore<S> {
         &self,
         id: &str,
         update: UpdatePasskeyAuthentication,
-    ) -> AuthResult<Passkey> {
+    ) -> AuthResult<Option<Passkey>> {
         self.inner.update_passkey_authentication(id, update).await
     }
     async fn update_passkey_name(&self, id: &str, name: &str) -> AuthResult<Passkey> {
@@ -1491,11 +1491,13 @@ pub trait PasskeyStore: Send + Sync {
         credential_id: &str,
     ) -> AuthResult<Option<Passkey>>;
     async fn list_passkeys_by_user(&self, user_id: &str) -> AuthResult<Vec<Passkey>>;
+    /// Update the verified credential, returning `None` if application code removed its row.
+    /// Storage failures remain errors; an absent row does not invalidate completed verification.
     async fn update_passkey_authentication(
         &self,
         id: &str,
         update: UpdatePasskeyAuthentication,
-    ) -> AuthResult<Passkey>;
+    ) -> AuthResult<Option<Passkey>>;
     async fn update_passkey_name(&self, id: &str, name: &str) -> AuthResult<Passkey>;
     async fn delete_passkey(&self, id: &str) -> AuthResult<()>;
 }

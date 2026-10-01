@@ -80,9 +80,10 @@ callback order/errors, token ownership, persistence and application mutations.
 Native tests retained cover distinct existing endpoint/store contracts.
 
 Callback deletion leaves Source's counter update with no row but still creates the
-original owner's session; the existing Rust mandatory-row update fails instead.
-This deletion/no-row interaction remains unclosed, not masked by the metadata
-reload. Captured application stores are outside any adapter transaction; the
+original owner's session. The native store now distinguishes `Ok(None)` from a
+storage error in `update_passkey_authentication`; the handler completes the
+already verified owner's session for that successful no-row result. A failed
+application deletion still aborts before the counter/session writes. Captured application stores are outside any adapter transaction; the
 callback is not claimed atomic with application side effects. Extensions/native
 verifier data beyond the actual signed fixture, arbitrary adapter/hook failures,
 and Source session-versus-user lookup exception ordering are not universally proven.
@@ -97,3 +98,53 @@ plugin and produced unrelated user projection drift; configured final before/aft
 proofs use equivalent profiles. A nonexistent native test-target invocation is
 retained in `passkey-auth-callback-native-target-setup.log`; the final proof invokes
 the actual `plugins::passkey::tests` native module. No full gate/inventory claim.
+
+
+## Issue #231: exact-row deletion and no-row completion
+
+The immutable `passkey-auth-deletion` application profile awaits actual store
+removal of the row selected by the successful signed assertion, then rereads that
+same ID to require its absence. Both fixtures use their real application store;
+no request field selects the callback policy. The official-client test submits
+through the foreign actor with foreign-owner body claims, yet checks the original
+verified owner in both the returned and current session. Complete callback facts,
+original credential projection, submitted assertions, public transport and cookies,
+user/account/session state and empty public credential list remain in the
+unchanged differential comparison. Replay consumes no second callback; a fresh
+challenge retry reaches the missing credential denial without another callback or
+session write. Foreign user/account/session state remains unchanged.
+
+`passkey-auth-failed-deletion` uses a server-owned SQLite trigger to make the actual
+store deletion fail. The trigger is removed in the callback even on error. The
+row and counter remain intact; there is no cookie or session, the challenge burns,
+and a fresh assertion reaches the callback again rather than treating a deletion
+error as successful absence. Wrong credential (valid transport encoding), genuine
+signed wrong challenge and valid-DER invalid signature all reject before the
+removal callback. Existing reassignment, metadata and current-counter scenarios
+remain part of the complete passkey family.
+
+The authoring gate assigns the regression to the real SDK/crypto/store/session
+boundary: a mandatory missing-row store update makes the successful-deletion test
+fail with native 400 instead of Source 200. Existing callback mutation coverage
+never deletes a row and cannot detect this regression. No production fixture
+flags, normalization, comparator changes, allowlists or native duplicate scenario
+were added. Custom `PasskeyStore` implementations must adopt the optional update
+result; real storage errors remain errors. The preloaded SeaORM update retains its
+existing concurrent-deletion race between read and write; this proof bounds the
+awaited callback's completed deletion before that read, not arbitrary concurrent
+adapter failures.
+
+Before/after evidence for #231:
+`/tmp/issue-231-before-clean.log` runs the complete passkey family with the new
+server-only profiles and unchanged production: 41 pass, with the sole intended
+native 400 failure at the successful deletion's session completion assertion.
+`/tmp/issue-231-after.log` runs the final family: 42 pass / 6734 assertions.
+`/tmp/issue-231-native.log` retains all 12 existing native passkey tests.
+`/tmp/issue-231-typecheck-final.log`, `/tmp/issue-231-lint.log` and
+`/tmp/issue-231-fixture-clippy.log` pass TypeScript and strict Rust checks.
+
+Independent coordinator review traced the complete authentication handler, store
+contract and actual callback fixtures, then reviewed all three new official-client
+owners after the passing differential run: no findings. The capability manifest
+requires the new success, rejection, authorization and state owners additively;
+every previous requirement remains.

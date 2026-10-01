@@ -2573,7 +2573,8 @@
           "passkey raw authority Ed25519Alg7 packed preserves signed tags and full lifecycle",
           "passkey raw authority Ed25519 packed preserves signed tags and full lifecycle",
           "passkey raw authority ES256 packed preserves signed tags and full lifecycle",
-          "passkey raw authority Ed25519Alg7 packed statement8 preserves signed tags and full lifecycle"
+          "passkey raw authority Ed25519Alg7 packed statement8 preserves signed tags and full lifecycle",
+          "passkey callback deletion completes the original owner session after a no-row counter write and rejects replay and retry"
         ],
         "rejection": [
           "passkey registration authentication ownership and deletion round trip",
@@ -2603,7 +2604,10 @@
           "passkey raw authority Ed25519Alg7 packed preserves signed tags and full lifecycle",
           "passkey raw authority Ed25519 packed preserves signed tags and full lifecycle",
           "passkey raw authority ES256 packed preserves signed tags and full lifecycle",
-          "passkey raw authority Ed25519Alg7 packed statement8 preserves signed tags and full lifecycle"
+          "passkey raw authority Ed25519Alg7 packed statement8 preserves signed tags and full lifecycle",
+          "passkey callback deletion completes the original owner session after a no-row counter write and rejects replay and retry",
+          "passkey failed application deletion aborts authentication while the retained credential remains retryable with a fresh challenge",
+          "passkey deletion callback cannot run for a wrong credential challenge or signature"
         ],
         "authorization": [
           "passkey rejected cryptographic attempts consume challenges without credential or session writes",
@@ -2618,7 +2622,9 @@
           "passkey raw authority Ed25519Alg7 packed preserves signed tags and full lifecycle",
           "passkey raw authority Ed25519 packed preserves signed tags and full lifecycle",
           "passkey raw authority ES256 packed preserves signed tags and full lifecycle",
-          "passkey raw authority Ed25519Alg7 packed statement8 preserves signed tags and full lifecycle"
+          "passkey raw authority Ed25519Alg7 packed statement8 preserves signed tags and full lifecycle",
+          "passkey callback deletion completes the original owner session after a no-row counter write and rejects replay and retry",
+          "passkey deletion callback cannot run for a wrong credential challenge or signature"
         ],
         "state": [
           "passkey registration authentication ownership and deletion round trip",
@@ -2653,7 +2659,10 @@
           "passkey raw authority Ed25519Alg7 packed preserves signed tags and full lifecycle",
           "passkey raw authority Ed25519 packed preserves signed tags and full lifecycle",
           "passkey raw authority ES256 packed preserves signed tags and full lifecycle",
-          "passkey raw authority Ed25519Alg7 packed statement8 preserves signed tags and full lifecycle"
+          "passkey raw authority Ed25519Alg7 packed statement8 preserves signed tags and full lifecycle",
+          "passkey callback deletion completes the original owner session after a no-row counter write and rejects replay and retry",
+          "passkey failed application deletion aborts authentication while the retained credential remains retryable with a fresh challenge",
+          "passkey deletion callback cannot run for a wrong credential challenge or signature"
         ]
       }
     },

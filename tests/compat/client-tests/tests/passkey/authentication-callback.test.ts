@@ -135,3 +135,70 @@ compatScenario("passkey callback may change persisted credential ownership and m
   expect(await fixture.events()).toHaveLength(1);
   return { signup: fixture.signup, foreignSignup: fixture.foreignSignup, registered: fixture.registered, before: fixture.before, foreignBefore: fixture.foreignBefore, challenge, result, callback, current, ownerRows, foreignRows, after, foreignAfter, replay, submitted: submitted(fixture) };
 }, ["POST /passkey/verify-authentication", "GET /passkey/list-user-passkeys"]);
+
+compatScenario("passkey callback deletion completes the original owner session after a no-row counter write and rejects replay and retry", async ctx => {
+  const fixture = await setup(ctx, "passkey-auth-deletion");
+  const challenge = await fixture.foreign.$fetch("/passkey/generate-authenticate-options", { method: "GET" }); expect(challenge.error).toBeNull();
+  const assertion = { ...fixture.device.authenticate(challenge.data, ctx.baseURL), userId: fixture.foreignSignup.data!.user.id };
+  const result = await fixture.foreign.$fetch("/passkey/verify-authentication", { method: "POST", body: { response: assertion, userId: fixture.foreignSignup.data!.user.id } });
+  expect(result.error).toBeNull();
+  expect(result.data).toMatchObject({ user: { id: fixture.signup.data!.user.id }, session: { userId: fixture.signup.data!.user.id } });
+  const callback = observed(await fixture.events(), assertion, fixture);
+  const current = await fixture.foreign.getSession(); expect(current.data?.user.id).toBe(fixture.signup.data!.user.id);
+  const rows = await fixture.foreign.$fetch("/passkey/list-user-passkeys", { method: "GET" }); expect(rows.error).toBeNull(); expect(rows.data).toEqual([]);
+  const after = await ctx.readUserState({ userId: fixture.signup.data!.user.id }); expect(after).toMatchObject({ sessions: [{ userId: fixture.signup.data!.user.id }] });
+  const stableBefore = fixture.before as { user: unknown; accounts: unknown };
+  expect(after).toMatchObject({ user: stableBefore.user, accounts: stableBefore.accounts });
+  const replay = await fixture.foreign.$fetch("/passkey/verify-authentication", { method: "POST", body: { response: assertion } }); expect(replay.error).toMatchObject({ status: 400, code: "CHALLENGE_NOT_FOUND" });
+  const retryChallenge = await fixture.foreign.$fetch("/passkey/generate-authenticate-options", { method: "GET" }); expect(retryChallenge.error).toBeNull();
+  const retryAssertion = fixture.device.authenticate(retryChallenge.data, ctx.baseURL);
+  const retry = await fixture.foreign.$fetch("/passkey/verify-authentication", { method: "POST", body: { response: retryAssertion } }); expect(retry.error).toMatchObject({ status: 401, code: "PASSKEY_NOT_FOUND" });
+  expect(await fixture.events()).toHaveLength(1);
+  expect(await ctx.readUserState({ userId: fixture.signup.data!.user.id })).toEqual(after);
+  const foreignAfter = await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id }); expect(foreignAfter).toEqual(fixture.foreignBefore);
+  return { signup: fixture.signup, foreignSignup: fixture.foreignSignup, registered: fixture.registered, before: fixture.before, foreignBefore: fixture.foreignBefore, challenge, result, callback, current, rows, after, replay, retryChallenge, retry, foreignAfter, submitted: submitted(fixture) };
+}, ["POST /passkey/verify-authentication", "GET /passkey/list-user-passkeys"]);
+
+compatScenario("passkey failed application deletion aborts authentication while the retained credential remains retryable with a fresh challenge", async ctx => {
+  const fixture = await setup(ctx, "passkey-auth-failed-deletion"); const outcomes = [];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const challenge = await fixture.owner.$fetch("/passkey/generate-authenticate-options", { method: "GET" }); expect(challenge.error).toBeNull();
+    const assertion = fixture.device.authenticate(challenge.data, ctx.baseURL);
+    let cookies: string[] = [];
+    const result = await fixture.owner.$fetch("/passkey/verify-authentication", { method: "POST", body: { response: assertion }, onResponse({ response }) { cookies = response.headers.getSetCookie(); } });
+    expect(result.error).toMatchObject({ status: 400, code: "AUTHENTICATION_FAILED" }); expect(cookies).toEqual([]);
+    const events = await fixture.events(); expect(events).toHaveLength(attempt + 1);
+    expect(events[attempt]!.clientData).toEqual(assertion);
+    expect(fixture.submitted[attempt * 2]!.response).toEqual(assertion);
+    expect(events[attempt]!.facts).toMatchObject({ newCounter: attempt + 1, credentialID: assertion.id });
+    expect(events[attempt]!.storedPasskey).toMatchObject({ credentialID: assertion.id, userId: fixture.signup.data!.user.id, counter: 0 });
+    expect(events[attempt]!.sessions).toEqual({ count: 0 }); expect(events[attempt]!.challenges).toEqual({ count: 0 });
+    const replay = await fixture.owner.$fetch("/passkey/verify-authentication", { method: "POST", body: { response: assertion } }); expect(replay.error).toMatchObject({ status: 400, code: "CHALLENGE_NOT_FOUND" });
+    expect(await fixture.events()).toHaveLength(attempt + 1);
+    expect(await ctx.readUserState({ userId: fixture.signup.data!.user.id })).toEqual(fixture.before);
+    outcomes.push({ challenge, result, cookies, replay });
+  }
+  const current = await fixture.owner.getSession(); expect(current.data).toBeNull();
+  const relogin = await fixture.owner.signIn.email({ email: fixture.signup.data!.user.email, password: "password123" }); expect(relogin.error).toBeNull();
+  const rows = await fixture.owner.$fetch("/passkey/list-user-passkeys", { method: "GET" }); expect(rows).toEqual(fixture.listed);
+  const foreignAfter = await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id }); expect(foreignAfter).toEqual(fixture.foreignBefore);
+  const callback = (await fixture.events()).map(event => ({ ...event, facts: { ...event.facts, origin: { url: event.facts.origin } }, clientData: wrapAssertion(event.clientData) }));
+  return { signup: fixture.signup, foreignSignup: fixture.foreignSignup, registered: fixture.registered, before: fixture.before, foreignBefore: fixture.foreignBefore, outcomes, current, relogin, rows, foreignAfter, callback, submitted: submitted(fixture) };
+}, ["POST /passkey/verify-authentication", "GET /passkey/list-user-passkeys"]);
+
+compatScenario("passkey deletion callback cannot run for a wrong credential challenge or signature", async ctx => {
+  const fixture = await setup(ctx, "passkey-auth-deletion"); const outcomes = [];
+  for (const mode of ["credential", "challenge", "signature"] as const) {
+    const challenge = await fixture.owner.$fetch("/passkey/generate-authenticate-options", { method: "GET" }); expect(challenge.error).toBeNull();
+    const assertion = fixture.device.authenticate(mode === "challenge" ? { ...(challenge.data as object), challenge: "wrong-signed-challenge" } : challenge.data, ctx.baseURL);
+    if (mode === "credential") { assertion.id = Buffer.from("unregistered-credential").toString("base64url"); assertion.rawId = assertion.id; }
+    if (mode === "signature") { const bytes = Buffer.from(assertion.response.signature, "base64url"); bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 1; assertion.response.signature = bytes.toString("base64url"); }
+    const result = await fixture.owner.$fetch("/passkey/verify-authentication", { method: "POST", body: { response: assertion } });
+    expect(result.error).toMatchObject({ status: mode === "challenge" ? 400 : 401, code: mode === "credential" ? "PASSKEY_NOT_FOUND" : "AUTHENTICATION_FAILED" });
+    const replay = await fixture.owner.$fetch("/passkey/verify-authentication", { method: "POST", body: { response: assertion } }); expect(replay.error).toMatchObject({ status: 400, code: "CHALLENGE_NOT_FOUND" });
+    expect(await fixture.events()).toEqual([]); expect(await ctx.readUserState({ userId: fixture.signup.data!.user.id })).toEqual(fixture.before);
+    expect(await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id })).toEqual(fixture.foreignBefore);
+    outcomes.push({ mode, challenge, result, replay });
+  }
+  return { signup: fixture.signup, foreignSignup: fixture.foreignSignup, registered: fixture.registered, before: fixture.before, foreignBefore: fixture.foreignBefore, outcomes, callback: await fixture.events(), submitted: submitted(fixture) };
+}, ["POST /passkey/verify-authentication"]);

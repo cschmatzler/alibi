@@ -1045,7 +1045,7 @@ impl PasskeyStore for MemoryStore {
         &self,
         _id: &str,
         _update: UpdatePasskeyAuthentication,
-    ) -> AuthResult<Passkey> {
+    ) -> AuthResult<Option<Passkey>> {
         Err(AuthError::internal("unsupported test-store operation"))
     }
     async fn update_passkey_name(&self, _id: &str, _name: &str) -> AuthResult<Passkey> {

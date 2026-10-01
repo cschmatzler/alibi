@@ -72,6 +72,32 @@ impl PasskeyAuthenticationAfterVerification for Application {
             "sessions":{"count":sessions.try_get::<i64>("","count").map_err(database_error)?},
             "challenges":{"count":challenges.try_get::<i64>("","count").map_err(database_error)?}
         }));
+        if matches!(self.mode, "deletion" | "failed-deletion") {
+            if self.mode == "failed-deletion" {
+                self.database.execute_raw(Statement::from_string(DbBackend::Sqlite,
+                    "CREATE TEMP TRIGGER reject_callback_delete BEFORE DELETE ON passkeys BEGIN SELECT RAISE(ABORT, 'Application deletion failed'); END"))
+                    .await.map_err(database_error)?;
+            }
+            let deleted = self.store.delete_passkey(row.id().as_ref()).await;
+            if self.mode == "failed-deletion" {
+                self.database
+                    .execute_raw(Statement::from_string(
+                        DbBackend::Sqlite,
+                        "DROP TRIGGER reject_callback_delete",
+                    ))
+                    .await
+                    .map_err(database_error)?;
+            }
+            deleted?;
+            if self
+                .store
+                .get_passkey_by_id(row.id().as_ref())
+                .await?
+                .is_some()
+            {
+                return Err(AuthError::internal("Verified credential deletion required"));
+            }
+        }
         if self.mode == "mutation" {
             let foreign = self
                 .database
@@ -117,6 +143,8 @@ pub(super) async fn router(
         "public-error",
         "internal-error",
         "mutation",
+        "deletion",
+        "failed-deletion",
     ] {
         let path = format!("/__test/profiles/passkey-auth-{mode}/api/auth");
         let configured = config.clone().base_path(&path);
