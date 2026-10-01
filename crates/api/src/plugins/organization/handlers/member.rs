@@ -234,13 +234,12 @@ pub(crate) async fn remove_member_core(
 
 pub(crate) async fn update_member_role_core(
     body: &UpdateMemberRoleRequest,
+    organization_id: &str,
     user: &impl AuthUser,
-    session: &impl AuthSession,
     config: &OrganizationConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<BasicMemberResponse> {
-    let org_id =
-        resolve_organization_id(body.organization_id.as_deref(), None, session, ctx).await?;
+    let org_id = organization_id.to_owned();
 
     let requester_member = ctx
         .database
@@ -442,12 +441,40 @@ pub async fn handle_update_member_role(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
-    let (user, session) = require_session(req, ctx).await?;
-    let body: UpdateMemberRoleRequest = match better_auth_core::validate_request_body(req) {
-        Ok(v) => v,
-        Err(resp) => return Ok(resp),
+    let body = match super::org_input::member_role_update(req) {
+        Ok(body) => body,
+        Err(response) => return Ok(response),
     };
-    let response = match update_member_role_core(&body, &user, &session, config, ctx).await {
+    // Pinned nested session middleware maps failed session retrieval to
+    // Unauthorized. Scope this mapping to authentication, not later callbacks.
+    let (user, session) = match require_session(req, ctx).await {
+        Ok(session) => session,
+        Err(AuthError::Unauthenticated) => {
+            return Err(super::extension_common::org_error(401, "UNAUTHORIZED"));
+        }
+        Err(error) => return Err(error),
+    };
+    let empty = || {
+        let mut response = AuthResponse::new(400);
+        _ = response.headers.insert("content-type", "application/json");
+        response
+    };
+    // An empty string is falsy before organization resolution; an empty array
+    // or whitespace-only string reaches resolution before role normalization.
+    if matches!(&body.role, super::super::types::RoleInput::One(role) if role.is_empty()) {
+        return Ok(empty());
+    }
+    let organization_id = body
+        .organization_id
+        .as_deref()
+        .filter(|id| !id.is_empty())
+        .or(session.active_organization_id())
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| super::extension_common::org_error(400, "NO_ACTIVE_ORGANIZATION"))?;
+    if body.role.roles().is_empty() {
+        return Ok(empty());
+    }
+    let response = match update_member_role_core(&body, organization_id, &user, config, ctx).await {
         Err(AuthError::BadRequest(message)) if message.starts_with("ROLE_NOT_FOUND: ") => {
             return Ok(AuthResponse::json(
                 400,
