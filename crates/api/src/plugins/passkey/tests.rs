@@ -729,8 +729,9 @@ async fn raw_none_credential_sql_readback_keeps_original_key_and_hidden_codec()
                 .handle_generate_authenticate_options(&request, &ctx)
                 .await?;
             let issued: serde_json::Value = serde_json::from_slice(&options.body)?;
+            let challenge = issued.get("challenge").expect("issued authentication challenge");
             let client = serde_json::to_vec(
-                &serde_json::json!({"type":"webauthn.get", "challenge":issued["challenge"],"origin":"http://localhost:3000"}),
+                &serde_json::json!({"type":"webauthn.get", "challenge":challenge,"origin":"http://localhost:3000"}),
             )?;
             let mut data = Sha256::digest(b"localhost").to_vec();
             data.push(1);
