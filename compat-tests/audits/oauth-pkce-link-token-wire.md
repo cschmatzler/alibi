@@ -45,3 +45,9 @@ assertions (`/tmp/gitlab-sdk-family-final.log`); Source-self passes five scenari
 consumers pass (`/tmp/gitlab-native-siblings-final.log`), with strict fixture
 Clippy and client/reference type checks. Broad transport, unusual token payloads and unrelated OAuth
 configuration are not claimed by these repairs.
+
+Coordinator independent review is clear for c39eb88e: pinned verifier alphabet,
+exact linking error literal and sole access-token response constructor inspected.
+The retained signed foreign callback primary now has four additive required
+callback categories, alongside its actual same-owner successful persisted link.
+No prior required evidence is removed.
