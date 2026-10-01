@@ -231,3 +231,15 @@ The frozen storage/FK prerequisites retain their separately proved native
 61-test family and installed schema evidence above. No full canonical gate was
 run by this owner. All focused fixture processes were stopped by their runner;
 source trees, scripts and nonpassing evidence are preserved.
+
+Coordinator and independent SIWE-owner review of exact SDK freeze 687f2c16 are
+bounded clear. Both original-production admission failures and the separate
+old-query failures reach their intended boundaries. The complete callback/state
+receipts, actual rows, first-row authorization, exact-row deletion and all four
+concurrent transport observations prevent placeholder success. The hashed team
+membership key is retained as an opaque token together with its complete inputs;
+each runtime's actual key is independently recomputed locally. No raw value or
+identity relationship is discarded. Twenty-three additive inventory requirements
+enforce the three complete primary owners through their real official-client
+consumers; the trusted add-member helper remains outside the public route map.
+The complete next integration gate remains pending.
