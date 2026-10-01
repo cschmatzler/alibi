@@ -118,18 +118,32 @@ pub struct RequestMeta {
 impl RequestMeta {
     /// Extract metadata from an [`AuthRequest`]'s headers.
     ///
-    /// IP address is read from `x-forwarded-for` (preferred), falling back
-    /// to `x-real-ip`. User-agent is read from the `user-agent` header.
+    /// Dispatch uses its initialized IP policy. Standalone requests use the
+    /// default policy. An actual HTTP dispatch retains empty IP/user-agent
+    /// strings when those headers provide no value, as session metadata.
     #[must_use]
     pub fn from_request(req: &AuthRequest) -> Self {
+        let configured = req.extensions().get::<crate::config::IpAddressConfig>();
+        let ip = configured.as_ref().map_or_else(
+            || crate::config::IpAddressConfig::default().resolve_ip(&req.headers),
+            |policy| policy.resolve_ip(&req.headers),
+        );
+        let user_agent = req
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
+            .map(|(_, value)| value.clone());
         Self {
-            ip_address: req
-                .headers
-                .get("x-forwarded-for")
-                .or_else(|| req.headers.get("x-real-ip"))
-                .cloned()
-                .filter(|value| !value.is_empty()),
-            user_agent: req.headers.get("user-agent").cloned(),
+            ip_address: if configured.is_some() {
+                Some(ip.unwrap_or_default())
+            } else {
+                ip
+            },
+            user_agent: if configured.is_some() {
+                Some(user_agent.unwrap_or_default())
+            } else {
+                user_agent
+            },
         }
     }
 }

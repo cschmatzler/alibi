@@ -94,6 +94,7 @@ mod api_key_generation_fixture;
 mod api_key_hook_fixture;
 mod apple_provider_fixture;
 mod atlassian_provider_fixture;
+mod client_ip_fixture;
 mod cloudflare_provider_fixture;
 mod device_fixture;
 mod google_id_token_fixture;
@@ -940,6 +941,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let jwt_keyring_router = jwt_keyring_fixture::router(&config, reset_database.clone()).await?;
     let jwt_remote_router = jwt_remote_fixture::router(&config, reset_database.clone()).await?;
     let device_profiles = device_fixture::profiles(&config, reset_database.clone()).await?;
+    let client_ip_router = client_ip_fixture::router(
+        &config,
+        reset_database.clone(),
+        Arc::new(CompatVerificationSender {
+            outbox: verification_outbox.clone(),
+        }),
+    )
+    .await?;
 
     let reset_outbox_for_token = reset_outbox.clone();
     let reset_outbox_for_reset = reset_outbox.clone();
@@ -1830,6 +1839,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(ott_router)
         .merge(jwt_router)
         .merge(device_profiles)
+        .merge(client_ip_router)
         .merge(team_router)
         .merge(creation_router)
         .merge(creation_hooks_router)

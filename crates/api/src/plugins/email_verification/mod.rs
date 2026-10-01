@@ -193,16 +193,15 @@ impl EmailVerificationPlugin {
             callback_url,
         };
 
-        let ip_address = req.headers.get("x-forwarded-for").cloned();
-        let user_agent = req.headers.get("user-agent").cloned();
+        let metadata = better_auth_core::RequestMeta::from_request(req);
         let current_session = ctx.require_session(req).await.ok();
 
         match verify_email_core(
             &query,
             current_session,
             &self.config,
-            ip_address,
-            user_agent,
+            metadata.ip_address,
+            metadata.user_agent,
             ctx,
         )
         .await?

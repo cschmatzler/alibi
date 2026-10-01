@@ -13,6 +13,7 @@ export const FIXTURE_PROFILES = [
   ...variants("social-cloudflare-",["default","configured","disabled-scope","disabled-configured","public","post","encoded","mapped","implicit-disabled","signup-disabled","required","configured-endpoint"] as const),
   ...variants("social-atlassian-",["default","configured","disabled-scope","disabled-configured","mapped","implicit-disabled","signup-disabled","required","configured-endpoint"] as const),
   "signup-standard", "signup-disabled", "signup-password-disabled", "signup-no-auto", "signup-required", "signup-custom", "signup-policy", "signup-zero-policy", "signup-username", "signup-otp", "signup-background",
+  ...variants("client-ip-", ["default", "ordered", "trusted", "v6proxy", "mixed", "invalid", "full", "excess", "zero", "negative", "fractional", "nan", "disabled", "empty"] as const),
   "social-apple-default", "social-apple-configured", "social-apple-disabled-scope", "social-apple-disabled-configured", "social-apple-bundle", "social-apple-audience", "social-apple-client-array", "social-apple-disabled-idtoken", "social-apple-signup-disabled", "social-apple-implicit-disabled", "social-apple-encrypted", "social-apple-mapped", "social-apple-empty-clients",
   "oauth-proxy",
   "two-factor-pending-lookup", "two-factor-pending-lookup-disabled", "two-factor-pending-lookup-zero", "two-factor-pending-lookup-zero-disabled",

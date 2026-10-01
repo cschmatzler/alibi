@@ -1,3 +1,5 @@
+mod client_ip;
+
 /// Well-known core route paths.
 ///
 /// These constants are the single source of truth for route paths used by both
@@ -469,8 +471,24 @@ pub struct AdvancedConfig {
 #[derive(Debug, Clone)]
 pub struct IpAddressConfig {
     /// Ordered list of headers to check for the client IP.
-    /// Defaults to `["x-forwarded-for", "x-real-ip"]`.
+    /// Defaults to `["x-forwarded-for"]`. Header names are case insensitive.
     pub headers: Vec<String>,
+
+    /// IP addresses or CIDRs removed from the right of a forwarded chain.
+    /// Invalid entries are ignored. Without valid entries, only a single
+    /// address is admitted. Deployments must prevent clients bypassing the
+    /// proxy and supplying their own trusted forwarding headers.
+    pub trusted_proxies: Vec<String>,
+
+    /// IPv6 grouping prefix; defaults to 64. Fractional values are floored,
+    /// negative values become zero, and values at least 128 or NaN preserve
+    /// the full address. IPv4-mapped addresses use IPv4 grouping.
+    pub ipv6_subnet: f64,
+
+    /// Fall back to localhost when no configured header resolves an address.
+    /// Defaults to true for NODE_ENV dev/development/test or a truthy TEST
+    /// environment flag. Applications may configure this explicitly.
+    pub localhost_fallback: bool,
 
     /// If `true`, IP tracking is entirely disabled (no IP stored in sessions).
     pub disable_ip_tracking: bool,
@@ -564,7 +582,14 @@ impl Default for SessionConfig {
 impl Default for IpAddressConfig {
     fn default() -> Self {
         Self {
-            headers: vec!["x-forwarded-for".to_owned(), "x-real-ip".to_owned()],
+            headers: vec!["x-forwarded-for".to_owned()],
+            trusted_proxies: Vec::new(),
+            ipv6_subnet: 64.0,
+            localhost_fallback: matches!(
+                std::env::var("NODE_ENV").as_deref(),
+                Ok("dev" | "development" | "test")
+            ) || std::env::var("TEST")
+                .is_ok_and(|value| !matches!(value.as_str(), "" | "false")),
             disable_ip_tracking: false,
         }
     }
