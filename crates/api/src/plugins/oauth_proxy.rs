@@ -1,8 +1,9 @@
 //! OAuth code exchange on a production host, followed by stateful completion on
 //! the originating preview host. This implementation supports database state.
 use super::oauth::handlers::{
-    complete_link_social, create_account_cookie_header, fetch_user_info_from_provider,
-    parse_callback_user_payload, process_oauth_sign_in, validate_authorization_code_via_provider,
+    OAuthSignInError, complete_link_social, create_account_cookie_header,
+    fetch_user_info_from_provider, parse_callback_user_payload, process_oauth_sign_in,
+    validate_authorization_code_via_provider,
 };
 use super::oauth::state::{
     OAuthStatePayload, RecoveredOAuthServerContext, state_cookie_name, verified_server_context,
@@ -18,6 +19,18 @@ use better_auth_core::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+struct OAuthProxyUnhandledError(AtomicBool);
+
+/// Internal dispatch bridge for an ordinary unhandled proxy session error.
+/// The marker is private and public dispatch resets request extensions.
+#[doc(hidden)]
+pub fn take_unhandled_error(req: &AuthRequest) -> bool {
+    req.extensions()
+        .get::<OAuthProxyUnhandledError>()
+        .is_some_and(|marker| marker.0.swap(false, Ordering::Relaxed))
+}
 
 /// Immutable application configuration. URLs are application origins; the auth
 /// base path is appended to the production URL. A dedicated secret can be shared
@@ -411,10 +424,10 @@ impl OAuthProxyPlugin {
         if age > self.config.max_age_seconds || age < -10.0 {
             return error_redirect(error_url, "payload_expired", None);
         }
-        let Some(row) = ctx
+        let Ok(Some(row)) = ctx
             .database
             .get_verification_by_identifier(&format!("oauth:{}", payload.state))
-            .await?
+            .await
         else {
             return error_redirect(error_url, "state_mismatch", None);
         };
@@ -430,12 +443,14 @@ impl OAuthProxyPlugin {
         {
             return error_redirect(error_url, "state_mismatch", None);
         }
-        ctx.database.delete_verification(&row.id()).await?;
         let clear = better_auth_core::utils::cookie_utils::create_clear_cookie(
             &state_cookie_name(&ctx.config),
             &ctx.config,
         );
         req.queue_response_header("Set-Cookie", clear);
+        if ctx.database.delete_verification(&row.id()).await.is_err() {
+            return error_redirect(error_url, "state_mismatch", None);
+        }
         if state.is_expired() {
             return error_redirect(error_url, "state_mismatch", None);
         }
@@ -495,6 +510,36 @@ impl OAuthProxyPlugin {
         {
             Ok(outcome) => outcome,
             Err(error) => {
+                if let OAuthSignInError::SessionAuth(error) = error {
+                    return match error {
+                        AuthError::SessionCreationCancelled => {
+                            error_redirect(error_url, "unable_to_create_session", None)
+                        }
+                        AuthError::Api {
+                            code: Some(code),
+                            message,
+                            ..
+                        } => error_redirect(error_url, &code, Some(&message)),
+                        AuthError::Upstream { code, message, .. } => {
+                            error_redirect(error_url, code, Some(message))
+                        }
+                        error
+                            if error.status_code() < 500
+                                || matches!(error, AuthError::Api { .. }) =>
+                        {
+                            Err(error)
+                        }
+                        _ => {
+                            // Source's ordinary exception response discards the
+                            // accumulated endpoint headers; APIError redirects
+                            // above retain the state-cookie cleanup instead.
+                            let _ = req.take_response_headers();
+                            req.extensions()
+                                .insert(OAuthProxyUnhandledError(AtomicBool::new(true)));
+                            Ok(AuthResponse::new(500))
+                        }
+                    };
+                }
                 let (code, description) = error.redirect_parts();
                 return error_redirect(error_url, &code, description);
             }

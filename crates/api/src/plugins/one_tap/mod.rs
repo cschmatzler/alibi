@@ -242,6 +242,7 @@ impl OneTapPlugin {
         let outcome = match result {
             Ok(outcome) => outcome,
             Err(OAuthSignInError::Generic(error)) => return message(401, &error),
+            Err(OAuthSignInError::SessionAuth(error)) => return message(401, &error.to_string()),
             Err(OAuthSignInError::Banned(error)) => {
                 return AuthResponse::json(403, &json!({"code":"BANNED_USER","message":error}))
                     .map_err(Into::into);

@@ -121,3 +121,79 @@ The coordinator owns full gates, inventories, shared dependencies and publicatio
 
 No OAuth authorization-server, MCP, CIMD, enterprise SSO/SCIM, Stripe, i18n,
 Expo or Electron integration is included.
+
+## Independent review completion: restoration and application failures
+
+The independent review found two genuine stages missing from the initial default
+flow slice. Source `restoreOAuthProxyState` catches lookup, decode and deletion
+exceptions and redirects `state_mismatch`; Native now applies that catch only to
+proxy restoration. The real state-cookie cleanup is queued before deletion,
+matching `parseGenericState`. A real SQLite delete-veto trigger proves rejected
+consumption retains every principal and verification row; removing the veto
+allows that same authentic profile/state to progress.
+
+The shared private `OAuthSignInError::SessionAuth` retains the actual session
+issuer failure. Existing ordinary OAuth projections still use the same message
+and redirect rules, and the exhaustive OneTap arm keeps its existing 401/message
+projection. Only proxy completion distinguishes Source's coded APIError redirect,
+ordinary internal exception's empty 500, and typed HookControl cancellation's
+`unable_to_create_session` result. Ordinary exceptions discard accumulated
+endpoint headers; coded/cancellation/deletion redirects preserve the real state
+cleanup cookie. No generic string matching or shared public error mapper changed.
+
+The fourth official-client owner configures an actual application session-create
+hook, records its real stored userId, exercises ordinary Error, coded API500 and
+HookControl::Cancel, and succeeds after resetting that application policy. Original
+state is consumed on session failure; already committed user/account rows survive,
+account refresh expiry/update writes are explicitly asserted against the new real
+provider payload, no new session/cookie is issued, and foreign rows/sessions remain
+unchanged. Every physical observation and authenticated payload remains returned.
+The original three owners are retained. State annotations use actual HTTP route
+IDs rather than implementation handler identifiers.
+
+Actual pre-correction logs are `/tmp/oauth-proxy-review-delete-veto-before.log`
+(500 instead of 302 on the real SQL veto) and
+`/tmp/oauth-proxy-review-session-error-before.log` (302 exposing an internal error
+instead of the Source empty 500). A first post-correction full run passed every
+676 local assertion and complete client observation but exposed the queued-cookie
+failure difference at the ordinary-exception trace; the route-local discard fixes
+that remaining stage. Source-only fixture setup corrections (initial missing
+private control route, selecting an older provider receipt, assuming refreshed
+account dates stayed unchanged, and misnaming the authenticated atom container)
+are not treated as production before evidence.
+
+Final strengthened proofs are `/tmp/oauth-proxy-review-source-family-final.log`
+and `/tmp/oauth-proxy-review-sdk-family-final.log` (four owners), with scoped
+strict/focused checks in `/tmp/oauth-proxy-review-{clippy,fixture-clippy,typecheck,reference-typecheck,native}-final.log`.
+Broader user/account-store error classification, provider profile rejection and
+custom adapter/application hook combinations remain explicit follow-up work;
+this review repair closes the measured state-restoration/session-issuer stages.
+
+The completed-response application observer now independently proves the hook
+boundary too. It records the actual callbackURL from Source middleware context
+and the native request; it does not generate expected receipts. The ordinary
+session exception produces no after-request receipt, while state-deletion,
+coded APIError, cancellation, replay and successful retry do. The wire-only
+correction first failed this real owner with an extra native receipt
+(`/tmp/oauth-proxy-review-afterhooks-before.log`). A private typed request marker,
+created only by that internal proxy error and consumed by the production dispatch
+bridge, suppresses completed-response hooks for the exact branch. Public dispatch
+already replaces request extensions, so callers cannot inject/reuse this private
+marker. Ordinary 500 responses elsewhere are not remapped. Central cache
+composition must retain its own marker and combine suppression at the adjacent
+dispatch boundary. Source after-hook paths are route patterns whereas native
+request paths are concrete; the observer purposefully records the common actual
+query contract, not a fabricated path alias. Final four-owner count is 684.
+
+Final route evidence additionally exercises a valid authentic profile with a
+foreign origin on the legacy route. Both completion routes now independently
+record genuine 403 rejection/authorization and successful state transitions;
+302 responses are not relabeled as rejections. The final Source self-control
+`/tmp/oauth-proxy-review-source-family-final.log` and recorded differential
+`/tmp/oauth-proxy-review-recorded-sdk-final.log` pass four owners / 694 assertions.
+The four actual evidence JSON files are under this checkout's
+`compat-tests/client-tests/artifacts/evidence/`; inventory remains coordinator-owned.
+The normal account OAuth public native consumers also pass 18 tests in
+`/tmp/oauth-proxy-review-account-native-final.log`, protecting the unchanged
+nonproxy projections. An attempted OneTap native lib selector finds zero tests;
+that setup invocation is not counted as validation.

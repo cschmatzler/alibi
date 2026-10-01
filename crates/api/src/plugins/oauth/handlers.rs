@@ -524,6 +524,7 @@ pub(crate) struct ProcessOAuthUserResult {
 
 pub(crate) enum OAuthSignInError {
     Generic(String),
+    SessionAuth(AuthError),
     Banned(String),
     EmailNotVerified,
 }
@@ -532,6 +533,7 @@ impl OAuthSignInError {
     fn into_auth_error(self) -> AuthError {
         match self {
             Self::Generic(message) => AuthError::forbidden(message),
+            Self::SessionAuth(error) => AuthError::forbidden(error.to_string()),
             Self::Banned(message) => AuthError::banned_user(message),
             Self::EmailNotVerified => AuthError::Upstream {
                 status: 403,
@@ -546,6 +548,7 @@ impl OAuthSignInError {
             // Upstream turns a plain internal error string into the `error`
             // param verbatim, with no description.
             Self::Generic(message) => (message.replace(' ', "_"), None),
+            Self::SessionAuth(error) => (error.to_string().replace(' ', "_"), None),
             // An APIError instead redirects with its `code` and message, so the
             // param is the constant, not a lowercased word.
             Self::Banned(message) => ("BANNED_USER".to_string(), Some(message.as_str())),
@@ -563,7 +566,7 @@ impl From<String> for OAuthSignInError {
 impl From<SessionIssueError> for OAuthSignInError {
     fn from(value: SessionIssueError) -> Self {
         match value {
-            SessionIssueError::Auth(error) => Self::Generic(error.to_string()),
+            SessionIssueError::Auth(error) => Self::SessionAuth(error),
             SessionIssueError::Banned { message } => Self::Banned(message),
         }
     }

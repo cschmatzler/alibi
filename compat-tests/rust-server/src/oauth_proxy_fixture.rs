@@ -1,5 +1,6 @@
 //! Actual two-host authentication and one-use HTTP provider grants.
 use crate::TestSchema;
+use async_trait::async_trait;
 use axum::{
     extract::{Query, Request, State},
     http::{HeaderMap, StatusCode},
@@ -14,10 +15,15 @@ use better_auth::plugins::oauth::OAuthProvider;
 use better_auth::plugins::{
     EmailPasswordPlugin, OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin, SessionManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::sea_orm::{EntityTrait, QueryOrder};
+use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use better_auth_core::{
+    AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, CreateSession,
+};
+use better_auth_seaorm::sea_orm::{ConnectionTrait, EntityTrait, QueryOrder, Statement};
 use better_auth_seaorm::store::entities::{account, session, user, verification};
-use better_auth_seaorm::{Database, DatabaseConnection, SeaOrmStore};
+use better_auth_seaorm::{
+    Database, DatabaseConnection, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore,
+};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -36,6 +42,10 @@ struct Provider {
     receipts: Vec<Value>,
     count: usize,
     profile: Value,
+    failure: String,
+    session_hooks: Vec<Value>,
+    after_requests: Vec<Value>,
+    tracking: bool,
 }
 #[derive(Clone)]
 pub(super) struct Fixture {
@@ -49,9 +59,83 @@ fn profile() -> Value {
 fn date(v: DateTime<Utc>) -> String {
     v.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
+struct CompletedRequests(Fixture);
+#[async_trait]
+impl AuthPlugin<TestSchema> for CompletedRequests {
+    fn name(&self) -> &'static str {
+        "proxy-application-observer"
+    }
+    fn routes(&self) -> Vec<AuthRoute> {
+        vec![]
+    }
+    async fn on_request(
+        &self,
+        _req: &AuthRequest,
+        _ctx: &AuthContext<TestSchema>,
+    ) -> AuthResult<Option<AuthResponse>> {
+        Ok(None)
+    }
+    async fn after_request(
+        &self,
+        req: &AuthRequest,
+        _ctx: &AuthContext<TestSchema>,
+        response: AuthResponse,
+    ) -> AuthResult<AuthResponse> {
+        let mut provider = self.0.provider.lock().await;
+        if provider.tracking
+            && (req.path().ends_with("/oauth-proxy") || req.path() == "/oauth-proxy-callback")
+        {
+            provider
+                .after_requests
+                .push(json!({"callbackURL":req.query.get("callbackURL")}));
+        }
+        Ok(response)
+    }
+}
+struct SessionHooks(Fixture);
+#[async_trait]
+impl SeaOrmHooks<TestSchema> for SessionHooks {
+    async fn before_create_session(
+        &self,
+        session: &mut CreateSession,
+        context: &SeaOrmHookContext<'_>,
+    ) -> AuthResult<HookControl> {
+        if context
+            .request
+            .as_ref()
+            .is_some_and(|request| request.path.contains("oauth-proxy"))
+        {
+            let mut provider = self.0.provider.lock().await;
+            let mode = provider.failure.clone();
+            provider
+                .session_hooks
+                .push(json!({"userId":session.user_id,"mode":mode}));
+            if mode == "cancel-session" {
+                return Ok(HookControl::Cancel);
+            }
+            if mode == "ordinary-session-error" {
+                return Err(AuthError::internal("private proxy session failure"));
+            }
+            if mode == "coded-session-error" {
+                return Err(AuthError::Api {
+                    status: 500,
+                    code: Some("PROXY_SESSION_DENIED".into()),
+                    message: "Configured proxy session denied".into(),
+                });
+            }
+        }
+        Ok(HookControl::Continue)
+    }
+}
 impl Fixture {
     pub(super) async fn reset(&self) -> AuthResult<()> {
         for db in [&self.preview, &self.production] {
+            db.execute_raw(Statement::from_string(
+                db.get_database_backend(),
+                "DROP TRIGGER IF EXISTS proxy_delete_veto",
+            ))
+            .await
+            .map_err(|e| AuthError::internal(e.to_string()))?;
             let _ = session::Entity::delete_many()
                 .exec(db)
                 .await
@@ -73,6 +157,10 @@ impl Fixture {
         provider.grants.clear();
         provider.receipts.clear();
         provider.count = 0;
+        provider.failure = "none".into();
+        provider.session_hooks.clear();
+        provider.after_requests.clear();
+        provider.tracking = false;
         provider.profile = profile();
         Ok(())
     }
@@ -92,6 +180,10 @@ pub(super) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
             receipts: vec![],
             count: 0,
             profile: profile(),
+            failure: "none".into(),
+            session_hooks: vec![],
+            after_requests: vec![],
+            tracking: false,
         })),
     };
     for db in [&fixture.preview, &fixture.production] {
@@ -113,7 +205,10 @@ pub(super) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
             .trusted_origin(production_origin.clone());
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(settings.clone())
-                .store(SeaOrmStore::<TestSchema>::new(settings, db.clone()))
+                .store(
+                    SeaOrmStore::<TestSchema>::new(settings, db.clone())
+                        .with_hooks(vec![Arc::new(SessionHooks(fixture.clone()))]),
+                )
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(SessionManagementPlugin::new())
@@ -131,6 +226,7 @@ pub(super) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
                     secret: Some(SECRET.into()),
                     ..Default::default()
                 }))
+                .plugin(CompletedRequests(fixture.clone()))
                 .build()
                 .await?,
         );
@@ -148,6 +244,12 @@ pub(super) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
         async move {selected.oneshot(request).await}
     }))
     .route("/__test/oauth-proxy/state",get(state))
+    .route("/__test/oauth-proxy/control",post(|State(fixture):State<Fixture>,Json(value):Json<Value>|async move{
+        let mode=value.get("mode").and_then(Value::as_str).unwrap_or("none").to_owned();{let mut provider=fixture.provider.lock().await;provider.failure=mode.clone();provider.tracking=true;}let db=&fixture.preview;
+        db.execute_raw(Statement::from_string(db.get_database_backend(),"DROP TRIGGER IF EXISTS proxy_delete_veto")).await.map_err(|e|e.to_string())?;
+        if mode=="delete-veto" {db.execute_raw(Statement::from_string(db.get_database_backend(),"CREATE TRIGGER proxy_delete_veto BEFORE DELETE ON verifications BEGIN SELECT RAISE(ABORT, 'proxy delete veto'); END")).await.map_err(|e|e.to_string())?;}
+        Ok::<_,String>(Json(json!({"status":true})))
+    }))
     .route("/__test/oauth-proxy/profile",post(|State(fixture):State<Fixture>,Json(value):Json<Value>|async move{fixture.provider.lock().await.profile=value;Json(json!({"status":true}))}))
     .route("/__test/oauth-proxy/provider/oauth/authorize",get(authorize))
     .route("/__test/oauth-proxy/provider/oauth/token",post(token))
@@ -263,6 +365,14 @@ async fn state(State(fixture): State<Fixture>) -> Result<Json<Value>, String> {
     let _ = result.insert(
         "receipts".into(),
         json!(fixture.provider.lock().await.receipts),
+    );
+    let _ = result.insert(
+        "sessionHooks".into(),
+        json!(fixture.provider.lock().await.session_hooks),
+    );
+    let _ = result.insert(
+        "afterRequests".into(),
+        json!(fixture.provider.lock().await.after_requests),
     );
     Ok(Json(Value::Object(result)))
 }
