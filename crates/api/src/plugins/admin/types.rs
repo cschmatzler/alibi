@@ -84,8 +84,23 @@ pub(crate) struct BanUserRequest {
     pub user_id: String,
     #[serde(rename = "banReason")]
     pub ban_reason: Option<String>,
-    #[serde(rename = "banExpiresIn")]
-    pub ban_expires_in: Option<i64>,
+    #[serde(
+        rename = "banExpiresIn",
+        default,
+        deserialize_with = "finite_optional_duration"
+    )]
+    pub ban_expires_in: Option<f64>,
+}
+
+fn finite_optional_duration<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let duration = Option::<f64>::deserialize(deserializer)?;
+    if duration.is_some_and(|value| !value.is_finite()) {
+        return Err(serde::de::Error::custom("banExpiresIn must be finite"));
+    }
+    Ok(duration)
 }
 
 #[derive(Debug, Deserialize, Validate)]

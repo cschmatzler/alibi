@@ -77,12 +77,12 @@ pub struct AdminConfig {
     /// Default reason applied when banning a user without an explicit reason.
     #[config(default = None)]
     pub default_ban_reason: Option<String>,
-    /// Default ban duration in seconds when banning a user without an explicit duration.
+    /// Default ban duration in seconds, including fractions; zero/NaN act as unset.
     #[config(default = None)]
-    pub default_ban_expires_in: Option<i64>,
-    /// Custom impersonation session duration in seconds.
+    pub default_ban_expires_in: Option<f64>,
+    /// Custom impersonation lifetime in seconds, including fractions; zero/NaN use one hour.
     #[config(default = None)]
-    pub impersonation_session_duration: Option<i64>,
+    pub impersonation_session_duration: Option<f64>,
     /// Message surfaced to banned users.
     #[config(default = "You have been banned from this application. Please contact support if you believe this is an error.".to_string())]
     pub banned_user_message: String,
@@ -362,7 +362,11 @@ impl AdminPlugin {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
-        let response = ban_user_core(&body, user.id.as_str(), &self.config, ctx).await?;
+        let response = match ban_user_core(&body, user.id.as_str(), &self.config, ctx).await {
+            Ok(response) => response,
+            Err(AdminDateOperationError::InvalidDate) => return Ok(AuthResponse::new(500)),
+            Err(AdminDateOperationError::Auth(error)) => return Err(error),
+        };
         AuthResponse::json(200, &response).map_err(AuthError::from)
     }
 
@@ -392,7 +396,7 @@ impl AdminPlugin {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
-        let (response, token) = impersonate_user_core(
+        let (response, token) = match impersonate_user_core(
             &body,
             user.id.as_str(),
             req.headers
@@ -402,7 +406,12 @@ impl AdminPlugin {
             &self.config,
             ctx,
         )
-        .await?;
+        .await
+        {
+            Ok(response) => response,
+            Err(AdminDateOperationError::InvalidDate) => return Ok(AuthResponse::new(500)),
+            Err(AdminDateOperationError::Auth(error)) => return Err(error),
+        };
         let dont_remember = get_cookie(req, &related_cookie_name(&ctx.config, "dont_remember"))
             .and_then(|value| {
                 better_auth_core::utils::cookie_utils::verify_cookie_value(

@@ -1,3 +1,4 @@
+import { APIError } from "better-auth/api";
 import type { Database } from "bun:sqlite";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { admin, username, twoFactor } from "better-auth/plugins";
@@ -19,17 +20,85 @@ export function createAdminPermissionFixture(
     "admin-empty-role",
     "admin-role-manager",
     "admin-role-creator",
+    "admin-duration-zero",
+    "admin-duration-fractional",
+    "admin-duration-negative",
+    "admin-duration-invalid",
+    "admin-duration-nan",
+    "admin-duration-hook-error",
   ]) {
     const path = `/__test/profiles/${name}/api/auth`;
     profiles.set(
       path,
       betterAuth({
         ...base,
+        ...(name === "admin-duration-hook-error"
+          ? {
+              databaseHooks: {
+                ...base.databaseHooks,
+                user: {
+                  ...base.databaseHooks?.user,
+                  update: {
+                    ...base.databaseHooks?.user?.update,
+                    before: async (user) => {
+                      if ("banned" in user && user.banned === true)
+                        throw new APIError("FORBIDDEN", {
+                          code: "APPLICATION_BAN_REFUSED",
+                          message: "Invalid Date",
+                        });
+                    },
+                  },
+                },
+                session: {
+                  ...base.databaseHooks?.session,
+                  create: {
+                    ...base.databaseHooks?.session?.create,
+                    before: async (session) => {
+                      if ("impersonatedBy" in session && session.impersonatedBy)
+                        throw new APIError("INTERNAL_SERVER_ERROR", {
+                          code: "APPLICATION_SESSION_REFUSED",
+                          message: "Invalid Date",
+                        });
+                    },
+                  },
+                },
+              },
+            }
+          : {}),
         basePath: path,
         plugins: [
           username(),
           twoFactor(),
           admin({
+            ...(name === "admin-duration-zero"
+              ? {
+                  defaultBanReason: "",
+                  defaultBanExpiresIn: 0,
+                  impersonationSessionDuration: 0,
+                }
+              : {}),
+            ...(name === "admin-duration-fractional"
+              ? {
+                  defaultBanReason: "configured reason",
+                  defaultBanExpiresIn: 300.875,
+                  impersonationSessionDuration: 120.75,
+                }
+              : {}),
+            ...(name === "admin-duration-negative"
+              ? {
+                  defaultBanExpiresIn: -60.25,
+                  impersonationSessionDuration: -10.5,
+                }
+              : {}),
+            ...(name === "admin-duration-invalid"
+              ? {
+                  defaultBanExpiresIn: Infinity,
+                  impersonationSessionDuration: Infinity,
+                }
+              : {}),
+            ...(name === "admin-duration-nan"
+              ? { defaultBanExpiresIn: NaN, impersonationSessionDuration: NaN }
+              : {}),
             defaultRole:
               name === "admin-role-manager"
                 ? "manager"
@@ -74,7 +143,9 @@ export function createAdminPermissionFixture(
       if (!email)
         return Response.json({ message: "email required" }, { status: 400 });
       const user = database
-        .query("SELECT id,email,name,role FROM user WHERE email=?")
+        .query(
+          "SELECT id,email,name,role,banned,banReason,banExpires,createdAt,updatedAt FROM user WHERE email=?",
+        )
         .get(email) as {
         id: string;
         email: string;
@@ -82,7 +153,18 @@ export function createAdminPermissionFixture(
         role: string | null;
       } | null;
       return Response.json({
-        user,
+        user: user
+          ? {
+              ...user,
+              banned:
+                (user as typeof user & { banned: number | null }).banned ===
+                null
+                  ? null
+                  : Boolean(
+                      (user as typeof user & { banned: number | null }).banned,
+                    ),
+            }
+          : null,
         accounts: user
           ? database
               .query(
@@ -93,7 +175,7 @@ export function createAdminPermissionFixture(
         sessions: user
           ? database
               .query(
-                "SELECT id,userId,token,impersonatedBy FROM session WHERE userId=? ORDER BY createdAt",
+                "SELECT id,userId,token,impersonatedBy,createdAt,expiresAt FROM session WHERE userId=? ORDER BY createdAt",
               )
               .all(user.id)
           : [],
