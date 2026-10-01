@@ -500,3 +500,61 @@ async fn test_set_user_password_does_not_create_credential_account() {
             .is_empty()
     );
 }
+
+#[tokio::test]
+async fn admin_creation_stores_application_metadata_without_reserved_role_input() {
+    let (ctx, admin, admin_session, _other, other_session) = create_admin_context().await;
+    let expected = serde_json::json!({"preferences":{"theme":"night","nested":{"$serde_json::private::RawValue":"literal"}}});
+    let request = make_request(
+        HttpMethod::Post,
+        "/admin/create-user",
+        &admin_session.token,
+        Some(
+            serde_json::json!({"email":"metadata-user@fixture.test","name":"Metadata user","data":{"role":"user","preferences":expected.get("preferences").unwrap()}}),
+        ),
+    );
+    let response = AdminPlugin::new()
+        .on_request(&request, &ctx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(response.status, 200);
+    let created = ctx
+        .database
+        .get_user_by_email("metadata-user@fixture.test")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(created.role(), Some("user"));
+    assert_eq!(created.metadata(), &expected);
+    assert_eq!(
+        json_body(&response)
+            .get("user")
+            .and_then(|user| user.get("id"))
+            .and_then(serde_json::Value::as_str),
+        Some(created.id.as_str())
+    );
+    assert!(
+        ctx.database
+            .get_session(&admin_session.token)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        ctx.database
+            .get_session(&other_session.token)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(
+        ctx.database
+            .get_user_by_id(&admin.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .role(),
+        Some("admin")
+    );
+}

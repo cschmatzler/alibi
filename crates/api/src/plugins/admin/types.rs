@@ -22,22 +22,9 @@ impl RoleInput {
 
     pub(crate) fn roles(&self) -> Vec<&str> {
         match self {
-            Self::One(role) => role
-                .split(',')
-                .map(str::trim)
-                .filter(|role| !role.is_empty())
-                .collect(),
-            Self::Many(roles) => roles
-                .iter()
-                .flat_map(|role| role.split(','))
-                .map(str::trim)
-                .filter(|role| !role.is_empty())
-                .collect(),
+            Self::One(role) => vec![role.as_str()],
+            Self::Many(roles) => roles.iter().map(String::as_str).collect(),
         }
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.roles().is_empty()
     }
 }
 

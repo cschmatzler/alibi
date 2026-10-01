@@ -225,6 +225,16 @@ impl AdminPlugin {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
+        // The source checks presence after nullish body/data precedence; empty
+        // strings/arrays still request role authority. Validate nested types later.
+        if body.role.is_some()
+            || body
+                .data
+                .as_ref()
+                .is_some_and(|data| data.contains_key("role"))
+        {
+            self.authorize(&user, "user", "set-role", MESSAGE_CHANGE_ROLE)?;
+        }
         let response = create_user_core(&body, &self.config, ctx).await?;
         AuthResponse::json(200, &response).map_err(AuthError::from)
     }
