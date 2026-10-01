@@ -35,12 +35,13 @@ export async function createClientIpFixture(base: BetterAuthOptions, database: D
       plugins: [deviceAuthorization(), passkey(), admin(), apiKey({enableSessionForAPIKeys:true}), {
         id: "client-ip-application",
         endpoints: {
+          rateCheck: createAuthEndpoint("/client-ip-rate-check", { method: "GET" }, async ctx => ctx.json({ok:true})),
           rateEmpty: createAuthEndpoint("/client-ip-rate-empty", { method: "GET" }, async ctx => ctx.json({ok:true})),
           rateDuplicate: createAuthEndpoint("/client-ip-rate-duplicate", { method: "GET" }, async ctx => ctx.json({ok:true})),
         },
       }],
       rateLimit: { enabled: true, storage: "memory", window: 60, max: 10000,
-        customRules: { "/ok": { window: 60, max: 2 },
+        customRules: { "/client-ip-rate-check": { window: 60, max: 2 },
           "/client-ip-rate-empty": {window:60,max:2},
           "/client-ip-rate-duplicate": {window:60,max:2},
           "/sign-up/email": {window: 60, max: 10000},

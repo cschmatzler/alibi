@@ -108,7 +108,7 @@ for(const row of buckets) compatScenario(`client IP ${row.name} selects real HTT
   expect(signup.error).toBeNull();
   const before=await sessions(ctx), responses=[];
   for(const [index,headers] of row.inputs.entries()){
-    const endpoint=row.profile==="client-ip-empty"?"/client-ip-rate-empty":"/ok";
+    const endpoint=row.profile==="client-ip-empty"?"/client-ip-rate-empty":"/client-ip-rate-check";
     const raw=await ctx.actor("bucket").fetch(authProfilePath(row.profile)+endpoint,{headers});
     const response={status:raw.status,body:await raw.text(),headers:{"content-type":raw.headers.get("content-type"),"x-retry-after":raw.headers.get("x-retry-after")}};
     expect(response.status).toBe(row.statuses[index]!);
@@ -121,7 +121,8 @@ for(const row of buckets) compatScenario(`client IP ${row.name} selects real HTT
     expect(await sessions(ctx)).toEqual(before);
   }
   expect((await foreign.client.getSession()).data?.user.id).toBe(signup.data!.user.id);
-  return {signup:ctx.snapshot(signup),before,responses,after:await sessions(ctx)};
+  const health=await ctx.rawRequest({path:authProfilePath(row.profile)+"/ok"});expect(health.status).toBe(200);expect(health.body).toEqual({ok:true});
+  return {signup:ctx.snapshot(signup),before,responses,health,after:await sessions(ctx)};
 },["GET /ok"]);
 
 compatScenario("client IP repeated forwarded fields cannot rotate the unresolved rate bucket",async ctx=>{
@@ -180,14 +181,15 @@ for(const profile of ["client-ip-trusted","client-ip-disabled"] as const) compat
 },["POST /device/code","GET /device","POST /device/approve","POST /device/token","POST /revoke-session"]);
 
 compatScenario("client IP concurrent equivalent addresses atomically share a bucket",async ctx=>{
-  const path=authProfilePath("client-ip-default")+"/ok";
+  const path=authProfilePath("client-ip-default")+"/client-ip-rate-check";
   const headers={"x-forwarded-for":"2001:db8:ddd:1234::1"};
   const first=await ctx.rawRequest({path,headers});
   expect(first.status).toBe(200);
   const responses=await Promise.all(Array.from({length:3},()=>ctx.rawRequest({path,headers})));
   expect(responses.map(row=>row.status).sort()).toEqual([200,429,429]);
   expect(await sessions(ctx)).toEqual([]);
-  return {first,responses:responses.sort((left,right)=>left.status-right.status),sessions:await sessions(ctx)};
+  const health=await ctx.rawRequest({path:authProfilePath("client-ip-default")+"/ok",headers});expect(health.status).toBe(200);expect(health.body).toEqual({ok:true});
+  return {first,responses:responses.sort((left,right)=>left.status-right.status),health,sessions:await sessions(ctx)};
 },["GET /ok"]);
 
 // Actual TCP preserves duplicate fields that fetch/Headers would combine.

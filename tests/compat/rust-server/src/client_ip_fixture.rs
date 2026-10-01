@@ -25,6 +25,7 @@ impl AuthPlugin<TestSchema> for ApplicationEndpoint {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
+            AuthRoute::get("/client-ip-rate-check", "rate_check"),
             AuthRoute::get("/client-ip-rate-empty", "rate_empty"),
             AuthRoute::get("/client-ip-rate-duplicate", "rate_duplicate"),
         ]
@@ -36,7 +37,7 @@ impl AuthPlugin<TestSchema> for ApplicationEndpoint {
     ) -> AuthResult<Option<AuthResponse>> {
         if matches!(
             req.path(),
-            "/client-ip-rate-empty" | "/client-ip-rate-duplicate"
+            "/client-ip-rate-check" | "/client-ip-rate-empty" | "/client-ip-rate-duplicate"
         ) {
             Ok(Some(AuthResponse::json(200, &json!({"ok":true}))?))
         } else {
@@ -107,7 +108,7 @@ pub(super) async fn router(
                 .rate_limit(
                     RateLimitConfig::new()
                         .default_limit(Duration::from_secs(60), 10000)
-                        .endpoint("/ok", Duration::from_secs(60), 2)
+                        .endpoint("/client-ip-rate-check", Duration::from_secs(60), 2)
                         .endpoint("/client-ip-rate-empty", Duration::from_secs(60), 2)
                         .endpoint("/client-ip-rate-duplicate", Duration::from_secs(60), 2),
                 )
