@@ -214,5 +214,5 @@ compatScenario("two-factor passwordless OTP enrollment rotates the social owner'
   expect(await ctx.readUserState({ userId })).toEqual(enabledRaw);
   expect(await credentials(ctx, userId)).toEqual(social);
   expect(await ctx.readUserState({ userId: foreign.userId })).toEqual(foreignBefore);
-  return ctx.snapshot({ created, mixed, initial, before, wrongPassword, social, nullPassword, invalidMethod, nullIssuer, enabled, current, enabledState, oldSession, sent, wrongOwner, wrongCode, verified, replay, final, persisted, foreignBefore });
+  return ctx.snapshot({ created, mixed, initial, before, wrongPassword, social, nullPassword, invalidMethod, nullIssuer, enabled, current, enabledState, oldSession, sent, wrongOwner, wrongCode, verified, replay, final, persisted, foreignBefore }, ["POST /two-factor/enable", "POST /two-factor/send-otp", "POST /two-factor/verify-otp"]);
 }, ["POST /two-factor/enable", "POST /two-factor/send-otp", "POST /two-factor/verify-otp"]);
