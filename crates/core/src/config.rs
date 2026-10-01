@@ -587,7 +587,8 @@ pub struct SessionConfig {
     /// Optional cookie-based session cache to avoid DB lookups.
     ///
     /// When enabled, session data is cached in a signed/encrypted cookie.
-    /// `SessionManager` checks the cookie cache before hitting the database.
+    /// Cache-aware HTTP guards check it before hitting the database; physical
+    /// session APIs continue to read authoritative stored state.
     pub cookie_cache: Option<CookieCacheConfig>,
 }
 
