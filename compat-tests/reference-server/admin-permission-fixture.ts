@@ -135,6 +135,49 @@ export function createAdminPermissionFixture(
     handle(request: Request) {
       const url = new URL(request.url);
       if (
+        url.pathname === "/__test/admin-user-timestamps" &&
+        request.method === "POST"
+      ) {
+        return request
+          .json()
+          .then(
+            (body: {
+              userId: string;
+              createdAt: string;
+              updatedAt: string;
+            }) => {
+              if (
+                ![body.createdAt, body.updatedAt].every(
+                  (value) =>
+                    typeof value === "string" &&
+                    Number.isFinite(new Date(value).getTime()),
+                ) ||
+                typeof body.userId !== "string"
+              ) {
+                return Response.json(
+                  { message: "valid stored timestamps required" },
+                  { status: 400 },
+                );
+              }
+              const result = database
+                .query("UPDATE user SET createdAt=?,updatedAt=? WHERE id=?")
+                .run(body.createdAt, body.updatedAt, body.userId);
+              if (result.changes !== 1)
+                return Response.json(
+                  { message: "user required" },
+                  { status: 404 },
+                );
+              return Response.json(
+                database
+                  .query(
+                    "SELECT id AS userId,createdAt,updatedAt FROM user WHERE id=?",
+                  )
+                  .get(body.userId),
+              );
+            },
+          );
+      }
+      if (
         url.pathname !== "/__test/admin-role-state" ||
         request.method !== "GET"
       )

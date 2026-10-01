@@ -152,8 +152,10 @@ pub(crate) struct AdminUserView {
     pub email_verified: bool,
     pub image: Option<String>,
     #[serde(rename = "createdAt")]
+    #[serde(serialize_with = "better_auth_core::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
     #[serde(rename = "updatedAt")]
+    #[serde(serialize_with = "better_auth_core::utils::datetime::serialize")]
     pub updated_at: DateTime<Utc>,
     pub username: Option<String>,
     #[serde(rename = "displayUsername")]
