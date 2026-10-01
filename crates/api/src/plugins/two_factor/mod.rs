@@ -488,6 +488,7 @@ impl TwoFactorPlugin {
                 | AuthError::Database(_)
                 | AuthError::Serialization(_)
                 | AuthError::Plugin { .. }
+                | AuthError::CallbackFailure(_)
                 | AuthError::Internal(_)
                 | AuthError::PasswordHash(_)
                 | AuthError::Jwt(_)) => error,
@@ -554,6 +555,7 @@ impl TwoFactorPlugin {
                 | AuthError::Database(_)
                 | AuthError::Serialization(_)
                 | AuthError::Plugin { .. }
+                | AuthError::CallbackFailure(_)
                 | AuthError::Internal(_)
                 | AuthError::PasswordHash(_)
                 | AuthError::Jwt(_)) => other,
@@ -1966,6 +1968,7 @@ async fn verify_existing_session_factor(
             | AuthError::Database(_)
             | AuthError::Serialization(_)
             | AuthError::Plugin { .. }
+            | AuthError::CallbackFailure(_)
             | AuthError::Internal(_)
             | AuthError::PasswordHash(_)
             | AuthError::UserCreationCancelled

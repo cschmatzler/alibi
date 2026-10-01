@@ -789,6 +789,7 @@ impl ApiKeyPlugin {
                 | AuthError::Database(_)
                 | AuthError::Serialization(_)
                 | AuthError::Plugin { .. }
+                | AuthError::CallbackFailure(_)
                 | AuthError::Internal(_)
                 | AuthError::PasswordHash(_)
                 | AuthError::Jwt(_)) => error,
@@ -874,6 +875,7 @@ impl ApiKeyPlugin {
                 | AuthError::Database(_)
                 | AuthError::Serialization(_)
                 | AuthError::Plugin { .. }
+                | AuthError::CallbackFailure(_)
                 | AuthError::Internal(_)
                 | AuthError::PasswordHash(_)
                 | AuthError::Jwt(_)) => error,

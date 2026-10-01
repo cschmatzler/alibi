@@ -81,3 +81,10 @@ merges and rebases must preserve each reviewed layer's complete tree; the final
 merged code/test tree must equal the final gated tree. Release notes here are
 compatibility documentation and Rustdoc; deleted ROADMAP, docs directory and
 CHANGELOG are not restored.
+
+
+## Remaining-issue implementation work
+
+| Issue | Implementation and primary evidence | Review |
+| --- | --- | --- |
+| #197 | Ordinary admin callback failures preserve empty500 through email, username and impersonation. Explicit application errors retain their responses; anonymous/cache configured failures preserve issued ownership and physical session state. Existing banned-message owner plus composition owner pass41 scenarios /3602 assertions. | Independent production review found no authorization or session-write-order issue. Full gate recorded in the PR. |

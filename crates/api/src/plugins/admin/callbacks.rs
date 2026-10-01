@@ -11,7 +11,10 @@ use std::{
 ///
 /// The user is the stored application entity, including fields hidden from HTTP
 /// responses. This callback is awaited before any new session is created. Errors
-/// are propagated as authentication framework errors, retaining their status.
+/// retain their status. Returning [`AuthError::Internal`] represents an ordinary
+/// application failure: HTTP callers receive an empty 500 response, matching
+/// the upstream callback exception contract. Explicit API errors retain their
+/// public body, including when their status is 500.
 #[async_trait]
 pub trait AdminBannedUserMessage<U: AuthUser>: Send + Sync + 'static {
     async fn message(&self, user: &U) -> AuthResult<String>;
@@ -35,7 +38,13 @@ impl<U: AuthUser, H: AdminBannedUserMessage<U>> ErasedMessage for TypedMessage<U
         let user = user.downcast_ref::<U>().ok_or_else(|| AuthError::config(
             "Admin banned-user message callback user type does not match the authentication schema"
         ))?;
-        self.handler.message(user).await
+        self.handler
+            .message(user)
+            .await
+            .map_err(|error| match error {
+                AuthError::Internal(_) => AuthError::CallbackFailure(Box::new(error)),
+                other => other,
+            })
     }
 }
 

@@ -306,3 +306,31 @@ fn fixed_message_variants_display() {
     assert_eq!(AuthError::UserNotFound.to_string(), "User not found");
     assert_eq!(AuthError::RateLimited.to_string(), "Too many requests");
 }
+
+// The framework-neutral response conversion is distinct from Axum's HTTP path.
+#[test]
+fn callback_failure_transport_preserves_empty_body_and_public_api_errors() {
+    let response = AuthError::CallbackFailure(Box::new(AuthError::internal("private cause")))
+        .to_auth_response();
+    assert_eq!(response.status, 500);
+    assert!(response.body.is_empty());
+    assert!(response.headers.get("content-type").is_none());
+
+    let internal = AuthError::internal("private cause").to_auth_response();
+    assert_eq!(internal.status, 500);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&internal.body).unwrap(),
+        serde_json::json!({"message":"Internal server error"})
+    );
+    let explicit = AuthError::Api {
+        status: 500,
+        code: Some("APPLICATION_ERROR".into()),
+        message: "public error".into(),
+    }
+    .to_auth_response();
+    assert_eq!(explicit.status, 500);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&explicit.body).unwrap(),
+        serde_json::json!({"code":"APPLICATION_ERROR","message":"public error"})
+    );
+}

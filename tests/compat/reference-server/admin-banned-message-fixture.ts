@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError } from "better-auth/api";
-import { admin, username, twoFactor } from "better-auth/plugins";
+import { admin, username, twoFactor, anonymous } from "better-auth/plugins";
 
 /** Stored, non-input, hidden application data reaches the real admin callback. */
 export function createAdminBannedMessageFixture(
@@ -18,7 +18,7 @@ export function createAdminBannedMessageFixture(
   }
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   const events: Record<string, unknown>[] = [];
-  for (const name of ["admin-banned-message", "admin-banned-message-error"]) {
+  for (const name of ["admin-banned-message", "admin-banned-message-error", "admin-banned-message-error-cache"]) {
     const path = `/__test/profiles/${name}/api/auth`;
     profiles.set(
       path,
@@ -37,7 +37,11 @@ export function createAdminBannedMessageFixture(
             },
           },
         },
+        session: name.endsWith("-cache")
+          ? { ...base.session, cookieCache: { enabled: true, strategy: "compact" } }
+          : base.session,
         plugins: [
+          ...(name.endsWith("-cache") ? [anonymous({ generateRandomEmail: () => "callback-anonymous@fixture.test" })] : []),
           username(),
           twoFactor(),
           admin({
@@ -57,14 +61,19 @@ export function createAdminBannedMessageFixture(
                 metadata: user.metadata,
               });
               if (
-                name === "admin-banned-message-error" &&
+                name.startsWith("admin-banned-message-error") &&
+                user.banReason === "ordinary callback failure"
+              )
+                throw new Error("private callback failure details");
+              if (
+                name.startsWith("admin-banned-message-error") &&
                 user.banReason === "server application ban"
               )
                 throw new APIError("INTERNAL_SERVER_ERROR", {
                   code: "APPLICATION_BAN_MESSAGE_UNAVAILABLE",
                   message: "configured message unavailable",
                 });
-              if (name === "admin-banned-message-error")
+              if (name.startsWith("admin-banned-message-error"))
                 throw new APIError("BAD_REQUEST", {
                   code: "APPLICATION_BAN_MESSAGE_REFUSED",
                   message: "configured message refused",

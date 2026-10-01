@@ -5,11 +5,12 @@ use axum::{
     extract::{Query, State},
     routing::get,
 };
+use better_auth::config::CookieCacheConfig;
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::{
-    AdminBannedUserMessage, AdminConfig, AdminPlugin, EmailPasswordPlugin, SessionManagementPlugin,
-    TwoFactorPlugin,
+    AdminBannedUserMessage, AdminConfig, AdminPlugin, AnonymousPlugin, EmailPasswordPlugin,
+    SessionManagementPlugin, TwoFactorPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use better_auth_core::store::UserStore;
@@ -21,6 +22,13 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+struct CallbackAnonymousIdentity;
+#[async_trait::async_trait]
+impl better_auth::plugins::anonymous::AnonymousIdentity for CallbackAnonymousIdentity {
+    async fn email(&self) -> AuthResult<Option<String>> {
+        Ok(Some("callback-anonymous@fixture.test".into()))
+    }
+}
 struct ApplicationMetadata;
 #[async_trait::async_trait]
 impl better_auth_seaorm::SeaOrmHooks<TestSchema> for ApplicationMetadata {
@@ -41,7 +49,12 @@ struct ApplicationMessage {
 impl AdminBannedUserMessage<Model> for ApplicationMessage {
     async fn message(&self, user: &Model) -> AuthResult<String> {
         self.events.lock().await.push(json!({"profile":self.profile,"userId":user.id(),"email":user.email(),"name":user.name(),"role":user.role(),"banned":user.banned(),"banReason":user.ban_reason(),"banExpires":user.ban_expires(),"metadata":user.metadata()}));
-        if self.profile == "admin-banned-message-error"
+        if self.profile.starts_with("admin-banned-message-error")
+            && user.ban_reason() == Some("ordinary callback failure")
+        {
+            return Err(AuthError::internal("private callback failure details"));
+        }
+        if self.profile.starts_with("admin-banned-message-error")
             && user.ban_reason() == Some("server application ban")
         {
             return Err(AuthError::Upstream {
@@ -50,7 +63,7 @@ impl AdminBannedUserMessage<Model> for ApplicationMessage {
                 message: "configured message unavailable",
             });
         }
-        if self.profile == "admin-banned-message-error" {
+        if self.profile.starts_with("admin-banned-message-error") {
             return Err(AuthError::Upstream {
                 status: 400,
                 code: "APPLICATION_BAN_MESSAGE_REFUSED",
@@ -108,35 +121,49 @@ pub(super) async fn router(
 ) -> AuthResult<Router> {
     let events_log = Arc::new(Mutex::new(Vec::new()));
     let mut router = Router::new();
-    for name in ["admin-banned-message", "admin-banned-message-error"] {
+    for name in [
+        "admin-banned-message",
+        "admin-banned-message-error",
+        "admin-banned-message-error-cache",
+    ] {
         let path = format!("/__test/profiles/{name}/api/auth");
-        let config = config.clone().base_path(&path);
-        let auth = Arc::new(
-            AuthBuilder::<TestSchema>::new(config.clone())
-                .store(
-                    SeaOrmStore::<TestSchema>::new(config, database.clone())
-                        .hook(ApplicationMetadata),
-                )
-                .rate_limit(RateLimitConfig::new().enabled(false))
-                .plugin(EmailPasswordPlugin::new())
-                .plugin(SessionManagementPlugin::new())
-                .plugin(TwoFactorPlugin::new())
-                .plugin(
-                    AdminPlugin::with_config(AdminConfig {
-                        default_role: "admin".into(),
-                        allow_impersonating_admins: true,
-                        ..Default::default()
-                    })
-                    .banned_user_message_callback::<Model, _>(
-                        ApplicationMessage {
-                            profile: name,
-                            events: events_log.clone(),
-                        },
-                    ),
-                )
-                .build()
-                .await?,
-        );
+        let mut config = config.clone().base_path(&path);
+        if name.ends_with("-cache") {
+            config = config.session_cookie_cache(CookieCacheConfig {
+                enabled: true,
+                ..Default::default()
+            });
+        }
+        let builder = AuthBuilder::<TestSchema>::new(config.clone())
+            .store(
+                SeaOrmStore::<TestSchema>::new(config, database.clone()).hook(ApplicationMetadata),
+            )
+            .rate_limit(RateLimitConfig::new().enabled(false))
+            .plugin(EmailPasswordPlugin::new().enable_username(true))
+            .plugin(SessionManagementPlugin::new())
+            .plugin(TwoFactorPlugin::new())
+            .plugin(
+                AdminPlugin::with_config(AdminConfig {
+                    default_role: "admin".into(),
+                    allow_impersonating_admins: true,
+                    ..Default::default()
+                })
+                .banned_user_message_callback::<Model, _>(ApplicationMessage {
+                    profile: name,
+                    events: events_log.clone(),
+                }),
+            );
+        let builder = if name.ends_with("-cache") {
+            builder.plugin(AnonymousPlugin::with_config(
+                better_auth::plugins::anonymous::AnonymousConfig {
+                    identity: Some(Arc::new(CallbackAnonymousIdentity)),
+                    ..Default::default()
+                },
+            ))
+        } else {
+            builder
+        };
+        let auth = Arc::new(builder.build().await?);
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
     Ok(router.merge(
