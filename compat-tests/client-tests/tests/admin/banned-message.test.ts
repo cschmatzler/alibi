@@ -271,6 +271,16 @@ for (const profile of [
         foreignAfter = await state(ctx, foreign.email);
       expect(ownerAfter).toEqual(ownerBefore);
       expect(foreignAfter).toEqual(foreignBefore);
+      await ctx.resetServerState();
+      const replacement = await signup(ctx, `${profile}-target`, profile);
+      expect(replacement.email).toBe(target.email);
+      expect(replacement.userId).not.toBe(target.userId);
+      const replacementEvents = await events(ctx, replacement.email, profile);
+      expect(replacementEvents).toEqual({
+        user: { userId: replacement.userId, metadata: { supportCode: "private-fixture-code" } },
+        events: [],
+      });
+      expect((await state(ctx, replacement.email)).sessions).toHaveLength(1);
       return {
         owner: owner.result,
         target: target.result,
@@ -303,6 +313,8 @@ for (const profile of [
         ownerEvents,
         ownerAfter,
         foreignAfter,
+        replacement: replacement.result,
+        replacementEvents,
       };
     },
     ["POST /admin/ban-user", "POST /admin/set-role", "POST /admin/impersonate-user", "POST /sign-in/email"],

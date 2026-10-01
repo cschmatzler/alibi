@@ -89,7 +89,13 @@ async fn events(
         .lock()
         .await
         .iter()
-        .filter(|event| event["email"] == query.email && event["profile"] == query.profile)
+        .filter(|event| {
+            event["email"] == query.email
+                && event["profile"] == query.profile
+                && user
+                    .as_ref()
+                    .is_some_and(|user| event["userId"].as_str() == Some(user.id().as_ref()))
+        })
         .cloned()
         .collect();
     Ok(Json(
