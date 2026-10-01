@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 
-/** Read actual credential/session rows; move only the trusted verification clock. */
+/** Read actual credential/session rows and control trusted fixture clock/counter state. */
 export function passkeyFixture(database: Database) {
   return async (request: Request): Promise<Response | null> => {
     const url = new URL(request.url);
@@ -17,6 +17,11 @@ export function passkeyFixture(database: Database) {
           .query("SELECT COUNT(*) AS count FROM verification")
           .get(),
       });
+    }
+    if (url.pathname === "/__test/passkey-current-counter" && request.method === "POST") {
+      const body = await request.json() as { credentialId: string; counter: number };
+      const result = database.query('UPDATE passkey SET counter = ? WHERE "credentialID" = ?').run(body.counter, body.credentialId);
+      return Response.json({ updated: result.changes });
     }
     if (
       url.pathname === "/__test/passkey-challenge-clock" &&
