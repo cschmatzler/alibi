@@ -52,7 +52,7 @@ compatScenario("builtin social authorization retains ordered default configured 
   const after = await state(ctx);
   expect(after).toEqual(before);
   return { before, results, after };
-}, ["state"]);
+}, ["POST /sign-in/social"]);
 
 compatScenario("Discord authorization conditions JS permissions on effective bot scope and defaults prompt", async ctx => {
   const before = await state(ctx);
@@ -78,7 +78,7 @@ compatScenario("Discord authorization conditions JS permissions on effective bot
   const after = await state(ctx);
   expect(after).toEqual(before);
   return { before, results, after };
-}, ["state"]);
+}, ["POST /sign-in/social"]);
 
 compatScenario("builtin social link authorization requires a session and retains configured scope additions", async ctx => {
   const results = [];
@@ -104,7 +104,7 @@ compatScenario("builtin social link authorization requires a session and retains
     results.push({ provider, signup: ctx.snapshot(signup), before, guest: ctx.snapshot(guest), link: ctx.snapshot(link), current: ctx.snapshot(current), after });
   }
   return { results };
-}, ["state"]);
+}, ["POST /link-social"]);
 
 compatScenario("Discord callback exchanges without PKCE and preserves current foreign and replay state", async ctx => {
   const fixture = "social-discord-default";
@@ -153,4 +153,4 @@ compatScenario("Discord callback exchanges without PKCE and preserves current fo
   const foreignCurrent = await foreign.client.getSession();
   expect(foreignCurrent.data!.user.id).toBe(foreignSignup.data!.user.id);
   return { foreignSignup: ctx.snapshot(foreignSignup), foreignBefore, control, before, signin: ctx.snapshot(signin), callback, current: ctx.snapshot(current), after, replay, afterReplay, foreignAfter, foreignCurrent: ctx.snapshot(foreignCurrent) };
-}, ["state"]);
+}, ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"]);
