@@ -651,7 +651,11 @@ impl TwoFactorPlugin {
         {
             return Ok(response);
         }
-        let response = send_otp_core(req, &self.config, ctx).await?;
+        let response = match send_otp_core(req, &self.config, ctx).await {
+            Ok(response) => response,
+            Err(SendOtpError::NonpositiveLength) => return Ok(AuthResponse::new(500)),
+            Err(SendOtpError::Auth(error)) => return Err(error),
+        };
         AuthResponse::json(200, &response).map_err(AuthError::from)
     }
 
@@ -1064,11 +1068,23 @@ async fn mark_factor_verified(
     Ok(())
 }
 
+enum SendOtpError {
+    Auth(AuthError),
+    // The pinned random-string generator throws before storage or delivery.
+    NonpositiveLength,
+}
+
+impl From<AuthError> for SendOtpError {
+    fn from(error: AuthError) -> Self {
+        Self::Auth(error)
+    }
+}
+
 async fn send_otp_core(
     req: &AuthRequest,
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<StatusResponse> {
+) -> Result<StatusResponse, SendOtpError> {
     let sender = config
         .send_otp
         .as_ref()
@@ -1077,8 +1093,11 @@ async fn send_otp_core(
 
     // The upstream random-string loop produces ceil(digits) decimal characters.
     let digits = config.otp_digits;
-    if digits <= 0.0 || digits > 32768.5 || digits.is_infinite() {
-        return Err(AuthError::internal("Invalid two-factor OTP length"));
+    if digits <= 0.0 {
+        return Err(SendOtpError::NonpositiveLength);
+    }
+    if digits > 32768.5 || digits.is_infinite() {
+        return Err(AuthError::internal("Invalid two-factor OTP length").into());
     }
     let otp: String = (0..digits.ceil() as usize)
         .map(|_| char::from(b'0' + rand::thread_rng().gen_range(0..10u8)))
@@ -1092,7 +1111,7 @@ async fn send_otp_core(
     };
     let milliseconds = Utc::now().timestamp_millis() as f64 + period * 60000.0;
     if !milliseconds.is_finite() || milliseconds.abs() > 8_640_000_000_000_000.0 {
-        return Err(AuthError::internal("Invalid two-factor OTP expiry"));
+        return Err(AuthError::internal("Invalid two-factor OTP expiry").into());
     }
     let expires_at = chrono::DateTime::from_timestamp_millis(milliseconds.trunc() as i64)
         .ok_or_else(|| AuthError::internal("Invalid two-factor OTP expiry"))?;

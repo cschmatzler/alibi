@@ -95,12 +95,18 @@ pub(super) async fn router(
         "two-factor-otp-encrypted",
         "two-factor-otp-custom-hash",
         "two-factor-otp-custom-cipher",
+        "two-factor-otp-zero",
+        "two-factor-otp-negative",
     ] {
         let callback = Arc::new(Callback {
             profile: name.to_owned(),
             state: state.clone(),
         });
-        let (digits, period, attempts) = if name.ends_with("plain") {
+        let (digits, period, attempts) = if name.ends_with("zero") {
+            (0.0, 3.0, 5.0)
+        } else if name.ends_with("negative") {
+            (-1.0, 3.0, 5.0)
+        } else if name.ends_with("plain") {
             (6.0, 3.0, 5.0)
         } else if name.ends_with("encrypted") {
             (8.0, 0.0, 0.0)

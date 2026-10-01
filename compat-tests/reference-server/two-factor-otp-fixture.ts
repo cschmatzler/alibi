@@ -6,10 +6,10 @@ export function createTwoFactorOtpFixture(base:Parameters<typeof betterAuth>[0],
   const deliveries=new Map<string,{userId:string;otp:string}>(), receipts=new Map<string,Array<{phase:string;input:string}>>();
   const record=(profile:string,phase:string,input:string)=>{const values=receipts.get(profile)??[];values.push({phase,input});receipts.set(profile,values);};
   const reverse=(value:string)=>value.split("").reverse().join("");
-  const names=["two-factor-otp-plain","two-factor-otp-hashed","two-factor-otp-encrypted","two-factor-otp-custom-hash","two-factor-otp-custom-cipher"] as const;
+  const names=["two-factor-otp-plain","two-factor-otp-hashed","two-factor-otp-encrypted","two-factor-otp-custom-hash","two-factor-otp-custom-cipher","two-factor-otp-zero","two-factor-otp-negative"] as const;
   const profiles=new Map(names.map(name=>{
     const storage=name.endsWith("custom-hash")?{hash:async(input:string)=>{record(name,"hash",input);return "hash-"+reverse(input);}}:name.endsWith("custom-cipher")?{encrypt:async(input:string)=>{record(name,"encrypt",input);return "cipher-"+reverse(input);},decrypt:async(input:string)=>{record(name,"decrypt",input);return reverse(input.slice(7));}}:name.endsWith("hashed")?"hashed":name.endsWith("encrypted")?"encrypted":"plain";
-    const settings=name.endsWith("plain")?{}:name.endsWith("encrypted")?{digits:8,period:0,allowedAttempts:0}:name.endsWith("hashed")?{digits:3.5,period:0.5,allowedAttempts:2.5}:{digits:3,period:1,allowedAttempts:2};
+    const settings=name.endsWith("zero")?{digits:0}:name.endsWith("negative")?{digits:-1}:name.endsWith("plain")?{}:name.endsWith("encrypted")?{digits:8,period:0,allowedAttempts:0}:name.endsWith("hashed")?{digits:3.5,period:0.5,allowedAttempts:2.5}:{digits:3,period:1,allowedAttempts:2};
     return[name,betterAuth({...base,appName:"Fixture Auth",basePath:`/__test/profiles/${name}/api/auth`,plugins:[twoFactor({totpOptions:{disable:name.endsWith("hashed")},otpOptions:{...settings,storeOTP:storage,sendOTP:async({user,otp})=>{if(user.email)deliveries.set(user.email,{userId:user.id,otp});record(name,"send",otp);}}})]})] as const;
   }));
   return async(request:Request,url:URL):Promise<Response|undefined>=>{
