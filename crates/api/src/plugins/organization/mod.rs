@@ -8,6 +8,11 @@ pub use lifecycle::{
     OrganizationDeleteContext, OrganizationDeletionHooks, OrganizationDraftContext,
     OrganizationMemberCreatePatch, OrganizationMemberDraftContext,
 };
+pub mod invitation_acceptance_lifecycle;
+pub use invitation_acceptance_lifecycle::{
+    OrganizationInvitationAcceptanceContext, OrganizationInvitationAcceptanceHooks,
+    OrganizationInvitationAcceptedContext,
+};
 pub mod membership_policy;
 pub use membership_policy::{MembershipLimit, OrganizationMembershipLimitResolver};
 pub mod member_addition_lifecycle;
@@ -94,6 +99,10 @@ pub struct OrganizationConfig {
     /// Awaited server-only addition callbacks over the target and raw organization.
     #[config(default = None, skip)]
     pub member_addition_hooks: Option<std::sync::Arc<dyn OrganizationMemberAdditionHooks>>,
+    /// Awaited acceptance callbacks around conditional claim and membership transaction.
+    #[config(default = None, skip)]
+    pub invitation_acceptance_hooks:
+        Option<std::sync::Arc<dyn OrganizationInvitationAcceptanceHooks>>,
     /// Admission policy. Absent or falsy fixed numbers use 100; resolver results
     /// retain JavaScript Number comparison semantics without a second fallback.
     /// Read pages use only a fixed number, and never call an admission resolver.

@@ -88,12 +88,12 @@ fn apply_member_sort(
     }
 }
 
-#[async_trait]
-impl<S> MemberStore for SeaOrmStore<S>
-where
-    S: AuthSchema + Send + Sync,
-{
-    async fn create_member(&self, member: CreateMember) -> AuthResult<Member> {
+impl<S: AuthSchema> SeaOrmStore<S> {
+    pub(super) async fn create_member_with_connection<C: sea_orm::ConnectionTrait>(
+        &self,
+        connection: &C,
+        member: CreateMember,
+    ) -> AuthResult<Member> {
         ActiveModel {
             id: Set(Uuid::new_v4().to_string()),
             organization_id: Set(member.organization_id),
@@ -101,10 +101,21 @@ where
             role: Set(member.role),
             created_at: Set(Utc::now()),
         }
-        .insert(self.connection())
+        .insert(connection)
         .await
         .map(|model| Member::from(&model))
         .map_err(map_db_err)
+    }
+}
+
+#[async_trait]
+impl<S> MemberStore for SeaOrmStore<S>
+where
+    S: AuthSchema + Send + Sync,
+{
+    async fn create_member(&self, member: CreateMember) -> AuthResult<Member> {
+        self.create_member_with_connection(self.connection(), member)
+            .await
     }
 
     async fn get_member(&self, organization_id: &str, user_id: &str) -> AuthResult<Option<Member>> {

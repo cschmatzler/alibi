@@ -379,6 +379,16 @@ impl<S: AuthSchema> InvitationStore for PluginStore<S> {
     ) -> AuthResult<Invitation> {
         self.inner.update_invitation_status(id, status).await
     }
+    async fn update_invitation_status_if_status(
+        &self,
+        id: &str,
+        expected: InvitationStatus,
+        status: InvitationStatus,
+    ) -> AuthResult<Option<Invitation>> {
+        self.inner
+            .update_invitation_status_if_status(id, expected, status)
+            .await
+    }
     async fn list_organization_invitations(&self, org_id: &str) -> AuthResult<Vec<Invitation>> {
         self.inner.list_organization_invitations(org_id).await
     }
@@ -720,6 +730,40 @@ struct PluginTransaction<'a, S: AuthSchema> {
 
 #[async_trait]
 impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
+    async fn get_team(
+        &self,
+        organization_id: &str,
+        team_id: &str,
+    ) -> AuthResult<Option<crate::types::Team>> {
+        self.inner.get_team(organization_id, team_id).await
+    }
+    async fn add_team_member(
+        &self,
+        team_id: &str,
+        user_id: &str,
+        maximum: Option<usize>,
+    ) -> AuthResult<crate::types::AddTeamMemberResult> {
+        self.inner.add_team_member(team_id, user_id, maximum).await
+    }
+    async fn create_member(&self, member: CreateMember) -> AuthResult<Member> {
+        self.inner.create_member(member).await
+    }
+    async fn update_session_active_team(
+        &self,
+        token: &str,
+        team_id: Option<&str>,
+    ) -> AuthResult<S::Session> {
+        self.inner.update_session_active_team(token, team_id).await
+    }
+    async fn update_session_active_organization(
+        &self,
+        token: &str,
+        organization_id: Option<&str>,
+    ) -> AuthResult<S::Session> {
+        self.inner
+            .update_session_active_organization(token, organization_id)
+            .await
+    }
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {
         self.inner.get_user_by_id(id).await
     }

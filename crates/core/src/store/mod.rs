@@ -36,6 +36,51 @@ pub type TransactionWork<S> =
 
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
+    /// Read a team within the authorized organization through this transaction.
+    async fn get_team(
+        &self,
+        _organization_id: &str,
+        _team_id: &str,
+    ) -> AuthResult<Option<crate::types::Team>> {
+        Err(AuthError::NotImplemented(
+            "Team lookup in a transaction is not supported by this store".into(),
+        ))
+    }
+    /// Add an idempotent team membership under the same transaction's capacity check.
+    async fn add_team_member(
+        &self,
+        _team_id: &str,
+        _user_id: &str,
+        _maximum: Option<usize>,
+    ) -> AuthResult<crate::types::AddTeamMemberResult> {
+        Err(AuthError::NotImplemented(
+            "Team admission in a transaction is not supported by this store".into(),
+        ))
+    }
+    async fn create_member(&self, _member: CreateMember) -> AuthResult<Member> {
+        Err(AuthError::NotImplemented(
+            "Member creation in a transaction is not supported by this store".into(),
+        ))
+    }
+    /// Update the already authenticated token through the transaction connection.
+    async fn update_session_active_team(
+        &self,
+        _token: &str,
+        _team_id: Option<&str>,
+    ) -> AuthResult<S::Session> {
+        Err(AuthError::NotImplemented(
+            "Active team updates in a transaction are not supported by this store".into(),
+        ))
+    }
+    async fn update_session_active_organization(
+        &self,
+        _token: &str,
+        _organization_id: Option<&str>,
+    ) -> AuthResult<S::Session> {
+        Err(AuthError::NotImplemented(
+            "Active organization updates in a transaction are not supported by this store".into(),
+        ))
+    }
     /// Read an existing registration owner through this transaction's connection.
     async fn get_user_by_id(&self, _id: &str) -> AuthResult<Option<S::User>> {
         Err(AuthError::NotImplemented(
@@ -423,6 +468,19 @@ pub trait InvitationStore: Send + Sync {
         id: &str,
         status: InvitationStatus,
     ) -> AuthResult<Invitation>;
+    /// Atomically change only an invitation still at the expected status and return
+    /// the actual updated row. A mismatch or missing row returns None. This write
+    /// commits independently of a later membership transaction.
+    async fn update_invitation_status_if_status(
+        &self,
+        _id: &str,
+        _expected: InvitationStatus,
+        _status: InvitationStatus,
+    ) -> AuthResult<Option<Invitation>> {
+        Err(AuthError::NotImplemented(
+            "Conditional invitation updates are not supported by this store".into(),
+        ))
+    }
     async fn list_organization_invitations(&self, org_id: &str) -> AuthResult<Vec<Invitation>>;
     /// Count still-pending, unexpired invitations for an organization.
     async fn count_pending_organization_invitations(&self, org_id: &str) -> AuthResult<i64>;

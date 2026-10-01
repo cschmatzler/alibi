@@ -9,6 +9,8 @@ mod device_code_user_reference;
 mod device_codes;
 pub mod entities;
 mod identity_fields;
+#[cfg(test)]
+mod invitation_staging_tests;
 mod invitations;
 mod jwks;
 #[cfg(test)]
@@ -161,6 +163,59 @@ where
     S::Session: SeaOrmSessionModel,
     S::Verification: SeaOrmVerificationModel,
 {
+    async fn get_team(
+        &self,
+        organization_id: &str,
+        team_id: &str,
+    ) -> AuthResult<Option<better_auth_core::types::Team>> {
+        self.store
+            .get_team_with_connection(self.tx, Some(organization_id), team_id)
+            .await
+    }
+    async fn add_team_member(
+        &self,
+        team_id: &str,
+        user_id: &str,
+        maximum: Option<usize>,
+    ) -> AuthResult<better_auth_core::types::AddTeamMemberResult> {
+        self.store
+            .add_team_member_in_tx(self.tx, team_id, user_id, maximum)
+            .await
+    }
+    async fn create_member(
+        &self,
+        member: better_auth_core::CreateMember,
+    ) -> AuthResult<better_auth_core::types::Member> {
+        self.store
+            .create_member_with_connection(self.tx, member)
+            .await
+    }
+    async fn update_session_active_team(
+        &self,
+        token: &str,
+        team_id: Option<&str>,
+    ) -> AuthResult<S::Session> {
+        self.store
+            .update_session_scope_with_connection(
+                self.tx,
+                token,
+                sessions::SessionScope::Team(team_id),
+            )
+            .await
+    }
+    async fn update_session_active_organization(
+        &self,
+        token: &str,
+        organization_id: Option<&str>,
+    ) -> AuthResult<S::Session> {
+        self.store
+            .update_session_scope_with_connection(
+                self.tx,
+                token,
+                sessions::SessionScope::Organization(organization_id),
+            )
+            .await
+    }
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {
         use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
         let id = S::User::parse_id(id)?;

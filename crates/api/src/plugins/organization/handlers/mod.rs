@@ -144,3 +144,5 @@ pub async fn handle_has_permission(
     let response = has_permission_core(&body, &user, &session, config, ctx).await?;
     Ok(AuthResponse::json(200, &response)?)
 }
+
+pub(crate) mod invitation_acceptance;

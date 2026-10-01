@@ -8,7 +8,7 @@ Wider pinned parity work follows these priorities. Excluded external integration
 packages will receive no implementation work. Prepared unmerged work remains
 separate from delivered capabilities.
 
-This snapshot describes merged `origin/master` through PR #113 (including encrypted cookies, organization/member hooks and trusted member addition, observed API-key cleanup, configured OTP background delivery and Source passkey authentication policies),
+This snapshot describes merged `origin/master` through PR #116 (including encrypted cookies, organization/member hooks, physical duplicate memberships, observed API-key cleanup, configured OTP background delivery, raw-none passkey decoding and admin impersonation authority),
 not the older, dirty coordinator worktree. The reference remains Better Auth
 1.7.6. The [upstream audit](audits/upstream-target.md) records source locations
 and wider boundaries. An audit gap means equivalence has not been established;
@@ -73,18 +73,18 @@ and configuration branches that have not been fully implemented or proved.
   enforcement across new login methods and impersonation variants.
 - **Passkeys:** freshness, single-use/overlapping ceremonies and callback-controlled
   registration ownership/name/session behavior are merged PRs #72–73. A reviewed snapshot repair advances verified counters without changing public registration facts. Remaining
-  work includes registration UV/attestation policy (reviewed integration pending), callback-deleted credential handling, advertised EdDSA, extensions, origin/RP configurations
+  work includes callback-deleted credential handling, additional attestation formats, malformed or exotic key encoding, extensions, origin/RP configurations
   and custom challenge cookies.
 - **API keys:** custom getter/validator/generator/default-permission callbacks and
   trusted forced expired-key cleanup are merged PRs #70–71. Automatic background
-  individual-row deferral (reviewed integration pending), secondary storage/fallback/deferred updates and
+  individual-row deferral is merged; secondary storage/fallback/deferred updates and
   further quota/organization interactions remain work.
 - **Email OTP, magic links, JWT and one-time tokens:** remaining custom schema,
   callback, rate-limit, remote signing, cache/storage and secret/configuration
   branches; implemented default flows do not prove every option.
 - **OAuth providers:** dedicated built-in defaults/profile mapping are present
-  for Google, GitHub and Discord; the other 33 built-in providers remain to be
-  accounted for. Generic configuration is possible but does not prove their
+  for Google, GitHub and Discord; GitLab is reviewed PR #123 awaiting the
+  integrated gate. The other 32 built-in providers remain to be accounted for. Generic configuration is possible but does not prove their
   upstream defaults. Discovery, ID-token verification, nonce/audience checks,
   refresh, logout and provider-specific configuration need further work/evidence.
 - **Cross-cutting hooks/security:** dynamic base URL/origin/provider policies,
@@ -171,3 +171,14 @@ two Chromium / 22 and 78.550841% source lines (29,433 / 37,470). PRs #96–113 a
 merged. Physical duplicate organization memberships, installed-index constraint
 preservation and measured raw-none CBOR decoder differences are active next
 priority slices. Those are not complete merely because the existing suite passes.
+
+
+Latest delivered master `a3a9f568` equals validated `f2e16ec5`: 543 SDK / 36,788
+assertions, 42 harness / 344, two Chromium / 22 and 78.788518% source lines
+(29,864 / 37,904). PRs #114–116 are merged. Reviewed PRs #117–124 remain pending
+their combined canonical gate; focused proof does not substitute for that gate.
+An attempted 558-scenario run passed 557 and exposed six-digit account-list
+timestamp parsing by the official client. The production repair is in progress;
+the failed run is retained and no comparison tolerance changes. Invitation
+staging, GitLab, core callback origins and membership policy are integrated next.
+Anonymous authentication and cookie-cache/encrypted-token contracts continue.

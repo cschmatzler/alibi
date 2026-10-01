@@ -1188,3 +1188,153 @@ async fn nullable_ban_expiry_patch_preserves_ban_and_other_principals()
     .await?;
     Ok(())
 }
+
+/// Numeric application session IDs and a manual model without active-team support
+/// must update their own columns, then fail closed and roll back unsupported scope.
+#[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "public custom-schema test asserts actual persisted state and propagates setup failures"
+)]
+async fn invitation_transaction_uses_manual_numeric_session_columns_and_rolls_back_missing_team_binding()
+-> Result<(), Box<dyn std::error::Error>> {
+    use better_auth_core::store::{
+        MemberStore, OrganizationStore, SessionStore, TeamStore, UserStore, transaction,
+    };
+    use better_auth_core::{CreateMember, CreateOrganization, CreateTeam};
+    let database = test_database().await;
+    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
+    let store = SeaOrmStore::<LegacySchema>::new(test_config(), database.clone());
+    let owner = store
+        .create_user(CreateUser::new().with_email("manual-invitation-owner@example.test"))
+        .await?;
+    let other = store
+        .create_user(CreateUser::new().with_email("manual-invitation-peer@example.test"))
+        .await?;
+    let org = store
+        .create_organization(CreateOrganization::new(
+            "Manual scope",
+            "manual-invitation-scope",
+        ))
+        .await?;
+    let team = store
+        .create_team(CreateTeam {
+            name: "Manual team".into(),
+            organization_id: org.id.clone(),
+            updated_at: None,
+        })
+        .await?;
+    let session = store
+        .create_session(CreateSession {
+            user_id: owner.id().into_owned(),
+            token: None,
+            expires_at: Utc::now() + chrono::Duration::hours(1),
+            ip_address: None,
+            user_agent: None,
+            impersonated_by: None,
+            active_organization_id: None,
+            active_team_id: None,
+            additional_fields: Default::default(),
+        })
+        .await?;
+    let peer = store
+        .create_session(CreateSession {
+            user_id: other.id().into_owned(),
+            token: None,
+            expires_at: Utc::now() + chrono::Duration::hours(1),
+            ip_address: None,
+            user_agent: None,
+            impersonated_by: None,
+            active_organization_id: None,
+            active_team_id: None,
+            additional_fields: Default::default(),
+        })
+        .await?;
+    let (token, organization_id, user_id) = (
+        session.token.clone(),
+        org.id.clone(),
+        owner.id().into_owned(),
+    );
+    let committed = transaction(&store, move |tx| {
+        Box::pin(async move {
+            let member = tx
+                .create_member(CreateMember {
+                    organization_id: organization_id.clone(),
+                    user_id,
+                    role: "member".into(),
+                })
+                .await?;
+            let selected = tx
+                .update_session_active_organization(&token, Some(&organization_id))
+                .await?;
+            assert!(selected.id > 0);
+            Ok(member)
+        })
+    })
+    .await?;
+    assert_eq!(committed.user_id, owner.id().as_ref());
+    let before = store
+        .get_session(&session.token)
+        .await?
+        .ok_or("missing manual session")?;
+    assert_eq!(before.id, session.id);
+    assert_eq!(
+        before.active_organization_id.as_deref(),
+        Some(org.id.as_str())
+    );
+    assert_eq!(
+        serde_json::to_value(
+            store
+                .get_session(&peer.token)
+                .await?
+                .ok_or("missing peer")?
+        )?,
+        serde_json::to_value(&peer)?
+    );
+    let (token, team_id, user_id, organization_id) = (
+        session.token.clone(),
+        team.id.clone(),
+        owner.id().into_owned(),
+        org.id.clone(),
+    );
+    let rejected: AuthResult<()> = transaction(&store, move |tx| {
+        Box::pin(async move {
+            assert!(tx.get_team(&organization_id, &team_id).await?.is_some());
+            let _ = tx.add_team_member(&team_id, &user_id, Some(1)).await?;
+            let _ = tx
+                .update_session_active_team(&token, Some(&team_id))
+                .await?;
+            Ok(())
+        })
+    })
+    .await;
+    assert!(
+        matches!(rejected, Err(AuthError::Internal(message)) if message == "the session schema has no active-team field")
+    );
+    assert!(
+        store
+            .get_team_member(&team.id, &owner.id())
+            .await?
+            .is_none()
+    );
+    assert_eq!(store.list_organization_members(&org.id).await?.len(), 1);
+    assert_eq!(
+        serde_json::to_value(
+            store
+                .get_session(&session.token)
+                .await?
+                .ok_or("missing rolled-back session")?
+        )?,
+        serde_json::to_value(before)?
+    );
+    assert_eq!(
+        serde_json::to_value(
+            store
+                .get_session(&peer.token)
+                .await?
+                .ok_or("missing unchanged peer")?
+        )?,
+        serde_json::to_value(peer)?
+    );
+    Ok(())
+}
