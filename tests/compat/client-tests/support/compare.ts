@@ -167,10 +167,17 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       && (value.remaining === null || typeof value.remaining === "number");
   }
 
+  // These are observations from the actual SQLite expressions, not another
+  // plaintext issuance. Every such candidate is independently validated below;
+  // adding these fields never grants an unchecked identity exception.
+  function sqliteApiKeyReceipt(value: Record<string, unknown>): boolean {
+    return apiKeyRow(value) && (Object.hasOwn(value, "startHex") || Object.hasOwn(value, "startType"));
+  }
+
   function issuedApiKeys(value: unknown, path = "", result = new Map<string, string>()): Map<string, string> {
     if (Array.isArray(value)) value.forEach((child, index) => issuedApiKeys(child, path ? `${path}.${index}` : `${index}`, result));
     else if (record(value) && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path) && !traceShape(path)) {
-      if (apiKeyRow(value) && typeof value.id === "string" && typeof value.key === "string") {
+      if (apiKeyRow(value) && !sqliteApiKeyReceipt(value) && typeof value.id === "string" && typeof value.key === "string") {
         const previous = result.get(value.id);
         if (previous !== undefined && previous !== value.key) fail(path, "API key changed for a persisted row");
         result.set(value.id, value.key);
@@ -180,6 +187,69 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     return result;
   }
   const leftApiKeys = issuedApiKeys(normalizedLeft), rightApiKeys = issuedApiKeys(normalizedRight);
+
+  function codeUnitBytes(unit: number): number[] {
+    if (unit <= 0x7f) return [unit];
+    if (unit <= 0x7ff) return [0xc0 | (unit >> 6), 0x80 | (unit & 0x3f)];
+    return [0xe0 | (unit >> 12), 0x80 | ((unit >> 6) & 0x3f), 0x80 | (unit & 0x3f)];
+  }
+  // Find an actual UTF-16 prefix whose WTF-8 encoding equals the persisted
+  // bytes. A cut between a surrogate pair encodes its high code unit as three
+  // bytes; a complete pair uses ordinary UTF-8. No replacement text is accepted
+  // without this derivation and the exact database readback.
+  function utf16PrefixUnits(key: string, bytes: Buffer): number | undefined {
+    if (!bytes.length) return 0;
+    const prefix: number[] = [];
+    for (let index = 0; index < key.length; index++) {
+      const unit = key.charCodeAt(index), next = key.charCodeAt(index + 1);
+      if (unit >= 0xd800 && unit <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
+        if (prefix.length + 3 === bytes.length && Buffer.from([...prefix, ...codeUnitBytes(unit)]).equals(bytes)) return index + 1;
+        prefix.push(...Buffer.from(key.substring(index, index + 2)));
+        index++;
+      } else prefix.push(...codeUnitBytes(unit));
+      if (prefix.length === bytes.length && Buffer.from(prefix).equals(bytes)) return index + 1;
+      if (prefix.length > bytes.length) return;
+    }
+  }
+  type SqliteApiKey = { key: string; mode: "plain" | "hashed"; start: string | null; units: number | null };
+  function sqliteApiKeys(value: unknown, issued: ReadonlyMap<string, string>, path = "", result = new Map<string, SqliteApiKey[]>()): Map<string, SqliteApiKey[]> {
+    if (Array.isArray(value)) value.forEach((child, index) => sqliteApiKeys(child, issued, path ? `${path}.${index}` : `${index}`, result));
+    else if (record(value) && !/(?:^|\.)(?:metadata|additionalFields|custom|applicationData)(?:\.|$)/.test(path) && !traceShape(path)) {
+      if (sqliteApiKeyReceipt(value)) {
+        const plaintext = typeof value.id === "string" ? issued.get(value.id) : undefined;
+        const mode = plaintext !== undefined && value.key === plaintext ? "plain"
+          : plaintext !== undefined && value.key === createHash("sha256").update(plaintext).digest("base64url") ? "hashed" : undefined;
+        if (mode === undefined) fail(`${path}.key`, "SQLite API-key storage is not derived from its observed issuance");
+        let units: number | null | undefined;
+        if (value.startType !== "text" && value.startType !== "null") fail(`${path}.startType`, "SQLite API-key storage type is neither text nor null");
+        if (value.startType === "null" && value.start === null && value.startHex === "") units = null;
+        else if (value.startType === "text" && typeof value.start === "string" && typeof value.startHex === "string" && /^(?:[0-9A-Fa-f]{2})*$/.test(value.startHex)) {
+          const bytes = Buffer.from(value.startHex, "hex");
+          if (bytes.toString("utf8") !== value.start) fail(`${path}.start`, "SQLite API-key text readback disagrees with its actual bytes");
+          else if (plaintext !== undefined) units = utf16PrefixUnits(plaintext, bytes);
+        }
+        if (units === undefined) fail(`${path}.startHex`, "SQLite API-key bytes are not an actual UTF-16 credential prefix");
+        if (mode !== undefined && units !== undefined && typeof value.id === "string" && typeof value.key === "string" && (typeof value.start === "string" || value.start === null)) {
+          const receipts = result.get(value.id) ?? [];
+          receipts.push({ key: value.key, mode, start: value.start, units }); result.set(value.id, receipts);
+        }
+      }
+      for (const [key, child] of Object.entries(value)) sqliteApiKeys(child, issued, path ? `${path}.${key}` : key, result);
+    }
+    return result;
+  }
+  const leftSqliteApiKeys = sqliteApiKeys(normalizedLeft, leftApiKeys), rightSqliteApiKeys = sqliteApiKeys(normalizedRight, rightApiKeys);
+  function sqliteStorage(value: Record<string, unknown>, receipts: ReadonlyMap<string, SqliteApiKey[]>): SqliteApiKey | undefined {
+    return typeof value.id === "string" ? receipts.get(value.id)?.find(row => row.key === value.key && row.start === value.start) : undefined;
+  }
+  function observedPrefixUnits(value: Record<string, unknown>, plaintext: string, receipts: ReadonlyMap<string, SqliteApiKey[]>): number | undefined {
+    if (typeof value.start !== "string") return;
+    if (typeof value.id === "string") {
+      const receipt = receipts.get(value.id)?.find(row => row.start === value.start);
+      if (receipt && receipt.units !== null) return receipt.units;
+    }
+    return plaintext.startsWith(value.start) ? value.start.length : undefined;
+  }
 
   function entityValues(value:unknown,result=new Set<string>()):Set<string> {
     if (Array.isArray(value)) for (const child of value) entityValues(child,result);
@@ -579,8 +649,9 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       const inApplicationData=applicationData || jwtPayload || jwtClaims || key === "metadata" || key === "additionalFields";
       const computedLifetime = !inApplicationData && !traceShape(path) && sessionLifetime(a,b,path);
       const apiKey = !inApplicationData && !traceShape(path) && apiKeyRow(a) && apiKeyRow(b);
-      const issuedLeft = typeof a.key === "string" ? a.key : typeof a.id === "string" ? leftApiKeys.get(a.id) : undefined;
-      const issuedRight = typeof b.key === "string" ? b.key : typeof b.id === "string" ? rightApiKeys.get(b.id) : undefined;
+      const sqliteApiKey = apiKey && (sqliteApiKeyReceipt(a) || sqliteApiKeyReceipt(b));
+      const issuedLeft = !sqliteApiKey && typeof a.key === "string" ? a.key : typeof a.id === "string" ? leftApiKeys.get(a.id) : undefined;
+      const issuedRight = !sqliteApiKey && typeof b.key === "string" ? b.key : typeof b.id === "string" ? rightApiKeys.get(b.id) : undefined;
       // User claims retain literal key-shaped content; only public key material carries key entropy.
       const jwk=!inApplicationData && typeof a.kty==="string" && typeof b.kty==="string" && ["EC","OKP","RSA"].includes(a.kty) && ["EC","OKP","RSA"].includes(b.kty);
       const inClock=(date:unknown,start:number,end:number|undefined)=>typeof date==="number" && Number.isInteger(date) && date>=Math.floor(start/1000)-1 && date<=Math.ceil((end ?? start)/1000)+1;
@@ -621,6 +692,14 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           if (!/^[A-Za-z0-9_-]+$/.test(leftMaterial) || !/^[A-Za-z0-9_-]+$/.test(rightMaterial) || Buffer.from(leftMaterial,"base64url").length!==Buffer.from(rightMaterial,"base64url").length) fail(childPath,"JWK key encoding or size differs");
           identity(leftMaterial,rightMaterial,childPath,`jwk:${childKey}`);
         }
+        else if (sqliteApiKey && childKey === "key") {
+          const leftStorage = sqliteStorage(a, leftSqliteApiKeys), rightStorage = sqliteStorage(b, rightSqliteApiKeys);
+          if (!leftStorage || !rightStorage || issuedLeft === undefined || issuedRight === undefined) fail(childPath, "SQLite API-key lacks independently validated issuance and storage");
+          else {
+            if (leftStorage.mode !== rightStorage.mode) fail(childPath, "SQLite API-key plaintext-versus-hashed storage differs");
+            identity(issuedLeft, issuedRight, childPath, "api-key");
+          }
+        }
         else if (apiKey && childKey === "key" && typeof a.key === "string" && typeof b.key === "string") {
           if (a.key.length !== b.key.length) fail(childPath, "API key length differs");
           // Application generators own the full key and need not prepend prefix.
@@ -632,7 +711,8 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           if (a.start.length !== b.start.length) fail(childPath, "API key stored-prefix length differs");
           if (issuedLeft === undefined || issuedRight === undefined) fail(childPath, "API key stored-prefix lacks observed issuance");
           else {
-            if (!issuedLeft.startsWith(a.start) || !issuedRight.startsWith(b.start)) fail(childPath, "API key stored-prefix relationship differs");
+            const leftUnits = observedPrefixUnits(a, issuedLeft, leftSqliteApiKeys), rightUnits = observedPrefixUnits(b, issuedRight, rightSqliteApiKeys);
+            if (leftUnits === undefined || rightUnits === undefined || leftUnits !== rightUnits) fail(childPath, "API key stored-prefix relationship differs");
             identity(issuedLeft, issuedRight, childPath, "api-key");
           }
         }
