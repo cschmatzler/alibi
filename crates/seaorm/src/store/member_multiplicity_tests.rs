@@ -336,3 +336,166 @@ async fn independent_connections_admit_distinct_member_ids_for_the_same_pair() -
     std::fs::remove_file(path)?;
     Ok(())
 }
+
+#[tokio::test]
+async fn installed_pair_upgrade_preserves_dependent_foreign_key_then_retries_after_app_id_migration()
+-> TestResult {
+    let db = Database::connect("sqlite::memory:").await?;
+    let prior = AuthMigrator::migrations()
+        .iter()
+        .take_while(|migration| migration.name() != UPGRADE)
+        .count();
+    AuthMigrator::up(&db, Some(u32::try_from(prior)?)).await?;
+    let store = SeaOrmStore::<BundledSchema>::new(
+        AuthConfig::new("dependent-member-pair-upgrade-secret"),
+        db.clone(),
+    );
+    let user = store
+        .create_user(CreateUser::new().with_email("pair-owner@app-ref.test"))
+        .await?;
+    let foreign = store
+        .create_user(CreateUser::new().with_email("pair-peer@app-ref.test"))
+        .await?;
+    let org = store
+        .create_organization(CreateOrganization::new("Owned", "dependent-pair-owned"))
+        .await?;
+    let other = store
+        .create_organization(CreateOrganization::new("Foreign", "dependent-pair-foreign"))
+        .await?;
+    let member = store
+        .create_member(CreateMember::new(&org.id, &user.id, "owner"))
+        .await?;
+    let peer = store
+        .create_member(CreateMember::new(&other.id, &foreign.id, "member"))
+        .await?;
+    let _ = db.execute_unprepared("CREATE TABLE \"app \"\"pair\"\" refs\"(org TEXT NOT NULL,user TEXT NOT NULL,note TEXT NOT NULL,FOREIGN KEY(org,user) REFERENCES member(organization_id,user_id))").await?;
+    for (organization_id, user_id, note) in [
+        (&org.id, &user.id, "owned,bytes"),
+        (&other.id, &foreign.id, "peer'bytes"),
+    ] {
+        let _ = db
+            .execute_raw(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                "INSERT INTO \"app \"\"pair\"\" refs\" VALUES(?,?,?)",
+                [
+                    organization_id.clone().into(),
+                    user_id.clone().into(),
+                    note.into(),
+                ],
+            ))
+            .await?;
+    }
+    let schema_sql = "SELECT json_group_array(json_object('type',type,'name',name,'table',tbl_name,'sql',sql)) AS value FROM (SELECT * FROM sqlite_schema ORDER BY type,name)";
+    let members_sql = "SELECT json_group_array(json_object('rowid',rowid,'id',id,'org',organization_id,'user',user_id,'role',role,'created',created_at)) AS value FROM (SELECT rowid,* FROM member ORDER BY rowid)";
+    let app_sql = "SELECT json_group_array(json_object('rowid',rowid,'org',org,'user',user,'note',note)) AS value FROM (SELECT rowid,* FROM \"app \"\"pair\"\" refs\" ORDER BY rowid)";
+    let ledger_sql = "SELECT json_group_array(json_object('version',version,'applied',applied_at)) AS value FROM (SELECT * FROM better_auth_migrations ORDER BY version)";
+    let before = (
+        scalar(&db, schema_sql).await?,
+        scalar(&db, members_sql).await?,
+        scalar(&db, app_sql).await?,
+        scalar(&db, ledger_sql).await?,
+    );
+    let owners_before = serde_json::to_value((&user, &foreign, &org, &other, &member, &peer))?;
+    assert!(
+        db.query_all_raw(Statement::from_string(
+            DbBackend::Sqlite,
+            "PRAGMA foreign_key_check"
+        ))
+        .await?
+        .is_empty()
+    );
+    let upgrade = AuthMigrator::up(&db, None).await;
+    // On the former production this checks the actual broken constraint, rather
+    // than failing only because a migration unexpectedly returned success.
+    let integrity = db
+        .query_all_raw(Statement::from_string(
+            DbBackend::Sqlite,
+            "PRAGMA foreign_key_check",
+        ))
+        .await;
+    let deletion = store.delete_member(&member.id).await;
+    assert!(
+        deletion.is_err(),
+        "the actual referenced member must stay protected"
+    );
+    assert!(
+        integrity.is_ok(),
+        "upgrade invalidated the actual application foreign key: {integrity:?}; member delete: {deletion:?}"
+    );
+    assert!(integrity?.is_empty());
+    assert!(
+        matches!(upgrade, Err(sea_orm::DbErr::Migration(_))),
+        "a dependent application foreign key must stop the upgrade with its explicit migration error: {upgrade:?}"
+    );
+    assert_eq!(
+        (
+            scalar(&db, schema_sql).await?,
+            scalar(&db, members_sql).await?,
+            scalar(&db, app_sql).await?,
+            scalar(&db, ledger_sql).await?
+        ),
+        before
+    );
+    assert_eq!(
+        serde_json::to_value((
+            store
+                .get_user_by_id(&user.id)
+                .await?
+                .ok_or("owner missing")?,
+            store
+                .get_user_by_id(&foreign.id)
+                .await?
+                .ok_or("peer user missing")?,
+            store
+                .get_organization_by_id(&org.id)
+                .await?
+                .ok_or("owned organization missing")?,
+            store
+                .get_organization_by_id(&other.id)
+                .await?
+                .ok_or("peer organization missing")?,
+            store
+                .get_member_by_id(&member.id)
+                .await?
+                .ok_or("owned member missing")?,
+            store
+                .get_member_by_id(&peer.id)
+                .await?
+                .ok_or("peer member missing")?
+        ))?,
+        owners_before
+    );
+    assert!(
+        store
+            .create_member(CreateMember::new(&org.id, &user.id, "admin"))
+            .await
+            .is_err()
+    );
+    // Only the application changes its reference contract, preserving both
+    // actual rows and their byte payloads while moving to the member's identity.
+    let _ = db.execute_unprepared("CREATE TABLE app_member_ids(member_id TEXT NOT NULL REFERENCES member(id),note TEXT NOT NULL); INSERT INTO app_member_ids SELECT m.id,a.note FROM \"app \"\"pair\"\" refs\" a JOIN member m ON m.organization_id=a.org AND m.user_id=a.user; DROP TABLE \"app \"\"pair\"\" refs\"").await?;
+    let app_ids_sql = "SELECT json_group_array(json_object('member',member_id,'note',note)) AS value FROM (SELECT * FROM app_member_ids ORDER BY rowid)";
+    let migrated_app = scalar(&db, app_ids_sql).await?;
+    AuthMigrator::up(&db, None).await?;
+    assert_eq!(scalar(&db, app_ids_sql).await?, migrated_app);
+    assert_eq!(scalar(&db, members_sql).await?, before.1);
+    assert!(
+        db.query_all_raw(Statement::from_string(
+            DbBackend::Sqlite,
+            "PRAGMA foreign_key_check"
+        ))
+        .await?
+        .is_empty()
+    );
+    let duplicate = store
+        .create_member(CreateMember::new(&org.id, &user.id, "admin"))
+        .await?;
+    assert_ne!(duplicate.id, member.id);
+    assert_eq!(store.count_organization_members(&org.id).await?, 2);
+    assert_eq!(
+        serde_json::to_value(store.get_member_by_id(&peer.id).await?)?,
+        serde_json::to_value(Some(peer))?
+    );
+    assert_eq!(scalar(&db, app_ids_sql).await?, migrated_app);
+    Ok(())
+}

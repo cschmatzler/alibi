@@ -28,7 +28,9 @@ The appended `m20261001_000015_member_pair_multiplicity` migration drops only
 the bundled `idx_member_org_user_unique` index when present. The recorded initial
 schema remains unchanged. Fresh databases run the same appended upgrade as
 populated installations. No rows are rebuilt or deduplicated, and application
-constraints/indexes remain application-owned. There is no automatic downgrade
+constraints/indexes remain application-owned. SQLite upgrades first refuse an
+incoming application foreign key over the organization/user pair, as detailed
+below. There is no automatic downgrade
 that invents a choice of which duplicate rows to delete.
 
 `OrganizationStore::list_user_organizations` keeps its existing public return
@@ -96,3 +98,43 @@ accept/reset, rollback failures, pre-transaction capacity checks and lifecycle
 hooks remain a separate capability. The server-only add-member duplicate-hook
 SDK extension follows its independently frozen helper dependency; this storage
 prerequisite does not claim that additional end-to-end evidence yet.
+
+## Dependent application foreign keys
+
+Independent review found a real installed-schema preservation failure in frozen
+0d0ba40c: SQLite permits dropping the old unique pair index even when an
+application foreign key depends on it. The drop succeeds, but subsequent
+`foreign_key_check` and real member deletion fail with foreign-key mismatch.
+The native prior-code reproduction is retained in
+`/tmp/organization-member-pair-fk-guard-before.log`; both operations reach the
+actual database. This is not a hypothetical constraint or a mocked migration.
+
+Before dropping a present index, the SQLite migration now reads actual catalog
+tables, passes each name as a bound value to `pragma_foreign_key_list`, groups
+references by their FK identity/sequence and detects the two referenced pair
+columns in either order. Quoted names and case-insensitive parent names remain
+data. It returns an explicit migration error before any index, row or ledger
+write. The application must migrate its reference to the member ID first; this
+migration does not drop its FK, rewrite its records or choose duplicate rows.
+The existing absent-index no-op and fresh/default migrations remain unchanged.
+
+The additional native owner creates two actual organization/user/member pairs
+and a quoted-name application table with real pair references and byte payloads.
+On refusal, complete schema, member rowids/text/dates, app records, migration
+ledger and full owner/peer records match their prior snapshots. The real FK
+check remains valid and the referenced member still rejects deletion. An actual
+application-owned change preserves both payloads while moving to member-ID
+references; upgrade retry then succeeds, permits a duplicate member insert and
+retains the peer and app records. The reference guard deliberately refuses pair
+references even if another application-owned unique index could also support
+them; arbitrary app constraint redesign remains application-owned.
+
+Focused storage family passes 61 native tests in
+`/tmp/organization-member-pair-fk-guard-seaorm-final.log`. Production strict Clippy passes in
+`/tmp/organization-member-pair-fk-guard-clippy-final.log`; formatting and diff
+checks pass on the isolated guard tree.
+PostgreSQL/MySQL dependency rejection relies on their existing DROP without
+CASCADE behavior and is not runtime proved here. Concurrent application-schema
+changes during migration are outside this bounded installed-upgrade contract.
+No store API, handler, model, initial schema, dependency, lock or inventory
+changed in this follow-up.
