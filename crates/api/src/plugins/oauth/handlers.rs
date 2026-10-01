@@ -716,35 +716,36 @@ pub(crate) async fn process_oauth_sign_in(
         }
 
         let issued = finish_oauth_session(&user, false, policy, meta, ctx).await?;
-        let account_cookie =
-            ctx.config
-                .account
-                .store_account_cookie
-                .then(|| AccountCookiePayload {
-                    id: Some(existing_account.id().to_string()),
-                    user_id: existing_account.user_id().to_string(),
-                    provider_id: provider_name.to_string(),
-                    account_id: existing_account.account_id().to_string(),
-                    access_token: token_bundle
-                        .access_token
-                        .or_else(|| existing_account.access_token().map(str::to_string)),
-                    refresh_token: token_bundle
-                        .refresh_token
-                        .or_else(|| existing_account.refresh_token().map(str::to_string)),
-                    id_token: token_bundle
-                        .id_token
-                        .or_else(|| existing_account.id_token().map(str::to_string)),
-                    access_token_expires_at: tokens
-                        .access_token_expires_at
-                        .or_else(|| existing_account.access_token_expires_at()),
-                    refresh_token_expires_at: tokens
-                        .refresh_token_expires_at
-                        .or_else(|| existing_account.refresh_token_expires_at()),
-                    scope: existing_account.scope().map(str::to_string),
-                    password: existing_account.password().map(str::to_string),
-                    created_at: Some(existing_account.created_at()),
-                    updated_at: Some(existing_account.updated_at()),
-                });
+        let account_cookie = ctx.config.account.store_account_cookie.then(|| {
+            if !ctx.config.account.update_account_on_sign_in {
+                return AccountCookiePayload::from_account(&existing_account);
+            }
+            AccountCookiePayload {
+                id: Some(existing_account.id().to_string()),
+                user_id: existing_account.user_id().to_string(),
+                provider_id: provider_name.to_string(),
+                account_id: existing_account.account_id().to_string(),
+                access_token: token_bundle
+                    .access_token
+                    .or_else(|| existing_account.access_token().map(str::to_string)),
+                refresh_token: token_bundle
+                    .refresh_token
+                    .or_else(|| existing_account.refresh_token().map(str::to_string)),
+                id_token: token_bundle
+                    .id_token
+                    .or_else(|| existing_account.id_token().map(str::to_string)),
+                access_token_expires_at: tokens
+                    .access_token_expires_at
+                    .or_else(|| existing_account.access_token_expires_at()),
+                refresh_token_expires_at: tokens
+                    .refresh_token_expires_at
+                    .or_else(|| existing_account.refresh_token_expires_at()),
+                scope: existing_account.scope().map(str::to_string),
+                password: existing_account.password().map(str::to_string),
+                created_at: Some(existing_account.created_at()),
+                updated_at: Some(existing_account.updated_at()),
+            }
+        });
 
         return Ok(ProcessOAuthUserResult {
             session: ctx.session_view(&issued.session),

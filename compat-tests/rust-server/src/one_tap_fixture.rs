@@ -64,6 +64,7 @@ pub(super) async fn router(
         "one-tap-plugin-only",
         "one-tap-missing",
         "one-tap-empty-array",
+        "one-tap-empty-audience-member",
         "one-tap-domain",
         "one-tap-domain-any",
         "one-tap-disabled",
@@ -78,7 +79,8 @@ pub(super) async fn router(
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut profile_config = config.clone().base_path(&path);
-        profile_config.account.store_account_cookie = name == "one-tap-account-cookie";
+        profile_config.account.store_account_cookie =
+            name == "one-tap-account-cookie" || name == "one-tap-retain-account";
         profile_config
             .account
             .account_linking
@@ -116,6 +118,9 @@ pub(super) async fn router(
         };
         if name == "one-tap-fallback" || name == "one-tap-missing" {
             one_tap.client_id = None;
+        }
+        if name == "one-tap-empty-audience-member" {
+            one_tap.client_id = Some(OneTapClientId::Multiple(vec![String::new()]));
         }
         if name == "one-tap-empty-array" {
             one_tap.client_id = Some(OneTapClientId::Multiple(Vec::new()));
