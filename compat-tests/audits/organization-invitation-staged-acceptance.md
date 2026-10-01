@@ -4,8 +4,9 @@ This capability follows the published invitation acceptance lifecycle. It depend
 on membership policy checkpoint `b7e29c28` and the duplicate-member storage/FK
 prerequisites already in that checkpoint. The pending-invitation creation error
 supplement `69b23fb4` is a separate dependency; this slice leaves that creation
-handler unchanged. No inventory, comparator, dependency, schema, or lock change
-belongs to this capability.
+handler unchanged. No comparator, dependency, schema, or lock change belongs to this capability.
+Coordinator review adds 74 explicit successful, rejected, authorization and
+state-transition requirements without replacing earlier inventory evidence.
 
 ## Source observations and production contract
 
