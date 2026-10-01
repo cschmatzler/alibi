@@ -222,7 +222,6 @@ impl OneTapPlugin {
             require_email_verification: provider
                 .is_some_and(|provider| provider.require_email_verification),
             callback_url: None,
-            encrypt_id_token: false,
             use_updated_user: false,
         };
         let tokens = OAuthTokenSet {

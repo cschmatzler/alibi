@@ -549,11 +549,11 @@ async fn test_encryption_disabled_stores_plaintext() {
 
 // Upstream reference: packages/better-auth/src/api/routes/account.test.ts :: describe("account") and packages/better-auth/src/oauth2/link-account.test.ts; adapted to the Rust account and OAuth route behavior.
 #[tokio::test]
-async fn test_get_access_token_rejects_plaintext_when_encryption_is_enabled() {
+async fn test_get_access_token_preserves_source_plaintext_import_when_encryption_is_enabled() {
     let config = Arc::new(test_config_with_encryption());
     let db = create_test_database().await;
 
-    let (_, session_token, account_id) = setup_user_with_account(
+    let (user_id, session_token, account_id) = setup_user_with_account(
         &db,
         &config,
         "plaintext-access@example.com",
@@ -563,6 +563,7 @@ async fn test_get_access_token_rejects_plaintext_when_encryption_is_enabled() {
     )
     .await;
 
+    let before = serde_json::to_value(db.get_user_accounts(&user_id).await.unwrap()).unwrap();
     let ctx = AuthContext::new(config.clone(), db.clone());
     let mut oauth_config = OAuthConfig::default();
     oauth_config.providers.insert(
@@ -584,16 +585,23 @@ async fn test_get_access_token_rejects_plaintext_when_encryption_is_enabled() {
     );
 
     let result = oauth_plugin.on_request(&req, &ctx).await;
-    assert!(result.is_err(), "plaintext tokens must not be accepted");
+    let response = result.unwrap().unwrap();
+    assert_eq!(response.status, 200);
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(body["accessToken"], "plain-access-token");
+    assert_eq!(
+        serde_json::to_value(db.get_user_accounts(&user_id).await.unwrap()).unwrap(),
+        before
+    );
 }
 
 // Upstream reference: packages/better-auth/src/api/routes/account.test.ts :: describe("account") and packages/better-auth/src/oauth2/link-account.test.ts; adapted to the Rust account and OAuth route behavior.
 #[tokio::test]
-async fn test_refresh_token_rejects_plaintext_when_encryption_is_enabled() {
+async fn test_refresh_token_passes_plaintext_import_to_custom_provider_and_encrypts_rotation() {
     let config = Arc::new(test_config_with_encryption());
     let db = create_test_database().await;
 
-    let (_, session_token, account_id) = setup_user_with_account(
+    let (user_id, session_token, account_id) = setup_user_with_account(
         &db,
         &config,
         "plaintext-refresh@example.com",
@@ -605,10 +613,20 @@ async fn test_refresh_token_rejects_plaintext_when_encryption_is_enabled() {
 
     let ctx = AuthContext::new(config.clone(), db.clone());
     let mut oauth_config = OAuthConfig::default();
-    oauth_config.providers.insert(
-        "google".to_string(),
-        make_test_provider("http://localhost:65535"),
-    );
+    let sequence = Arc::new(std::sync::Mutex::new(vec![(
+        "plain-refresh-token".to_owned(),
+        OAuthTokenSet {
+            access_token: Some("new-access-token".to_owned()),
+            refresh_token: Some("new-refresh-token".to_owned()),
+            id_token: Some("literal-provider-id-token".to_owned()),
+            ..Default::default()
+        },
+    )]));
+    let mut provider = make_test_provider("http://localhost:65535");
+    provider.refresh_access_token = Some(Arc::new(RotatingRefreshHandler {
+        sequence: sequence.clone(),
+    }));
+    oauth_config.providers.insert("google".to_owned(), provider);
     let oauth_plugin = OAuthPlugin::with_config(oauth_config);
 
     let mut req = AuthRequest::new(HttpMethod::Post, "/refresh-token");
@@ -624,10 +642,24 @@ async fn test_refresh_token_rejects_plaintext_when_encryption_is_enabled() {
     );
 
     let result = oauth_plugin.on_request(&req, &ctx).await;
-    assert!(
-        result.is_err(),
-        "plaintext refresh tokens must not be accepted"
+    let response = result.unwrap().unwrap();
+    assert_eq!(response.status, 200);
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(body["accessToken"], "new-access-token");
+    assert_eq!(body["refreshToken"], "new-refresh-token");
+    assert_eq!(body["idToken"], "literal-provider-id-token");
+    assert!(sequence.lock().unwrap().is_empty());
+    let account = db.get_user_accounts(&user_id).await.unwrap().remove(0);
+    assert_eq!(account.id(), account_id);
+    assert_eq!(
+        decrypt_token(account.access_token().unwrap(), TEST_SECRET).unwrap(),
+        "new-access-token"
     );
+    assert_eq!(
+        decrypt_token(account.refresh_token().unwrap(), TEST_SECRET).unwrap(),
+        "new-refresh-token"
+    );
+    assert_eq!(account.id_token(), Some("literal-provider-id-token"));
 }
 
 // Upstream reference: packages/better-auth/src/api/routes/account.ts :: getAccessToken/refreshToken cookie-backed token refresh behavior; adapted to the Rust account and OAuth route behavior.
