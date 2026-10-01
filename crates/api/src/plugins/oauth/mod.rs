@@ -16,9 +16,9 @@ mod state;
 mod types;
 
 pub use providers::{
-    OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthConfig, OAuthIdTokenVerifier,
+    OAuthAuthorizationPolicy, OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthConfig, OAuthIdTokenVerifier,
     OAuthProvider, OAuthRefreshTokenHandler, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoHandler,
-    OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthScopeOrder, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 
 pub struct OAuthPlugin {

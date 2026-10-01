@@ -38,6 +38,7 @@ import { organization } from "better-auth/plugins/organization";
 import { createAccessControl } from "better-auth/plugins/access";
 import { defaultStatements } from "better-auth/plugins/organization/access";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
+import { socialProviderFixture } from "./social-provider-fixture";
 
 function getPort() {
   const idx = process.argv.indexOf("--port");
@@ -423,9 +424,11 @@ const organizationUpdateFixture = organizationUpdateHooksFixture(database, authO
 const organizationDeletionFixture = organizationDeletionHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
 const passkeyRegistration = passkeyRegistrationFixture(authOptions);
 const passkeyAuthentication = passkeyAuthenticationFixture(database, authOptions, `http://localhost:${PORT}`);
+const socialProvidersFixture = socialProviderFixture(authOptions);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
+for (const [path, instance] of socialProvidersFixture.profiles) verificationProfiles.set(path, instance);
 const apiKeyBackground = await apiKeyBackgroundFixture(database, authOptions);
 for (const [path, instance] of apiKeyBackground.profiles) verificationProfiles.set(path, instance);
 const apiKeyGenerationFixture = createApiKeyGenerationFixture(database, authOptions);
@@ -777,6 +780,8 @@ const server = Bun.serve({
     try {
       const url = new URL(request.url);
       organizationTransport.observe(request);
+      const socialProviderControl = await socialProvidersFixture.handle(request);
+      if (socialProviderControl) return socialProviderControl;
       const transportControl = await organizationTransport.handle(request, url);
       if (transportControl) return transportControl;
       if(url.pathname==="/__test/session-field-state")return jsonResponse(sessionFieldsFixture.state(url.searchParams.get("email")??""));
@@ -1015,6 +1020,7 @@ const server = Bun.serve({
         return jsonResponse({message:"unknown server operation"},{status:400});
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
+        socialProvidersFixture.reset();
         passkeyRegistration.reset();
         passkeyAuthentication.reset();
         siweFixture.reset();

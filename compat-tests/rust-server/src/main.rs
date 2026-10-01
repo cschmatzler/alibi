@@ -78,6 +78,7 @@ mod session_fields_fixture;
 mod session_profiles;
 mod siwe_fixture;
 mod sqlite_fixture;
+mod social_provider_fixture;
 mod two_factor_delivery_fixture;
 mod two_factor_otp_fixture;
 mod two_factor_policy_fixture;
@@ -554,6 +555,7 @@ fn mock_oauth_plugin(
                     "email".to_string(),
                     "profile".to_string(),
                 ],
+                authorization: None,
                 authorization_params: Vec::new(),
                 map_user_info: Some(|_value| {
                     Ok(OAuthUserInfo {
@@ -599,6 +601,7 @@ fn mock_oauth_plugin(
                     "profile".to_string(),
                     "openid".to_string(),
                 ],
+                authorization: None,
                 authorization_params: vec![(
                     "include_granted_scopes".to_string(),
                     "true".to_string(),
@@ -699,6 +702,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         admin_banned_message_fixture::router(&config, database.clone()).await?;
     let admin_permission_router =
         admin_permission_fixture::router(&config, database.clone()).await?;
+    let (social_provider_router, social_provider_reset) =
+        social_provider_fixture::router(&config, database.clone()).await?;
     let session_fields_router = session_fields_fixture::router(&config, database.clone()).await?;
     let api_key_generation_router =
         api_key_generation_fixture::router(&config, database.clone()).await?;
@@ -1108,7 +1113,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let github_profile = github_profile_for_reset.clone();
                 let social_id_token_valid = social_id_token_valid_for_reset.clone();
                 let database = database_for_reset.clone();
+                let social_provider_reset = social_provider_reset.clone();
                 async move {
+                    social_provider_reset.reset().await;
                     siwe_fixture::reset(&siwe_state).await;
                     multiple_session_counter.store(0, std::sync::atomic::Ordering::SeqCst);
                     registration_receipts.reset();
@@ -1687,6 +1694,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(deletion_hooks_router)
         .nest("/api/auth", auth_router)
         .with_state(auth)
+        .merge(social_provider_router)
         .merge(verification_profile_router)
         .merge(session_profile_router)
         .merge(multiple_session_router)
