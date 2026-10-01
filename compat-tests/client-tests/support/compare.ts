@@ -208,7 +208,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     } catch { return undefined; }
   }
 
-  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false, urlQueryContext: "url" | "query" | undefined = undefined) {
+  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false, urlQueryContext: "url" | "query" | undefined = undefined, adminFilterUrl = false) {
     if (typeof a === "string" && typeof b === "string" && !traceShape(path)
       && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path)) {
       if (key === "teamId" && (a.includes(",") || b.includes(","))) {
@@ -258,12 +258,16 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       if (urlKeys.has(key) || key.endsWith("URL") || key.endsWith("Url") || key === "redirect_uri") {
         const ap = urlParts(a, context.leftBaseURL, context.leftOAuthURL), bp = urlParts(b, context.rightBaseURL, context.rightOAuthURL);
         if (!ap || !bp) { fail(path, "invalid URL"); return; }
-        visit(ap, bp, path, "", false, false, false, false, "url"); return;
+        const adminPath = /^\/(?:api\/auth|__test\/profiles\/[^/]+\/api\/auth)\/admin\/list-users$/;
+        const observedAdminUrl = ap.origin === "<server>" && bp.origin === "<server>"
+          && typeof ap.pathname === "string" && typeof bp.pathname === "string"
+          && adminPath.test(ap.pathname) && adminPath.test(bp.pathname);
+        visit(ap, bp, path, "", false, false, false, false, "url", observedAdminUrl); return;
       }
     }
     if (Array.isArray(a) && Array.isArray(b)) {
       if (a.length !== b.length) fail(path, "array length differs");
-      a.forEach((child, index) => visit(child, b[index], `${path ? `${path}.` : ""}${index}`, key, false, applicationData || jwtPayload, false, false, urlQueryContext));
+      a.forEach((child, index) => visit(child, b[index], `${path ? `${path}.` : ""}${index}`, key, false, applicationData || jwtPayload, false, false, urlQueryContext, adminFilterUrl));
       return;
     }
     if (record(a) && record(b)) {
@@ -342,7 +346,16 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
             identity(issuedLeft, issuedRight, childPath, "api-key");
           }
         }
-        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData, false, false, urlQueryContext === "query" || (urlQueryContext === "url" && childKey === "query") ? "query" : undefined);
+        else if (adminFilterUrl && urlQueryContext === "query" && childKey === "filterValue"
+          && Array.isArray(a.filterField) && a.filterField.length === 1 && a.filterField[0] === "id"
+          && Array.isArray(b.filterField) && b.filterField.length === 1 && b.filterField[0] === "id"
+          && Array.isArray(a.filterValue) && a.filterValue.every(value => typeof value === "string" && leftEntities.has(value))
+          && Array.isArray(b.filterValue) && b.filterValue.every(value => typeof value === "string" && rightEntities.has(value))) {
+          // Only complete independently observed IDs in this real ID selector
+          // use the existing graph. Arity, order, duplicates and URL fields stay.
+          visit(a.filterValue, b.filterValue, childPath, "id", false, false, false, false, "query");
+        }
+        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData, false, false, urlQueryContext === "query" || (urlQueryContext === "url" && childKey === "query") ? "query" : undefined, adminFilterUrl);
       }
       return;
     }
