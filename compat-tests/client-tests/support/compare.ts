@@ -1,3 +1,4 @@
+import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { sessionSchema, userSchema } from "@better-auth/core/db";
 import { safeJSONParse } from "@better-auth/core/utils/json";
 import { z } from "zod";
@@ -10,6 +11,7 @@ export type Difference = { readonly path: string; readonly reason: string };
 /** Explicit fixture origins and scenario clocks used to compare runtime output. */
 export type ComparisonContext = {
   readonly compactSessionCacheSecret?: string;
+  readonly oauthProxyProfileSecret?: string;
   readonly leftBaseURL: string;
   readonly rightBaseURL: string;
   readonly leftOAuthURL?: string | undefined;
@@ -234,6 +236,37 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   function cacheClock(a: number, b: number, path: string) {
     if (a !== b && Math.abs((a-context.leftStartedAt)-(b-context.rightStartedAt)) > 1500) fail(path,"compact cache timestamp differs");
   }
+  function authenticatedProxyProfile(value: Record<string, unknown>): boolean {
+    if (!context.oauthProxyProfileSecret || Object.keys(value).sort().join(",") !== "payload,token"
+      || typeof value.token !== "string" || !/^(?:[0-9a-f]{2}){40,}$/.test(value.token) || !record(value.payload)) return false;
+    try {
+      const bytes = Buffer.from(value.token, "hex"), key = createHash("sha256").update(context.oauthProxyProfileSecret).digest();
+      const plaintext = xchacha20poly1305(key, bytes.subarray(0, 24)).decrypt(bytes.subarray(24));
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(plaintext);
+      const parsed: unknown = JSON.parse(text);
+      const exactCopy = (a: unknown, b: unknown): boolean => {
+        if (Array.isArray(a)) return Array.isArray(b) && a.length === b.length && a.every((child,index) => exactCopy(child,b[index]));
+        if (record(a)) return record(b) && Object.keys(a).length === Object.keys(b).length
+          && Object.entries(a).every(([key,child]) => Object.hasOwn(b,key) && exactCopy(child,b[key]));
+        return Object.is(a,b);
+      };
+      if (JSON.stringify(parsed) !== text || JSON.stringify(value.payload) !== text || !exactCopy(parsed,value.payload)) return false;
+      // Authentication proves the complete submitted JSON, including schema-invalid
+      // or expired input. Endpoint admission remains the primary owner's proof.
+      return true;
+    } catch { return false; }
+  }
+  function proxyProfiles(value: unknown, path = "", applicationData = false, result = new Map<string, Record<string, unknown>>()): Map<string, Record<string, unknown>> {
+    if (Array.isArray(value)) value.forEach((child, index) => proxyProfiles(child,`${path}.${index}`,applicationData,result));
+    else if (record(value) && !applicationData && !traceShape(path)) for (const [key, child] of Object.entries(value)) {
+      const childPath = path ? `${path}.${key}` : key;
+      if (key === "oauthProxyProfile" && record(child) && authenticatedProxyProfile(child)) result.set(String(child.token),child.payload as Record<string,unknown>);
+      else proxyProfiles(child,childPath,["metadata","additionalFields","applicationData","userInfo","profile"].includes(key),result);
+    }
+    return result;
+  }
+  const leftProxyProfiles = proxyProfiles(normalizedLeft);
+  const rightProxyProfiles = proxyProfiles(normalizedRight);
   const leftEncryptedClaims = new Map<string, string>(), rightEncryptedClaims = new Map<string, string>();
   function rememberEncryptedClaims(value: Record<string, unknown>, seen: Map<string, string>, path: string) {
     const token = String(value.token), claims = stableJSON(value.payload), previous = seen.get(token);
@@ -292,12 +325,29 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     } catch { return undefined; }
   }
 
-  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false, urlQueryContext: "url" | "query" | undefined = undefined, adminFilterUrl = false, compactCache = false) {
+  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false, urlQueryContext: "url" | "query" | undefined = undefined, adminFilterUrl = false, compactCache = false, proxyProviders: readonly [string | undefined, string | undefined] | undefined = undefined, proxyPayload = false) {
+    if (proxyPayload && key === "timestamp" && typeof a === "number" && typeof b === "number") {
+      if (a !== b && Math.abs((a-context.leftStartedAt)-(b-context.rightStartedAt)) > 1500) fail(path,"OAuth proxy profile timestamp differs");
+      return;
+    }
     if (compactCache && typeof a === "number" && typeof b === "number" && /\.compactSessionCache\.(?:envelope\.expiresAt|(?:envelope\.session|decoded)\.updatedAt)$/.test(`.${path}`)) {
       cacheClock(a,b,path); return;
     }
     if (typeof a === "string" && typeof b === "string" && !traceShape(path)
       && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path)) {
+      if (key === "profile" && urlQueryContext === "query" && proxyProviders) {
+        const leftPayload = leftProxyProfiles.get(a), rightPayload = rightProxyProfiles.get(b);
+        if (!leftPayload || !rightPayload) {
+          if (a !== b) fail(path,"unverified OAuth proxy URL profile differs literally");
+        } else {
+          const provider = (payload: Record<string,unknown>) => record(payload.account) && typeof payload.account.providerId === "string" ? payload.account.providerId : undefined;
+          const leftProvider = provider(leftPayload), rightProvider = provider(rightPayload);
+          if (leftProvider !== undefined && rightProvider !== undefined && proxyProviders[0] !== undefined && proxyProviders[1] !== undefined
+            && (leftProvider === proxyProviders[0]) !== (rightProvider === proxyProviders[1])) fail(path,"OAuth proxy provider-route relationship differs");
+          identity(a,b,path,"token");
+        }
+        return;
+      }
       if (key === "teamId" && (a.includes(",") || b.includes(","))) {
         const leftTeams = a.split(","), rightTeams = b.split(",");
         if (leftTeams.length !== rightTeams.length) fail(path, "team selection length differs");
@@ -349,15 +399,40 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
         const observedAdminUrl = ap.origin === "<server>" && bp.origin === "<server>"
           && typeof ap.pathname === "string" && typeof bp.pathname === "string"
           && adminPath.test(ap.pathname) && adminPath.test(bp.pathname);
-        visit(ap, bp, path, "", false, false, false, false, "url", observedAdminUrl); return;
+        const proxyPath = /^\/(?:api\/auth|__test\/profiles\/[^/]+\/api\/auth)\/callback\/([^/]+)\/oauth-proxy$/;
+        const leftProvider = ap.origin === "<server>" && typeof ap.pathname === "string" ? proxyPath.exec(ap.pathname)?.[1] : undefined;
+        const rightProvider = bp.origin === "<server>" && typeof bp.pathname === "string" ? proxyPath.exec(bp.pathname)?.[1] : undefined;
+        const legacyPath = /^\/(?:api\/auth|__test\/profiles\/[^/]+\/api\/auth)\/oauth-proxy-callback$/;
+        const leftLegacy = ap.origin === "<server>" && typeof ap.pathname === "string" && legacyPath.test(ap.pathname);
+        const rightLegacy = bp.origin === "<server>" && typeof bp.pathname === "string" && legacyPath.test(bp.pathname);
+        const providers = (leftProvider || leftLegacy) && (rightProvider || rightLegacy) ? [leftProvider,rightProvider] as const : undefined;
+        if (providers) {
+          const leftURL = new URL(a,context.leftBaseURL), rightURL = new URL(b,context.rightBaseURL);
+          if (leftURL.username !== rightURL.username || leftURL.password !== rightURL.password) fail(path,"OAuth proxy callback URL credentials differ");
+        }
+        visit(ap, bp, path, "", false, false, false, false, "url", observedAdminUrl, false, providers); return;
       }
     }
     if (Array.isArray(a) && Array.isArray(b)) {
       if (a.length !== b.length) fail(path, "array length differs");
-      a.forEach((child, index) => visit(child, b[index], `${path ? `${path}.` : ""}${index}`, key, false, applicationData || jwtPayload, false, false, urlQueryContext, adminFilterUrl, compactCache));
+      a.forEach((child, index) => visit(child, b[index], `${path ? `${path}.` : ""}${index}`, key, false, applicationData || jwtPayload, false, false, urlQueryContext, adminFilterUrl, compactCache, proxyProviders, false));
       return;
     }
     if (record(a) && record(b)) {
+      if (key === "oauthProxyProfile") {
+        if (applicationData || traceShape(path) || /(?:^|\.)applicationData(?:\.|$)/.test(path)
+          || !authenticatedProxyProfile(a)
+          || !authenticatedProxyProfile(b)) {
+          if (stableJSON(a) !== stableJSON(b)) fail(path,"unverified or application OAuth proxy profile differs literally");
+          return;
+        }
+        const providerAccountMatches = (payload: unknown) => record(payload) && record(payload.account) && record(payload.userInfo)
+          && typeof payload.account.accountId === "string" && typeof payload.userInfo.id === "string" ? payload.account.accountId === payload.userInfo.id : undefined;
+        if (providerAccountMatches(a.payload) !== providerAccountMatches(b.payload)) fail(path,"OAuth proxy provider account identity relationship differs");
+        identity(String(a.token),String(b.token),`${path}.token`,"token");
+        visit(a.payload,b.payload,`${path}.payload`,"",false,false,false,false,undefined,false,false,undefined,true);
+        return;
+      }
       if (key === "compactSessionCache") {
         if (applicationData || traceShape(path) || /(?:^|\.)applicationData(?:\.|$)/.test(path)) {
           if (stableJSON(a) !== stableJSON(b)) fail(path,"application compact-cache-shaped data differs literally");
@@ -415,6 +490,9 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       for (const childKey of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
         const childPath = path ? `${path}.${childKey}` : childKey;
         if (!Object.hasOwn(a, childKey) || !Object.hasOwn(b, childKey)) fail(childPath, "field presence differs");
+        else if (proxyPayload && ["userInfo","profile"].includes(childKey)) {
+          if (stableJSON(a[childKey]) !== stableJSON(b[childKey])) fail(childPath,"OAuth proxy provider JSON differs literally");
+        }
         else if (computedLifetime && childKey === "expires_in") continue;
         else if (computedLifetime && childKey === "access_token" && typeof a.access_token === "string" && typeof b.access_token === "string") identity(a.access_token,b.access_token,childPath,"token");
         else if (oneTimeRow && childKey === "value" && typeof a.value === "string" && typeof b.value === "string") {
@@ -464,7 +542,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           // use the existing graph. Arity, order, duplicates and URL fields stay.
           visit(a.filterValue, b.filterValue, childPath, "id", false, false, false, false, "query");
         }
-        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData, false, false, urlQueryContext === "query" || (urlQueryContext === "url" && childKey === "query") ? "query" : undefined, adminFilterUrl, compactCache);
+        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData, false, false, urlQueryContext === "query" || (urlQueryContext === "url" && childKey === "query") ? "query" : undefined, adminFilterUrl, compactCache, proxyProviders, proxyPayload && childKey === "timestamp");
       }
       return;
     }
