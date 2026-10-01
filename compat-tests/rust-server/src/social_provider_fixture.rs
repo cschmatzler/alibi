@@ -11,7 +11,9 @@ use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::oauth::OAuthProvider;
 use better_auth::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::sea_orm::{EntityTrait, QueryOrder};
+use better_auth_seaorm::sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set,
+};
 use better_auth_seaorm::store::entities::{account, session, user};
 use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -115,10 +117,12 @@ pub(super) async fn router(
         "disabled-configured",
         "issuer",
         "issuer-slashes",
+        "encrypted",
     ] {
         let path = format!("/__test/profiles/social-gitlab-{mode}/api/auth");
-        let settings = config.clone().base_path(&path);
-        let mut provider = if mode.starts_with("issuer") {
+        let mut settings = config.clone().base_path(&path);
+        settings.account.encrypt_oauth_tokens = mode == "encrypted";
+        let mut provider = if mode.starts_with("issuer") || mode == "encrypted" {
             OAuthProvider::gitlab_with_issuer(
                 "fixture-social-client",
                 "fixture-social-secret",
@@ -151,6 +155,54 @@ pub(super) async fn router(
         );
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
+    let importer = database.clone();
+    router = router.route(
+        "/__test/social-provider/import-tokens",
+        post(move |Json(body): Json<Value>| {
+            let importer = importer.clone();
+            async move {
+                let id = body
+                    .get("accountId")
+                    .and_then(Value::as_str)
+                    .ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+                let user_id = body
+                    .get("userId")
+                    .and_then(Value::as_str)
+                    .ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+                let row = account::Entity::find_by_id(id)
+                    .filter(account::Column::UserId.eq(user_id))
+                    .one(&importer)
+                    .await
+                    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?
+                    .ok_or(axum::http::StatusCode::NOT_FOUND)?;
+                let mut active = row.into_active_model();
+                for (name, field) in [
+                    ("accessToken", &mut active.access_token),
+                    ("refreshToken", &mut active.refresh_token),
+                    ("idToken", &mut active.id_token),
+                ] {
+                    if let Some(value) = body.get(name) {
+                        *field = Set(if value.is_null() {
+                            None
+                        } else {
+                            Some(
+                                value
+                                    .as_str()
+                                    .ok_or(axum::http::StatusCode::BAD_REQUEST)?
+                                    .to_owned(),
+                            )
+                        });
+                    }
+                }
+                active.updated_at = Set(Utc::now());
+                active
+                    .update(&importer)
+                    .await
+                    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                Ok::<_, axum::http::StatusCode>(Json(json!({"status": true})))
+            }
+        }),
+    );
     let store = database.clone();
     let observer = fixture.clone();
     let control = fixture.clone();
@@ -175,7 +227,10 @@ pub(super) async fn router(
             let form = url::form_urlencoded::parse(body.as_bytes()).into_owned().collect::<std::collections::BTreeMap<_,_>>();
             let refresh = form.get("grant_type").is_some_and(|value| value == "refresh_token");
             state.receipts.lock().await.push(json!({"path": "/__test/social-provider/gitlab/oauth/token", "method": "POST", "authorization": headers.get("authorization").and_then(|v| v.to_str().ok()), "contentType": headers.get("content-type").and_then(|v| v.to_str().ok()), "body": form}));
-            Json(if refresh { json!({"access_token": "fixture-gitlab-refreshed-access", "refresh_token": "fixture-gitlab-refreshed-refresh", "token_type": "Bearer", "scope": "read_user refreshed-scope", "expires_in": 1800}) } else { json!({"access_token": "fixture-gitlab-access", "refresh_token": "fixture-gitlab-refresh", "token_type": "Bearer", "scope": "read_user issued-scope", "expires_in": 3600}) })
+            let encrypted_fixture = state.profile.lock().await.get("fixtureTokens").and_then(Value::as_bool) == Some(true);
+            let mut tokens = if refresh { json!({"access_token": "fixture-gitlab-refreshed-access", "refresh_token": "fixture-gitlab-refreshed-refresh", "token_type": "Bearer", "scope": "read_user refreshed-scope", "expires_in": 1800}) } else { json!({"access_token": "fixture-gitlab-access", "refresh_token": "fixture-gitlab-refresh", "token_type": "Bearer", "scope": "read_user issued-scope", "expires_in": 3600}) };
+            if encrypted_fixture { tokens["id_token"] = json!(if refresh { "fixture-encrypted-id-rotated" } else { "fixture-encrypted-id" }); }
+            Json(tokens)
         }))
         .route("/__test/social-provider/gitlab/api/v4/user", get(|State(state): State<Fixture>, headers: HeaderMap| async move {
             state.receipts.lock().await.push(json!({"path": "/__test/social-provider/gitlab/api/v4/user", "method": "GET", "authorization": headers.get("authorization").and_then(|v| v.to_str().ok()), "contentType": headers.get("content-type").and_then(|v| v.to_str().ok()), "body": null}));

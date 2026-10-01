@@ -591,7 +591,6 @@ pub(crate) struct OAuthProcessPolicy {
     pub(crate) override_user_info: bool,
     pub(crate) require_email_verification: bool,
     pub(crate) callback_url: Option<String>,
-    pub(crate) encrypt_id_token: bool,
     pub(crate) use_updated_user: bool,
 }
 impl OAuthProcessPolicy {
@@ -600,7 +599,6 @@ impl OAuthProcessPolicy {
             override_user_info: provider.override_user_info_on_sign_in,
             require_email_verification: provider.require_email_verification,
             callback_url,
-            encrypt_id_token: true,
             use_updated_user: true,
         }
     }
@@ -692,21 +690,13 @@ pub(crate) async fn process_oauth_sign_in(
         .await
         .map_err(|error| error.to_string())?;
 
-    let mut token_bundle = encrypt_token_set(
+    let token_bundle = encrypt_token_set(
         ctx,
         tokens.access_token.clone(),
         tokens.refresh_token.clone(),
-        if policy.encrypt_id_token {
-            tokens.id_token.clone()
-        } else {
-            None
-        },
+        tokens.id_token.clone(),
     )
     .map_err(|error| error.to_string())?;
-
-    if !policy.encrypt_id_token {
-        token_bundle.id_token = tokens.id_token.clone();
-    }
 
     if let Some(existing_account) = linked_account {
         if ctx.config.account.update_account_on_sign_in {

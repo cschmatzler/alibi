@@ -16,6 +16,21 @@ use super::types::{
     RefreshTokenResponse,
 };
 
+fn access_token_failure() -> AuthError {
+    AuthError::Upstream {
+        status: 400,
+        code: "FAILED_TO_GET_ACCESS_TOKEN",
+        message: "Failed to get a valid access token",
+    }
+}
+fn refresh_token_failure() -> AuthError {
+    AuthError::Upstream {
+        status: 400,
+        code: "FAILED_TO_REFRESH_ACCESS_TOKEN",
+        message: "Failed to refresh access token",
+    }
+}
+
 enum AccountSelection {
     Id(String),
     Cookie,
@@ -166,19 +181,24 @@ async fn valid_access_token(
         ))
     })?;
     let encrypted = ctx.config.account.encrypt_oauth_tokens;
-    let refresh_token = maybe_decrypt(
-        account.refresh_token.as_deref(),
-        encrypted,
-        &ctx.config.secret,
-    )?;
     let expired = account.access_token_expires_at.is_some_and(|expires_at| {
         expires_at.timestamp_millis() - Utc::now().timestamp_millis() < 5_000
     });
-    let refreshed = if expired && let Some(refresh_token) = refresh_token {
+    let refreshed = if expired
+        && let Some(stored_refresh) = account
+            .refresh_token
+            .as_deref()
+            .filter(|token| !token.is_empty())
+    {
+        let refresh_token = maybe_decrypt(Some(stored_refresh), encrypted, &ctx.config.secret)
+            .map_err(|_| access_token_failure())?
+            .unwrap_or_default();
         let tokens = refresh_tokens_via_provider(provider, &refresh_token)
             .await
-            .map_err(|_| AuthError::bad_request("Failed to get a valid access token"))?;
-        persist_tokens(account, &tokens, ctx).await?;
+            .map_err(|_| access_token_failure())?;
+        persist_tokens(account, &tokens, ctx)
+            .await
+            .map_err(|_| access_token_failure())?;
         true
     } else {
         false
@@ -190,14 +210,15 @@ async fn valid_access_token(
                     account.access_token.as_deref(),
                     encrypted,
                     &ctx.config.secret,
-                )?
+                )
+                .map_err(|_| access_token_failure())?
                 .unwrap_or_default(),
             ),
             access_token_expires_at: account
                 .access_token_expires_at
                 .map(|value| value.to_rfc3339()),
             scopes: scopes(account),
-            id_token: maybe_decrypt(account.id_token.as_deref(), encrypted, &ctx.config.secret)?,
+            id_token: account.id_token.clone(),
         },
         refreshed,
     ))
@@ -263,16 +284,24 @@ pub(super) async fn handle_refresh_token(
             account.provider_id
         ))
     })?;
+    let stored_refresh = account
+        .refresh_token
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| AuthError::bad_request("Refresh token not found"))?;
     let refresh_token = maybe_decrypt(
-        account.refresh_token.as_deref(),
+        Some(stored_refresh),
         ctx.config.account.encrypt_oauth_tokens,
         &ctx.config.secret,
-    )?
-    .ok_or_else(|| AuthError::bad_request("Refresh token not found"))?;
+    )
+    .map_err(|_| refresh_token_failure())?
+    .unwrap_or_default();
     let tokens = refresh_tokens_via_provider(provider, &refresh_token)
         .await
-        .map_err(|_| AuthError::bad_request("Failed to refresh access token"))?;
-    persist_tokens(&mut account, &tokens, ctx).await?;
+        .map_err(|_| refresh_token_failure())?;
+    persist_tokens(&mut account, &tokens, ctx)
+        .await
+        .map_err(|_| refresh_token_failure())?;
     let response = RefreshTokenResponse {
         access_token: tokens.access_token,
         access_token_expires_at: tokens
@@ -283,11 +312,7 @@ pub(super) async fn handle_refresh_token(
             .refresh_token_expires_at
             .map(|value| value.to_rfc3339()),
         scope: account.scope.clone(),
-        id_token: maybe_decrypt(
-            account.id_token.as_deref(),
-            ctx.config.account.encrypt_oauth_tokens,
-            &ctx.config.secret,
-        )?,
+        id_token: account.id_token.clone(),
         provider_id: account.provider_id.clone(),
         account_id: account.id.clone(),
     };
