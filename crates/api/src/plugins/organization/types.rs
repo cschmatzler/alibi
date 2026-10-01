@@ -444,14 +444,6 @@ pub struct OrganizationResponse {
     pub metadata: Option<serde_json::Value>,
 }
 
-fn normalize_metadata(metadata: Option<&serde_json::Value>) -> Option<serde_json::Value> {
-    match metadata {
-        None => None,
-        Some(serde_json::Value::Null) => None,
-        Some(value) => Some(value.clone()),
-    }
-}
-
 impl CreatedOrganizationResponse {
     pub fn from_organization(organization: &impl AuthOrganization) -> Self {
         Self {
@@ -460,7 +452,7 @@ impl CreatedOrganizationResponse {
             slug: organization.slug().to_string(),
             logo: organization.logo().map(str::to_owned),
             created_at: organization.created_at(),
-            metadata: normalize_metadata(organization.metadata()),
+            metadata: organization.metadata().cloned(),
         }
     }
 }
@@ -489,7 +481,7 @@ impl OrganizationResponse {
             slug: organization.slug().to_string(),
             logo: organization.logo().map(str::to_owned),
             created_at: organization.created_at(),
-            metadata: normalize_metadata(organization.metadata()),
+            metadata: organization.metadata().cloned(),
         }
     }
 }

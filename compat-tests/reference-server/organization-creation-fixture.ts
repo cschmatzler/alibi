@@ -64,6 +64,11 @@ export function createOrganizationCreationFixture(
   }));
   return {
     profiles,
+    legacyMetadata(body:Record<string,unknown>) {
+      if(typeof body.organizationId !== "string") return Response.json({message:"organizationId required"},{status:400});
+      const result=database.query('UPDATE organization SET metadata=? WHERE id=?').run("null",body.organizationId);
+      return result.changes === 1 ? Response.json({id:body.organizationId}) : Response.json({message:"Organization not found"},{status:404});
+    },
     state(email:string, includeMetadata=false, includeLogo=false) {
       const user = database.query('SELECT id FROM user WHERE email=?').get(email) as {id:string}|null;
       return {

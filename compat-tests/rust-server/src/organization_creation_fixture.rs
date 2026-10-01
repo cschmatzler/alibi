@@ -14,6 +14,7 @@ use better_auth::plugins::organization::{
 use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_core::wire::UserView;
+use better_auth_core::{store::OrganizationStore, UpdateOrganization};
 use better_auth_seaorm::sea_orm::{
     ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
     Statement,
@@ -272,6 +273,34 @@ pub(super) async fn router(
                         .filter(|receipt| receipt["email"] == query.email)
                         .cloned().collect::<Vec<_>>()
                 }))
+            }
+        }),
+    );
+    let legacy_store = Arc::new(SeaOrmStore::<TestSchema>::new(base.clone(), database));
+    router = router.route(
+        "/__test/organization-metadata-legacy",
+        post(move |Json(body): Json<Value>| {
+            let store = legacy_store.clone();
+            async move {
+                let Some(id) = body["organizationId"].as_str() else {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({"message":"organizationId required"})),
+                    );
+                };
+                match store
+                    .update_organization(
+                        id,
+                        UpdateOrganization {
+                            metadata: Some(Value::Null),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                {
+                    Ok(value) => (StatusCode::OK, Json(json!({"id":value.id}))),
+                    Err(error) => failure(error),
+                }
             }
         }),
     );

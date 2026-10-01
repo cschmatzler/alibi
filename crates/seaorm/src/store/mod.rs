@@ -12,6 +12,9 @@ mod invitations;
 mod jwks;
 mod members;
 mod migrator;
+mod nullable_organization_metadata;
+#[cfg(test)]
+mod nullable_organization_tests;
 mod nullable_user_flags;
 #[cfg(test)]
 mod nullable_user_tests;
