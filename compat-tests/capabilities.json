@@ -21,14 +21,7 @@
           "admin get-user and update-user match TS",
           "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
           "admin empty persisted and configured role fall back to the actual configured user grant",
-          "admin configured grant rejects empty per-resource action requests without losing valid owned reads"
-        ],
-        "rejection": "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
-        "authorization": "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
-        "state": null
-      },
-      "requiredEvidence": {
-        "success": [
+          "admin configured grant rejects empty per-resource action requests without losing valid owned reads",
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
           "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
           "admin stored timestamp precision survives official read, update and list without shifting dates",
@@ -36,6 +29,7 @@
           "admin repeated query fields retain arrays and reject before authentication without selecting a different owner"
         ],
         "rejection": [
+          "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
@@ -43,6 +37,7 @@
           "admin repeated query fields retain arrays and reject before authentication without selecting a different owner"
         ],
         "authorization": [
+          "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
@@ -64,12 +59,11 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "admin impersonation restores the original admin session and hides impersonated sessions",
-        "rejection": null,
-        "authorization": null,
-        "state": null
-      },
-      "requiredEvidence": {
+        "success": [
+          "admin impersonation restores the original admin session and hides impersonated sessions",
+          "admin stored timestamp precision survives official read, update and list without shifting dates",
+          "admin official client array filters preserve all operands SQL semantics pagination and authorization without changing owners"
+        ],
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
@@ -91,10 +85,6 @@
           "admin stored timestamp precision survives official read, update and list without shifting dates",
           "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner",
           "admin repeated query fields retain arrays and reject before authentication without selecting a different owner",
-          "admin official client array filters preserve all operands SQL semantics pagination and authorization without changing owners"
-        ],
-        "success": [
-          "admin stored timestamp precision survives official read, update and list without shifting dates",
           "admin official client array filters preserve all operands SQL semantics pagination and authorization without changing owners"
         ]
       }
@@ -204,15 +194,33 @@
           "phone signup binds integral and exponential JSON numbers to exact SQLite text",
           "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
           "api-key custom getter replaces headers and validator binds the request owner before usage",
-          "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization"
+          "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization",
+          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
+          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
+          "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer",
+          "api-key automatic middleware default admits one concurrent cleanup and retains both credential owners",
+          "api-key automatic middleware observe admits one concurrent cleanup and retains both credential owners",
+          "api-key automatic middleware ignore admits one concurrent cleanup and retains both credential owners",
+          "api-key trusted deferred verification catches actual cleanup errors and forced retry bypasses the shared throttle"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
-          "api-key custom getter replaces headers and validator binds the request owner before usage"
+          "api-key custom getter replaces headers and validator binds the request owner before usage",
+          "api-key background handler failures preserve consumed usage running cleanup and genuine application 403",
+          "api-key deferred individual expired deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
+          "api-key deferred individual exhausted deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
+          "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
+          "api-key awaited individual exhausted deletion waits for actual adapter release and rejects without observer registration",
+          "api-key deferred individual storage failure resolves caught completion retains the exact row and awaited retry preserves failure then deletes only its owner",
+          "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority"
         ],
         "authorization": [
           "api-key shared headers select the first configured session",
-          "api-key custom getter replaces headers and validator binds the request owner before usage"
+          "api-key custom getter replaces headers and validator binds the request owner before usage",
+          "api-key background handler failures preserve consumed usage running cleanup and genuine application 403",
+          "api-key deferred individual expired deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
+          "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
+          "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority"
         ],
         "state": [
           "session reads refresh from persisted expiry and renew the signed cookie",
@@ -222,20 +230,7 @@
           "phone signup binds integral and exponential JSON numbers to exact SQLite text",
           "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
           "api-key custom getter replaces headers and validator binds the request owner before usage",
-          "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization"
-        ]
-      },
-      "requiredEvidence": {
-        "success": [
-          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
-          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
-          "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer",
-          "api-key automatic middleware default admits one concurrent cleanup and retains both credential owners",
-          "api-key automatic middleware observe admits one concurrent cleanup and retains both credential owners",
-          "api-key automatic middleware ignore admits one concurrent cleanup and retains both credential owners",
-          "api-key trusted deferred verification catches actual cleanup errors and forced retry bypasses the shared throttle"
-        ],
-        "state": [
+          "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization",
           "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer",
           "api-key automatic middleware default admits one concurrent cleanup and retains both credential owners",
           "api-key automatic middleware observe admits one concurrent cleanup and retains both credential owners",
@@ -247,21 +242,6 @@
           "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
           "api-key awaited individual exhausted deletion waits for actual adapter release and rejects without observer registration",
           "api-key deferred individual storage failure resolves caught completion retains the exact row and awaited retry preserves failure then deletes only its owner",
-          "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority"
-        ],
-        "rejection": [
-          "api-key background handler failures preserve consumed usage running cleanup and genuine application 403",
-          "api-key deferred individual expired deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
-          "api-key deferred individual exhausted deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
-          "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
-          "api-key awaited individual exhausted deletion waits for actual adapter release and rejects without observer registration",
-          "api-key deferred individual storage failure resolves caught completion retains the exact row and awaited retry preserves failure then deletes only its owner",
-          "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority"
-        ],
-        "authorization": [
-          "api-key background handler failures preserve consumed usage running cleanup and genuine application 403",
-          "api-key deferred individual expired deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
-          "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
           "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority"
         ]
       }
@@ -590,13 +570,8 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "passkey client surface matches TS for options and management errors",
-        "rejection": null,
-        "authorization": null,
-        "state": null
-      },
-      "requiredEvidence": {
         "success": [
+          "passkey client surface matches TS for options and management errors",
           "passkey signed uv-absent authenticates original owner without historical verifier restrictions",
           "passkey signed backup-upgrade-backed authenticates original owner without historical verifier restrictions",
           "passkey signed backup-downgrade authenticates original owner without historical verifier restrictions",
@@ -604,7 +579,10 @@
           "passkey overlapping issued challenges verify against the current saved counter rather than a stale generation snapshot",
           "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
           "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history"
-        ]
+        ],
+        "rejection": null,
+        "authorization": null,
+        "state": null
       }
     },
     {
@@ -614,26 +592,22 @@
       "evidence": {
         "success": [
           "passkey client surface matches TS for options and management errors",
-          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions"
-        ],
-        "rejection": "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
-        "authorization": "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
-        "state": "passkey registration freshness rejects before consumption and freshAge zero permits old sessions"
-      },
-      "requiredEvidence": {
-        "success": [
+          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
           "passkey registration policy resolves a proven existing owner and creates its real session with callback facts",
           "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
           "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
           "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior"
         ],
         "rejection": [
+          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
           "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior"
         ],
         "authorization": [
+          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
           "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior"
         ],
         "state": [
+          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
           "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior"
         ]
       }
@@ -643,13 +617,8 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "passkey client surface matches TS for options and management errors",
-        "rejection": null,
-        "authorization": null,
-        "state": null
-      },
-      "requiredEvidence": {
         "success": [
+          "passkey client surface matches TS for options and management errors",
           "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners",
           "passkey verified callback awaits real stored reads before counter and session while body claims cannot switch credential owner",
           "passkey callback may change persisted credential ownership and metadata without changing the verified session owner",
@@ -661,6 +630,8 @@
           "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
           "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history"
         ],
+        "rejection": null,
+        "authorization": null,
         "state": [
           "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners",
           "passkey verified callback awaits real stored reads before counter and session while body claims cannot switch credential owner",
@@ -750,25 +721,8 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "admin ban, unban, and user-session routes match TS",
-        "rejection": [
-          "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
-          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
-          "admin empty persisted and configured role fall back to the actual configured user grant"
-        ],
-        "authorization": [
-          "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
-          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
-          "admin empty persisted and configured role fall back to the actual configured user grant"
-        ],
-        "state": [
-          "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
-          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
-          "admin empty persisted and configured role fall back to the actual configured user grant"
-        ]
-      },
-      "requiredEvidence": {
         "success": [
+          "admin ban, unban, and user-session routes match TS",
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
           "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
           "admin zero duration and empty reason use source defaults while owned sessions transition",
@@ -777,7 +731,31 @@
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
         ],
+        "rejection": [
+          "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
+          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
+          "admin empty persisted and configured role fall back to the actual configured user grant",
+          "admin date mapping preserves genuine application hook API errors and unchanged owned state",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
+        ],
+        "authorization": [
+          "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
+          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
+          "admin empty persisted and configured role fall back to the actual configured user grant",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
         "state": [
+          "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
+          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
+          "admin empty persisted and configured role fall back to the actual configured user grant",
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
           "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
           "admin zero duration and empty reason use source defaults while owned sessions transition",
@@ -794,21 +772,6 @@
           "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
           "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
           "admin JSON and media rejection precedes authenticated permissions and retains session state"
-        ],
-        "rejection": [
-          "admin date mapping preserves genuine application hook API errors and unchanged owned state",
-          "admin missing session rejects every valid guest operation without changing owned state",
-          "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state",
-          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
-          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
-          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
-          "admin JSON and media rejection precedes authenticated permissions and retains session state"
-        ],
-        "authorization": [
-          "admin missing session rejects every valid guest operation without changing owned state",
-          "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
         ]
       }
     },
@@ -817,18 +780,14 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "admin create-user, set-role, set-user-password, and remove-user match TS",
-        "rejection": "admin create-user, set-role, set-user-password, and remove-user match TS",
-        "authorization": null,
-        "state": null
-      },
-      "requiredEvidence": {
         "success": [
+          "admin create-user, set-role, set-user-password, and remove-user match TS",
           "admin create validates explicit and nested roles before lookup and persists legitimate array ownership",
           "admin create-only grant cannot select explicit or nested roles and retains default creation",
           "admin creation validates email only after permission and literal role validation without inserting invalid owners"
         ],
         "rejection": [
+          "admin create-user, set-role, set-user-password, and remove-user match TS",
           "admin create validates explicit and nested roles before lookup and persists legitimate array ownership",
           "admin create-only grant cannot select explicit or nested roles and retains default creation",
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -871,14 +830,7 @@
           "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
           "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
           "admin empty persisted and configured role fall back to the actual configured user grant",
-          "admin configured grant rejects empty per-resource action requests without losing valid owned reads"
-        ],
-        "rejection": null,
-        "authorization": null,
-        "state": null
-      },
-      "requiredEvidence": {
-        "success": [
+          "admin configured grant rejects empty per-resource action requests without losing valid owned reads",
           "admin create validates explicit and nested roles before lookup and persists legitimate array ownership"
         ],
         "rejection": [
@@ -915,21 +867,33 @@
       "evidence": {
         "success": [
           "admin impersonation restores the original admin session and hides impersonated sessions",
-          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization"
-        ],
-        "rejection": null,
-        "authorization": null,
-        "state": "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization"
-      },
-      "requiredEvidence": {
-        "success": [
+          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
           "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
           "admin zero duration and empty reason use source defaults while owned sessions transition",
           "admin configured fractional negative and NaN defaults preserve persisted session ownership",
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
         ],
+        "rejection": [
+          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
+        ],
+        "authorization": [
+          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
+        ],
         "state": [
+          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
           "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
           "admin zero duration and empty reason use source defaults while owned sessions transition",
           "admin configured fractional negative and NaN defaults preserve persisted session ownership",
@@ -944,24 +908,6 @@
           "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
           "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
           "admin JSON and media rejection precedes authenticated permissions and retains session state"
-        ],
-        "rejection": [
-          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin missing session rejects every valid guest operation without changing owned state",
-          "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state",
-          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
-          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
-          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
-          "admin JSON and media rejection precedes authenticated permissions and retains session state"
-        ],
-        "authorization": [
-          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin missing session rejects every valid guest operation without changing owned state",
-          "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
         ]
       }
     },
@@ -970,12 +916,12 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "admin ban, unban, and user-session routes match TS",
-        "rejection": null,
-        "authorization": null,
-        "state": null
-      },
-      "requiredEvidence": {
+        "success": [
+          "admin ban, unban, and user-session routes match TS",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row"
+        ],
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
@@ -998,11 +944,6 @@
           "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
           "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
           "admin JSON and media rejection precedes authenticated permissions and retains session state"
-        ],
-        "success": [
-          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
-          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
-          "admin revoked malformed schemas reject before session cleanup and preserve every owned row"
         ]
       }
     },
@@ -1014,13 +955,7 @@
         "success": "admin deletion revokes target credentials and sessions while rejecting other principals",
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
-          "admin deletion revokes target credentials and sessions while rejecting other principals"
-        ],
-        "authorization": "admin deletion revokes target credentials and sessions while rejecting other principals",
-        "state": "admin deletion revokes target credentials and sessions while rejecting other principals"
-      },
-      "requiredEvidence": {
-        "rejection": [
+          "admin deletion revokes target credentials and sessions while rejecting other principals",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
@@ -1030,11 +965,13 @@
           "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "authorization": [
+          "admin deletion revokes target credentials and sessions while rejecting other principals",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state"
         ],
         "state": [
+          "admin deletion revokes target credentials and sessions while rejecting other principals",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
@@ -1051,11 +988,6 @@
       "implemented": true,
       "evidence": {
         "success": "admin ban, unban, and user-session routes match TS",
-        "rejection": null,
-        "authorization": null,
-        "state": null
-      },
-      "requiredEvidence": {
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
@@ -1087,11 +1019,6 @@
       "implemented": true,
       "evidence": {
         "success": "admin ban, unban, and user-session routes match TS",
-        "rejection": null,
-        "authorization": null,
-        "state": null
-      },
-      "requiredEvidence": {
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
@@ -1122,13 +1049,8 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "admin create-user, set-role, set-user-password, and remove-user match TS",
-        "rejection": null,
-        "authorization": null,
-        "state": null
-      },
-      "requiredEvidence": {
         "success": [
+          "admin create-user, set-role, set-user-password, and remove-user match TS",
           "admin configured role values retain literal strings and array elements before any target mutation",
           "admin unconfigured role table accepts empty role strings and arrays without inventing validation",
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
@@ -1149,6 +1071,12 @@
           "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
           "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
+        "authorization": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin stored timestamp precision survives official read, update and list without shifting dates"
+        ],
         "state": [
           "admin configured role values retain literal strings and array elements before any target mutation",
           "admin unconfigured role table accepts empty role strings and arrays without inventing validation",
@@ -1162,12 +1090,6 @@
           "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
           "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
           "admin JSON and media rejection precedes authenticated permissions and retains session state"
-        ],
-        "authorization": [
-          "admin missing session rejects every valid guest operation without changing owned state",
-          "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state",
-          "admin stored timestamp precision survives official read, update and list without shifting dates"
         ]
       }
     },
@@ -1177,11 +1099,6 @@
       "implemented": true,
       "evidence": {
         "success": "admin create-user, set-role, set-user-password, and remove-user match TS",
-        "rejection": null,
-        "authorization": null,
-        "state": null
-      },
-      "requiredEvidence": {
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
@@ -1216,11 +1133,6 @@
           "admin impersonation restores the original admin session and hides impersonated sessions",
           "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization"
         ],
-        "rejection": null,
-        "authorization": null,
-        "state": "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization"
-      },
-      "requiredEvidence": {
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
@@ -1233,6 +1145,7 @@
           "admin revoked session rejects every valid guest operation without changing owned state"
         ],
         "state": [
+          "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
@@ -1245,15 +1158,24 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "admin ban, unban, and user-session routes match TS",
-        "rejection": null,
-        "authorization": null,
-        "state": null
-      },
-      "requiredEvidence": {
         "success": [
+          "admin ban, unban, and user-session routes match TS",
           "admin zero duration and empty reason use source defaults while owned sessions transition",
           "admin configured fractional negative and NaN defaults preserve persisted session ownership"
+        ],
+        "rejection": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
+          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
+          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
+          "admin JSON and media rejection precedes authenticated permissions and retains session state"
+        ],
+        "authorization": [
+          "admin missing session rejects every valid guest operation without changing owned state",
+          "admin tampered session rejects every valid guest operation without changing owned state",
+          "admin revoked session rejects every valid guest operation without changing owned state"
         ],
         "state": [
           "admin zero duration and empty reason use source defaults while owned sessions transition",
@@ -1265,8 +1187,17 @@
           "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
           "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
           "admin JSON and media rejection precedes authenticated permissions and retains session state"
-        ],
+        ]
+      }
+    },
+    {
+      "route": "POST /admin/update-user",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": "admin get-user and update-user match TS",
         "rejection": [
+          "admin configured role values retain literal strings and array elements before any target mutation",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
@@ -1279,29 +1210,6 @@
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state"
-        ]
-      }
-    },
-    {
-      "route": "POST /admin/update-user",
-      "upstream": true,
-      "implemented": true,
-      "evidence": {
-        "success": "admin get-user and update-user match TS",
-        "rejection": null,
-        "authorization": null,
-        "state": null
-      },
-      "requiredEvidence": {
-        "rejection": [
-          "admin configured role values retain literal strings and array elements before any target mutation",
-          "admin missing session rejects every valid guest operation without changing owned state",
-          "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state",
-          "admin missing malformed schemas reject before session cleanup and preserve every owned row",
-          "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
-          "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
-          "admin JSON and media rejection precedes authenticated permissions and retains session state"
         ],
         "state": [
           "admin configured role values retain literal strings and array elements before any target mutation",
@@ -1312,11 +1220,6 @@
           "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
           "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
           "admin JSON and media rejection precedes authenticated permissions and retains session state"
-        ],
-        "authorization": [
-          "admin missing session rejects every valid guest operation without changing owned state",
-          "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
         ]
       }
     },
@@ -1334,7 +1237,8 @@
         "rejection": [
           "api-key HTTP requests cannot select a different owner",
           "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
-          "api-key creation rejects client authority before callbacks and preserves deliberate callback errors without secret writes"
+          "api-key creation rejects client authority before callbacks and preserves deliberate callback errors without secret writes",
+          "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer"
         ],
         "authorization": [
           "api-key HTTP requests cannot select a different owner",
@@ -1343,14 +1247,7 @@
         "state": [
           "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
           "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization",
-          "api-key creation rejects client authority before callbacks and preserves deliberate callback errors without secret writes"
-        ]
-      },
-      "requiredEvidence": {
-        "state": [
-          "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer"
-        ],
-        "rejection": [
+          "api-key creation rejects client authority before callbacks and preserves deliberate callback errors without secret writes",
           "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer"
         ]
       }
@@ -1608,21 +1505,16 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "get access token refreshes expired token",
-        "rejection": "account token routes reject conflicting and foreign account selectors",
-        "authorization": null,
-        "state": null
-      },
-      "requiredEvidence": {
         "success": [
+          "get access token refreshes expired token",
           "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials"
         ],
         "rejection": [
+          "account token routes reject conflicting and foreign account selectors",
           "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials"
         ],
-        "state": [
-          "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials"
-        ]
+        "authorization": null,
+        "state": "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials"
       }
     },
     {
@@ -1703,12 +1595,6 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": null,
-        "rejection": null,
-        "authorization": null,
-        "state": null
-      },
-      "requiredEvidence": {
         "success": [
           "One Tap official client binds verified Google accounts and persisted sessions",
           "One Tap disabled signup preserves existing account ownership",
@@ -1817,7 +1703,13 @@
           "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
           "organization metadata record validation precedes policy callbacks and preserves stored rows and selections",
           "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations",
-          "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs"
+          "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs",
+          "organization creation hooks patch persisted drafts and run before selection in actual team order",
+          "organization creation hook null empty and absent patches preserve source merge and no revalidation",
+          "organization creation rejected hooks retain exact earlier rows without selecting the current or sibling session",
+          "organization creation after hooks retain immutable member snapshots after independent database mutation",
+          "organization creation awaits async member hooks before team writes and session selection",
+          "organization trusted creation hook member overrides retain actor authority and original default team membership"
         ],
         "rejection": [
           "organization creation static denial and negative limits preserve ownership while trusted creation bypasses only the allow policy",
@@ -1826,12 +1718,15 @@
           "organization creation callback errors propagate before writes even for trusted callers",
           "organization metadata record validation precedes policy callbacks and preserves stored rows and selections",
           "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations",
-          "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs"
+          "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs",
+          "organization creation rejected hooks retain exact earlier rows without selecting the current or sibling session",
+          "organization creation policies and duplicate checks precede hooks while trusted creation has no request selection"
         ],
         "authorization": [
           "organization creation static denial and negative limits preserve ownership while trusted creation bypasses only the allow policy",
           "organization creation async policy sees the persisted principal and true limit results deny public and trusted creation",
-          "organization creation callback errors propagate before writes even for trusted callers"
+          "organization creation callback errors propagate before writes even for trusted callers",
+          "organization creation policies and duplicate checks precede hooks while trusted creation has no request selection"
         ],
         "state": [
           "organization metadata stores rounded JavaScript numbers before readback",
@@ -1843,26 +1738,7 @@
           "organization creation callback errors propagate before writes even for trusted callers",
           "organization metadata record validation precedes policy callbacks and preserves stored rows and selections",
           "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations",
-          "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs"
-        ]
-      },
-      "requiredEvidence": {
-        "success": [
-          "organization creation hooks patch persisted drafts and run before selection in actual team order",
-          "organization creation hook null empty and absent patches preserve source merge and no revalidation",
-          "organization creation rejected hooks retain exact earlier rows without selecting the current or sibling session",
-          "organization creation after hooks retain immutable member snapshots after independent database mutation",
-          "organization creation awaits async member hooks before team writes and session selection",
-          "organization trusted creation hook member overrides retain actor authority and original default team membership"
-        ],
-        "rejection": [
-          "organization creation rejected hooks retain exact earlier rows without selecting the current or sibling session",
-          "organization creation policies and duplicate checks precede hooks while trusted creation has no request selection"
-        ],
-        "authorization": [
-          "organization creation policies and duplicate checks precede hooks while trusted creation has no request selection"
-        ],
-        "state": [
+          "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs",
           "organization creation hooks patch persisted drafts and run before selection in actual team order",
           "organization creation hook null empty and absent patches preserve source merge and no revalidation",
           "organization creation rejected hooks retain exact earlier rows without selecting the current or sibling session",
@@ -1900,13 +1776,8 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "organization delete returns the deleted org and clears active state",
-        "rejection": null,
-        "authorization": null,
-        "state": null
-      },
-      "requiredEvidence": {
         "success": [
+          "organization delete returns the deleted org and clears active state",
           "organization deletion retains extension rows and valid keys while clearing only its current selected token",
           "organization deletion leaves an unrelated active organization selected when deleting another owned organization",
           "organization deletion hooks receive raw rows and original authority after token clearing and before committed deletion",
@@ -1999,25 +1870,8 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "organization membership mutations cover permissions, role updates, removal, and leave",
-        "rejection": null,
-        "authorization": null,
-        "state": null
-      },
-      "requiredEvidence": {
         "success": [
-          "organization ID removal omits the email join and preserves the target and foreign selected sessions",
-          "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
-          "organization removal callbacks preserve ID and email snapshots across committed team cleanup",
-          "organization removal callbacks reject at the actual before and after persistence phases",
-          "organization removal keeps original callback snapshots after independent target mutation or member deletion",
-          "organization removal guards and body validation prevent configured callbacks and permit a legitimate retry",
-          "organization self removal clears only the current organization before after-hook rejection",
-          "organization removal honors disabled team cleanup and the actual default team page",
-          "organization last owner checks its configured raw page before callbacks",
-          "organization removal awaits its actual before callback before member and team writes"
-        ],
-        "state": [
+          "organization membership mutations cover permissions, role updates, removal, and leave",
           "organization ID removal omits the email join and preserves the target and foreign selected sessions",
           "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
           "organization removal callbacks preserve ID and email snapshots across committed team cleanup",
@@ -2041,6 +1895,18 @@
           "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
           "organization removal validates ordered string fields and media before guest authentication",
           "organization removal guards and body validation prevent configured callbacks and permit a legitimate retry"
+        ],
+        "state": [
+          "organization ID removal omits the email join and preserves the target and foreign selected sessions",
+          "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
+          "organization removal callbacks preserve ID and email snapshots across committed team cleanup",
+          "organization removal callbacks reject at the actual before and after persistence phases",
+          "organization removal keeps original callback snapshots after independent target mutation or member deletion",
+          "organization removal guards and body validation prevent configured callbacks and permit a legitimate retry",
+          "organization self removal clears only the current organization before after-hook rejection",
+          "organization removal honors disabled team cleanup and the actual default team page",
+          "organization last owner checks its configured raw page before callbacks",
+          "organization removal awaits its actual before callback before member and team writes"
         ]
       }
     },
@@ -2129,7 +1995,12 @@
           "organization logo patches preserve omitted fields, clear SQL null, and enforce authenticated ownership",
           "organization blank update selectors use only the current token selection and preserve other organizations",
           "organization set-active returns exact stored metadata text and changes only the current token selection",
-          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
+          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints",
+          "organization update hooks merge null empty and absent patches with parsed adapter output",
+          "organization update callbacks retain original actor and membership despite independent writes",
+          "organization update after hook receives null when before hook actually deletes its row",
+          "organization update awaits its real async before hook before executing the adapter",
+          "organization update hooks observe raw nonfinite and signed-zero metadata before adapter JSON normalization"
         ],
         "rejection": [
           "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
@@ -2137,12 +2008,17 @@
           "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations",
           "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs",
           "organization logo patches preserve omitted fields, clear SQL null, and enforce authenticated ownership",
-          "organization blank update selectors use only the current token selection and preserve other organizations"
+          "organization blank update selectors use only the current token selection and preserve other organizations",
+          "organization update hook rejection retains source before and after persistence ordering",
+          "organization update validation authority and duplicate guards run before application hooks",
+          "organization update callbacks retain original actor and membership despite independent writes"
         ],
         "authorization": [
           "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
           "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations",
-          "organization logo patches preserve omitted fields, clear SQL null, and enforce authenticated ownership"
+          "organization logo patches preserve omitted fields, clear SQL null, and enforce authenticated ownership",
+          "organization update validation authority and duplicate guards run before application hooks",
+          "organization update callbacks retain original actor and membership despite independent writes"
         ],
         "state": [
           "organization metadata stores rounded JavaScript numbers before readback",
@@ -2155,11 +2031,7 @@
           "organization logo patches preserve omitted fields, clear SQL null, and enforce authenticated ownership",
           "organization blank update selectors use only the current token selection and preserve other organizations",
           "organization set-active returns exact stored metadata text and changes only the current token selection",
-          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
-        ]
-      },
-      "requiredEvidence": {
-        "state": [
+          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints",
           "organization update hooks merge null empty and absent patches with parsed adapter output",
           "organization update hook rejection retains source before and after persistence ordering",
           "organization update validation authority and duplicate guards run before application hooks",
@@ -2167,22 +2039,6 @@
           "organization update after hook receives null when before hook actually deletes its row",
           "organization update awaits its real async before hook before executing the adapter",
           "organization update hooks observe raw nonfinite and signed-zero metadata before adapter JSON normalization"
-        ],
-        "success": [
-          "organization update hooks merge null empty and absent patches with parsed adapter output",
-          "organization update callbacks retain original actor and membership despite independent writes",
-          "organization update after hook receives null when before hook actually deletes its row",
-          "organization update awaits its real async before hook before executing the adapter",
-          "organization update hooks observe raw nonfinite and signed-zero metadata before adapter JSON normalization"
-        ],
-        "rejection": [
-          "organization update hook rejection retains source before and after persistence ordering",
-          "organization update validation authority and duplicate guards run before application hooks",
-          "organization update callbacks retain original actor and membership despite independent writes"
-        ],
-        "authorization": [
-          "organization update validation authority and duplicate guards run before application hooks",
-          "organization update callbacks retain original actor and membership despite independent writes"
         ]
       }
     },
@@ -2193,42 +2049,20 @@
       "evidence": {
         "success": [
           "organization membership mutations cover permissions, role updates, removal, and leave",
-          "organization creator role customization preserves explicit grants and prevents removing the only effective owner"
-        ],
-        "rejection": "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
-        "authorization": null,
-        "state": "organization creator role customization preserves explicit grants and prevents removing the only effective owner"
-      },
-      "requiredEvidence": {
-        "success": [
+          "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
           "organization member role updates normalize string and array input without deduplicating roles",
           "organization member role callbacks use the target user and normalized initial role with source patch fallback",
           "organization member role after callback keeps original target snapshots across independent writes",
           "organization member role update awaits async callback before changing the stored role",
           "organization member role revoked and expired sessions preserve cleanup and sibling authority",
           "organization member role empty input rejects before callbacks and preserves actual full owned and foreign state",
-          "organization member role media and malformed JSON rejection precede authentication with a valid retry",
-          "organization member role selectors retain source empty-role precedence and literal whitespace IDs",
-          "organization member role ECMAScript whitespace normalizes arrays and duplicates before callbacks and storage",
-          "organization member role preserves NEL as a non-whitespace unknown role without callbacks or writes"
-        ],
-        "state": [
-          "organization member role updates normalize string and array input without deduplicating roles",
-          "organization member role callbacks use the target user and normalized initial role with source patch fallback",
-          "organization member role callback errors distinguish no write from a committed role change",
-          "organization member role validation and foreign authorization reject before any callback or write",
-          "organization member role after callback keeps original target snapshots across independent writes",
-          "organization member role before callback deletion yields actual missing-member rejection without after callback",
-          "organization member role update awaits async callback before changing the stored role",
-          "organization member role revoked and expired sessions preserve cleanup and sibling authority",
-          "organization member role empty input rejects before callbacks and preserves actual full owned and foreign state",
-          "organization member role ordered union and field validation runs before guest authentication without side effects",
           "organization member role media and malformed JSON rejection precede authentication with a valid retry",
           "organization member role selectors retain source empty-role precedence and literal whitespace IDs",
           "organization member role ECMAScript whitespace normalizes arrays and duplicates before callbacks and storage",
           "organization member role preserves NEL as a non-whitespace unknown role without callbacks or writes"
         ],
         "rejection": [
+          "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
           "organization member role callbacks use the target user and normalized initial role with source patch fallback",
           "organization member role callback errors distinguish no write from a committed role change",
           "organization member role validation and foreign authorization reject before any callback or write",
@@ -2246,6 +2080,23 @@
           "organization member role validation and foreign authorization reject before any callback or write",
           "organization member role revoked and expired sessions preserve cleanup and sibling authority",
           "organization member role ordered union and field validation runs before guest authentication without side effects"
+        ],
+        "state": [
+          "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
+          "organization member role updates normalize string and array input without deduplicating roles",
+          "organization member role callbacks use the target user and normalized initial role with source patch fallback",
+          "organization member role callback errors distinguish no write from a committed role change",
+          "organization member role validation and foreign authorization reject before any callback or write",
+          "organization member role after callback keeps original target snapshots across independent writes",
+          "organization member role before callback deletion yields actual missing-member rejection without after callback",
+          "organization member role update awaits async callback before changing the stored role",
+          "organization member role revoked and expired sessions preserve cleanup and sibling authority",
+          "organization member role empty input rejects before callbacks and preserves actual full owned and foreign state",
+          "organization member role ordered union and field validation runs before guest authentication without side effects",
+          "organization member role media and malformed JSON rejection precede authentication with a valid retry",
+          "organization member role selectors retain source empty-role precedence and literal whitespace IDs",
+          "organization member role ECMAScript whitespace normalizes arrays and duplicates before callbacks and storage",
+          "organization member role preserves NEL as a non-whitespace unknown role without callbacks or writes"
         ]
       }
     },
@@ -2301,22 +2152,7 @@
         "success": [
           "passkey registration authentication ownership and deletion round trip",
           "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
-          "passkey rejected cryptographic attempts consume challenges without credential or session writes"
-        ],
-        "rejection": [
-          "passkey registration authentication ownership and deletion round trip",
-          "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
-          "passkey rejected cryptographic attempts consume challenges without credential or session writes"
-        ],
-        "authorization": "passkey rejected cryptographic attempts consume challenges without credential or session writes",
-        "state": [
-          "passkey registration authentication ownership and deletion round trip",
-          "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
-          "passkey rejected cryptographic attempts consume challenges without credential or session writes"
-        ]
-      },
-      "requiredEvidence": {
-        "success": [
+          "passkey rejected cryptographic attempts consume challenges without credential or session writes",
           "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners",
           "passkey verified callback awaits real stored reads before counter and session while body claims cannot switch credential owner",
           "passkey callback may change persisted credential ownership and metadata without changing the verified session owner",
@@ -2330,26 +2166,10 @@
           "passkey packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication"
         ],
-        "state": [
-          "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners",
-          "passkey passkey-auth-forbidden callback rejects after real proof and burns challenge without counter session or cookie writes",
-          "passkey passkey-auth-public-error callback rejects after real proof and burns challenge without counter session or cookie writes",
-          "passkey passkey-auth-internal-error callback rejects after real proof and burns challenge without counter session or cookie writes",
-          "passkey verified callback awaits real stored reads before counter and session while body claims cannot switch credential owner",
-          "passkey cryptographic challenge and signature failures never invoke application callback and cannot reuse consumed context",
-          "passkey callback may change persisted credential ownership and metadata without changing the verified session owner",
-          "passkey signed uv-absent authenticates original owner without historical verifier restrictions",
-          "passkey signed backup-upgrade-backed authenticates original owner without historical verifier restrictions",
-          "passkey signed backup-downgrade authenticates original owner without historical verifier restrictions",
-          "passkey Source verifier rejects actual signed invalid flags presence RP origins challenge signature and counters before callbacks",
-          "passkey overlapping issued challenges verify against the current saved counter rather than a stale generation snapshot",
-          "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
-          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history",
-          "passkey none-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication"
-        ],
         "rejection": [
+          "passkey registration authentication ownership and deletion round trip",
+          "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
+          "passkey rejected cryptographic attempts consume challenges without credential or session writes",
           "passkey passkey-auth-forbidden callback rejects after real proof and burns challenge without counter session or cookie writes",
           "passkey passkey-auth-public-error callback rejects after real proof and burns challenge without counter session or cookie writes",
           "passkey passkey-auth-internal-error callback rejects after real proof and burns challenge without counter session or cookie writes",
@@ -2365,9 +2185,32 @@
           "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history"
         ],
         "authorization": [
+          "passkey rejected cryptographic attempts consume challenges without credential or session writes",
           "passkey passkey-auth-forbidden callback rejects after real proof and burns challenge without counter session or cookie writes",
           "passkey cryptographic challenge and signature failures never invoke application callback and cannot reuse consumed context",
           "passkey Source verifier rejects actual signed invalid flags presence RP origins challenge signature and counters before callbacks"
+        ],
+        "state": [
+          "passkey registration authentication ownership and deletion round trip",
+          "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
+          "passkey rejected cryptographic attempts consume challenges without credential or session writes",
+          "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners",
+          "passkey passkey-auth-forbidden callback rejects after real proof and burns challenge without counter session or cookie writes",
+          "passkey passkey-auth-public-error callback rejects after real proof and burns challenge without counter session or cookie writes",
+          "passkey passkey-auth-internal-error callback rejects after real proof and burns challenge without counter session or cookie writes",
+          "passkey verified callback awaits real stored reads before counter and session while body claims cannot switch credential owner",
+          "passkey cryptographic challenge and signature failures never invoke application callback and cannot reuse consumed context",
+          "passkey callback may change persisted credential ownership and metadata without changing the verified session owner",
+          "passkey signed uv-absent authenticates original owner without historical verifier restrictions",
+          "passkey signed backup-upgrade-backed authenticates original owner without historical verifier restrictions",
+          "passkey signed backup-downgrade authenticates original owner without historical verifier restrictions",
+          "passkey Source verifier rejects actual signed invalid flags presence RP origins challenge signature and counters before callbacks",
+          "passkey overlapping issued challenges verify against the current saved counter rather than a stale generation snapshot",
+          "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
+          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history",
+          "passkey none-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication"
         ]
       }
     },
@@ -2380,28 +2223,7 @@
           "passkey registration authentication ownership and deletion round trip",
           "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
           "passkey rejected cryptographic attempts consume challenges without credential or session writes",
-          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions"
-        ],
-        "rejection": [
-          "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
-          "passkey rejected cryptographic attempts consume challenges without credential or session writes",
           "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
-          "passkey foreign owner, expired challenge and wrong ceremony retire the actual persisted generation"
-        ],
-        "authorization": [
-          "passkey foreign owner, expired challenge and wrong ceremony retire the actual persisted generation",
-          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions"
-        ],
-        "state": [
-          "passkey registration authentication ownership and deletion round trip",
-          "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
-          "passkey rejected cryptographic attempts consume challenges without credential or session writes",
-          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
-          "passkey foreign owner, expired challenge and wrong ceremony retire the actual persisted generation"
-        ]
-      },
-      "requiredEvidence": {
-        "success": [
           "passkey registration policy resolves a proven existing owner and creates its real session with callback facts",
           "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
           "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
@@ -2411,6 +2233,10 @@
           "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication"
         ],
         "rejection": [
+          "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
+          "passkey rejected cryptographic attempts consume challenges without credential or session writes",
+          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
+          "passkey foreign owner, expired challenge and wrong ceremony retire the actual persisted generation",
           "passkey registration policy resolves a proven existing owner and creates its real session with callback facts",
           "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
           "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
@@ -2418,11 +2244,18 @@
           "passkey registration rejects actual packed signature failures malformed proofs flags origins and wrong owner before writes"
         ],
         "authorization": [
+          "passkey foreign owner, expired challenge and wrong ceremony retire the actual persisted generation",
+          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
           "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
           "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
           "passkey registration rejects actual packed signature failures malformed proofs flags origins and wrong owner before writes"
         ],
         "state": [
+          "passkey registration authentication ownership and deletion round trip",
+          "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
+          "passkey rejected cryptographic attempts consume challenges without credential or session writes",
+          "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
+          "passkey foreign owner, expired challenge and wrong ceremony retire the actual persisted generation",
           "passkey registration policy resolves a proven existing owner and creates its real session with callback facts",
           "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
           "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
@@ -2605,33 +2438,9 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "admin ban, unban, and user-session routes match TS",
-        "rejection": "admin create-user, set-role, set-user-password, and remove-user match TS",
-        "authorization": "admin create-user, set-role, set-user-password, and remove-user match TS",
-        "state": "official client signs in with imported TypeScript scrypt credentials"
-      },
-      "requiredEvidence": {
         "success": [
+          "admin ban, unban, and user-session routes match TS",
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
-          "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions",
-          "two-factor two-factor-trust-fractional retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-zero-challenge retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-negative-challenge retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state",
-          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "two-factor two-factor-skip-verification checks outer and inner trust syntax before deletion and cleanup",
-          "two-factor two-factor-skip-verification checks authenticated trust ownership missing rows expiry and cleanup",
-          "two-factor two-factor-skip-verification rotates real trust proofs accepts HMAC aliases and rejects replay",
-          "two-factor two-factor-trust-cleanup-disabled checks outer and inner trust syntax before deletion and cleanup",
-          "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
-          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay"
-        ],
-        "state": [
-          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
-          "admin zero duration and empty reason use source defaults while owned sessions transition",
           "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions",
           "two-factor two-factor-trust-fractional retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor two-factor-trust-zero-challenge retains configured cookie and database lifetimes through real trust and challenge state",
@@ -2649,14 +2458,36 @@
           "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay"
         ],
         "rejection": [
+          "admin create-user, set-role, set-user-password, and remove-user match TS",
           "admin zero duration and empty reason use source defaults while owned sessions transition",
           "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions",
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
         ],
         "authorization": [
+          "admin create-user, set-role, set-user-password, and remove-user match TS",
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
+        ],
+        "state": [
+          "official client signs in with imported TypeScript scrypt credentials",
+          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
+          "admin zero duration and empty reason use source defaults while owned sessions transition",
+          "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions",
+          "two-factor two-factor-trust-fractional retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-zero-challenge retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-negative-challenge retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state",
+          "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "two-factor two-factor-skip-verification checks outer and inner trust syntax before deletion and cleanup",
+          "two-factor two-factor-skip-verification checks authenticated trust ownership missing rows expiry and cleanup",
+          "two-factor two-factor-skip-verification rotates real trust proofs accepts HMAC aliases and rejects replay",
+          "two-factor two-factor-trust-cleanup-disabled checks outer and inner trust syntax before deletion and cleanup",
+          "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
+          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay"
         ]
       }
     },
@@ -2894,7 +2725,15 @@
           "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
           "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation",
           "two-factor OTP enable uses an authoritative owner, validates method before password verification and succeeds with disabled TOTP without a factor",
-          "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries"
+          "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries",
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
+          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor",
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
         ],
         "rejection": [
           "disabled TOTP rejects generator and verification before touching owner factor state",
@@ -2906,11 +2745,13 @@
           "two-factor passwordless option retains password ownership for mixed social and credential accounts",
           "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation",
           "two-factor OTP enable uses an authoritative owner, validates method before password verification and succeeds with disabled TOTP without a factor",
-          "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries"
+          "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries",
+          "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor"
         ],
         "authorization": [
           "two-factor skip enrollment preserves a genuine identical-message 403 without factor or token mutation",
-          "two-factor OTP enable uses an authoritative owner, validates method before password verification and succeeds with disabled TOTP without a factor"
+          "two-factor OTP enable uses an authoritative owner, validates method before password verification and succeeds with disabled TOTP without a factor",
+          "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor"
         ],
         "state": [
           "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership",
@@ -2931,11 +2772,7 @@
           "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
           "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation",
           "two-factor OTP enable uses an authoritative owner, validates method before password verification and succeeds with disabled TOTP without a factor",
-          "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries"
-        ]
-      },
-      "requiredEvidence": {
-        "success": [
+          "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries",
           "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
           "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
@@ -2944,22 +2781,6 @@
           "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor",
           "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
-        ],
-        "state": [
-          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
-          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
-          "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
-          "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
-          "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
-          "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
-          "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor",
-          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
-        ],
-        "rejection": [
-          "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor"
-        ],
-        "authorization": [
-          "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor"
         ]
       }
     },
@@ -2971,21 +2792,7 @@
         "success": [
           "two-factor generate-backup-codes replaces the backup code set for enabled users",
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
-          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations"
-        ],
-        "rejection": [
-          "two-factor passwordless option retains password ownership for mixed social and credential accounts",
-          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations"
-        ],
-        "authorization": null,
-        "state": [
-          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
-          "two-factor passwordless option retains password ownership for mixed social and credential accounts",
-          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations"
-        ]
-      },
-      "requiredEvidence": {
-        "success": [
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
           "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
           "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
@@ -2993,8 +2800,9 @@
           "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration"
         ],
-        "state": [
-          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
+        "rejection": [
+          "two-factor passwordless option retains password ownership for mixed social and credential accounts",
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
           "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
@@ -3002,7 +2810,12 @@
           "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor"
         ],
-        "rejection": [
+        "authorization": null,
+        "state": [
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
+          "two-factor passwordless option retains password ownership for mixed social and credential accounts",
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
           "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
@@ -3023,7 +2836,8 @@
           "default TOTP URI preserves reserved issuer bytes and explicit default parameters",
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
           "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
-          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation"
+          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation",
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
         ],
         "rejection": [
           "disabled TOTP rejects generator and verification before touching owner factor state",
@@ -3037,14 +2851,7 @@
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
           "two-factor passwordless option retains password ownership for mixed social and credential accounts",
           "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
-          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation"
-        ]
-      },
-      "requiredEvidence": {
-        "success": [
-          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
-        ],
-        "state": [
+          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation",
           "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
         ]
       }
@@ -3065,10 +2872,17 @@
           "two-factor two-factor-otp-hashed applies decimal-prefix counters, fractional or zero-default budgets and consumes the exhausted row",
           "two-factor two-factor-otp-encrypted applies decimal-prefix counters, fractional or zero-default budgets and consumes the exhausted row",
           "two-factor OTP resends retain generations until the newest code is consumed once under concurrent requests",
-          "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries"
+          "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries",
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
+          "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
+          "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
+          "two-factor authenticated OTP success rotates its real owner session after code consumption"
         ],
-        "rejection": "two-factor OTP enable uses an authoritative owner, validates method before password verification and succeeds with disabled TOTP without a factor",
-        "authorization": null,
+        "rejection": [
+          "two-factor OTP enable uses an authoritative owner, validates method before password verification and succeeds with disabled TOTP without a factor",
+          "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation"
+        ],
+        "authorization": "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation",
         "state": [
           "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code",
           "two-factor two-factor-otp-plain delivers and persists its configured OTP before real enrollment, login, expiry and replay checks",
@@ -3080,24 +2894,8 @@
           "two-factor two-factor-otp-encrypted applies decimal-prefix counters, fractional or zero-default budgets and consumes the exhausted row",
           "two-factor OTP resends retain generations until the newest code is consumed once under concurrent requests",
           "two-factor OTP enable uses an authoritative owner, validates method before password verification and succeeds with disabled TOTP without a factor",
-          "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries"
-        ]
-      },
-      "requiredEvidence": {
-        "rejection": [
-          "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation"
-        ],
-        "authorization": [
-          "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation"
-        ],
-        "state": [
+          "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries",
           "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation",
-          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
-          "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
-          "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
-          "two-factor authenticated OTP success rotates its real owner session after code consumption"
-        ],
-        "success": [
           "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
           "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
           "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
@@ -3117,7 +2915,12 @@
           "two-factor enrollment reuses only an unverified factor generation and protects established secrets from re-enrollment",
           "two-factor skip-verification enrollment persists verified state and rotates only the owner's session",
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
-          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations"
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
+          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
         ],
         "rejection": [
           "two-factor verify-backup-code signs the user in and consumes the used code",
@@ -3127,7 +2930,14 @@
           "two-factor skip-verification enrollment persists verified state and rotates only the owner's session",
           "two-factor pending backup session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
           "two-factor pending backup preserves an identical-message application Forbidden after consumption",
-          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password"
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
+          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
         ],
         "authorization": [
           "two-factor verify-backup-code signs the user in and consumes the used code",
@@ -3142,27 +2952,7 @@
           "two-factor pending backup session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
           "two-factor pending backup preserves an identical-message application Forbidden after consumption",
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
-          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations"
-        ]
-      },
-      "requiredEvidence": {
-        "success": [
-          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
-          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
-          "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
-          "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
-          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
-        ],
-        "state": [
-          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
-          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
-          "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
-          "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
-          "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
-          "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
-          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
-        ],
-        "rejection": [
+          "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
           "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
           "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
@@ -3189,7 +2979,19 @@
           "two-factor two-factor-otp-hashed applies decimal-prefix counters, fractional or zero-default budgets and consumes the exhausted row",
           "two-factor two-factor-otp-encrypted applies decimal-prefix counters, fractional or zero-default budgets and consumes the exhausted row",
           "two-factor OTP resends retain generations until the newest code is consumed once under concurrent requests",
-          "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries"
+          "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries",
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
+          "two-factor two-factor-trust-fractional retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor authenticated OTP success rotates its real owner session after code consumption",
+          "two-factor two-factor-skip-verification checks outer and inner trust syntax before deletion and cleanup",
+          "two-factor two-factor-skip-verification checks authenticated trust ownership missing rows expiry and cleanup",
+          "two-factor two-factor-skip-verification rotates real trust proofs accepts HMAC aliases and rejects replay",
+          "two-factor two-factor-trust-cleanup-disabled checks outer and inner trust syntax before deletion and cleanup",
+          "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
+          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay"
         ],
         "rejection": [
           "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
@@ -3204,12 +3006,18 @@
           "two-factor two-factor-otp-hashed applies decimal-prefix counters, fractional or zero-default budgets and consumes the exhausted row",
           "two-factor two-factor-otp-encrypted applies decimal-prefix counters, fractional or zero-default budgets and consumes the exhausted row",
           "two-factor OTP resends retain generations until the newest code is consumed once under concurrent requests",
-          "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries"
+          "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries",
+          "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
+          "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
+          "two-factor authenticated OTP success rotates its real owner session after code consumption"
         ],
         "authorization": [
           "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
           "two-factor pending otp session cancellation returns FAILED_TO_CREATE_SESSION after consumption",
-          "two-factor pending otp preserves an identical-message application Forbidden after consumption"
+          "two-factor pending otp preserves an identical-message application Forbidden after consumption",
+          "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
+          "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
+          "two-factor authenticated OTP success rotates its real owner session after code consumption"
         ],
         "state": [
           "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code",
@@ -3223,25 +3031,7 @@
           "two-factor two-factor-otp-hashed applies decimal-prefix counters, fractional or zero-default budgets and consumes the exhausted row",
           "two-factor two-factor-otp-encrypted applies decimal-prefix counters, fractional or zero-default budgets and consumes the exhausted row",
           "two-factor OTP resends retain generations until the newest code is consumed once under concurrent requests",
-          "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries"
-        ]
-      },
-      "requiredEvidence": {
-        "success": [
-          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
-          "two-factor two-factor-trust-fractional retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor authenticated OTP success rotates its real owner session after code consumption",
-          "two-factor two-factor-skip-verification checks outer and inner trust syntax before deletion and cleanup",
-          "two-factor two-factor-skip-verification checks authenticated trust ownership missing rows expiry and cleanup",
-          "two-factor two-factor-skip-verification rotates real trust proofs accepts HMAC aliases and rejects replay",
-          "two-factor two-factor-trust-cleanup-disabled checks outer and inner trust syntax before deletion and cleanup",
-          "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
-          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay"
-        ],
-        "state": [
+          "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries",
           "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
           "two-factor two-factor-trust-fractional retains configured cookie and database lifetimes through real trust and challenge state",
           "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
@@ -3256,16 +3046,6 @@
           "two-factor two-factor-trust-cleanup-disabled checks outer and inner trust syntax before deletion and cleanup",
           "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
           "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay"
-        ],
-        "rejection": [
-          "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
-          "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
-          "two-factor authenticated OTP success rotates its real owner session after code consumption"
-        ],
-        "authorization": [
-          "two-factor authenticated OTP session cancellation returns an empty 500 after code consumption",
-          "two-factor authenticated OTP retains a same-message application Forbidden after code consumption",
-          "two-factor authenticated OTP success rotates its real owner session after code consumption"
         ]
       }
     },
@@ -3284,7 +3064,8 @@
           "two-factor OTP failures share the pending account budget and successful OTP resets it without consuming a backup code",
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
           "two-factor passwordless option retains password ownership for mixed social and credential accounts",
-          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation"
+          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation",
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
         ],
         "rejection": [
           "disabled TOTP rejects generator and verification before touching owner factor state",
@@ -3312,14 +3093,7 @@
           "two-factor pending totp preserves an identical-message application Forbidden after consumption",
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
           "two-factor passwordless option retains password ownership for mixed social and credential accounts",
-          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation"
-        ]
-      },
-      "requiredEvidence": {
-        "success": [
-          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
-        ],
-        "state": [
+          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation",
           "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
         ]
       }

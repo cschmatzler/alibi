@@ -38,6 +38,16 @@ test("capability gate requires every committed scenario and regeneration preserv
     expect(updated.capabilities[0].evidence.success).toEqual(inventory.capabilities[0]!.evidence.success);
     expect(updated.capabilities[0].evidence.rejection).toBe("expired session");
     expect(updated.capabilities[0].evidence.state).toBe("persisted refresh");
+    // A misspelled or separate requirement field must never be silently stripped.
+    const unknownRequirements = { ...updated, capabilities: [{ ...updated.capabilities[0], requiredEvidence: { success: "unobserved lifecycle" } }] };
+    await Bun.write(inventoryPath, JSON.stringify(unknownRequirements));
+    for (const update of [false, true]) {
+      const unknown = await run(update);
+      expect(unknown.code).not.toBe(0);
+      expect(unknown.output).toContain("requiredEvidence");
+      expect(await Bun.file(inventoryPath).json()).toEqual(unknownRequirements);
+    }
+    await Bun.write(inventoryPath, JSON.stringify(updated));
     const duplicated = { ...updated, capabilities: [...updated.capabilities, { ...updated.capabilities[0], evidence: { ...updated.capabilities[0].evidence, success: "earlier alphabetic scenario" } }] };
     await Bun.write(inventoryPath, JSON.stringify(duplicated));
     const duplicateResult = await run(true);

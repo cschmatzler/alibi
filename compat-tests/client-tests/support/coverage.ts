@@ -8,8 +8,8 @@ const requirementSchema = z.union([z.string().min(1), z.array(z.string().min(1))
 /** Validated, committed route and scenario requirements. */
 export const inventorySchema = z.object({ upstreamVersion: z.literal("1.7.6"), capabilities: z.array(z.object({
   route: z.string(), implemented: z.boolean(), upstream: z.boolean(),
-  evidence: z.object({ success: requirementSchema, rejection: requirementSchema, authorization: requirementSchema, state: requirementSchema }),
-})) });
+  evidence: z.object({ success: requirementSchema, rejection: requirementSchema, authorization: requirementSchema, state: requirementSchema }).strict(),
+}).strict()) }).strict();
 /** Independent evidence categories; none implies complete endpoint coverage. */
 export type EvidenceKind = "success" | "rejection" | "authorization" | "state";
 const inventory = inventorySchema.parse(await Bun.file(new URL("../../capabilities.json", import.meta.url)).json());
