@@ -22,6 +22,7 @@ import { createAdminBannedMessageFixture } from "./admin-banned-message-fixture"
 import { createAdminPermissionFixture } from "./admin-permission-fixture";
 import { createMultipleSessionFixture } from "./multiple-session-fixture";
 import { createSessionFieldsFixture } from "./session-fields-fixture";
+import { createOneTapProfiles, googleOneTapJwks, oneTapState } from "./one-tap-fixture";
 import { getMigrations } from "better-auth/db/migration";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { apiKey } from "@better-auth/api-key";
@@ -171,6 +172,9 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const request = input instanceof Request ? input : new Request(input, init);
   const url = new URL(request.url);
 
+  if (url.href === "https://www.googleapis.com/oauth2/v3/certs") {
+    return originalFetch(`${authOptions.baseURL}/__test/one-tap/jwks`);
+  }
   if (url.origin === "https://oauth2.googleapis.com" && url.pathname === "/token") {
     if (oauthRefreshMode === "error") {
       return jsonResponse(
@@ -501,6 +505,7 @@ const twoFactorPolicyFixture = createTwoFactorPolicyFixture(authOptions, databas
 const twoFactorOtpFixture = createTwoFactorOtpFixture(authOptions, database);
 const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
+const oneTapProfiles = createOneTapProfiles(authOptions);
 
 const OTT_PROFILE_NAMES=["ott-default","ott-hashed","ott-no-cookie","ott-server-header","ott-refresh-disabled","ott-refresh-deferred"] as const;
 const ottExposedHeaderFixture: BetterAuthPlugin = {
@@ -1309,6 +1314,11 @@ const server = Bun.serve({
       }
 
       for (const [name, instance] of phoneFixture.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
+      }
+      if (url.pathname === "/__test/one-tap/jwks") return googleOneTapJwks();
+      if (url.pathname === "/__test/one-tap/state") return oneTapState(oneTapProfiles);
+      for (const [name,instance] of oneTapProfiles) {
         if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
       }
       for (const [name,instance] of magicProfiles) {

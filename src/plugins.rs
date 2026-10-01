@@ -41,3 +41,7 @@ pub use better_auth_api::plugins::passkey::{
     PasskeyRegistrationOverride, PasskeyRegistrationUser, PasskeyUserResolver,
     VerifiedPasskeyRegistration,
 };
+
+pub use better_auth_api::plugins::one_tap::{
+    self, GoogleJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin,
+};

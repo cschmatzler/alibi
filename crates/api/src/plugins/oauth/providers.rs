@@ -221,6 +221,12 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
 #[derive(Clone)]
 pub struct OAuthProvider {
     pub client_id: String,
+    /// Additional Google client IDs accepted when verifying ID tokens.
+    pub additional_client_ids: Vec<String>,
+    /// Google Workspace domain restriction, independently of authorization parameters.
+    pub hosted_domain: Option<String>,
+    /// Require a verified provider email before creating the authentication session.
+    pub require_email_verification: bool,
     pub client_secret: String,
     pub auth_url: String,
     pub token_url: String,
@@ -237,9 +243,33 @@ pub struct OAuthProvider {
 }
 
 impl OAuthProvider {
+    pub fn with_client_ids(mut self, client_ids: Vec<String>) -> Self {
+        let mut ids = client_ids.into_iter();
+        self.client_id = ids.next().unwrap_or_default();
+        self.additional_client_ids = ids.collect();
+        self
+    }
+
+    pub fn with_hosted_domain(mut self, domain: impl Into<String>) -> Self {
+        let domain = domain.into();
+        self.authorization_params.retain(|(key, _)| key != "hd");
+        self.authorization_params
+            .push(("hd".into(), domain.clone()));
+        self.hosted_domain = Some(domain);
+        self
+    }
+
+    pub fn require_email_verification(mut self, required: bool) -> Self {
+        self.require_email_verification = required;
+        self
+    }
+
     pub fn google(client_id: &str, client_secret: &str) -> Self {
         Self {
             client_id: client_id.to_string(),
+            additional_client_ids: Vec::new(),
+            hosted_domain: None,
+            require_email_verification: false,
             client_secret: client_secret.to_string(),
             auth_url: "https://accounts.google.com/o/oauth2/v2/auth".to_string(),
             token_url: "https://oauth2.googleapis.com/token".to_string(),
@@ -304,6 +334,9 @@ impl OAuthProvider {
     ) -> Self {
         Self {
             client_id: client_id.to_string(),
+            additional_client_ids: Vec::new(),
+            hosted_domain: None,
+            require_email_verification: false,
             client_secret: client_secret.to_string(),
             auth_url: auth_url.to_string(),
             token_url: token_url.to_string(),
@@ -326,6 +359,9 @@ impl OAuthProvider {
     pub fn discord(client_id: &str, client_secret: &str) -> Self {
         Self {
             client_id: client_id.to_string(),
+            additional_client_ids: Vec::new(),
+            hosted_domain: None,
+            require_email_verification: false,
             client_secret: client_secret.to_string(),
             auth_url: "https://discord.com/api/oauth2/authorize".to_string(),
             token_url: "https://discord.com/api/oauth2/token".to_string(),

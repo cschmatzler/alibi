@@ -24,6 +24,7 @@ use better_auth::{
             OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
             OAuthUserInfoResponse,
         },
+        one_tap::OneTapPlugin,
         organization::{
             DynamicAccessControlConfig, OrganizationConfig, TeamsConfig,
             default_organization_statements,
@@ -158,6 +159,7 @@ pub struct TestAuthOptions {
     pub dynamic_roles_enabled: bool,
     pub phone_enabled: bool,
     pub multi_session_enabled: bool,
+    pub one_tap_enabled: bool,
 }
 
 struct TestResetSender {
@@ -260,6 +262,9 @@ fn mock_oauth_plugin() -> OAuthPlugin {
         "mock",
         OAuthProvider {
             client_id: "mock-client-id".to_string(),
+            additional_client_ids: Vec::new(),
+            hosted_domain: None,
+            require_email_verification: false,
             client_secret: "mock-client-secret".to_string(),
             auth_url: format!("{MOCK_OAUTH_BASE_URL}/__test/oauth/authorize"),
             token_url: format!("{MOCK_OAUTH_BASE_URL}/__test/oauth/token"),
@@ -387,6 +392,11 @@ pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth
     };
     let builder = if options.multi_session_enabled {
         builder.plugin(MultiSessionPlugin::new())
+    } else {
+        builder
+    };
+    let builder = if options.one_tap_enabled {
+        builder.plugin(OneTapPlugin::new())
     } else {
         builder
     };

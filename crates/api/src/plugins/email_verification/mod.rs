@@ -269,7 +269,7 @@ impl EmailVerificationPlugin {
     /// If [`EmailVerificationConfig::send_verification_email`] is set the
     /// custom callback is used; otherwise the default `EmailProvider` path is
     /// taken.
-    async fn send_verification_email_for_user(
+    pub(crate) async fn send_verification_email_for_user(
         &self,
         user: &impl AuthUser,
         email: &str,

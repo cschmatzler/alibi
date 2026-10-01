@@ -58,6 +58,7 @@ mod jwt_fixture;
 mod lifecycle_fixture;
 mod magic_profiles;
 mod multiple_session_fixture;
+mod one_tap_fixture;
 mod one_time_token_fixture;
 mod open_api_fixture;
 mod organization_timestamp_fixture;
@@ -534,6 +535,9 @@ fn mock_oauth_plugin(
             "mock",
             OAuthProvider {
                 client_id: "mock-client-id".to_string(),
+                additional_client_ids: Vec::new(),
+                hosted_domain: None,
+                require_email_verification: false,
                 client_secret: "mock-client-secret".to_string(),
                 auth_url: format!("http://127.0.0.1:{port}/__test/oauth/authorize"),
                 token_url: format!("http://127.0.0.1:{port}/__test/oauth/token"),
@@ -576,6 +580,9 @@ fn mock_oauth_plugin(
             "google",
             OAuthProvider {
                 client_id: "google-client-id".to_string(),
+                additional_client_ids: Vec::new(),
+                hosted_domain: None,
+                require_email_verification: false,
                 client_secret: "google-client-secret".to_string(),
                 auth_url: format!("http://127.0.0.1:{port}/oauth/authorize"),
                 token_url: format!("http://127.0.0.1:{port}/__test/oauth/token"),
@@ -692,6 +699,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         two_factor_otp_outbox.clone(),
     )
     .await?;
+    let one_tap_router =
+        one_tap_fixture::router(&config, database.clone(), verification_outbox.clone()).await?;
     let store = SeaOrmStore::<TestSchema>::new(config.clone(), database);
     let two_factor_plugin =
         TwoFactorPlugin::new().custom_send_otp(Arc::new(CompatTwoFactorOtpSender {
@@ -1654,6 +1663,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(open_api_router)
         .merge(passkey_router)
         .merge(registration_router)
+        .merge(one_tap_router)
         .merge(otp_router)
         .merge(magic_router)
         .merge(siwe_profile_router)

@@ -331,6 +331,9 @@ async fn handle_mock_connection(stream: tokio::net::TcpStream, email: &str) {
 fn make_test_provider(mock_url: &str) -> OAuthProvider {
     OAuthProvider {
         client_id: "client".to_string(),
+        additional_client_ids: Vec::new(),
+        hosted_domain: None,
+        require_email_verification: false,
         client_secret: "secret".to_string(),
         auth_url: format!("{}/auth", mock_url),
         token_url: format!("{}/token", mock_url),
@@ -427,6 +430,9 @@ async fn test_encrypt_oauth_tokens_stored_encrypted_in_db() {
         "google".to_string(),
         OAuthProvider {
             client_id: provider.client_id,
+            additional_client_ids: Vec::new(),
+            hosted_domain: None,
+            require_email_verification: false,
             client_secret: provider.client_secret,
             auth_url: provider.auth_url,
             token_url: provider.token_url,
@@ -1325,6 +1331,9 @@ async fn test_link_social_returns_redirect_url_with_state() {
         "github".to_string(),
         OAuthProvider {
             client_id: "client".to_string(),
+            additional_client_ids: Vec::new(),
+            hosted_domain: None,
+            require_email_verification: false,
             client_secret: "secret".to_string(),
             auth_url: "https://github.com/login/oauth/authorize".to_string(),
             token_url: "https://github.com/login/oauth/access_token".to_string(),
