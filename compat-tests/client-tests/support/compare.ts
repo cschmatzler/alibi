@@ -129,6 +129,33 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       if (record(header) && typeof header.alg === "string" && record(payload)) return { header, payload, signature };
     } catch { return; }
   }
+  // Only fixture observations authenticated by the published decoder use this
+  // envelope. Application JSON and unrelated JWT-shaped objects stay literal.
+  function encryptedAccountCookie(value: Record<string, unknown>): boolean {
+    if (Object.keys(value).sort().join(",") !== "header,payload,token"
+      || typeof value.token !== "string" || !record(value.header) || !record(value.payload)) return false;
+    const parts = value.token.split(".");
+    if (parts.length !== 5 || parts[1] !== "") return false;
+    const header = compactPart(parts[0] ?? "", false), iv = compactPart(parts[2] ?? "", false);
+    const ciphertext = compactPart(parts[3] ?? "", false), tag = compactPart(parts[4] ?? "", false);
+    if (!header || iv?.length !== 16 || !ciphertext?.length || ciphertext.length % 16 !== 0 || tag?.length !== 32) return false;
+    try {
+      const decoded: unknown = JSON.parse(header.toString());
+      return record(decoded) && decoded.alg === "dir" && decoded.enc === "A256CBC-HS512"
+        && stableJSON(decoded) === stableJSON(value.header);
+    } catch { return false; }
+  }
+  function stableJSON(value: unknown): string {
+    if (Array.isArray(value)) return `[${value.map(stableJSON).join(",")}]`;
+    if (record(value)) return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableJSON(value[key])}`).join(",")}}`;
+    return JSON.stringify(value) ?? "undefined";
+  }
+  const leftEncryptedClaims = new Map<string, string>(), rightEncryptedClaims = new Map<string, string>();
+  function rememberEncryptedClaims(value: Record<string, unknown>, seen: Map<string, string>, path: string) {
+    const token = String(value.token), claims = stableJSON(value.payload), previous = seen.get(token);
+    if (previous !== undefined && previous !== claims) fail(path, "the same encrypted cookie has different decoded claims");
+    seen.set(token, claims);
+  }
   function clock(a:number,b:number,path:string) {
     if (a!==b && Math.abs((a-context.leftStartedAt/1000)-(b-context.rightStartedAt/1000))>1.5) fail(path,"JWT timestamp differs");
   }
@@ -181,7 +208,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     } catch { return undefined; }
   }
 
-  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false) {
+  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false) {
     if (typeof a === "string" && typeof b === "string" && !traceShape(path)
       && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path)) {
       if (key === "teamId" && (a.includes(",") || b.includes(","))) {
@@ -235,6 +262,20 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       return;
     }
     if (record(a) && record(b)) {
+      if (key === "accountCookie" && !applicationData && !traceShape(path)) {
+        if (!encryptedAccountCookie(a) || !encryptedAccountCookie(b)) {
+          fail(path, "authenticated encrypted account-cookie envelope differs");
+          return;
+        }
+        rememberEncryptedClaims(a, leftEncryptedClaims, path);
+        rememberEncryptedClaims(b, rightEncryptedClaims, path);
+        identity(String(a.token), String(b.token), `${path}.token`, "token");
+        // The same configured secret gives the same key thumbprint. Protected
+        // encryption headers retain their complete literal values and presence.
+        if (stableJSON(a.header) !== stableJSON(b.header)) fail(`${path}.header`, "protected encrypted cookie header differs");
+        visit(a.payload, b.payload, `${path}.payload`, "", true, false, false, true);
+        return;
+      }
       const oneTimeRow = typeof a.identifier === "string" && typeof b.identifier === "string"
         && a.identifier.startsWith("one-time-token:") && b.identifier.startsWith("one-time-token:")
         && ["id", "expiresAt", "createdAt", "updatedAt"].every(field => Object.hasOwn(a, field) && Object.hasOwn(b, field));
@@ -267,6 +308,11 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           // Public key IDs and every nonempty selector still use the bijection.
           if (jwtHeader && !jwk && (a.kid === "" || b.kid === "")) visit(a.kid,b.kid,childPath,childKey);
           else identity(a.kid,b.kid,childPath,"entity");
+        }
+        else if (childKey === "jti" && encryptedClaims) {
+          const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+          if (typeof a.jti !== "string" || typeof b.jti !== "string" || !uuid.test(a.jti) || !uuid.test(b.jti)) fail(childPath, "encrypted JWT identifier is not a generated UUID");
+          else identity(a.jti, b.jti, childPath, "encrypted-jwt-id");
         }
         else if (childKey==="sub" && jwtClaims && typeof a.sub==="string" && typeof b.sub==="string" && (leftEntities.has(a.sub)||rightEntities.has(b.sub))) identity(a.sub,b.sub,childPath,"entity");
         else if (runtimeDates && ["iat","exp"].includes(childKey) && typeof a[childKey]==="number" && typeof b[childKey]==="number") clock(a[childKey],b[childKey],childPath);
