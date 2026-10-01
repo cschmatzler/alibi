@@ -5,7 +5,8 @@ pub mod handlers;
 pub mod lifecycle;
 pub use lifecycle::{
     OrganizationCreatePatch, OrganizationCreatedContext, OrganizationCreationHooks,
-    OrganizationDraftContext, OrganizationMemberCreatePatch, OrganizationMemberDraftContext,
+    OrganizationDeleteContext, OrganizationDeletionHooks, OrganizationDraftContext,
+    OrganizationMemberCreatePatch, OrganizationMemberDraftContext,
 };
 pub mod rbac;
 pub mod types;
@@ -57,6 +58,9 @@ pub struct OrganizationConfig {
     /// Awaited creation callbacks with immutable authority and persisted snapshots.
     #[config(default = None, skip)]
     pub creation_hooks: Option<std::sync::Arc<dyn OrganizationCreationHooks>>,
+    /// Awaited deletion callbacks over raw rows and original authority snapshots.
+    #[config(default = None, skip)]
+    pub deletion_hooks: Option<std::sync::Arc<dyn OrganizationDeletionHooks>>,
     /// Maximum members per organization (None = unlimited)
     #[config(default = Some(100))]
     pub membership_limit: Option<usize>,
@@ -105,6 +109,43 @@ pub struct OrganizationPlugin {
 }
 
 impl OrganizationPlugin {
+    /// Delete using an actual signed-cookie session from supplied headers, without
+    /// manufacturing an HTTP request for lifecycle callbacks. This low-level
+    /// plugin helper does not execute builder-wide before/after dispatch hooks;
+    /// API-key-only session injection requires normal authenticated dispatch.
+    /// None represents a missing organization after its membership was resolved.
+    pub async fn delete_organization_with_headers<S: better_auth_core::AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        headers: &HashMap<String, String>,
+        body: &types::DeleteOrganizationRequest,
+    ) -> AuthResult<Option<types::OrganizationResponse>> {
+        if self.config.disable_organization_deletion {
+            return Err(handlers::extension_common::org_error(
+                404,
+                "ORGANIZATION_DELETION_DISABLED",
+            ));
+        }
+        let mut resolution = AuthRequest::new(HttpMethod::Post, "/organization/delete");
+        resolution.headers = headers
+            .iter()
+            .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
+            .collect();
+        let (user, session) = handlers::require_session(&resolution, ctx).await?;
+        handlers::org::delete_organization_core(
+            body,
+            &user,
+            &session,
+            lifecycle::DeleteInvocation {
+                headers,
+                request: None,
+            },
+            &self.config,
+            ctx,
+        )
+        .await
+    }
+
     /// Trusted server operation. The supplied user ID is resolved from storage;
     /// HTTP creation always uses the authenticated principal instead.
     /// Like upstream's server-only body.userId branch, this bypasses an allow-policy

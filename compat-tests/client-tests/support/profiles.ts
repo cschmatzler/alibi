@@ -47,6 +47,8 @@ export type FixtureProfile =
   | "org-roles-delegated"
   | "org-roles-callback"
   | "org-deletion-disabled"
+  | "org-deletion-hooks"
+  | "org-deletion-hooks-disabled"
   | "org-teams"
   | "org-teams-no-default"
   | "org-teams-limited"

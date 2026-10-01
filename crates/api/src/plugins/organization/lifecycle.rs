@@ -1,4 +1,4 @@
-//! Typed creation lifecycle callbacks over immutable authority and row snapshots.
+//! Typed organization lifecycle callbacks over immutable authority and row snapshots.
 use async_trait::async_trait;
 use better_auth_core::wire::UserView;
 use better_auth_core::{AuthResult, CreateMember, CreateOrganization, Member, Organization};
@@ -106,6 +106,41 @@ pub trait OrganizationCreationHooks: std::fmt::Debug + Send + Sync {
         Ok(())
     }
     async fn after_create(&self, _context: &OrganizationCreatedContext) -> AuthResult<()> {
+        Ok(())
+    }
+}
+
+/// The original authenticated user/session and raw stored organization. Selection
+/// has already been cleared in storage when `before_delete` runs. The same
+/// snapshots reach `after_delete`, after scoped deletion has committed.
+#[derive(Debug, Clone)]
+pub struct OrganizationDeleteContext {
+    pub organization: super::types::OrganizationResponse,
+    pub user: UserView,
+    pub session: better_auth_core::wire::SessionView,
+    /// Actual supplied values; a trusted header-only call does not invent headers.
+    pub headers: std::collections::HashMap<String, String>,
+    /// None for the trusted header-only helper. HTTP snapshots use the native
+    /// AuthRequest's canonical route path and independent public request parts.
+    pub request: Option<better_auth_core::AuthRequest>,
+}
+
+pub(crate) struct DeleteInvocation<'a> {
+    pub headers: &'a std::collections::HashMap<String, String>,
+    pub request: Option<&'a better_auth_core::AuthRequest>,
+}
+
+/// Awaited deletion phases, without a lifecycle-wide transaction. A before-hook
+/// error retains rows after selection clearing; an after-hook error retains the
+/// committed deletion. Capture an application store for independent operations.
+/// Direct JavaScript argument mutation, global server-API dispatch and continuation
+/// after HTTP request cancellation are separate framework boundaries.
+#[async_trait]
+pub trait OrganizationDeletionHooks: std::fmt::Debug + Send + Sync {
+    async fn before_delete(&self, _context: &OrganizationDeleteContext) -> AuthResult<()> {
+        Ok(())
+    }
+    async fn after_delete(&self, _context: &OrganizationDeleteContext) -> AuthResult<()> {
         Ok(())
     }
 }

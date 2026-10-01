@@ -250,6 +250,7 @@ pub(crate) async fn delete_organization_core(
     body: &DeleteOrganizationRequest,
     user: &impl AuthUser,
     session: &impl AuthSession,
+    invocation: crate::plugins::organization::lifecycle::DeleteInvocation<'_>,
     config: &OrganizationConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<Option<OrganizationResponse>> {
@@ -305,13 +306,32 @@ pub(crate) async fn delete_organization_core(
         return Ok(None);
     };
 
+    let original = OrganizationResponse::from_stored_organization(&organization)?;
+    let callback = crate::plugins::organization::OrganizationDeleteContext {
+        organization: original.clone(),
+        user: ctx.user_view(user),
+        session: ctx.session_view(session),
+        headers: invocation.headers.clone(),
+        request: invocation.request.map(|request| {
+            better_auth_core::AuthRequest::from_parts(
+                request.method.clone(),
+                request.path.clone(),
+                request.headers.clone(),
+                request.body.clone(),
+                request.query.clone(),
+            )
+        }),
+    };
+    if let Some(hooks) = &config.deletion_hooks {
+        hooks.before_delete(&callback).await?;
+    }
     ctx.database
         .delete_organization(&body.organization_id)
         .await?;
-
-    Ok(Some(OrganizationResponse::from_stored_organization(
-        &organization,
-    )?))
+    if let Some(hooks) = &config.deletion_hooks {
+        hooks.after_delete(&callback).await?;
+    }
+    Ok(Some(original))
 }
 
 pub(crate) async fn list_organizations_core(
@@ -651,7 +671,18 @@ pub async fn handle_delete_organization(
         }
         Err(error) => return Err(error),
     };
-    let Some(response) = delete_organization_core(&body, &user, &session, config, ctx).await?
+    let Some(response) = delete_organization_core(
+        &body,
+        &user,
+        &session,
+        crate::plugins::organization::lifecycle::DeleteInvocation {
+            headers: &req.headers,
+            request: Some(req),
+        },
+        config,
+        ctx,
+    )
+    .await?
     else {
         return Ok(AuthResponse::new(400).with_header("content-type", "application/json"));
     };
@@ -858,6 +889,7 @@ mod tests {
             organization_limit: None,
             creation_policy: None,
             creation_hooks: None,
+            deletion_hooks: None,
             membership_limit: Some(100),
             creator_role: "owner".to_string(),
             invitation_expires_in: 60 * 60 * 48,
