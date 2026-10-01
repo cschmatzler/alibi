@@ -66,11 +66,11 @@ struct ApplicationSigner {
 impl SignRemoteJwt for ApplicationSigner {
     async fn sign(
         &self,
-        payload: &Map<String, Value>,
+        payload: &RemoteJwtPayload,
         options: &JwtSignOptions,
     ) -> AuthResult<String> {
         self.plugin
-            .sign_jwt(payload.clone(), options, None, &self.context)
+            .sign_jwt_json(payload.raw_claims(), options, None, &self.context)
             .await
     }
 }
@@ -409,7 +409,7 @@ async fn signing_and_verification_enforce_jose_headers_and_externally_signed_cla
     ] {
         let mut header = header.as_object().unwrap().clone();
         let options = JwtSignOptions {
-            header: header.clone(),
+            header: Some(header.clone()),
             ..Default::default()
         };
         assert_eq!(
@@ -756,7 +756,7 @@ async fn explicit_algorithm_lazy_mints_only_configured_keys_and_default_uses_pri
             payload("extra"),
             &JwtSignOptions {
                 signing_algorithm: Some(JwtAlgorithm::Es256),
-                header: json!({"typ":"logout+jwt"}).as_object().unwrap().clone(),
+                header: Some(json!({"typ":"logout+jwt"}).as_object().unwrap().clone()),
                 ..Default::default()
             },
             None,
@@ -966,10 +966,12 @@ async fn delegated_signing_uses_external_keys_and_preserves_explicit_payload_and
         ..Default::default()
     });
     let options = JwtSignOptions {
-        header: json!({"typ":"application+jwt"})
-            .as_object()
-            .unwrap()
-            .clone(),
+        header: Some(
+            json!({"typ":"application+jwt"})
+                .as_object()
+                .unwrap()
+                .clone(),
+        ),
         ..Default::default()
     };
     let explicit = json!({"sub":"delegated-owner","permission":"read","iat":Utc::now().timestamp(),"exp":Utc::now().timestamp()+600}).as_object().unwrap().clone();
@@ -1809,10 +1811,12 @@ async fn raw_json_signing_normalizes_application_numbers_and_preserves_literal_k
 
     // Native Map<Value> callers use the same JSON signing boundary, including headers.
     let options = JwtSignOptions {
-        header: json!({"proof":u64::MAX,"literal":"1e400"})
-            .as_object()
-            .unwrap()
-            .clone(),
+        header: Some(
+            json!({"proof":u64::MAX,"literal":"1e400"})
+                .as_object()
+                .unwrap()
+                .clone(),
+        ),
         ..Default::default()
     };
     let native = plugin
