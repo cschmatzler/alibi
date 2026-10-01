@@ -85,7 +85,7 @@ compatScenario("GitLab authorization preserves hosted issuer ordered scopes and 
 
   return {signup:ctx.snapshot(signup),before,ownerBefore,results,guest:ctx.snapshot(guest),linked:ctx.snapshot(linked),after:await state(ctx),ownerAfter:await ctx.readUserState({userId:signup.data!.user.id})};
 
-},["state"]);
+},["POST /sign-in/social", "POST /link-social"]);
 
 compatScenario("GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",async ctx=>{
   const fixture="social-gitlab-issuer",primary=ctx.actor("primary",fixture),foreign=ctx.actor("foreign",fixture);
@@ -116,7 +116,8 @@ compatScenario("GitLab self hosted callback login link refresh and replay preser
   expect(await ctx.readUserState({userId:foreignSignup.data!.user.id})).toEqual(foreignBefore);
 
   const replayResponse=await primary.fetch(completed.path,{redirect:"manual"}),replay={status:replayResponse.status,location:replayResponse.headers.get("location"),body:await replayResponse.text()};
-  expect(replay.location).toContain("state_mismatch");
+  expect(replay.status).toBe(302);
+  expect(replay.location).toBe(`${ctx.baseURL}${authProfilePath(fixture)}/error?error=state_mismatch`);
   expect(await state(ctx)).toEqual(after);
 
   const refreshed=await primary.client.refreshToken({accountId:String(account.id)});
@@ -134,6 +135,14 @@ compatScenario("GitLab self hosted callback login link refresh and replay preser
   expect(Object.hasOwn(accessed.data!,"idToken")).toBe(false);
   expect(accessed.data).toMatchObject({accessToken:"fixture-gitlab-refreshed-access",scopes:["read_user","issued-scope"]});
   expect(await state(ctx)).toEqual(afterRefresh);
+  const guest=ctx.actor("guest",fixture);
+  const guestAccess=await guest.client.getAccessToken({accountId:String(account.id)});
+  const guestRefresh=await guest.client.refreshToken({accountId:String(account.id)});
+  const guestLink=await guest.client.linkSocial({provider:"gitlab",callbackURL:"/gitlab-done",disableRedirect:true});
+  for(const result of [guestAccess,guestRefresh]) expect(result).toEqual({data:null,error:{status:401,statusText:"Unauthorized"}});
+  expect(guestLink).toEqual({data:null,error:{status:401,statusText:"Unauthorized",code:"UNAUTHORIZED",message:"Unauthorized"}});
+  expect(await state(ctx)).toEqual(afterRefresh);
+  expect(await ctx.readUserState({userId:foreignSignup.data!.user.id})).toEqual(foreignBefore);
   const deniedAccess=await foreign.client.getAccessToken({accountId:String(account.id)});
   expect(deniedAccess.error).not.toBeNull();
   expect(await state(ctx)).toEqual(afterRefresh);
@@ -158,7 +167,8 @@ compatScenario("GitLab self hosted callback login link refresh and replay preser
   const conflict=await foreign.client.linkSocial({provider:"gitlab",callbackURL:"/gitlab-done",disableRedirect:true});
   expect(conflict.error).toBeNull();
   const conflictCallback=await callback(foreign,fixture,conflict.data!.url!);
-  expect(conflictCallback.response.location).not.toBe("/gitlab-done");
+  expect(conflictCallback.response.status).toBe(302);
+  expect(conflictCallback.response.location).toBe(`${ctx.baseURL}${authProfilePath(fixture)}/error?error=email_does_not_match`);
   const afterConflict=await state(ctx);
   expect(rows(afterConflict)).toEqual(rows(afterLogin));
   await assertExchange(ctx,conflict.data!.url!,afterConflict.receipts[5]!,fixture);
@@ -177,9 +187,9 @@ compatScenario("GitLab self hosted callback login link refresh and replay preser
   expect(afterLink.accounts.find(row=>row.id===account.id)?.userId).toBe(current.data!.user.id);
   await assertExchange(ctx,link.data!.url!,afterLink.receipts[7]!,fixture);
 
-  return {foreignSignup:ctx.snapshot(foreignSignup),foreignBefore,control,before,signin:ctx.snapshot(signin),completed:completed.response,current:ctx.snapshot(current),after:observed(after),replay,refreshed:ctx.snapshot(refreshed),afterRefresh:observed(afterRefresh),accessed:ctx.snapshot(accessed),deniedAccess:ctx.snapshot(deniedAccess),deniedRefresh:ctx.snapshot(deniedRefresh),anotherSignin:ctx.snapshot(anotherSignin),anotherCallback:anotherCallback.response,anotherCurrent:ctx.snapshot(anotherCurrent),afterLogin:observed(afterLogin),conflict:ctx.snapshot(conflict),conflictCallback:conflictCallback.response,afterConflict:observed(afterConflict),ownControl,link:ctx.snapshot(link),linkCallback:linkCallback.response,afterLink:observed(afterLink),foreignCurrent:ctx.snapshot(foreignCurrent)};
+  return {foreignSignup:ctx.snapshot(foreignSignup),foreignBefore,control,before,signin:ctx.snapshot(signin),completed:completed.response,current:ctx.snapshot(current),after:observed(after),replay,refreshed:ctx.snapshot(refreshed),afterRefresh:observed(afterRefresh),accessed:ctx.snapshot(accessed),guestAccess:ctx.snapshot(guestAccess),guestRefresh:ctx.snapshot(guestRefresh),guestLink:ctx.snapshot(guestLink),deniedAccess:ctx.snapshot(deniedAccess),deniedRefresh:ctx.snapshot(deniedRefresh),anotherSignin:ctx.snapshot(anotherSignin),anotherCallback:anotherCallback.response,anotherCurrent:ctx.snapshot(anotherCurrent),afterLogin:observed(afterLogin),conflict:ctx.snapshot(conflict),conflictCallback:conflictCallback.response,afterConflict:observed(afterConflict),ownControl,link:ctx.snapshot(link),linkCallback:linkCallback.response,afterLink:observed(afterLink),foreignCurrent:ctx.snapshot(foreignCurrent)};
 
-},["state"]);
+},["POST /sign-in/social", "GET /callback/{}", "POST /refresh-token", "POST /get-access-token", "POST /link-social"]);
 
 compatScenario("GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",async ctx=>{
   const fixture="social-gitlab-issuer-slashes",foreign=ctx.actor("foreign",fixture);
@@ -201,7 +211,8 @@ compatScenario("GitLab profile admission rejects inactive and truthy locked rows
       expect(after.accounts.filter(row=>row.userId===current.data!.user.id&&row.providerId==="gitlab")).toEqual([expect.objectContaining({accountId:String(profile.id),userId:current.data!.user.id})]);
       expect(after.users).toHaveLength(before.users.length+1);
       expect(after.sessions).toHaveLength(before.sessions.length+1);
-    }else{expect(completed.response.location).toContain("unable_to_get_user_info");
+    }else{expect(completed.response.status).toBe(302);
+      expect(completed.response.location).toBe(`${ctx.baseURL}${authProfilePath(fixture)}/error?error=unable_to_get_user_info`);
       expect(current.data).toBeNull();
       expect(rows(after)).toEqual(rows(before));
       const replayResponse=await actor.fetch(completed.path,{redirect:"manual"});
@@ -212,4 +223,4 @@ compatScenario("GitLab profile admission rejects inactive and truthy locked rows
   }
   return {signup:ctx.snapshot(signup),foreignBefore,results,foreignAfter:await ctx.readUserState({userId:signup.data!.user.id})};
 
-},["state"]);
+},["POST /sign-in/social", "GET /callback/{}"]);

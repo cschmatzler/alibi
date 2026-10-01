@@ -301,6 +301,6 @@ export function compatScenario(
     const rawDiffs = differences.filter(entry => entry.path.startsWith("traces")).filter(entry =>
       !RAW_DIFF_ALLOWLIST.some(allowance => allowance.scenario.test(scenarioName) && allowance.path.test(entry.path)));
     if (rawDiffs.length) throw new Error(formatDiffs(`Raw trace drift: ${scenarioName}`, rawDiffs));
-    await recordCoverage(scenarioName, ts.traces, stateTransitions);
+    await recordCoverage(scenarioName, ts.traces, stateTransitions, TS_BASE_URL);
   }, timeoutMs);
 }
