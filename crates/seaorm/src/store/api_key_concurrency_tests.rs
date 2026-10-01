@@ -198,6 +198,62 @@ async fn independent_connections_reject_final_quota_loser_without_deleting_crede
             };
             assert_eq!(retry.id, key.id);
             assert_eq!(retry.remaining, Some(0.0));
+            // Eight callers share one overdue refill across separate database
+            // connections. Refill replenishes once, then guarded uses exhaust it.
+            let due = stores[0]
+                .update_api_key(
+                    &key.id,
+                    UpdateApiKey {
+                        remaining: Some(0.0),
+                        refill_amount: Some(3.0),
+                        refill_interval: Some(60_000.0),
+                        last_refill_at: Some(Some("1970-01-01T00:00:00.000Z".into())),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            let barrier = Arc::new(Barrier::new(8));
+            let mut tasks = JoinSet::new();
+            for index in 0..8 {
+                let store = stores[index % stores.len()].clone();
+                let id = key.id.clone();
+                let barrier = barrier.clone();
+                let _ = tasks.spawn(async move {
+                    let _ = barrier.wait().await;
+                    store.consume_api_key_usage(&id, false).await
+                });
+            }
+            let mut accepted = 0;
+            let mut exhausted = 0;
+            while let Some(result) = tasks.join_next().await {
+                match result?? {
+                    ConsumeApiKeyResult::Allowed(value) => {
+                        accepted += 1;
+                        assert_eq!(value.id, due.id);
+                        assert_eq!(value.reference_id, due.reference_id);
+                    }
+                    ConsumeApiKeyResult::UsageExhausted => exhausted += 1,
+                    ConsumeApiKeyResult::RateLimited { .. } => {
+                        panic!("disabled rate limit must not deny refill")
+                    }
+                }
+            }
+            assert_eq!((accepted, exhausted), (3, 5));
+            let final_row = stores[1]
+                .get_api_key_by_id(&key.id)
+                .await?
+                .ok_or("refill losers must retain row")?;
+            assert_eq!(final_row.remaining, Some(0.0));
+            assert_ne!(final_row.last_refill_at, due.last_refill_at);
+            assert_eq!(final_row.refill_amount, due.refill_amount);
+            assert_eq!(final_row.refill_interval, due.refill_interval);
+            assert_eq!(final_row.id, due.id);
+            assert_eq!(final_row.key_hash, due.key_hash);
+            assert_eq!(final_row.reference_id, due.reference_id);
+            assert_eq!(
+                serde_json::to_value(stores[0].get_api_key_by_id(&foreign.id).await?)?,
+                serde_json::to_value(Some(&foreign))?
+            );
             Ok::<_, Box<dyn std::error::Error>>(())
         }
         .await;
