@@ -351,7 +351,10 @@ where
         self.inner.update_api_key(id, update).await
     }
     async fn delete_api_key(&self, id: &str) -> AuthResult<()> {
-        self.inner.delete_api_key(id).await
+        let serial = self.application.begin_delete(self.profile, id).await;
+        let result = self.inner.delete_api_key(id).await;
+        self.application.finish_delete(serial, result.is_ok());
+        result
     }
     async fn delete_expired_api_keys(&self) -> AuthResult<usize> {
         let admission = self.application.begin(self.profile).await;

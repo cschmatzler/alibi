@@ -91,9 +91,28 @@ export async function apiKeyBackgroundFixture(
       void work.then(() => inflight.delete(work), () => inflight.delete(work));
       return work;
     };
+    const deleteOne = context.adapter.delete.bind(context.adapter);
+    context.adapter.delete = input => {
+      if (input.model !== "apikey") return deleteOne(input);
+      const id = ++serial;
+      const keyId = input.where?.find(value => value.field === "id")?.value;
+      let release: (() => void) | undefined;
+      const gate = hold ? new Promise<void>(resolve => { release = resolve; }) : null;
+      if (release) blocked.set(id, release);
+      event({kind:"row-delete-enter",profile:name,serial:id,key:{id:keyId}});
+      const work = (async () => {
+        if (gate) await gate;
+        try {const result = await deleteOne(input);event({kind:"row-delete-complete",serial:id,success:true});return result;}
+        catch(error){event({kind:"row-delete-complete",serial:id,success:false});throw error;}
+      })();
+      inflight.add(work);
+      void work.then(() => inflight.delete(work), () => inflight.delete(work));
+      return work;
+    };
     profiles.set(path, auth);
   }
-  function release() {
+  function release(selected?: number) {
+    if (selected !== undefined) {const sender=blocked.get(selected);blocked.delete(selected);sender?.();return;}
     const senders = [...blocked.values()]; blocked.clear();
     for (const sender of senders) sender();
   }
@@ -118,13 +137,14 @@ export async function apiKeyBackgroundFixture(
             hold = false; observer = ""; generator = "";
             break;
           case "configure": hold = !!input.hold; observer = input.observer ?? ""; generator = input.generator ?? ""; break;
-          case "release": release(); break;
+          case "release": release(input.serial); break;
           case "wait": await wait(input.kind, input.count); break;
           case "window":
             if (lastAdmission === null) throw new Error("actual cleanup receipt required");
             await Bun.sleep(Math.max(0, lastAdmission + 10020 - Date.now()));
             break;
           case "remaining": database.query('UPDATE apikey SET remaining=11 WHERE id=?').run(input.keyId); break;
+          case "quota": database.query('UPDATE apikey SET remaining=? WHERE id=?').run(input.remaining, input.keyId); break;
           case "expire": database.query('UPDATE apikey SET expiresAt=? WHERE id=?').run(new Date(0).toISOString(), input.keyId); break;
           case "veto": database.exec("CREATE TRIGGER automatic_cleanup_veto BEFORE DELETE ON apikey BEGIN SELECT RAISE(ABORT,'actual cleanup storage veto'); END"); break;
           case "restore": database.exec("DROP TRIGGER IF EXISTS automatic_cleanup_veto"); break;

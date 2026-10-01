@@ -588,21 +588,30 @@ impl ApiKeyPlugin {
         if !admit_expired_cleanup(false) {
             return Ok(Box::pin(async { Ok(()) }));
         }
-        use tracing::{Instrument, instrument::WithSubscriber};
         let database = ctx.database.clone();
+        Self::start_background_work(async move {
+            if let Err(error) = database.delete_expired_api_keys().await {
+                tracing::error!(%error, "Failed to delete expired API keys");
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    // Both automatic bulk cleanup and deferred single-row rejection own their
+    // work before application completion registration, preserving hook context.
+    pub(super) async fn start_background_work(
+        operation: impl std::future::Future<Output = AuthResult<()>> + Send + 'static,
+    ) -> AuthResult<better_auth_core::BackgroundTaskCompletion> {
+        use tracing::{Instrument, instrument::WithSubscriber};
         let request_context = better_auth_core::hooks::current_request_hook_context();
         let work = async move {
-            let delete = async move {
-                if let Err(error) = database.delete_expired_api_keys().await {
-                    tracing::error!(%error, "Failed to delete expired API keys");
-                }
-                Ok(())
-            };
             match request_context {
                 Some(context) => {
-                    better_auth_core::hooks::with_request_hook_context_value(context, delete).await
+                    better_auth_core::hooks::with_request_hook_context_value(context, operation)
+                        .await
                 }
-                None => delete.await,
+                None => operation.await,
             }
         }
         .instrument(tracing::Span::current())

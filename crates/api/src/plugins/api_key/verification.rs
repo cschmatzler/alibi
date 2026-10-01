@@ -240,7 +240,7 @@ impl ApiKeyPlugin {
                 AuthError::internal(format!("Invalid stored API key expiration: {error}"))
             })?;
             if chrono::Utc::now() > expiration {
-                ctx.database.delete_api_key(&api_key.id).await?;
+                Self::delete_rejected_key(&api_key.id, config, ctx).await?;
                 return Err(ApiKeyErrorCode::KeyExpired.into());
             }
         }
@@ -251,6 +251,13 @@ impl ApiKeyPlugin {
             if !permitted {
                 return Err(ApiKeyErrorCode::KeyNotFound.into());
             }
+        }
+
+        // Source deletes only an initially observed zero/no-refill row.
+        // A positive-snapshot loser of atomic consumption rejects without deletion.
+        if api_key.remaining == Some(0.0) && api_key.refill_amount.is_none() {
+            Self::delete_rejected_key(&api_key.id, config, ctx).await?;
+            return Err(ApiKeyErrorCode::UsageExceeded.into());
         }
 
         let updated = match ctx
@@ -269,6 +276,31 @@ impl ApiKeyPlugin {
             }
         };
         Ok(ApiKeyView::from(updated.as_ref()))
+    }
+
+    async fn delete_rejected_key(
+        id: &str,
+        config: &ApiKeyConfig,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ) -> AuthResult<()> {
+        if !config.defer_updates {
+            return ctx.database.delete_api_key(id).await;
+        }
+        let database = ctx.database.clone();
+        let id = id.to_owned();
+        let completion = Self::start_background_work(async move {
+            if let Err(error) = database.delete_api_key(&id).await {
+                tracing::error!(%error, "Deferred update failed");
+            }
+            Ok(())
+        })
+        .await?;
+        if let Some(handler) = &ctx.config.background_tasks {
+            handler.handle(completion)
+        } else {
+            drop(completion);
+            Ok(())
+        }
     }
 
     fn find_session_key<'a>(
@@ -342,7 +374,16 @@ impl ApiKeyPlugin {
             Err(ApiKeyVerificationError::Validation(error)) => {
                 return Ok(Some(BeforeRequestAction::Respond(error.response()?)));
             }
-            Err(ApiKeyVerificationError::Internal(error)) => return Err(error),
+            Err(ApiKeyVerificationError::Internal(error)) => {
+                // At this source middleware validation stage ordinary failures
+                // become an empty 500; explicit application API errors survive.
+                if error.status_code() >= 500
+                    && !matches!(error, AuthError::Api { .. } | AuthError::Upstream { .. })
+                {
+                    return Ok(Some(BeforeRequestAction::Respond(AuthResponse::new(500))));
+                }
+                return Err(error);
+            }
         };
         if config.defer_updates {
             let completion = Self::start_expired_cleanup(ctx).await?;
