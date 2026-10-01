@@ -18,6 +18,15 @@ function deferred() {
   const promise = new Promise<void>(resolve => { done = resolve; });
   return {promise, done};
 }
+// The application encodes its numeric cache clock losslessly for its JWT
+// snapshot. The tag retains the callback input type as well as its full value.
+function snapshot(session: any) {
+  if (!Object.hasOwn(session,"updatedAt")) return session;
+  const value=session.updatedAt;
+  const date=new Date(value);
+  if (typeof value!=="number" || !Number.isSafeInteger(value) || date.getTime()!==value) throw new Error("invalid cache clock");
+  return {...session,updatedAt:date.toISOString(),updatedAtType:"number"};
+}
 async function bounded(promise: Promise<void>) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try { await Promise.race([promise, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("application keyring scheduling timeout")), 10000); })]); }
@@ -59,7 +68,7 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
     if (failure.kind === "api500") throw new APIError("INTERNAL_SERVER_ERROR", {code:"APPLICATION_KEYRING_DENIED",message:"application denied keys"});
     throw new Error("application keyring failed");
   }
-  for (const mode of ["standard","plain","cache","empty-subject","null-subject"] as const) {
+  for (const mode of ["standard","plain","cache","custom-cache","empty-subject","null-subject"] as const) {
     const name = `jwt-keyring-${mode}`;
     const adapter = {
       getJwks: async (ctx: any) => {
@@ -97,20 +106,21 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
       },
       jwt: mode === "cache" ? {} : {
         definePayload: async (session: any) => {
-          events.push({operation:"payload",profile:name,session});
+          const input=snapshot(session);
+          events.push({operation:"payload",profile:name,session:input});
           reject("payload");
-          return {iat:100,exp:4102444800,application:"external-keyring",snapshot:session};
+          return {iat:100,exp:4102444800,application:"external-keyring",snapshot:input};
         },
         getSubject: async (session: any) => {
-          events.push({operation:"subject",profile:name,session});
+          events.push({operation:"subject",profile:name,session:snapshot(session)});
           reject("subject");
-          return mode === "empty-subject" ? "" : mode === "null-subject" ? null : session.user.email;
+          return mode === "empty-subject" ? "" : mode === "null-subject" ? null : mode === "custom-cache" ? `${session.user.email}|version:${session.version??"absent"}|clock:${typeof session.updatedAt}` : session.user.email;
         },
       },
     };
     configurations.set(name,options);
     profiles.set(name,betterAuth({...base,basePath:`/__test/profiles/${name}/api/auth`,
-      ...(mode === "cache" ? {session:{cookieCache:{enabled:true,strategy:"compact",maxAge:300}}} : {}),
+      ...(mode === "cache" || mode === "custom-cache" ? {session:{cookieCache:{enabled:true,strategy:"compact",maxAge:300}}} : {}),
       plugins:[...base.plugins!.filter(plugin=>plugin.id==="username"),jwt(options as any)],
     }));
   }
@@ -138,10 +148,15 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
       database.query(`UPDATE fixtureJwtKeyring SET ${column}=? WHERE profile=? AND id=?`).run(body.field==="public"?"corrupt":"\"corrupt\"",profile,body.id);
     } else if (body.operation === "legacy") database.query("UPDATE fixtureJwtKeyring SET alg=NULL,crv=NULL WHERE profile=? AND id=?").run(profile,body.id);
     else if (body.operation === "delete") database.query("DELETE FROM fixtureJwtKeyring WHERE profile=? AND id=?").run(profile,body.id);
-    else if (["sign","resolve-sign","create","verify"].includes(body.operation)) {
+    else if (["sign","resolve-sign","create","verify","api-sign"].includes(body.operation)) {
       try {
+        const transport=body.absentRequest?{}:{request,headers:request.headers};
+        if (body.operation === "api-sign") {
+          const signed=await auth.api.signJWT({...transport,body:{payload:body.payload}});
+          return Response.json(signed instanceof Response ? await signed.json() : signed);
+        }
         if (body.operation === "verify") {
-          const verified=await auth.api.verifyJWT({request,headers:request.headers,body:{token:body.token,...(body.issuer!==undefined?{issuer:body.issuer}:{})}});
+          const verified=await auth.api.verifyJWT({...transport,body:{token:body.token,...(body.issuer!==undefined?{issuer:body.issuer}:{})}});
           return Response.json(verified instanceof Response ? await verified.json() : verified);
         }
         let configured = options;

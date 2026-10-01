@@ -14,6 +14,13 @@ Credible regressions include a dropped callback input, duplicate or omitted
 application reads, ordinary errors exposed as JSON, explicit API errors hidden,
 incorrect key selection, signature/key substitution, lost nullable cache fields,
 or physical session revocation prematurely overriding a valid ordinary cache.
+The custom-cache owner separately catches loss of the real direct-hook clock or
+version and accidental propagation of that metadata into nested token middleware.
+The server-only owner catches loss of the endpoint path when no HTTP request
+exists. Neither contract was visible to the earlier default-cache owner, which
+remains intact. These use the actual public callbacks and signing helpers; no
+new test-only production seam is needed.
+
 Earlier default-store tests cannot observe an application keyring's requests,
 write data or real SQL rows. Earlier compact-cache tests do not exercise JWT
 issuance against that keyring. Existing session/API-key owners independently
@@ -37,6 +44,16 @@ sign these claims. Existing default JWT/session owners retain issuance-clock
 and lifetime proof. Numeric-expiration cases use independent compact JWS
 verification so an intentionally historical expiration cannot make the
 cryptographic positive control fail for an unrelated clock reason.
+
+The custom-cache application encodes the complete callback snapshot with its
+actual numeric `updatedAt` converted losslessly to ISO and an explicit
+`updatedAtType: "number"` tag. Its subject also depends on the actual version
+and clock type. Independent assertions round-trip that clock against the
+published compact decoder. Stored, nested and versionless-cache inputs retain
+their different field presence. The versionless envelope keeps the actual
+issued identity and clock and is reauthenticated with genuine independent
+HMAC-SHA256; both published decoding and real HTTP admission verify it. It
+claims no server-issued cookie receipt for that application-created envelope.
 
 The concurrency case coordinates two real initial empty reads before either
 request can create a key. It delays the second creation until the first public
@@ -76,6 +93,18 @@ identity and independent signatures are assertions, not scheduled receipts.
   validation. It does not merge arbitrary fields into identifiers, roles or
   tokens or change sensitive authoritative-session guards.
 
+- Direct get-session JWT callbacks now receive the authenticated cache
+  snapshot's real numeric `updatedAt` and optional version. Metadata is retained
+  in request-local typed state after authenticated decoding, and only the
+  direct response hook reads it. Token middleware continues to expose its
+  completed user/session result. Every stored or virtual read clears cache
+  metadata. Missing cache versions remain absent.
+- Application keyrings receive `JwtKeyringContext`, separating the actual
+  endpoint path from the optional real HTTP request. Server-only signing
+  without a Request and verification use `virtual:`; verification with a
+  Request retains that request's actual method, path, headers and bytes.
+  The fixture no longer constructs a virtual HTTP request.
+
 ## Pinned option audit
 
 The installed `types.d.mts`, `index.mjs`, `sign.mjs`, `verify.mjs`, `adapter.mjs`,
@@ -98,6 +127,7 @@ the source of this inventory. Type options and runtime support are distinguished
 | `jwksPath`, `disableSettingJwtHeader`, exposed headers | Existing configured path/header and session hook owners retain replacement-path 404, header suppression and ordered exposed-header proof. New external-keyring owner exercises normal get-session headers and callback/API failures in that after-response path. |
 | `jwks.remoteUrl` and `jwt.sign` | New public remote-discovery owner proves exact local JWKS refusal and no signer/key-store activity. #229 owns the real application HS256 signer, callback arguments, raw claims, custom results and lack of local key creation. Source verification uses adapter keys; it does not fetch the configured remote URL. No invented JWKS HTTP fetch or KMS integration is claimed. |
 | `schema` | Existing adapter/schema projection owners remain. This fixture uses the real default JWT schema plus a separate application key table; it does not claim every possible schema rename. |
+| Custom cached payload/subject and server-only context | Complete direct hook metadata, exact version absence on a real authenticated legacy envelope, nested/stored field absence, metadata-dependent subjects and JOSE signatures. Actual Source server-only sign/verify calls omit Request; callback path survives while method/headers stay absent. Verification with the actual HTTP control Request retains its distinct endpoint path. |
 | Compact cache + default JWT | Actual published compact decoder, cached versus stored get-session headers, retained ordinary token issuance after physical revocation, explicit bypass and guest/replay rejection, complete nullable user claims and foreign-state guards. |
 
 ## Shared dependencies and explicit limits
@@ -108,22 +138,10 @@ only. Symmetric/managed JWT and JWE cache formats remain #171; stateless cache
 and refresh behavior remain #172. This PR proves compact/default-JWT composition
 and does not claim those modes or full raw nonfinite rotation/grace configuration.
 
-Source server-only `auth.api.verifyJWT` without a Request gives a callback
-context with path `virtual:` and no HTTP method. The native public helper's
-`request: None` provides no request path. That richer dispatch/context boundary
-remains #205. The controlled positive owner passes its real HTTP control Request
-to Source API and an actual equivalent POST `virtual:` AuthRequest to the native
-helper; both callbacks capture the received request. A Source API Response is
-decoded and returned through the same private JSON control transport as the
-native result. This adaptation does not change public JWT transport.
-
-Discovery also observed a Source cached custom session snapshot containing an
-outer millisecond `updatedAt` field, beyond its declared user/session shape.
-Native JwtSession does not yet carry this cache metadata. Full custom cached
-payload/subject snapshot propagation remains a shared #205/#171 dependency.
-The cache proof here registers no custom payload/subject callback and uses the
-actual default JWT payload. Complete custom inputs are proved separately for
-stored and virtual principals. No unsupported cached-input branch is claimed.
+The bounded JWT context and compact custom callback inputs are implemented
+and covered here. Broader server-only dispatch APIs remain #205; this PR does
+not claim the complete shared dispatcher. Managed JWT/JWE cache signer formats
+remain #171, and do not block the compact-cache acceptance proved here.
 
 ## Validation
 
@@ -137,8 +155,12 @@ Its only fixture API adaptations are the absent resolved-key signing option
 and the original numeric enum. The numeric option owner is excluded from that
 runtime replay because its new floating-point configuration does not compile
 against original Numeric(i64); the genuine compiler errors are separate proof.
-The first context drift was an explicitly classified fixture API adaptation,
-not a product fix. Subsequent actual six-scenario comparisons independently
+The original request-context adaptation is superseded by the real optional
+request/context API and the new server-only owner. The immediate pre-context
+4557260e production replay runs both final new owners: both fail, respectively
+for missing updatedAt/version/type and a null endpoint path. Its only fixture
+adaptation is the original keyring trait signature; it preserves the actual
+optional request and does not fabricate a virtual path. Subsequent actual six-scenario comparisons independently
 exposed fallback-read, revoked cached-token and nullable-field failures. The
 existing API-key owner caught virtual-session projection drift and was retained
 through its repair. Final exact Source/native counts, focused siblings, strict
@@ -149,3 +171,20 @@ must have actual public-route receipts in successful complete comparisons;
 all previous requirements remain. No test-only production export or fake crypto
 is added. The external `$autoreview` and referenced OpenClaw testing/PR skills
 are unavailable; independent coordinator review accompanies executable proof.
+
+Final owner proof before the immutable canonical rerun: Source 9/9 with 1,542
+assertions; Source/native JWT, remote, numeric and session owners 36/36 with
+3,070 assertions. The two immediate pre-context regressions fail on untouched
+4557260e production with 124 assertions and pass after repair with 208. Actual
+143-route evidence preserves the rebased main's 2,674 requirements and adds
+59 measured public cells, for 2,733. Strict optional workspace/fixture Clippy
+and TypeScript checking pass.
+
+The earlier immutable 4557260e canonical ran all required stages up to the full
+SDK gate: default 794, feature 845, fixture 2, harness 70, Axum 36, endpoint 3
+and inventory 2 passed; SDK 753 passed and 21 failed with 58,342 assertions.
+Browser, documentation and coverage stages were unreached. All seven then-new
+keyring owners passed. A retained remote undefined-claim owner reported one raw
+default-expiration difference; its unchanged focused rerun passed 34 assertions.
+That unreproduced failure remains recorded, alongside the independently
+reproduced API-key Content-Type baseline and other existing gate failures.

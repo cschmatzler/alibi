@@ -204,6 +204,11 @@ pub struct JwtSession {
     /// hooks observe the original stored snapshot and omit this field.
     #[serde(rename = "needsRefresh", skip_serializing_if = "Option::is_none")]
     pub needs_refresh: Option<bool>,
+    /// The verified cache clock seen by a direct get-session response hook.
+    #[serde(rename = "updatedAt", skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 #[async_trait]
@@ -218,8 +223,16 @@ pub trait DefineJwtSubject: Send + Sync {
 
 #[async_trait]
 pub trait JwtKeyring: Send + Sync {
-    async fn keys(&self, request: Option<&AuthRequest>) -> AuthResult<Vec<Jwk>>;
-    async fn create_key(&self, key: CreateJwk, request: Option<&AuthRequest>) -> AuthResult<Jwk>;
+    async fn keys(&self, context: &JwtKeyringContext<'_>) -> AuthResult<Vec<Jwk>>;
+    async fn create_key(&self, key: CreateJwk, context: &JwtKeyringContext<'_>) -> AuthResult<Jwk>;
+}
+
+/// The real endpoint context supplied to application key storage. Server-only
+/// operations have a virtual endpoint path and may have no HTTP request.
+#[derive(Clone, Copy, Debug)]
+pub struct JwtKeyringContext<'a> {
+    pub path: &'a str,
+    pub request: Option<&'a AuthRequest>,
 }
 
 /// One property in an application-owned remote signing payload.
@@ -385,8 +398,18 @@ impl JwtPlugin {
         request: Option<&AuthRequest>,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<Vec<Jwk>> {
+        self.keys_at_path(request, request.map_or("virtual:", AuthRequest::path), ctx)
+            .await
+    }
+
+    async fn keys_at_path(
+        &self,
+        request: Option<&AuthRequest>,
+        path: &str,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<Vec<Jwk>> {
         match &self.config.keyring {
-            Some(keyring) => keyring.keys(request).await,
+            Some(keyring) => keyring.keys(&JwtKeyringContext { path, request }).await,
             None => ctx.database.list_jwks().await,
         }
     }
@@ -425,7 +448,17 @@ impl JwtPlugin {
             crv: config.algorithm.curve().map(str::to_owned),
         };
         match &self.config.keyring {
-            Some(keyring) => keyring.create_key(data, request).await,
+            Some(keyring) => {
+                keyring
+                    .create_key(
+                        data,
+                        &JwtKeyringContext {
+                            path: request.map_or("virtual:", AuthRequest::path),
+                            request,
+                        },
+                    )
+                    .await
+            }
             None => ctx.database.create_jwk(data).await,
         }
     }
@@ -834,7 +867,7 @@ impl JwtPlugin {
             return Ok(None);
         };
         let Some(key) = self
-            .keys(request, ctx)
+            .keys_at_path(request, "virtual:", ctx)
             .await?
             .into_iter()
             .find(|key| key.id == kid)
@@ -907,6 +940,8 @@ impl JwtPlugin {
             // applying persisted-session output defaults would add fields.
             session: req.virtual_session().cloned().unwrap_or(read.session),
             needs_refresh: read.needs_refresh,
+            updated_at: None,
+            version: None,
         };
         self.sign_session_token(req, ctx, &session).await
     }
@@ -1044,6 +1079,7 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
         let Some((user, session)) = req.session_hook_snapshot() else {
             return Ok(response);
         };
+        let cache = better_auth_core::cache::runtime::session_hook_cache_metadata(req);
         let token = self
             .sign_session_token(
                 req,
@@ -1052,6 +1088,8 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
                     user,
                     session,
                     needs_refresh: None,
+                    updated_at: cache.as_ref().map(|metadata| metadata.updated_at),
+                    version: cache.and_then(|metadata| metadata.version),
                 },
             )
             .await

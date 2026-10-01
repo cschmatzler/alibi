@@ -474,7 +474,8 @@
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
-          "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation"
+          "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -562,7 +563,8 @@
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
           "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
-          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage"
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session"
         ]
       }
     },
@@ -578,7 +580,9 @@
           "application JWT keyring pinning resolved keys RSA modulus grace corruption and installed rows remain observable",
           "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
           "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys",
-          "application JWT keyring simultaneous first public requests create and persist both actual signing keys"
+          "application JWT keyring simultaneous first public requests create and persist both actual signing keys",
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session",
+          "application JWT keyring server-only signing and verification preserve an absent HTTP request and the real virtual endpoint context"
         ],
         "rejection": [
           "JWT configured issuer audience lifetime and path header branches remain observable",
@@ -594,7 +598,9 @@
           "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
           "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys",
           "application JWT keyring simultaneous first public requests create and persist both actual signing keys",
-          "application JWT keyring remote discovery refuses local JWKS without signing or writing any key store"
+          "application JWT keyring remote discovery refuses local JWKS without signing or writing any key store",
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session",
+          "application JWT keyring server-only signing and verification preserve an absent HTTP request and the real virtual endpoint context"
         ]
       }
     },
@@ -1085,7 +1091,8 @@
           "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
           "application JWT keyring pinning resolved keys RSA modulus grace corruption and installed rows remain observable",
           "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
-          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys"
+          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys",
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session"
         ],
         "rejection": [
           "JWT default JWKS token and get-session header carry the complete authenticated user",
@@ -1114,7 +1121,8 @@
           "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
           "application JWT keyring pinning resolved keys RSA modulus grace corruption and installed rows remain observable",
           "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
-          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys"
+          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys",
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session"
         ]
       }
     },
@@ -3880,7 +3888,9 @@
           "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
           "application JWT keyring pinning resolved keys RSA modulus grace corruption and installed rows remain observable",
           "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
-          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys"
+          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys",
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session",
+          "application JWT keyring server-only signing and verification preserve an absent HTTP request and the real virtual endpoint context"
         ],
         "rejection": [
           "sign up with duplicate email returns error",
@@ -3953,7 +3963,9 @@
           "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
           "application JWT keyring pinning resolved keys RSA modulus grace corruption and installed rows remain observable",
           "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
-          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys"
+          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys",
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session",
+          "application JWT keyring server-only signing and verification preserve an absent HTTP request and the real virtual endpoint context"
         ]
       }
     },

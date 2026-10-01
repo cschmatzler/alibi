@@ -80,7 +80,7 @@ export const FIXTURE_PROFILES = [
   "ott-refresh-disabled",
   "ott-refresh-deferred",
   "last-login-default", "last-login-database", "last-login-custom", "last-login-denied", "last-login-cookie-error", "last-login-resolver-error", "last-login-update-error", "last-login-transform", "last-login-policy", "last-login-composition", "last-login-nan", "last-login-negative", "last-login-excess",
-  "jwt-keyring-standard", "jwt-keyring-plain", "jwt-keyring-cache", "jwt-keyring-empty-subject", "jwt-keyring-null-subject",
+  "jwt-keyring-standard", "jwt-keyring-plain", "jwt-keyring-cache", "jwt-keyring-custom-cache", "jwt-keyring-empty-subject", "jwt-keyring-null-subject",
   "jwt-remote-raw", "jwt-remote-configured", "jwt-remote-result", "jwt-remote-error", "jwt-default", "jwt-es256", "jwt-es512", "jwt-rs256", "jwt-ps256",
   "jwt-session-normal", "jwt-session-disabled", "jwt-session-deferred",
   "jwt-claims", "jwt-path-header", "jwt-plain-rotation",

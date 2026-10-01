@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+import { createHmac } from "node:crypto";
 import { createAuthClient } from "better-auth/client";
 import { jwtClient } from "better-auth/client/plugins";
 import { compactVerify, importJWK, jwtVerify, type JWK } from "jose";
@@ -239,3 +240,75 @@ compatScenario("application JWT keyring remote discovery refuses local JWKS with
   }
   return {cleared,before,keysBefore,responses,after:await state(ctx)};
 },["GET /jwks"]);
+
+compatScenario("application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session",async ctx=>{
+  const mode:FixtureProfile="jwt-keyring-custom-cache";await control(ctx,{operation:"reset"},mode);
+  const owner=client(ctx,"owner",mode),foreign=client(ctx,"foreign",mode),guest=client(ctx,"guest",mode);
+  const receipts:Headers[]=[];
+  const signup=await owner.signUp.email({email:ctx.uniqueEmail("keyring-custom-cache-owner"),password:"password123",name:"Custom Cached Owner"},{onSuccess({response}){receipts.push(new Headers(response.headers));}});expect(signup.error).toBeNull();
+  const other=await foreign.signUp.email({email:ctx.uniqueEmail("keyring-custom-cache-foreign"),password:"password123",name:"Custom Cached Foreign"});expect(other.error).toBeNull();
+  const foreignBefore=await ctx.readUserState({userId:other.data!.user.id});
+  const cookie=receipts[0]!.getSetCookie().map(value=>value.split(";")[0]!).join("; ");
+  const cache=await getCookieCache(new Headers({cookie}),{secret:"compat-test-only-key-not-real-minimum-32chars",strategy:"compact"});expect(cache).not.toBeNull();
+  const cacheToken=decodeURIComponent(cookie.split("; ").find(value=>value.startsWith("better-auth.session_data="))!.split("=").slice(1).join("="));
+  const compactSessionCache={token:cacheToken,envelope:JSON.parse(Buffer.from(cacheToken,"base64url").toString()),decoded:cache,observedAt:Date.now(),effectiveMaxAgeSeconds:300,rawCookies:receipts[0]!.getSetCookie().filter(value=>value.startsWith("better-auth.session_data="))};
+  const jwks=await guest.jwks();expect(jwks.error).toBeNull();const original=await state(ctx,mode);
+  const renamed=await ctx.rawRequest({path:"/__test/session-cookie-cache/control",method:"POST",json:{mode:"standard",action:"rename",userId:signup.data!.user.id,name:"Updated Custom Owner"}});expect(renamed.status).toBe(200);
+  const ownerBefore=await ctx.readUserState({userId:signup.data!.user.id});
+  await control(ctx,{operation:"clear-events"},mode);
+  const cached=await owner.getSession({fetchOptions:{onSuccess({response}){receipts.push(new Headers(response.headers));}}});expect(cached.data!.user.name).toBe("Custom Cached Owner");
+  const header=receipts[1]!.get("set-auth-jwt");expect(header).not.toBeNull();const cachedChecked=await verified(header!,jwks.data!.keys as JWK[],ctx);
+  const snapshot=z.object({user:z.record(z.string(),z.unknown()),session:z.record(z.string(),z.unknown()),updatedAt:z.string(),updatedAtType:z.literal("number"),version:z.string()}).strict().parse(cachedChecked.payload.snapshot);
+  expect(Date.parse(snapshot.updatedAt)).toBe(cache!.updatedAt);expect(snapshot.version).toBe(cache!.version!);expect(snapshot.version).toBe("1");
+  expect({user:snapshot.user,session:snapshot.session}).toEqual(JSON.parse(JSON.stringify(cached.data)));
+  expect(cachedChecked.payload.sub).toBe(`${signup.data!.user.email}|version:1|clock:number`);
+  const cachedState=await state(ctx,mode);expect(cachedState.events.map(event=>event.operation)).toEqual(["payload","subject","read"]);
+  for(const event of cachedState.events.filter(event=>event.operation!=="read"))expect(event.session).toEqual(snapshot);
+  expect(cachedState.events[2]!.context).toEqual({path:"/get-session",method:"GET",marker:"application-marker",hasCookie:true});expect(cachedState.keys).toEqual(original.keys);
+  await control(ctx,{operation:"clear-events"},mode);
+  const nested=await owner.token();expect(nested.error).toBeNull();const nestedChecked=await verified(nested.data!.token,jwks.data!.keys as JWK[],ctx);
+  expect(nestedChecked.payload.snapshot).toEqual({user:snapshot.user,session:snapshot.session});expect(nestedChecked.payload.sub).toBe(`${signup.data!.user.email}|version:absent|clock:undefined`);
+  const nestedState=await state(ctx,mode);expect(nestedState.events.map(event=>event.operation)).toEqual(["payload","subject","read"]);
+  for(const event of nestedState.events.filter(event=>event.operation!=="read"))expect(event.session).toEqual(nestedChecked.payload.snapshot);
+  expect(nestedState.events[2]!.context).toEqual({path:"/token",method:"GET",marker:"application-marker",hasCookie:true});
+  // An authenticated older envelope can omit version. Retain the exact real
+  // issued identity/clock and use independent HMAC to authenticate that format.
+  const legacyEnvelope=JSON.parse(Buffer.from(cacheToken,"base64url").toString());delete legacyEnvelope.session.version;
+  legacyEnvelope.signature=createHmac("sha256","compat-test-only-key-not-real-minimum-32chars").update(JSON.stringify({...legacyEnvelope.session,expiresAt:legacyEnvelope.expiresAt})).digest("base64url");
+  const legacyToken=Buffer.from(JSON.stringify(legacyEnvelope)).toString("base64url");
+  const legacyCookie=cookie.split("; ").map(value=>value.startsWith("better-auth.session_data=")?`better-auth.session_data=${legacyToken}`:value).join("; ");
+  const legacyDecoded=await getCookieCache(new Headers({cookie:legacyCookie}),{secret:"compat-test-only-key-not-real-minimum-32chars",strategy:"compact"});expect(legacyDecoded).not.toBeNull();expect(Object.hasOwn(legacyDecoded!,"version")).toBe(false);
+  const legacyCache={compactSessionCache:{token:legacyToken,envelope:legacyEnvelope,decoded:legacyDecoded,observedAt:Date.now(),effectiveMaxAgeSeconds:300}};
+  await control(ctx,{operation:"clear-events"},mode);
+  const legacyHeaders:Headers[]=[];const legacy=await owner.getSession({fetchOptions:{headers:{cookie:legacyCookie,"x-keyring-proof":"legacy-marker"},onSuccess({response}){legacyHeaders.push(new Headers(response.headers));}}});expect(legacy.error).toBeNull();
+  const legacyChecked=await verified(legacyHeaders[0]!.get("set-auth-jwt")!,jwks.data!.keys as JWK[],ctx);
+  const {version:removedVersion,...versionlessSnapshot}=snapshot;expect(removedVersion).toBe("1");expect(legacyChecked.payload.snapshot).toEqual(versionlessSnapshot);expect(legacyChecked.payload.sub).toBe(`${signup.data!.user.email}|version:absent|clock:number`);
+  const legacyState=await state(ctx,mode);expect(legacyState.events.map(event=>event.operation)).toEqual(["payload","subject","read"]);for(const event of legacyState.events.filter(event=>event.operation!=="read"))expect(event.session).toEqual(versionlessSnapshot);
+  await control(ctx,{operation:"clear-events"},mode);
+  const bypass=await owner.getSession({query:{disableCookieCache:true,disableRefresh:true},fetchOptions:{onSuccess({response}){receipts.push(new Headers(response.headers));}}});expect(bypass.data!.user.name).toBe("Updated Custom Owner");
+  const bypassChecked=await verified(receipts[2]!.get("set-auth-jwt")!,jwks.data!.keys as JWK[],ctx);expect(bypassChecked.payload.snapshot).toEqual(JSON.parse(JSON.stringify(bypass.data)));expect(bypassChecked.payload.sub).toBe(`${signup.data!.user.email}|version:absent|clock:undefined`);
+  const bypassState=await state(ctx,mode);for(const event of bypassState.events.filter(event=>event.operation!=="read"))expect(event.session).toEqual(bypassChecked.payload.snapshot);
+  expect(await ctx.readUserState({userId:signup.data!.user.id})).toEqual(ownerBefore);expect(await ctx.readUserState({userId:other.data!.user.id})).toEqual(foreignBefore);expect((await state(ctx,mode)).keys).toEqual(original.keys);expect((await ctx.rawRequest({path:"/__test/jwks-state"})).body).toEqual([]);
+  return {signup:ctx.snapshot(signup),other:ctx.snapshot(other),foreignBefore,compactSessionCache,jwks,original,renamed,ownerBefore,cached:ctx.snapshot(cached),cachedChecked,cachedState,nested,nestedChecked,nestedState,legacyCache,legacy:ctx.snapshot(legacy),legacyHeaders,legacyChecked,legacyState,bypass:ctx.snapshot(bypass),bypassChecked,bypassState,receipts,ownerAfter:await ctx.readUserState({userId:signup.data!.user.id}),foreignAfter:await ctx.readUserState({userId:other.data!.user.id})};
+},["GET /jwks","GET /token","GET /get-session","POST /sign-up/email"]);
+
+compatScenario("application JWT keyring server-only signing and verification preserve an absent HTTP request and the real virtual endpoint context",async ctx=>{
+  await control(ctx,{operation:"reset"});const owner=client(ctx,"owner"),foreign=client(ctx,"foreign"),guest=client(ctx,"guest");
+  const signup=await owner.signUp.email({email:ctx.uniqueEmail("keyring-server-owner"),password:"password123",name:"Server JWT Owner"});expect(signup.error).toBeNull();
+  const other=await foreign.signUp.email({email:ctx.uniqueEmail("keyring-server-foreign"),password:"password123",name:"Server JWT Foreign"});expect(other.error).toBeNull();
+  const ownerBefore=await ctx.readUserState({userId:signup.data!.user.id}),foreignBefore=await ctx.readUserState({userId:other.data!.user.id});
+  const payload={sub:"server-owned-subject",iat:100,exp:4102444800,application:{scope:"server-only"}};
+  const issued=await signed(ctx,payload,{operation:"api-sign",absentRequest:true});const issuedToken=await token(issued);const issuedState=await state(ctx);
+  expect(issuedState.keys).toHaveLength(1);expect(issuedState.events.map(event=>event.operation)).toEqual(["read","read","create"]);
+  for(const event of issuedState.events)expect(event.context).toEqual({path:"virtual:",method:null,marker:null,hasCookie:false});
+  const jwks=await guest.jwks();expect(jwks.error).toBeNull();const checked=await verified(issuedToken,jwks.data!.keys as JWK[],ctx);expect(checked.payload).toMatchObject(payload);
+  const verifiedContexts=[];
+  for(const absentRequest of [true,false]){
+    await control(ctx,{operation:"clear-events"});const accepted=await control(ctx,{operation:"verify",token:issuedToken,absentRequest});expect(accepted.body).toEqual({payload:checked.payload});const acceptedState=await state(ctx);expect(acceptedState.events.map(event=>event.operation)).toEqual(["read"]);
+    expect(acceptedState.events[0]!.context).toEqual({path:"virtual:",method:absentRequest?null:"POST",marker:absentRequest?null:"server-marker",hasCookie:false});expect(acceptedState.keys).toEqual(issuedState.keys);
+    await control(ctx,{operation:"clear-events"});const wrong=await control(ctx,{operation:"verify",token:issuedToken,issuer:"https://wrong.invalid",absentRequest});expect(wrong.body).toEqual({payload:null});const wrongState=await state(ctx);expect(wrongState.events.map(event=>event.operation)).toEqual(["read"]);expect(wrongState.events[0]!.context).toEqual(acceptedState.events[0]!.context);
+    verifiedContexts.push({absentRequest,accepted,acceptedState,wrong,wrongState});
+  }
+  expect(await ctx.readUserState({userId:signup.data!.user.id})).toEqual(ownerBefore);expect(await ctx.readUserState({userId:other.data!.user.id})).toEqual(foreignBefore);expect((await ctx.rawRequest({path:"/__test/jwks-state"})).body).toEqual([]);
+  return {signup:ctx.snapshot(signup),other:ctx.snapshot(other),ownerBefore,foreignBefore,issued,issuedState,jwks,checked,verifiedContexts,ownerAfter:await ctx.readUserState({userId:signup.data!.user.id}),foreignAfter:await ctx.readUserState({userId:other.data!.user.id})};
+},["GET /jwks","POST /sign-up/email"]);

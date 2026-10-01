@@ -9,7 +9,8 @@ use axum::{
 };
 use better_auth::plugins::jwt::{
     DefineJwtPayload, DefineJwtSubject, JwtAlgorithm, JwtClaimsConfig, JwtExpiration,
-    JwtKeyPairConfig, JwtKeyring, JwtPlugin, JwtPluginConfig, JwtSession, JwtSignOptions,
+    JwtKeyPairConfig, JwtKeyring, JwtKeyringContext, JwtPlugin, JwtPluginConfig, JwtSession,
+    JwtSignOptions,
 };
 use better_auth::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
 use better_auth::{
@@ -98,8 +99,25 @@ fn observed(key: &Jwk) -> Value {
     json!({"id":key.id,"publicKey":serde_json::from_str::<Value>(&key.public_key).unwrap_or_else(|_|json!(key.public_key)),"privateKeyEncrypted":serde_json::from_str::<Value>(&key.private_key).is_ok_and(|value|value.is_string()),
         "createdAt":key.created_at.to_rfc3339_opts(SecondsFormat::Millis,true),"expiresAt":key.expires_at.map(|value|value.to_rfc3339_opts(SecondsFormat::Millis,true)),"alg":key.alg,"crv":key.crv})
 }
-fn context(request: Option<&AuthRequest>) -> Value {
-    json!({"path":request.map(AuthRequest::path),"method":request.map(|request|format!("{:?}",request.method()).to_uppercase()),"marker":request.and_then(|request|request.headers.get("x-keyring-proof")),"hasCookie":request.is_some_and(|request|request.headers.get("cookie").is_some_and(|value|!value.is_empty()))})
+fn context(context: &JwtKeyringContext<'_>) -> Value {
+    let request = context.request;
+    json!({"path":context.path,"method":request.map(|request|format!("{:?}",request.method()).to_uppercase()),"marker":request.and_then(|request|request.headers.get("x-keyring-proof")),"hasCookie":request.is_some_and(|request|request.headers.get("cookie").is_some_and(|value|!value.is_empty()))})
+}
+fn snapshot(session: &JwtSession) -> AuthResult<Value> {
+    let mut value = serde_json::to_value(session)?;
+    if let Some(clock) = value.get("updatedAt") {
+        let milliseconds = clock
+            .as_f64()
+            .ok_or_else(|| AuthError::internal("invalid cache clock"))?
+            .to_string()
+            .parse::<i64>()
+            .map_err(database_error)?;
+        let date = DateTime::from_timestamp_millis(milliseconds)
+            .ok_or_else(|| AuthError::internal("invalid cache clock"))?;
+        value["updatedAt"] = json!(date.to_rfc3339_opts(SecondsFormat::Millis, true));
+        value["updatedAtType"] = json!("number");
+    }
+    Ok(value)
 }
 impl Application {
     async fn rows(&self) -> AuthResult<Vec<Jwk>> {
@@ -155,7 +173,8 @@ impl Application {
 }
 #[async_trait::async_trait]
 impl JwtKeyring for Application {
-    async fn keys(&self, request: Option<&AuthRequest>) -> AuthResult<Vec<Jwk>> {
+    async fn keys(&self, ctx: &JwtKeyringContext<'_>) -> AuthResult<Vec<Jwk>> {
+        let request = ctx.request;
         let scheduled = self.race()?;
         let marker = request
             .and_then(|request| request.headers.get("x-keyring-proof"))
@@ -166,7 +185,7 @@ impl JwtKeyring for Application {
             }
         }
         let result = self.rows().await?;
-        self.record(json!({"operation":"read","profile":self.profile,"context":context(request),"ids":result.iter().map(|key|&key.id).collect::<Vec<_>>()}))?;
+        self.record(json!({"operation":"read","profile":self.profile,"context":context(ctx),"ids":result.iter().map(|key|&key.id).collect::<Vec<_>>()}))?;
         self.reject("read")?;
         if result.is_empty() && matches!(marker, Some("race-first" | "race-second")) {
             if let Some(scheduled) = scheduled {
@@ -181,7 +200,8 @@ impl JwtKeyring for Application {
         }
         Ok(result)
     }
-    async fn create_key(&self, key: CreateJwk, request: Option<&AuthRequest>) -> AuthResult<Jwk> {
+    async fn create_key(&self, key: CreateJwk, ctx: &JwtKeyringContext<'_>) -> AuthResult<Jwk> {
+        let request = ctx.request;
         if request
             .and_then(|request| request.headers.get("x-keyring-proof"))
             .is_some_and(|marker| marker == "race-second")
@@ -190,7 +210,7 @@ impl JwtKeyring for Application {
                 Race::wait(&scheduled.second).await?;
             }
         }
-        self.record(json!({"operation":"create","profile":self.profile,"context":context(request),"key":{"publicKey":serde_json::from_str::<Value>(&key.public_key)?,"privateKeyEncrypted":serde_json::from_str::<Value>(&key.private_key).is_ok_and(|value|value.is_string()),
+        self.record(json!({"operation":"create","profile":self.profile,"context":context(ctx),"key":{"publicKey":serde_json::from_str::<Value>(&key.public_key)?,"privateKeyEncrypted":serde_json::from_str::<Value>(&key.private_key).is_ok_and(|value|value.is_string()),
             "createdAt":key.created_at.to_rfc3339_opts(SecondsFormat::Millis,true),"expiresAt":key.expires_at.map(|value|value.to_rfc3339_opts(SecondsFormat::Millis,true)),"alg":key.alg,"crv":key.crv}}))?;
         self.reject("create")?;
         let _writer = self.state.writer.lock().await;
@@ -217,6 +237,7 @@ impl JwtKeyring for Application {
 #[async_trait::async_trait]
 impl DefineJwtPayload for Application {
     async fn define_payload(&self, session: &JwtSession) -> AuthResult<Map<String, Value>> {
+        let session = snapshot(session)?;
         self.record(json!({"operation":"payload","profile":self.profile,"session":session}))?;
         self.reject("payload")?;
         json!({"iat":100,"exp":4_102_444_800_u64,"application":"external-keyring","snapshot":session})
@@ -228,11 +249,27 @@ impl DefineJwtPayload for Application {
 #[async_trait::async_trait]
 impl DefineJwtSubject for Application {
     async fn subject(&self, session: &JwtSession) -> AuthResult<Option<String>> {
-        self.record(json!({"operation":"subject","profile":self.profile,"session":session}))?;
+        self.record(
+            json!({"operation":"subject","profile":self.profile,"session":snapshot(session)?}),
+        )?;
         self.reject("subject")?;
+        let input = serde_json::to_value(session)?;
         Ok(match self.mode {
             "empty-subject" => Some(String::new()),
             "null-subject" => None,
+            "custom-cache" => Some(format!(
+                "{}|version:{}|clock:{}",
+                session.user.email.as_deref().unwrap_or_default(),
+                input
+                    .get("version")
+                    .and_then(Value::as_str)
+                    .unwrap_or("absent"),
+                if input.get("updatedAt").is_some_and(Value::is_number) {
+                    "number"
+                } else {
+                    "undefined"
+                }
+            )),
             _ => session.user.email.clone(),
         })
     }
@@ -253,6 +290,8 @@ struct Control {
     signing_key_id: Option<String>,
     signing_algorithm: Option<JwtAlgorithm>,
     expiration: Option<Expiration>,
+    #[serde(default)]
+    absent_request: bool,
 }
 #[derive(Deserialize)]
 struct Expiration {
@@ -304,6 +343,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         "standard",
         "plain",
         "cache",
+        "custom-cache",
         "empty-subject",
         "null-subject",
     ] {
@@ -340,7 +380,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         let jwt = JwtPlugin::with_config(options);
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = base.clone().base_path(&path);
-        if mode == "cache" {
+        if matches!(mode, "cache" | "custom-cache") {
             config = config.session_cookie_cache(CookieCacheConfig {
                 enabled: true,
                 ..Default::default()
@@ -368,6 +408,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         let profiles=profiles.clone();let database=database.clone();let state=state.clone();
         async move {
             let result=async {
+                let request_body=body.to_vec();
                 let body:Control=better_auth_core::utils::json::from_slice(&body)?;
                 let (auth,jwt,app)=profiles.get(body.profile.as_deref().unwrap_or("jwt-keyring-standard")).ok_or_else(||AuthError::bad_request("unknown keyring profile"))?;
                 match body.operation.as_str() {
@@ -380,15 +421,16 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     "corrupt"=>{let (query,value)=if body.field.as_deref()==Some("public") {("UPDATE fixtureJwtKeyring SET publicKey=? WHERE profile=? AND id=?","corrupt")}else{("UPDATE fixtureJwtKeyring SET privateKey=? WHERE profile=? AND id=?","\"corrupt\"")};database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,query,[value.into(),app.profile.clone().into(),body.id.into()])).await.map_err(database_error)?;},
                     "legacy"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE fixtureJwtKeyring SET alg=NULL,crv=NULL WHERE profile=? AND id=?",[app.profile.clone().into(),body.id.into()])).await.map_err(database_error)?;},
                     "delete"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"DELETE FROM fixtureJwtKeyring WHERE profile=? AND id=?",[app.profile.clone().into(),body.id.into()])).await.map_err(database_error)?;},
-                    "verify"=>{let mut request=AuthRequest::new(HttpMethod::Post,"virtual:");request.headers=headers.iter().filter_map(|(key,value)|value.to_str().ok().map(|value|(key.to_string(),value.to_owned()))).collect();return Ok(json!({"payload":jwt.verify_jwt(body.token.as_deref().ok_or_else(||AuthError::bad_request("token"))?,body.issuer.as_deref(),Some(&request),auth.context()).await?}));},
-                    "sign"|"resolve-sign"|"create"=>{
+                    "verify"=>{let mut request=AuthRequest::new(HttpMethod::Post,"/__test/jwt-keyring");request.body=Some(request_body.clone());request.headers=headers.iter().filter_map(|(key,value)|value.to_str().ok().map(|value|(key.to_string(),value.to_owned()))).collect();return Ok(json!({"payload":jwt.verify_jwt(body.token.as_deref().ok_or_else(||AuthError::bad_request("token"))?,body.issuer.as_deref(),(!body.absent_request).then_some(&request),auth.context()).await?}));},
+                    "sign"|"resolve-sign"|"create"|"api-sign"=>{
                         let mut request=AuthRequest::new(HttpMethod::Post,"/__test/jwt-keyring");
-                        request.headers=headers.iter().filter_map(|(key,value)|value.to_str().ok().map(|value|(key.to_string(),value.to_owned()))).collect();
+                        request.body=Some(request_body.clone());request.headers=headers.iter().filter_map(|(key,value)|value.to_str().ok().map(|value|(key.to_string(),value.to_owned()))).collect();
                         let mut options=JwtSignOptions {header:body.header,signing_key_id:body.signing_key_id,signing_algorithm:body.signing_algorithm,claims:body.expiration.map(|expiration|expiration.value().map(|expiration|JwtClaimsConfig {expiration,..Default::default()})).transpose()?,..Default::default()};
-                        if body.operation=="create" {jwt.create_jwk(None,Some(&request),auth.context()).await?;return Ok(json!({"created":true}));}
+                        let request=(!body.absent_request).then_some(&request);
+                        if body.operation=="create" {jwt.create_jwk(None,request,auth.context()).await?;return Ok(json!({"created":true}));}
                         let payload=body.payload.ok_or_else(||AuthError::bad_request("payload"))?;
-                        if body.operation=="resolve-sign" {options.resolved_key=jwt.resolve_signing_key(&options,Some(&request),auth.context()).await?.map(Arc::new);}
-                        return Ok(json!({"token":jwt.sign_jwt_json(&payload,&options,Some(&request),auth.context()).await?}));
+                        if body.operation=="resolve-sign" {options.resolved_key=jwt.resolve_signing_key(&options,request,auth.context()).await?.map(Arc::new);}
+                        return Ok(json!({"token":jwt.sign_jwt_json(&payload,&options,request,auth.context()).await?}));
                     }
                     "state"=>{},_=>return Err(AuthError::bad_request("unknown keyring operation")),
                 }
