@@ -59,6 +59,19 @@ fractional account timestamp control and failed that owner (46 pass / 1 fail);
 
 The actual 23 new evidence requirements are drawn from passing records for the
 four routes these owners exercise. No existing requirement was removed.
+The two earlier native plaintext rejection tests contradicted the measured Source
+policy. The read owner now proves passthrough without a row update; the refresh
+owner uses the real typed provider callback to prove plaintext input and encrypted
+rotation. Its former assertion failed only because port 65535 was unavailable,
+which could not establish a decryption rejection. Both revised owners fail against
+the original implementation at its actual AES decoder:
+`/tmp/oauth-native-plaintext-meaningful-before.log`. All 18 native account owners
+then pass: `/tmp/oauth-token-persistence-reviewed-native-owners-clean.log`.
+After the old-code control, stale artifacts in the reused private target caused
+one repeated old-decoder result; the API package was explicitly cleaned before
+the final current-tree rebuild. The intermediate failed log is retained as
+`/tmp/oauth-token-persistence-reviewed-native-owners-source-policy.log`.
+
 Strict API Clippy, fixture build, client TypeScript, Rust formatting and diff
 checks pass. Independent Phone review clears the measured fresh-row Source
 interoperability and identifies the installed-row boundary below. The canonical
