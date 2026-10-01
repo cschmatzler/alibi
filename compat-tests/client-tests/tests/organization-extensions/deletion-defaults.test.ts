@@ -164,6 +164,7 @@ compatScenario(
       deniedRead,
     };
   },
+  ["POST /organization/delete"],
 );
 
 compatScenario(
@@ -244,6 +245,7 @@ compatScenario(
       blank,
     };
   },
+  ["POST /organization/delete"],
 );
 
 compatScenario(
@@ -315,6 +317,7 @@ compatScenario(
     }
     return observations;
   },
+  ["POST /organization/delete"],
 );
 
 compatScenario(
@@ -372,6 +375,7 @@ compatScenario(
       selectedAfter,
     };
   },
+  ["POST /organization/delete"],
 );
 
 compatScenario(
@@ -408,4 +412,5 @@ compatScenario(
     );
     return { first, second, before, active, otherBefore, deleted };
   },
+  ["POST /organization/delete"],
 );
