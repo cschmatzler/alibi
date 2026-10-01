@@ -3,6 +3,7 @@
 mod concurrency_tests;
 
 use super::entities::api_key::{ActiveModel, Column, Entity};
+use super::entities::api_key_start::ApiKeyStart;
 use super::{SeaOrmStore, map_db_err, parse_optional_rfc3339};
 use crate::schema::AuthSchema;
 use async_trait::async_trait;
@@ -35,7 +36,10 @@ where
         ActiveModel {
             id: Set(Uuid::new_v4().to_string()),
             name: Set(input.name),
-            start: Set(input.start),
+            start: Set(input
+                .start
+                .map(|start| ApiKeyStart::prepare(start, self.connection().get_database_backend()))
+                .transpose()?),
             prefix: Set(input.prefix),
             key_hash: Set(input.key_hash),
             reference_id: Set(input.reference_id),

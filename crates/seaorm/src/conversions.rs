@@ -67,7 +67,7 @@ impl From<&entities::api_key::Model> for ApiKey {
         Self {
             id: model.id.clone(),
             name: model.name.clone(),
-            start: model.start.clone(),
+            start: model.start.as_ref().map(|start| start.as_str().to_owned()),
             prefix: model.prefix.clone(),
             key_hash: model.key_hash.clone(),
             reference_id: model.reference_id.clone(),

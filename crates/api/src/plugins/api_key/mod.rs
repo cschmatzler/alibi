@@ -240,7 +240,10 @@ pub struct ApiKeyConfig {
     pub references: ApiKeyReferences,
 
     // -- key generation --
-    pub key_length: usize,
+    /// Raw length excluding the prefix. Zero and NaN use 64; the built-in
+    /// generator admits safely terminating fractions from 0.5 upward.
+    /// A custom generator receives the number unchanged after that fallback.
+    pub key_length: f64,
     pub prefix: Option<String>,
     /// Permissions applied when creation does not supply explicit permissions.
     pub default_permissions: Option<ApiKeyPermissions>,
@@ -260,16 +263,23 @@ pub struct ApiKeyConfig {
     pub disable_key_hashing: bool,
 
     // -- starting characters --
-    pub starting_characters_length: usize,
+    /// UTF-16 substring end: finite fractions truncate, negative/NaN select an
+    /// empty prefix, and positive infinity selects the whole credential.
+    /// SQLite retains a cut through a surrogate pair as actual WTF-8 TEXT.
+    pub starting_characters_length: f64,
     pub store_starting_characters: bool,
 
     // -- prefix length validation --
-    pub max_prefix_length: usize,
-    pub min_prefix_length: usize,
+    /// Compare the actual UTF-16 prefix length against this raw number.
+    pub max_prefix_length: f64,
+    /// Compare the actual UTF-16 prefix length against this raw number.
+    pub min_prefix_length: f64,
 
     // -- name validation --
-    pub max_name_length: usize,
-    pub min_name_length: usize,
+    /// Compare the actual UTF-16 name length against this raw number.
+    pub max_name_length: f64,
+    /// Compare the actual UTF-16 name length against this raw number.
+    pub min_name_length: f64,
     pub require_name: bool,
 
     // -- metadata --
@@ -292,8 +302,8 @@ pub struct ApiKeyConfig {
 impl ApiKeyConfig {
     const fn normalized(mut self) -> Self {
         // Upstream resolves defaultKeyLength using JavaScript's `|| 64`.
-        if self.key_length == 0 {
-            self.key_length = 64;
+        if self.key_length == 0.0 || self.key_length.is_nan() {
+            self.key_length = 64.0;
         }
         self
     }
@@ -332,14 +342,16 @@ impl std::fmt::Debug for ApiKeyConfig {
 /// Key expiration constraints.
 #[derive(Debug, Clone)]
 pub struct KeyExpirationConfig {
-    /// Default `expiresIn` (in seconds) when none is provided. `None` = no default.
-    pub default_expires_in: Option<i64>,
+    /// Raw default `expiresIn` in seconds when none is provided. Zero/NaN omit
+    /// expiry; finite fractions retain milliseconds, and invalid dates reject
+    /// creation after generation and before the database write.
+    pub default_expires_in: Option<f64>,
     /// If true, clients cannot set a custom `expiresIn`.
     pub disable_custom_expires_time: bool,
     /// Maximum `expiresIn` in **days**.
-    pub max_expires_in: i64,
+    pub max_expires_in: f64,
     /// Minimum `expiresIn` in **days**.
-    pub min_expires_in: i64,
+    pub min_expires_in: f64,
 }
 
 impl Default for KeyExpirationConfig {
@@ -347,8 +359,8 @@ impl Default for KeyExpirationConfig {
         Self {
             default_expires_in: None,
             disable_custom_expires_time: false,
-            max_expires_in: 365,
-            min_expires_in: 1,
+            max_expires_in: 365.0,
+            min_expires_in: 1.0,
         }
     }
 }
@@ -378,7 +390,7 @@ impl Default for ApiKeyConfig {
         Self {
             config_id: "default".to_owned(),
             references: ApiKeyReferences::default(),
-            key_length: 64,
+            key_length: 64.0,
             prefix: None,
             default_permissions: None,
             custom_key_generator: None,
@@ -387,12 +399,12 @@ impl Default for ApiKeyConfig {
             custom_api_key_getter: None,
             custom_api_key_validator: None,
             disable_key_hashing: false,
-            starting_characters_length: 6,
+            starting_characters_length: 6.0,
             store_starting_characters: true,
-            max_prefix_length: 32,
-            min_prefix_length: 1,
-            max_name_length: 32,
-            min_name_length: 1,
+            max_prefix_length: 32.0,
+            min_prefix_length: 1.0,
+            max_name_length: 32.0,
+            min_name_length: 1.0,
             require_name: false,
             enable_metadata: false,
             key_expiration: KeyExpirationConfig::default(),
@@ -425,7 +437,7 @@ impl ApiKeyPlugin {
     pub fn new(
         #[builder(default = "default".to_owned())] config_id: String,
         #[builder(default)] references: ApiKeyReferences,
-        #[builder(default = 64)] key_length: usize,
+        #[builder(default = 64.0, into)] key_length: f64,
         prefix: Option<String>,
         default_permissions: Option<ApiKeyPermissions>,
         custom_key_generator: Option<Arc<dyn ApiKeyGenerator>>,
@@ -434,12 +446,12 @@ impl ApiKeyPlugin {
         custom_api_key_getter: Option<Arc<dyn ApiKeyGetter>>,
         custom_api_key_validator: Option<Arc<dyn ApiKeyValidator>>,
         #[builder(default = false)] disable_key_hashing: bool,
-        #[builder(default = 6)] starting_characters_length: usize,
+        #[builder(default = 6.0, into)] starting_characters_length: f64,
         #[builder(default = true)] store_starting_characters: bool,
-        #[builder(default = 32)] max_prefix_length: usize,
-        #[builder(default = 1)] min_prefix_length: usize,
-        #[builder(default = 32)] max_name_length: usize,
-        #[builder(default = 1)] min_name_length: usize,
+        #[builder(default = 32.0, into)] max_prefix_length: f64,
+        #[builder(default = 1.0, into)] min_prefix_length: f64,
+        #[builder(default = 32.0, into)] max_name_length: f64,
+        #[builder(default = 1.0, into)] min_name_length: f64,
         #[builder(default = false)] require_name: bool,
         #[builder(default = false)] enable_metadata: bool,
         #[builder(default)] key_expiration: KeyExpirationConfig,
@@ -491,22 +503,45 @@ impl ApiKeyPlugin {
     pub(super) fn generate_key(
         config: &ApiKeyConfig,
         custom_prefix: Option<&str>,
-    ) -> (String, String, String) {
+    ) -> AuthResult<(String, String, better_auth_core::ApiKeyStartingCharacters)> {
+        if config.key_length <= 0.0 {
+            return Err(AuthError::internal("Length must be a positive integer."));
+        }
+        // Source's zero-byte random buffer cannot advance positive lengths
+        // below one half. Nonfinite built-in lengths also cannot terminate.
+        if !config.key_length.is_finite() || config.key_length < 0.5 {
+            return Err(AuthError::internal("Unsupported random key length"));
+        }
+        let capacity = config
+            .key_length
+            .ceil()
+            .to_string()
+            .parse::<u32>()
+            .map_err(|error| AuthError::internal(error.to_string()))?;
         // Match TS: generateRandomString(length, "a-z", "A-Z") — alpha only
         const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
         let mut rng = rand::thread_rng();
-        let raw: String = (0..config.key_length)
-            .map(|_| ALPHABET.choose(&mut rng).copied().map_or('a', char::from))
-            .collect();
+        let mut raw = String::new();
+        raw.try_reserve_exact(
+            usize::try_from(capacity).map_err(|error| AuthError::internal(error.to_string()))?,
+        )
+        .map_err(|error| AuthError::internal(error.to_string()))?;
+        while f64::from(
+            u32::try_from(raw.len()).map_err(|error| AuthError::internal(error.to_string()))?,
+        ) < config.key_length
+        {
+            raw.push(ALPHABET.choose(&mut rng).copied().map_or('a', char::from));
+        }
 
-        let prefix = custom_prefix.or(config.prefix.as_deref()).unwrap_or("");
+        let prefix = custom_prefix
+            .filter(|prefix| !prefix.is_empty())
+            .or(config.prefix.as_deref())
+            .unwrap_or("");
         let full_key = format!("{prefix}{raw}");
 
         // TS computes start from the full key (including prefix):
         //   start = key.substring(0, charactersLength)
-        let start_len = config.starting_characters_length;
-        let units: Vec<_> = full_key.encode_utf16().take(start_len).collect();
-        let start = String::from_utf16_lossy(&units);
+        let start = Self::starting_characters(&full_key, config.starting_characters_length);
 
         let hash = if config.disable_key_hashing {
             full_key.clone()
@@ -514,7 +549,29 @@ impl ApiKeyPlugin {
             Self::hash_key(&full_key)
         };
 
-        (full_key, hash, start)
+        Ok((full_key, hash, start))
+    }
+
+    pub(super) fn starting_characters(
+        key: &str,
+        length: f64,
+    ) -> better_auth_core::ApiKeyStartingCharacters {
+        // substring(0, length) clamps negatives/NaN to zero, truncates finite
+        // fractions, and preserves all code units for positive infinity.
+        let end = if length.is_nan() || length < 0.0 {
+            0.0
+        } else {
+            length.trunc()
+        };
+        let units = key
+            .encode_utf16()
+            .scan(0_u32, |position, unit| {
+                let keep = f64::from(*position) < end;
+                *position = position.saturating_add(1);
+                keep.then_some(unit)
+            })
+            .collect();
+        better_auth_core::ApiKeyStartingCharacters::from_utf16(units)
     }
 
     pub(super) fn hash_key(key: &str) -> String {
@@ -605,7 +662,10 @@ impl ApiKeyPlugin {
     /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn validate_prefix(config: &ApiKeyConfig, prefix: Option<&str>) -> AuthResult<()> {
         if let Some(p) = prefix.filter(|prefix| !prefix.is_empty()) {
-            let len = p.encode_utf16().count();
+            let len = f64::from(
+                u32::try_from(p.encode_utf16().count())
+                    .map_err(|error| AuthError::internal(error.to_string()))?,
+            );
             if len < config.min_prefix_length || len > config.max_prefix_length {
                 return Err(api_key_error(ApiKeyErrorCode::InvalidPrefixLength));
             }
@@ -630,7 +690,10 @@ impl ApiKeyPlugin {
             return Err(api_key_error(ApiKeyErrorCode::NameRequired));
         }
         if let Some(n) = name.filter(|name| !is_create || !name.is_empty()) {
-            let len = n.encode_utf16().count();
+            let len = f64::from(
+                u32::try_from(n.encode_utf16().count())
+                    .map_err(|error| AuthError::internal(error.to_string()))?,
+            );
             if len < config.min_name_length || len > config.max_name_length {
                 return Err(api_key_error(ApiKeyErrorCode::InvalidNameLength));
             }
@@ -638,11 +701,6 @@ impl ApiKeyPlugin {
         Ok(())
     }
 
-    #[expect(
-        clippy::as_conversions,
-        clippy::cast_precision_loss,
-        reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
-    )]
     ///
     /// # Errors
     /// Returns an error when validation, storage, or an application callback fails.
@@ -657,15 +715,15 @@ impl ApiKeyPlugin {
             }
             // expiresIn is in seconds; min/max are in days
             let days = secs / 86_400.0;
-            if days < cfg.min_expires_in as f64 {
+            if days < cfg.min_expires_in {
                 return Err(api_key_error(ApiKeyErrorCode::ExpiresInTooSmall));
             }
-            if days > cfg.max_expires_in as f64 {
+            if days > cfg.max_expires_in {
                 return Err(api_key_error(ApiKeyErrorCode::ExpiresInTooLarge));
             }
             Ok(Some(secs))
         } else {
-            Ok(cfg.default_expires_in.map(|seconds| seconds as f64))
+            Ok(cfg.default_expires_in)
         }
     }
 
@@ -919,7 +977,11 @@ better_auth_core::impl_auth_plugin! {
             req: &AuthRequest,
             ctx: &AuthContext<S>,
         ) -> AuthResult<Option<BeforeRequestAction>> {
-            self.api_key_session(req, ctx).await
+            self.api_key_session(req, ctx).await.map_err(|error| {
+                if error.status_code() >= 500 && !matches!(error, AuthError::Api { .. } | AuthError::Upstream { .. }) {
+                    AuthError::CallbackFailure(Box::new(error))
+                } else { error }
+            })
         }
     }
 }

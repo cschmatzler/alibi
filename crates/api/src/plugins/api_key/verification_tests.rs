@@ -309,7 +309,8 @@ async fn organization_key_verifies_without_emulating_a_user_session() {
         .enable_session_for_api_keys(true)
         .build();
     let (ctx, user, _) = create_test_context_with_user().await;
-    let (key, key_hash, start) = ApiKeyPlugin::generate_key(&ApiKeyConfig::default(), None);
+    let (key, key_hash, start) =
+        ApiKeyPlugin::generate_key(&ApiKeyConfig::default(), None).unwrap();
     ctx.database
         .create_api_key(better_auth_core::CreateApiKey {
             // A colliding user ID must not turn an organization key into a user session.
@@ -465,15 +466,19 @@ async fn programmatic_validator_uses_typed_policy_without_a_request() {
     }
     #[async_trait::async_trait]
     impl ApiKeyValidator for Predicate {
-        async fn validate(&self, context: &ApiKeyCallbackContext<'_>, _key: &str) -> bool {
-            context.request.is_none()
+        async fn validate(
+            &self,
+            context: &ApiKeyCallbackContext<'_>,
+            _key: &str,
+        ) -> AuthResult<bool> {
+            Ok(context.request.is_none()
                 && context.configuration_id == "programmatic"
                 && context.auth_config.secret == "test-secret-key-at-least-32-chars-long"
                 && self.private_policy_secret == "application-private-policy-secret"
                 && context
                     .extensions
                     .get::<Policy>()
-                    .is_some_and(|policy| policy.0.load(Ordering::SeqCst))
+                    .is_some_and(|policy| policy.0.load(Ordering::SeqCst)))
         }
     }
     let (mut ctx, user, _) = create_test_context_with_user().await;

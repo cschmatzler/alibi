@@ -162,14 +162,14 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             } else {
                 "raw_".into()
             }),
-            key_length: if id == "generated" { 24 } else { 31 },
-            starting_characters_length: 2,
+            key_length: if id == "generated" { 24.0 } else { 31.0 },
+            starting_characters_length: 2.0,
             custom_key_generator: Some(Arc::new(application.clone())),
             default_permissions_callback: Some(Arc::new(Permissions {
                 application: application.clone(),
             })),
             key_expiration: KeyExpirationConfig {
-                min_expires_in: 0,
+                min_expires_in: 0.0,
                 ..Default::default()
             },
             rate_limit: RateLimitDefaults {
@@ -181,7 +181,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     }
     plugin = plugin.configuration(ApiKeyConfig {
         config_id: "static".into(),
-        key_length: 0,
+        key_length: 0.0,
         custom_key_generator: Some(Arc::new(application.clone())),
         rate_limit: RateLimitDefaults {
             enabled: false,
@@ -319,7 +319,10 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     Err(ApiKeyVerificationError::Validation(error)) => {
                         Json(value!({"valid":false,"error":error,"key":null})).into_response()
                     }
-                    Err(ApiKeyVerificationError::Internal(_)) => (
+                    Err(
+                        ApiKeyVerificationError::Internal(_)
+                        | ApiKeyVerificationError::ExplicitValidator(_),
+                    ) => (
                         axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                         Json(value!({"message":"Internal server error"})),
                     )

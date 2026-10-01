@@ -112,13 +112,18 @@ pub enum ApiKeyVerificationError {
     Validation(ApiKeyValidationError),
     /// An internal operation failed. The original typed error is preserved.
     Internal(AuthError),
+    /// An explicitly selected validator failed before verification's catch
+    /// boundary. Server endpoint adapters propagate this original typed error.
+    ExplicitValidator(AuthError),
 }
 
 impl std::fmt::Display for ApiKeyVerificationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Validation(error) => f.write_str(error.message.text()),
-            Self::Internal(error) => write!(f, "API key verification failed: {error}"),
+            Self::Internal(error) | Self::ExplicitValidator(error) => {
+                write!(f, "API key verification failed: {error}")
+            }
         }
     }
 }
@@ -126,7 +131,7 @@ impl std::fmt::Display for ApiKeyVerificationError {
 impl std::error::Error for ApiKeyVerificationError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::Internal(error) => Some(error),
+            Self::Internal(error) | Self::ExplicitValidator(error) => Some(error),
             Self::Validation(_) => None,
         }
     }
@@ -215,10 +220,12 @@ impl ApiKeyPlugin {
             && let Some(validator) = &lookup_config.custom_api_key_validator
             && !validator
                 .validate(
-                    &ApiKeyCallbackContext::new(request, ctx, &lookup_config.config_id),
+                    &ApiKeyCallbackContext::new(request, ctx, &lookup_config.config_id)
+                        .with_verification_input(input),
                     input.key,
                 )
                 .await
+                .map_err(ApiKeyVerificationError::ExplicitValidator)?
         {
             return Err(ApiKeyVerificationError::Validation(ApiKeyValidationError {
                 code: ApiKeyErrorCode::KeyNotFound,
@@ -255,10 +262,11 @@ impl ApiKeyPlugin {
             && let Some(validator) = &config.custom_api_key_validator
             && !validator
                 .validate(
-                    &ApiKeyCallbackContext::new(request, ctx, &config.config_id),
+                    &ApiKeyCallbackContext::new(request, ctx, &config.config_id)
+                        .with_verification_input(input),
                     input.key,
                 )
-                .await
+                .await?
         {
             return Err(ApiKeyErrorCode::KeyNotFound.into());
         }
@@ -276,9 +284,10 @@ impl ApiKeyPlugin {
             }
         }
         if let Some(required) = input.permissions {
-            let permitted = api_key.permissions.as_deref().is_some_and(|permissions| {
-                super::handlers::check_permissions(permissions, required)
-            });
+            let permitted = match api_key.permissions.as_deref() {
+                Some(permissions) => super::handlers::check_permissions(permissions, required)?,
+                None => false,
+            };
             if !permitted {
                 return Err(ApiKeyErrorCode::KeyNotFound.into());
             }
@@ -338,30 +347,30 @@ impl ApiKeyPlugin {
         &'a self,
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-    ) -> Option<(&'a ApiKeyConfig, String)> {
-        self.configurations
+    ) -> AuthResult<Option<(&'a ApiKeyConfig, String)>> {
+        for config in self
+            .configurations
             .iter()
             .filter(|config| config.enable_session_for_api_keys)
-            .find_map(|config| {
-                let key = config.custom_api_key_getter.as_ref().map_or_else(
-                    || {
-                        config.api_key_headers.iter().find_map(|header| {
-                            req.headers
-                                .get(&header.to_ascii_lowercase())
-                                .filter(|key| !key.is_empty())
-                                .cloned()
-                        })
-                    },
-                    |getter| {
-                        getter.get_key(&ApiKeyCallbackContext::new(
-                            Some(req),
-                            ctx,
-                            &config.config_id,
-                        ))
-                    },
-                );
-                key.filter(|key| !key.is_empty()).map(|key| (config, key))
-            })
+        {
+            let key = match &config.custom_api_key_getter {
+                Some(getter) => getter.get_key(&ApiKeyCallbackContext::new(
+                    Some(req),
+                    ctx,
+                    &config.config_id,
+                ))?,
+                None => config.api_key_headers.iter().find_map(|header| {
+                    req.headers
+                        .get(&header.to_ascii_lowercase())
+                        .filter(|key| !key.is_empty())
+                        .cloned()
+                }),
+            };
+            if let Some(key) = key.filter(|key| !key.is_empty()) {
+                return Ok(Some((config, key)));
+            }
+        }
+        Ok(None)
     }
 
     #[expect(
@@ -376,14 +385,29 @@ impl ApiKeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<Option<BeforeRequestAction>> {
-        if self.find_session_key(req, ctx).is_none() {
+        // The Source hook matcher executes before its middleware handler. A
+        // getter failure at that stage becomes the dispatcher's matcher error,
+        // including an intentional API error thrown by the application.
+        if self
+            .find_session_key(req, ctx)
+            .map_err(|_error| AuthError::Api {
+                status: 500,
+                code: None,
+                message: "An error occurred during hook matcher execution. Check the logs for more details.".into(),
+            })?
+            .is_none()
+        {
             return Ok(None);
         }
-        let (config, key) = self.find_session_key(req, ctx).ok_or_else(|| {
+        let (config, key) = self.find_session_key(req, ctx)?.ok_or_else(|| {
             AuthError::internal("API key getter did not return a key after matching")
         })?;
 
-        if key.encode_utf16().count() < config.key_length {
+        if f64::from(
+            u32::try_from(key.encode_utf16().count())
+                .map_err(|error| AuthError::internal(error.to_string()))?,
+        ) < config.key_length
+        {
             return Ok(Some(BeforeRequestAction::Respond(AuthResponse::json(
                 403,
                 &ApiKeyValidationError::new(ApiKeyErrorCode::InvalidApiKey),
@@ -395,7 +419,7 @@ impl ApiKeyPlugin {
                     &ApiKeyCallbackContext::new(Some(req), ctx, &config.config_id),
                     &key,
                 )
-                .await
+                .await?
         {
             return Ok(Some(BeforeRequestAction::Respond(AuthResponse::json(
                 403,
@@ -415,7 +439,10 @@ impl ApiKeyPlugin {
             Err(ApiKeyVerificationError::Validation(error)) => {
                 return Ok(Some(BeforeRequestAction::Respond(error.response()?)));
             }
-            Err(ApiKeyVerificationError::Internal(error)) => {
+            Err(
+                ApiKeyVerificationError::Internal(error)
+                | ApiKeyVerificationError::ExplicitValidator(error),
+            ) => {
                 // At this source middleware validation stage ordinary failures
                 // become an empty 500; explicit application API errors survive.
                 if error.status_code() >= 500

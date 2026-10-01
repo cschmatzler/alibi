@@ -26,8 +26,10 @@ use std::sync::{Arc, Mutex};
 type Events = Arc<Mutex<Vec<Value>>>;
 struct Getter(Events);
 impl ApiKeyGetter for Getter {
-    fn get_key(&self, context: &ApiKeyCallbackContext<'_>) -> Option<String> {
-        let request = context.request?;
+    fn get_key(&self, context: &ApiKeyCallbackContext<'_>) -> AuthResult<Option<String>> {
+        let Some(request) = context.request else {
+            return Ok(None);
+        };
         let header = request.header("x-custom-api-key");
         let key = header
             .and_then(|value| value.strip_prefix("ApiKey "))
@@ -35,20 +37,20 @@ impl ApiKeyGetter for Getter {
         if header.is_some() || request.path() == "/get-session" {
             self.0.lock().unwrap().push(json!({"kind":"getter", "configurationId":context.configuration_id, "provided":key.as_ref().is_some_and(|value|!value.is_empty())}));
         }
-        key
+        Ok(key)
     }
 }
 struct Validator(Events);
 #[async_trait::async_trait]
 impl ApiKeyValidator for Validator {
-    async fn validate(&self, context: &ApiKeyCallbackContext<'_>, key: &str) -> bool {
+    async fn validate(&self, context: &ApiKeyCallbackContext<'_>, key: &str) -> AuthResult<bool> {
         let policy = context
             .request
             .and_then(|request| request.header("x-key-policy"))
             .map(String::as_str)
             .unwrap_or("allow");
         self.0.lock().unwrap().push(json!({"kind":"validator", "configurationId":context.configuration_id, "policy":policy, "keyLength":key.encode_utf16().count(), "prefix":if key.starts_with("red_") {"red_"} else {"other"}}));
-        policy != "deny" && (policy != "red-only" || key.starts_with("red_"))
+        Ok(policy != "deny" && (policy != "red-only" || key.starts_with("red_")))
     }
 }
 #[derive(Deserialize, Serialize)]
@@ -175,7 +177,7 @@ pub(super) async fn router(
                 match plugin.verify_api_key_with_request(&input, &request, auth.context()).await {
                     Ok(key) => Json(json!({"valid": true, "error": null, "key": key})).into_response(),
                     Err(ApiKeyVerificationError::Validation(error)) => Json(json!({"valid": false, "error": error, "key": null})).into_response(),
-                    Err(ApiKeyVerificationError::Internal(error)) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"message": error.to_string()}))).into_response(),
+                    Err(ApiKeyVerificationError::Internal(error) | ApiKeyVerificationError::ExplicitValidator(error)) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"message": error.to_string()}))).into_response(),
                 }
             }
         }));

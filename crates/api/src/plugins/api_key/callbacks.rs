@@ -13,6 +13,9 @@ pub struct ApiKeyCallbackContext<'a> {
     pub auth_config: &'a AuthConfig,
     pub extensions: &'a ContextExtensions,
     pub configuration_id: &'a str,
+    /// Original trusted verification input, including the requested scope and
+    /// permissions. HTTP authentication callbacks have no server-only input.
+    pub verification_input: Option<&'a super::VerifyApiKey<'a>>,
 }
 
 impl std::fmt::Debug for ApiKeyCallbackContext<'_> {
@@ -34,7 +37,17 @@ impl<'a> ApiKeyCallbackContext<'a> {
             auth_config: &ctx.config,
             extensions: &ctx.extensions,
             configuration_id,
+            verification_input: None,
         }
+    }
+
+    #[must_use]
+    pub(super) const fn with_verification_input(
+        mut self,
+        input: &'a super::VerifyApiKey<'a>,
+    ) -> Self {
+        self.verification_input = Some(input);
+        self
     }
 }
 
@@ -43,17 +56,29 @@ impl<'a> ApiKeyCallbackContext<'a> {
 /// `None` or an empty string leaves normal session authentication in control.
 /// A matching getter is called again when the authentication hook executes,
 /// following upstream's matcher/handler ordering.
+/// Errors during matching become the hook matcher's public 500 response;
+/// errors from the subsequent handler preserve the application API error.
 pub trait ApiKeyGetter: Send + Sync {
-    fn get_key(&self, context: &ApiKeyCallbackContext<'_>) -> Option<String>;
+    /// Look up the actual request's credential.
+    ///
+    /// # Errors
+    /// Returns an application failure from credential lookup.
+    fn get_key(&self, context: &ApiKeyCallbackContext<'_>) -> AuthResult<Option<String>>;
 }
 
 /// Trusted acceptance predicate, evaluated before key usage is consumed.
 ///
 /// Explicitly scoped programmatic verification evaluates it before lookup;
 /// unscoped verification first resolves the persisted issuing configuration.
+/// A scoped callback error is returned directly. Unscoped verification catches
+/// it in the same validation phase as stored key errors.
 #[async_trait]
 pub trait ApiKeyValidator: Send + Sync {
-    async fn validate(&self, context: &ApiKeyCallbackContext<'_>, key: &str) -> bool;
+    /// Accept or reject a credential before consuming its usage.
+    ///
+    /// # Errors
+    /// Returns an application failure from credential validation.
+    async fn validate(&self, context: &ApiKeyCallbackContext<'_>, key: &str) -> AuthResult<bool>;
 }
 
 /// Ordered resource/action permissions, following JavaScript object insertion order.
@@ -61,7 +86,9 @@ pub type ApiKeyPermissions = indexmap::IndexMap<String, Vec<String>>;
 
 /// Inputs passed to an application key generator; length excludes the prefix.
 pub struct ApiKeyGenerationOptions<'a> {
-    pub length: usize,
+    /// Raw configured number after zero/NaN fallback; custom generators own
+    /// fractional and nonfinite values without an integer coercion.
+    pub length: f64,
     pub prefix: Option<&'a str>,
 }
 

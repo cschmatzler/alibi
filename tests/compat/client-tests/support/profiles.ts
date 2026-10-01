@@ -49,7 +49,7 @@ export const FIXTURE_PROFILES = [
   "session-fields", "session-fields-plugins",
   "api-key-automatic", "api-key-automatic-deferred", "api-key-automatic-other",
   "api-key-usage-rate", "api-key-usage-rate-deferred",
-  "api-key-generation", "passkey-fresh", "passkey-no-freshness", "passkey-first", "passkey-first-missing",
+  "api-key-generation", "api-key-options", "passkey-fresh", "passkey-no-freshness", "passkey-first", "passkey-first-missing",
   "device-custom", "device-configured", "device-unicode", "device-too-long",
   "siwe", "siwe-email", "siwe-contract",
   "phone-default", "phone-signup", "phone-proof", "phone-custom",

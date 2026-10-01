@@ -109,16 +109,17 @@ pub use store::{
     WalletAddressStore, transaction,
 };
 pub use types::{
-    ApiKey, AuthRequest, AuthResponse, CodeMessageResponse, CreateAccount, CreateApiKey,
-    CreateDeviceCode, CreateInvitation, CreateMember, CreateOrganization, CreatePasskey,
-    CreateSession, CreateTeam, CreateTwoFactor, CreateUser, CreateVerification,
-    CreateWalletAddress, DeviceCode, ErrorCodeMessageResponse, ErrorMessageResponse, Headers,
-    HealthCheckResponse, HttpMethod, Invitation, InvitationStatus, ListUsersParams, Member,
-    OkResponse, Organization, OrganizationPermissions, Passkey, RateLimitErrorResponse,
-    RequestMeta, StatusMessageResponse, StatusResponse, SuccessMessageResponse, SuccessResponse,
-    Team, TeamMember, TwoFactor, UpdateAccount, UpdateApiKey, UpdateDeviceCode, UpdateOrganization,
-    UpdatePasskey, UpdateTeam, UpdateTwoFactor, UpdateUser, UpdateUserRequest, UpdateUserResponse,
-    UpdateVerification, UserFilterValue, ValidationErrorResponse, WalletAddress,
+    ApiKey, ApiKeyStartingCharacters, AuthRequest, AuthResponse, CodeMessageResponse,
+    CreateAccount, CreateApiKey, CreateDeviceCode, CreateInvitation, CreateMember,
+    CreateOrganization, CreatePasskey, CreateSession, CreateTeam, CreateTwoFactor, CreateUser,
+    CreateVerification, CreateWalletAddress, DeviceCode, ErrorCodeMessageResponse,
+    ErrorMessageResponse, Headers, HealthCheckResponse, HttpMethod, Invitation, InvitationStatus,
+    ListUsersParams, Member, OkResponse, Organization, OrganizationPermissions, Passkey,
+    RateLimitErrorResponse, RequestMeta, StatusMessageResponse, StatusResponse,
+    SuccessMessageResponse, SuccessResponse, Team, TeamMember, TwoFactor, UpdateAccount,
+    UpdateApiKey, UpdateDeviceCode, UpdateOrganization, UpdatePasskey, UpdateTeam, UpdateTwoFactor,
+    UpdateUser, UpdateUserRequest, UpdateUserResponse, UpdateVerification, UserFilterValue,
+    ValidationErrorResponse, WalletAddress,
 };
 pub use types::{CreateJwk, Jwk};
 pub use utils::password::{PasswordHasher, ScryptHasher, hash_password, verify_password};
