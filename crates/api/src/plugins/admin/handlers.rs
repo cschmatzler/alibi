@@ -422,7 +422,7 @@ pub(crate) async fn impersonate_user_core(
         return Err(AuthError::bad_request("Cannot impersonate yourself"));
     }
 
-    let mut target = ctx
+    let target = ctx
         .database
         .get_user_by_id(&body.user_id)
         .await?
@@ -439,7 +439,7 @@ pub(crate) async fn impersonate_user_core(
             .ban_expires()
             .is_some_and(|expires| expires <= Utc::now())
         {
-            target = ctx
+            let _ = ctx
                 .database
                 .update_user(
                     &body.user_id,
