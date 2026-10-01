@@ -16,6 +16,7 @@ compatScenario(
     const outcomes = [];
     for (const [profile, aud, hd, allowed] of [
       ["one-tap-default", "one-tap-plugin-client", undefined, true],
+      ["one-tap-empty-audience-member", "", undefined, true],
       ["one-tap-default", "one-tap-provider-client", undefined, false],
       ["one-tap-fallback", "one-tap-provider-client", undefined, true],
       ["one-tap-fallback", "one-tap-provider-secondary", undefined, true],
@@ -80,9 +81,9 @@ compatScenario(
     }
     const persisted = await state(ctx);
     expect(persisted.jwksFetches).toBe(beforeMissing.jwksFetches);
-    expect(persisted.users).toHaveLength(6);
-    expect(persisted.accounts).toHaveLength(6);
-    expect(persisted.sessions).toHaveLength(6);
+    expect(persisted.users).toHaveLength(7);
+    expect(persisted.accounts).toHaveLength(7);
+    expect(persisted.sessions).toHaveLength(7);
     return {
       outcomes,
       persisted: {
@@ -91,6 +92,7 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );
 compatScenario(
   "One Tap required email verification commits identity before delivery and session",
@@ -163,6 +165,7 @@ compatScenario(
       final: { ...final, jwksFetches: final.jwksFetches - initial.jwksFetches },
     };
   },
+  ["POST /one-tap/callback"],
 );
 compatScenario(
   "One Tap explicit signup mail suppression preserves verification denial side effects",
@@ -193,6 +196,7 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );
 compatScenario(
   "One Tap implicit linking applies configured profile sync and preserves local identity",
@@ -282,6 +286,7 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );
 compatScenario(
   "One Tap ID token storage honors encryption and retained-account configurations",
@@ -318,6 +323,15 @@ compatScenario(
       "one-tap-retain-account",
       "storage",
     );
+    expect(retained.accountCookie?.payload).toMatchObject({
+      id: initial.accounts[0]!.id,
+      userId: created.response.data!.user.id,
+      providerId: "google",
+      accountId: sub,
+      idToken: token,
+      scope: "openid,profile,email",
+    });
+    expect(retained.accountCookie?.payload.idToken).not.toBe(fresh);
     const unchanged = await state(ctx);
     expect(unchanged.accounts).toEqual(initial.accounts);
     expect(retained.response.data?.user.id).toBe(
@@ -329,6 +343,14 @@ compatScenario(
       "one-tap-account-cookie",
       "storage",
     );
+    expect(cookie.accountCookie?.payload).toMatchObject({
+      id: initial.accounts[0]!.id,
+      userId: created.response.data!.user.id,
+      providerId: "google",
+      accountId: sub,
+      idToken: fresh,
+      scope: "openid,profile,email",
+    });
     const persisted = await state(ctx);
     expect(persisted.accounts).toMatchObject([
       {
@@ -353,6 +375,7 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );
 
 compatScenario(
@@ -412,6 +435,7 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );
 compatScenario(
   "One Tap retains the upstream user snapshot during email verification upgrades",
@@ -478,4 +502,5 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );

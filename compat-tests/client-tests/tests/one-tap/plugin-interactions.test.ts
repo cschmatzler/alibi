@@ -153,4 +153,5 @@ compatScenario(
       },
     };
   },
+  ["POST /one-tap/callback"],
 );

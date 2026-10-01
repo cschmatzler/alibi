@@ -17,6 +17,7 @@ export function createOneTapProfiles(options: BetterAuthOptions) {
     "one-tap-plugin-only",
     "one-tap-missing",
     "one-tap-empty-array",
+    "one-tap-empty-audience-member",
     "one-tap-domain",
     "one-tap-domain-any",
     "one-tap-disabled",
@@ -53,7 +54,9 @@ export function createOneTapProfiles(options: BetterAuthOptions) {
             : { google },
         account: {
           ...options.account,
-          storeAccountCookie: name === "one-tap-account-cookie",
+          storeAccountCookie:
+            name === "one-tap-account-cookie" ||
+            name === "one-tap-retain-account",
           encryptOAuthTokens: name === "one-tap-encrypted",
           updateAccountOnSignIn: name !== "one-tap-retain-account",
           accountLinking: {
@@ -80,7 +83,9 @@ export function createOneTapProfiles(options: BetterAuthOptions) {
                   clientId:
                     name === "one-tap-empty-array"
                       ? []
-                      : "one-tap-plugin-client",
+                      : name === "one-tap-empty-audience-member"
+                        ? [""]
+                        : "one-tap-plugin-client",
                 }),
             disableSignup: name === "one-tap-disabled",
           }),

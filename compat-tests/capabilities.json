@@ -1407,6 +1407,17 @@
         "rejection": "account token routes reject conflicting and foreign account selectors",
         "authorization": null,
         "state": null
+      },
+      "requiredEvidence": {
+        "success": [
+          "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials"
+        ],
+        "rejection": [
+          "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials"
+        ],
+        "state": [
+          "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials"
+        ]
       }
     },
     {
@@ -1491,6 +1502,39 @@
         "rejection": null,
         "authorization": null,
         "state": null
+      },
+      "requiredEvidence": {
+        "success": [
+          "One Tap official client binds verified Google accounts and persisted sessions",
+          "One Tap disabled signup preserves existing account ownership",
+          "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials"
+        ],
+        "rejection": [
+          "One Tap cryptographic and Google claim rejections leave identities unchanged",
+          "One Tap callback origin and request validation precede Google JWKS reads"
+        ],
+        "authorization": [
+          "One Tap disabled signup preserves existing account ownership",
+          "One Tap respects persisted admin bans and existing two-factor session behavior",
+          "One Tap callback origin and request validation precede Google JWKS reads"
+        ],
+        "state": [
+          "One Tap respects persisted admin bans and existing two-factor session behavior",
+          "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials",
+          "One Tap official client binds verified Google accounts and persisted sessions",
+          "One Tap disabled signup preserves existing account ownership",
+          "One Tap verifies raw JavaScript payload numbers and literal private keys",
+          "One Tap protected header processing preserves Google JWKS lookup order",
+          "One Tap cryptographic and Google claim rejections leave identities unchanged",
+          "One Tap callback origin and request validation precede Google JWKS reads",
+          "One Tap immutable audience configuration and hosted domains",
+          "One Tap required email verification commits identity before delivery and session",
+          "One Tap explicit signup mail suppression preserves verification denial side effects",
+          "One Tap implicit linking applies configured profile sync and preserves local identity",
+          "One Tap ID token storage honors encryption and retained-account configurations",
+          "One Tap preserves the signed browser-session preference cookie",
+          "One Tap retains the upstream user snapshot during email verification upgrades"
+        ]
       }
     },
     {

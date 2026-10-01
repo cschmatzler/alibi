@@ -161,7 +161,9 @@ impl OneTapPlugin {
                 .unwrap_or_default(),
         };
         if audiences.is_empty()
-            || audiences.len() == 1 && audiences.first().is_some_and(String::is_empty)
+            || !matches!(&self.config.client_id, Some(OneTapClientId::Multiple(_)))
+                && audiences.len() == 1
+                && audiences.first().is_some_and(String::is_empty)
         {
             return message(400, MISSING_CLIENT);
         }
