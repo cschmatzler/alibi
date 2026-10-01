@@ -4121,6 +4121,282 @@
         "authorization": "verify password requires a session",
         "state": null
       }
+    },
+    {
+      "route": "GET /callback/{}",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": [
+          "banned users are denied email and social session creation",
+          "social linking rejects missing tampered and revoked sessions without changing owners",
+          "social callback rejects consumed database state while retaining the issued session and foreign state",
+          "Discord callback exchanges without PKCE and preserves current foreign and replay state",
+          "Discord profile defaults persist original provider owners names and avatar URLs",
+          "social linking rejects missing tampered and revoked sessions without changing any principal",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
+          "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
+          "OAuth proxy linking follows the saved authenticated owner without creating any session",
+          "OAuth proxy restoration and session failures preserve exact stages rows and retry",
+          "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
+          "OAuth proxy exchanges on production then consumes preview state for only the provider owner"
+        ],
+        "rejection": [
+          "social callback rejects consumed database state while retaining the issued session and foreign state",
+          "Discord callback exchanges without PKCE and preserves current foreign and replay state",
+          "social linking rejects missing tampered and revoked sessions without changing any principal",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie"
+        ],
+        "authorization": [
+          "social linking rejects missing tampered and revoked sessions without changing any principal",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie"
+        ],
+        "state": [
+          "social linking rejects missing tampered and revoked sessions without changing owners",
+          "social callback rejects consumed database state while retaining the issued session and foreign state",
+          "Discord callback exchanges without PKCE and preserves current foreign and replay state",
+          "Discord profile defaults persist original provider owners names and avatar URLs",
+          "social linking rejects missing tampered and revoked sessions without changing any principal",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
+          "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie"
+        ]
+      }
+    },
+    {
+      "route": "GET /get-session",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": [
+          "Discord callback exchanges without PKCE and preserves current foreign and replay state",
+          "Discord profile defaults persist original provider owners names and avatar URLs",
+          "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged",
+          "JWT session headers preserve original refresh expiry cleanup and exposed header order",
+          "admin impersonation legacy uses original actor permissions for admin targets and self sessions",
+          "admin impersonation no-base uses original actor permissions for admin targets and self sessions",
+          "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
+          "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
+          "admin impersonation restores the original admin session and hides impersonated sessions",
+          "api-key api-key-automatic successful database usage awaits actual refill and preserves non-due quota and foreign state",
+          "api-key api-key-automatic-deferred successful database usage awaits actual refill and preserves non-due quota and foreign state",
+          "api-key api-key-usage-rate final SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate rate SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate-deferred final SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate-deferred rate SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization",
+          "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer",
+          "api-key automatic middleware default admits one concurrent cleanup and retains both credential owners",
+          "api-key automatic middleware ignore admits one concurrent cleanup and retains both credential owners",
+          "api-key automatic middleware observe admits one concurrent cleanup and retains both credential owners",
+          "api-key custom getter replaces headers and validator binds the request owner before usage",
+          "api-key trusted deferred verification catches actual cleanup errors and forced retry bypasses the shared throttle",
+          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions",
+          "compact asynchronous version receives real stored private fields then filtered cache fields and invalidation falls back without mutating foreign state",
+          "compact browser preference authenticates dontRemember and refreshes a sixty-second browser cache without persistent cookie attributes",
+          "compact cache authenticates the signed token and complete payload while retaining revoked ordinary authority only until explicit bypass",
+          "compact cache chunking uses real writer limits and canonical server chunk indices with base-cookie precedence",
+          "compact date-version preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
+          "compact infinite Max-Age fails actual cookie emission with empty500 and email signup rolls every new row back",
+          "compact negative preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
+          "compact negative-infinite preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
+          "compact version-api issuance failure rolls email transaction back and does not link the authenticated anonymous account",
+          "compact version-ordinary issuance failure rolls email transaction back and does not link the authenticated anonymous account",
+          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
+          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
+          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
+          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
+          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
+          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
+          "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields"
+        ],
+        "rejection": [
+          "api-key shared headers select the first configured session",
+          "api-key custom getter replaces headers and validator binds the request owner before usage",
+          "api-key background handler failures preserve consumed usage running cleanup and genuine application 403",
+          "api-key deferred individual expired deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
+          "api-key deferred individual exhausted deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
+          "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
+          "api-key awaited individual exhausted deletion waits for actual adapter release and rejects without observer registration",
+          "api-key deferred individual storage failure resolves caught completion retains the exact row and awaited retry preserves failure then deletes only its owner",
+          "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority",
+          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle"
+        ],
+        "authorization": [
+          "api-key shared headers select the first configured session",
+          "api-key custom getter replaces headers and validator binds the request owner before usage",
+          "api-key background handler failures preserve consumed usage running cleanup and genuine application 403",
+          "api-key deferred individual expired deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
+          "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
+          "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority",
+          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
+          "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields"
+        ],
+        "state": [
+          "Discord callback exchanges without PKCE and preserves current foreign and replay state",
+          "Discord profile defaults persist original provider owners names and avatar URLs",
+          "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged",
+          "JWT session headers preserve original refresh expiry cleanup and exposed header order",
+          "api-key api-key-automatic successful database usage awaits actual refill and preserves non-due quota and foreign state",
+          "api-key api-key-automatic-deferred successful database usage awaits actual refill and preserves non-due quota and foreign state",
+          "api-key api-key-usage-rate final SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate rate SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate-deferred final SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate-deferred rate SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization",
+          "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer",
+          "api-key automatic middleware default admits one concurrent cleanup and retains both credential owners",
+          "api-key automatic middleware ignore admits one concurrent cleanup and retains both credential owners",
+          "api-key automatic middleware observe admits one concurrent cleanup and retains both credential owners",
+          "api-key awaited individual exhausted deletion waits for actual adapter release and rejects without observer registration",
+          "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
+          "api-key background handler failures preserve consumed usage running cleanup and genuine application 403",
+          "api-key custom getter replaces headers and validator binds the request owner before usage",
+          "api-key deferred individual exhausted deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
+          "api-key deferred individual expired deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
+          "api-key deferred individual storage failure resolves caught completion retains the exact row and awaited retry preserves failure then deletes only its owner",
+          "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority",
+          "api-key trusted deferred verification catches actual cleanup errors and forced retry bypasses the shared throttle",
+          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions",
+          "compact asynchronous version receives real stored private fields then filtered cache fields and invalidation falls back without mutating foreign state",
+          "compact browser preference authenticates dontRemember and refreshes a sixty-second browser cache without persistent cookie attributes",
+          "compact cache authenticates the signed token and complete payload while retaining revoked ordinary authority only until explicit bypass",
+          "compact cache chunking uses real writer limits and canonical server chunk indices with base-cookie precedence",
+          "compact date-version preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
+          "compact infinite Max-Age fails actual cookie emission with empty500 and email signup rolls every new row back",
+          "compact negative preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
+          "compact negative-infinite preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
+          "compact version-api issuance failure rolls email transaction back and does not link the authenticated anonymous account",
+          "compact version-ordinary issuance failure rolls email transaction back and does not link the authenticated anonymous account",
+          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
+          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
+          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
+          "session reads refresh from persisted expiry and renew the signed cookie",
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
+          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
+          "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields"
+        ]
+      }
+    },
+    {
+      "route": "POST /refresh-token",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": [
+          "refresh token returns a fresh token set",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets"
+        ],
+        "rejection": [
+          "account token routes reject conflicting and foreign account selectors",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets"
+        ],
+        "authorization": [
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets"
+        ],
+        "state": [
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets"
+        ]
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": [
+          "banned users are denied email and social session creation",
+          "builtin social authorization retains ordered default configured and requested scopes",
+          "Discord authorization conditions JS permissions on effective bot scope and defaults prompt",
+          "Discord callback exchanges without PKCE and preserves current foreign and replay state",
+          "Discord profile defaults persist original provider owners names and avatar URLs",
+          "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
+          "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
+          "OAuth proxy restoration and session failures preserve exact stages rows and retry",
+          "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
+          "OAuth proxy exchanges on production then consumes preview state for only the provider owner",
+          "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields"
+        ],
+        "rejection": [
+          "social sign-in rejects invalid callbackURL",
+          "Google default genuine cryptographic and claim negatives never mutate any principal"
+        ],
+        "authorization": [
+          "social sign-in rejects invalid callbackURL",
+          "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields"
+        ],
+        "state": [
+          "builtin social authorization retains ordered default configured and requested scopes",
+          "Discord authorization conditions JS permissions on effective bot scope and defaults prompt",
+          "Discord callback exchanges without PKCE and preserves current foreign and replay state",
+          "Discord profile defaults persist original provider owners names and avatar URLs",
+          "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
+          "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
+          "OAuth proxy restoration and session failures preserve exact stages rows and retry",
+          "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
+          "OAuth proxy exchanges on production then consumes preview state for only the provider owner",
+          "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields"
+        ]
+      }
+    },
+    {
+      "route": "POST /sign-out",
+      "upstream": true,
+      "implemented": true,
+      "evidence": {
+        "success": [
+          "github social sign-in redirects existing users to callbackURL",
+          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
+          "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields"
+        ],
+        "rejection": null,
+        "authorization": [
+          "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields"
+        ],
+        "state": [
+          "passkey registration authentication ownership and deletion round trip",
+          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
+          "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields"
+        ]
+      }
     }
   ]
 }

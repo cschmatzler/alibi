@@ -34,6 +34,7 @@ import { createAdminBannedMessageFixture } from "./admin-banned-message-fixture"
 import { createAdminPermissionFixture } from "./admin-permission-fixture";
 import { createMultipleSessionFixture } from "./multiple-session-fixture";
 import { createSessionFieldsFixture } from "./session-fields-fixture";
+import { googleIdTokenProfiles } from "./google-id-token-fixture";
 import { createOneTapProfiles, googleOneTapJwks, oneTapState } from "./one-tap-fixture";
 import { getMigrations } from "better-auth/db/migration";
 import { APIError, createAuthMiddleware } from "better-auth/api";
@@ -549,6 +550,7 @@ const twoFactorDeliveryFixture = createTwoFactorDeliveryFixture(authOptions, dat
 const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
 const oneTapProfiles = createOneTapProfiles(authOptions);
+const googleIdProfiles = googleIdTokenProfiles(authOptions);
 
 const OTT_PROFILE_NAMES=["ott-default","ott-hashed","ott-no-cookie","ott-server-header","ott-refresh-disabled","ott-refresh-deferred"] as const;
 const ottExposedHeaderFixture: BetterAuthPlugin = {
@@ -1428,6 +1430,9 @@ const server = Bun.serve({
       }
       if (url.pathname === "/__test/one-tap/jwks") return googleOneTapJwks();
       if (url.pathname === "/__test/one-tap/state") return oneTapState(oneTapProfiles);
+      for (const [name,instance] of googleIdProfiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
+      }
       for (const [name,instance] of oneTapProfiles) {
         if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
       }

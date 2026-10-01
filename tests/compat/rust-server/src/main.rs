@@ -91,6 +91,7 @@ mod api_key_generation_fixture;
 mod api_key_hook_fixture;
 mod apple_provider_fixture;
 mod device_fixture;
+mod google_id_token_fixture;
 mod invitation_fixture;
 mod jwt_fixture;
 mod lifecycle_fixture;
@@ -772,6 +773,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         apple_provider_fixture::router(&config, database.clone()).await?;
     let (social_provider_router, social_provider_reset) =
         social_provider_fixture::router(&config, database.clone()).await?;
+    let google_id_router = google_id_token_fixture::router(&config, database.clone()).await?;
     let (anonymous_router, anonymous_reset) =
         anonymous_fixture::router(&config, database.clone()).await?;
     let session_fields_router = session_fields_fixture::router(&config, database.clone()).await?;
@@ -1829,6 +1831,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(passkey_router)
         .merge(registration_router)
         .merge(one_tap_router)
+        .merge(google_id_router)
         .merge(otp_router)
         .merge(magic_router)
         .merge(siwe_profile_router)

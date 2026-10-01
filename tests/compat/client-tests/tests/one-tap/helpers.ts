@@ -41,6 +41,7 @@ export async function credential(
 export function signedRawToken(
   claims: Record<string, unknown>,
   header: Record<string, unknown>,
+  algorithm = "RSA-SHA256",
 ) {
   const encoded = [
     header,
@@ -57,7 +58,7 @@ export function signedRawToken(
   return (
     encoded +
     "." +
-    sign("RSA-SHA256", Buffer.from(encoded), privatePem).toString("base64url")
+    sign(algorithm, Buffer.from(encoded), privatePem).toString("base64url")
   );
 }
 export const stateSchema = z.object({
