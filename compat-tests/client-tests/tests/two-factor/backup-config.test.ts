@@ -204,8 +204,69 @@ for (const profile of [
       expect((await owner.getSession()).data?.session.token).toBe(
         current.data?.session.token,
       );
+      let repeated = null;
+      if (profile === "two-factor-backup-custom") {
+        // The same callback remains alive while the existing reset boundary
+        // clears fixture state. A second real enrollment must start at one and
+        // return only the new owner's actual generation/cipher receipts.
+        const reset = await ctx.rawRequest({
+          path: "/__test/reset-state",
+          method: "POST",
+        });
+        expect(reset.status).toBe(200);
+        expect(reset.body).toEqual({ status: true });
+        const secondSignup = await owner.signUp.email({
+          email,
+          password,
+          name: "Backup Owner",
+        });
+        expect(secondSignup.error).toBeNull();
+        if (!secondSignup.data) throw new Error("second owner required");
+        expect(secondSignup.data.user.id).not.toBe(userId);
+        const secondEnabled = await owner.twoFactor.enable({ password });
+        expect(secondEnabled.error).toBeNull();
+        const secondCodes = codesSchema.parse(secondEnabled.data).backupCodes;
+        expect(secondCodes).toEqual(["same-1", "same-1", "other-1"]);
+        const secondStorage = await ctx.rawRequest({
+          path: "/__test/two-factor-policy",
+          method: "POST",
+          json: { userId: secondSignup.data.user.id },
+        });
+        expect(secondStorage.status).toBe(200);
+        const secondFactor = factorSchema.parse(secondStorage.body);
+        expect(secondFactor.userId).toBe(secondSignup.data.user.id);
+        expect(secondFactor.backupCodes).toBe(
+          "backup-" + JSON.stringify(secondCodes),
+        );
+        const secondView = await ctx.rawRequest({
+          path: "/__test/two-factor-policy",
+          method: "POST",
+          json: {
+            userId: secondSignup.data.user.id,
+            backupProfile: profile,
+            viewBackupCodes: true,
+          },
+        });
+        expect(secondView.status).toBe(200);
+        expect(viewSchema.parse(secondView.body)).toEqual({
+          status: true,
+          backupCodes: secondCodes,
+          receipts: [
+            { phase: "generate", input: "" },
+            { phase: "encrypt", input: JSON.stringify(secondCodes) },
+            { phase: "decrypt", input: secondFactor.backupCodes },
+          ],
+        });
+        repeated = {
+          reset,
+          signup: secondSignup,
+          enabled: redactCodes(secondEnabled),
+          owner: { userId: secondSignup.data.user.id },
+        };
+      }
       return ctx.snapshot({
         signup,
+        repeated,
         before,
         missing,
         enabled: redactCodes(enabled),

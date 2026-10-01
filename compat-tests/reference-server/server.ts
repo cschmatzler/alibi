@@ -934,6 +934,7 @@ const server = Bun.serve({
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         siweFixture.reset();
         multipleSessionFixture.reset();
+        twoFactorPolicyFixture.reset();
         await resetDatabaseState();
         emailOtpOutbox.clear();
         magicLinkOutbox.clear();

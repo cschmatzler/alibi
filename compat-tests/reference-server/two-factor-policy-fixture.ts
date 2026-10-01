@@ -70,7 +70,7 @@ export function createTwoFactorPolicyFixture(base: Parameters<typeof betterAuth>
       otpOptions: { sendOTP: async ({ user, otp }) => { if (user.email) deliveries.set(user.email, { otp }); } },
     })],
   })] as const));
-  return async function handle(request: Request, url: URL): Promise<Response | undefined> {
+  const handle = async function handle(request: Request, url: URL): Promise<Response | undefined> {
     for (const [name, auth] of profiles) {
       if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return auth.handler(request);
     }
@@ -115,4 +115,5 @@ export function createTwoFactorPolicyFixture(base: Parameters<typeof betterAuth>
     if (row && row.verified !== null) row.verified = Boolean(row.verified);
     return Response.json(row);
   };
+  return Object.assign(handle, { reset: () => backupReceipts.clear() });
 }

@@ -813,7 +813,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_key_for_update = api_key_plugin.clone();
 
     let totp_router = two_factor_totp_fixture::router(&config, reset_database.clone()).await?;
-    let policy_router = two_factor_policy_fixture::router(&config, reset_database.clone()).await?;
+    let backup_receipts = two_factor_policy_fixture::BackupReceipts::default();
+    let policy_router = two_factor_policy_fixture::router(
+        &config,
+        reset_database.clone(),
+        backup_receipts.clone(),
+    )
+    .await?;
     let two_factor_otp_router =
         two_factor_otp_fixture::router(&config, reset_database.clone()).await?;
     let ott_router = one_time_token_fixture::router(&config, reset_database.clone()).await?;
@@ -1032,6 +1038,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/__test/reset-state",
             post(move || {
+                let backup_receipts = backup_receipts.clone();
                 let phone_controls = phone_controls.clone();
                 let otp_outbox = otp_outbox_for_reset.clone();
                 let magic_outbox = magic_outbox_for_reset.clone();
@@ -1050,6 +1057,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 async move {
                     siwe_fixture::reset(&siwe_state).await;
                     multiple_session_counter.store(0, std::sync::atomic::Ordering::SeqCst);
+                    backup_receipts.reset();
                     if let Err(error) = reset_database_state(&database).await {
                         return (
                             axum::http::StatusCode::INTERNAL_SERVER_ERROR,

@@ -89,8 +89,11 @@ impl SendTwoFactorOtp for Delivery {
 }
 
 #[derive(Clone, Default)]
-struct BackupReceipts(Arc<std::sync::Mutex<HashMap<String, Vec<serde_json::Value>>>>);
+pub(super) struct BackupReceipts(Arc<std::sync::Mutex<HashMap<String, Vec<serde_json::Value>>>>);
 impl BackupReceipts {
+    pub(super) fn reset(&self) {
+        self.0.lock().unwrap().clear();
+    }
     fn record(&self, profile: &str, phase: &str, input: &str) {
         self.0
             .lock()
@@ -167,9 +170,9 @@ fn backup_config(name: &str, receipts: &BackupReceipts) -> TwoFactorConfig {
 pub(super) async fn router(
     base: &AuthConfig,
     database: DatabaseConnection,
+    backup_receipts: BackupReceipts,
 ) -> AuthResult<Router<Auth>> {
     let delivery = Delivery::default();
-    let backup_receipts = BackupReceipts::default();
     let mut backup_configs = HashMap::new();
     let mut router = Router::new();
     for name in [
