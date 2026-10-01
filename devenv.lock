@@ -132,15 +132,15 @@
       "locked": {
         "lastModified": 1790874268,
         "narHash": "sha256-n/Pz9JVK/iJzWoIsIpetyk91Z8x9yT3KUJBFONp9tGw=",
-        "ref": "refs/heads/main",
+        "owner": "cschmatzler",
+        "repo": "rust",
         "rev": "3ed7d4c03987dd958f4626449b933ae80a755268",
-        "revCount": 9,
-        "type": "git",
-        "url": "ssh://git@github.com/cschmatzler/rust"
+        "type": "github"
       },
       "original": {
-        "type": "git",
-        "url": "ssh://git@github.com/cschmatzler/rust"
+        "owner": "cschmatzler",
+        "repo": "rust",
+        "type": "github"
       }
     }
   },

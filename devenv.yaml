@@ -1,5 +1,5 @@
 inputs:
   rust-style:
-    url: git+ssh://git@github.com/cschmatzler/rust
+    url: github:cschmatzler/rust
   nixpkgs:
     follows: rust-style/nixpkgs
