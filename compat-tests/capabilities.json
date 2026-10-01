@@ -2891,7 +2891,10 @@
           "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
           "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay",
           "core cookie origin validation uses canonical HTTP origin and rejects foreign authorities before session writes",
-          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics"
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
+          "core redirect controls reject path controls while preserving encoded query and fragment values",
+          "core redirect controls preserve whitespace absolute callbacks and explicit empty callbacks",
+          "core redirect controls reject authority-shaped paths while permitting owned safe paths"
         ],
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -2900,14 +2903,18 @@
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "core cookie origin validation uses canonical HTTP origin and rejects foreign authorities before session writes",
-          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics"
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
+          "core redirect controls reject path controls while preserving encoded query and fragment values",
+          "core redirect controls reject authority-shaped paths while permitting owned safe paths"
         ],
         "authorization": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "core cookie origin validation uses canonical HTTP origin and rejects foreign authorities before session writes",
-          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics"
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
+          "core redirect controls reject path controls while preserving encoded query and fragment values",
+          "core redirect controls reject authority-shaped paths while permitting owned safe paths"
         ],
         "state": [
           "official client signs in with imported TypeScript scrypt credentials",
@@ -2929,7 +2936,10 @@
           "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
           "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay",
           "core cookie origin validation uses canonical HTTP origin and rejects foreign authorities before session writes",
-          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics"
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
+          "core redirect controls reject path controls while preserving encoded query and fragment values",
+          "core redirect controls preserve whitespace absolute callbacks and explicit empty callbacks",
+          "core redirect controls reject authority-shaped paths while permitting owned safe paths"
         ]
       }
     },
@@ -3030,18 +3040,28 @@
       "evidence": {
         "success": [
           "sign in with differently cased username returns user and token",
-          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics"
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
+          "core redirect controls reject path controls while preserving encoded query and fragment values",
+          "core redirect controls preserve whitespace absolute callbacks and explicit empty callbacks",
+          "core redirect controls reject authority-shaped paths while permitting owned safe paths"
         ],
         "rejection": [
           "sign in with nonexistent username returns error",
-          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics"
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
+          "core redirect controls reject path controls while preserving encoded query and fragment values",
+          "core redirect controls reject authority-shaped paths while permitting owned safe paths"
         ],
         "authorization": [
           "sign in with nonexistent username returns error",
-          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics"
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
+          "core redirect controls reject path controls while preserving encoded query and fragment values",
+          "core redirect controls reject authority-shaped paths while permitting owned safe paths"
         ],
         "state": [
-          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics"
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
+          "core redirect controls reject path controls while preserving encoded query and fragment values",
+          "core redirect controls preserve whitespace absolute callbacks and explicit empty callbacks",
+          "core redirect controls reject authority-shaped paths while permitting owned safe paths"
         ]
       }
     },

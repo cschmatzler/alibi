@@ -31,9 +31,18 @@ compatScenario("core cookie origin validation uses canonical HTTP origin and rej
   return {signup:fixture.signup,foreignSignup:fixture.foreignSignup,foreignBefore:fixture.foreignBefore,results,foreignCurrent};
 },["POST /sign-in/email"]);
 
-compatScenario("core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",async ctx=>{
+const redirectScenarios = [
+  "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
+  "core redirect controls reject path controls while preserving encoded query and fragment values",
+  "core redirect controls reject authority-shaped paths while permitting owned safe paths",
+  "core redirect controls preserve whitespace absolute callbacks and explicit empty callbacks",
+] as const;
+for (const [group, scenarioName] of redirectScenarios.entries()) {
+compatScenario(scenarioName,async ctx=>{
   const fixture=await owners(ctx),results=[];
-  const table:[string,boolean][]=[["/safe/inner%2fnext",false],[`${ctx.baseURL.replace("http://localhost","HTTP://LOCALHOST")}/done`,true],["/safe/inner%5Cnext",false],["/safe\u0085next",false],["/safe?query=%2f",true],["/safe#fragment=%5C",true],["/%2fnext",false],["//evil.invalid",false],["/safe/path",true],[` ${ctx.baseURL}/done`,true],[`\t${ctx.baseURL.replace("http://localhost","HTTP://LOCALHOST")}/done`,true],["",true]];
+  // Keep the complete twelve-value matrix for both real login methods. Each
+  // bounded owner observes fewer password hashes before comparing fresh rows.
+  const table:[string,boolean][]=[["/safe/inner%2fnext",false],[`${ctx.baseURL.replace("http://localhost","HTTP://LOCALHOST")}/done`,true],["/safe/inner%5Cnext",false],["/safe\u0085next",false],["/safe?query=%2f",true],["/safe#fragment=%5C",true],["/%2fnext",false],["//evil.invalid",false],["/safe/path",true],[` ${ctx.baseURL}/done`,true],[`\t${ctx.baseURL.replace("http://localhost","HTTP://LOCALHOST")}/done`,true],["",true]].slice(group * 3, group * 3 + 3) as [string, boolean][];
   for(const method of ["email","username"] as const)for(const [callbackURL,allowed] of table){
     const before=await ctx.readUserState({userId:fixture.signup.data!.user.id}) as {sessions:{token:string}[]};
     const result=method==="email"?await fixture.owner.client.signIn.email({email:fixture.signup.data!.user.email,password:"password123",callbackURL}):await fixture.owner.client.signIn.username({username:"origin_owner",password:"password123",callbackURL});
@@ -46,6 +55,7 @@ compatScenario("core redirect validation rejects inner encoded path separators a
   const foreignCurrent=await fixture.foreign.client.getSession();expect(foreignCurrent.data?.session.token).toBe(fixture.foreignSignup.data!.token!);
   return {signup:fixture.signup,foreignSignup:fixture.foreignSignup,foreignBefore:fixture.foreignBefore,results,foreignCurrent};
 },["POST /sign-in/email","POST /sign-in/username"]);
+}
 
 compatScenario("core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges",async ctx=>{
   const fixture=await owners(ctx),uppercase=ctx.baseURL.replace("http://localhost","HTTP://LOCALHOST");
