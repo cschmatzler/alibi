@@ -201,7 +201,7 @@ The stateful compact-cache implementation exposes `CookieCacheConfig` with a
 floating-point maximum age and async version callback. Created callbacks receive
 actual model references; stored/cached reads receive their filtered public
 projections. Selected ordinary endpoint guards use cached projections, while
-`SessionManager::require_session` retains physical authorization. JWT/JWE cache
+`AuthContext::require_session` retains physical authorization. JWT/JWE cache
 and stateless modes are not implemented. `OAuthProxyConfig` configures explicit
 current/production URLs, an optional dedicated secret and a floating-point maximum
 payload age; `OAuthProxyPlugin` implements database-state GET completion and
