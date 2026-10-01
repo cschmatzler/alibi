@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { organizationMembershipPolicyFixture } from "./organization-membership-policy-fixture";
+import { organizationInvitationAcceptanceFixture } from "./organization-invitation-acceptance-fixture";
 import { organizationMemberAdditionFixture } from "./organization-member-addition-fixture";
 import { organizationTransportProbe } from "./organization-transport-probe";
 
@@ -419,6 +420,7 @@ const organizationCreationFixture = createOrganizationCreationFixture(database, 
 const organizationTransport = organizationTransportProbe();
 const organizationHooksFixture = organizationCreationHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
 const organizationMembershipFixture=organizationMembershipPolicyFixture(database,authOptions,`http://localhost:${PORT}`);
+const organizationInvitationFixture = organizationInvitationAcceptanceFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationAdditionFixture = organizationMemberAdditionFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationMemberRemovalFixture = organizationMemberRemovalHooksFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationMemberRoleFixture = organizationMemberRoleHooksFixture(database, authOptions, `http://localhost:${PORT}`);
@@ -802,6 +804,10 @@ const server = Bun.serve({
       if(url.pathname==="/__test/organization-membership-policy/state"&&request.method==="GET")return organizationMembershipFixture.state();
       if(url.pathname==="/__test/organization-membership-policy/configure"&&request.method==="POST")return organizationMembershipFixture.configure();
       if(url.pathname==="/__test/organization-membership-policy/server"&&request.method==="POST")return organizationMembershipFixture.server(request);
+      for(const [name,profile] of organizationInvitationFixture.profiles)if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return profile.handler(request);
+      if(url.pathname==="/__test/organization-invitation-stage/configure"&&request.method==="POST")return organizationInvitationFixture.configure(await request.json());
+      if(url.pathname==="/__test/organization-invitation-stage/release"&&request.method==="POST")return organizationInvitationFixture.release();
+      if(url.pathname==="/__test/organization-invitation-stage/state"&&request.method==="GET")return organizationInvitationFixture.state(url.searchParams.get("waitFor"));
       for(const [name,profile] of organizationAdditionFixture.profiles)if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return profile.handler(request);
       if(url.pathname==="/__test/organization-member-addition/configure"&&request.method==="POST")return organizationAdditionFixture.configure(await request.json() as Record<string,unknown>);
       if(url.pathname==="/__test/organization-member-addition/release"&&request.method==="POST")return organizationAdditionFixture.release();
@@ -1027,6 +1033,7 @@ const server = Bun.serve({
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         socialProvidersFixture.reset();
+        organizationInvitationFixture.reset();
         passkeyRegistration.reset();
         passkeyAuthentication.reset();
         siweFixture.reset();

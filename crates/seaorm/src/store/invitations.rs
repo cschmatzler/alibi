@@ -229,6 +229,35 @@ where
         }
     }
 
+    async fn update_invitation_status_if_status(
+        &self,
+        id: &str,
+        expected: InvitationStatus,
+        status: InvitationStatus,
+    ) -> AuthResult<Option<Invitation>> {
+        // Returning the actual changed row is part of this atomic public contract.
+        // Fail before mutation on a backend without supported RETURNING semantics.
+        if !matches!(
+            self.connection().get_database_backend(),
+            sea_orm::DbBackend::Sqlite | sea_orm::DbBackend::Postgres
+        ) {
+            return Err(crate::error::AuthError::NotImplemented(
+                "Conditional invitation updates require RETURNING support".into(),
+            ));
+        }
+        Entity::update_many()
+            .filter(Column::Id.eq(id))
+            .filter(Column::Status.eq(expected.to_string()))
+            .col_expr(
+                Column::Status,
+                sea_orm::sea_query::Expr::value(status.to_string()),
+            )
+            .exec_with_returning(self.connection())
+            .await
+            .map(|rows| rows.first().map(Invitation::from))
+            .map_err(map_db_err)
+    }
+
     async fn get_pending_invitation(
         &self,
         organization_id: &str,

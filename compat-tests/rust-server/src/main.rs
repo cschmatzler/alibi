@@ -1,6 +1,7 @@
 mod organization_creation_fixture;
 mod organization_creation_hooks_fixture;
 mod organization_deletion_hooks_fixture;
+mod organization_invitation_acceptance_fixture;
 mod organization_member_addition_fixture;
 mod organization_member_removal_hooks_fixture;
 mod organization_member_role_hooks_fixture;
@@ -638,7 +639,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .base_url(format!("http://localhost:{port}"))
         .password_min_length(8);
 
-    let database = sqlite_fixture::connect().await?;
+    let (database, invitation_status_observer) = sqlite_fixture::connect().await?;
     better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
     let reset_database = database.clone();
     let verification_outbox = Arc::new(Mutex::new(HashMap::new()));
@@ -722,6 +723,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
     let passkey_router = passkey_fixture::router(&config, database.clone()).await?;
+    let (invitation_acceptance_router, invitation_acceptance_reset) =
+        organization_invitation_acceptance_fixture::router(
+            &config,
+            database.clone(),
+            invitation_status_observer,
+        )
+        .await?;
     let (registration_router, registration_receipts) =
         passkey_registration_fixture::router(&config, database.clone()).await?;
     let siwe_state = siwe_fixture::state();
@@ -1121,8 +1129,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let social_id_token_valid = social_id_token_valid_for_reset.clone();
                 let database = database_for_reset.clone();
                 let social_provider_reset = social_provider_reset.clone();
+                let invitation_acceptance_reset = invitation_acceptance_reset.clone();
                 async move {
                     social_provider_reset.reset().await;
+                    invitation_acceptance_reset.reset().await;
                     siwe_fixture::reset(&siwe_state).await;
                     multiple_session_counter.store(0, std::sync::atomic::Ordering::SeqCst);
                     registration_receipts.reset();
@@ -1703,6 +1713,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_state(auth)
         .merge(social_provider_router)
         .merge(membership_router)
+        .merge(invitation_acceptance_router)
         .merge(verification_profile_router)
         .merge(session_profile_router)
         .merge(multiple_session_router)

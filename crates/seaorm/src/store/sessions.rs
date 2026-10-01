@@ -105,6 +105,43 @@ where
     }
 }
 
+pub(super) enum SessionScope<'a> {
+    Team(Option<&'a str>),
+    Organization(Option<&'a str>),
+}
+
+impl<S> SeaOrmStore<S>
+where
+    S: AuthSchema,
+    S::Session: SeaOrmSessionModel,
+{
+    pub(super) async fn update_session_scope_with_connection<C: sea_orm::ConnectionTrait>(
+        &self,
+        connection: &C,
+        token: &str,
+        scope: SessionScope<'_>,
+    ) -> AuthResult<S::Session> {
+        let model = <S::Session as SeaOrmSessionModel>::Entity::find()
+            .filter(S::Session::token_column().eq(token))
+            .filter(S::Session::active_column().eq(true))
+            .one(connection)
+            .await
+            .map_err(map_db_err)?
+            .ok_or(AuthError::SessionNotFound)?;
+        let mut active = model.into_active_model();
+        match scope {
+            SessionScope::Team(team) => {
+                S::Session::set_active_team_id(&mut active, team.map(str::to_owned))?
+            }
+            SessionScope::Organization(organization) => {
+                S::Session::set_active_organization_id(&mut active, organization.map(str::to_owned))
+            }
+        }
+        S::Session::set_updated_at(&mut active, Utc::now());
+        active.update(connection).await.map_err(map_db_err)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

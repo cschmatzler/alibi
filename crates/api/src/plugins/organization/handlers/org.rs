@@ -941,6 +941,7 @@ mod tests {
             member_role_hooks: None,
             member_removal_hooks: None,
             member_addition_hooks: None,
+            invitation_acceptance_hooks: None,
             deletion_hooks: None,
             membership_limit: Some(crate::plugins::organization::MembershipLimit::Fixed(100.0)),
             creator_role: "owner".to_string(),

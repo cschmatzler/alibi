@@ -77,6 +77,23 @@ where
     S: AuthSchema,
     S::User: SeaOrmUserModel,
 {
+    pub(super) async fn get_team_with_connection<C: sea_orm::ConnectionTrait>(
+        &self,
+        connection: &C,
+        organization_id: Option<&str>,
+        team_id: &str,
+    ) -> AuthResult<Option<Team>> {
+        let mut query = team::Entity::find_by_id(team_id.to_owned());
+        if let Some(org) = organization_id {
+            query = query.filter(team::Column::OrganizationId.eq(org));
+        }
+        query
+            .one(connection)
+            .await
+            .map(|row| row.map(Into::into))
+            .map_err(map_db_err)
+    }
+
     pub(super) async fn add_team_member_in_tx(
         &self,
         tx: &sea_orm::DatabaseTransaction,
@@ -163,15 +180,8 @@ where
         organization_id: Option<&str>,
         team_id: &str,
     ) -> AuthResult<Option<Team>> {
-        let mut query = team::Entity::find_by_id(team_id.to_owned());
-        if let Some(org) = organization_id {
-            query = query.filter(team::Column::OrganizationId.eq(org));
-        }
-        query
-            .one(self.connection())
+        self.get_team_with_connection(self.connection(), organization_id, team_id)
             .await
-            .map(|row| row.map(Into::into))
-            .map_err(map_db_err)
     }
     async fn list_teams(&self, organization_id: &str) -> AuthResult<Vec<Team>> {
         team::Entity::find()
