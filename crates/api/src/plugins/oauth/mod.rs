@@ -5,6 +5,7 @@ use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
 use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 
 mod account;
+mod account_cookie;
 pub mod encryption;
 mod handlers;
 pub(crate) use handlers::{
