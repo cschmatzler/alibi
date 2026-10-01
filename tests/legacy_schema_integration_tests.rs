@@ -866,6 +866,24 @@ async fn legacy_numeric_schema_signup_flow_uses_numeric_ids_and_defaults() {
     assert_eq!(stored_user.locale, "en");
     assert_eq!(body["user"]["id"], stored_user.id.to_string());
 
+    // Raw numeric pages must use this application's native ID parser and retain
+    // its physical custom fields, rather than a bundled string-ID projection.
+    let paged = auth
+        .store()
+        .list_users_by_ids_page(&[format!("00{}", stored_user.id)], 1.0)
+        .await
+        .expect("numeric alias page should use the custom ID parser");
+    assert_eq!(
+        serde_json::to_value(paged).expect("page JSON"),
+        serde_json::to_value(vec![stored_user.clone()]).expect("stored JSON")
+    );
+    assert!(matches!(
+        auth.store()
+            .list_users_by_ids_page(&[format!("{}suffix", stored_user.id)], 1.0,)
+            .await,
+        Err(AuthError::BadRequest(_))
+    ));
+
     let session_response = auth
         .handle_request(auth_request(HttpMethod::Get, "/get-session", &token))
         .await

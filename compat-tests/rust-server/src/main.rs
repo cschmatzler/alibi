@@ -4,6 +4,7 @@ mod organization_deletion_hooks_fixture;
 mod organization_member_addition_fixture;
 mod organization_member_removal_hooks_fixture;
 mod organization_member_role_hooks_fixture;
+mod organization_membership_policy_fixture;
 mod organization_transport_probe;
 mod organization_update_hooks_fixture;
 mod team_fixture;
@@ -652,6 +653,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let team_router = team_fixture::router(database.clone(), team_profiles);
     let creation_router = organization_creation_fixture::router(&config, database.clone()).await?;
     let probe = organization_transport_probe::Probe::default();
+    let membership_router = organization_membership_policy_fixture::router(
+        &config,
+        database.clone(),
+        verification_outbox.clone(),
+    )
+    .await?;
     let member_addition_router =
         organization_member_addition_fixture::router(&config, database.clone()).await?;
     let member_removal_hooks_router =
@@ -1695,6 +1702,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nest("/api/auth", auth_router)
         .with_state(auth)
         .merge(social_provider_router)
+        .merge(membership_router)
         .merge(verification_profile_router)
         .merge(session_profile_router)
         .merge(multiple_session_router)

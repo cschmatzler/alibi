@@ -1,34 +1,34 @@
 //! Application-owned server-only admission and genuine callback/storage observations.
-use crate::{TestSchema, organization_update_hooks_fixture::snapshot as base_snapshot};
+use crate::{organization_update_hooks_fixture::snapshot as base_snapshot, TestSchema};
 use async_trait::async_trait;
 use axum::{
-    Json, Router,
     extract::Query,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
+    Json, Router,
 };
 use better_auth::plugins::organization::{
-    OrganizationConfig, OrganizationMemberAddedContext, OrganizationMemberAdditionContext,
-    OrganizationMemberAdditionHooks, OrganizationMemberCreatePatch, TeamsConfig,
     extensions::{OrganizationLimitResolver, TeamLimitContext},
     types::AddOrganizationMemberRequest,
+    OrganizationConfig, OrganizationMemberAddedContext, OrganizationMemberAdditionContext,
+    OrganizationMemberAdditionHooks, OrganizationMemberCreatePatch, TeamsConfig,
 };
 use better_auth::{
-    AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin},
+    AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
 };
 use better_auth_core::{
-    CreateMember, CreateUser, UpdateUser,
     store::{MemberStore, OrganizationStore, UserStore},
+    CreateMember, CreateUser, UpdateUser,
 };
 use better_auth_seaorm::{
-    DatabaseConnection, SeaOrmStore,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
+    DatabaseConnection, SeaOrmStore,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, Notify};
 async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {

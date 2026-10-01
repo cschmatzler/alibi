@@ -1,31 +1,31 @@
 //! Real removal callbacks, SQLite observations and signed-cookie server calls.
-use crate::{TestSchema, organization_update_hooks_fixture::snapshot as base_snapshot};
+use crate::{organization_update_hooks_fixture::snapshot as base_snapshot, TestSchema};
 use axum::{
-    Json, Router,
     extract::Query,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
+    Json, Router,
 };
 use better_auth::{
-    AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::organization::{
-        OrganizationConfig, OrganizationMemberRemovalContext, OrganizationMemberRemovalHooks,
-        TeamsConfig, types::RemoveMemberRequest,
+        types::RemoveMemberRequest, OrganizationConfig, OrganizationMemberRemovalContext,
+        OrganizationMemberRemovalHooks, TeamsConfig,
     },
     plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin},
+    AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
 };
 use better_auth_core::{
-    UpdateUser,
     store::{MemberStore, UserStore},
+    UpdateUser,
 };
 use better_auth_seaorm::{
-    DatabaseConnection, SeaOrmStore,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
+    DatabaseConnection, SeaOrmStore,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, Notify};
 async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
