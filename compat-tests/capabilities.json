@@ -2003,19 +2003,40 @@
       "requiredEvidence": {
         "success": [
           "organization ID removal omits the email join and preserves the target and foreign selected sessions",
-          "organization removal permission and last-owner guards reject without mutation and preserve foreign authority"
+          "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
+          "organization removal callbacks preserve ID and email snapshots across committed team cleanup",
+          "organization removal callbacks reject at the actual before and after persistence phases",
+          "organization removal keeps original callback snapshots after independent target mutation or member deletion",
+          "organization removal guards and body validation prevent configured callbacks and permit a legitimate retry",
+          "organization self removal clears only the current organization before after-hook rejection",
+          "organization removal honors disabled team cleanup and the actual default team page",
+          "organization last owner checks its configured raw page before callbacks",
+          "organization removal awaits its actual before callback before member and team writes"
         ],
         "state": [
           "organization ID removal omits the email join and preserves the target and foreign selected sessions",
-          "organization removal permission and last-owner guards reject without mutation and preserve foreign authority"
+          "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
+          "organization removal callbacks preserve ID and email snapshots across committed team cleanup",
+          "organization removal callbacks reject at the actual before and after persistence phases",
+          "organization removal keeps original callback snapshots after independent target mutation or member deletion",
+          "organization removal guards and body validation prevent configured callbacks and permit a legitimate retry",
+          "organization self removal clears only the current organization before after-hook rejection",
+          "organization removal honors disabled team cleanup and the actual default team page",
+          "organization last owner checks its configured raw page before callbacks",
+          "organization removal awaits its actual before callback before member and team writes"
         ],
         "rejection": [
           "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
-          "organization removal validates ordered string fields and media before guest authentication"
+          "organization removal validates ordered string fields and media before guest authentication",
+          "organization removal callbacks reject at the actual before and after persistence phases",
+          "organization removal guards and body validation prevent configured callbacks and permit a legitimate retry",
+          "organization self removal clears only the current organization before after-hook rejection",
+          "organization last owner checks its configured raw page before callbacks"
         ],
         "authorization": [
           "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
-          "organization removal validates ordered string fields and media before guest authentication"
+          "organization removal validates ordered string fields and media before guest authentication",
+          "organization removal guards and body validation prevent configured callbacks and permit a legitimate retry"
         ]
       }
     },
