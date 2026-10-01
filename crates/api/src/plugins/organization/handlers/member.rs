@@ -278,7 +278,7 @@ pub(crate) async fn update_member_role_core(
 
     let requester_is_owner = has_role(&requester_member, config.effective_creator_role());
     let target_is_owner = has_role(&target_member, config.effective_creator_role());
-    let new_role = body.role.joined();
+    let new_role = body.role.roles().join(",");
     let new_role_contains_owner = new_role
         .split(',')
         .map(str::trim)
