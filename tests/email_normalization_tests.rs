@@ -10,6 +10,7 @@
     reason = "email normalization tests intentionally use panic-on-failure assertions and direct JSON indexing for concise behavior checks"
 )]
 
+#[path = "support/compat/mod.rs"]
 mod compat;
 
 #[cfg(test)]

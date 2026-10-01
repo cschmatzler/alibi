@@ -85,7 +85,7 @@ async fn wait_for_health(port: u16, child: &mut ManagedChild, timeout: Duration)
 fn start_reference_server(port: u16) -> ManagedChild {
     let child = Command::new("bun")
         .args(["run", "server.ts"])
-        .current_dir(project_root().join("compat-tests/reference-server"))
+        .current_dir(project_root().join("tests/compat/reference-server"))
         .env("PORT", port.to_string())
         .env("NO_PROXY", "localhost,127.0.0.1")
         .env("no_proxy", "localhost,127.0.0.1")
@@ -103,7 +103,7 @@ fn build_rust_compat_server() -> PathBuf {
             "build",
             "--locked",
             "--manifest-path",
-            "compat-tests/rust-server/Cargo.toml",
+            "tests/compat/rust-server/Cargo.toml",
             "--message-format=json-render-diagnostics",
         ])
         .current_dir(project_root())
@@ -139,7 +139,7 @@ fn start_rust_compat_server(port: u16, executable: &std::path::Path) -> ManagedC
 
 fn run_bun_suite(paths: &[&str], ts_port: u16, rust_port: u16) {
     if paths == ["tests"] {
-        let directory = project_root().join("compat-tests/client-tests/artifacts/evidence");
+        let directory = project_root().join("tests/compat/client-tests/artifacts/evidence");
         if directory.exists() {
             std::fs::remove_dir_all(directory)
                 .unwrap_or_else(|error| panic!("failed to reset capability evidence: {error}"));
@@ -152,7 +152,7 @@ fn run_bun_suite(paths: &[&str], ts_port: u16, rust_port: u16) {
             "COMPAT_COVERAGE",
             if paths == ["tests"] { "1" } else { "0" },
         )
-        .current_dir(project_root().join("compat-tests/client-tests"))
+        .current_dir(project_root().join("tests/compat/client-tests"))
         .env("AUTH_BASE_URL_TS", format!("http://localhost:{ts_port}"))
         .env(
             "AUTH_BASE_URL_RUST",
@@ -181,7 +181,7 @@ fn run_bun_suite(paths: &[&str], ts_port: u16, rust_port: u16) {
     if paths == ["tests"] {
         let status = Command::new("bun")
             .args(["run", "support/check-coverage.ts"])
-            .current_dir(project_root().join("compat-tests/client-tests"))
+            .current_dir(project_root().join("tests/compat/client-tests"))
             .status()
             .unwrap_or_else(|error| panic!("failed to check capability evidence: {error}"));
         assert!(status.success(), "capability evidence check failed");

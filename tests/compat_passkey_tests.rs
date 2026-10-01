@@ -14,6 +14,7 @@
     reason = "passkey contract tests use direct JSON indexing for concise response assertions"
 )]
 
+#[path = "support/compat/mod.rs"]
 mod compat;
 
 #[cfg(test)]

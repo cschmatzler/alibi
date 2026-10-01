@@ -22,4 +22,4 @@ AGENTS.md
 
 # Test artifacts
 /coverage/
-/compat-tests/client-tests/artifacts/
+/tests/compat/client-tests/artifacts/

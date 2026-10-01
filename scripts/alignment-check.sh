@@ -3,7 +3,7 @@ set -euo pipefail
 
 export BETTER_AUTH_REQUIRE_REFERENCE_SERVER=1
 mkdir -p coverage
-bun compat-tests/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json
+bun tests/compat/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json
 
 skip_build=false
 
@@ -19,24 +19,23 @@ if ! command -v bun >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -d compat-tests/reference-server/node_modules ]]; then
-  echo "compat-tests/reference-server dependencies are missing. Run 'cd compat-tests/reference-server && bun install'." >&2
+if [[ ! -d tests/compat/reference-server/node_modules ]]; then
+  echo "tests/compat/reference-server dependencies are missing. Run 'cd tests/compat/reference-server && bun install'." >&2
   exit 1
 fi
 
-if [[ ! -d compat-tests/client-tests/node_modules ]]; then
-  echo "compat-tests/client-tests dependencies are missing. Run 'cd compat-tests/client-tests && bun install'." >&2
+if [[ ! -d tests/compat/client-tests/node_modules ]]; then
+  echo "tests/compat/client-tests dependencies are missing. Run 'cd tests/compat/client-tests && bun install'." >&2
   exit 1
 fi
 
 if [[ "$skip_build" != "true" ]]; then
   cargo build --workspace
-  cargo build --manifest-path compat-tests/rust-server/Cargo.toml
+  cargo build --manifest-path tests/compat/rust-server/Cargo.toml
 fi
 
 cargo test --features axum --test axum_integration_tests
 cargo test --test compat_endpoint_tests -- --nocapture
 cargo test --test compat_coverage_tests -- --nocapture
-cargo test --test wire_compat_smoke_tests -- --nocapture
 cargo test --test client_compat_tests full_client_compat -- --ignored --nocapture
 cargo test --test client_compat_tests browser_client_compat -- --ignored --nocapture

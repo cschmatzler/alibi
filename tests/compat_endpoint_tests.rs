@@ -14,6 +14,7 @@
     reason = "endpoint smoke tests intentionally use direct JSON assertions against the generated spec"
 )]
 
+#[path = "support/compat/mod.rs"]
 mod compat;
 
 #[cfg(test)]

@@ -10,6 +10,7 @@
     reason = "consistency tests use direct JSON indexing to compare response object shapes"
 )]
 
+#[path = "support/compat/mod.rs"]
 mod compat;
 
 #[cfg(test)]

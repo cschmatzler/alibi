@@ -1,5 +1,5 @@
 //! Source-backed Better Auth 1.7.6 declarations.
-//! Author-time port: compat-tests/reference-server/port-openapi-annotations.ts.
+//! Author-time port: tests/compat/reference-server/port-openapi-annotations.ts.
 //! Conversion helpers SHA256: ecbb352aeae990043fa25e1a5c42413aa433f33f015110d85c2bfecff74d67c5.
 //! No generated document or fixture response was captured.
 use super::{OpenApiField, OpenApiModel};

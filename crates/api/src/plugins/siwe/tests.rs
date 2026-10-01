@@ -161,8 +161,10 @@ async fn independent_unicode_signature_creates_an_authenticated_wallet_identity_
         Arc::new(FixedNonce("GoldenNonce0001")),
         Arc::<Verifier>::clone(&verifier),
     ));
-    let fixture: serde_json::Value =
-        serde_json::from_str(include_str!("fixtures/eip191-noble-2.0.1.json")).unwrap();
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tests/fixtures/siwe/eip191-noble-2.0.1.json"
+    ))
+    .unwrap();
     let nonce = issue(&plugin, &ctx, "/siwe/get-nonce").await;
     let proof = ctx
         .database

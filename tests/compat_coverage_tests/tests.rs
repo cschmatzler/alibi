@@ -46,9 +46,8 @@ async fn runtime_routes_match_capability_inventory() {
     if std::env::var("BETTER_AUTH_UPDATE_CAPABILITIES").as_deref() == Ok("1") {
         return;
     }
-    let inventory: Value =
-        serde_json::from_str(include_str!("../../compat-tests/capabilities.json"))
-            .expect("capability inventory JSON");
+    let inventory: Value = serde_json::from_str(include_str!("../compat/capabilities.json"))
+        .expect("capability inventory JSON");
     let expected: BTreeSet<String> = inventory["capabilities"]
         .as_array()
         .expect("capabilities")
@@ -58,6 +57,6 @@ async fn runtime_routes_match_capability_inventory() {
         .collect();
     assert_eq!(
         actual, expected,
-        "Runtime route inventory changed. Review and update compat-tests/capabilities.json; no route may silently appear or disappear."
+        "Runtime route inventory changed. Review and update tests/compat/capabilities.json; no route may silently appear or disappear."
     );
 }

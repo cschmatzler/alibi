@@ -15,6 +15,7 @@
     reason = "integration tests intentionally use panic-on-failure assertions and direct JSON indexing for endpoint behavior checks"
 )]
 
+#[path = "support/compat/mod.rs"]
 mod compat;
 
 #[cfg(test)]

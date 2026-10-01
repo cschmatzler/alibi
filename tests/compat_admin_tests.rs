@@ -21,6 +21,7 @@
     reason = "admin compatibility tests intentionally use panic-on-failure assertions and direct JSON indexing for endpoint contract checks"
 )]
 
+#[path = "support/compat/mod.rs"]
 mod compat;
 
 #[cfg(test)]

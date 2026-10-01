@@ -21,7 +21,7 @@ fn collect_files(root: &Path, files: &mut Vec<PathBuf>) {
         let entry = entry.expect("directory entry should be readable");
         let path = entry.path();
         if path.is_dir() {
-            if path.file_name().and_then(std::ffi::OsStr::to_str) == Some("target") {
+            if is_skipped_directory(&path) {
                 continue;
             }
             collect_files(&path, files);
@@ -40,7 +40,7 @@ fn collect_rust_files(root: &Path, files: &mut Vec<PathBuf>) {
         let entry = entry.expect("directory entry should be readable");
         let path = entry.path();
         if path.is_dir() {
-            if path.file_name().and_then(std::ffi::OsStr::to_str) == Some("target") {
+            if is_skipped_directory(&path) {
                 continue;
             }
             collect_rust_files(&path, files);
@@ -59,8 +59,6 @@ fn is_behavior_marker_exempt(path: &Path) -> bool {
         || text.contains("/tests/architecture_guard_tests/")
         || text.ends_with("tests/client_compat_tests.rs")
         || text.contains("/tests/client_compat_tests/")
-        || text.ends_with("tests/wire_compat_smoke_tests.rs")
-        || text.contains("/tests/wire_compat_smoke_tests/")
         || text.contains("/tests/compat")
         || text.contains("/tests/compat/")
         || text.ends_with("tests/compatibility_tests.rs")
@@ -74,10 +72,18 @@ fn requires_strict_behavior_markers(path: &Path) -> bool {
         || text.ends_with("tests/axum_integration_tests.rs")
         || text.contains("/tests/axum_integration_tests/")
         || text.contains("/crates/api/src/plugins/email_password/")
-        || text.ends_with("crates/api/tests/account_oauth_tests.rs")
-        || text.contains("/crates/api/tests/account_oauth_tests/")
+        || text.ends_with("tests/account_oauth_tests.rs")
+        || text.contains("/tests/account_oauth_tests/")
 }
 
 fn has_test_attribute(line: &str) -> bool {
     matches!(line.trim(), "#[test]" | "#[tokio::test]")
+}
+
+/// Vendored and generated trees are not repository sources.
+fn is_skipped_directory(path: &Path) -> bool {
+    matches!(
+        path.file_name().and_then(std::ffi::OsStr::to_str),
+        Some("target" | "node_modules" | "artifacts" | ".devenv")
+    )
 }

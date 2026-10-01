@@ -9,7 +9,7 @@
     reason = "Assert successful public-handler SQLite setup and independently specified JSON/model events"
 )]
 //! Application storage and native hook contracts; the SDK owns built-in wire parity.
-#[path = "../compat-tests/rust-server/src/session_field_model.rs"]
+#[path = "compat/rust-server/src/session_field_model.rs"]
 mod application_model;
 
 #[cfg(test)]

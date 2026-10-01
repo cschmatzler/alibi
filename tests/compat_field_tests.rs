@@ -9,6 +9,7 @@
     reason = "field-level compatibility tests use direct JSON indexing for concise response shape assertions"
 )]
 
+#[path = "support/compat/mod.rs"]
 mod compat;
 
 #[cfg(test)]

@@ -2,8 +2,10 @@ use super::*;
 
 #[test]
 fn account_cookie_accepts_pinned_encrypted_vectors_and_rejects_unauthenticated_values() {
-    let vectors: serde_json::Value =
-        serde_json::from_str(include_str!("../account-cookie-vectors.json")).unwrap();
+    let vectors: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../../tests/fixtures/oauth/account-cookie-vectors.json"
+    ))
+    .unwrap();
     let secret = (*(vectors)
         .get("secret")
         .expect("fixture contains the requested index"))
