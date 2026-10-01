@@ -3,6 +3,7 @@ import { symmetricEncodeJWT, symmetricDecodeJWT } from "better-auth/crypto";
 import { decodeProtectedHeader, EncryptJWT } from "jose";
 import { hkdfSync } from "node:crypto";
 import { betterAuth } from "better-auth";
+import { admin } from "better-auth/plugins";
 import { apiKey } from "@better-auth/api-key";
 import { getMigrations } from "better-auth/db/migration";
 import { createHash } from "node:crypto";
@@ -453,4 +454,38 @@ test("published encrypted account cookies retain complete claims, clocks, identi
   expect(compareValues({ payload: left.payload }, { payload: right.payload }, execution).length).toBeGreaterThan(0);
   expect(compareValues({ metadata: { accountCookie: left } }, { metadata: { accountCookie: right } }, execution).length).toBeGreaterThan(0);
   expect(compareValues({ additionalFields: { accountCookie: left } }, { additionalFields: { accountCookie: right } }, execution).length).toBeGreaterThan(0);
+});
+
+
+test("actual admin URLs preserve literal empty selectors without admitting empty generated identities", async () => {
+  async function observe(baseURL: string, id: string) {
+    const database = new Database(":memory:");
+    const auth = betterAuth({ baseURL, secret: "query-harness-application-secret32", database, plugins: [admin()], rateLimit: { enabled: false } });
+    try {
+      await (await getMigrations(auth.options)).runMigrations();
+      const url = new URL("/api/auth/admin/get-user", baseURL);
+      url.searchParams.set("id", id);
+      const response = await auth.handler(new Request(url));
+      expect(response.status).toBe(401);
+      expect(response.headers.get("content-type")).toBe("application/json");
+      const body = await response.text();
+      expect(body).toBe("");
+      return { path: url.href, status: response.status, body };
+    } finally { database.close(); }
+  }
+  for (const id of ["", " "]) {
+    const left = await observe(context.leftBaseURL, id), right = await observe(context.rightBaseURL, id);
+    expect(compareValues(left, right, context)).toEqual([]);
+    for (const path of [right.path.replace("id=" + (id ? "+" : ""), "id=different"), right.path.replace("id=" + (id ? "+" : ""), ""), right.path + "&id=extra", right.path.replace("id=" + (id ? "+" : ""), "id=" + (id ? "" : "+"))]) {
+      expect(compareValues(left, { ...right, path }, context).length).toBeGreaterThan(0);
+    }
+  }
+  for (const value of [{ id: "" }, { userId: " " }, { token: "" }, { path: { query: { id: [""] } } }]) {
+    expect(compareValues(value, structuredClone(value), context).length).toBeGreaterThan(0);
+  }
+  // A queried observed identity still participates in the same graph.
+  const left = { user: { id: "owner-left" }, path: "/admin/get-user?id=owner-left" };
+  const right = { user: { id: "owner-right" }, path: "/admin/get-user?id=owner-right" };
+  expect(compareValues(left, right, context)).toEqual([]);
+  expect(compareValues(left, { ...right, path: "/admin/get-user?id=foreign" }, context).length).toBeGreaterThan(0);
 });

@@ -208,7 +208,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     } catch { return undefined; }
   }
 
-  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false) {
+  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false, urlQueryContext: "url" | "query" | undefined = undefined) {
     if (typeof a === "string" && typeof b === "string" && !traceShape(path)
       && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path)) {
       if (key === "teamId" && (a.includes(",") || b.includes(","))) {
@@ -230,7 +230,12 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
         if (leftJwt.signature.length!==rightJwt.signature.length) fail(path,"JWT signature length differs");
         return;
       }
-      if (entityKeys.has(key) && !path.endsWith(".rp.id")) { identity(a, b, path, "entity"); return; }
+      if (entityKeys.has(key) && !path.endsWith(".rp.id")) {
+        if (urlQueryContext === "query" && !a.trim() && !b.trim()) {
+          if (a !== b) fail(path, "literal empty URL selector differs");
+        } else identity(a, b, path, "entity");
+        return;
+      }
       if (key === "identifier" && (a.startsWith("one-time-token:") || b.startsWith("one-time-token:"))) {
         const leftIdentifier = oneTimeIdentifier(a, leftTokens), rightIdentifier = oneTimeIdentifier(b, rightTokens);
         if (leftIdentifier || rightIdentifier) {
@@ -253,12 +258,12 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       if (urlKeys.has(key) || key.endsWith("URL") || key.endsWith("Url") || key === "redirect_uri") {
         const ap = urlParts(a, context.leftBaseURL, context.leftOAuthURL), bp = urlParts(b, context.rightBaseURL, context.rightOAuthURL);
         if (!ap || !bp) { fail(path, "invalid URL"); return; }
-        visit(ap, bp, path, ""); return;
+        visit(ap, bp, path, "", false, false, false, false, "url"); return;
       }
     }
     if (Array.isArray(a) && Array.isArray(b)) {
       if (a.length !== b.length) fail(path, "array length differs");
-      a.forEach((child, index) => visit(child, b[index], `${path ? `${path}.` : ""}${index}`, key, false, applicationData || jwtPayload));
+      a.forEach((child, index) => visit(child, b[index], `${path ? `${path}.` : ""}${index}`, key, false, applicationData || jwtPayload, false, false, urlQueryContext));
       return;
     }
     if (record(a) && record(b)) {
@@ -337,7 +342,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
             identity(issuedLeft, issuedRight, childPath, "api-key");
           }
         }
-        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData);
+        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData, false, false, urlQueryContext === "query" || (urlQueryContext === "url" && childKey === "query") ? "query" : undefined);
       }
       return;
     }
