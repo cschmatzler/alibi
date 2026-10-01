@@ -319,10 +319,19 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "github link social creates an account that listAccounts returns",
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": [
+          "github link social creates an account that listAccounts returns",
+          "social sign-in preserves previously granted account scopes"
+        ],
+        "rejection": [
+          "social sign-in preserves previously granted account scopes"
+        ],
+        "authorization": [
+          "social sign-in preserves previously granted account scopes"
+        ],
+        "state": [
+          "social sign-in preserves previously granted account scopes"
+        ]
       }
     },
     {

@@ -34,10 +34,16 @@ pub(crate) struct AccountResponse {
     provider_id: String,
     #[serde(rename = "userId")]
     user_id: String,
-    #[serde(rename = "createdAt")]
-    created_at: String,
-    #[serde(rename = "updatedAt")]
-    updated_at: String,
+    #[serde(
+        rename = "createdAt",
+        serialize_with = "better_auth_core::utils::datetime::serialize"
+    )]
+    created_at: chrono::DateTime<chrono::Utc>,
+    #[serde(
+        rename = "updatedAt",
+        serialize_with = "better_auth_core::utils::datetime::serialize"
+    )]
+    updated_at: chrono::DateTime<chrono::Utc>,
     scopes: Vec<String>,
 }
 
@@ -66,8 +72,8 @@ pub(crate) async fn list_accounts_core(
             account_id: acc.account_id().to_string(),
             provider_id: acc.provider_id().to_string(),
             user_id: acc.user_id().to_string(),
-            created_at: acc.created_at().to_rfc3339(),
-            updated_at: acc.updated_at().to_rfc3339(),
+            created_at: acc.created_at(),
+            updated_at: acc.updated_at(),
             scopes: acc
                 .scope()
                 .map(|s| {
@@ -81,7 +87,7 @@ pub(crate) async fn list_accounts_core(
         .collect::<Vec<_>>();
 
     let mut filtered = filtered;
-    filtered.sort_by(|left, right| left.created_at.cmp(&right.created_at));
+    filtered.sort_by_key(|account| account.created_at);
 
     Ok(filtered)
 }
@@ -113,7 +119,8 @@ impl AccountManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = ctx.require_session(req).await?;
+        let (user, _session) =
+            super::organization::handlers::extension_common::session(req, ctx).await?;
         let filtered = list_accounts_core(&user, ctx).await?;
         Ok(AuthResponse::json(200, &filtered)?)
     }

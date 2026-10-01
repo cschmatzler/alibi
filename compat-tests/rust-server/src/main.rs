@@ -506,6 +506,8 @@ struct SeedOAuthAccountRequest {
     access_token_expires_at: Option<String>,
     refresh_token_expires_at: Option<String>,
     scope: Option<String>,
+    created_at: Option<String>,
+    updated_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -874,6 +876,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let auth_for_delete_seed = auth.clone();
     let auth_for_remove_credential = auth.clone();
     let auth_for_oauth_seed = auth.clone();
+    let db_for_oauth_seed = reset_database.clone();
     let auth_for_promote_admin = auth.clone();
     let auth_for_view_backup_codes = auth.clone();
     let auth_for_password = auth.clone();
@@ -1460,7 +1463,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/__test/seed-oauth-account",
             post(move |Json(body): Json<SeedOAuthAccountRequest>| {
                 let auth = auth_for_oauth_seed.clone();
+                let db_for_oauth_seed = db_for_oauth_seed.clone();
                 async move {
+                    let timestamps = match (&body.created_at, &body.updated_at) {
+                        (None, None) => None,
+                        (Some(created), Some(updated)) if parse_rfc3339(created).is_ok() && parse_rfc3339(updated).is_ok() => Some((created.clone(), updated.clone())),
+                        _ => return (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"message":"Both valid account timestamps required"}))),
+                    };
                     let user = match auth.store().get_user_by_email(&body.email).await {
                         Ok(Some(user)) => user,
                         Ok(None) => {
@@ -1558,6 +1567,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     };
 
+                    if let Some((created, updated)) = timestamps {
+                        use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+                        let result: AuthResult<serde_json::Value> = async {
+                            db_for_oauth_seed.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,
+                                "UPDATE accounts SET created_at=?,updated_at=? WHERE id=?", [created.into(),updated.into(),account.id().into()])).await.map_err(|error| AuthError::Internal(error.to_string()))?;
+                            let row = db_for_oauth_seed.query_one_raw(Statement::from_sql_and_values(DbBackend::Sqlite,
+                                "SELECT created_at AS createdAt,updated_at AS updatedAt FROM accounts WHERE id=?", [account.id().into()])).await.map_err(|error|AuthError::Internal(error.to_string()))?.ok_or_else(||AuthError::Internal("Seeded account missing".into()))?;
+                            Ok(serde_json::json!({"createdAt":row.try_get::<String>("","createdAt").map_err(|error|AuthError::Internal(error.to_string()))?,"updatedAt":row.try_get::<String>("","updatedAt").map_err(|error|AuthError::Internal(error.to_string()))?}))
+                        }.await;
+                        return match result {
+                            Ok(timestamps) => (axum::http::StatusCode::OK,Json(serde_json::json!({"status":true,"accountId":account.id(),"timestamps":timestamps}))),
+                            Err(error) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"message":error.to_string()}))),
+                        };
+                    }
                     (
                         axum::http::StatusCode::OK,
                         Json(serde_json::json!({ "status": true, "accountId": account.id() })),

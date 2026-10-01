@@ -1324,7 +1324,14 @@ const server = Bun.serve({
           accessTokenExpiresAt?: string | null;
           refreshTokenExpiresAt?: string | null;
           scope?: string | null;
+          createdAt?: string;
+          updatedAt?: string;
         } | null;
+        if ((body?.createdAt !== undefined || body?.updatedAt !== undefined) &&
+          (typeof body.createdAt !== "string" || typeof body.updatedAt !== "string" ||
+           !Number.isFinite(Date.parse(body.createdAt)) || !Number.isFinite(Date.parse(body.updatedAt)))) {
+          return jsonResponse({ message: "Both valid account timestamps required" }, { status: 400 });
+        }
         const email = body?.email;
         const user = email
           ? await authContext.internalAdapter.findUserByEmail(email, {
@@ -1372,6 +1379,11 @@ const server = Bun.serve({
           localAccountId = account.id;
         }
 
+        if (body?.createdAt !== undefined && body.updatedAt !== undefined) {
+          database.query("UPDATE account SET createdAt=?, updatedAt=? WHERE id=?").run(body.createdAt, body.updatedAt, localAccountId!);
+          const timestamps = database.query("SELECT createdAt,updatedAt FROM account WHERE id=?").get(localAccountId!);
+          return jsonResponse({ status: true, accountId: localAccountId, timestamps });
+        }
         return jsonResponse({ status: true, accountId: localAccountId });
       }
 
