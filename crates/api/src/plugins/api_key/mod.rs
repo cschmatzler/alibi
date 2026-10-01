@@ -8,12 +8,15 @@ use better_auth_core::entity::AuthUser;
 use better_auth_core::{AuthContext, AuthError, AuthResult, BeforeRequestAction};
 use better_auth_core::{AuthRequest, AuthResponse};
 
+mod callbacks;
 pub(super) mod handlers;
 pub(super) mod types;
 mod verification;
+pub use callbacks::{ApiKeyCallbackContext, ApiKeyGetter, ApiKeyValidator};
 
 pub use verification::{
-    ApiKeyErrorDetails, ApiKeyValidationError, ApiKeyVerificationError, VerifyApiKey,
+    ApiKeyErrorDetails, ApiKeyErrorMessage, ApiKeyValidationError, ApiKeyVerificationError,
+    VerifyApiKey,
 };
 
 #[cfg(test)]
@@ -240,7 +243,7 @@ pub(super) fn config_id_matches(key_config_id: &str, expected: &str) -> bool {
 }
 
 /// Configuration for the API Key plugin, aligned with the TypeScript `ApiKeyOptions`.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ApiKeyConfig {
     /// Name of this configuration, stored on every key it creates.
     /// Upstream defaults it to `"default"`.
@@ -257,6 +260,10 @@ pub struct ApiKeyConfig {
 
     // -- header --
     pub api_key_headers: Vec<String>,
+    /// Trusted application lookup, replacing `api_key_headers` when configured.
+    pub custom_api_key_getter: Option<Arc<dyn ApiKeyGetter>>,
+    /// Trusted acceptance predicate, checked before quota and rate-limit writes.
+    pub custom_api_key_validator: Option<Arc<dyn ApiKeyValidator>>,
 
     // -- hashing --
     pub disable_key_hashing: bool,
@@ -285,6 +292,31 @@ pub struct ApiKeyConfig {
 
     // -- session emulation --
     pub enable_session_for_api_keys: bool,
+}
+
+impl std::fmt::Debug for ApiKeyConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ApiKeyConfig")
+            .field("config_id", &self.config_id)
+            .field("references", &self.references)
+            .field("key_length", &self.key_length)
+            .field("prefix", &self.prefix)
+            .field("api_key_headers", &self.api_key_headers)
+            .field(
+                "custom_api_key_getter",
+                &self.custom_api_key_getter.is_some(),
+            )
+            .field(
+                "custom_api_key_validator",
+                &self.custom_api_key_validator.is_some(),
+            )
+            .field(
+                "enable_session_for_api_keys",
+                &self.enable_session_for_api_keys,
+            )
+            .finish_non_exhaustive()
+    }
 }
 
 /// Key expiration constraints.
@@ -340,6 +372,8 @@ impl Default for ApiKeyConfig {
             prefix: None,
             default_permissions: None,
             api_key_headers: vec!["x-api-key".to_string()],
+            custom_api_key_getter: None,
+            custom_api_key_validator: None,
             disable_key_hashing: false,
             starting_characters_length: 6,
             store_starting_characters: true,
@@ -381,6 +415,8 @@ impl ApiKeyPlugin {
         prefix: Option<String>,
         default_permissions: Option<std::collections::HashMap<String, Vec<String>>>,
         #[builder(default = vec!["x-api-key".to_string()])] api_key_headers: Vec<String>,
+        custom_api_key_getter: Option<Arc<dyn ApiKeyGetter>>,
+        custom_api_key_validator: Option<Arc<dyn ApiKeyValidator>>,
         #[builder(default = false)] disable_key_hashing: bool,
         #[builder(default = 6)] starting_characters_length: usize,
         #[builder(default = true)] store_starting_characters: bool,
@@ -402,6 +438,8 @@ impl ApiKeyPlugin {
                 prefix,
                 default_permissions,
                 api_key_headers,
+                custom_api_key_getter,
+                custom_api_key_validator,
                 disable_key_hashing,
                 starting_characters_length,
                 store_starting_characters,
