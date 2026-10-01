@@ -11,6 +11,8 @@ mod identity_fields;
 mod invitations;
 mod jwks;
 #[cfg(test)]
+mod member_removal_tests;
+#[cfg(test)]
 mod member_role_tests;
 mod members;
 mod migrator;

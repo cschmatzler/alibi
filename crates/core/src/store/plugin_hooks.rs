@@ -311,6 +311,26 @@ impl<S: AuthSchema> MemberStore for PluginStore<S> {
     async fn delete_member(&self, member_id: &str) -> AuthResult<()> {
         self.inner.delete_member(member_id).await
     }
+    async fn delete_member_with_context(
+        &self,
+        member_id: &str,
+        organization_id: &str,
+        user_id: &str,
+        remove_team_members: bool,
+    ) -> AuthResult<()> {
+        self.inner
+            .delete_member_with_context(member_id, organization_id, user_id, remove_team_members)
+            .await
+    }
+    async fn list_organization_members_page(
+        &self,
+        organization_id: &str,
+        limit: usize,
+    ) -> AuthResult<Vec<Member>> {
+        self.inner
+            .list_organization_members_page(organization_id, limit)
+            .await
+    }
     async fn list_organization_members(&self, org_id: &str) -> AuthResult<Vec<Member>> {
         self.inner.list_organization_members(org_id).await
     }

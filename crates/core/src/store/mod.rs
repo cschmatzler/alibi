@@ -338,6 +338,32 @@ pub trait MemberStore: Send + Sync {
         ))
     }
     async fn delete_member(&self, member_id: &str) -> AuthResult<()>;
+    /// Delete the authorized original member, then optionally release its team
+    /// memberships atomically. The original scope/user remains authoritative if
+    /// a lifecycle callback independently changes or removes the stored member.
+    /// A missing/ignored member deletion is successful; SQL errors are failures.
+    async fn delete_member_with_context(
+        &self,
+        _member_id: &str,
+        _organization_id: &str,
+        _user_id: &str,
+        _remove_team_members: bool,
+    ) -> AuthResult<()> {
+        Err(AuthError::NotImplemented(
+            "Contextual member deletion is not supported by this store".into(),
+        ))
+    }
+    /// Return the adapter's organization-scoped page without imposing a sort.
+    /// Used for the source's paged last-owner guard independently of total count.
+    async fn list_organization_members_page(
+        &self,
+        _organization_id: &str,
+        _limit: usize,
+    ) -> AuthResult<Vec<Member>> {
+        Err(AuthError::NotImplemented(
+            "Unsorted member pages are not supported by this store".into(),
+        ))
+    }
     async fn list_organization_members(&self, org_id: &str) -> AuthResult<Vec<Member>>;
     /// Query organization members with filter, sort, and pagination applied in
     /// the store when possible.

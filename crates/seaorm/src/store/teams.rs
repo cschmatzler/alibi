@@ -32,13 +32,22 @@ pub(super) async fn remove_owned_team_members(
     if let Some(org) = organization_id {
         teams = teams.filter(team::Column::OrganizationId.eq(org));
     }
-    for room in teams
+    let rooms = teams
         .order_by_asc(team::Column::Id)
         .lock_exclusive()
         .all(connection)
         .await
-        .map_err(map_db_err)?
-    {
+        .map_err(map_db_err)?;
+    release_owned_team_members(connection, user_id, rooms).await
+}
+
+/// Remove memberships from an already selected adapter page and release seats.
+pub(super) async fn release_owned_team_members(
+    connection: &sea_orm::DatabaseTransaction,
+    user_id: &str,
+    rooms: Vec<team::Model>,
+) -> AuthResult<()> {
+    for room in rooms {
         let deleted = team_member::Entity::delete_many()
             .filter(team_member::Column::TeamId.eq(&room.id))
             .filter(team_member::Column::UserId.eq(user_id))

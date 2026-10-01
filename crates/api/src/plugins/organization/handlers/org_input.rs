@@ -4,8 +4,8 @@ use better_auth_core::{AuthError, AuthRequest, AuthResponse};
 use serde_json::{Value, json};
 
 use crate::plugins::organization::types::{
-    CreateOrganizationRequest, DeleteOrganizationRequest, NullableStringField, RoleInput,
-    SetActiveOrganizationRequest, UpdateMemberRoleRequest, UpdateOrganizationData,
+    CreateOrganizationRequest, DeleteOrganizationRequest, NullableStringField, RemoveMemberRequest,
+    RoleInput, SetActiveOrganizationRequest, UpdateMemberRoleRequest, UpdateOrganizationData,
     UpdateOrganizationRequest,
 };
 
@@ -366,6 +366,41 @@ pub(super) fn member_role_update(
                 400,
                 "VALIDATION_ERROR",
                 expected("body.memberId", "string", get("memberId")),
+            )
+        })?,
+        organization_id,
+    })
+}
+
+pub(super) fn member_remove(req: &AuthRequest) -> Result<RemoveMemberRequest, AuthResponse> {
+    let decoded = decode(req)?;
+    object(decoded.as_ref(), "body")
+        .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
+    let get = |key| decoded.as_ref().and_then(|value| value.get(key));
+    let mut issues = Vec::new();
+    let member_id_or_email = string(
+        get("memberIdOrEmail"),
+        "body.memberIdOrEmail",
+        true,
+        false,
+        false,
+        &mut issues,
+    );
+    let organization_id = string(
+        get("organizationId"),
+        "body.organizationId",
+        false,
+        false,
+        false,
+        &mut issues,
+    );
+    validate(issues)?;
+    Ok(RemoveMemberRequest {
+        member_id_or_email: member_id_or_email.ok_or_else(|| {
+            response(
+                400,
+                "VALIDATION_ERROR",
+                expected("body.memberIdOrEmail", "string", get("memberIdOrEmail")),
             )
         })?,
         organization_id,

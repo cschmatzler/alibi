@@ -1,7 +1,43 @@
 import { expect } from "bun:test";
 import { z } from "zod";
-import { compatScenario } from "../../support/scenario";
+import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { asArray, asRecord, signUpUser } from "./helpers";
+
+async function removalSetup(ctx:ScenarioContext,name:string) {
+ expect((await ctx.rawRequest({path:"/__test/organization-member-role-hooks-configure",method:"POST",json:{mode:"record"}})).status).toBe(200);
+ const owner=await signUpUser(ctx,`${name}-owner`,`${name}-owner`,"Owner"),target=await signUpUser(ctx,`${name}-target`,`${name}-target`,"Target"),foreign=await signUpUser(ctx,`${name}-foreign`,`${name}-foreign`,"Foreign");
+ for(const actor of [owner,target,foreign])expect(actor.signup.error).toBeNull();
+ const created=await owner.orgClient.organization.create({name:"Removal",slug:ctx.uniqueToken(`${name}-org`),metadata:{owned:true}}),other=await foreign.orgClient.organization.create({name:"Foreign",slug:ctx.uniqueToken(`${name}-foreign-org`),metadata:{foreign:true}});expect(created.error).toBeNull();expect(other.error).toBeNull();
+ const organizationId=z.string().parse(created.data?.id),invited=await owner.orgClient.organization.inviteMember({organizationId,email:target.email,role:"member"});expect(invited.error).toBeNull();const accepted=await target.orgClient.organization.acceptInvitation({invitationId:z.string().parse(invited.data?.id)});expect(accepted.error).toBeNull();const memberId=z.string().parse(accepted.data?.member.id);expect((await target.orgClient.organization.setActive({organizationId})).error).toBeNull();
+ const actors=[owner,target,foreign];async function state(){const response=await ctx.rawRequest({path:"/__test/organization-member-role-hooks-state"});expect(response.status).toBe(200);const users=[];for(const actor of actors){const observed=await ctx.rawRequest({path:`/__test/user-state?userId=${encodeURIComponent(z.string().parse(actor.signup.data?.user.id))}`});expect(observed.status).toBe(200);users.push(observed.body);}return {hooks:z.object({receipts:z.array(z.unknown()),snapshot:z.object({organizations:z.array(z.record(z.string(),z.unknown())),members:z.array(z.record(z.string(),z.unknown())),users:z.array(z.record(z.string(),z.unknown())),sessions:z.array(z.record(z.string(),z.unknown()))})}).parse(response.body),users};}
+ return {owner,target,foreign,created,other,organizationId,memberId,state};
+}
+
+compatScenario("organization ID removal omits the email join and preserves the target and foreign selected sessions",async ctx=>{
+ const {owner,target,organizationId,memberId,state}=await removalSetup(ctx,"remove-id"),before=await state();
+ const result=await owner.orgClient.organization.removeMember({organizationId,memberIdOrEmail:memberId});expect(result.error).toBeNull();expect(result.data?.member).toHaveProperty("id",memberId);expect(result.data?.member).toHaveProperty("userId",target.signup.data?.user.id);expect(result.data?.member).not.toHaveProperty("user");
+ const after=await state();expect(after.hooks.receipts).toEqual([]);expect(after.hooks.snapshot).toEqual({...before.hooks.snapshot,members:before.hooks.snapshot.members.filter(member=>member.id!==memberId)});expect(after.users).toEqual(before.users);
+ return {before,result:ctx.snapshot(result),after};
+},["POST /organization/remove-member"]);
+compatScenario("organization removal permission and last-owner guards reject without mutation and preserve foreign authority",async ctx=>{
+ const {owner,target,foreign,organizationId,memberId,state}=await removalSetup(ctx,"remove-guards"),before=await state();const ownerMember=z.record(z.string(),z.unknown()).parse(before.hooks.snapshot.members.find(member=>member.userId===owner.signup.data?.user.id&&member.organizationId===organizationId)),foreignMember=z.record(z.string(),z.unknown()).parse(before.hooks.snapshot.members.find(member=>member.userId===foreign.signup.data?.user.id));const observations=[];
+ for(const [actor,selector,status,code] of [[target,memberId,401,"YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER"],[owner,z.string().parse(ownerMember.id),400,"YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER"],[owner,z.string().parse(foreignMember.id),400,"YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER"],[foreign,memberId,400,"MEMBER_NOT_FOUND"],[owner,` ${target.email} `,400,"MEMBER_NOT_FOUND"]] as const){const result=await actor.orgClient.organization.removeMember({organizationId,memberIdOrEmail:selector});expect(result.error).toMatchObject({status,code});expect(await state()).toEqual(before);observations.push(ctx.snapshot(result));}
+ const retry=await owner.orgClient.organization.removeMember({organizationId,memberIdOrEmail:target.email.toUpperCase()});expect(retry.error).toBeNull();expect(retry.data?.member).toHaveProperty("user",{id:target.signup.data?.user.id,name:"Target",email:target.email,image:null});const after=await state();expect(after.hooks.snapshot).toEqual({...before.hooks.snapshot,members:before.hooks.snapshot.members.filter(member=>member.id!==memberId)});expect(after.users).toEqual(before.users);expect(after.hooks.receipts).toEqual([]);
+ return {before,observations,retry:ctx.snapshot(retry),after};
+},["POST /organization/remove-member"]);
+compatScenario("organization removal validates ordered string fields and media before guest authentication",async ctx=>{
+ const {owner,target,foreign,organizationId,memberId,state}=await removalSetup(ctx,"remove-input"),before=await state(),guest=ctx.actor("remove-input-guest"),observations=[];
+ for(const [body,media,status,error] of [
+  ["{}","application/json",400,{code:"VALIDATION_ERROR",message:"[body.memberIdOrEmail] Invalid input: expected string, received undefined"}],
+  [JSON.stringify({memberIdOrEmail:null,organizationId:1}),"application/json",400,{code:"VALIDATION_ERROR",message:"[body.memberIdOrEmail] Invalid input: expected string, received null; [body.organizationId] Invalid input: expected string, received number"}],
+  ["{","application/json",400,{code:"BAD_REQUEST",message:"Invalid JSON in request body"}],
+  [JSON.stringify({organizationId,memberIdOrEmail:memberId}),"text/plain",415,{code:"UNSUPPORTED_MEDIA_TYPE",message:'Content-Type "text/plain" is not allowed. Allowed types: application/json'}],
+  [JSON.stringify({organizationId,memberIdOrEmail:"",userId:owner.signup.data?.user.id}),"application/json",401,{code:"UNAUTHORIZED",message:"Unauthorized"}],
+ ] as const){const response=await guest.fetch("/api/auth/organization/remove-member",{method:"POST",headers:{"content-type":media},body});const value=await response.json();expect(response.status).toBe(status);expect(value).toEqual(error);expect(await state()).toEqual(before);observations.push({status:response.status,body:value});}
+ for(const [organization,selector] of [[organizationId,""],[" ",memberId]] as const){const result=await owner.orgClient.organization.removeMember({organizationId:organization,memberIdOrEmail:selector});expect(result.error).toMatchObject({status:400,code:"MEMBER_NOT_FOUND"});expect(await state()).toEqual(before);observations.push(ctx.snapshot(result));}
+ const retry=await owner.orgClient.organization.removeMember({organizationId:"",memberIdOrEmail:memberId});expect(retry.error).toBeNull();const after=await state();expect(after.hooks.snapshot).toEqual({...before.hooks.snapshot,members:before.hooks.snapshot.members.filter(member=>member.id!==memberId)});expect(after.users).toEqual(before.users);
+ return {before,observations,retry:ctx.snapshot(retry),after};
+},["POST /organization/remove-member"]);
 
 compatScenario("organization member queries reflect non-public add-member and active member endpoints", async (ctx) => {
   const owner = await signUpUser(ctx, "owner", "organization-members-owner", "Owner");
