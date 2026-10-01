@@ -1,6 +1,6 @@
 //! Application configuration with concrete session columns and real callbacks.
-use crate::session_field_model::{application_session, ApplicationSchema};
-use axum::{extract::Query, routing::get, Json, Router};
+use crate::session_field_model::{ApplicationSchema, application_session};
+use axum::{Json, Router, extract::Query, routing::get};
 use better_auth::__private_core::utils::json::JsValue;
 use better_auth::field_policy::{FieldConfig, FieldValues};
 use better_auth::integrations::axum::AxumIntegration;
@@ -19,7 +19,7 @@ use better_auth_seaorm::{
     DatabaseConnection, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 struct Callbacks;

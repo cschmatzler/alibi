@@ -1,10 +1,10 @@
 //! Trusted fixture controls for persisted OAuth device grants.
 use crate::TestSchema;
 use axum::{
+    Json, Router,
     extract::Query,
     http::StatusCode,
     routing::{get, post},
-    Json, Router,
 };
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
@@ -14,14 +14,14 @@ use better_auth::plugins::{
 use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
 use better_auth_seaorm::SeaOrmStore;
 use better_auth_seaorm::{
-    sea_orm::{sea_query::Expr, ColumnTrait, EntityTrait, QueryFilter},
-    store::entities::device_code,
     DatabaseConnection,
+    sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr},
+    store::entities::device_code,
 };
 use chrono::Duration;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

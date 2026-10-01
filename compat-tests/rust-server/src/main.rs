@@ -12,10 +12,10 @@ mod session_cookie_cache_fixture;
 mod team_fixture;
 
 use axum::{
+    Json, Router,
     extract::Query,
     response::IntoResponse,
     routing::{get, post},
-    Json, Router,
 };
 use better_auth::__private_core::AuthContext as InternalAuthContext;
 use better_auth::integrations::axum::AxumIntegration;
@@ -25,6 +25,10 @@ use better_auth::plugins::api_key::{
     VerifyApiKey,
 };
 use better_auth::plugins::{
+    AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
+    EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, OrganizationPlugin, PasskeyPlugin,
+    PasswordManagementPlugin, SendTwoFactorOtp, SessionManagementPlugin, TwoFactorPlugin,
+    UserManagementPlugin,
     email_verification::SendVerificationEmail,
     oauth::{
         OAuthIdTokenVerifier, OAuthProvider, OAuthRefreshTokenHandler, OAuthTokenSet,
@@ -32,22 +36,18 @@ use better_auth::plugins::{
     },
     password_management::SendResetPassword,
     user_management::SendChangeEmailConfirmation,
-    AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
-    EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, OrganizationPlugin, PasskeyPlugin,
-    PasswordManagementPlugin, SendTwoFactorOtp, SessionManagementPlugin, TwoFactorPlugin,
-    UserManagementPlugin,
 };
 use better_auth::prelude::{
     AuthAccount, AuthUser, CreateAccount, CreateVerification, UpdateAccount,
 };
 use better_auth::wire::UserView;
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use better_auth_seaorm::SeaOrmStore;
 use better_auth_seaorm::sea_orm::{DatabaseConnection, DbErr, EntityTrait};
 use better_auth_seaorm::store::entities::{
     account, api_key, device_code, invitation, member, organization, passkey, session, two_factor,
     user, verification, wallet_address,
 };
-use better_auth_seaorm::SeaOrmStore;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

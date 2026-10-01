@@ -12,7 +12,12 @@ use crate::plugins::authentication_helpers::{
 };
 
 use super::{
-    EmailOtpDelivery, EmailOtpPlugin, EmailOtpType, OtpResendStrategy, helpers::*, types::*,
+    EmailOtpDelivery, EmailOtpPlugin, EmailOtpType, OtpResendStrategy,
+    helpers::{expired_otp, invalid_otp, too_many_attempts, user_not_found},
+    types::{
+        ChangeEmailRequest, CheckRequest, ConfirmChangeRequest, EmailRequest, PasswordRequest,
+        SendRequest, SignInRequest, VerifyRequest, identifier, split_value,
+    },
 };
 
 impl EmailOtpPlugin {
@@ -54,7 +59,7 @@ impl EmailOtpPlugin {
         let (otp, value) = self
             .prepare_code(ctx, email, otp_type, identifier_override)
             .await?;
-        let _ = ctx.database.create_verification(value).await?;
+        drop(ctx.database.create_verification(value).await?);
         Ok(otp)
     }
 
@@ -104,7 +109,7 @@ impl EmailOtpPlugin {
                 AuthError::bad_request("send email verification is not implemented")
             })?;
         crate::plugins::authentication_helpers::run_notification(sender.send(&EmailOtpDelivery {
-            email: email.to_string(),
+            email: email.to_owned(),
             otp,
             otp_type,
         }))
@@ -112,7 +117,7 @@ impl EmailOtpPlugin {
         Ok(())
     }
 
-    fn allowed_attempts(&self) -> usize {
+    const fn allowed_attempts(&self) -> usize {
         if self.config.allowed_attempts == 0 {
             3
         } else {
@@ -149,14 +154,15 @@ impl EmailOtpPlugin {
             .verify(stored, otp, &ctx.config.secret)
             .await?
         {
-            let _ = ctx
-                .database
-                .create_verification(CreateVerification {
-                    identifier: key.to_string(),
-                    value: format!("{stored}:{}", attempts + 1),
-                    expires_at: value.expires_at(),
-                })
-                .await?;
+            drop(
+                ctx.database
+                    .create_verification(CreateVerification {
+                        identifier: key.to_owned(),
+                        value: format!("{stored}:{}", attempts + 1),
+                        expires_at: value.expires_at(),
+                    })
+                    .await?,
+            );
             return Err(invalid_otp());
         }
         Ok(())
@@ -331,8 +337,8 @@ impl EmailOtpPlugin {
             && let Ok(mut value) = serde_json::from_slice::<Value>(body)
             && let Some(object) = value.as_object_mut()
         {
-            _ = object.remove("username");
-            _ = object.remove("displayUsername");
+            drop(object.remove("username"));
+            drop(object.remove("displayUsername"));
             configured_request.body = Some(serde_json::to_vec(&value)?);
         }
         let body: SignInRequest = match parse_body(&configured_request) {
@@ -429,47 +435,50 @@ impl EmailOtpPlugin {
         .await?;
         if let Some(account) = super::super::helpers::get_credential_account(ctx, user.id()).await?
         {
-            let _ = ctx
-                .database
-                .update_account(
-                    &account.id(),
-                    UpdateAccount {
-                        password: Some(password),
-                        ..Default::default()
-                    },
-                )
-                .await?;
+            drop(
+                ctx.database
+                    .update_account(
+                        &account.id(),
+                        UpdateAccount {
+                            password: Some(password),
+                            ..Default::default()
+                        },
+                    )
+                    .await?,
+            );
         } else {
-            let _ = ctx
-                .database
-                .create_account(CreateAccount {
-                    user_id: user.id().to_string(),
-                    account_id: user.id().to_string(),
-                    provider_id: "credential".to_string(),
-                    access_token: None,
-                    refresh_token: None,
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: None,
-                    password: Some(password),
-                })
-                .await?;
+            drop(
+                ctx.database
+                    .create_account(CreateAccount {
+                        user_id: user.id().to_string(),
+                        account_id: user.id().to_string(),
+                        provider_id: "credential".to_owned(),
+                        access_token: None,
+                        refresh_token: None,
+                        id_token: None,
+                        access_token_expires_at: None,
+                        refresh_token_expires_at: None,
+                        scope: None,
+                        password: Some(password),
+                    })
+                    .await?,
+            );
         }
         if let Some(hook) = &settings.on_reset {
             hook(serde_json::to_value(&user)?).await?;
         }
         if !user.email_verified() {
-            let _ = ctx
-                .database
-                .update_user(
-                    &user.id(),
-                    UpdateUser {
-                        email_verified: Some(true),
-                        ..Default::default()
-                    },
-                )
-                .await?;
+            drop(
+                ctx.database
+                    .update_user(
+                        &user.id(),
+                        UpdateUser {
+                            email_verified: Some(true),
+                            ..Default::default()
+                        },
+                    )
+                    .await?,
+            );
         }
         if settings.revoke_sessions {
             ctx.database.delete_user_sessions(&user.id()).await?;
@@ -600,6 +609,31 @@ async fn require_authoritative_session<S: AuthSchema>(
             code: "UNAUTHORIZED",
             message: "Unauthorized",
         },
-        error => error,
+        error @ (AuthError::Api { .. }
+        | AuthError::Upstream { .. }
+        | AuthError::BadRequest(_)
+        | AuthError::InvalidRequest(_)
+        | AuthError::Validation(_)
+        | AuthError::InvalidCredentials
+        | AuthError::AuthenticationFailed(_)
+        | AuthError::Forbidden(_)
+        | AuthError::SessionCreationCancelled
+        | AuthError::BannedUser(_)
+        | AuthError::Unauthorized
+        | AuthError::UserNotFound
+        | AuthError::NotFound(_)
+        | AuthError::Conflict(_)
+        | AuthError::MethodNotAllowed(_)
+        | AuthError::PayloadTooLarge(_)
+        | AuthError::UnprocessableEntity(_)
+        | AuthError::RateLimited
+        | AuthError::NotImplemented(_)
+        | AuthError::Config(_)
+        | AuthError::Database(_)
+        | AuthError::Serialization(_)
+        | AuthError::Plugin { .. }
+        | AuthError::Internal(_)
+        | AuthError::PasswordHash(_)
+        | AuthError::Jwt(_)) => error,
     })
 }

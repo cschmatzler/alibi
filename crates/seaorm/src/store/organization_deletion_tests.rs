@@ -55,11 +55,16 @@ async fn physical(
             .query_one_raw(Statement::from_string(DatabaseBackend::Sqlite, query))
             .await?
             .ok_or_else(|| sea_orm::DbErr::Custom("snapshot missing".into()))?;
-        let _ = values.insert(table.to_owned(), row.try_get("", "snapshot")?);
+        drop(values.insert(table.to_owned(), row.try_get("", "snapshot")?));
     }
     Ok(values)
 }
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn public_organization_delete_retains_extensions_and_rolls_back_all_scoped_writes()
 -> Result<(), Box<dyn std::error::Error>> {
     let database = Database::connect("sqlite::memory:").await?;
@@ -99,73 +104,148 @@ async fn public_organization_delete_retains_extensions_and_rolls_back_all_scoped
                 updated_at: None,
             })
             .await?;
-        let _ = store.add_team_member(&team.id, &user.id, None).await?;
-        let _ = store
-            .create_organization_role(CreateOrganizationRole {
-                organization_id: org.id.clone(),
-                role: "retained".into(),
-                permission: Default::default(),
-            })
-            .await?;
-        let _ = store
-            .create_api_key(CreateApiKey {
-                reference_id: org.id.clone(),
-                config_id: "organization".into(),
-                name: Some(slug.into()),
-                prefix: None,
-                key_hash: format!("{slug}-local-key-hash"),
-                start: None,
-                expires_at: None,
-                remaining: None,
-                rate_limit_enabled: false,
-                rate_limit_time_window: None,
-                rate_limit_max: None,
-                refill_interval: None,
-                refill_amount: None,
-                permissions: None,
-                metadata: None,
-                enabled: true,
-            })
-            .await?;
+        drop(store.add_team_member(&team.id, &user.id, None).await?);
+        drop(
+            store
+                .create_organization_role(CreateOrganizationRole {
+                    organization_id: org.id.clone(),
+                    role: "retained".into(),
+                    permission: better_auth_core::OrganizationPermissions::default(),
+                })
+                .await?,
+        );
+        drop(
+            store
+                .create_api_key(CreateApiKey {
+                    reference_id: org.id.clone(),
+                    config_id: "organization".into(),
+                    name: Some(slug.into()),
+                    prefix: None,
+                    key_hash: format!("{slug}-local-key-hash"),
+                    start: None,
+                    expires_at: None,
+                    remaining: None,
+                    rate_limit_enabled: false,
+                    rate_limit_time_window: None,
+                    rate_limit_max: None,
+                    refill_interval: None,
+                    refill_amount: None,
+                    permissions: None,
+                    metadata: None,
+                    enabled: true,
+                })
+                .await?,
+        );
         records.push((org, member, invitation));
     }
     let before = physical(&database).await?;
-    let _ = database.execute_unprepared("CREATE TRIGGER app_refuse_organization_delete BEFORE DELETE ON organization WHEN OLD.slug='target' BEGIN SELECT RAISE(ABORT,'application deletion denied'); END").await?;
-    assert!(store.delete_organization(&records[0].0.id).await.is_err());
+    let _ignored_execute_unprepared = database.execute_unprepared("CREATE TRIGGER app_refuse_organization_delete BEFORE DELETE ON organization WHEN OLD.slug='target' BEGIN SELECT RAISE(ABORT,'application deletion denied'); END").await?;
+    assert!(
+        store
+            .delete_organization(
+                &(records)
+                    .first()
+                    .expect("fixture contains the requested index")
+                    .0
+                    .id
+            )
+            .await
+            .is_err()
+    );
     assert_eq!(
         physical(&database).await?,
         before,
         "a failed final organization write must roll back members/invitations and retain every key/extension row"
     );
-    let _ = database
+    let _ignored_execute_unprepared_2 = database
         .execute_unprepared("DROP TRIGGER app_refuse_organization_delete")
         .await?;
-    store.delete_organization(&records[0].0.id).await?;
+    store
+        .delete_organization(
+            &(records)
+                .first()
+                .expect("fixture contains the requested index")
+                .0
+                .id,
+        )
+        .await?;
     assert!(
         store
-            .get_organization_by_id(&records[0].0.id)
+            .get_organization_by_id(
+                &(records)
+                    .first()
+                    .expect("fixture contains the requested index")
+                    .0
+                    .id
+            )
             .await?
             .is_none()
     );
-    assert!(store.get_member_by_id(&records[0].1.id).await?.is_none());
     assert!(
         store
-            .get_invitation_by_id(&records[0].2.id)
+            .get_member_by_id(
+                &(records)
+                    .first()
+                    .expect("fixture contains the requested index")
+                    .1
+                    .id
+            )
+            .await?
+            .is_none()
+    );
+    assert!(
+        store
+            .get_invitation_by_id(
+                &(records)
+                    .first()
+                    .expect("fixture contains the requested index")
+                    .2
+                    .id
+            )
             .await?
             .is_none()
     );
     assert_eq!(
         store
-            .get_organization_by_id(&records[1].0.id)
+            .get_organization_by_id(
+                &(records)
+                    .get(1)
+                    .expect("fixture contains the requested index")
+                    .0
+                    .id
+            )
             .await?
             .as_ref()
             .map(|org| &org.slug),
-        Some(&records[1].0.slug)
+        Some(
+            &(records)
+                .get(1)
+                .expect("fixture contains the requested index")
+                .0
+                .slug
+        )
     );
-    assert!(store.get_member_by_id(&records[1].1.id).await?.is_some());
     assert!(
         store
-            .get_invitation_by_id(&records[1].2.id)
+            .get_member_by_id(
+                &(records)
+                    .get(1)
+                    .expect("fixture contains the requested index")
+                    .1
+                    .id
+            )
+            .await?
+            .is_some()
+    );
+    assert!(
+        store
+            .get_invitation_by_id(
+                &(records)
+                    .get(1)
+                    .expect("fixture contains the requested index")
+                    .2
+                    .id
+            )
             .await?
             .is_some()
     );
@@ -178,7 +258,12 @@ async fn public_organization_delete_retains_extensions_and_rolls_back_all_scoped
         "api_keys",
     ] {
         assert_eq!(
-            after[table], before[table],
+            (*(after)
+                .get(table)
+                .expect("fixture contains the requested index")),
+            (*(before)
+                .get(table)
+                .expect("fixture contains the requested index")),
             "retained {table} rows must preserve all physical fields"
         );
     }

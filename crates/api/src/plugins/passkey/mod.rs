@@ -1,31 +1,47 @@
+mod authentication;
+
+pub(super) mod handlers;
+
+mod raw_none;
+
+mod registration;
+
+pub(super) mod types;
+
+pub(super) mod webauthn;
+
+#[cfg(test)]
+mod tests;
+
 use better_auth_core::{AuthContext, AuthError, AuthResult};
+
 use better_auth_core::{AuthRequest, AuthResponse};
 
 use better_auth_core::utils::cookie_utils::create_session_cookie;
 
-mod authentication;
 pub use authentication::{
     AuthenticationResult, PasskeyAuthenticationAfterVerification, PasskeyAuthenticationConfig,
     PasskeyAuthenticationContext, VerifiedPasskeyAuthentication,
 };
-pub(super) mod handlers;
-mod raw_none;
-mod registration;
-pub(super) mod types;
-pub(super) mod webauthn;
+
 pub use registration::{
     PasskeyRegistrationAfterVerification, PasskeyRegistrationConfig, PasskeyRegistrationContext,
     PasskeyRegistrationOverride, PasskeyRegistrationUser, PasskeyUserResolver,
     VerifiedPasskeyRegistration,
 };
 
-#[cfg(test)]
-mod tests;
+use handlers::{
+    PasskeyHandlerOutcome, delete_passkey_core, generate_authenticate_options_core,
+    generate_register_options_core, list_user_passkeys_core, update_passkey_core,
+    verify_authentication_core, verify_registration_core,
+};
 
-use handlers::*;
-use types::*;
+use types::{
+    DeletePasskeyRequest, UpdatePasskeyRequest, VerifyAuthenticationRequest,
+    VerifyRegistrationRequest,
+};
 
-/// Passkey / WebAuthn authentication plugin.
+/// Passkey / `WebAuthn` authentication plugin.
 ///
 /// Generates WebAuthn-compatible registration and authentication options,
 /// stores challenge state via the auth store, and manages passkey CRUD.
@@ -38,7 +54,7 @@ pub struct PasskeyPlugin {
 pub struct PasskeyConfig {
     #[config(default = String::new())]
     pub rp_id: String,
-    #[config(default = "Better Auth".to_string())]
+    #[config(default = "Better Auth".to_owned())]
     pub rp_name: String,
     #[config(default = String::new())]
     pub origin: String,
@@ -102,8 +118,8 @@ impl PasskeyPlugin {
                 Err(_) => return Ok(AuthResponse::new(500)),
             }
         };
-        let passkey_name = req.query.get("name").map(|s| s.as_str());
-        let authenticator_attachment = req.query.get("authenticatorAttachment").map(|s| s.as_str());
+        let passkey_name = req.query.get("name").map(String::as_str);
+        let authenticator_attachment = req.query.get("authenticatorAttachment").map(String::as_str);
         let (result, cookie_header) = generate_register_options_core(
             &user,
             req.query.get("context").map(String::as_str),
@@ -138,7 +154,7 @@ impl PasskeyPlugin {
             PasskeyHandlerOutcome::Success(result) => {
                 let token = result
                     .get("session")
-                    .and_then(|session| session.get("token"))
+                    .and_then(|session_2| session_2.get("token"))
                     .and_then(serde_json::Value::as_str);
                 let response = AuthResponse::json(200, &result)?;
                 if let Some(token) = token {
@@ -304,5 +320,11 @@ better_auth_core::impl_auth_plugin! {
         get  "/passkey/list-user-passkeys"             => handle_list_user_passkeys,             "passkey_list_user_passkeys";
         post "/passkey/delete-passkey"                 => handle_delete_passkey,                 "passkey_delete_passkey";
         post "/passkey/update-passkey"                 => handle_update_passkey,                 "passkey_update_passkey";
+    }
+}
+
+impl std::fmt::Debug for PasskeyPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PasskeyPlugin").finish_non_exhaustive()
     }
 }

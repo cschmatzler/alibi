@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use better_auth_core::{AuthResult, wire::UserView};
 
 /// Optional asynchronous overrides for the fixed creation settings.
+///
 /// `None` uses the corresponding fixed configuration. A limit override returns
 /// `Some(true)` when the user has reached the limit, rather than when creation is allowed.
 #[async_trait]

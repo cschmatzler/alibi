@@ -1,12 +1,21 @@
 use base64::Engine;
+
 use better_auth_core::entity::{AuthPasskey, AuthSession, AuthUser, AuthVerification};
+
 use better_auth_core::types::UpdatePasskeyAuthentication;
+
 use better_auth_core::wire::PasskeyView;
+
 use better_auth_core::{AuthContext, AuthError, AuthResult, CreatePasskey, CreateVerification};
+
 use chrono::{Duration, Utc};
+
 use serde_json::{Value, json};
+
 use uuid::Uuid;
+
 use webauthn_rs::prelude::{DiscoverableKey, PublicKeyCredential, RegisterPublicKeyCredential};
+
 use webauthn_rs_core::{
     error::WebauthnError,
     proto::{
@@ -16,12 +25,14 @@ use webauthn_rs_core::{
 };
 
 use crate::plugins::StatusResponse;
+
 use crate::plugins::helpers::{SessionIssueError, issue_user_session};
 
 use super::types::{
     DeletePasskeyRequest, PasskeyResponse, SessionResponse, UpdatePasskeyRequest,
     VerifyAuthenticationRequest, VerifyRegistrationRequest,
 };
+
 use super::webauthn::{
     StoredAuthenticationState, StoredCoreRegistrationState, StoredRegistrationState,
     StoredRegistrationVerifier, authentication_options_json, build_verification_core,
@@ -31,7 +42,15 @@ use super::webauthn::{
     generate_ts_user_handle, get_cookie_value, parse_stored_passkey, parse_transports_csv,
     registration_options_json, resolve_origin, snapshot_passkey, transports_to_csv,
 };
+
 use super::{PasskeyConfig, PasskeyRegistrationUser};
+
+pub(super) type PasskeyHandlerResult<T> = AuthResult<PasskeyHandlerOutcome<T>>;
+
+pub(super) enum PasskeyHandlerOutcome<T> {
+    Success(T),
+    Response(better_auth_core::AuthResponse),
+}
 
 fn response_message<T>(status: u16, message: &str) -> PasskeyHandlerResult<T> {
     Ok(PasskeyHandlerOutcome::Response(
@@ -59,13 +78,6 @@ fn response_null<T>(status: u16) -> PasskeyHandlerResult<T> {
     Ok(PasskeyHandlerOutcome::Response(
         better_auth_core::AuthResponse::json(status, &Value::Null).map_err(AuthError::from)?,
     ))
-}
-
-pub(super) type PasskeyHandlerResult<T> = AuthResult<PasskeyHandlerOutcome<T>>;
-
-pub(super) enum PasskeyHandlerOutcome<T> {
-    Success(T),
-    Response(better_auth_core::AuthResponse),
 }
 
 fn generation_origin(
@@ -116,10 +128,10 @@ pub(super) async fn generate_register_options_core(
                 "id": passkey.credential_id(),
                 "type": "public-key",
             });
-            if let Some(transports) = parse_transports_csv(passkey.transports())
+            if let Some(transports) = passkey.transports().map(parse_transports_csv)
                 && let Some(object) = descriptor.as_object_mut()
             {
-                let _ = object.insert("transports".to_string(), json!(transports));
+                drop(object.insert("transports".to_owned(), json!(transports)));
             }
             descriptor
         })
@@ -175,14 +187,15 @@ pub(super) async fn generate_register_options_core(
             state,
         }),
     })?;
-    let _ = ctx
-        .database
-        .create_verification(CreateVerification {
-            identifier: token.clone(),
-            value: serialized_state,
-            expires_at,
-        })
-        .await?;
+    drop(
+        ctx.database
+            .create_verification(CreateVerification {
+                identifier: token.clone(),
+                value: serialized_state,
+                expires_at,
+            })
+            .await?,
+    );
 
     let cookie = create_challenge_cookie(&ctx.config, config.challenge_ttl_secs, &token)?;
     let mut response = registration_options_json(
@@ -191,10 +204,10 @@ pub(super) async fn generate_register_options_core(
         authenticator_attachment,
     )?;
     if let Some(object) = response.as_object_mut() {
-        let _ = object.insert(
-            "excludeCredentials".to_string(),
+        drop(object.insert(
+            "excludeCredentials".to_owned(),
             Value::Array(exclude_credentials_json),
-        );
+        ));
     }
     Ok((response, cookie))
 }
@@ -218,10 +231,10 @@ pub(super) async fn generate_authenticate_options_core<U: AuthUser>(
                 "id": passkey.credential_id(),
                 "type": "public-key",
             });
-            if let Some(transports) = parse_transports_csv(passkey.transports())
+            if let Some(transports) = passkey.transports().map(parse_transports_csv)
                 && let Some(object) = descriptor.as_object_mut()
             {
-                let _ = object.insert("transports".to_string(), json!(transports));
+                drop(object.insert("transports".to_owned(), json!(transports)));
             }
             descriptor
         })
@@ -230,10 +243,7 @@ pub(super) async fn generate_authenticate_options_core<U: AuthUser>(
     // Source's allowCredentials is a browser hint; verification selects the real
     // current stored credential by its ID and authenticates that credential owner.
     let builder = core
-        .new_challenge_authenticate_builder(
-            Vec::new(),
-            Some(webauthn_rs_core::proto::UserVerificationPolicy::Preferred),
-        )
+        .new_challenge_authenticate_builder(Vec::new(), Some(UserVerificationPolicy::Preferred))
         .map_err(|error| {
             AuthError::internal(format!("Failed to generate authenticate options: {error}"))
         })?
@@ -247,30 +257,35 @@ pub(super) async fn generate_authenticate_options_core<U: AuthUser>(
 
     let token = Uuid::new_v4().to_string();
     let expires_at = Utc::now() + Duration::seconds(config.challenge_ttl_secs);
-    let _ = ctx
-        .database
-        .create_verification(CreateVerification {
-            identifier: token.clone(),
-            value: serde_json::to_string(&state)?,
-            expires_at,
-        })
-        .await?;
+    drop(
+        ctx.database
+            .create_verification(CreateVerification {
+                identifier: token.clone(),
+                value: serde_json::to_string(&state)?,
+                expires_at,
+            })
+            .await?,
+    );
 
     let cookie = create_challenge_cookie(&ctx.config, config.challenge_ttl_secs, &token)?;
     let mut response = authentication_options_json(options)?;
     if let Some(object) = response.as_object_mut() {
         if allow_credentials_json.is_empty() {
-            let _ = object.remove("allowCredentials");
+            drop(object.remove("allowCredentials"));
         } else {
-            let _ = object.insert(
-                "allowCredentials".to_string(),
+            drop(object.insert(
+                "allowCredentials".to_owned(),
                 Value::Array(allow_credentials_json),
-            );
+            ));
         }
     }
     Ok((response, cookie))
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep challenge consumption, credential verification, and registration callbacks in protocol order"
+)]
 pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
     body: &VerifyRegistrationRequest,
     req: &better_auth_core::AuthRequest,
@@ -278,6 +293,8 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
     config: &PasskeyConfig,
     ctx: &AuthContext<S>,
 ) -> PasskeyHandlerResult<Value> {
+    use super::registration::{PasskeyRegistrationContext, VerifiedPasskeyRegistration, trim_name};
+
     let Some(origin) = resolve_origin(config, req) else {
         return response_null(400);
     };
@@ -285,9 +302,8 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
     let Some(cookie_value) = get_cookie_value(req, &challenge_cookie_name(&ctx.config)) else {
         return challenge_not_found();
     };
-    let token = match decode_challenge_cookie(&ctx.config, &cookie_value) {
-        Ok(token) => token,
-        Err(_) => return challenge_not_found(),
+    let Ok(token) = decode_challenge_cookie(&ctx.config, &cookie_value) else {
+        return challenge_not_found();
     };
 
     let Some(verification) = ctx
@@ -342,12 +358,12 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
                 Err(_) => return passkey_registration_failure(),
             }
         }
-        _ => None,
+        StoredRegistrationVerifier::Source(_) | StoredRegistrationVerifier::Legacy(_) => None,
     };
     let (snapshot, metadata, credential_id) = if let Some(raw) = raw_registration {
         let metadata = super::webauthn::RegisteredPasskeyMetadata {
             public_key: base64::engine::general_purpose::STANDARD.encode(raw.public_key()),
-            aaguid: Some(uuid::Uuid::from_bytes(raw.aaguid()).to_string()),
+            aaguid: Some(Uuid::from_bytes(raw.aaguid()).to_string()),
         };
         (
             raw.snapshot()?,
@@ -357,9 +373,8 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
     } else {
         let verified_passkey = match &stored_state.state {
             StoredRegistrationVerifier::Legacy(state) => {
-                let webauthn = match build_webauthn(config, &ctx.config, &origin) {
-                    Ok(webauthn) => webauthn,
-                    Err(_) => return passkey_registration_failure(),
+                let Ok(webauthn) = build_webauthn(config, &ctx.config, &origin) else {
+                    return passkey_registration_failure();
                 };
                 match webauthn.finish_passkey_registration(&registration, state) {
                     Ok(passkey) => passkey,
@@ -370,9 +385,8 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
                 StoredCoreRegistrationState::Core { state }
                 | StoredCoreRegistrationState::CoreRawNone { state, .. },
             ) => {
-                let core = match build_verification_core(config, &ctx.config, &origin) {
-                    Ok(core) => core,
-                    Err(_) => return passkey_registration_failure(),
+                let Ok(core) = build_verification_core(config, &ctx.config, &origin) else {
+                    return passkey_registration_failure();
                 };
                 match finish_core_registration(&core, &registration, state, &origin) {
                     Ok(passkey) => passkey,
@@ -389,13 +403,11 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
                 }
             }
         };
-        let snapshot = match snapshot_passkey(&verified_passkey) {
-            Ok(snapshot) => snapshot,
-            Err(_) => return passkey_registration_failure(),
+        let Ok(snapshot) = snapshot_passkey(&verified_passkey) else {
+            return passkey_registration_failure();
         };
-        let metadata = match extract_registration_metadata(&registration) {
-            Ok(metadata) => metadata,
-            Err(_) => return passkey_registration_failure(),
+        let Ok(metadata) = extract_registration_metadata(&registration) else {
+            return passkey_registration_failure();
         };
         let credential_id = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .encode(verified_passkey.cred_id().as_ref());
@@ -409,7 +421,6 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
             .collect::<Vec<_>>()
     });
 
-    use super::registration::{PasskeyRegistrationContext, VerifiedPasskeyRegistration, trim_name};
     let verified = VerifiedPasskeyRegistration {
         credential_id: credential_id.clone(),
         public_key: base64::engine::general_purpose::STANDARD
@@ -440,7 +451,7 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
         counter: snapshot.counter,
         device_type: snapshot.device_type().to_owned(),
         backed_up: snapshot.backed_up,
-        transports: transports_to_csv(&transports),
+        transports: transports_to_csv(transports.as_deref()),
         credential: snapshot.serialized,
         aaguid: metadata.aaguid,
     };
@@ -449,9 +460,9 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
     let stored_context = stored_state.context;
     let authenticated_owner = authenticated_owner.map(str::to_owned);
     let request = req.clone();
-    let auth_config = ctx.config.clone();
+    let auth_config = std::sync::Arc::clone(&ctx.config);
     let extensions = ctx.extensions.clone();
-    let apply_policy = move |mut input: CreatePasskey| async move {
+    let apply_policy = move |mut input_2: CreatePasskey| async move {
         if let Some(callback) = callback {
             let callback_context = PasskeyRegistrationContext {
                 request: &request,
@@ -479,10 +490,10 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
                             message: "You are not allowed to register this passkey",
                         });
                     }
-                    input.user_id = user_id;
+                    input_2.user_id = user_id;
                 }
-                if input.name.is_none() {
-                    input.name = result
+                if input_2.name.is_none() {
+                    input_2.name = result
                         .name
                         .as_deref()
                         .map(trim_name)
@@ -491,14 +502,14 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
                 }
             }
         }
-        if input.user_id.is_empty() {
+        if input_2.user_id.is_empty() {
             return Err(AuthError::Upstream {
                 status: 400,
                 code: "RESOLVED_USER_INVALID",
                 message: "Resolved user is invalid",
             });
         }
-        Ok(input)
+        Ok(input_2)
     };
     let outcome: AuthResult<Value> = if body.create_session.as_bool() == Some(true) {
         let meta = better_auth_core::RequestMeta::from_request(req);
@@ -519,7 +530,8 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
                     let passkey = transaction.create_passkey(input).await?;
                     let session = transaction
                         .create_session(better_auth_core::CreateSession {
-                            additional_fields: Default::default(),
+                            additional_fields: better_auth_core::field_policy::FieldValues::default(
+                            ),
                             token: None,
                             user_id,
                             expires_at,
@@ -536,10 +548,37 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
                                 code: "UNABLE_TO_CREATE_SESSION",
                                 message: "Unable to create session",
                             },
-                            other => other,
+                            other @ (AuthError::Api { .. }
+                            | AuthError::Upstream { .. }
+                            | AuthError::BadRequest(_)
+                            | AuthError::InvalidRequest(_)
+                            | AuthError::Validation(_)
+                            | AuthError::InvalidCredentials
+                            | AuthError::Unauthenticated
+                            | AuthError::AuthenticationFailed(_)
+                            | AuthError::SessionNotFound
+                            | AuthError::Forbidden(_)
+                            | AuthError::BannedUser(_)
+                            | AuthError::Unauthorized
+                            | AuthError::UserNotFound
+                            | AuthError::NotFound(_)
+                            | AuthError::Conflict(_)
+                            | AuthError::MethodNotAllowed(_)
+                            | AuthError::PayloadTooLarge(_)
+                            | AuthError::UnprocessableEntity(_)
+                            | AuthError::RateLimited
+                            | AuthError::NotImplemented(_)
+                            | AuthError::Config(_)
+                            | AuthError::Database(_)
+                            | AuthError::Serialization(_)
+                            | AuthError::Plugin { .. }
+                            | AuthError::Internal(_)
+                            | AuthError::PasswordHash(_)
+                            | AuthError::Jwt(_)) => other,
                         })?;
-                    Ok(Box::new((passkey, user, session))
-                        as better_auth_core::store::BoxedTransactionValue)
+                    Ok::<better_auth_core::store::BoxedTransactionValue, AuthError>(Box::new((
+                        passkey, user, session,
+                    )))
                 })
             }))
             .await;
@@ -547,17 +586,16 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
             Ok(value) => {
                 let (passkey, user, session) = *value
                     .downcast::<(better_auth_core::Passkey, S::User, S::Session)>()
-                    .map_err(|_| {
+                    .map_err(|_error| {
                         AuthError::internal("invalid passkey registration transaction result")
                     })?;
                 let mut result = serde_json::to_value(PasskeyView::from(&passkey))?;
                 if let Some(object) = result.as_object_mut() {
-                    let _ =
-                        object.insert("user".into(), serde_json::to_value(ctx.user_view(&user))?);
-                    let _ = object.insert(
+                    drop(object.insert("user".into(), serde_json::to_value(ctx.user_view(&user))?));
+                    drop(object.insert(
                         "session".into(),
                         serde_json::to_value(ctx.session_view(&session))?,
-                    );
+                    ));
                 }
                 Ok(result)
             }
@@ -582,6 +620,10 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep credential verification, counter updates, and session callbacks in protocol order"
+)]
 pub(super) async fn verify_authentication_core(
     body: &VerifyAuthenticationRequest,
     req: &better_auth_core::AuthRequest,
@@ -597,9 +639,8 @@ pub(super) async fn verify_authentication_core(
     let Some(cookie_value) = get_cookie_value(req, &challenge_cookie_name(&ctx.config)) else {
         return challenge_not_found();
     };
-    let token = match decode_challenge_cookie(&ctx.config, &cookie_value) {
-        Ok(token) => token,
-        Err(_) => return challenge_not_found(),
+    let Ok(token) = decode_challenge_cookie(&ctx.config, &cookie_value) else {
+        return challenge_not_found();
     };
 
     let Some(verification) = ctx
@@ -622,10 +663,7 @@ pub(super) async fn verify_authentication_core(
             Ok(authentication) => authentication,
             Err(_) => return passkey_authentication_failure(),
         };
-    let credential_id = match credential_id_from_authentication(&authentication) {
-        Ok(credential_id) => credential_id,
-        Err(_) => return passkey_authentication_failure(),
-    };
+    let credential_id = credential_id_from_authentication(&authentication);
 
     let Some(passkey) = ctx
         .database
@@ -635,29 +673,25 @@ pub(super) async fn verify_authentication_core(
         return passkey_not_found();
     };
 
-    let mut stored_passkey = match parse_stored_passkey(passkey.credential()) {
-        Ok(passkey) => passkey,
-        Err(_) => return passkey_authentication_failure(),
+    let Ok(mut stored_passkey) = parse_stored_passkey(passkey.credential()) else {
+        return passkey_authentication_failure();
     };
-    let webauthn = match build_webauthn(config, &ctx.config, &origin) {
-        Ok(webauthn) => webauthn,
-        Err(_) => return passkey_authentication_failure(),
+    let Ok(webauthn) = build_webauthn(config, &ctx.config, &origin) else {
+        return passkey_authentication_failure();
     };
 
     let authentication_result = match stored_state {
         StoredAuthenticationState::Core { state } => {
-            let counter = match u32::try_from(passkey.counter()) {
-                Ok(counter) => counter,
-                Err(_) => return passkey_authentication_failure(),
+            let Ok(counter) = u32::try_from(passkey.counter()) else {
+                return passkey_authentication_failure();
             };
             // Public saved counter is authoritative, even if application code
             // changed it independently of the opaque verifier credential.
             let mut current = webauthn_rs_core::proto::Credential::from(stored_passkey.clone());
             current.counter = counter;
             stored_passkey = current.into();
-            let core = match build_verification_core(config, &ctx.config, &origin) {
-                Ok(core) => core,
-                Err(_) => return passkey_authentication_failure(),
+            let Ok(core) = build_verification_core(config, &ctx.config, &origin) else {
+                return passkey_authentication_failure();
             };
             finish_core_authentication(
                 &core,
@@ -678,7 +712,7 @@ pub(super) async fn verify_authentication_core(
     };
     let authentication_result = match authentication_result {
         Ok(result) => result,
-        Err(webauthn_rs::prelude::WebauthnError::AuthenticationFailure) => {
+        Err(WebauthnError::AuthenticationFailure) => {
             return response_code(401, "AUTHENTICATION_FAILED", "Authentication failed");
         }
         Err(_) => return passkey_authentication_failure(),
@@ -714,7 +748,7 @@ pub(super) async fn verify_authentication_core(
         match ctx.database.get_passkey_by_id(passkey.id().as_ref()).await {
             Ok(Some(current)) => {
                 public_backed_up = current.backed_up();
-                public_device_type = current.device_type().to_owned();
+                current.device_type().clone_into(&mut public_device_type);
             }
             Ok(None) => {}
             Err(_) => return passkey_authentication_failure(),
@@ -728,9 +762,8 @@ pub(super) async fn verify_authentication_core(
         return passkey_authentication_failure();
     }
 
-    let snapshot = match snapshot_passkey(&stored_passkey) {
-        Ok(snapshot) => snapshot,
-        Err(_) => return passkey_authentication_failure(),
+    let Ok(snapshot) = snapshot_passkey(&stored_passkey) else {
+        return passkey_authentication_failure();
     };
     match ctx
         .database
@@ -769,7 +802,7 @@ pub(super) async fn verify_authentication_core(
             session: ctx.session_view(&session),
             user: ctx.user_view(&user),
         })?,
-        session.token().to_string(),
+        session.token().to_owned(),
     )))
 }
 

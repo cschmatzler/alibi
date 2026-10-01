@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
+
 use validator::Validate;
 
 use better_auth_core::entity::{AuthAccount, AuthUser};
+
 use better_auth_core::{AuthContext, AuthError, AuthResult};
+
 use better_auth_core::{AuthRequest, AuthResponse};
 
 use super::StatusResponse;
@@ -59,7 +62,7 @@ better_auth_core::impl_auth_plugin! {
 // Core functions — framework-agnostic business logic
 // ---------------------------------------------------------------------------
 
-pub(crate) async fn list_accounts_core(
+pub(in crate::plugins) async fn list_accounts_core(
     user: &impl AuthUser,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<Vec<AccountResponse>> {
@@ -92,7 +95,7 @@ pub(crate) async fn list_accounts_core(
     Ok(filtered)
 }
 
-pub(crate) async fn unlink_account_core(
+pub(in crate::plugins) async fn unlink_account_core(
     user: &impl AuthUser,
     account_id: &str,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -139,5 +142,12 @@ impl AccountManagementPlugin {
 
         let response = unlink_account_core(&user, &unlink_req.account_id, ctx).await?;
         Ok(AuthResponse::json(200, &response)?)
+    }
+}
+
+impl std::fmt::Debug for AccountManagementPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AccountManagementPlugin")
+            .finish_non_exhaustive()
     }
 }

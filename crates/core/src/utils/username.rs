@@ -10,10 +10,15 @@ pub enum UsernameValidationError {
     Invalid,
 }
 
+#[must_use]
 pub fn normalize_username(username: &str) -> String {
     username.to_lowercase()
 }
 
+///
+/// # Errors
+///
+/// Returns an error if the username fails the configured length or character validation.
 pub fn validate_username(username: &str) -> Result<(), UsernameValidationError> {
     if username.len() < USERNAME_MIN_LENGTH {
         return Err(UsernameValidationError::TooShort);
@@ -33,16 +38,17 @@ pub fn validate_username(username: &str) -> Result<(), UsernameValidationError> 
     }
 }
 
+#[must_use]
 pub fn normalize_username_fields(
     mut username: Option<String>,
     mut display_username: Option<String>,
 ) -> (Option<String>, Option<String>) {
     if username.is_some() && display_username.is_none() {
-        display_username = username.clone();
+        display_username.clone_from(&username);
     }
 
     if display_username.is_some() && username.is_none() {
-        username = display_username.clone();
+        username.clone_from(&display_username);
     }
 
     if let Some(username_value) = username.as_mut() {

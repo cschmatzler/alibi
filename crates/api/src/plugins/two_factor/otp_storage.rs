@@ -28,8 +28,8 @@ pub enum TwoFactorOtpStorage {
 }
 
 impl std::fmt::Debug for TwoFactorOtpStorage {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(match self {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
             Self::Plain => "Plain",
             Self::Hashed => "Hashed",
             Self::Encrypted => "Encrypted",

@@ -1,15 +1,25 @@
 use std::time::Duration;
 
 use base64::Engine;
+
 use base64::engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD};
+
 use better_auth_core::{AuthConfig, AuthError, AuthRequest, AuthResult};
+
 use chrono::Utc;
+
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+
 use rand::seq::SliceRandom;
+
 use serde::{Deserialize, Serialize};
+
 use serde_json::{Value, json};
+
 use url::Url;
+
 use uuid::Uuid;
+
 use webauthn_rs::prelude::{
     Base64UrlSafeData, CreationChallengeResponse, CredentialID, DiscoverableAuthentication,
     Passkey as WebauthnPasskey, PublicKeyCredential, RegisterPublicKeyCredential,
@@ -17,6 +27,7 @@ use webauthn_rs::prelude::{
 };
 
 use super::PasskeyConfig;
+
 use webauthn_rs_core::{
     WebauthnCore,
     error::WebauthnError,
@@ -28,8 +39,11 @@ use webauthn_rs_core::{
 };
 
 pub(super) const PASSKEY_CHALLENGE_COOKIE_NAME: &str = "better-auth-passkey";
+
 const OPTIONS_TIMEOUT_MS: u64 = 60_000;
+
 const GENERATED_USER_ID_LENGTH: usize = 32;
+
 const GENERATED_USER_ID_ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 
 #[derive(Debug)]
@@ -47,7 +61,7 @@ pub(super) struct PasskeySnapshot {
 }
 
 impl PasskeySnapshot {
-    pub(super) fn device_type(&self) -> &'static str {
+    pub(super) const fn device_type(&self) -> &'static str {
         if self.backup_eligible {
             "multiDevice"
         } else {
@@ -57,7 +71,7 @@ impl PasskeySnapshot {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct StoredRegistrationState {
+pub(in crate::plugins) struct StoredRegistrationState {
     pub user_id: String,
     #[serde(default)]
     pub user: Option<super::PasskeyRegistrationUser>,
@@ -69,14 +83,14 @@ pub(crate) struct StoredRegistrationState {
 /// The legacy state shape stays readable for already-issued challenges.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum StoredRegistrationVerifier {
+pub(in crate::plugins) enum StoredRegistrationVerifier {
     Source(StoredCoreRegistrationState),
     Legacy(webauthn_rs::prelude::PasskeyRegistration),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-pub(crate) enum StoredCoreRegistrationState {
+pub(in crate::plugins) enum StoredCoreRegistrationState {
     Core {
         state: RegistrationState,
     },
@@ -88,7 +102,7 @@ pub(crate) enum StoredCoreRegistrationState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-pub(crate) enum StoredAuthenticationState {
+pub(in crate::plugins) enum StoredAuthenticationState {
     /// Source policy for newly issued ceremonies. Older variants remain readable.
     Core {
         state: AuthenticationState,
@@ -118,14 +132,11 @@ pub(super) fn resolve_origin(config: &PasskeyConfig, req: &AuthRequest) -> Optio
 
 pub(super) fn get_cookie_value(req: &AuthRequest, name: &str) -> Option<String> {
     let header = req.headers.get("cookie")?;
-    header
-        .split(';')
-        .filter_map(|cookie| {
-            let trimmed = cookie.trim();
-            let (cookie_name, cookie_value) = trimmed.split_once('=')?;
-            (cookie_name == name).then_some(cookie_value.to_string())
-        })
-        .next()
+    header.split(';').find_map(|cookie| {
+        let trimmed = cookie.trim();
+        let (cookie_name, cookie_value) = trimmed.split_once('=')?;
+        (cookie_name == name).then_some(cookie_value.to_owned())
+    })
 }
 
 pub(super) fn challenge_cookie_name(auth_config: &AuthConfig) -> String {
@@ -133,8 +144,10 @@ pub(super) fn challenge_cookie_name(auth_config: &AuthConfig) -> String {
         .session
         .cookie_name
         .strip_suffix("session_token")
-        .map(|prefix| format!("{prefix}{PASSKEY_CHALLENGE_COOKIE_NAME}"))
-        .unwrap_or_else(|| PASSKEY_CHALLENGE_COOKIE_NAME.to_string())
+        .map_or_else(
+            || PASSKEY_CHALLENGE_COOKIE_NAME.to_owned(),
+            |prefix| format!("{prefix}{PASSKEY_CHALLENGE_COOKIE_NAME}"),
+        )
 }
 
 pub(super) fn resolve_rp_id(
@@ -145,7 +158,7 @@ pub(super) fn resolve_rp_id(
         Url::parse(&auth_config.base_url)
             .ok()
             .and_then(|url| url.host_str().map(str::to_owned))
-            .ok_or_else(|| AuthError::config("Missing passkey RP ID".to_string()))
+            .ok_or_else(|| AuthError::config("Missing passkey RP ID".to_owned()))
     } else {
         Ok(config.rp_id.clone())
     }
@@ -159,7 +172,7 @@ pub(super) fn build_verification_core(
     origin: &str,
 ) -> AuthResult<WebauthnCore> {
     // Retain the high-level builder's RP/origin configuration validation.
-    let _ = build_webauthn(config, auth_config, origin)?;
+    drop(build_webauthn(config, auth_config, origin)?);
     let rp_id = resolve_rp_id(config, auth_config)?;
     let parsed_origin = Url::parse(origin)
         .map_err(|error| AuthError::bad_request(format!("Invalid passkey origin: {error}")))?;
@@ -182,7 +195,11 @@ pub(super) fn finish_core_registration(
     let client_data = better_auth_core::utils::json::from_slice::<
         better_auth_core::utils::json::JsValue,
     >(registration.response.client_data_json.as_ref())?;
-    if client_data.get("origin").and_then(|origin| origin.as_str()) != Some(origin) {
+    if client_data
+        .get("origin")
+        .and_then(|origin_2| origin_2.as_str())
+        != Some(origin)
+    {
         return Err(WebauthnError::InvalidRPOrigin);
     }
     // Source's packed self-attestation verifier accepts only Ed25519 OKP.
@@ -224,7 +241,11 @@ pub(super) fn finish_core_authentication(
     let client_data = better_auth_core::utils::json::from_slice::<
         better_auth_core::utils::json::JsValue,
     >(authentication.response.client_data_json.as_ref())?;
-    if client_data.get("origin").and_then(|origin| origin.as_str()) != Some(origin) {
+    if client_data
+        .get("origin")
+        .and_then(|origin_2| origin_2.as_str())
+        != Some(origin)
+    {
         return Err(WebauthnError::InvalidRPOrigin);
     }
     let data = AuthenticatorData::<Authentication>::try_from(
@@ -278,9 +299,13 @@ pub(super) fn create_challenge_cookie(
 ) -> AuthResult<String> {
     let now = Utc::now();
     let claims = ChallengeCookieClaims {
-        token: token.to_string(),
-        exp: (now + chrono::Duration::seconds(ttl_secs)).timestamp() as usize,
-        iat: now.timestamp() as usize,
+        token: token.to_owned(),
+        exp: usize::try_from((now + chrono::Duration::seconds(ttl_secs)).timestamp()).map_err(
+            |_error| AuthError::internal("JWT timestamp exceeds the supported integer range"),
+        )?,
+        iat: usize::try_from(now.timestamp()).map_err(|_error| {
+            AuthError::internal("JWT timestamp exceeds the supported integer range")
+        })?,
     };
     let signed = encode(
         &Header::default(),
@@ -314,10 +339,12 @@ pub(super) fn generate_ts_user_handle() -> String {
     let mut rng = rand::thread_rng();
     let handle: String = (0..GENERATED_USER_ID_LENGTH)
         .map(|_| {
-            GENERATED_USER_ID_ALPHABET
-                .choose(&mut rng)
-                .copied()
-                .unwrap_or(b'a') as char
+            char::from(
+                GENERATED_USER_ID_ALPHABET
+                    .choose(&mut rng)
+                    .copied()
+                    .unwrap_or(b'a'),
+            )
         })
         .collect();
     URL_SAFE_NO_PAD.encode(handle.as_bytes())
@@ -340,54 +367,54 @@ pub(super) fn registration_options_json(
             "Passkey registration options missing user object",
         ));
     };
-    let _ = user.insert(
-        "id".to_string(),
-        Value::String(generated_user_handle.to_string()),
-    );
+    drop(user.insert(
+        "id".to_owned(),
+        Value::String(generated_user_handle.to_owned()),
+    ));
 
     if !root.contains_key("excludeCredentials") {
-        let _ = root.insert("excludeCredentials".to_string(), Value::Array(Vec::new()));
+        drop(root.insert("excludeCredentials".to_owned(), Value::Array(Vec::new())));
     }
 
-    let _ = root.insert(
-        "pubKeyCredParams".to_string(),
+    drop(root.insert(
+        "pubKeyCredParams".to_owned(),
         json!([
             { "alg": -8, "type": "public-key" },
             { "alg": -7, "type": "public-key" },
             { "alg": -257, "type": "public-key" }
         ]),
-    );
+    ));
 
     let selection = root
-        .entry("authenticatorSelection".to_string())
+        .entry("authenticatorSelection".to_owned())
         .or_insert_with(|| json!({}));
     let Some(selection) = selection.as_object_mut() else {
         return Err(AuthError::internal(
             "Passkey registration options missing authenticatorSelection object",
         ));
     };
-    let _ = selection.insert(
-        "userVerification".to_string(),
-        Value::String("preferred".to_string()),
-    );
-    let _ = selection.insert(
-        "residentKey".to_string(),
-        Value::String("preferred".to_string()),
-    );
-    let _ = selection.insert("requireResidentKey".to_string(), Value::Bool(false));
+    drop(selection.insert(
+        "userVerification".to_owned(),
+        Value::String("preferred".to_owned()),
+    ));
+    drop(selection.insert(
+        "residentKey".to_owned(),
+        Value::String("preferred".to_owned()),
+    ));
+    drop(selection.insert("requireResidentKey".to_owned(), Value::Bool(false)));
     if let Some(authenticator_attachment) = authenticator_attachment {
-        let _ = selection.insert(
-            "authenticatorAttachment".to_string(),
-            Value::String(authenticator_attachment.to_string()),
-        );
+        drop(selection.insert(
+            "authenticatorAttachment".to_owned(),
+            Value::String(authenticator_attachment.to_owned()),
+        ));
     }
 
-    let _ = root.insert("hints".to_string(), Value::Array(Vec::new()));
-    let _ = root.insert("extensions".to_string(), json!({ "credProps": true }));
-    let _ = root.insert(
-        "timeout".to_string(),
+    drop(root.insert("hints".to_owned(), Value::Array(Vec::new())));
+    drop(root.insert("extensions".to_owned(), json!({ "credProps": true })));
+    drop(root.insert(
+        "timeout".to_owned(),
         Value::Number(OPTIONS_TIMEOUT_MS.into()),
-    );
+    ));
     Ok(value)
 }
 
@@ -402,21 +429,21 @@ pub(super) fn authentication_options_json(options: RequestChallengeResponse) -> 
     if root
         .get("allowCredentials")
         .and_then(Value::as_array)
-        .is_some_and(|credentials| credentials.is_empty())
+        .is_some_and(Vec::is_empty)
     {
-        let _ = root.remove("allowCredentials");
+        drop(root.remove("allowCredentials"));
     }
 
-    let _ = root.remove("extensions");
-    let _ = root.insert(
-        "timeout".to_string(),
+    drop(root.remove("extensions"));
+    drop(root.insert(
+        "timeout".to_owned(),
         Value::Number(OPTIONS_TIMEOUT_MS.into()),
-    );
-    let _ = root.insert(
-        "userVerification".to_string(),
-        Value::String("preferred".to_string()),
-    );
-    let _ = root.remove("hints");
+    ));
+    drop(root.insert(
+        "userVerification".to_owned(),
+        Value::String("preferred".to_owned()),
+    ));
+    drop(root.remove("hints"));
     Ok(value)
 }
 
@@ -425,7 +452,7 @@ pub(super) fn decode_credential_id(credential_id: &str) -> AuthResult<Credential
         .decode(credential_id)
         .or_else(|_| URL_SAFE.decode(credential_id))
         .or_else(|_| STANDARD.decode(credential_id))
-        .map_err(|_| AuthError::bad_request("Invalid passkey credential id"))?;
+        .map_err(|_error| AuthError::bad_request("Invalid passkey credential id"))?;
     Ok(bytes.into())
 }
 
@@ -496,10 +523,18 @@ pub(super) fn extract_registration_metadata(
         return Err(AuthError::internal("Attestation object must be a CBOR map"));
     };
     let auth_data = attestation_map
-        .get(&serde_cbor_2::Value::Text("authData".to_string()))
+        .get(&serde_cbor_2::Value::Text("authData".to_owned()))
         .and_then(|value| match value {
             serde_cbor_2::Value::Bytes(bytes) => Some(bytes.as_slice()),
-            _ => None,
+            serde_cbor_2::Value::Null
+            | serde_cbor_2::Value::Bool(_)
+            | serde_cbor_2::Value::Integer(_)
+            | serde_cbor_2::Value::Float(_)
+            | serde_cbor_2::Value::Text(_)
+            | serde_cbor_2::Value::Array(_)
+            | serde_cbor_2::Value::Map(_)
+            | serde_cbor_2::Value::Tag(..)
+            | serde_cbor_2::Value::__Hidden => None,
         })
         .ok_or_else(|| AuthError::internal("Attestation object missing authData"))?;
 
@@ -526,9 +561,11 @@ pub(super) fn extract_registration_metadata(
         .get(offset..)
         .ok_or_else(|| AuthError::internal("Attestation authData missing credential public key"))?;
     let mut deserializer = serde_cbor_2::de::Deserializer::from_slice(credential_public_key);
-    let _: serde_cbor_2::Value = Deserialize::deserialize(&mut deserializer).map_err(|error| {
-        AuthError::internal(format!("Invalid credential public key CBOR: {error}"))
-    })?;
+    drop(
+        serde_cbor_2::Value::deserialize(&mut deserializer).map_err(|error| {
+            AuthError::internal(format!("Invalid credential public key CBOR: {error}"))
+        })?,
+    );
     let public_key_length = deserializer.byte_offset();
     let public_key = credential_public_key
         .get(..public_key_length)
@@ -542,30 +579,25 @@ pub(super) fn extract_registration_metadata(
     })
 }
 
-pub(super) fn transports_to_csv(transports: &Option<Vec<String>>) -> Option<String> {
+pub(super) fn transports_to_csv(transports: Option<&[String]>) -> Option<String> {
     transports
-        .as_ref()
         .filter(|transports| !transports.is_empty())
         .map(|transports| transports.join(","))
 }
 
-pub(super) fn parse_transports_csv(transports: Option<&str>) -> Option<Vec<String>> {
-    transports.map(|transports| {
-        transports
-            .split(',')
-            .filter(|transport| !transport.is_empty())
-            .map(str::to_string)
-            .collect()
-    })
+pub(super) fn parse_transports_csv(transports: &str) -> Vec<String> {
+    transports
+        .split(',')
+        .filter(|transport| !transport.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
-pub(super) fn credential_id_from_authentication(
-    authentication: &PublicKeyCredential,
-) -> AuthResult<String> {
+pub(super) fn credential_id_from_authentication(authentication: &PublicKeyCredential) -> String {
     if !authentication.id.is_empty() {
-        return Ok(authentication.id.clone());
+        return authentication.id.clone();
     }
 
     let raw_id: &Base64UrlSafeData = &authentication.raw_id;
-    Ok(URL_SAFE_NO_PAD.encode(raw_id.as_ref()))
+    URL_SAFE_NO_PAD.encode(raw_id.as_ref())
 }

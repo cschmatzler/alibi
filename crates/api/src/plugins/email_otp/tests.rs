@@ -1,8 +1,3 @@
-#![expect(
-    clippy::unwrap_used,
-    reason = "test fixtures require successful setup and decoding"
-)]
-
 use super::*;
 use crate::plugins::test_helpers::{self, create_auth_json_request_no_query};
 use better_auth_core::{
@@ -41,7 +36,7 @@ impl EmailOtpGenerator for CounterGenerator {
     async fn generate(&self, _: &str, _: EmailOtpType) -> AuthResult<Option<String>> {
         Ok(Some(format!(
             "{:06}",
-            self.0.fetch_add(1, Ordering::SeqCst) + 100000
+            self.0.fetch_add(1, Ordering::SeqCst) + 100_000
         )))
     }
 }
@@ -69,7 +64,7 @@ fn configured() -> (EmailOtpConfig, Arc<Outbox>) {
     let outbox = Arc::new(Outbox::default());
     (
         EmailOtpConfig {
-            send_verification_otp: Some(outbox.clone()),
+            send_verification_otp: Some(Arc::<Outbox>::clone(&outbox)),
             generate_otp: Some(Arc::new(CounterGenerator(AtomicUsize::new(0)))),
             ..Default::default()
         },
@@ -97,7 +92,7 @@ async fn post(
 async fn notification_failure_retains_the_issued_otp_for_single_use_signin() {
     let ctx = test_helpers::create_test_context().await;
     let (mut config, outbox) = configured();
-    config.send_verification_otp = Some(Arc::new(RejectingSender(outbox.clone())));
+    config.send_verification_otp = Some(Arc::new(RejectingSender(Arc::<Outbox>::clone(&outbox))));
     let plugin = EmailOtpPlugin::new(config);
     let email = "delivery-failure@fixture.test";
     let issued = post(
@@ -186,17 +181,18 @@ async fn cancelled_attempt_update_rejects_once_without_hanging_or_consuming_proo
     migrator::run_migrations(&database).await.unwrap();
     let calls = Arc::new(AtomicUsize::new(0));
     let store = Arc::new(
-        SeaOrmStore::<BundledSchema>::new(config.clone(), database)
-            .hook(CancelVerificationUpdate(calls.clone())),
+        SeaOrmStore::<BundledSchema>::new(Arc::clone(&config), database)
+            .hook(CancelVerificationUpdate(Arc::clone(&calls))),
     );
     let ctx = AuthContext::new(config, store);
-    let _ = ctx
-        .database
-        .create_user(CreateUser::new().with_email("veto@example.com"))
-        .await
-        .unwrap();
-    let (config, _) = configured();
-    let plugin = EmailOtpPlugin::new(config);
+    drop(
+        ctx.database
+            .create_user(CreateUser::new().with_email("veto@example.com"))
+            .await
+            .unwrap(),
+    );
+    let (config_2, _) = configured();
+    let plugin = EmailOtpPlugin::new(config_2);
     let otp = plugin
         .create_verification_otp(&ctx, "veto@example.com", EmailOtpType::EmailVerification)
         .await
@@ -283,6 +279,10 @@ async fn unknown_verification_and_reset_mailboxes_leave_no_code_or_delivery() {
 
 // Upstream: email-otp/routes.ts :: signInEmailOTP + atomicVerifyOTP.
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn sign_in_creates_verified_user_and_owned_session_then_rejects_replay() {
     use better_auth_core::utils::cookie_utils::{
         related_cookie_name, sign_cookie_value, verify_cookie_value,
@@ -323,14 +323,14 @@ async fn sign_in_creates_verified_user_and_owned_session_then_rejects_replay() {
                 Some(body.clone()),
             );
             if let Some(value) = preference {
-                let _ = request.headers.insert(
+                drop(request.headers.insert(
                     "cookie".to_owned(),
                     format!(
                         "{}={}",
                         related_cookie_name(&ctx.config, "dont_remember"),
                         sign_cookie_value(value, &ctx.config.secret)
                     ),
-                );
+                ));
             }
             let response = plugin.on_request(&request, &ctx).await.unwrap().unwrap();
             assert_eq!(response.status, 200);
@@ -363,7 +363,9 @@ async fn sign_in_creates_verified_user_and_owned_session_then_rejects_replay() {
                 .find(|cookie| cookie.name() == "otp-fixture.session_token")
                 .unwrap();
             assert_eq!(
-                session_cookie.max_age().map(|age| age.whole_seconds()),
+                session_cookie
+                    .max_age()
+                    .map(cookie::time::Duration::whole_seconds),
                 persistent.then_some(lifetime),
                 "signed preference {preference:?}, configured lifetime {lifetime}",
             );
@@ -533,15 +535,16 @@ async fn expired_and_cross_scope_codes_cannot_authenticate() {
     let ctx = test_helpers::create_test_context().await;
     let (config, _) = configured();
     let plugin = EmailOtpPlugin::new(config);
-    let _ = ctx
-        .database
-        .create_verification(CreateVerification {
-            identifier: "sign-in-otp-expired@example.com".into(),
-            value: "654321:0".into(),
-            expires_at: chrono::Utc::now() - Duration::seconds(1),
-        })
-        .await
-        .unwrap();
+    drop(
+        ctx.database
+            .create_verification(CreateVerification {
+                identifier: "sign-in-otp-expired@example.com".into(),
+                value: "654321:0".into(),
+                expires_at: chrono::Utc::now() - Duration::seconds(1),
+            })
+            .await
+            .unwrap(),
+    );
     let expired = post(
         &plugin,
         &ctx,
@@ -611,22 +614,23 @@ async fn existing_unverified_account_loses_password_oauth_and_old_sessions() {
         .await
         .unwrap();
     for provider in ["credential", "google"] {
-        let _ = ctx
-            .database
-            .create_account(CreateAccount {
-                user_id: user.id().to_string(),
-                account_id: format!("{provider}-identity"),
-                provider_id: provider.into(),
-                access_token: None,
-                refresh_token: None,
-                id_token: None,
-                access_token_expires_at: None,
-                refresh_token_expires_at: None,
-                scope: None,
-                password: (provider == "credential").then_some("old-password-hash".into()),
-            })
-            .await
-            .unwrap();
+        drop(
+            ctx.database
+                .create_account(CreateAccount {
+                    user_id: user.id().to_string(),
+                    account_id: format!("{provider}-identity"),
+                    provider_id: provider.into(),
+                    access_token: None,
+                    refresh_token: None,
+                    id_token: None,
+                    access_token_expires_at: None,
+                    refresh_token_expires_at: None,
+                    scope: None,
+                    password: (provider == "credential").then_some("old-password-hash".into()),
+                })
+                .await
+                .unwrap(),
+        );
     }
     let old_session = ctx
         .session_manager()
@@ -689,7 +693,7 @@ async fn concurrent_sign_in_cannot_reuse_a_code() {
         post(&plugin, &ctx, "/sign-in/email-otp", body)
     );
     let mut statuses = [first.status, second.status];
-    statuses.sort();
+    statuses.sort_unstable();
     assert_eq!(statuses, [200, 400]);
 }
 
@@ -806,14 +810,14 @@ async fn reuse_extends_existing_code_and_hashed_storage_rotates() {
             .status,
         200
     );
-    let codes = outbox
+    let codes_2 = outbox
         .0
         .lock()
         .unwrap()
         .iter()
         .map(|delivery| delivery.otp.clone())
         .collect::<Vec<_>>();
-    assert_ne!(codes.get(2), codes.get(3));
+    assert_ne!(codes_2.get(2), codes_2.get(3));
     assert!(
         plugin
             .get_verification_otp(&ctx, "reuse@example.com", EmailOtpType::SignIn)
@@ -826,13 +830,13 @@ async fn reuse_extends_existing_code_and_hashed_storage_rotates() {
         .await
         .unwrap()
         .unwrap();
-    assert!(!codes.iter().any(|code| raw.value().contains(code)));
+    assert!(!codes_2.iter().any(|code| raw.value().contains(code)));
     assert_eq!(
         post(
             &plugin,
             &ctx,
             "/sign-in/email-otp",
-            json!({"email":"reuse@example.com","otp":codes.last().unwrap()})
+            json!({"email":"reuse@example.com","otp":codes_2.last().unwrap()})
         )
         .await
         .status,
@@ -886,7 +890,7 @@ async fn changing_email_rejects_another_users_code_and_keeps_current_session() {
         200
     );
     let code = outbox.0.lock().unwrap().last().unwrap().otp.clone();
-    let req = create_auth_json_request_no_query(
+    let req_2 = create_auth_json_request_no_query(
         HttpMethod::Post,
         "/email-otp/change-email",
         Some(stranger_session.token()),
@@ -894,7 +898,7 @@ async fn changing_email_rejects_another_users_code_and_keeps_current_session() {
     );
     assert_eq!(
         plugin
-            .on_request(&req, &ctx)
+            .on_request(&req_2, &ctx)
             .await
             .unwrap_err()
             .status_code(),
@@ -909,14 +913,19 @@ async fn changing_email_rejects_another_users_code_and_keeps_current_session() {
             .email(),
         Some("stranger@example.com")
     );
-    let req = create_auth_json_request_no_query(
+    let req_3 = create_auth_json_request_no_query(
         HttpMethod::Post,
         "/email-otp/change-email",
         Some(owner_session.token()),
         Some(json!({"newEmail":"target@example.com","otp":code})),
     );
     assert_eq!(
-        plugin.on_request(&req, &ctx).await.unwrap().unwrap().status,
+        plugin
+            .on_request(&req_3, &ctx)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
         200
     );
     assert_eq!(
@@ -980,6 +989,10 @@ async fn encrypted_codec_reads_upstream_ciphertext_and_hides_plaintext() {
 // Upstream: password policy runs before consumption; reset callbacks see the
 // pre-verification user and configured session revocation applies afterward.
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn reset_updates_password_runs_hook_and_revokes_owned_sessions() {
     use better_auth_core::AuthAccount;
     let ctx = test_helpers::create_test_context().await;
@@ -1011,11 +1024,11 @@ async fn reset_updates_password_runs_hook_and_revokes_owned_sessions() {
         .unwrap();
     let calls = Arc::new(Mutex::new(Vec::new()));
     let (mut config, outbox) = configured();
-    let calls_for_hook = calls.clone();
-    config.on_password_reset = Some(Arc::new(move |user| {
-        let calls = calls_for_hook.clone();
+    let calls_for_hook = Arc::clone(&calls);
+    config.on_password_reset = Some(Arc::new(move |user_2| {
+        let calls_2 = Arc::clone(&calls_for_hook);
         Box::pin(async move {
-            calls.lock().unwrap().push(user);
+            calls_2.lock().unwrap().push(user_2);
             Ok(())
         })
     }));
@@ -1108,6 +1121,8 @@ async fn reset_updates_password_runs_hook_and_revokes_owned_sessions() {
 // unknown mailboxes do not receive reset codes.
 #[tokio::test]
 async fn reset_creates_missing_credential_and_unknown_reset_is_indistinguishable() {
+    use better_auth_core::AuthAccount;
+
     let ctx = test_helpers::create_test_context().await;
     let user = ctx
         .database
@@ -1153,7 +1168,7 @@ async fn reset_creates_missing_credential_and_unknown_reset_is_indistinguishable
     );
     let accounts = ctx.database.get_user_accounts(&user.id()).await.unwrap();
     assert_eq!(accounts.len(), 1);
-    use better_auth_core::AuthAccount;
+
     assert_eq!(accounts.first().unwrap().account_id(), user.id());
     assert_eq!(accounts.first().unwrap().provider_id(), "credential");
 }
@@ -1215,15 +1230,16 @@ async fn nonconsuming_checks_count_attempts_and_reject_unowned_and_expired_mailb
             .unwrap()
             .is_none()
     );
-    let _ = ctx
-        .database
-        .create_verification(CreateVerification {
-            identifier: "email-verification-otp-expired-check@example.com".into(),
-            value: "654321:0".into(),
-            expires_at: chrono::Utc::now() - Duration::seconds(1),
-        })
-        .await
-        .unwrap();
+    drop(
+        ctx.database
+            .create_verification(CreateVerification {
+                identifier: "email-verification-otp-expired-check@example.com".into(),
+                value: "654321:0".into(),
+                expires_at: chrono::Utc::now() - Duration::seconds(1),
+            })
+            .await
+            .unwrap(),
+    );
     assert!(
         plugin
             .get_verification_otp(
@@ -1270,19 +1286,19 @@ async fn verification_hooks_and_auto_signin_observe_order_and_ownership() {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let (mut config, _) = configured();
     config.auto_sign_in_after_verification = true;
-    let before = seen.clone();
-    config.before_email_verification = Some(Arc::new(move |user| {
-        let before = before.clone();
-        let verified = user.email_verified;
+    let before = Arc::clone(&seen);
+    config.before_email_verification = Some(Arc::new(move |user_2| {
+        let before = Arc::clone(&before);
+        let verified = user_2.email_verified;
         Box::pin(async move {
             before.lock().unwrap().push(("before", verified));
             Ok(())
         })
     }));
-    let after = seen.clone();
-    config.after_email_verification = Some(Arc::new(move |user| {
-        let after = after.clone();
-        let verified = user.email_verified;
+    let after = Arc::clone(&seen);
+    config.after_email_verification = Some(Arc::new(move |user_3| {
+        let after = Arc::clone(&after);
+        let verified = user_3.email_verified;
         Box::pin(async move {
             after.lock().unwrap().push(("after", verified));
             Ok(())
@@ -1314,13 +1330,9 @@ async fn verification_hooks_and_auto_signin_observe_order_and_ownership() {
     );
     assert_eq!(*seen.lock().unwrap(), [("before", false), ("after", true)]);
     plugin.config.before_email_verification = Some(Arc::new(|_| {
-        Box::pin(async {
-            Err(better_auth_core::AuthError::forbidden(
-                "blocked by verification policy",
-            ))
-        })
+        Box::pin(async { Err(AuthError::forbidden("blocked by verification policy")) })
     }));
-    let otp = plugin
+    let otp_2 = plugin
         .create_verification_otp(&ctx, "hooks@example.com", EmailOtpType::EmailVerification)
         .await
         .unwrap();
@@ -1329,7 +1341,7 @@ async fn verification_hooks_and_auto_signin_observe_order_and_ownership() {
             &plugin,
             &ctx,
             "/email-otp/verify-email",
-            json!({"email":"hooks@example.com","otp":otp})
+            json!({"email":"hooks@example.com","otp":otp_2})
         )
         .await
         .status,
@@ -1347,6 +1359,10 @@ async fn verification_hooks_and_auto_signin_observe_order_and_ownership() {
 // Upstream: changeEmail.verifyCurrentEmail consumes current-mailbox proof before
 // issuing a code bound to both mailboxes; occupied targets remain undisclosed.
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn email_change_requires_current_proof_and_hides_existing_target() {
     let ctx = test_helpers::create_test_context().await;
     let user = ctx
@@ -1354,11 +1370,12 @@ async fn email_change_requires_current_proof_and_hides_existing_target() {
         .create_user(CreateUser::new().with_email("proof@example.com"))
         .await
         .unwrap();
-    let _ = ctx
-        .database
-        .create_user(CreateUser::new().with_email("occupied@example.com"))
-        .await
-        .unwrap();
+    drop(
+        ctx.database
+            .create_user(CreateUser::new().with_email("occupied@example.com"))
+            .await
+            .unwrap(),
+    );
     let session = ctx
         .session_manager()
         .create_session(&user, None, None)
@@ -1369,7 +1386,7 @@ async fn email_change_requires_current_proof_and_hides_existing_target() {
     config.verify_current_email = true;
     let plugin = EmailOtpPlugin::new(config);
     let request = |body| {
-        test_helpers::create_auth_json_request_no_query(
+        create_auth_json_request_no_query(
             HttpMethod::Post,
             "/email-otp/request-email-change",
             Some(session.token()),
@@ -1418,14 +1435,14 @@ async fn email_change_requires_current_proof_and_hides_existing_target() {
             .unwrap()
             .is_none()
     );
-    let current = plugin
+    let current_2 = plugin
         .create_verification_otp(&ctx, "proof@example.com", EmailOtpType::EmailVerification)
         .await
         .unwrap();
     assert_eq!(
         plugin
             .on_request(
-                &request(json!({"newEmail":"target@example.com","otp":current})),
+                &request(json!({"newEmail":"target@example.com","otp":current_2})),
                 &ctx
             )
             .await
@@ -1435,7 +1452,7 @@ async fn email_change_requires_current_proof_and_hides_existing_target() {
         200
     );
     let code = outbox.0.lock().unwrap().last().unwrap().otp.clone();
-    let confirm = test_helpers::create_auth_json_request_no_query(
+    let confirm = create_auth_json_request_no_query(
         HttpMethod::Post,
         "/email-otp/change-email",
         Some(session.token()),
@@ -1537,10 +1554,12 @@ async fn signup_hook_and_disabled_signup_preserve_delivery_and_state_contracts()
     let request = AuthRequest::new(HttpMethod::Post, "/sign-up/email");
     let response =
         AuthResponse::json(200, &json!({"user":{"email":"signup@example.com"}})).unwrap();
-    let _ = plugin
-        .after_request(&request, &ctx, response)
-        .await
-        .unwrap();
+    drop(
+        plugin
+            .after_request(&request, &ctx, response)
+            .await
+            .unwrap(),
+    );
     assert_eq!(
         outbox.0.lock().unwrap().last().unwrap().otp_type,
         EmailOtpType::EmailVerification

@@ -11,9 +11,12 @@
 use std::borrow::Cow;
 
 use chrono::{DateTime, Utc};
+
 use serde::Serialize;
 
 use crate::types::InvitationStatus;
+
+use serde::Deserialize;
 
 /// Trait representing a user entity.
 ///
@@ -232,14 +235,13 @@ pub struct MemberUserView {
 
 impl MemberUserView {
     /// Construct from any type implementing [`AuthUser`].
+    #[must_use]
     pub fn from_user(user: &impl AuthUser) -> Self {
         Self {
             id: user.id().to_string(),
-            email: user.email().map(|s| s.to_string()),
-            name: user.name().map(|s| s.to_string()),
-            image: user.image().map(|s| s.to_string()),
+            email: user.email().map(ToOwned::to_owned),
+            name: user.name().map(ToOwned::to_owned),
+            image: user.image().map(ToOwned::to_owned),
         }
     }
 }
-
-use serde::Deserialize;

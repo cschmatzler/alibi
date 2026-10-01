@@ -1,13 +1,30 @@
 //! Route-local HTTP schemas from the pinned admin endpoints.
 use better_auth_core::{AuthRequest, AuthResponse, utils::json::JsValue};
+
 use serde::de::DeserializeOwned;
+
 use serde_json::json;
+
+#[derive(Clone, Copy)]
+enum Rule {
+    String,
+    OptionalString,
+    Id,
+    NonemptyId,
+    NonemptyPassword,
+    Role,
+    OptionalRole,
+    Record,
+    OptionalRecord,
+    OptionalNumber,
+}
 
 fn response(status: u16, code: &str, message: impl Into<String>) -> AuthResponse {
     AuthResponse::json(status, &json!({"code":code,"message":message.into()}))
         .unwrap_or_else(|_| AuthResponse::text(status, "Validation failed"))
 }
-fn kind(value: Option<&JsValue>) -> &'static str {
+
+const fn kind(value: Option<&JsValue>) -> &'static str {
     match value {
         None => "undefined",
         Some(JsValue::Null) => "null",
@@ -18,22 +35,27 @@ fn kind(value: Option<&JsValue>) -> &'static str {
         Some(JsValue::Object(_)) => "object",
     }
 }
+
 fn expected(field: &str, expected: &str, value: Option<&JsValue>) -> String {
     format!(
         "[{field}] Invalid input: expected {expected}, received {}",
         kind(value)
     )
 }
-fn schema_error(issues: Vec<String>) -> AuthResponse {
+
+fn schema_error(issues: &[String]) -> AuthResponse {
     response(400, "VALIDATION_ERROR", issues.join("; "))
 }
+
 fn json_media_type(value: &str) -> bool {
     let Some(subtype) = value.strip_prefix("application/") else {
         return false;
     };
     subtype.starts_with("json")
         || subtype.find("+json").is_some_and(|index| {
-            subtype[..index]
+            subtype
+                .get(..index)
+                .unwrap_or_default()
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || b".+-".contains(&byte))
         })
@@ -68,7 +90,7 @@ pub(super) fn parse(req: &AuthRequest) -> Result<Option<JsValue>, AuthResponse> 
         .contains("application/json")
     {
         let message = if normalized.is_empty() {
-            "Content-Type is required. Allowed types: application/json".to_string()
+            "Content-Type is required. Allowed types: application/json".to_owned()
         } else {
             format!(
                 "Content-Type \"{content_type}\" is not allowed. Allowed types: application/json"
@@ -79,29 +101,18 @@ pub(super) fn parse(req: &AuthRequest) -> Result<Option<JsValue>, AuthResponse> 
     if !json_media_type(&normalized) {
         // Better-call returns a ReadableStream for its accepted non-JSON media
         // spellings; object schemas see no declared fields on that stream.
-        return Ok(Some(JsValue::Object(Default::default())));
+        return Ok(Some(JsValue::Object(indexmap::IndexMap::default())));
     }
     better_auth_core::utils::json::from_slice(bytes)
         .map(Some)
-        .map_err(|_| response(400, "BAD_REQUEST", "Invalid JSON in request body"))
-}
-
-#[derive(Clone, Copy)]
-enum Rule {
-    String,
-    OptionalString,
-    Id,
-    NonemptyId,
-    NonemptyPassword,
-    Role,
-    OptionalRole,
-    Record,
-    OptionalRecord,
-    OptionalNumber,
+        .map_err(|_error| response(400, "BAD_REQUEST", "Invalid JSON in request body"))
 }
 
 fn fields(route: &str) -> &'static [(&'static str, Rule)] {
-    use Rule::*;
+    use Rule::{
+        Id, NonemptyId, NonemptyPassword, OptionalNumber, OptionalRecord, OptionalRole,
+        OptionalString, Record, Role, String,
+    };
     match route {
         "set-role" => &[("userId", Id), ("role", Role)],
         "create-user" => &[
@@ -128,36 +139,37 @@ fn coerce_string(value: &JsValue) -> Option<String> {
     Some(match value {
         JsValue::Null => "null".into(),
         JsValue::Bool(value) => value.to_string(),
-        JsValue::Number(value) => ryu_js::Buffer::new().format(*value).to_string(),
+        JsValue::Number(value) => ryu_js::Buffer::new().format(*value).to_owned(),
         JsValue::String(value) => value.clone(),
         // JSON cannot supply callable methods. An own toString shadows the
         // inherited conversion and makes z.coerce.string fail its type check.
         JsValue::Object(value) => {
             if value.contains_key("toString") {
                 return None;
-            } else {
-                "[object Object]".into()
             }
+            "[object Object]".into()
         }
         JsValue::Array(values) => values
             .iter()
-            .map(|value| {
-                if value.is_null() {
+            .map(|value_2| {
+                if value_2.is_null() {
                     Some(String::new())
                 } else {
-                    coerce_string(value)
+                    coerce_string(value_2)
                 }
             })
             .collect::<Option<Vec<_>>>()?
             .join(","),
     })
 }
+
 fn valid_role(value: &JsValue) -> bool {
     value.is_string()
         || value
             .as_array()
             .is_some_and(|roles| roles.iter().all(JsValue::is_string))
 }
+
 fn valid_permissions(value: Option<&JsValue>) -> bool {
     value
         .and_then(JsValue::as_object)
@@ -178,12 +190,12 @@ pub(super) fn body<T: DeserializeOwned + 'static>(req: &AuthRequest) -> Result<T
         if route == "has-permission" {
             issues.push("[body] Invalid input".into());
         }
-        return Err(schema_error(issues));
+        return Err(schema_error(&(issues)));
     };
     let mut issues = Vec::new();
     for &(field, rule) in fields(route) {
-        let value = input.get(field);
-        if value.is_none()
+        let value_2 = input.get(field);
+        if value_2.is_none()
             && (matches!(
                 rule,
                 Rule::OptionalString
@@ -197,41 +209,44 @@ pub(super) fn body<T: DeserializeOwned + 'static>(req: &AuthRequest) -> Result<T
         let path = format!("body.{field}");
         match rule {
             Rule::Id | Rule::NonemptyId => {
-                if let Some(value) = value {
-                    if let Some(value) = coerce_string(value) {
-                        if matches!(rule, Rule::NonemptyId) && value.is_empty() {
+                if let Some(value_2_3) = value_2 {
+                    if let Some(coerced_value) = coerce_string(value_2_3) {
+                        if matches!(rule, Rule::NonemptyId) && coerced_value.is_empty() {
                             issues.push(format!("[{path}] userId cannot be empty"));
                         }
-                        let _ = input.insert(field.into(), JsValue::String(value));
+                        drop(input.insert(field.into(), JsValue::String(coerced_value)));
                     } else {
-                        issues.push(expected(&path, "string", Some(value)));
+                        issues.push(expected(&path, "string", Some(value_2_3)));
                     }
                 } else {
                     issues.push(expected(&path, "nonoptional", None));
                 }
             }
             Rule::String | Rule::OptionalString | Rule::NonemptyPassword => {
-                if let Some(value) = value.and_then(JsValue::as_str) {
-                    if matches!(rule, Rule::NonemptyPassword) && value.is_empty() {
+                if let Some(value_4) = value_2.and_then(JsValue::as_str) {
+                    if matches!(rule, Rule::NonemptyPassword) && value_4.is_empty() {
                         issues.push(format!("[{path}] newPassword cannot be empty"));
                     }
                 } else {
-                    issues.push(expected(&path, "string", value));
+                    issues.push(expected(&path, "string", value_2));
                 }
             }
             Rule::Role | Rule::OptionalRole => {
-                if !value.is_some_and(valid_role) {
+                if !value_2.is_some_and(valid_role) {
                     issues.push(format!("[{path}] Invalid input"));
                 }
             }
             Rule::Record | Rule::OptionalRecord => {
-                if !value.is_some_and(JsValue::is_object) {
-                    issues.push(expected(&path, "record", value));
+                if !value_2.is_some_and(JsValue::is_object) {
+                    issues.push(expected(&path, "record", value_2));
                 }
             }
             Rule::OptionalNumber => {
-                if !value.and_then(JsValue::as_f64).is_some_and(f64::is_finite) {
-                    issues.push(expected(&path, "number", value));
+                if !value_2
+                    .and_then(JsValue::as_f64)
+                    .is_some_and(f64::is_finite)
+                {
+                    issues.push(expected(&path, "number", value_2));
                 }
             }
         }
@@ -241,36 +256,37 @@ pub(super) fn body<T: DeserializeOwned + 'static>(req: &AuthRequest) -> Result<T
         let plural = valid_permissions(input.get("permissions"));
         match (singular, plural) {
             (true, true) => {
-                issues.push("[body] Invalid input: more than one option matched".into())
+                issues.push("[body] Invalid input: more than one option matched".into());
             }
             (false, false) => issues.push("[body] Invalid input".into()),
             (true, false) => {
-                let _ = input.shift_remove("permissions");
+                drop(input.shift_remove("permissions"));
             }
             (false, true) => {
-                let _ = input.shift_remove("permission");
+                drop(input.shift_remove("permission"));
             }
         }
     }
     if !issues.is_empty() {
-        return Err(schema_error(issues));
+        return Err(schema_error(&(issues)));
     }
     better_auth_core::utils::json::from_value(JsValue::Object(input))
-        .map_err(|_| response(400, "VALIDATION_ERROR", "[body] Invalid input"))
+        .map_err(|_error| response(400, "VALIDATION_ERROR", "[body] Invalid input"))
 }
 
 pub(super) fn get_user(req: &AuthRequest) -> Result<super::types::GetUserQuery, AuthResponse> {
-    let _ = parse(req)?;
+    drop(parse(req)?);
     match req.query_values("id") {
         Some([id]) => Ok(super::types::GetUserQuery { id: id.clone() }),
-        Some(_) => Err(schema_error(vec![
+        Some(_) => Err(schema_error(&[
             "[query.id] Invalid input: expected string, received array".into(),
         ])),
-        None => Err(schema_error(vec![expected("query.id", "string", None)])),
+        None => Err(schema_error(&[expected("query.id", "string", None)])),
     }
 }
+
 pub(super) fn list_users(req: &AuthRequest) -> Result<(), AuthResponse> {
-    let _ = parse(req)?;
+    drop(parse(req)?);
     let mut issues = Vec::new();
     // Query arrays are materialized by repeated names before the endpoint
     // schema. Retain schema field order, including string/number unions.
@@ -330,7 +346,7 @@ pub(super) fn list_users(req: &AuthRequest) -> Result<(), AuthResponse> {
     if issues.is_empty() {
         Ok(())
     } else {
-        Err(schema_error(issues))
+        Err(schema_error(&(issues)))
     }
 }
 

@@ -173,12 +173,12 @@ async fn permissions_failure_preserves_usage_and_rate_limit_reports_retry_time()
         plugin.verify_api_key(&input, &ctx).await.unwrap().remaining,
         Some(2.0)
     );
-    let error = plugin.verify_api_key(&input, &ctx).await.unwrap_err();
-    let ApiKeyVerificationError::Validation(error) = error else {
+    let error_2 = plugin.verify_api_key(&input, &ctx).await.unwrap_err();
+    let ApiKeyVerificationError::Validation(error_2_3) = error_2 else {
         panic!("Expected rate limit rejection")
     };
-    assert_eq!(error.code, ApiKeyErrorCode::RateLimited);
-    let retry = error.details.unwrap().try_again_in;
+    assert_eq!(error_2_3.code, ApiKeyErrorCode::RateLimited);
+    let retry = error_2_3.details.unwrap().try_again_in;
     assert!(retry > 0.0 && retry <= 60_000.0);
     assert_eq!(
         ctx.database
@@ -223,11 +223,36 @@ async fn session_header_selects_a_named_config_without_a_default() {
     };
     assert_eq!(response.status, 200);
     let body = json_body(&response);
-    assert_eq!(body["session"]["token"], key);
-    assert_eq!(body["session"]["userId"], user.id);
-    assert_eq!(body["user"]["emailVerified"], false);
-    assert!(body["session"]["createdAt"].is_string());
-    assert!(body["session"]["expiresAt"].is_string());
+    assert_eq!(
+        (*(*(body).get("session").unwrap_or(&serde_json::Value::Null))
+            .get("token")
+            .unwrap_or(&serde_json::Value::Null)),
+        key
+    );
+    assert_eq!(
+        (*(*(body).get("session").unwrap_or(&serde_json::Value::Null))
+            .get("userId")
+            .unwrap_or(&serde_json::Value::Null)),
+        user.id
+    );
+    assert_eq!(
+        (*(*(body).get("user").unwrap_or(&serde_json::Value::Null))
+            .get("emailVerified")
+            .unwrap_or(&serde_json::Value::Null)),
+        false
+    );
+    assert!(
+        (*(*(body).get("session").unwrap_or(&serde_json::Value::Null))
+            .get("createdAt")
+            .unwrap_or(&serde_json::Value::Null))
+        .is_string()
+    );
+    assert!(
+        (*(*(body).get("session").unwrap_or(&serde_json::Value::Null))
+            .get("expiresAt")
+            .unwrap_or(&serde_json::Value::Null))
+        .is_string()
+    );
 }
 
 #[tokio::test]
@@ -260,7 +285,12 @@ async fn session_header_cannot_authenticate_a_different_configuration() {
         panic!("Expected credential rejection")
     };
     assert_eq!(response.status, 401);
-    assert_eq!(json_body(&response)["code"], "INVALID_API_KEY");
+    assert_eq!(
+        (*(json_body(&response))
+            .get("code")
+            .unwrap_or(&serde_json::Value::Null)),
+        "INVALID_API_KEY"
+    );
     assert_eq!(
         ctx.database
             .get_api_key_by_id(&id)
@@ -325,7 +355,9 @@ async fn organization_key_verifies_without_emulating_a_user_session() {
     };
     assert_eq!(response.status, 401);
     assert_eq!(
-        json_body(&response)["code"],
+        (*(json_body(&response))
+            .get("code")
+            .unwrap_or(&serde_json::Value::Null)),
         "INVALID_REFERENCE_ID_FROM_API_KEY"
     );
 }
@@ -338,8 +370,10 @@ async fn api_key_initialization_rejects_ambiguous_configurations() {
             config_id: config_id.to_owned(),
             ..Default::default()
         });
-        let mut init =
-            better_auth_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+        let mut init = better_auth_core::AuthInitContext::new(
+            Arc::clone(&ctx.config),
+            Arc::clone(&ctx.database),
+        );
         assert!(matches!(
             plugin.on_init(&mut init).await,
             Err(AuthError::Config(_))
@@ -355,7 +389,7 @@ async fn verification_preserves_database_failures() {
     connection.clone().close().await.unwrap();
     let config = Arc::new(crate::plugins::test_helpers::create_test_config());
     let database = Arc::new(better_auth_seaorm::SeaOrmStore::<TestSchema>::new(
-        config.clone(),
+        Arc::clone(&config),
         connection,
     ));
     let ctx = AuthContext::new(config, database);
@@ -392,14 +426,23 @@ async fn verified_session_authenticates_a_protected_plugin_route_without_a_datab
         .await
         .unwrap()
         .unwrap();
-    let BeforeRequestAction::InjectSession { session } = action else {
+    let BeforeRequestAction::InjectSession { session: session_2 } = action else {
         panic!("Expected virtual session")
     };
-    assert_eq!(session.token, key);
-    request.set_virtual_session(session);
+    assert_eq!(session_2.token, key);
+    request.set_virtual_session(session_2);
     let response = plugin.on_request(&request, &ctx).await.unwrap().unwrap();
     assert_eq!(response.status, 200);
-    assert_eq!(json_body(&response)["apiKeys"][0]["id"], id);
+    assert_eq!(
+        (*(*(*(json_body(&response))
+            .get("apiKeys")
+            .unwrap_or(&serde_json::Value::Null))
+        .get(0)
+        .unwrap_or(&serde_json::Value::Null))
+        .get("id")
+        .unwrap_or(&serde_json::Value::Null)),
+        id
+    );
     assert_eq!(
         ctx.database
             .get_user_sessions(&user.id)

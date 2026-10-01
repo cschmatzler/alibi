@@ -17,7 +17,7 @@ pub(super) enum AuthReference {
     OrganizationRoleOrganization,
 }
 impl AuthReference {
-    fn table(self) -> &'static str {
+    const fn table(self) -> &'static str {
         match self {
             Self::DeviceCode => "device_code",
             Self::TwoFactor => "two_factor",
@@ -25,19 +25,19 @@ impl AuthReference {
             Self::OrganizationRoleOrganization => "organization_role",
         }
     }
-    fn column(self) -> &'static str {
+    const fn column(self) -> &'static str {
         match self {
             Self::DeviceCode | Self::TwoFactor => "user_id",
             Self::TeamOrganization | Self::OrganizationRoleOrganization => "organization_id",
         }
     }
-    fn parent(self) -> &'static str {
+    const fn parent(self) -> &'static str {
         match self {
             Self::DeviceCode | Self::TwoFactor => "users",
             Self::TeamOrganization | Self::OrganizationRoleOrganization => "organization",
         }
     }
-    fn constraint(self) -> &'static str {
+    const fn constraint(self) -> &'static str {
         match self {
             Self::DeviceCode => "fk_device_code_user_id",
             Self::TwoFactor => "fk_two_factor_user_id",
@@ -45,7 +45,7 @@ impl AuthReference {
             Self::OrganizationRoleOrganization => "fk_organization_role_organization",
         }
     }
-    fn label(self) -> &'static str {
+    const fn label(self) -> &'static str {
         match self {
             Self::DeviceCode => "Device",
             Self::TwoFactor => "Two-factor",
@@ -55,6 +55,10 @@ impl AuthReference {
     }
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "DatabaseBackend is non-exhaustive; unsupported backends must return a migration error"
+)]
 pub(super) async fn remove_auth_references(
     manager: &SchemaManager<'_>,
     targets: &[AuthReference],
@@ -70,7 +74,7 @@ pub(super) async fn remove_auth_references(
             };
             let transaction = database.begin().await?;
             for target in targets {
-                let _ = transaction
+                let _ignored_constraint = transaction
                     .execute_unprepared(&format!(
                         "ALTER TABLE {} DROP CONSTRAINT IF EXISTS {}",
                         target.table(),
@@ -110,6 +114,10 @@ pub(super) async fn remove_auth_references(
     }
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Result::map_err transfers ownership to this error-boundary adapter"
+)]
 fn sqlx_error(error: sea_orm::sqlx::Error) -> DbErr {
     DbErr::Migration(format!("Auth user reference: {error}"))
 }
@@ -140,26 +148,27 @@ async fn rebuild_sqlite_references(
     // Cancellation/error must never return a connection with foreign keys
     // disabled to the pool. Successful restoration returns it explicitly.
     connection.close_on_drop();
-    let _ = sea_orm::sqlx::query("PRAGMA foreign_keys = OFF")
+    let _ignored_map_err = sea_orm::sqlx::query("PRAGMA foreign_keys = OFF")
         .execute(&mut *connection)
         .await
         .map_err(sqlx_error)?;
     // Existing views temporarily refer to the dropped name inside this
     // transaction. Legacy rename validation leaves those definitions intact
     // until the replacement restores that same name.
-    let _ = sea_orm::sqlx::query("PRAGMA legacy_alter_table = ON")
+    let _ignored_map_err_2 = sea_orm::sqlx::query("PRAGMA legacy_alter_table = ON")
         .execute(&mut *connection)
         .await
         .map_err(sqlx_error)?;
     let result = rebuild_reference_transaction(&mut connection, targets).await;
-    let _ = sea_orm::sqlx::query(&format!("PRAGMA foreign_keys = {foreign_keys}"))
+    let _ignored_map_err_3 = sea_orm::sqlx::query(&format!("PRAGMA foreign_keys = {foreign_keys}"))
         .execute(&mut *connection)
         .await
         .map_err(sqlx_error)?;
-    let _ = sea_orm::sqlx::query(&format!("PRAGMA legacy_alter_table = {legacy_alter_table}"))
-        .execute(&mut *connection)
-        .await
-        .map_err(sqlx_error)?;
+    let _ignored_map_err_4 =
+        sea_orm::sqlx::query(&format!("PRAGMA legacy_alter_table = {legacy_alter_table}"))
+            .execute(&mut *connection)
+            .await
+            .map_err(sqlx_error)?;
     let restored: i64 = sea_orm::sqlx::query_scalar("PRAGMA foreign_keys")
         .fetch_one(&mut *connection)
         .await
@@ -177,6 +186,10 @@ async fn rebuild_sqlite_references(
     result
 }
 
+#[expect(
+    clippy::string_slice,
+    reason = "SQL lexer ranges end at ASCII delimiters or input boundaries and retain UTF-8 token boundaries"
+)]
 async fn rebuild_reference_transaction(
     connection: &mut SqliteConnection,
     targets: &[AuthReference],
@@ -215,11 +228,11 @@ async fn rebuild_reference_transaction(
         let without_rowid = sql_tokens(suffix)?.windows(2).any(|pair| matches!(pair, [without,rowid] if suffix[without.clone()].eq_ignore_ascii_case("WITHOUT") && suffix[rowid.clone()].eq_ignore_ascii_case("ROWID")));
         if !without_rowid && let Some(alias) = ["rowid","_rowid_","oid"].into_iter().find(|alias| !columns.iter().any(|row| row.get::<String,_>("name").eq_ignore_ascii_case(alias))) { copied.insert(0,format!("\"{alias}\"")); }
         let copied = copied.join(",");
-        let _ = sea_orm::sqlx::query(&rewritten).execute(&mut *transaction).await.map_err(sqlx_error)?;
-        let _ = sea_orm::sqlx::query(&format!("INSERT INTO \"{temporary}\" ({copied}) SELECT {copied} FROM \"{table}\"")).execute(&mut *transaction).await.map_err(sqlx_error)?;
-        let _ = sea_orm::sqlx::query(&format!("DROP TABLE \"{table}\"")).execute(&mut *transaction).await.map_err(sqlx_error)?;
-        let _ = sea_orm::sqlx::query(&format!("ALTER TABLE \"{temporary}\" RENAME TO \"{table}\"")).execute(&mut *transaction).await.map_err(sqlx_error)?;
-        for statement in statements { let _ = sea_orm::sqlx::query(&statement).execute(&mut *transaction).await.map_err(sqlx_error)?; }
+        let _ignored_map_err_5 = sea_orm::sqlx::query(&rewritten).execute(&mut *transaction).await.map_err(sqlx_error)?;
+        let _ignored_map_err_6 = sea_orm::sqlx::query(&format!("INSERT INTO \"{temporary}\" ({copied}) SELECT {copied} FROM \"{table}\"")).execute(&mut *transaction).await.map_err(sqlx_error)?;
+        let _ignored_map_err_7 = sea_orm::sqlx::query(&format!("DROP TABLE \"{table}\"")).execute(&mut *transaction).await.map_err(sqlx_error)?;
+        let _ignored_map_err_8 = sea_orm::sqlx::query(&format!("ALTER TABLE \"{temporary}\" RENAME TO \"{table}\"")).execute(&mut *transaction).await.map_err(sqlx_error)?;
+        for statement in statements { let _ignored_map_err_9 = sea_orm::sqlx::query(&statement).execute(&mut *transaction).await.map_err(sqlx_error)?; }
       }
         let violations = sea_orm::sqlx::query("PRAGMA foreign_key_check").fetch_all(&mut *transaction).await.map_err(sqlx_error)?;
         if !violations.is_empty() { return Err(DbErr::Migration(format!("{} migration would invalidate foreign-key relationships",targets.first().map_or("Auth", |target| target.label())))); }

@@ -1,7 +1,7 @@
 //! Core account endpoint DTO schemas declared by Better Auth 1.7.6.
 use super::OpenApiEndpoint;
 use serde_json::{Value, json};
-fn response(description: &str, schema: Value) -> Value {
+fn response(description: &str, schema: &Value) -> Value {
     json!({"description":description,"content":{"application/json":{"schema":schema}}})
 }
 fn selection() -> Value {
@@ -16,22 +16,22 @@ pub(super) fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
         "/list-accounts" => {
             metadata.operation_id = Some("listUserAccounts".into());
             metadata.description = Some("List all accounts linked to the user".into());
-            let _=metadata.responses.insert("200".into(),response("Success",json!({"type":"array","items":{"type":"object","properties":{
+            drop(metadata.responses.insert("200".into(),response("Success",&(json!({"type":"array","items":{"type":"object","properties":{
     "id":{"type":"string"},"providerId":{"type":"string"},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"},"accountId":{"type":"string"},"userId":{"type":"string"},"scopes":{"type":"array","items":{"type":"string"}}
-   },"required":["id","providerId","createdAt","updatedAt","accountId","userId","scopes"]}})));
+   },"required":["id","providerId","createdAt","updatedAt","accountId","userId","scopes"]}})))));
         }
         "/unlink-account" => {
             metadata.description = Some("Unlink an account".into());
             metadata.request_body = Some(
                 json!({"required":true,"content":{"application/json":{"schema":{"type":"object","properties":{"accountId":{"type":"string","description":"The Better Auth account ID to unlink"}},"required":["accountId"]}}}}),
             );
-            let _ = metadata.responses.insert(
+            drop(metadata.responses.insert(
                 "200".into(),
                 response(
                     "Success",
-                    json!({"type":"object","properties":{"status":{"type":"boolean"}}}),
+                    &(json!({"type":"object","properties":{"status":{"type":"boolean"}}})),
                 ),
-            );
+            ));
         }
         "/get-access-token" | "/refresh-token" => {
             let refreshing = path == "/refresh-token";
@@ -48,22 +48,22 @@ pub(super) fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
             );
             let mut properties = serde_json::Map::new();
             for name in ["tokenType", "idToken", "accessToken"] {
-                let _ = properties.insert(name.into(), json!({"type":"string"}));
+                drop(properties.insert(name.into(), json!({"type":"string"})));
             }
             if refreshing {
-                let _ = properties.insert("refreshToken".into(), json!({"type":"string"}));
+                drop(properties.insert("refreshToken".into(), json!({"type":"string"})));
             }
-            let _ = properties.insert(
+            drop(properties.insert(
                 "accessTokenExpiresAt".into(),
                 json!({"type":"string","format":"date-time"}),
-            );
+            ));
             if refreshing {
-                let _ = properties.insert(
+                drop(properties.insert(
                     "refreshTokenExpiresAt".into(),
                     json!({"type":"string","format":"date-time"}),
-                );
+                ));
             }
-            let _ = metadata.responses.insert(
+            drop(metadata.responses.insert(
                 "200".into(),
                 response(
                     if refreshing {
@@ -71,22 +71,22 @@ pub(super) fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
                     } else {
                         "A Valid access token"
                     },
-                    json!({"type":"object","properties":properties}),
+                    &(json!({"type":"object","properties":properties})),
                 ),
-            );
-            let _ = metadata.responses.insert(
+            ));
+            drop(metadata.responses.insert(
                 "400".into(),
                 json!({"description":"Invalid refresh token or provider configuration"}),
-            );
+            ));
         }
         "/account-info" => {
             metadata.description = Some("Get the account info provided by the provider".into());
             // The query is a union rather than a direct object; upstream reflects no query parameters.
-            let _=metadata.responses.insert("200".into(),response("Success",json!({"type":"object","properties":{
+            drop(metadata.responses.insert("200".into(),response("Success",&(json!({"type":"object","properties":{
     "user":{"type":"object","properties":{"name":{"type":"string"},"email":{"type":"string","nullable":true},"image":{"type":"string"},"emailVerified":{"type":"boolean"}},"required":["emailVerified"]},
     "account":{"type":"object","properties":{"id":{"type":"string"},"providerId":{"type":"string"},"accountId":{"type":"string"}},"required":["id","providerId","accountId"],"additionalProperties":false},
     "data":{"type":"object","properties":{},"additionalProperties":true}
-   },"required":["user","data","account"],"additionalProperties":false})));
+   },"required":["user","data","account"],"additionalProperties":false})))));
         }
         _ => return None,
     }

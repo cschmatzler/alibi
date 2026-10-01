@@ -1,10 +1,10 @@
 //! Real application callbacks and observations of their SQLite effects.
-use crate::organization_update_hooks_fixture::snapshot;
 use crate::TestSchema;
+use crate::organization_update_hooks_fixture::snapshot;
 use axum::{
+    Json, Router,
     extract::Query,
     routing::{get, post},
-    Json, Router,
 };
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
@@ -15,12 +15,12 @@ use better_auth::plugins::organization::{
 use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_core::{
+    Member, UpdateUser,
     store::{MemberStore, UserStore},
     wire::UserView,
-    Member, UpdateUser,
 };
 use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify};
 

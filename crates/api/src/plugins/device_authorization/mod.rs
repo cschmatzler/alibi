@@ -1,23 +1,32 @@
-use chrono::{Duration, Utc};
-use rand::RngCore;
-use rand::distributions::{Alphanumeric, DistString};
-use std::fmt;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-use url::Url;
-
-use crate::plugins::helpers::{SessionIssueError, issue_user_session};
-use better_auth_core::entity::{AuthSession, AuthUser};
-use better_auth_core::{
-    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateDeviceCode, RequestMeta,
-    UpdateDeviceCode,
-};
-
 pub(super) mod types;
 
 #[cfg(test)]
 mod tests;
+
+use chrono::{Duration, Utc};
+
+use rand::RngCore;
+
+use rand::distributions::{Alphanumeric, DistString};
+
+use std::fmt;
+
+use std::future::Future;
+
+use std::pin::Pin;
+
+use std::sync::Arc;
+
+use url::Url;
+
+use crate::plugins::helpers::{SessionIssueError, issue_user_session};
+
+use better_auth_core::entity::{AuthSession, AuthUser};
+
+use better_auth_core::{
+    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateDeviceCode, RequestMeta,
+    UpdateDeviceCode,
+};
 
 use types::{
     DeviceActionRequest, DeviceActionResponse, DeviceCodeRequest, DeviceCodeResponse,
@@ -25,32 +34,54 @@ use types::{
 };
 
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
+
 const DEVICE_STATUS_PENDING: &str = "pending";
+
 const DEVICE_STATUS_APPROVED: &str = "approved";
+
 const DEVICE_STATUS_DENIED: &str = "denied";
+
 const DEFAULT_USER_CODE_CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 const INVALID_DEVICE_CODE: &str = "Invalid device code";
+
 const EXPIRED_DEVICE_CODE: &str = "Device code has expired";
+
 const EXPIRED_USER_CODE: &str = "User code has expired";
+
 const AUTHORIZATION_PENDING: &str = "Authorization pending";
+
 const ACCESS_DENIED: &str = "Access denied";
+
 const INVALID_USER_CODE: &str = "Invalid user code";
+
 const DEVICE_CODE_ALREADY_PROCESSED: &str = "Device code already processed";
+
 const DEVICE_CODE_NOT_CLAIMED: &str = "Device code has not been claimed by a verifying session; call `GET /device` with the `user_code` while signed in before approving or denying";
+
 const POLLING_TOO_FREQUENTLY: &str = "Polling too frequently";
+
 const USER_NOT_FOUND: &str = "User not found";
+
 const FAILED_TO_CREATE_SESSION: &str = "Failed to create session";
+
 const INVALID_DEVICE_CODE_STATUS: &str = "Invalid device code status";
+
 const AUTHENTICATION_REQUIRED: &str = "Authentication required";
+
 const INVALID_CLIENT_ID: &str = "Invalid client ID";
+
 const CLIENT_ID_MISMATCH: &str = "Client ID mismatch";
+
 const INVALID_REQUEST: &str = "Invalid request";
 
 type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
+
 type ValidateClientCallback = dyn Fn(String) -> BoxFuture<AuthResult<bool>> + Send + Sync;
+
 type DeviceAuthRequestCallback =
     dyn Fn(String, Option<String>) -> BoxFuture<AuthResult<()>> + Send + Sync;
+
 type CodeGenerator = dyn Fn() -> BoxFuture<AuthResult<String>> + Send + Sync;
 
 #[derive(Clone)]
@@ -117,14 +148,14 @@ enum DeviceDecision {
 }
 
 impl DeviceDecision {
-    fn status(self) -> &'static str {
+    const fn status(self) -> &'static str {
         match self {
             Self::Approve => DEVICE_STATUS_APPROVED,
             Self::Deny => DEVICE_STATUS_DENIED,
         }
     }
 
-    fn forbidden_message(self) -> &'static str {
+    const fn forbidden_message(self) -> &'static str {
         match self {
             Self::Approve => "You are not authorized to approve this device authorization",
             Self::Deny => "You are not authorized to deny this device authorization",
@@ -137,6 +168,13 @@ pub struct DeviceAuthorizationPlugin {
     config: DeviceAuthorizationConfig,
 }
 
+impl fmt::Debug for DeviceAuthorizationPlugin {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DeviceAuthorizationPlugin")
+            .finish_non_exhaustive()
+    }
+}
+
 impl Default for DeviceAuthorizationPlugin {
     fn default() -> Self {
         Self::new()
@@ -145,6 +183,7 @@ impl Default for DeviceAuthorizationPlugin {
 
 impl DeviceAuthorizationPlugin {
     /// Create the plugin with TS-aligned defaults.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             config: DeviceAuthorizationConfig::default(),
@@ -152,36 +191,42 @@ impl DeviceAuthorizationPlugin {
     }
 
     /// Override the device-code expiration window.
-    pub fn expires_in(mut self, duration: Duration) -> Self {
+    #[must_use]
+    pub const fn expires_in(mut self, duration: Duration) -> Self {
         self.config.expires_in = duration;
         self
     }
 
     /// Override the minimum polling interval enforced by `/device/token`.
-    pub fn interval(mut self, duration: Duration) -> Self {
+    #[must_use]
+    pub const fn interval(mut self, duration: Duration) -> Self {
         self.config.interval = duration;
         self
     }
 
     /// Override the generated device-code length.
-    pub fn device_code_length(mut self, length: usize) -> Self {
+    #[must_use]
+    pub const fn device_code_length(mut self, length: usize) -> Self {
         self.config.device_code_length = length;
         self
     }
 
     /// Override the generated user-code length.
-    pub fn user_code_length(mut self, length: usize) -> Self {
+    #[must_use]
+    pub const fn user_code_length(mut self, length: usize) -> Self {
         self.config.user_code_length = length;
         self
     }
 
     /// Override the verification page URI returned to devices.
+    #[must_use]
     pub fn verification_uri(mut self, uri: impl Into<String>) -> Self {
         self.config.verification_uri = Some(uri.into());
         self
     }
 
     /// Use a custom device-code generator.
+    #[must_use]
     pub fn generate_device_code_with<F>(mut self, generator: F) -> Self
     where
         F: Fn() -> String + Send + Sync + 'static,
@@ -194,6 +239,7 @@ impl DeviceAuthorizationPlugin {
     }
 
     /// Use a custom user-code generator.
+    #[must_use]
     pub fn generate_user_code_with<F>(mut self, generator: F) -> Self
     where
         F: Fn() -> String + Send + Sync + 'static,
@@ -206,6 +252,7 @@ impl DeviceAuthorizationPlugin {
     }
 
     /// Use an asynchronous device-code generator.
+    #[must_use]
     pub fn generate_device_code_async_with<F, Fut>(mut self, generator: F) -> Self
     where
         F: Fn() -> Fut + Send + Sync + 'static,
@@ -216,6 +263,7 @@ impl DeviceAuthorizationPlugin {
     }
 
     /// Use an asynchronous user-code generator.
+    #[must_use]
     pub fn generate_user_code_async_with<F, Fut>(mut self, generator: F) -> Self
     where
         F: Fn() -> Fut + Send + Sync + 'static,
@@ -226,6 +274,7 @@ impl DeviceAuthorizationPlugin {
     }
 
     /// Validate the OAuth client identifier before issuing or redeeming codes.
+    #[must_use]
     pub fn validate_client<F, Fut>(mut self, callback: F) -> Self
     where
         F: Fn(String) -> Fut + Send + Sync + 'static,
@@ -237,6 +286,7 @@ impl DeviceAuthorizationPlugin {
     }
 
     /// Run a hook when a device authorization request is created.
+    #[must_use]
     pub fn on_device_auth_request<F, Fut>(mut self, callback: F) -> Self
     where
         F: Fn(String, Option<String>) -> Fut + Send + Sync + 'static,
@@ -312,7 +362,7 @@ impl DeviceAuthorizationPlugin {
                     user_code: user_code.clone(),
                     user_id: body.user_id.clone(),
                     expires_at,
-                    status: DEVICE_STATUS_PENDING.to_string(),
+                    status: DEVICE_STATUS_PENDING.to_owned(),
                     last_polled_at: None,
                     polling_interval: Some(polling_interval),
                     client_id: Some(body.client_id.clone()),
@@ -407,16 +457,17 @@ impl DeviceAuthorizationPlugin {
             }
         }
 
-        let _ = ctx
-            .database
-            .update_device_code(
-                &device_code.id,
-                UpdateDeviceCode {
-                    last_polled_at: Some(Some(now)),
-                    ..Default::default()
-                },
-            )
-            .await?;
+        drop(
+            ctx.database
+                .update_device_code(
+                    &device_code.id,
+                    UpdateDeviceCode {
+                        last_polled_at: Some(Some(now)),
+                        ..Default::default()
+                    },
+                )
+                .await?,
+        );
 
         if device_code.expires_at < now {
             ctx.database.delete_device_code(&device_code.id).await?;
@@ -474,7 +525,7 @@ impl DeviceAuthorizationPlugin {
             return Ok(AuthResponse::json(
                 200,
                 &DeviceTokenResponse {
-                    access_token: session.token().to_string(),
+                    access_token: session.token().to_owned(),
                     token_type: "Bearer",
                     expires_in: (session.expires_at().timestamp_millis()
                         - Utc::now().timestamp_millis())
@@ -512,7 +563,7 @@ impl DeviceAuthorizationPlugin {
         // session is optional — anyone may look up the status.
         let user_id = match ctx.require_session(req).await {
             Ok((user, _)) => Some(user.id().into_owned()),
-            Err(AuthError::Unauthenticated) | Err(AuthError::SessionNotFound) => None,
+            Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => None,
             Err(err) => return Err(err),
         };
         if device_code.user_id.is_none()
@@ -574,7 +625,7 @@ impl DeviceAuthorizationPlugin {
         };
         let user = match ctx.require_session(req).await {
             Ok((user, _session)) => user,
-            Err(AuthError::Unauthenticated) | Err(AuthError::SessionNotFound) => {
+            Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
                 return device_error_response(401, "unauthorized", AUTHENTICATION_REQUIRED);
             }
             Err(error) => return Err(error),
@@ -605,7 +656,7 @@ impl DeviceAuthorizationPlugin {
             return device_error_response(403, "access_denied", decision.forbidden_message());
         }
 
-        let updated_user_id = claimed_user_id.to_string();
+        let updated_user_id = claimed_user_id.to_owned();
 
         let updated = ctx
             .database
@@ -613,7 +664,7 @@ impl DeviceAuthorizationPlugin {
                 &device_code.id,
                 DEVICE_STATUS_PENDING,
                 UpdateDeviceCode {
-                    status: Some(decision.status().to_string()),
+                    status: Some(decision.status().to_owned()),
                     user_id: Some(Some(updated_user_id)),
                     ..Default::default()
                 },
@@ -629,7 +680,7 @@ impl DeviceAuthorizationPlugin {
 
     async fn validate_client_id(&self, client_id: &str) -> AuthResult<bool> {
         match &self.config.validate_client {
-            Some(callback) => callback(client_id.to_string()).await,
+            Some(callback) => callback(client_id.to_owned()).await,
             None => Ok(true),
         }
     }
@@ -652,6 +703,24 @@ impl DeviceAuthorizationPlugin {
     }
 }
 
+#[derive(Clone, Copy)]
+enum DeviceRequestKind {
+    Issuance,
+    Token,
+    Decision,
+}
+
+better_auth_core::impl_auth_plugin! {
+    DeviceAuthorizationPlugin, "device-authorization";
+    routes {
+        post "/device/code" => handle_device_code, "device_code";
+        post "/device/token" => handle_device_token, "device_token";
+        get "/device" => handle_device_verify, "device_verify";
+        post "/device/approve" => handle_device_approve, "device_approve";
+        post "/device/deny" => handle_device_deny, "device_deny";
+    }
+}
+
 fn is_unique_constraint_error(error: &AuthError) -> bool {
     let AuthError::Database(better_auth_core::DatabaseError::Constraint(message)) = error else {
         return false;
@@ -667,7 +736,7 @@ fn is_unique_constraint_error(error: &AuthError) -> bool {
 fn deserialize_device_body<T: serde::de::DeserializeOwned>(
     value: serde_json::Value,
 ) -> Result<T, AuthResponse> {
-    serde_json::from_value(value).map_err(|_| AuthResponse::text(400, "Invalid request body"))
+    serde_json::from_value(value).map_err(|_error| AuthResponse::text(400, "Invalid request body"))
 }
 
 fn validate_device_media(req: &AuthRequest, issuance: bool) -> Result<bool, AuthResponse> {
@@ -690,7 +759,7 @@ fn validate_device_media(req: &AuthRequest, issuance: bool) -> Result<bool, Auth
     } else {
         "application/json"
     };
-    let missing = req.body.is_some() && raw_content_type.is_none_or(|value| value.is_empty());
+    let missing = req.body.is_some() && raw_content_type.is_none_or(str::is_empty);
     if missing
         || content_type
             .as_deref()
@@ -713,35 +782,25 @@ fn validate_device_media(req: &AuthRequest, issuance: bool) -> Result<bool, Auth
     Ok(is_form)
 }
 
-enum DeviceRequestKind {
-    Issuance,
-    Token,
-    Decision,
-}
-
 fn parse_device_body(
     req: &AuthRequest,
     kind: DeviceRequestKind,
 ) -> Result<serde_json::Value, AuthResponse> {
     let issuance = matches!(kind, DeviceRequestKind::Issuance);
     let is_form = validate_device_media(req, issuance)?;
-    let pairs = if is_form {
-        Some(
-            url::form_urlencoded::parse(req.body.as_deref().unwrap_or_default())
-                .into_owned()
-                .collect::<Vec<_>>(),
-        )
-    } else {
-        None
-    };
+    let pairs = is_form.then(|| {
+        url::form_urlencoded::parse(req.body.as_deref().unwrap_or_default())
+            .into_owned()
+            .collect::<Vec<_>>()
+    });
     let mut body = if let Some(pairs) = &pairs {
         let mut object = serde_json::Map::new();
         for (key, value) in pairs {
-            let _ = object.insert(key.clone(), serde_json::Value::String(value.clone()));
+            drop(object.insert(key.clone(), serde_json::Value::String(value.clone())));
         }
         serde_json::Value::Object(object)
     } else {
-        req.body_as_json::<serde_json::Value>().map_err(|_| {
+        req.body_as_json::<serde_json::Value>().map_err(|_error| {
             AuthResponse::json(
                 400,
                 &serde_json::json!({"code":"BAD_REQUEST","message":"Invalid JSON in request body"}),
@@ -755,12 +814,7 @@ fn parse_device_body(
         DeviceRequestKind::Decision => &["userCode"][..],
     };
     let mut issues = Vec::new();
-    if !body.is_object() {
-        issues.push(format!(
-            "[body] Invalid input: expected object, received {}",
-            json_type(Some(&body))
-        ));
-    } else {
+    if body.is_object() {
         for field in fields {
             let value = body.get(*field);
             if !issuance && *field == "grant_type" {
@@ -769,15 +823,20 @@ fn parse_device_body(
                         "[body.grant_type] Invalid input: expected \"{DEVICE_GRANT_TYPE}\""
                     ));
                 }
-            } else if value.is_none() && issuance && matches!(*field, "user_id" | "scope") {
-                continue;
-            } else if !value.is_some_and(serde_json::Value::is_string) {
+            } else if !(value.is_some_and(serde_json::Value::is_string)
+                || value.is_none() && issuance && matches!(*field, "user_id" | "scope"))
+            {
                 issues.push(format!(
                     "[body.{field}] Invalid input: expected string, received {}",
                     json_type(value)
                 ));
             }
         }
+    } else {
+        issues.push(format!(
+            "[body] Invalid input: expected object, received {}",
+            json_type(Some(&body))
+        ));
     }
     if !issues.is_empty() {
         let message = issues.join("; ");
@@ -812,17 +871,17 @@ fn parse_device_body(
             if let Some(value) = values.first()
                 && let Some(object) = body.as_object_mut()
             {
-                let _ = object.insert(
+                drop(object.insert(
                     (*field).to_owned(),
                     serde_json::Value::String((*value).clone()),
-                );
+                ));
             }
         }
     }
     Ok(body)
 }
 
-fn json_type(value: Option<&serde_json::Value>) -> &'static str {
+const fn json_type(value: Option<&serde_json::Value>) -> &'static str {
     match value {
         None => "undefined",
         Some(serde_json::Value::Null) => "null",
@@ -834,17 +893,6 @@ fn json_type(value: Option<&serde_json::Value>) -> &'static str {
     }
 }
 
-better_auth_core::impl_auth_plugin! {
-    DeviceAuthorizationPlugin, "device-authorization";
-    routes {
-        post "/device/code" => handle_device_code, "device_code";
-        post "/device/token" => handle_device_token, "device_token";
-        get "/device" => handle_device_verify, "device_verify";
-        post "/device/approve" => handle_device_approve, "device_approve";
-        post "/device/deny" => handle_device_deny, "device_deny";
-    }
-}
-
 fn build_verification_uris(
     verification_uri: Option<&str>,
     base_url: &str,
@@ -853,7 +901,7 @@ fn build_verification_uris(
     let uri = verification_uri
         .filter(|uri| !uri.is_empty())
         .unwrap_or("/device");
-    let verification_url = match Url::parse(uri) {
+    let parsed_verification_url = match Url::parse(uri) {
         Ok(url) => url,
         Err(_) => Url::parse(base_url)
             .map_err(|error| AuthError::config(format!("Invalid base URL: {error}")))?
@@ -863,7 +911,7 @@ fn build_verification_uris(
             })?,
     };
 
-    let mut verification_uri_complete = verification_url.clone();
+    let mut verification_uri_complete = parsed_verification_url.clone();
     // URLSearchParams.set replaces the first matching key and removes any
     // later copies, preserving the surrounding query and fragment.
     let mut replaced = false;
@@ -871,7 +919,7 @@ fn build_verification_uris(
     for (key, value) in verification_uri_complete.query_pairs() {
         if key == "user_code" {
             if !replaced {
-                pairs.push((key.into_owned(), user_code.to_string()));
+                pairs.push((key.into_owned(), user_code.to_owned()));
                 replaced = true;
             }
         } else {
@@ -879,15 +927,15 @@ fn build_verification_uris(
         }
     }
     if !replaced {
-        pairs.push(("user_code".to_string(), user_code.to_string()));
+        pairs.push(("user_code".to_owned(), user_code.to_owned()));
     }
-    let _ = verification_uri_complete
+    let _ignored_extend_pairs = verification_uri_complete
         .query_pairs_mut()
         .clear()
         .extend_pairs(pairs);
 
     Ok((
-        verification_url.to_string(),
+        parsed_verification_url.to_string(),
         verification_uri_complete.to_string(),
     ))
 }
@@ -930,10 +978,12 @@ fn default_generate_user_code(length: usize) -> String {
         .into_iter()
         .map(|byte| {
             let index = usize::from(byte) % DEFAULT_USER_CODE_CHARSET.len();
-            DEFAULT_USER_CODE_CHARSET
-                .get(index)
-                .copied()
-                .unwrap_or(b'A') as char
+            char::from(
+                DEFAULT_USER_CODE_CHARSET
+                    .get(index)
+                    .copied()
+                    .unwrap_or(b'A'),
+            )
         })
         .collect()
 }
@@ -946,8 +996,8 @@ fn device_error_response(
     AuthResponse::json(
         status,
         &DeviceErrorResponse {
-            error: error.to_string(),
-            error_description: error_description.to_string(),
+            error: error.to_owned(),
+            error_description: error_description.to_owned(),
         },
     )
     .map_err(AuthError::from)

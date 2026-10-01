@@ -4,20 +4,27 @@
 //! [`EmailOtpPlugin::get_verification_otp`] are server-only operations. Neither
 //! operation registers an HTTP endpoint.
 
-use async_trait::async_trait;
-use better_auth_core::{AuthContext, AuthRequest, AuthResponse, AuthResult};
-use chrono::Duration;
-use std::sync::Arc;
-
 mod handlers;
+
 mod helpers;
+
 mod storage;
+
 mod types;
 
 #[cfg(test)]
 mod tests;
 
+use async_trait::async_trait;
+
+use better_auth_core::{AuthContext, AuthRequest, AuthResponse, AuthResult};
+
+use chrono::Duration;
+
+use std::sync::Arc;
+
 pub use storage::{EmailOtpCodec, EmailOtpStorage};
+
 pub use types::{EmailOtpDelivery, EmailOtpType, OtpResendStrategy};
 
 /// Delivers a code to its intended mailbox. The default notification policy
@@ -36,6 +43,10 @@ pub trait EmailOtpGenerator: Send + Sync {
 
 /// Configuration for email OTP verification, login, password reset and email change.
 #[derive(Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
+)]
 pub struct EmailOtpConfig {
     pub send_verification_otp: Option<Arc<dyn SendEmailOtp>>,
     pub generate_otp: Option<Arc<dyn EmailOtpGenerator>>,
@@ -56,6 +67,12 @@ pub struct EmailOtpConfig {
     pub max_password_length: usize,
     pub revoke_sessions_on_password_reset: bool,
     pub on_password_reset: Option<Arc<super::password_management::OnPasswordResetCallback>>,
+}
+
+impl std::fmt::Debug for EmailOtpConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EmailOtpConfig").finish_non_exhaustive()
+    }
 }
 
 impl Default for EmailOtpConfig {
@@ -89,8 +106,15 @@ pub struct EmailOtpPlugin {
     config: EmailOtpConfig,
 }
 
+impl std::fmt::Debug for EmailOtpPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EmailOtpPlugin").finish_non_exhaustive()
+    }
+}
+
 impl EmailOtpPlugin {
-    pub fn new(config: EmailOtpConfig) -> Self {
+    #[must_use]
+    pub const fn new(config: EmailOtpConfig) -> Self {
         Self { config }
     }
 
@@ -142,9 +166,8 @@ impl EmailOtpPlugin {
                 .as_ref()
                 .and_then(|config| config.password_hasher.clone())
                 .or_else(|| {
-                    passwords
-                        .as_ref()
-                        .and_then(|config| config.password_hasher.clone())
+                    let config = passwords.as_ref()?;
+                    config.password_hasher.clone()
                 })
                 .or_else(|| self.config.password_hasher.clone()),
             on_reset: resets
@@ -160,6 +183,10 @@ impl EmailOtpPlugin {
 
     /// Create and persist a code without delivering it or checking whether the
     /// mailbox has an account. This operation is available only to server code.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if OTP generation, encoding, or persistence fails.
     pub async fn create_verification_otp(
         &self,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -172,6 +199,10 @@ impl EmailOtpPlugin {
 
     /// Retrieve a live plaintext/decryptable code without consuming it.
     /// Hashed storage rejects this operation, since a hash cannot reveal a code.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if storage fails or the configured OTP representation cannot be recovered.
     pub async fn get_verification_otp(
         &self,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -272,7 +303,7 @@ impl<S: better_auth_core::AuthSchema> better_auth_core::VerificationEmailOverrid
             "/email-otp/send-verification-otp",
         );
         req.body = Some(serde_json::to_vec(&body)?);
-        let _ = self.send_verification(&req, ctx).await?;
+        drop(self.send_verification(&req, ctx).await?);
         Ok(())
     }
 
@@ -290,7 +321,7 @@ impl<S: better_auth_core::AuthSchema> better_auth_core::VerificationEmailOverrid
         let (otp, value) = self
             .prepare_code(ctx, &email, EmailOtpType::EmailVerification, None)
             .await?;
-        let _ = tx.create_verification(value).await?;
+        drop(tx.create_verification(value).await?);
         self.deliver(&email, otp, EmailOtpType::EmailVerification)
             .await
     }

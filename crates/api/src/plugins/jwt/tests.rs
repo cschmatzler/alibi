@@ -5,10 +5,77 @@
 )]
 
 use super::*;
+
 use crate::plugins::test_helpers;
+
 use better_auth_core::CreateUser;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+
+struct ApplicationClaims;
+
+#[async_trait]
+impl DefineJwtPayload for ApplicationClaims {
+    async fn define_payload(&self, session: &JwtSession) -> AuthResult<Map<String, Value>> {
+        Ok(
+            json!({"purpose":"application","ownerId":session.user.id,"loginId":session.session.id})
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+    }
+}
+
+struct ApplicationSubject(Option<String>);
+
+#[async_trait]
+impl DefineJwtSubject for ApplicationSubject {
+    async fn subject(&self, _session: &JwtSession) -> AuthResult<Option<String>> {
+        Ok(self.0.clone())
+    }
+}
+
+struct ApplicationKeyring {
+    database: Arc<dyn better_auth_core::AuthStore<TestSchema>>,
+}
+
+#[async_trait]
+impl JwtKeyring for ApplicationKeyring {
+    async fn keys(&self, _request: Option<&AuthRequest>) -> AuthResult<Vec<Jwk>> {
+        self.database.list_jwks().await
+    }
+    async fn create_key(
+        &self,
+        mut key: CreateJwk,
+        request: Option<&AuthRequest>,
+    ) -> AuthResult<Jwk> {
+        if request.map(AuthRequest::path) != Some("/jwks") {
+            return Err(AuthError::forbidden(
+                "Application key provisioning requires its public key request",
+            ));
+        }
+        key.id = Some("application-signing-key".to_owned());
+        self.database.create_jwk(key).await
+    }
+}
+
+struct ApplicationSigner {
+    context: AuthContext<TestSchema>,
+    plugin: JwtPlugin,
+}
+
+#[async_trait]
+impl SignRemoteJwt for ApplicationSigner {
+    async fn sign(
+        &self,
+        payload: &Map<String, Value>,
+        options: &JwtSignOptions,
+    ) -> AuthResult<String> {
+        self.plugin
+            .sign_jwt(payload.clone(), options, None, &self.context)
+            .await
+    }
+}
 
 fn payload(subject: &str) -> Map<String, Value> {
     json!({ "sub": subject, "application": "jwt-tests" })
@@ -16,6 +83,7 @@ fn payload(subject: &str) -> Map<String, Value> {
         .unwrap()
         .clone()
 }
+
 fn decoded(token: &str) -> (Value, Value) {
     let parts = token.split('.').collect::<Vec<_>>();
     (
@@ -215,6 +283,11 @@ async fn verification_rejects_tampering_wrong_claims_unknown_key_and_algorithm_c
 }
 
 #[tokio::test]
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
 async fn signing_normalizes_jose_numeric_dates_and_rejects_invalid_claim_types() {
     let ctx = test_helpers::create_test_context().await;
     let plugin = JwtPlugin::new();
@@ -224,19 +297,19 @@ async fn signing_normalizes_jose_numeric_dates_and_rejects_invalid_claim_types()
         ("+1 hr", 3600.0),
         ("1 minute ago", -60.0),
         ("1 minute AGO", 60.0),
-        ("1 year from now", 31557600.0),
+        ("1 year from now", 31_557_600.0),
         ("-0.5 secs", -1.0),
     ] {
         let before = Utc::now().timestamp() as f64;
         let mut claims = payload("subject");
-        let _ = claims.insert("exp".to_owned(), json!(expiry));
+        drop(claims.insert("exp".to_owned(), json!(expiry)));
         let token = plugin
             .sign_jwt(claims, &JwtSignOptions::default(), None, &ctx)
             .await
             .unwrap();
         let after = Utc::now().timestamp() as f64;
-        let expiry = decoded(&token).1["exp"].as_f64().unwrap();
-        assert!(expiry >= before + seconds && expiry <= after + seconds);
+        let expiry_2 = decoded(&token).1["exp"].as_f64().unwrap();
+        assert!(expiry_2 >= before + seconds && expiry_2 <= after + seconds);
         assert_eq!(
             plugin
                 .verify_jwt(&token, None, None, &ctx)
@@ -270,7 +343,7 @@ async fn signing_normalizes_jose_numeric_dates_and_rejects_invalid_claim_types()
     }
     let mut relative_iat = payload("relative-iat-owner");
     relative_iat.extend(
-        json!({"iat":"1m","exp":4102444800_i64})
+        json!({"iat":"1m","exp":4_102_444_800_i64})
             .as_object()
             .unwrap()
             .clone(),
@@ -283,18 +356,18 @@ async fn signing_normalizes_jose_numeric_dates_and_rejects_invalid_claim_types()
     let claims = decoded(&token).1;
     assert!(claims["iat"].as_f64().unwrap() >= (before + 60) as f64);
     assert!(claims["iat"].as_f64().unwrap() <= (Utc::now().timestamp() + 60) as f64);
-    assert_eq!(claims["exp"], 4102444800_i64);
+    assert_eq!(claims["exp"], 4_102_444_800_i64);
     let mut false_iat = payload("false-iat-owner");
-    let _ = false_iat.insert("iat".to_owned(), json!(false));
-    let token = plugin
+    drop(false_iat.insert("iat".to_owned(), json!(false)));
+    let token_2 = plugin
         .sign_jwt(false_iat, &JwtSignOptions::default(), None, &ctx)
         .await
         .unwrap();
-    assert_eq!(decoded(&token).1["iat"], false);
-    assert_eq!(decoded(&token).1["exp"], 900);
+    assert_eq!(decoded(&token_2).1["iat"], false);
+    assert_eq!(decoded(&token_2).1["exp"], 900);
     // Falsy optional claims are retained by the pinned signer rather than sent
     // to JOSE's setters; its verifier still checks NumericDate types.
-    let token = plugin
+    let token_3 = plugin
         .sign_jwt(
             json!({"sub":"subject","iat":null,"jti":false})
                 .as_object()
@@ -306,10 +379,10 @@ async fn signing_normalizes_jose_numeric_dates_and_rejects_invalid_claim_types()
         )
         .await
         .unwrap();
-    assert_eq!(decoded(&token).1["jti"], false);
+    assert_eq!(decoded(&token_3).1["jti"], false);
     assert!(
         plugin
-            .verify_jwt(&token, None, None, &ctx)
+            .verify_jwt(&token_3, None, None, &ctx)
             .await
             .unwrap()
             .is_none()
@@ -325,7 +398,7 @@ async fn signing_and_verification_enforce_jose_headers_and_externally_signed_cla
         .await
         .unwrap()
         .unwrap();
-    let claims = json!({"sub":"subject","exp":4102444800_i64,"iss":ctx.config.base_url,"aud":ctx.config.base_url});
+    let claims = json!({"sub":"subject","exp":4_102_444_800_i64,"iss":ctx.config.base_url,"aud":ctx.config.base_url});
     for (header, signs, verifies) in [
         (json!({}), true, true),
         (json!({"crit":["unknown"],"unknown":true}), false, false),
@@ -348,8 +421,8 @@ async fn signing_and_verification_enforce_jose_headers_and_externally_signed_cla
                 .is_ok(),
             signs
         );
-        let _ = header.insert("alg".to_owned(), json!(key.algorithm.as_str()));
-        let _ = header.insert("kid".to_owned(), json!(key.key_id));
+        drop(header.insert("alg".to_owned(), json!(key.algorithm.as_str())));
+        drop(header.insert("kid".to_owned(), json!(key.key_id)));
         // Use the key directly to create a cryptographically valid JWT even
         // when the public signer correctly refuses its extension header.
         let input = format!(
@@ -381,7 +454,7 @@ async fn signing_and_verification_enforce_jose_headers_and_externally_signed_cla
         (json!(""), false),
     ] {
         let mut claims = claims.as_object().unwrap().clone();
-        let _ = claims.insert("sub".to_owned(), subject);
+        drop(claims.insert("sub".to_owned(), subject));
         let header = json!({"alg":key.algorithm.as_str(),"kid":key.key_id});
         let input = format!(
             "{}.{}",
@@ -429,7 +502,7 @@ async fn verification_imports_persisted_jwk_metadata_as_the_pinned_runtime_does(
     let ctx = test_helpers::create_test_context().await;
     let plugin = JwtPlugin::new();
     let (public, private) = crypto::generate(&JwtKeyPairConfig::default()).unwrap();
-    let claims = json!({"sub":"subject","exp":4102444800_i64,"iss":ctx.config.base_url,"aud":ctx.config.base_url});
+    let claims = json!({"sub":"subject","exp":4_102_444_800_i64,"iss":ctx.config.base_url,"aud":ctx.config.base_url});
     for (index, (metadata, verifies)) in [
         (json!({}), true),
         (json!({"ext":false}), true),
@@ -498,7 +571,7 @@ async fn all_official_algorithms_generate_sign_and_verify_with_matching_jwks() {
             },
             ..Default::default()
         });
-        let claims = json!({ "sub": "subject", "iat": 100, "exp": 4102444800_i64 })
+        let claims = json!({ "sub": "subject", "iat": 100, "exp": 4_102_444_800_i64 })
             .as_object()
             .unwrap()
             .clone();
@@ -539,6 +612,10 @@ async fn all_official_algorithms_generate_sign_and_verify_with_matching_jwks() {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn rotation_keeps_public_keys_for_grace_and_pinning_never_silently_changes_keys() {
     let ctx = test_helpers::create_test_context().await;
     let plugin = JwtPlugin::with_config(JwtPluginConfig {
@@ -566,19 +643,18 @@ async fn rotation_keeps_public_keys_for_grace_and_pinning_never_silently_changes
         })
         .await
         .unwrap();
-    let old_token = plugin
-        .sign_resolved(
-            plugin
-                .default_claims(payload("old-subject"), None, &ctx)
-                .unwrap(),
-            &JwtSignOptions::default(),
-            &ResolvedJwtSigningKey {
-                algorithm: JwtAlgorithm::EdDsa,
-                key_id: old.id.clone(),
-                private_key: private,
-            },
-        )
-        .unwrap();
+    let old_token = JwtPlugin::sign_resolved(
+        plugin
+            .default_claims(payload("old-subject"), None, &ctx)
+            .unwrap(),
+        &JwtSignOptions::default(),
+        &ResolvedJwtSigningKey {
+            algorithm: JwtAlgorithm::EdDsa,
+            key_id: old.id.clone(),
+            private_key: private,
+        },
+    )
+    .unwrap();
     let current_token = plugin
         .sign_jwt(
             payload("new-subject"),
@@ -614,7 +690,7 @@ async fn rotation_keeps_public_keys_for_grace_and_pinning_never_silently_changes
         grace_period: Duration::seconds(1),
         ..Default::default()
     });
-    let jwks = beyond_grace
+    let jwks_2 = beyond_grace
         .jwks(
             &test_helpers::create_auth_request_no_query(HttpMethod::Get, "/jwks", None, None),
             &ctx,
@@ -622,7 +698,7 @@ async fn rotation_keeps_public_keys_for_grace_and_pinning_never_silently_changes
         .await
         .unwrap();
     assert_eq!(
-        serde_json::from_slice::<Value>(&jwks.body).unwrap()["keys"]
+        serde_json::from_slice::<Value>(&jwks_2.body).unwrap()["keys"]
             .as_array()
             .unwrap()
             .len(),
@@ -782,29 +858,6 @@ async fn session_payload_and_server_only_endpoints_have_distinct_authority() {
     );
 }
 
-struct ApplicationClaims;
-
-#[async_trait]
-impl DefineJwtPayload for ApplicationClaims {
-    async fn define_payload(&self, session: &JwtSession) -> AuthResult<Map<String, Value>> {
-        Ok(
-            json!({"purpose":"application","ownerId":session.user.id,"loginId":session.session.id})
-                .as_object()
-                .unwrap()
-                .clone(),
-        )
-    }
-}
-
-struct ApplicationSubject(Option<String>);
-
-#[async_trait]
-impl DefineJwtSubject for ApplicationSubject {
-    async fn subject(&self, _session: &JwtSession) -> AuthResult<Option<String>> {
-        Ok(self.0.clone())
-    }
-}
-
 #[tokio::test]
 async fn application_session_callbacks_replace_default_claims_and_preserve_subject_fallback() {
     let ctx = test_helpers::create_test_context().await;
@@ -849,37 +902,13 @@ async fn application_session_callbacks_replace_default_claims_and_preserve_subje
     }
 }
 
-struct ApplicationKeyring {
-    database: Arc<dyn better_auth_core::AuthStore<TestSchema>>,
-}
-
-#[async_trait]
-impl JwtKeyring for ApplicationKeyring {
-    async fn keys(&self, _request: Option<&AuthRequest>) -> AuthResult<Vec<Jwk>> {
-        self.database.list_jwks().await
-    }
-    async fn create_key(
-        &self,
-        mut key: CreateJwk,
-        request: Option<&AuthRequest>,
-    ) -> AuthResult<Jwk> {
-        if request.map(AuthRequest::path) != Some("/jwks") {
-            return Err(AuthError::forbidden(
-                "Application key provisioning requires its public key request",
-            ));
-        }
-        key.id = Some("application-signing-key".to_owned());
-        self.database.create_jwk(key).await
-    }
-}
-
 #[tokio::test]
 async fn application_keyring_persists_and_resolves_keys_outside_auth_storage() {
     let ctx = test_helpers::create_test_context().await;
     let application_keys = test_helpers::create_test_context().await;
     let plugin = JwtPlugin::with_config(JwtPluginConfig {
         keyring: Some(Arc::new(ApplicationKeyring {
-            database: application_keys.database.clone(),
+            database: Arc::clone(&application_keys.database),
         })),
         ..Default::default()
     });
@@ -926,24 +955,6 @@ async fn application_keyring_persists_and_resolves_keys_outside_auth_storage() {
     );
 }
 
-struct ApplicationSigner {
-    context: AuthContext<TestSchema>,
-    plugin: JwtPlugin,
-}
-
-#[async_trait]
-impl SignRemoteJwt for ApplicationSigner {
-    async fn sign(
-        &self,
-        payload: &Map<String, Value>,
-        options: &JwtSignOptions,
-    ) -> AuthResult<String> {
-        self.plugin
-            .sign_jwt(payload.clone(), options, None, &self.context)
-            .await
-    }
-}
-
 #[tokio::test]
 async fn delegated_signing_uses_external_keys_and_preserves_explicit_payload_and_headers() {
     let ctx = test_helpers::create_test_context().await;
@@ -953,7 +964,7 @@ async fn delegated_signing_uses_external_keys_and_preserves_explicit_payload_and
     });
     let plugin = JwtPlugin::with_config(JwtPluginConfig {
         remote_url: Some("https://keys.fixture.test/jwks".to_owned()),
-        remote_signer: Some(service.clone()),
+        remote_signer: Some(Arc::<ApplicationSigner>::clone(&service)),
         ..Default::default()
     });
     let options = JwtSignOptions {
@@ -1003,7 +1014,7 @@ async fn delegated_signing_uses_external_keys_and_preserves_explicit_payload_and
         remote_signer: Some(service),
         ..Default::default()
     });
-    let mut init = AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    let mut init = AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
     assert!(invalid.on_init(&mut init).await.is_err());
 }
 
@@ -1052,7 +1063,7 @@ async fn signs_pinned_typescript_encrypted_key_and_refuses_a_changed_secret() {
     );
     let mut changed = config;
     changed.secret = "a-different-keyring-secret-at-least-32-characters".to_owned();
-    let changed = AuthContext::<TestSchema>::new(Arc::new(changed), ctx.database.clone());
+    let changed = AuthContext::<TestSchema>::new(Arc::new(changed), Arc::clone(&ctx.database));
     let error = plugin
         .sign_jwt(
             fixture["payload"].as_object().unwrap().clone(),
@@ -1088,6 +1099,10 @@ async fn signs_pinned_typescript_encrypted_key_and_refuses_a_changed_secret() {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn imported_private_ec_coordinates_must_match_the_secret_scalar() {
     for algorithm in [
         JwtAlgorithm::Es256,
@@ -1167,13 +1182,13 @@ async fn imported_private_ec_coordinates_must_match_the_secret_scalar() {
             stored.private_key
         );
         if algorithm != JwtAlgorithm::EdDsa {
-            let (public, mut private, scalar) = loop {
-                let (public, private) = crypto::generate(&pair).unwrap();
+            let (public_3, mut private_3, scalar) = loop {
+                let (public_2, private_2) = crypto::generate(&pair).unwrap();
                 let scalar = URL_SAFE_NO_PAD
-                    .decode(private["d"].as_str().unwrap())
+                    .decode(private_2["d"].as_str().unwrap())
                     .unwrap();
                 if scalar.first() == Some(&0) {
-                    break (public, private, scalar);
+                    break (public_2, private_2, scalar);
                 }
             };
             let mut padded_once = vec![0];
@@ -1182,7 +1197,7 @@ async fn imported_private_ec_coordinates_must_match_the_secret_scalar() {
             padded_many.extend(&scalar);
             let mut overflow = vec![1];
             overflow.extend(&scalar);
-            for (index, (scalar, accepted)) in [
+            for (index, (scalar_2, accepted)) in [
                 (scalar[1..].to_vec(), true),
                 (padded_once, true),
                 (padded_many, true),
@@ -1191,15 +1206,15 @@ async fn imported_private_ec_coordinates_must_match_the_secret_scalar() {
             .into_iter()
             .enumerate()
             {
-                private["d"] = json!(URL_SAFE_NO_PAD.encode(scalar));
+                private_3["d"] = json!(URL_SAFE_NO_PAD.encode(scalar_2));
                 let imported = ctx
                     .database
                     .create_jwk(CreateJwk {
                         id: Some(format!("unsigned-scalar-{}-{index}", algorithm.as_str())),
-                        public_key: serde_json::to_string(&public).unwrap(),
+                        public_key: serde_json::to_string(&public_3).unwrap(),
                         private_key: serde_json::to_string(
                             &encrypt(
-                                &serde_json::to_string(&private).unwrap(),
+                                &serde_json::to_string(&private_3).unwrap(),
                                 &ctx.config.secret,
                             )
                             .unwrap(),
@@ -1212,7 +1227,7 @@ async fn imported_private_ec_coordinates_must_match_the_secret_scalar() {
                     })
                     .await
                     .unwrap();
-                let result = plugin
+                let result_2 = plugin
                     .sign_jwt(
                         payload("matching-owner"),
                         &JwtSignOptions {
@@ -1224,7 +1239,7 @@ async fn imported_private_ec_coordinates_must_match_the_secret_scalar() {
                     )
                     .await;
                 if accepted {
-                    let token = result.expect("unsigned scalar leading zero representations with matching coordinates remain valid");
+                    let token = result_2.expect("unsigned scalar leading zero representations with matching coordinates remain valid");
                     assert!(
                         plugin
                             .verify_jwt(&token, None, None, &ctx)
@@ -1233,7 +1248,10 @@ async fn imported_private_ec_coordinates_must_match_the_secret_scalar() {
                             .is_some()
                     );
                 } else {
-                    assert!(result.is_err(), "nonzero scalar overflow must fail import");
+                    assert!(
+                        result_2.is_err(),
+                        "nonzero scalar overflow must fail import"
+                    );
                 }
                 assert_eq!(ctx.database.list_jwks().await.unwrap().len(), index + 2);
                 assert_eq!(
@@ -1304,8 +1322,14 @@ async fn negative_rotation_issues_one_expired_key_per_request() {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn verifies_compact_signature_padding_bits_and_ascii_whitespace_without_accepting_base64_alphabet()
  {
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
     let ctx = test_helpers::create_test_context().await;
     let plugin = JwtPlugin::new();
     let token = plugin
@@ -1337,7 +1361,7 @@ async fn verifies_compact_signature_padding_bits_and_ascii_whitespace_without_ac
             accepted
         );
     }
-    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
     let final_index = ALPHABET
         .iter()
         .position(|value| *value == *signature.as_bytes().last().unwrap())
@@ -1347,8 +1371,14 @@ async fn verifies_compact_signature_padding_bits_and_ascii_whitespace_without_ac
             "{}.{}.{}{}",
             parts[0],
             parts[1],
-            &signature[..signature.len() - 1],
-            ALPHABET[final_index + offset] as char
+            (signature)
+                .get(..signature.len() - 1)
+                .expect("fixture range is on a UTF-8 boundary"),
+            char::from(
+                *ALPHABET
+                    .get(final_index + offset)
+                    .expect("fixture index is in the alphabet")
+            )
         );
         assert!(
             plugin
@@ -1363,9 +1393,13 @@ async fn verifies_compact_signature_padding_bits_and_ascii_whitespace_without_ac
             "{}.{}.{}{}{}=={}",
             parts[0],
             parts[1],
-            &signature[..20],
+            (signature)
+                .get(..20)
+                .expect("fixture range is on a UTF-8 boundary"),
             whitespace,
-            &signature[20..],
+            (signature)
+                .get(20..)
+                .expect("fixture range is on a UTF-8 boundary"),
             whitespace
         );
         assert!(
@@ -1377,8 +1411,18 @@ async fn verifies_compact_signature_padding_bits_and_ascii_whitespace_without_ac
         );
     }
     for rejected in [
-        format!("+{}", &signature[1..]),
-        format!("/{}", &signature[1..]),
+        format!(
+            "+{}",
+            (signature)
+                .get(1..)
+                .expect("fixture range is on a UTF-8 boundary")
+        ),
+        format!(
+            "/{}",
+            (signature)
+                .get(1..)
+                .expect("fixture range is on a UTF-8 boundary")
+        ),
         format!("={signature}"),
         format!("{signature}==A"),
         format!("{signature}\u{000b}"),
@@ -1410,7 +1454,7 @@ async fn verifies_compact_signature_padding_bits_and_ascii_whitespace_without_ac
         let header = URL_SAFE_NO_PAD.encode(
             serde_json::to_vec(&json!({"alg":"EdDSA","kid":stored.id,"proof":proof})).unwrap(),
         );
-        let claims = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"sub":"encoding-owner","exp":4102444800_i64,"iss":ctx.config.base_url,"aud":ctx.config.base_url,"proof":proof})).unwrap());
+        let claims = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"sub":"encoding-owner","exp":4_102_444_800_i64,"iss":ctx.config.base_url,"aud":ctx.config.base_url,"proof":proof})).unwrap());
         for (index, source) in [&header, &claims].into_iter().enumerate() {
             let remainder = source.len() % 4;
             let mut variants = vec![(source.clone(), true)];
@@ -1428,15 +1472,30 @@ async fn verifies_compact_signature_padding_bits_and_ascii_whitespace_without_ac
                 variants.push((
                     format!(
                         "{}{}",
-                        &source[..source.len() - 1],
-                        ALPHABET[last + 1] as char
+                        (source)
+                            .get(..source.len() - 1)
+                            .expect("fixture range is on a UTF-8 boundary"),
+                        char::from(
+                            *ALPHABET
+                                .get(last + 1)
+                                .expect("fixture index is in the alphabet")
+                        )
                     ),
                     true,
                 ));
             }
             for whitespace in [" ", "\t", "\n", "\r", "\u{000c}", "\u{000b}", "\u{00a0}"] {
                 variants.push((
-                    format!("{}{}{}", &source[..3], whitespace, &source[3..]),
+                    format!(
+                        "{}{}{}",
+                        (source)
+                            .get(..3)
+                            .expect("fixture range is on a UTF-8 boundary"),
+                        whitespace,
+                        (source)
+                            .get(3..)
+                            .expect("fixture range is on a UTF-8 boundary")
+                    ),
                     index == 1 && matches!(whitespace, " " | "\t" | "\n" | "\r" | "\u{000c}"),
                 ));
             }
@@ -1448,12 +1507,12 @@ async fn verifies_compact_signature_padding_bits_and_ascii_whitespace_without_ac
                 let mut segments = [header.clone(), claims.clone()];
                 segments[index] = variant;
                 let input = segments.join(".");
-                let signature =
+                let signature_2 =
                     crypto::sign(JwtAlgorithm::EdDsa, &private, input.as_bytes()).unwrap();
-                let token = format!("{input}.{}", URL_SAFE_NO_PAD.encode(signature));
+                let token_2 = format!("{input}.{}", URL_SAFE_NO_PAD.encode(signature_2));
                 assert_eq!(
                     plugin
-                        .verify_jwt(&token, None, None, &ctx)
+                        .verify_jwt(&token_2, None, None, &ctx)
                         .await
                         .unwrap()
                         .is_some(),
@@ -1466,6 +1525,10 @@ async fn verifies_compact_signature_padding_bits_and_ascii_whitespace_without_ac
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn imported_jwk_material_accepts_padded_coordinates_and_rejects_other_alphabets_and_whitespace()
  {
     for algorithm in [JwtAlgorithm::Es256, JwtAlgorithm::Es512] {
@@ -1507,8 +1570,14 @@ async fn imported_jwk_material_accepts_padded_coordinates_and_rejects_other_alph
                         .unwrap();
                     imported_private[name] = json!(format!(
                         "{}{}",
-                        &source[..source.len() - 1],
-                        ALPHABET[last + offset] as char
+                        (source)
+                            .get(..source.len() - 1)
+                            .expect("fixture range is on a UTF-8 boundary"),
+                        char::from(
+                            *ALPHABET
+                                .get(last + offset)
+                                .expect("fixture index is in the alphabet")
+                        )
                     ));
                     if name != "d" {
                         imported_public[name] = imported_private[name].clone();
@@ -1518,12 +1587,12 @@ async fn imported_jwk_material_accepts_padded_coordinates_and_rejects_other_alph
             }
         }
         let (coordinate_public, coordinate_private, x) = loop {
-            let (public, private) = crypto::generate(&pair).unwrap();
+            let (public_2, private_2) = crypto::generate(&pair).unwrap();
             let x = URL_SAFE_NO_PAD
-                .decode(public["x"].as_str().unwrap())
+                .decode(public_2["x"].as_str().unwrap())
                 .unwrap();
             if x.first() == Some(&0) {
-                break (public, private, x);
+                break (public_2, private_2, x);
             }
         };
         for variation in 0..4 {
@@ -1568,8 +1637,18 @@ async fn imported_jwk_material_accepts_padded_coordinates_and_rejects_other_alph
         }
         let scalar = private["d"].as_str().unwrap();
         let mut invalid = vec![
-            format!("+{}", &scalar[1..]),
-            format!("/{}", &scalar[1..]),
+            format!(
+                "+{}",
+                (scalar)
+                    .get(1..)
+                    .expect("fixture range is on a UTF-8 boundary")
+            ),
+            format!(
+                "/{}",
+                (scalar)
+                    .get(1..)
+                    .expect("fixture range is on a UTF-8 boundary")
+            ),
             format!("={scalar}"),
             format!("{scalar}=A"),
             URL_SAFE_NO_PAD.encode(vec![
@@ -1582,22 +1661,31 @@ async fn imported_jwk_material_accepts_padded_coordinates_and_rejects_other_alph
             ]),
         ];
         for whitespace in [" ", "\t", "\n", "\r", "\u{000c}", "\u{000b}", "\u{00a0}"] {
-            invalid.push(format!("{}{}{}", &scalar[..3], whitespace, &scalar[3..]));
+            invalid.push(format!(
+                "{}{}{}",
+                (scalar)
+                    .get(..3)
+                    .expect("fixture range is on a UTF-8 boundary"),
+                whitespace,
+                (scalar)
+                    .get(3..)
+                    .expect("fixture range is on a UTF-8 boundary")
+            ));
         }
-        for scalar in invalid {
+        for scalar_2 in invalid {
             let mut imported_private = private.clone();
-            imported_private["d"] = json!(scalar);
+            imported_private["d"] = json!(scalar_2);
             imports.push((public.clone(), imported_private, false, None));
         }
-        for (index, (public, private, accepted, verification_control)) in
+        for (index, (public_3, private_3, accepted, verification_control)) in
             imports.into_iter().enumerate()
         {
             let key = ctx
                 .database
                 .create_jwk(CreateJwk {
                     id: Some(format!("imported-{}-{index}", algorithm.as_str())),
-                    public_key: serde_json::to_string(&public).unwrap(),
-                    private_key: serde_json::to_string(&private).unwrap(),
+                    public_key: serde_json::to_string(&public_3).unwrap(),
+                    private_key: serde_json::to_string(&private_3).unwrap(),
                     created_at: Utc::now(),
                     expires_at: None,
                     alg: Some(algorithm.as_str().to_owned()),
@@ -1633,19 +1721,18 @@ async fn imported_jwk_material_accepts_padded_coordinates_and_rejects_other_alph
                 );
             }
             if let Some(private_key) = verification_control {
-                let token = plugin
-                    .sign_resolved(
-                        plugin
-                            .default_claims(payload("coordinate-owner"), None, &ctx)
-                            .unwrap(),
-                        &JwtSignOptions::default(),
-                        &ResolvedJwtSigningKey {
-                            algorithm,
-                            key_id: key.id.clone(),
-                            private_key,
-                        },
-                    )
-                    .unwrap();
+                let token = JwtPlugin::sign_resolved(
+                    plugin
+                        .default_claims(payload("coordinate-owner"), None, &ctx)
+                        .unwrap(),
+                    &JwtSignOptions::default(),
+                    &ResolvedJwtSigningKey {
+                        algorithm,
+                        key_id: key.id.clone(),
+                        private_key,
+                    },
+                )
+                .unwrap();
                 assert!(
                     plugin
                         .verify_jwt(&token, None, None, &ctx)
@@ -1706,12 +1793,12 @@ async fn raw_json_signing_normalizes_application_numbers_and_preserves_literal_k
         r#"{"sub":"literal-key-owner","exp":4102444800,"singleton":{"$serde_json::private::RawValue":"hello"}}"#,
     )
     .unwrap();
-    let token = plugin
+    let token_2 = plugin
         .sign_jwt_json(&literal, &JwtSignOptions::default(), None, &ctx)
         .await
         .unwrap();
     let verified = plugin
-        .verify_jwt(&token, None, None, &ctx)
+        .verify_jwt(&token_2, None, None, &ctx)
         .await
         .unwrap()
         .unwrap();
@@ -1730,7 +1817,7 @@ async fn raw_json_signing_normalizes_application_numbers_and_preserves_literal_k
     };
     let native = plugin
         .sign_jwt(
-            json!({"sub":"native-numbers","exp":4102444800_u64,"rounded":9_007_199_254_740_993_u64})
+            json!({"sub":"native-numbers","exp":4_102_444_800_u64,"rounded":9_007_199_254_740_993_u64})
                 .as_object()
                 .unwrap()
                 .clone(),
@@ -1740,8 +1827,8 @@ async fn raw_json_signing_normalizes_application_numbers_and_preserves_literal_k
         )
         .await
         .unwrap();
-    let (header, signed) = decoded(&native);
-    assert_eq!(signed["rounded"], 9_007_199_254_740_992_u64);
+    let (header, signed_2) = decoded(&native);
+    assert_eq!(signed_2["rounded"], 9_007_199_254_740_992_u64);
     assert_eq!(header["literal"], "1e400");
     let header_text = String::from_utf8(
         URL_SAFE_NO_PAD

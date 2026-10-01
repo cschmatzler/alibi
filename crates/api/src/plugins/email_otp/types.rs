@@ -1,4 +1,5 @@
 use crate::plugins::authentication_helpers::{JsonField, JsonFieldKind, RequestBody};
+
 use serde::{Deserialize, Serialize};
 
 /// Code scope. Codes issued for one operation cannot authorize another.
@@ -15,7 +16,8 @@ pub enum EmailOtpType {
 }
 
 impl EmailOtpType {
-    pub fn as_str(self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::EmailVerification => "email-verification",
             Self::SignIn => "sign-in",
@@ -45,17 +47,6 @@ impl std::fmt::Debug for EmailOtpDelivery {
 pub enum OtpResendStrategy {
     Rotate,
     Reuse,
-}
-
-pub(super) fn identifier(otp_type: EmailOtpType, email: &str) -> String {
-    format!("{}-otp-{email}", otp_type.as_str())
-}
-
-pub(super) fn split_value(value: &str) -> (&str, usize) {
-    match value.rsplit_once(':') {
-        Some((code, attempts)) => (code, attempts.parse().unwrap_or(0)),
-        None => (value, 0),
-    }
 }
 
 #[derive(Deserialize)]
@@ -180,3 +171,14 @@ request_fields!(
     JsonField::string("newEmail", true),
     JsonField::string("otp", true)
 );
+
+pub(super) fn identifier(otp_type: EmailOtpType, email: &str) -> String {
+    format!("{}-otp-{email}", otp_type.as_str())
+}
+
+pub(super) fn split_value(value: &str) -> (&str, usize) {
+    match value.rsplit_once(':') {
+        Some((code, attempts)) => (code, attempts.parse().unwrap_or(0)),
+        None => (value, 0),
+    }
+}

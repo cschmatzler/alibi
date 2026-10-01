@@ -37,6 +37,11 @@ async fn rows(
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn captured_member_deletion_orders_writes_and_distinguishes_veto_ignore_and_absence()
 -> TestResult {
     let db = Database::connect("sqlite::memory:").await?;
@@ -85,15 +90,19 @@ async fn captured_member_deletion_orders_writes_and_distinguishes_veto_ignore_an
             updated_at: None,
         })
         .await?;
-    let _ = store.add_team_member(&own_team.id, &owner.id, None).await?;
-    let _ = store
-        .add_team_member(&own_team.id, &foreign.id, None)
-        .await?;
-    let _ = store
-        .add_team_member(&other_team.id, &owner.id, None)
-        .await?;
+    drop(store.add_team_member(&own_team.id, &owner.id, None).await?);
+    drop(
+        store
+            .add_team_member(&own_team.id, &foreign.id, None)
+            .await?,
+    );
+    drop(
+        store
+            .add_team_member(&other_team.id, &owner.id, None)
+            .await?,
+    );
     let before = rows(&db).await?;
-    let _=db.execute_unprepared("CREATE TRIGGER member_veto BEFORE DELETE ON member WHEN OLD.role='victim' BEGIN SELECT RAISE(ABORT,'member deletion veto'); END").await?;
+    let _ignored_execute_unprepared=db.execute_unprepared("CREATE TRIGGER member_veto BEFORE DELETE ON member WHEN OLD.role='victim' BEGIN SELECT RAISE(ABORT,'member deletion veto'); END").await?;
     let member_error = store
         .delete_member_with_context(&member.id, &organization.id, &owner.id, true)
         .await
@@ -105,8 +114,8 @@ async fn captured_member_deletion_orders_writes_and_distinguishes_veto_ignore_an
         before,
         "member veto must preserve all member/team rows"
     );
-    let _ = db.execute_unprepared("DROP TRIGGER member_veto").await?;
-    let _=db.execute_unprepared("CREATE TRIGGER team_veto BEFORE DELETE ON team_member WHEN OLD.user_id=(SELECT id FROM users WHERE email='target@member-delete.fixture.test') BEGIN SELECT RAISE(ABORT,'team deletion veto'); END").await?;
+    let _ignored_execute_unprepared_2 = db.execute_unprepared("DROP TRIGGER member_veto").await?;
+    let _ignored_execute_unprepared_3=db.execute_unprepared("CREATE TRIGGER team_veto BEFORE DELETE ON team_member WHEN OLD.user_id=(SELECT id FROM users WHERE email='target@member-delete.fixture.test') BEGIN SELECT RAISE(ABORT,'team deletion veto'); END").await?;
     let team_error = store
         .delete_member_with_context(&member.id, &organization.id, &owner.id, true)
         .await
@@ -118,8 +127,8 @@ async fn captured_member_deletion_orders_writes_and_distinguishes_veto_ignore_an
         before,
         "later team veto must roll back the member deletion"
     );
-    let _ = db.execute_unprepared("DROP TRIGGER team_veto").await?;
-    let _=db.execute_unprepared("CREATE TRIGGER ignored_member BEFORE DELETE ON member WHEN OLD.role='victim' BEGIN SELECT RAISE(IGNORE); END").await?;
+    let _ignored_execute_unprepared_4 = db.execute_unprepared("DROP TRIGGER team_veto").await?;
+    let _ignored_execute_unprepared_5=db.execute_unprepared("CREATE TRIGGER ignored_member BEFORE DELETE ON member WHEN OLD.role='victim' BEGIN SELECT RAISE(IGNORE); END").await?;
     store
         .delete_member_with_context(&member.id, &organization.id, &owner.id, true)
         .await?;
@@ -147,9 +156,10 @@ async fn captured_member_deletion_orders_writes_and_distinguishes_veto_ignore_an
             .map(|team| team.member_count),
         Some(1)
     );
-    let _ = db.execute_unprepared("DROP TRIGGER ignored_member").await?;
-    let _ = store.add_team_member(&own_team.id, &owner.id, None).await?;
-    let _=db.execute_unprepared("CREATE TRIGGER phase_guard BEFORE DELETE ON team_member WHEN EXISTS(SELECT 1 FROM member WHERE user_id=OLD.user_id AND role='victim') BEGIN SELECT RAISE(ABORT,'member must be deleted first'); END").await?;
+    let _ignored_execute_unprepared_6 =
+        db.execute_unprepared("DROP TRIGGER ignored_member").await?;
+    drop(store.add_team_member(&own_team.id, &owner.id, None).await?);
+    let _ignored_execute_unprepared_7=db.execute_unprepared("CREATE TRIGGER phase_guard BEFORE DELETE ON team_member WHEN EXISTS(SELECT 1 FROM member WHERE user_id=OLD.user_id AND role='victim') BEGIN SELECT RAISE(ABORT,'member must be deleted first'); END").await?;
     store
         .delete_member_with_context(&member.id, &organization.id, &owner.id, true)
         .await?;
@@ -160,8 +170,8 @@ async fn captured_member_deletion_orders_writes_and_distinguishes_veto_ignore_an
             .await?
             .is_none()
     );
-    let _ = db.execute_unprepared("DROP TRIGGER phase_guard").await?;
-    let _ = store.add_team_member(&own_team.id, &owner.id, None).await?;
+    let _ignored_execute_unprepared_8 = db.execute_unprepared("DROP TRIGGER phase_guard").await?;
+    drop(store.add_team_member(&own_team.id, &owner.id, None).await?);
     store
         .delete_member_with_context(&member.id, &organization.id, &owner.id, true)
         .await?;
@@ -220,6 +230,11 @@ async fn captured_member_deletion_orders_writes_and_distinguishes_veto_ignore_an
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn contextual_deletion_uses_original_scope_and_unsorted_configured_pages() -> TestResult {
     let db = Database::connect("sqlite::memory:").await?;
     run_migrations(&db).await?;
@@ -252,14 +267,14 @@ async fn contextual_deletion_uses_original_scope_and_unsorted_configured_pages()
             role: "owner".into(),
         })
         .await?;
-    let _ = db
+    let _ignored_into = db
         .execute_raw(Statement::from_sql_and_values(
             DbBackend::Sqlite,
             "UPDATE member SET created_at=? WHERE id=?",
             ["2030-01-01T00:00:00Z".into(), first.id.clone().into()],
         ))
         .await?;
-    let _ = db
+    let _ignored_into_2 = db
         .execute_raw(Statement::from_sql_and_values(
             DbBackend::Sqlite,
             "UPDATE member SET created_at=? WHERE id=?",
@@ -295,7 +310,7 @@ async fn contextual_deletion_uses_original_scope_and_unsorted_configured_pages()
                 updated_at: None,
             })
             .await?;
-        let _ = store.add_team_member(&team.id, &user.id, None).await?;
+        drop(store.add_team_member(&team.id, &user.id, None).await?);
         teams.push(team);
     }
     let [first_team, second_team] = teams.as_slice() else {
@@ -304,7 +319,7 @@ async fn contextual_deletion_uses_original_scope_and_unsorted_configured_pages()
         );
     };
     let before = rows(&db).await?;
-    let _ = db
+    let _ignored_into_3 = db
         .execute_raw(Statement::from_sql_and_values(
             DbBackend::Sqlite,
             "UPDATE member SET organization_id=?, user_id=? WHERE id=?",

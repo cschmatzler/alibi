@@ -10,12 +10,12 @@ pub(super) struct VerifyBody {
     pub email: Option<String>,
 }
 
-fn error(message: String) -> AuthResponse {
+fn error(message: &str) -> AuthResponse {
     AuthResponse::json(400, &json!({"message":message,"code":"VALIDATION_ERROR"}))
         .unwrap_or_else(|_| AuthResponse::text(400, "Invalid request body"))
 }
 
-fn received(value: Option<&Value>) -> &'static str {
+const fn received(value: Option<&Value>) -> &'static str {
     match value {
         None => "undefined",
         Some(Value::Null) => "null",
@@ -39,7 +39,7 @@ fn body(request: &AuthRequest, optional: bool) -> Result<Map<String, Value>, Aut
         // body. Its matching rule permits a containing media type as well.
         if !media_type.contains("application/json") {
             let message = if normalized.is_empty() {
-                "Content-Type is required. Allowed types: application/json".to_string()
+                "Content-Type is required. Allowed types: application/json".to_owned()
             } else {
                 format!(
                     "Content-Type \"{content_type}\" is not allowed. Allowed types: application/json"
@@ -57,7 +57,7 @@ fn body(request: &AuthRequest, optional: bool) -> Result<Map<String, Value>, Aut
         .as_deref()
         .map(serde_json::from_slice::<Value>)
         .transpose()
-        .map_err(|_| {
+        .map_err(|_error| {
             AuthResponse::json(
                 400,
                 &json!({"message":"Invalid JSON in request body","code":"BAD_REQUEST"}),
@@ -67,10 +67,12 @@ fn body(request: &AuthRequest, optional: bool) -> Result<Map<String, Value>, Aut
     match parsed {
         None if optional => Ok(Map::new()),
         Some(Value::Object(body)) => Ok(body),
-        value => Err(error(format!(
-            "[body] Invalid input: expected object, received {}",
-            received(value.as_ref())
-        ))),
+        value => Err(error(
+            &(format!(
+                "[body] Invalid input: expected object, received {}",
+                received(value.as_ref())
+            )),
+        )),
     }
 }
 
@@ -105,7 +107,7 @@ fn unknown_keys(body: &Map<String, Value>, known: &[&str]) -> Option<String> {
 pub(super) fn nonce_body(request: &AuthRequest) -> Result<(), AuthResponse> {
     let body = body(request, true)?;
     if let Some(message) = unknown_keys(&body, &[]) {
-        return Err(error(message));
+        return Err(error(&(message)));
     }
     Ok(())
 }
@@ -133,11 +135,10 @@ pub(super) fn verify_body(
         }
     }
     match body.get("email") {
-        None => {}
         Some(Value::String(email)) if !is_valid_email(email) => {
-            errors.push("[body.email] Invalid email address".to_owned())
+            errors.push("[body.email] Invalid email address".to_owned());
         }
-        Some(Value::String(_)) => {}
+        None | Some(Value::String(_)) => {}
         value => {
             aborted = true;
             errors.push(format!(
@@ -163,7 +164,7 @@ pub(super) fn verify_body(
         );
     }
     if !errors.is_empty() {
-        return Err(error(errors.join("; ")));
+        return Err(error(&(errors.join("; "))));
     }
     Ok(VerifyBody {
         message: body

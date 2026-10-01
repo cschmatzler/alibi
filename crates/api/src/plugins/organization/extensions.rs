@@ -111,6 +111,12 @@ pub struct DefaultTeamContext {
     pub config: Arc<better_auth_core::AuthConfig>,
 }
 
+impl std::fmt::Debug for DefaultTeamContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DefaultTeamContext").finish_non_exhaustive()
+    }
+}
+
 #[async_trait]
 pub trait DefaultTeamFactory: std::fmt::Debug + Send + Sync {
     async fn create(
@@ -154,6 +160,7 @@ pub struct DynamicAccessControlConfig {
     pub limit_resolver: Option<Arc<dyn OrganizationLimitResolver>>,
 }
 
+#[must_use]
 pub fn default_organization_statements() -> OrganizationPermissions {
     [
         ("organization", vec!["update", "delete"]),

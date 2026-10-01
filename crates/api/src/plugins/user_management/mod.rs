@@ -1,21 +1,29 @@
-use async_trait::async_trait;
-use chrono::Duration;
-use std::sync::Arc;
-
-use better_auth_core::entity::AuthUser;
-use better_auth_core::wire::{SessionView, UserView};
-use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
-use better_auth_core::{AuthError, AuthResult};
-use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
-
 pub(super) mod handlers;
+
 pub(super) mod types;
 
 #[cfg(test)]
 mod tests;
 
-use handlers::*;
-use types::*;
+use async_trait::async_trait;
+
+use chrono::Duration;
+
+use std::sync::Arc;
+
+use better_auth_core::entity::AuthUser;
+
+use better_auth_core::wire::{SessionView, UserView};
+
+use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
+
+use better_auth_core::{AuthError, AuthResult};
+
+use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
+
+use handlers::{change_email_core, delete_user_callback_core, delete_user_core};
+
+use types::{ChangeEmailRequest, DeleteUserRequest, TokenQuery};
 
 // ---------------------------------------------------------------------------
 // User info snapshot (dyn-compatible alternative to &dyn AuthUser)
@@ -38,8 +46,8 @@ impl UserInfo {
     fn from_auth_user(user: &impl AuthUser) -> Self {
         Self {
             id: user.id().to_string(),
-            email: user.email().map(|s| s.to_string()),
-            name: user.name().map(|s| s.to_string()),
+            email: user.email().map(ToOwned::to_owned),
+            name: user.name().map(ToOwned::to_owned),
             email_verified: user.email_verified(),
         }
     }
@@ -168,29 +176,41 @@ pub struct UserManagementPlugin {
     config: UserManagementConfig,
 }
 
+impl std::fmt::Debug for UserManagementPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UserManagementPlugin")
+            .finish_non_exhaustive()
+    }
+}
+
 impl UserManagementPlugin {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             config: UserManagementConfig::default(),
         }
     }
 
-    pub fn with_config(config: UserManagementConfig) -> Self {
+    #[must_use]
+    pub const fn with_config(config: UserManagementConfig) -> Self {
         Self { config }
     }
 
     // -- builder helpers --
 
-    pub fn change_email_enabled(mut self, enabled: bool) -> Self {
+    #[must_use]
+    pub const fn change_email_enabled(mut self, enabled: bool) -> Self {
         self.config.change_email.enabled = enabled;
         self
     }
 
-    pub fn update_without_verification(mut self, flag: bool) -> Self {
+    #[must_use]
+    pub const fn update_without_verification(mut self, flag: bool) -> Self {
         self.config.change_email.update_without_verification = flag;
         self
     }
 
+    #[must_use]
     pub fn send_change_email_confirmation(
         mut self,
         cb: Arc<dyn SendChangeEmailConfirmation>,
@@ -199,26 +219,31 @@ impl UserManagementPlugin {
         self
     }
 
-    pub fn delete_user_enabled(mut self, enabled: bool) -> Self {
+    #[must_use]
+    pub const fn delete_user_enabled(mut self, enabled: bool) -> Self {
         self.config.delete_user.enabled = enabled;
         self
     }
 
-    pub fn delete_token_expires_in(mut self, duration: Duration) -> Self {
+    #[must_use]
+    pub const fn delete_token_expires_in(mut self, duration: Duration) -> Self {
         self.config.delete_user.delete_token_expires_in = duration;
         self
     }
 
-    pub fn require_delete_verification(mut self, require: bool) -> Self {
+    #[must_use]
+    pub const fn require_delete_verification(mut self, require: bool) -> Self {
         self.config.delete_user.require_verification = require;
         self
     }
 
+    #[must_use]
     pub fn before_delete(mut self, hook: Arc<dyn BeforeDeleteUser>) -> Self {
         self.config.delete_user.before_delete = Some(hook);
         self
     }
 
+    #[must_use]
     pub fn after_delete(mut self, hook: Arc<dyn AfterDeleteUser>) -> Self {
         self.config.delete_user.after_delete = Some(hook);
         self
@@ -229,48 +254,6 @@ impl Default for UserManagementPlugin {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn append_clear_session_cookies(
-    response: &mut AuthResponse,
-    config: &better_auth_core::AuthConfig,
-) {
-    response.headers.append(
-        "Set-Cookie",
-        better_auth_core::utils::cookie_utils::create_clear_session_cookie(config),
-    );
-    response.headers.append(
-        "Set-Cookie",
-        better_auth_core::utils::cookie_utils::create_clear_cookie(
-            &related_cookie_name(config, "session_data"),
-            config,
-        ),
-    );
-    response.headers.append(
-        "Set-Cookie",
-        better_auth_core::utils::cookie_utils::create_clear_cookie(
-            &related_cookie_name(config, "dont_remember"),
-            config,
-        ),
-    );
-    if config.account.store_account_cookie {
-        response.headers.append(
-            "Set-Cookie",
-            better_auth_core::utils::cookie_utils::create_clear_cookie(
-                &related_cookie_name(config, "account_data"),
-                config,
-            ),
-        );
-    }
-}
-
-fn related_cookie_name(config: &better_auth_core::AuthConfig, suffix: &str) -> String {
-    config
-        .session
-        .cookie_name
-        .strip_suffix("session_token")
-        .map(|prefix| format!("{prefix}{suffix}"))
-        .unwrap_or_else(|| format!("better-auth.{suffix}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -322,24 +305,24 @@ impl UserManagementPlugin {
         let (user, _) = ctx
             .require_session(req)
             .await
-            .map_err(|_| AuthError::not_found("Failed to get user info"))?;
+            .map_err(|_error| AuthError::not_found("Failed to get user info"))?;
         let user = UserView::from(&user);
         let query: TokenQuery = serde_json::from_value(serde_json::json!({
             "token": req.query.get("token").cloned(),
             "callbackURL": req.query.get("callbackURL").cloned(),
         }))
-        .map_err(|_| AuthError::bad_request("Verification token is required"))?;
+        .map_err(|_error| AuthError::bad_request("Verification token is required"))?;
         let response = delete_user_callback_core(&query.token, &user, &self.config, ctx).await?;
         if let Some(callback_url) = query.callback_url {
             let mut headers = better_auth_core::Headers::new();
-            _ = headers.insert("Location".to_string(), callback_url);
-            let mut response = AuthResponse {
+            drop(headers.insert("Location".to_owned(), callback_url));
+            let mut response_2 = AuthResponse {
                 status: 302,
                 headers,
                 body: Vec::new(),
             };
-            append_clear_session_cookies(&mut response, &ctx.config);
-            return Ok(response);
+            append_clear_session_cookies(&mut response_2, &ctx.config);
+            return Ok(response_2);
         }
 
         let mut response = AuthResponse::json(200, &response)?;
@@ -393,4 +376,48 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
             _ => Ok(None),
         }
     }
+}
+
+fn append_clear_session_cookies(
+    response: &mut AuthResponse,
+    config: &better_auth_core::AuthConfig,
+) {
+    response.headers.append(
+        "Set-Cookie",
+        better_auth_core::utils::cookie_utils::create_clear_session_cookie(config),
+    );
+    response.headers.append(
+        "Set-Cookie",
+        better_auth_core::utils::cookie_utils::create_clear_cookie(
+            &related_cookie_name(config, "session_data"),
+            config,
+        ),
+    );
+    response.headers.append(
+        "Set-Cookie",
+        better_auth_core::utils::cookie_utils::create_clear_cookie(
+            &related_cookie_name(config, "dont_remember"),
+            config,
+        ),
+    );
+    if config.account.store_account_cookie {
+        response.headers.append(
+            "Set-Cookie",
+            better_auth_core::utils::cookie_utils::create_clear_cookie(
+                &related_cookie_name(config, "account_data"),
+                config,
+            ),
+        );
+    }
+}
+
+fn related_cookie_name(config: &better_auth_core::AuthConfig, suffix: &str) -> String {
+    config
+        .session
+        .cookie_name
+        .strip_suffix("session_token")
+        .map_or_else(
+            || format!("better-auth.{suffix}"),
+            |prefix| format!("{prefix}{suffix}"),
+        )
 }

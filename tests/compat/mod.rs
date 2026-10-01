@@ -1,7 +1,7 @@
 //! # Spec-Driven Compatibility Testing Framework
 //!
 //! Shared modules for validating better-auth-rs API responses against the
-//! generated upstream Better Auth OpenAPI contract from the pinned published
+//! generated upstream Better Auth `OpenAPI` contract from the pinned published
 //! reference package.
 //!
 //! ## Module layout

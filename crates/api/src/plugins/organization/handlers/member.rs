@@ -1,14 +1,23 @@
 use super::page::OrganizationPageError;
+
 use crate::plugins::organization::membership_policy::{read_page_limit, truthy_number};
+
 use better_auth_core::entity::{AuthMember, AuthOrganization, AuthSession, AuthUser};
+
 use better_auth_core::error::{AuthError, AuthResult};
+
 use better_auth_core::plugin::AuthContext;
+
 use better_auth_core::store::MemberPageQuery;
+
 use better_auth_core::types::{AuthRequest, AuthResponse};
+
 use std::collections::HashMap;
 
 use super::{require_session, resolve_organization_id};
+
 use crate::plugins::organization::OrganizationConfig;
+
 use crate::plugins::organization::types::{
     BasicMemberResponse, GetActiveMemberRoleQuery, GetActiveMemberRoleResponse, ListMembersQuery,
     ListMembersResponse, MemberResponse, OrganizationMemberRemovalSnapshot, RemoveMemberRequest,
@@ -41,9 +50,9 @@ fn normalized_update_roles(role: &super::super::types::RoleInput) -> Vec<&str> {
     };
     inputs
         .iter()
-        .flat_map(|role| role.split(','))
+        .flat_map(|role_2| role_2.split(','))
         .map(js_role_trim)
-        .filter(|role| !role.is_empty())
+        .filter(|role_3| !role_3.is_empty())
         .collect()
 }
 
@@ -51,7 +60,7 @@ fn normalized_update_roles(role: &super::super::types::RoleInput) -> Vec<&str> {
 // Core functions
 // ---------------------------------------------------------------------------
 
-pub(crate) async fn get_active_member_core(
+pub(in crate::plugins) async fn get_active_member_core(
     user: &impl AuthUser,
     session: &impl AuthSession,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -139,7 +148,7 @@ pub(crate) async fn list_members_core(
     Ok(ListMembersResponse { members, total })
 }
 
-pub(crate) async fn get_active_member_role_core(
+pub(in crate::plugins) async fn get_active_member_role_core(
     query: &GetActiveMemberRoleQuery,
     user: &impl AuthUser,
     session: &impl AuthSession,
@@ -169,16 +178,20 @@ pub(crate) async fn get_active_member_role_core(
             .await?
             .ok_or_else(|| AuthError::forbidden("You are not a member of this organization"))?;
         return Ok(GetActiveMemberRoleResponse {
-            role: target_member.role().to_string(),
+            role: target_member.role().to_owned(),
         });
     }
 
     Ok(GetActiveMemberRoleResponse {
-        role: requester_member.role().to_string(),
+        role: requester_member.role().to_owned(),
     })
 }
 
-pub(crate) async fn remove_member_core(
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep ownership checks and membership removal callbacks adjacent to their writes"
+)]
+pub(in crate::plugins) async fn remove_member_core(
     body: &RemoveMemberRequest,
     user: &impl AuthUser,
     session: &impl AuthSession,
@@ -335,7 +348,11 @@ pub(crate) async fn remove_member_core(
     Ok(response)
 }
 
-pub(crate) async fn update_member_role_core(
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep role authorization and before/after callbacks adjacent to the membership write"
+)]
+pub(in crate::plugins) async fn update_member_role_core(
     body: &UpdateMemberRoleRequest,
     organization_id: &str,
     user: &impl AuthUser,
@@ -489,6 +506,10 @@ pub(crate) async fn update_member_role_core(
 // ---------------------------------------------------------------------------
 
 /// Handle get active member request
+///
+/// # Errors
+///
+/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_get_active_member(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -514,6 +535,10 @@ pub async fn handle_list_members(
 }
 
 /// Handle get active member role request
+///
+/// # Errors
+///
+/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_get_active_member_role(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -525,6 +550,10 @@ pub async fn handle_get_active_member_role(
 }
 
 /// Handle remove member request
+///
+/// # Errors
+///
+/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_remove_member(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -546,6 +575,10 @@ pub async fn handle_remove_member(
 }
 
 /// Handle update member role request
+///
+/// # Errors
+///
+/// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_update_member_role(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -566,7 +599,7 @@ pub async fn handle_update_member_role(
     };
     let empty = || {
         let mut response = AuthResponse::new(400);
-        _ = response.headers.insert("content-type", "application/json");
+        drop(response.headers.insert("content-type", "application/json"));
         response
     };
     // An empty string is falsy before organization resolution; an empty array
@@ -578,7 +611,7 @@ pub async fn handle_update_member_role(
         .organization_id
         .as_deref()
         .filter(|id| !id.is_empty())
-        .or(session.active_organization_id())
+        .or_else(|| session.active_organization_id())
         .filter(|id| !id.is_empty())
         .ok_or_else(|| super::extension_common::org_error(400, "NO_ACTIVE_ORGANIZATION"))?;
     if normalized_update_roles(&body.role).is_empty() {
@@ -597,10 +630,8 @@ pub async fn handle_update_member_role(
 }
 
 /// Helper function to parse query parameters into a struct
-fn parse_query<T: Default + serde::de::DeserializeOwned>(
-    query: &std::collections::HashMap<String, String>,
-) -> T {
-    let json_value =
-        serde_json::to_value(query).unwrap_or(serde_json::Value::Object(Default::default()));
+fn parse_query<T: Default + serde::de::DeserializeOwned>(query: &HashMap<String, String>) -> T {
+    let json_value = serde_json::to_value(query)
+        .unwrap_or(serde_json::Value::Object(serde_json::Map::default()));
     serde_json::from_value(json_value).unwrap_or_default()
 }

@@ -11,7 +11,7 @@ use better_auth_core::types::{
     UpdateVerification,
 };
 
-/// Control flow returned by SeaORM `before_*` hooks.
+/// Control flow returned by `SeaORM` `before_*` hooks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HookControl {
     Continue,
@@ -19,12 +19,13 @@ pub enum HookControl {
 }
 
 impl HookControl {
-    pub fn is_cancelled(self) -> bool {
+    #[must_use]
+    pub const fn is_cancelled(self) -> bool {
         matches!(self, Self::Cancel)
     }
 }
 
-/// Context passed to SeaORM lifecycle hooks.
+/// Context passed to `SeaORM` lifecycle hooks.
 pub struct SeaOrmHookContext<'a> {
     pub config: &'a AuthConfig,
     pub db: &'a DatabaseConnection,
@@ -34,7 +35,13 @@ pub struct SeaOrmHookContext<'a> {
     pub request: Option<RequestHookContext>,
 }
 
-/// SeaORM lifecycle hooks for intercepting auth writes.
+impl std::fmt::Debug for SeaOrmHookContext<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SeaOrmHookContext").finish_non_exhaustive()
+    }
+}
+
+/// `SeaORM` lifecycle hooks for intercepting auth writes.
 ///
 /// Transactional creation after callbacks retain the created snapshots and
 /// run in operation order after commit. Rollback discards them; callback errors
@@ -43,221 +50,197 @@ pub struct SeaOrmHookContext<'a> {
 pub trait SeaOrmHooks<S: AuthSchema>: Send + Sync {
     async fn before_create_user(
         &self,
-        user: &mut CreateUser,
-        ctx: &SeaOrmHookContext<'_>,
+        _user: &mut CreateUser,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
-        let _ = (user, ctx);
         Ok(HookControl::Continue)
     }
 
     async fn after_create_user(
         &self,
-        user: &S::User,
-        ctx: &SeaOrmHookContext<'_>,
+        _user: &S::User,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
-        let _ = (user, ctx);
         Ok(())
     }
 
     async fn before_update_user(
         &self,
-        id: &str,
-        update: &mut UpdateUser,
-        ctx: &SeaOrmHookContext<'_>,
+        _id: &str,
+        _update: &mut UpdateUser,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
-        let _ = (id, update, ctx);
         Ok(HookControl::Continue)
     }
 
     async fn after_update_user(
         &self,
-        user: &S::User,
-        ctx: &SeaOrmHookContext<'_>,
+        _user: &S::User,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
-        let _ = (user, ctx);
         Ok(())
     }
 
     async fn before_delete_user(
         &self,
-        user: &S::User,
-        ctx: &SeaOrmHookContext<'_>,
+        _user: &S::User,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
-        let _ = (user, ctx);
         Ok(HookControl::Continue)
     }
 
     async fn after_delete_user(
         &self,
-        user: &S::User,
-        ctx: &SeaOrmHookContext<'_>,
+        _user: &S::User,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
-        let _ = (user, ctx);
         Ok(())
     }
 
     async fn before_create_session(
         &self,
-        session: &mut CreateSession,
-        ctx: &SeaOrmHookContext<'_>,
+        _session: &mut CreateSession,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
-        let _ = (session, ctx);
         Ok(HookControl::Continue)
     }
 
     async fn after_create_session(
         &self,
-        session: &S::Session,
-        ctx: &SeaOrmHookContext<'_>,
+        _session: &S::Session,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
-        let _ = (session, ctx);
         Ok(())
     }
 
     async fn before_update_session(
         &self,
-        token: &str,
-        fields: &mut better_auth_core::field_policy::FieldValues,
-        ctx: &SeaOrmHookContext<'_>,
+        _token: &str,
+        _fields: &mut better_auth_core::field_policy::FieldValues,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
-        let _ = (token, fields, ctx);
         Ok(HookControl::Continue)
     }
 
     async fn after_update_session(
         &self,
-        session: &S::Session,
-        ctx: &SeaOrmHookContext<'_>,
+        _session: &S::Session,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
-        let _ = (session, ctx);
         Ok(())
     }
 
     async fn before_delete_session(
         &self,
-        session: &S::Session,
-        ctx: &SeaOrmHookContext<'_>,
+        _session: &S::Session,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
-        let _ = (session, ctx);
         Ok(HookControl::Continue)
     }
 
     async fn after_delete_session(
         &self,
-        session: &S::Session,
-        ctx: &SeaOrmHookContext<'_>,
+        _session: &S::Session,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
-        let _ = (session, ctx);
         Ok(())
     }
 
     async fn before_create_account(
         &self,
-        account: &mut CreateAccount,
-        ctx: &SeaOrmHookContext<'_>,
+        _account: &mut CreateAccount,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
-        let _ = (account, ctx);
         Ok(HookControl::Continue)
     }
 
     async fn after_create_account(
         &self,
-        account: &S::Account,
-        ctx: &SeaOrmHookContext<'_>,
+        _account: &S::Account,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
-        let _ = (account, ctx);
         Ok(())
     }
 
     async fn before_update_account(
         &self,
-        id: &str,
-        update: &mut UpdateAccount,
-        ctx: &SeaOrmHookContext<'_>,
+        _id: &str,
+        _update: &mut UpdateAccount,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
-        let _ = (id, update, ctx);
         Ok(HookControl::Continue)
     }
 
     async fn after_update_account(
         &self,
-        account: &S::Account,
-        ctx: &SeaOrmHookContext<'_>,
+        _account: &S::Account,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
-        let _ = (account, ctx);
         Ok(())
     }
 
     async fn before_delete_account(
         &self,
-        account: &S::Account,
-        ctx: &SeaOrmHookContext<'_>,
+        _account: &S::Account,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
-        let _ = (account, ctx);
         Ok(HookControl::Continue)
     }
 
     async fn after_delete_account(
         &self,
-        account: &S::Account,
-        ctx: &SeaOrmHookContext<'_>,
+        _account: &S::Account,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
-        let _ = (account, ctx);
         Ok(())
     }
 
     async fn before_create_verification(
         &self,
-        verification: &mut CreateVerification,
-        ctx: &SeaOrmHookContext<'_>,
+        _verification: &mut CreateVerification,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
-        let _ = (verification, ctx);
         Ok(HookControl::Continue)
     }
 
     async fn after_create_verification(
         &self,
-        verification: &S::Verification,
-        ctx: &SeaOrmHookContext<'_>,
+        _verification: &S::Verification,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
-        let _ = (verification, ctx);
         Ok(())
     }
 
     async fn before_delete_verification(
         &self,
-        verification: &S::Verification,
-        ctx: &SeaOrmHookContext<'_>,
+        _verification: &S::Verification,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
-        let _ = (verification, ctx);
         Ok(HookControl::Continue)
     }
 
     async fn before_update_verification(
         &self,
-        id: &str,
-        update: &mut UpdateVerification,
-        ctx: &SeaOrmHookContext<'_>,
+        _id: &str,
+        _update: &mut UpdateVerification,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
-        let _ = (id, update, ctx);
         Ok(HookControl::Continue)
     }
 
     async fn after_update_verification(
         &self,
-        verification: &S::Verification,
-        ctx: &SeaOrmHookContext<'_>,
+        _verification: &S::Verification,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
-        let _ = (verification, ctx);
         Ok(())
     }
 
     async fn after_delete_verification(
         &self,
-        verification: &S::Verification,
-        ctx: &SeaOrmHookContext<'_>,
+        _verification: &S::Verification,
+        _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
-        let _ = (verification, ctx);
         Ok(())
     }
 }

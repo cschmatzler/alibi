@@ -30,11 +30,8 @@ pub(super) fn parse_message(message: &str) -> ParsedSiweMessage<'_> {
         .map(|line| {
             // /\r?\n/ consumes a CR only when it precedes a newline. The final
             // line remains unchanged even when it ends in a lone CR.
-            if let Some(line) = line.strip_suffix('\n') {
-                line.strip_suffix('\r').unwrap_or(line)
-            } else {
-                line
-            }
+            line.strip_suffix('\n')
+                .map_or(line, |line| line.strip_suffix('\r').unwrap_or(line))
         })
         .collect();
     let mut parsed = ParsedSiweMessage::default();
@@ -106,7 +103,7 @@ pub(super) fn js_trim(value: &str) -> &str {
     value.trim_matches(js_whitespace)
 }
 
-fn js_whitespace(character: char) -> bool {
+const fn js_whitespace(character: char) -> bool {
     matches!(
         character,
         '\u{0009}'..='\u{000D}'
@@ -146,6 +143,13 @@ fn js_number(value: &str) -> Option<f64> {
 /// Parse power-of-two radix integers with one IEEE-754 rounding, including
 /// values wider than u64. Incremental floating addition would round each digit
 /// and can change the chain presented to the verifier.
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
 fn radix_number(digits: &str, radix: u32, bits_per_digit: usize) -> Option<f64> {
     if digits.is_empty() {
         return None;
@@ -176,12 +180,10 @@ fn radix_number(digits: &str, radix: u32, bits_per_digit: usize) -> Option<f64> 
         };
         for bit in (0..width).rev() {
             let set = (*digit >> bit) & 1 != 0;
-            if position < 53 {
-                mantissa = (mantissa << 1) | u64::from(set);
-            } else if position == 53 {
-                guard = set;
-            } else {
-                sticky |= set;
+            match position.cmp(&53) {
+                std::cmp::Ordering::Less => mantissa = (mantissa << 1) | u64::from(set),
+                std::cmp::Ordering::Equal => guard = set,
+                std::cmp::Ordering::Greater => sticky |= set,
             }
             position += 1;
         }

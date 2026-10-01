@@ -1,8 +1,13 @@
 use super::ApiKeyPermissions;
+
 use better_auth_core::utils::json::JsValue;
-pub(crate) use better_auth_core::wire::ApiKeyView;
+
+pub(in crate::plugins) use better_auth_core::wire::ApiKeyView;
+
 use better_auth_core::{AuthRequest, AuthResponse};
+
 use serde::{Deserialize, Deserializer, Serialize};
+
 use validator::Validate;
 
 /// API key creation parameters for HTTP and trusted server callers.
@@ -100,96 +105,6 @@ pub struct UpdateKeyRequest {
     pub expires_in: Option<Option<f64>>,
 }
 
-/// Parse with the DTO schema and retain the field path in upstream validation errors.
-pub(crate) fn parse_api_key_body<T>(request: &AuthRequest) -> Result<T, AuthResponse>
-where
-    T: serde::de::DeserializeOwned + Validate,
-{
-    let input: JsValue = request
-        .body_as_json()
-        .map_err(|_| validation_response("body", "Invalid JSON"))?;
-    let body: T = serde_path_to_error::deserialize(input.clone()).map_err(|error| {
-        let mut path = error.path().to_string().replace('[', ".").replace(']', "");
-        if path == "." {
-            path.clear();
-        }
-        let detail = error.inner().to_string();
-        let input_number = {
-            let mut value = Some(&input);
-            for segment in error.path() {
-                value = value.and_then(|current| match segment {
-                    serde_path_to_error::Segment::Seq { index } => current.as_array()?.get(*index),
-                    serde_path_to_error::Segment::Map { key } => current.get(key),
-                    serde_path_to_error::Segment::Enum { variant } => current.get(variant),
-                    serde_path_to_error::Segment::Unknown => None,
-                });
-            }
-            value.and_then(JsValue::as_f64)
-        };
-        let nonfinite_input = input_number.filter(|number| !number.is_finite());
-        let message = if let Some(field) = detail
-            .strip_prefix("missing field `")
-            .and_then(|rest| rest.split('`').next())
-        {
-            path = field.to_string();
-            "Invalid input: expected string, received undefined".to_string()
-        } else if let Some((received, expected)) = detail
-            .strip_prefix("invalid type: ")
-            .and_then(|detail| detail.split_once(", expected "))
-        {
-            let expected = expected.split(" at line ").next().unwrap_or(expected);
-            let expected = match expected {
-                "a string" => "string",
-                "a boolean" => "boolean",
-                "f64" => "number",
-                "a sequence" => "array",
-                "a map" => "record",
-                _ => "object",
-            };
-            let received = if let Some(number) = nonfinite_input {
-                if number.is_sign_negative() {
-                    "-Infinity"
-                } else {
-                    "Infinity"
-                }
-            } else if received.starts_with("string") {
-                "string"
-            } else if received.starts_with("integer") || received.starts_with("floating point") {
-                "number"
-            } else if received.starts_with("boolean") {
-                "boolean"
-            } else {
-                match received {
-                    "sequence" => "array",
-                    "map" => "object",
-                    value => value,
-                }
-            };
-            format!("Invalid input: expected {expected}, received {received}")
-        } else if detail.starts_with("number out of range") && nonfinite_input.is_some() {
-            format!(
-                "Invalid input: expected number, received {}",
-                if nonfinite_input.is_some_and(f64::is_sign_negative) {
-                    "-Infinity"
-                } else {
-                    "Infinity"
-                }
-            )
-        } else {
-            detail
-        };
-        let location = if path.is_empty() {
-            "body".to_string()
-        } else {
-            format!("body.{path}")
-        };
-        validation_response(&location, &message)
-    })?;
-    body.validate()
-        .map_err(|error| better_auth_core::validation_error_response(&error))?;
-    Ok(body)
-}
-
 impl Validate for CreateKeyRequest {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         let mut errors = numeric_errors(&[
@@ -231,103 +146,17 @@ impl Validate for UpdateKeyRequest {
     }
 }
 
-fn numeric_errors(
-    fields: &[(&'static str, Option<f64>, Option<f64>)],
-) -> validator::ValidationErrors {
-    let mut errors = validator::ValidationErrors::new();
-    for &(field, value, minimum) in fields {
-        let Some(value) = value else {
-            continue;
-        };
-        let message = if !value.is_finite() {
-            Some(format!(
-                "Invalid input: expected number, received {}",
-                if value.is_nan() {
-                    "NaN"
-                } else if value.is_sign_negative() {
-                    "-Infinity"
-                } else {
-                    "Infinity"
-                }
-            ))
-        } else {
-            minimum
-                .filter(|minimum| value < *minimum)
-                .map(|minimum| format!("Too small: expected number to be >={minimum}"))
-        };
-        if let Some(message) = message {
-            let mut error = validator::ValidationError::new("range");
-            error.message = Some(message.into());
-            errors.add(field, error);
-        }
-    }
-    errors
-}
-
 #[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct DeleteKeyRequest {
+pub(in crate::plugins) struct DeleteKeyRequest {
     #[serde(default, deserialize_with = "present")]
     pub config_id: Option<String>,
     pub key_id: String,
 }
 
-/// Deserialize an explicitly supplied value without treating null as an absent field.
-fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    T::deserialize(deserializer).map(Some)
-}
-
-fn coerced_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    fn js_string(value: &JsValue) -> String {
-        match value {
-            JsValue::String(value) => value.clone(),
-            JsValue::Array(values) => values
-                .iter()
-                .map(|value| {
-                    if value.is_null() {
-                        String::new()
-                    } else {
-                        js_string(value)
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(","),
-            JsValue::Object(_) => "[object Object]".into(),
-            JsValue::Number(number) => ryu_js::Buffer::new().format(*number).to_owned(),
-            JsValue::Null => "null".into(),
-            JsValue::Bool(value) => value.to_string(),
-        }
-    }
-    JsValue::deserialize(deserializer).map(|value| Some(js_string(&value)))
-}
-
-fn validate_prefix(prefix: &str) -> Result<(), validator::ValidationError> {
-    if !prefix.is_empty()
-        && prefix
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-    {
-        Ok(())
-    } else {
-        let mut error = validator::ValidationError::new("regex");
-        error.message = Some(
-            "Invalid prefix format, must be alphanumeric and contain only underscores and hyphens."
-                .into(),
-        );
-        Err(error)
-    }
-}
-
 /// Query parameters accepted by `GET /api-key/list`.
 #[derive(Debug, Default)]
-pub(crate) struct ListKeysQuery {
+pub(in crate::plugins) struct ListKeysQuery {
     pub config_id: Option<String>,
     pub organization_id: Option<String>,
     pub limit: Option<usize>,
@@ -337,7 +166,13 @@ pub(crate) struct ListKeysQuery {
 }
 
 impl ListKeysQuery {
-    pub(crate) fn from_request(req: &AuthRequest) -> Result<Self, AuthResponse> {
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+    )]
+    pub(in crate::plugins) fn from_request(req: &AuthRequest) -> Result<Self, AuthResponse> {
         let number = |key: &str| -> Result<Option<usize>, AuthResponse> {
             let Some(value) = req.query.get(key) else {
                 return Ok(None);
@@ -345,10 +180,9 @@ impl ListKeysQuery {
             let parsed = if value.trim().is_empty() {
                 0.0
             } else {
-                value
-                    .trim()
-                    .parse::<f64>()
-                    .map_err(|_| query_error(key, "Invalid input: expected number, received NaN"))?
+                value.trim().parse::<f64>().map_err(|_error| {
+                    query_error(key, "Invalid input: expected number, received NaN")
+                })?
             };
             if !parsed.is_finite() {
                 return Err(query_error(
@@ -390,20 +224,9 @@ impl ListKeysQuery {
     }
 }
 
-fn query_error(field: &str, message: &str) -> AuthResponse {
-    validation_response(&format!("query.{field}"), message)
-}
-
-fn validation_response(location: &str, message: &str) -> AuthResponse {
-    let body = serde_json::json!({
-        "code": "VALIDATION_ERROR", "message": format!("[{location}] {message}")
-    });
-    AuthResponse::text(400, body.to_string()).with_header("content-type", "application/json")
-}
-
 /// Paginated API key response; absent pagination parameters are omitted.
 #[derive(Debug, Serialize)]
-pub(crate) struct ListKeysResponse {
+pub(in crate::plugins) struct ListKeysResponse {
     #[serde(rename = "apiKeys")]
     pub api_keys: Vec<ApiKeyView>,
     pub total: usize,
@@ -428,4 +251,204 @@ pub struct CreateKeyResponse {
 pub struct DeleteExpiredApiKeysResponse {
     pub success: bool,
     pub error: Option<String>,
+}
+
+/// Parse with the DTO schema and retain the field path in upstream validation errors.
+pub(in crate::plugins) fn parse_api_key_body<T>(request: &AuthRequest) -> Result<T, AuthResponse>
+where
+    T: serde::de::DeserializeOwned + Validate,
+{
+    let input: JsValue = request
+        .body_as_json()
+        .map_err(|_error| validation_response("body", "Invalid JSON"))?;
+    let body: T = serde_path_to_error::deserialize(input.clone()).map_err(|error| {
+        let mut path = error.path().to_string().replace('[', ".").replace(']', "");
+        if path == "." {
+            path.clear();
+        }
+        let detail = error.inner().to_string();
+        let input_number = {
+            let mut value = Some(&input);
+            for segment in error.path() {
+                value = value.and_then(|current| match segment {
+                    serde_path_to_error::Segment::Seq { index } => current.as_array()?.get(*index),
+                    serde_path_to_error::Segment::Map { key } => current.get(key),
+                    serde_path_to_error::Segment::Enum { variant } => current.get(variant),
+                    serde_path_to_error::Segment::Unknown => None,
+                });
+            }
+            value.and_then(JsValue::as_f64)
+        };
+        let nonfinite_input = input_number.filter(|number| !number.is_finite());
+        let message = detail
+            .strip_prefix("missing field `")
+            .and_then(|rest| rest.split('`').next())
+            .map_or_else(
+                || {
+                    if let Some((received, expected)) = detail
+                        .strip_prefix("invalid type: ")
+                        .and_then(|detail| detail.split_once(", expected "))
+                    {
+                        let expected = expected.split(" at line ").next().unwrap_or(expected);
+                        let expected = match expected {
+                            "a string" => "string",
+                            "a boolean" => "boolean",
+                            "f64" => "number",
+                            "a sequence" => "array",
+                            "a map" => "record",
+                            _ => "object",
+                        };
+                        let received = nonfinite_input.map_or_else(
+                            || {
+                                if received.starts_with("string") {
+                                    "string"
+                                } else if received.starts_with("integer")
+                                    || received.starts_with("floating point")
+                                {
+                                    "number"
+                                } else if received.starts_with("boolean") {
+                                    "boolean"
+                                } else {
+                                    match received {
+                                        "sequence" => "array",
+                                        "map" => "object",
+                                        value => value,
+                                    }
+                                }
+                            },
+                            |number| {
+                                if number.is_sign_negative() {
+                                    "-Infinity"
+                                } else {
+                                    "Infinity"
+                                }
+                            },
+                        );
+                        format!("Invalid input: expected {expected}, received {received}")
+                    } else if detail.starts_with("number out of range") && nonfinite_input.is_some()
+                    {
+                        format!(
+                            "Invalid input: expected number, received {}",
+                            if nonfinite_input.is_some_and(f64::is_sign_negative) {
+                                "-Infinity"
+                            } else {
+                                "Infinity"
+                            }
+                        )
+                    } else {
+                        detail.clone()
+                    }
+                },
+                |field| {
+                    field.clone_into(&mut path);
+                    "Invalid input: expected string, received undefined".to_owned()
+                },
+            );
+        let location = if path.is_empty() {
+            "body".to_owned()
+        } else {
+            format!("body.{path}")
+        };
+        validation_response(&location, &message)
+    })?;
+    body.validate()
+        .map_err(|error| better_auth_core::validation_error_response(&error))?;
+    Ok(body)
+}
+
+fn numeric_errors(
+    fields: &[(&'static str, Option<f64>, Option<f64>)],
+) -> validator::ValidationErrors {
+    let mut errors = validator::ValidationErrors::new();
+    for &(field, value, minimum) in fields {
+        let Some(value) = value else {
+            continue;
+        };
+        let message = if value.is_finite() {
+            minimum
+                .filter(|minimum| value < *minimum)
+                .map(|minimum| format!("Too small: expected number to be >={minimum}"))
+        } else {
+            Some(format!(
+                "Invalid input: expected number, received {}",
+                if value.is_nan() {
+                    "NaN"
+                } else if value.is_sign_negative() {
+                    "-Infinity"
+                } else {
+                    "Infinity"
+                }
+            ))
+        };
+        if let Some(message) = message {
+            let mut error = validator::ValidationError::new("range");
+            error.message = Some(message.into());
+            errors.add(field, error);
+        }
+    }
+    errors
+}
+
+/// Deserialize an explicitly supplied value without treating null as an absent field.
+fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
+}
+
+fn coerced_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    fn js_string(value: &JsValue) -> String {
+        match value {
+            JsValue::String(value) => value.clone(),
+            JsValue::Array(values) => values
+                .iter()
+                .map(|value_2| {
+                    if value_2.is_null() {
+                        String::new()
+                    } else {
+                        js_string(value_2)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(","),
+            JsValue::Object(_) => "[object Object]".into(),
+            JsValue::Number(number) => ryu_js::Buffer::new().format(*number).to_owned(),
+            JsValue::Null => "null".into(),
+            JsValue::Bool(value) => value.to_string(),
+        }
+    }
+    JsValue::deserialize(deserializer).map(|value| Some(js_string(&value)))
+}
+
+fn validate_prefix(prefix: &str) -> Result<(), validator::ValidationError> {
+    if !prefix.is_empty()
+        && prefix
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        Ok(())
+    } else {
+        let mut error = validator::ValidationError::new("regex");
+        error.message = Some(
+            "Invalid prefix format, must be alphanumeric and contain only underscores and hyphens."
+                .into(),
+        );
+        Err(error)
+    }
+}
+
+fn query_error(field: &str, message: &str) -> AuthResponse {
+    validation_response(&format!("query.{field}"), message)
+}
+
+fn validation_response(location: &str, message: &str) -> AuthResponse {
+    let body = serde_json::json!({
+        "code": "VALIDATION_ERROR", "message": format!("[{location}] {message}")
+    });
+    AuthResponse::text(400, body.to_string()).with_header("content-type", "application/json")
 }

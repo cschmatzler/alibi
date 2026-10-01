@@ -22,7 +22,7 @@ async fn issuance_retries_collisions_three_times_and_runs_request_hook_once() {
     let hooks = Arc::new(AtomicUsize::new(0));
     let plugin = DeviceAuthorizationPlugin::new()
         .generate_device_code_with({
-            let attempts = attempts.clone();
+            let attempts = std::sync::Arc::clone(&attempts);
             move || {
                 let attempt = attempts.fetch_add(1, Ordering::SeqCst);
                 if attempt < 2 {
@@ -34,9 +34,9 @@ async fn issuance_retries_collisions_three_times_and_runs_request_hook_once() {
         })
         .generate_user_code_async_with(|| async { Ok("custom-code".to_owned()) })
         .on_device_auth_request({
-            let hooks = hooks.clone();
+            let hooks = std::sync::Arc::clone(&hooks);
             move |_, scope| {
-                let hooks = hooks.clone();
+                let hooks = std::sync::Arc::clone(&hooks);
                 async move {
                     assert_eq!(scope, None);
                     hooks.fetch_add(1, Ordering::SeqCst);
@@ -66,7 +66,12 @@ async fn issuance_retries_collisions_three_times_and_runs_request_hook_once() {
     );
     let response = plugin.handle_device_code(&request, &ctx).await.unwrap();
     assert_eq!(response.status, 200);
-    assert_eq!(json_body(&response)["device_code"], "unique-device");
+    assert_eq!(
+        (*(json_body(&response))
+            .get("device_code")
+            .unwrap_or(&Value::Null)),
+        "unique-device"
+    );
     assert_eq!(attempts.load(Ordering::SeqCst), 3);
     assert_eq!(hooks.load(Ordering::SeqCst), 1);
     let stored = ctx
@@ -80,9 +85,9 @@ async fn issuance_retries_collisions_three_times_and_runs_request_hook_once() {
 
     let exhausted_attempts = Arc::new(AtomicUsize::new(0));
     let exhausted = DeviceAuthorizationPlugin::new().generate_device_code_with({
-        let attempts = exhausted_attempts.clone();
+        let attempts_2 = std::sync::Arc::clone(&exhausted_attempts);
         move || {
-            attempts.fetch_add(1, Ordering::SeqCst);
+            attempts_2.fetch_add(1, Ordering::SeqCst);
             "duplicate-device".to_owned()
         }
     });
@@ -118,7 +123,9 @@ async fn generators_enforce_unicode_character_limit_before_persistence() {
     let failure = too_long.handle_device_code(&request, &ctx).await.unwrap();
     assert_eq!(failure.status, 400);
     assert_eq!(
-        json_body(&failure)["error_description"],
+        (*(json_body(&failure))
+            .get("error_description")
+            .unwrap_or(&Value::Null)),
         "Generated device code must be at most 191 characters"
     );
     assert!(
@@ -131,13 +138,15 @@ async fn generators_enforce_unicode_character_limit_before_persistence() {
     let too_long_user = DeviceAuthorizationPlugin::new()
         .generate_device_code_with(|| "short-device".to_owned())
         .generate_user_code_with(|| "🦀".repeat(192));
-    let failure = too_long_user
+    let failure_2 = too_long_user
         .handle_device_code(&request, &ctx)
         .await
         .unwrap();
-    assert_eq!(failure.status, 400);
+    assert_eq!(failure_2.status, 400);
     assert_eq!(
-        json_body(&failure)["error_description"],
+        (*(json_body(&failure_2))
+            .get("error_description")
+            .unwrap_or(&Value::Null)),
         "Generated user code must be at most 191 characters"
     );
     assert!(
@@ -171,7 +180,7 @@ fn json_body(response: &AuthResponse) -> Value {
     serde_json::from_slice(&response.body).unwrap()
 }
 
-fn device_token_request(device_code: &str, client_id: &str) -> better_auth_core::AuthRequest {
+fn device_token_request(device_code: &str, client_id: &str) -> AuthRequest {
     test_helpers::create_auth_json_request_no_query(
         HttpMethod::Post,
         "/device/token",
@@ -184,30 +193,30 @@ fn device_token_request(device_code: &str, client_id: &str) -> better_auth_core:
     )
 }
 
-fn device_verify_request(user_code: &str) -> better_auth_core::AuthRequest {
+fn device_verify_request(user_code: &str) -> AuthRequest {
     let mut query = HashMap::new();
-    let _ = query.insert("user_code".to_string(), user_code.to_string());
+    drop(query.insert("user_code".to_owned(), user_code.to_owned()));
     test_helpers::create_auth_request(HttpMethod::Get, "/device", None, None, query)
 }
 
 /// `GET /device` as a signed-in user, which is what binds the code to them.
 /// `/device/approve` and `/device/deny` reject codes that were never claimed.
-fn device_claim_request(user_code: &str, token: &str) -> better_auth_core::AuthRequest {
+fn device_claim_request(user_code: &str, token: &str) -> AuthRequest {
     let mut query = HashMap::new();
-    let _ = query.insert("user_code".to_string(), user_code.to_string());
+    drop(query.insert("user_code".to_owned(), user_code.to_owned()));
     test_helpers::create_auth_request(HttpMethod::Get, "/device", Some(token), None, query)
 }
 
 async fn create_context_with_user(
     email: &str,
 ) -> (
-    better_auth_core::AuthContext<TestSchema>,
+    AuthContext<TestSchema>,
     better_auth_core::wire::UserView,
     better_auth_core::wire::SessionView,
 ) {
     test_helpers::create_test_context_with_user(
         CreateUser::new()
-            .with_email(email.to_string())
+            .with_email(email.to_owned())
             .with_name("Device Auth User"),
         Duration::hours(1),
     )
@@ -239,41 +248,63 @@ async fn test_device_code_response_shape_and_storage() {
     assert_eq!(response.status, 200);
     assert_eq!(
         response.headers.get("Cache-Control"),
-        Some(&"no-store".to_string())
+        Some(&"no-store".to_owned())
     );
-    assert_eq!(body["expires_in"], 300);
-    assert_eq!(body["interval"], 2);
-    assert!(body["device_code"].as_str().unwrap().len() >= 40);
-    assert!(body["user_code"].as_str().unwrap().len() >= 8);
+    assert_eq!((*(body).get("expires_in").unwrap_or(&Value::Null)), 300);
+    assert_eq!((*(body).get("interval").unwrap_or(&Value::Null)), 2);
     assert!(
-        body["user_code"]
+        (*(body).get("device_code").unwrap_or(&Value::Null))
+            .as_str()
+            .unwrap()
+            .len()
+            >= 40
+    );
+    assert!(
+        (*(body).get("user_code").unwrap_or(&Value::Null))
+            .as_str()
+            .unwrap()
+            .len()
+            >= 8
+    );
+    assert!(
+        (*(body).get("user_code").unwrap_or(&Value::Null))
             .as_str()
             .unwrap()
             .chars()
-            .all(|char| { DEFAULT_USER_CODE_CHARSET.contains(&(char as u8)) })
+            .all(|char| {
+                u8::try_from(char).is_ok_and(|byte| DEFAULT_USER_CODE_CHARSET.contains(&byte))
+            })
     );
     assert!(
-        body["verification_uri"]
+        (*(body).get("verification_uri").unwrap_or(&Value::Null))
             .as_str()
             .unwrap()
             .contains("/auth/device?lang=en")
     );
     assert!(
-        body["verification_uri_complete"]
-            .as_str()
-            .unwrap()
-            .contains("lang=en")
+        (*(body)
+            .get("verification_uri_complete")
+            .unwrap_or(&Value::Null))
+        .as_str()
+        .unwrap()
+        .contains("lang=en")
     );
     assert!(
-        body["verification_uri_complete"]
-            .as_str()
-            .unwrap()
-            .contains("user_code=")
+        (*(body)
+            .get("verification_uri_complete")
+            .unwrap_or(&Value::Null))
+        .as_str()
+        .unwrap()
+        .contains("user_code=")
     );
 
     let stored = ctx
         .database
-        .get_device_code_by_device_code(body["device_code"].as_str().unwrap())
+        .get_device_code_by_device_code(
+            (*(body).get("device_code").unwrap_or(&Value::Null))
+                .as_str()
+                .unwrap(),
+        )
         .await
         .unwrap()
         .unwrap();
@@ -302,24 +333,30 @@ async fn test_device_code_rejects_invalid_client() {
     let body = json_body(&response);
 
     assert_eq!(response.status, 400);
-    assert_eq!(body["error"], "invalid_client");
-    assert_eq!(body["error_description"], INVALID_CLIENT_ID);
+    assert_eq!(
+        (*(body).get("error").unwrap_or(&Value::Null)),
+        "invalid_client"
+    );
+    assert_eq!(
+        (*(body).get("error_description").unwrap_or(&Value::Null)),
+        INVALID_CLIENT_ID
+    );
 }
 
 // Upstream source: packages/better-auth/src/plugins/device-authorization/device-authorization.test.ts :: callback/generator coverage; adapted to the Rust plugin builder API.
 #[tokio::test]
 async fn test_device_code_uses_custom_generators_and_hook() {
     let hook_calls = Arc::new(AtomicUsize::new(0));
-    let hook_calls_clone = hook_calls.clone();
+    let hook_calls_clone = std::sync::Arc::clone(&hook_calls);
     let plugin = DeviceAuthorizationPlugin::new()
-        .generate_device_code_with(|| "custom-device-code".to_string())
-        .generate_user_code_with(|| "CUSTOM12".to_string())
+        .generate_device_code_with(|| "custom-device-code".to_owned())
+        .generate_user_code_with(|| "CUSTOM12".to_owned())
         .on_device_auth_request(move |client_id, scope| {
-            let hook_calls = hook_calls_clone.clone();
+            let hook_calls_2 = std::sync::Arc::clone(&hook_calls_clone);
             async move {
                 assert_eq!(client_id, "hook-client");
                 assert_eq!(scope.as_deref(), Some("openid"));
-                hook_calls.fetch_add(1, Ordering::SeqCst);
+                hook_calls_2.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }
         })
@@ -339,11 +376,22 @@ async fn test_device_code_uses_custom_generators_and_hook() {
     let response = plugin.handle_device_code(&request, &ctx).await.unwrap();
     let body = json_body(&response);
 
-    assert_eq!(body["device_code"], "custom-device-code");
-    assert_eq!(body["user_code"], "CUSTOM12");
-    assert_eq!(body["verification_uri"], "https://example.com/device");
     assert_eq!(
-        body["verification_uri_complete"],
+        (*(body).get("device_code").unwrap_or(&Value::Null)),
+        "custom-device-code"
+    );
+    assert_eq!(
+        (*(body).get("user_code").unwrap_or(&Value::Null)),
+        "CUSTOM12"
+    );
+    assert_eq!(
+        (*(body).get("verification_uri").unwrap_or(&Value::Null)),
+        "https://example.com/device"
+    );
+    assert_eq!(
+        (*(body)
+            .get("verification_uri_complete")
+            .unwrap_or(&Value::Null)),
         "https://example.com/device?user_code=CUSTOM12"
     );
     assert_eq!(hook_calls.load(Ordering::SeqCst), 1);
@@ -367,8 +415,12 @@ async fn test_device_token_pending_returns_authorization_pending() {
         .unwrap();
     let create_body = json_body(&create_response);
 
-    let token_request =
-        device_token_request(create_body["device_code"].as_str().unwrap(), "test-client");
+    let token_request = device_token_request(
+        (*(create_body).get("device_code").unwrap_or(&Value::Null))
+            .as_str()
+            .unwrap(),
+        "test-client",
+    );
     let token_response = plugin
         .handle_device_token(&token_request, &ctx)
         .await
@@ -376,8 +428,16 @@ async fn test_device_token_pending_returns_authorization_pending() {
     let token_body = json_body(&token_response);
 
     assert_eq!(token_response.status, 400);
-    assert_eq!(token_body["error"], "authorization_pending");
-    assert_eq!(token_body["error_description"], AUTHORIZATION_PENDING);
+    assert_eq!(
+        (*(token_body).get("error").unwrap_or(&Value::Null)),
+        "authorization_pending"
+    );
+    assert_eq!(
+        (*(token_body)
+            .get("error_description")
+            .unwrap_or(&Value::Null)),
+        AUTHORIZATION_PENDING
+    );
 }
 
 // Upstream source: packages/better-auth/src/plugins/device-authorization/device-authorization.test.ts :: "should return expired_token for expired device codes".
@@ -389,14 +449,14 @@ async fn test_device_token_expired_returns_error_and_deletes_record() {
     let stored = ctx
         .database
         .create_device_code(CreateDeviceCode {
-            device_code: "expired-device-code".to_string(),
-            user_code: "EXPIRED12".to_string(),
+            device_code: "expired-device-code".to_owned(),
+            user_code: "EXPIRED12".to_owned(),
             user_id: None,
             expires_at: Utc::now() - Duration::seconds(1),
-            status: DEVICE_STATUS_PENDING.to_string(),
+            status: DEVICE_STATUS_PENDING.to_owned(),
             last_polled_at: None,
             polling_interval: Some(5000),
-            client_id: Some("test-client".to_string()),
+            client_id: Some("test-client".to_owned()),
             scope: None,
         })
         .await
@@ -412,8 +472,14 @@ async fn test_device_token_expired_returns_error_and_deletes_record() {
     let body = json_body(&response);
 
     assert_eq!(response.status, 400);
-    assert_eq!(body["error"], "expired_token");
-    assert_eq!(body["error_description"], EXPIRED_DEVICE_CODE);
+    assert_eq!(
+        (*(body).get("error").unwrap_or(&Value::Null)),
+        "expired_token"
+    );
+    assert_eq!(
+        (*(body).get("error_description").unwrap_or(&Value::Null)),
+        EXPIRED_DEVICE_CODE
+    );
     assert!(
         ctx.database
             .get_device_code_by_device_code(&stored.device_code)
@@ -439,8 +505,14 @@ async fn test_device_token_invalid_device_code_returns_invalid_grant() {
     let body = json_body(&response);
 
     assert_eq!(response.status, 400);
-    assert_eq!(body["error"], "invalid_grant");
-    assert_eq!(body["error_description"], INVALID_DEVICE_CODE);
+    assert_eq!(
+        (*(body).get("error").unwrap_or(&Value::Null)),
+        "invalid_grant"
+    );
+    assert_eq!(
+        (*(body).get("error_description").unwrap_or(&Value::Null)),
+        INVALID_DEVICE_CODE
+    );
 }
 
 // Upstream source: packages/better-auth/src/plugins/device-authorization/device-authorization.test.ts :: "should enforce rate limiting with slow_down error".
@@ -460,13 +532,18 @@ async fn test_device_token_rate_limits_with_slow_down() {
         .await
         .unwrap();
     let create_body = json_body(&create_response);
-    let device_code = create_body["device_code"].as_str().unwrap();
+    let device_code = (*(create_body).get("device_code").unwrap_or(&Value::Null))
+        .as_str()
+        .unwrap();
 
     let first = plugin
         .handle_device_token(&device_token_request(device_code, "test-client"), &ctx)
         .await
         .unwrap();
-    assert_eq!(json_body(&first)["error"], "authorization_pending");
+    assert_eq!(
+        (*(json_body(&first)).get("error").unwrap_or(&Value::Null)),
+        "authorization_pending"
+    );
 
     let second = plugin
         .handle_device_token(&device_token_request(device_code, "test-client"), &ctx)
@@ -475,8 +552,16 @@ async fn test_device_token_rate_limits_with_slow_down() {
     let second_body = json_body(&second);
 
     assert_eq!(second.status, 400);
-    assert_eq!(second_body["error"], "slow_down");
-    assert_eq!(second_body["error_description"], POLLING_TOO_FREQUENTLY);
+    assert_eq!(
+        (*(second_body).get("error").unwrap_or(&Value::Null)),
+        "slow_down"
+    );
+    assert_eq!(
+        (*(second_body)
+            .get("error_description")
+            .unwrap_or(&Value::Null)),
+        POLLING_TOO_FREQUENTLY
+    );
 }
 
 // Upstream source: packages/better-auth/src/plugins/device-authorization/device-authorization.test.ts :: verification scenarios.
@@ -487,14 +572,14 @@ async fn test_device_verify_strips_hyphens_and_preserves_input_shape() {
 
     ctx.database
         .create_device_code(CreateDeviceCode {
-            device_code: "verify-device-code".to_string(),
-            user_code: "ABCD2345".to_string(),
+            device_code: "verify-device-code".to_owned(),
+            user_code: "ABCD2345".to_owned(),
             user_id: None,
             expires_at: Utc::now() + Duration::minutes(5),
-            status: DEVICE_STATUS_PENDING.to_string(),
+            status: DEVICE_STATUS_PENDING.to_owned(),
             last_polled_at: None,
             polling_interval: Some(5000),
-            client_id: Some("test-client".to_string()),
+            client_id: Some("test-client".to_owned()),
             scope: None,
         })
         .await
@@ -507,8 +592,14 @@ async fn test_device_verify_strips_hyphens_and_preserves_input_shape() {
     let body = json_body(&response);
 
     assert_eq!(response.status, 200);
-    assert_eq!(body["user_code"], "ABCD-2345");
-    assert_eq!(body["status"], DEVICE_STATUS_PENDING);
+    assert_eq!(
+        (*(body).get("user_code").unwrap_or(&Value::Null)),
+        "ABCD-2345"
+    );
+    assert_eq!(
+        (*(body).get("status").unwrap_or(&Value::Null)),
+        DEVICE_STATUS_PENDING
+    );
 }
 
 // Upstream source: packages/better-auth/src/plugins/device-authorization/device-authorization.test.ts :: invalid user code verification.
@@ -524,8 +615,14 @@ async fn test_device_verify_invalid_user_code_returns_error() {
     let body = json_body(&response);
 
     assert_eq!(response.status, 400);
-    assert_eq!(body["error"], "invalid_request");
-    assert_eq!(body["error_description"], INVALID_USER_CODE);
+    assert_eq!(
+        (*(body).get("error").unwrap_or(&Value::Null)),
+        "invalid_request"
+    );
+    assert_eq!(
+        (*(body).get("error_description").unwrap_or(&Value::Null)),
+        INVALID_USER_CODE
+    );
 }
 
 // Upstream source: packages/better-auth/src/plugins/device-authorization/device-authorization.test.ts :: approval flow, scope preservation, and OAuth-compliant token response.
@@ -548,8 +645,14 @@ async fn test_device_approve_flow_creates_session_and_returns_oauth_token_respon
         .await
         .unwrap();
     let create_body = json_body(&create_response);
-    let device_code = create_body["device_code"].as_str().unwrap().to_string();
-    let user_code = create_body["user_code"].as_str().unwrap().to_string();
+    let device_code = (*(create_body).get("device_code").unwrap_or(&Value::Null))
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let user_code = (*(create_body).get("user_code").unwrap_or(&Value::Null))
+        .as_str()
+        .unwrap()
+        .to_owned();
 
     plugin
         .handle_device_verify(&device_claim_request(&user_code, &session.token), &ctx)
@@ -566,7 +669,12 @@ async fn test_device_approve_flow_creates_session_and_returns_oauth_token_respon
         .handle_device_approve(&approve_request, &ctx)
         .await
         .unwrap();
-    assert_eq!(json_body(&approve_response)["success"], true);
+    assert_eq!(
+        (*(json_body(&approve_response))
+            .get("success")
+            .unwrap_or(&Value::Null)),
+        true
+    );
 
     let token_response = plugin
         .handle_device_token(&device_token_request(&device_code, "test-client"), &ctx)
@@ -577,17 +685,30 @@ async fn test_device_approve_flow_creates_session_and_returns_oauth_token_respon
     assert_eq!(token_response.status, 200);
     assert_eq!(
         token_response.headers.get("Cache-Control"),
-        Some(&"no-store".to_string())
+        Some(&"no-store".to_owned())
     );
     assert_eq!(
         token_response.headers.get("Pragma"),
-        Some(&"no-cache".to_string())
+        Some(&"no-cache".to_owned())
     );
-    assert_eq!(token_body["token_type"], "Bearer");
-    assert_eq!(token_body["scope"], "read write profile");
-    assert!(token_body["expires_in"].as_i64().unwrap() > 0);
+    assert_eq!(
+        (*(token_body).get("token_type").unwrap_or(&Value::Null)),
+        "Bearer"
+    );
+    assert_eq!(
+        (*(token_body).get("scope").unwrap_or(&Value::Null)),
+        "read write profile"
+    );
+    assert!(
+        (*(token_body).get("expires_in").unwrap_or(&Value::Null))
+            .as_i64()
+            .unwrap()
+            > 0
+    );
 
-    let access_token = token_body["access_token"].as_str().unwrap();
+    let access_token = (*(token_body).get("access_token").unwrap_or(&Value::Null))
+        .as_str()
+        .unwrap();
     assert!(
         ctx.database
             .get_session(access_token)
@@ -623,8 +744,14 @@ async fn test_device_approve_rejects_unclaimed_code() {
         .await
         .unwrap();
     let create_body = json_body(&create_response);
-    let device_code = create_body["device_code"].as_str().unwrap().to_string();
-    let user_code = create_body["user_code"].as_str().unwrap().to_string();
+    let device_code = (*(create_body).get("device_code").unwrap_or(&Value::Null))
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let user_code = (*(create_body).get("user_code").unwrap_or(&Value::Null))
+        .as_str()
+        .unwrap()
+        .to_owned();
 
     // Deliberately skip the `GET /device` claim.
     let approve_request = test_helpers::create_auth_json_request_no_query(
@@ -640,8 +767,16 @@ async fn test_device_approve_rejects_unclaimed_code() {
     let approve_body = json_body(&approve_response);
 
     assert_eq!(approve_response.status, 400);
-    assert_eq!(approve_body["error"], "invalid_request");
-    assert_eq!(approve_body["error_description"], DEVICE_CODE_NOT_CLAIMED);
+    assert_eq!(
+        (*(approve_body).get("error").unwrap_or(&Value::Null)),
+        "invalid_request"
+    );
+    assert_eq!(
+        (*(approve_body)
+            .get("error_description")
+            .unwrap_or(&Value::Null)),
+        DEVICE_CODE_NOT_CLAIMED
+    );
 
     let stored = ctx
         .database
@@ -670,8 +805,14 @@ async fn test_device_deny_flow_returns_access_denied_and_deletes_record() {
         .await
         .unwrap();
     let create_body = json_body(&create_response);
-    let device_code = create_body["device_code"].as_str().unwrap().to_string();
-    let user_code = create_body["user_code"].as_str().unwrap().to_string();
+    let device_code = (*(create_body).get("device_code").unwrap_or(&Value::Null))
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let user_code = (*(create_body).get("user_code").unwrap_or(&Value::Null))
+        .as_str()
+        .unwrap()
+        .to_owned();
 
     plugin
         .handle_device_verify(&device_claim_request(&user_code, &session.token), &ctx)
@@ -688,7 +829,12 @@ async fn test_device_deny_flow_returns_access_denied_and_deletes_record() {
         .handle_device_deny(&deny_request, &ctx)
         .await
         .unwrap();
-    assert_eq!(json_body(&deny_response)["success"], true);
+    assert_eq!(
+        (*(json_body(&deny_response))
+            .get("success")
+            .unwrap_or(&Value::Null)),
+        true
+    );
 
     let token_response = plugin
         .handle_device_token(&device_token_request(&device_code, "test-client"), &ctx)
@@ -697,8 +843,16 @@ async fn test_device_deny_flow_returns_access_denied_and_deletes_record() {
     let token_body = json_body(&token_response);
 
     assert_eq!(token_response.status, 400);
-    assert_eq!(token_body["error"], "access_denied");
-    assert_eq!(token_body["error_description"], ACCESS_DENIED);
+    assert_eq!(
+        (*(token_body).get("error").unwrap_or(&Value::Null)),
+        "access_denied"
+    );
+    assert_eq!(
+        (*(token_body)
+            .get("error_description")
+            .unwrap_or(&Value::Null)),
+        ACCESS_DENIED
+    );
     assert!(
         ctx.database
             .get_device_code_by_device_code(&device_code)
@@ -725,7 +879,10 @@ async fn test_device_approve_requires_authentication_and_blocks_double_processin
         .await
         .unwrap();
     let create_body = json_body(&create_response);
-    let user_code = create_body["user_code"].as_str().unwrap().to_string();
+    let user_code = (*(create_body).get("user_code").unwrap_or(&Value::Null))
+        .as_str()
+        .unwrap()
+        .to_owned();
 
     plugin
         .handle_device_verify(&device_claim_request(&user_code, &session.token), &ctx)
@@ -744,9 +901,14 @@ async fn test_device_approve_requires_authentication_and_blocks_double_processin
         .unwrap();
     let unauthenticated_body = json_body(&unauthenticated_response);
     assert_eq!(unauthenticated_response.status, 401);
-    assert_eq!(unauthenticated_body["error"], "unauthorized");
     assert_eq!(
-        unauthenticated_body["error_description"],
+        (*(unauthenticated_body).get("error").unwrap_or(&Value::Null)),
+        "unauthorized"
+    );
+    assert_eq!(
+        (*(unauthenticated_body)
+            .get("error_description")
+            .unwrap_or(&Value::Null)),
         AUTHENTICATION_REQUIRED
     );
 
@@ -760,7 +922,12 @@ async fn test_device_approve_requires_authentication_and_blocks_double_processin
         .handle_device_approve(&approve_request, &ctx)
         .await
         .unwrap();
-    assert_eq!(json_body(&first_response)["success"], true);
+    assert_eq!(
+        (*(json_body(&first_response))
+            .get("success")
+            .unwrap_or(&Value::Null)),
+        true
+    );
 
     let second_response = plugin
         .handle_device_approve(&approve_request, &ctx)
@@ -768,9 +935,14 @@ async fn test_device_approve_requires_authentication_and_blocks_double_processin
         .unwrap();
     let second_body = json_body(&second_response);
     assert_eq!(second_response.status, 400);
-    assert_eq!(second_body["error"], "invalid_request");
     assert_eq!(
-        second_body["error_description"],
+        (*(second_body).get("error").unwrap_or(&Value::Null)),
+        "invalid_request"
+    );
+    assert_eq!(
+        (*(second_body)
+            .get("error_description")
+            .unwrap_or(&Value::Null)),
         DEVICE_CODE_ALREADY_PROCESSED
     );
 }
@@ -793,7 +965,10 @@ async fn test_device_approve_allows_only_one_concurrent_decision() {
         .await
         .unwrap();
     let create_body = json_body(&create_response);
-    let user_code = create_body["user_code"].as_str().unwrap().to_string();
+    let user_code = (*(create_body).get("user_code").unwrap_or(&Value::Null))
+        .as_str()
+        .unwrap()
+        .to_owned();
 
     plugin
         .handle_device_verify(&device_claim_request(&user_code, &session.token), &ctx)
@@ -857,7 +1032,12 @@ async fn test_device_token_rejects_client_id_mismatch() {
 
     let response = plugin
         .handle_device_token(
-            &device_token_request(create_body["device_code"].as_str().unwrap(), "client-b"),
+            &device_token_request(
+                (*(create_body).get("device_code").unwrap_or(&Value::Null))
+                    .as_str()
+                    .unwrap(),
+                "client-b",
+            ),
             &ctx,
         )
         .await
@@ -865,8 +1045,14 @@ async fn test_device_token_rejects_client_id_mismatch() {
     let body = json_body(&response);
 
     assert_eq!(response.status, 400);
-    assert_eq!(body["error"], "invalid_grant");
-    assert_eq!(body["error_description"], CLIENT_ID_MISMATCH);
+    assert_eq!(
+        (*(body).get("error").unwrap_or(&Value::Null)),
+        "invalid_grant"
+    );
+    assert_eq!(
+        (*(body).get("error_description").unwrap_or(&Value::Null)),
+        CLIENT_ID_MISMATCH
+    );
 }
 
 // Upstream 1.7.6 uses consumeOne to permit exactly one successful redemption.
@@ -886,8 +1072,14 @@ async fn test_device_token_allows_only_one_concurrent_redemption() {
         .await
         .unwrap();
     let create_body = json_body(&create_response);
-    let device_code = create_body["device_code"].as_str().unwrap().to_string();
-    let user_code = create_body["user_code"].as_str().unwrap().to_string();
+    let device_code = (*(create_body).get("device_code").unwrap_or(&Value::Null))
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let user_code = (*(create_body).get("user_code").unwrap_or(&Value::Null))
+        .as_str()
+        .unwrap()
+        .to_owned();
 
     plugin
         .handle_device_verify(&device_claim_request(&user_code, &session.token), &ctx)
@@ -904,7 +1096,12 @@ async fn test_device_token_allows_only_one_concurrent_redemption() {
         .handle_device_approve(&approve_request, &ctx)
         .await
         .unwrap();
-    assert_eq!(json_body(&approve_response)["success"], true);
+    assert_eq!(
+        (*(json_body(&approve_response))
+            .get("success")
+            .unwrap_or(&Value::Null)),
+        true
+    );
 
     let first_request = device_token_request(&device_code, "test-client");
     let second_request = device_token_request(&device_code, "test-client");

@@ -1,3 +1,4 @@
+use super::types::RequestPasswordResetResponse;
 use super::*;
 use crate::plugins::test_helpers;
 use better_auth_core::AuthContext;
@@ -46,22 +47,23 @@ async fn create_test_context_with_user() -> (AuthContext<TestSchema>, UserView, 
         .with_email("test@example.com")
         .with_name("Test User");
     let user = test_helpers::create_user(&ctx, create_user).await;
-    let _ = ctx
-        .database
-        .create_account(CreateAccount {
-            user_id: user.id.clone(),
-            account_id: user.id.clone(),
-            provider_id: "credential".to_string(),
-            access_token: None,
-            refresh_token: None,
-            id_token: None,
-            access_token_expires_at: None,
-            refresh_token_expires_at: None,
-            scope: None,
-            password: Some(password_hash),
-        })
-        .await
-        .unwrap();
+    drop(
+        ctx.database
+            .create_account(CreateAccount {
+                user_id: user.id.clone(),
+                account_id: user.id.clone(),
+                provider_id: "credential".to_owned(),
+                access_token: None,
+                refresh_token: None,
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: None,
+                password: Some(password_hash),
+            })
+            .await
+            .unwrap(),
+    );
     let session = test_helpers::create_session(&ctx, user.id.clone(), Duration::hours(24)).await;
 
     (ctx, user, session)
@@ -76,22 +78,23 @@ async fn create_test_context_with_oauth_only_user()
         ctx.database.delete_account(&account.id).await.unwrap();
     }
 
-    let _ = ctx
-        .database
-        .create_account(CreateAccount {
-            user_id: user.id.clone(),
-            account_id: "google-account-id".to_string(),
-            provider_id: "google".to_string(),
-            access_token: Some("oauth-access-token".to_string()),
-            refresh_token: Some("oauth-refresh-token".to_string()),
-            id_token: None,
-            access_token_expires_at: None,
-            refresh_token_expires_at: None,
-            scope: Some("email profile".to_string()),
-            password: None,
-        })
-        .await
-        .unwrap();
+    drop(
+        ctx.database
+            .create_account(CreateAccount {
+                user_id: user.id.clone(),
+                account_id: "google-account-id".to_owned(),
+                provider_id: "google".to_owned(),
+                access_token: Some("oauth-access-token".to_owned()),
+                refresh_token: Some("oauth-refresh-token".to_owned()),
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: Some("email profile".to_owned()),
+                password: None,
+            })
+            .await
+            .unwrap(),
+    );
 
     (ctx, user, session)
 }
@@ -104,8 +107,8 @@ async fn create_reset_token(
 ) -> String {
     let reset_token = uuid::Uuid::new_v4().simple().to_string();
     let create_verification = CreateVerification {
-        identifier: format!("reset-password:{}", reset_token),
-        value: user_id.to_string(),
+        identifier: format!("reset-password:{reset_token}"),
+        value: user_id.to_owned(),
         expires_at: Utc::now() + Duration::hours(24),
     };
     ctx.database
@@ -217,7 +220,7 @@ async fn test_reset_password_success() {
 
     let verification_check = ctx
         .database
-        .get_verification_by_identifier(&format!("reset-password:{}", reset_token))
+        .get_verification_by_identifier(&format!("reset-password:{reset_token}"))
         .await
         .unwrap();
     assert!(verification_check.is_none());
@@ -293,10 +296,21 @@ async fn test_change_password_success() {
 
     let body_str = String::from_utf8(response.body).unwrap();
     let response_data: serde_json::Value = serde_json::from_str(&body_str).unwrap();
-    assert!(response_data["token"].is_null()); // No new token when not revoking sessions
+    assert!(
+        (*(response_data)
+            .get("token")
+            .unwrap_or(&serde_json::Value::Null))
+        .is_null()
+    ); // No new token when not revoking sessions
 
     // Verify password was updated by checking the database directly
-    let user_id = response_data["user"]["id"].as_str().unwrap();
+    let user_id = (*(*(response_data)
+        .get("user")
+        .unwrap_or(&serde_json::Value::Null))
+    .get("id")
+    .unwrap_or(&serde_json::Value::Null))
+    .as_str()
+    .unwrap();
     let accounts = ctx.database.get_user_accounts(user_id).await.unwrap();
     let stored_hash = accounts
         .iter()
@@ -335,7 +349,12 @@ async fn test_change_password_with_session_revocation() {
 
     let body_str = String::from_utf8(response.body).unwrap();
     let response_data: serde_json::Value = serde_json::from_str(&body_str).unwrap();
-    assert!(response_data["token"].is_string()); // New token when revoking sessions
+    assert!(
+        (*(response_data)
+            .get("token")
+            .unwrap_or(&serde_json::Value::Null))
+        .is_string()
+    ); // New token when revoking sessions
 }
 
 // Upstream reference: packages/better-auth/src/api/routes/password.test.ts :: describe("forget password") and packages/better-auth/src/api/routes/password.ts; adapted to the Rust password-management plugin.
@@ -437,7 +456,10 @@ async fn test_change_password_revoke_with_boolean() {
     let body_str = String::from_utf8(response.body).unwrap();
     let response_data: serde_json::Value = serde_json::from_str(&body_str).unwrap();
     assert!(
-        response_data["token"].is_string(),
+        (*(response_data)
+            .get("token")
+            .unwrap_or(&serde_json::Value::Null))
+        .is_string(),
         "New token must be returned when revokeOtherSessions is boolean true"
     );
 }
@@ -579,9 +601,15 @@ async fn test_verify_password_requires_session() {
     let response = plugin.handle_verify_password(&req, &ctx).await.unwrap();
     assert_eq!(response.status, 401);
     // Upstream returns better-call's default 401 body rather than an empty one.
-    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert_eq!(body["code"], "UNAUTHORIZED");
-    assert_eq!(body["message"], "Unauthorized");
+    let body_2: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(
+        (*(body_2).get("code").unwrap_or(&serde_json::Value::Null)),
+        "UNAUTHORIZED"
+    );
+    assert_eq!(
+        (*(body_2).get("message").unwrap_or(&serde_json::Value::Null)),
+        "Unauthorized"
+    );
 }
 
 // Upstream reference: packages/better-auth/src/api/routes/password.test.ts :: describe("forget password") and packages/better-auth/src/api/routes/password.ts; adapted to the Rust password-management plugin.
@@ -594,13 +622,13 @@ async fn test_reset_password_token_endpoint_redirects_with_callback_token() {
 
     let mut query = HashMap::new();
     query.insert(
-        "callbackURL".to_string(),
-        "http://localhost:3000/reset".to_string(),
+        "callbackURL".to_owned(),
+        "http://localhost:3000/reset".to_owned(),
     );
 
     let req = AuthRequest::from_parts(
         HttpMethod::Get,
-        "/reset-password/token".to_string(),
+        "/reset-password/token".to_owned(),
         HashMap::new(),
         None,
         query,
@@ -612,11 +640,17 @@ async fn test_reset_password_token_endpoint_redirects_with_callback_token() {
         .unwrap();
     assert_eq!(response.status, 302);
     assert!(
-        response.headers["Location"].contains("http://localhost:3000/reset"),
+        (*(response.headers)
+            .get("Location")
+            .expect("fixture contains the requested index"))
+        .contains("http://localhost:3000/reset"),
         "redirect must preserve the callback URL"
     );
     assert!(
-        response.headers["Location"].contains(&format!("token={}", reset_token)),
+        (*(response.headers)
+            .get("Location")
+            .expect("fixture contains the requested index"))
+        .contains(&format!("token={reset_token}")),
         "redirect must contain the reset token"
     );
 }
@@ -631,13 +665,13 @@ async fn test_reset_password_token_endpoint_with_callback() {
 
     let mut query = HashMap::new();
     query.insert(
-        "callbackURL".to_string(),
-        "http://localhost:3000/reset".to_string(),
+        "callbackURL".to_owned(),
+        "http://localhost:3000/reset".to_owned(),
     );
 
     let req = AuthRequest::from_parts(
         HttpMethod::Get,
-        "/reset-password/token".to_string(),
+        "/reset-password/token".to_owned(),
         HashMap::new(),
         None,
         query,
@@ -672,12 +706,12 @@ async fn test_reset_password_token_endpoint_invalid_token() {
 
     let mut query = HashMap::new();
     query.insert(
-        "callbackURL".to_string(),
-        "http://localhost:3000/reset".to_string(),
+        "callbackURL".to_owned(),
+        "http://localhost:3000/reset".to_owned(),
     );
     let req = AuthRequest::from_parts(
         HttpMethod::Get,
-        "/reset-password/token".to_string(),
+        "/reset-password/token".to_owned(),
         HashMap::new(),
         None,
         query,
@@ -688,13 +722,18 @@ async fn test_reset_password_token_endpoint_invalid_token() {
         .await
         .unwrap();
     assert_eq!(response.status, 302);
-    assert!(response.headers["Location"].contains("error=INVALID_TOKEN"));
+    assert!(
+        (*(response.headers)
+            .get("Location")
+            .expect("fixture contains the requested index"))
+        .contains("error=INVALID_TOKEN")
+    );
 }
 
 // Upstream reference: packages/better-auth/src/api/routes/password.test.ts :: describe("forget password") and packages/better-auth/src/api/routes/password.ts; adapted to the Rust password-management plugin.
 #[tokio::test]
 async fn test_password_validation() {
-    let plugin = PasswordManagementPlugin::new();
+    let _plugin = PasswordManagementPlugin::new();
     let mut config = AuthConfig::new("test-secret");
     config.password = PasswordConfig {
         min_length: 8,
@@ -707,22 +746,22 @@ async fn test_password_validation() {
     let ctx = AuthContext::new(Arc::new(config), database);
 
     // Test valid password
-    assert!(plugin.validate_password("Password123!", &ctx).is_ok());
+    assert!(PasswordManagementPlugin::validate_password("Password123!", &ctx).is_ok());
 
     // Test too short
-    assert!(plugin.validate_password("Pass1!", &ctx).is_err());
+    assert!(PasswordManagementPlugin::validate_password("Pass1!", &ctx).is_err());
 
     // Test missing uppercase
-    assert!(plugin.validate_password("password123!", &ctx).is_err());
+    assert!(PasswordManagementPlugin::validate_password("password123!", &ctx).is_err());
 
     // Test missing lowercase
-    assert!(plugin.validate_password("PASSWORD123!", &ctx).is_err());
+    assert!(PasswordManagementPlugin::validate_password("PASSWORD123!", &ctx).is_err());
 
     // Test missing number
-    assert!(plugin.validate_password("Password!", &ctx).is_err());
+    assert!(PasswordManagementPlugin::validate_password("Password!", &ctx).is_err());
 
     // Test missing special character
-    assert!(plugin.validate_password("Password123", &ctx).is_err());
+    assert!(PasswordManagementPlugin::validate_password("Password123", &ctx).is_err());
 }
 
 // Upstream reference: packages/better-auth/src/api/routes/password.test.ts :: describe("forget password") and packages/better-auth/src/api/routes/password.ts; adapted to the Rust password-management plugin.
@@ -799,25 +838,25 @@ async fn test_plugin_on_request_routing() {
     assert_eq!(response.unwrap().status, 200);
 
     // Test change password
-    let body = serde_json::json!({
+    let body_2 = serde_json::json!({
         "currentPassword": "Password123!",
         "newPassword": "NewPassword123!"
     });
-    let req = test_helpers::create_auth_request_no_query(
+    let req_2 = test_helpers::create_auth_request_no_query(
         HttpMethod::Post,
         "/change-password",
         Some(&session.token),
-        Some(body.to_string().into_bytes()),
+        Some(body_2.to_string().into_bytes()),
     );
-    let response = plugin.on_request(&req, &ctx).await.unwrap();
-    assert!(response.is_some());
-    assert_eq!(response.unwrap().status, 200);
+    let response_2 = plugin.on_request(&req_2, &ctx).await.unwrap();
+    assert!(response_2.is_some());
+    assert_eq!(response_2.unwrap().status, 200);
 
     // Test invalid route
-    let req =
+    let req_3 =
         test_helpers::create_auth_request_no_query(HttpMethod::Get, "/invalid-route", None, None);
-    let response = plugin.on_request(&req, &ctx).await.unwrap();
-    assert!(response.is_none());
+    let response_3 = plugin.on_request(&req_3, &ctx).await.unwrap();
+    assert!(response_3.is_none());
 }
 
 // Upstream reference: packages/better-auth/src/api/routes/password.test.ts :: describe("forget password") and packages/better-auth/src/api/routes/password.ts; adapted to the Rust password-management plugin.
@@ -861,7 +900,7 @@ async fn test_send_reset_password_custom_sender() {
 
     let called = Arc::new(AtomicBool::new(false));
     let sender: Arc<dyn SendResetPassword> = Arc::new(TestSender {
-        called: called.clone(),
+        called: std::sync::Arc::clone(&called),
     });
 
     let plugin = PasswordManagementPlugin::new().send_reset_password(sender);
@@ -897,10 +936,10 @@ async fn test_on_password_reset_callback() {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     let callback_called = Arc::new(AtomicBool::new(false));
-    let called_clone = callback_called.clone();
+    let called_clone = std::sync::Arc::clone(&callback_called);
 
     let callback: Arc<OnPasswordResetCallback> = Arc::new(move |_user_value| {
-        let called = called_clone.clone();
+        let called = std::sync::Arc::clone(&called_clone);
         Box::pin(async move {
             called.store(true, Ordering::SeqCst);
             Ok(())

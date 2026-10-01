@@ -1,27 +1,27 @@
 use crate::TestSchema;
-use axum::{extract::Json, routing::post, Router};
+use axum::{Router, extract::Json, routing::post};
 use better_auth::{
+    AuthBuilder, AuthConfig, AuthError, AuthResult, BackgroundTaskCompletion,
+    BackgroundTaskHandler, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{
-        two_factor::{SendTwoFactorOtp, TwoFactorConfig},
         EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin,
+        two_factor::{SendTwoFactorOtp, TwoFactorConfig},
     },
     wire::UserView,
-    AuthBuilder, AuthConfig, AuthError, AuthResult, BackgroundTaskCompletion,
-    BackgroundTaskHandler, BetterAuth,
 };
 use better_auth_seaorm::{
-    sea_orm::{ConnectionTrait, DbBackend, Statement},
     DatabaseConnection, SeaOrmStore,
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
 };
-use tokio::sync::{oneshot, Notify};
+use tokio::sync::{Notify, oneshot};
 
 struct Delivery {
     profile: String,

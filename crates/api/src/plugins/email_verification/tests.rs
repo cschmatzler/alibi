@@ -1,15 +1,37 @@
 use super::token::create_email_verification_token;
+
 use super::*;
+
 use crate::plugins::test_helpers;
+
 use async_trait::async_trait;
+
 use better_auth_core::wire::UserView;
+
 use better_auth_core::{AuthResult, AuthSession, CreateUser, UpdateUser};
+
 use chrono::{Duration, Utc};
+
 use std::collections::HashMap;
+
 use std::sync::Arc;
+
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use better_auth_core::{AuthPlugin, HttpMethod};
+
+// ------------------------------------------------------------------
+// Custom sender
+// ------------------------------------------------------------------
+
+struct DummySender;
+
+#[async_trait]
+impl SendVerificationEmail for DummySender {
+    async fn send(&self, _user: &UserView, _url: &str, _token: &str) -> AuthResult<()> {
+        Ok(())
+    }
+}
 
 // ------------------------------------------------------------------
 // Rust-specific builder/default surface
@@ -99,19 +121,6 @@ fn test_builder_chaining() {
     assert!(plugin.config.require_verification_for_signin);
 }
 
-// ------------------------------------------------------------------
-// Custom sender
-// ------------------------------------------------------------------
-
-struct DummySender;
-
-#[async_trait]
-impl SendVerificationEmail for DummySender {
-    async fn send(&self, _user: &UserView, _url: &str, _token: &str) -> AuthResult<()> {
-        Ok(())
-    }
-}
-
 // Rust-specific surface: `EmailVerificationPlugin::custom_send_verification_email`
 // is a public Rust-only builder API.
 #[test]
@@ -161,12 +170,12 @@ fn make_test_user(email: &str, verified: bool) -> UserView {
         phone_number: None,
         phone_number_verified: None,
         last_login_method: None,
-        extension_fields: Default::default(),
+        extension_fields: std::collections::BTreeMap::default(),
     }
 }
 
 fn jwt_token(
-    ctx: &better_auth_core::AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     email: &str,
     update_to: Option<&str>,
     request_type: Option<&str>,
@@ -184,6 +193,10 @@ fn jwt_token(
 // The legacy updateTo flow always sets a real session cookie and sends its
 // follow-up proof with the token helper's default lifetime, despite expiresIn.
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn legacy_email_change_reuses_or_issues_session_and_default_lifetime_followup() {
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
@@ -201,7 +214,7 @@ async fn legacy_email_change_reuses_or_issues_session_and_default_lifetime_follo
         let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
         let plugin = EmailVerificationPlugin::new()
             .verification_token_expiry(Duration::seconds(90))
-            .custom_send_verification_email(Arc::new(Sender(calls.clone())));
+            .custom_send_verification_email(Arc::new(Sender(std::sync::Arc::clone(&calls))));
         let user = ctx
             .database
             .create_user(CreateUser::new().with_email("before@legacy.fixture.test"))
@@ -211,7 +224,7 @@ async fn legacy_email_change_reuses_or_issues_session_and_default_lifetime_follo
             Some(
                 ctx.database
                     .create_session(better_auth_core::CreateSession {
-                        additional_fields: Default::default(),
+                        additional_fields: better_auth_core::field_policy::FieldValues::default(),
                         token: None,
                         user_id: user.id().to_string(),
                         expires_at: Utc::now() + ctx.config.session.expires_in,
@@ -247,9 +260,25 @@ async fn legacy_email_change_reuses_or_issues_session_and_default_lifetime_follo
         let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
         assert_eq!(response.status, 200);
         let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-        assert_eq!(body["user"]["id"].as_str(), Some(user.id().as_ref()));
-        assert_eq!(body["user"]["email"], "after@legacy.fixture.test");
-        assert_eq!(body["user"]["emailVerified"], false);
+        assert_eq!(
+            (*(*(body).get("user").unwrap_or(&serde_json::Value::Null))
+                .get("id")
+                .unwrap_or(&serde_json::Value::Null))
+            .as_str(),
+            Some(user.id().as_ref())
+        );
+        assert_eq!(
+            (*(*(body).get("user").unwrap_or(&serde_json::Value::Null))
+                .get("email")
+                .unwrap_or(&serde_json::Value::Null)),
+            "after@legacy.fixture.test"
+        );
+        assert_eq!(
+            (*(*(body).get("user").unwrap_or(&serde_json::Value::Null))
+                .get("emailVerified")
+                .unwrap_or(&serde_json::Value::Null)),
+            false
+        );
         let sessions = ctx.database.get_user_sessions(&user.id()).await.unwrap();
         assert_eq!(sessions.len(), 1, "Anonymous proof must issue a session");
         let session = sessions.first().unwrap();
@@ -280,12 +309,21 @@ async fn legacy_email_change_reuses_or_issues_session_and_default_lifetime_follo
         let encoded = token.split('.').nth(1).unwrap();
         let claims: serde_json::Value =
             serde_json::from_slice(&URL_SAFE_NO_PAD.decode(encoded).unwrap()).unwrap();
-        assert_eq!(claims["email"], "after@legacy.fixture.test");
         assert_eq!(
-            claims["exp"].as_i64().unwrap() - claims["iat"].as_i64().unwrap(),
+            (*(claims).get("email").unwrap_or(&serde_json::Value::Null)),
+            "after@legacy.fixture.test"
+        );
+        assert_eq!(
+            (*(claims).get("exp").unwrap_or(&serde_json::Value::Null))
+                .as_i64()
+                .unwrap()
+                - (*(claims).get("iat").unwrap_or(&serde_json::Value::Null))
+                    .as_i64()
+                    .unwrap(),
             3600
         );
         assert!(claims.get("updateTo").is_none());
+        drop(calls);
     }
 }
 
@@ -356,7 +394,15 @@ async fn external_verification_proofs_enforce_signature_algorithm_and_numeric_da
         ),
     ] {
         let mut payload = dates;
-        payload["email"] = serde_json::json!("proof-owner@fixture.test");
+        drop(
+            payload
+                .as_object_mut()
+                .expect("token payload is an object")
+                .insert(
+                    "email".to_owned(),
+                    serde_json::json!("proof-owner@fixture.test"),
+                ),
+        );
         let token = external_verification_token(secret, algorithm, &payload);
         let query = HashMap::from([("token".to_owned(), token.clone())]);
         let req =
@@ -365,13 +411,18 @@ async fn external_verification_proofs_enforce_signature_algorithm_and_numeric_da
         assert_eq!(error.status_code(), 401);
         assert_eq!(error.error_payload().1.as_deref(), Some(code));
         let callback = "/verification-error?source=caller&error=existing#details";
-        let query = HashMap::from([
+        let query_2 = HashMap::from([
             ("token".to_owned(), token),
             ("callbackURL".to_owned(), callback.to_owned()),
         ]);
-        let req =
-            test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
-        let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
+        let req_2 = test_helpers::create_auth_request(
+            HttpMethod::Get,
+            "/verify-email",
+            None,
+            None,
+            query_2,
+        );
+        let response = plugin.handle_verify_email(&req_2, &ctx).await.unwrap();
         assert_eq!(response.status, 302);
         assert_eq!(
             response.headers.get("Location"),
@@ -441,8 +492,8 @@ fn test_should_send_on_sign_in() {
     let plugin = EmailVerificationPlugin::new();
     assert!(!plugin.should_send_on_sign_in());
 
-    let plugin = EmailVerificationPlugin::new().send_on_sign_in(true);
-    assert!(plugin.should_send_on_sign_in());
+    let plugin_2 = EmailVerificationPlugin::new().send_on_sign_in(true);
+    assert!(plugin_2.should_send_on_sign_in());
 }
 
 // Rust-specific surface: helper methods exposing plugin state are public Rust
@@ -452,8 +503,8 @@ fn test_is_verification_required() {
     let plugin = EmailVerificationPlugin::new();
     assert!(!plugin.is_verification_required());
 
-    let plugin = EmailVerificationPlugin::new().require_verification_for_signin(true);
-    assert!(plugin.is_verification_required());
+    let plugin_2 = EmailVerificationPlugin::new().require_verification_for_signin(true);
+    assert!(plugin_2.is_verification_required());
 }
 
 // Rust-specific surface: helper methods exposing plugin state are public Rust
@@ -465,13 +516,13 @@ async fn test_is_user_verified_or_not_required() {
     // verification not required -> true even if unverified
     assert!(plugin.is_user_verified_or_not_required(&user));
 
-    let plugin = EmailVerificationPlugin::new().require_verification_for_signin(true);
+    let plugin_2 = EmailVerificationPlugin::new().require_verification_for_signin(true);
     // verification required + unverified -> false
-    assert!(!plugin.is_user_verified_or_not_required(&user));
+    assert!(!plugin_2.is_user_verified_or_not_required(&user));
 
     let verified_user = make_test_user("a@b.com", true);
     // verified -> always true
-    assert!(plugin.is_user_verified_or_not_required(&verified_user));
+    assert!(plugin_2.is_user_verified_or_not_required(&verified_user));
 }
 
 // ------------------------------------------------------------------
@@ -501,7 +552,7 @@ fn test_to_user_preserves_fields() {
         phone_number: None,
         phone_number_verified: None,
         last_login_method: None,
-        extension_fields: Default::default(),
+        extension_fields: std::collections::BTreeMap::default(),
     };
     let converted = UserView::from(&user);
     assert_eq!(converted.id, "test-id");
@@ -622,11 +673,8 @@ async fn test_send_verification_on_sign_in_verified_user() {
 // Upstream reference: packages/better-auth/src/api/routes/email-verification.test.ts :: describe("Email Verification") and packages/better-auth/src/api/routes/email-verification.ts; adapted to the Rust email verification plugin.
 #[tokio::test]
 async fn test_send_verification_on_sign_in_creates_token() {
-    // Use a custom sender that records calls instead of needing an
-    // email provider.
-    let call_count = Arc::new(AtomicU32::new(0));
-    let counter = call_count.clone();
     struct CountingSender(Arc<AtomicU32>);
+
     #[async_trait]
     impl SendVerificationEmail for CountingSender {
         async fn send(&self, _user: &UserView, _url: &str, _token: &str) -> AuthResult<()> {
@@ -634,6 +682,11 @@ async fn test_send_verification_on_sign_in_creates_token() {
             Ok(())
         }
     }
+
+    // Use a custom sender that records calls instead of needing an
+    // email provider.
+    let call_count = Arc::new(AtomicU32::new(0));
+    let counter = std::sync::Arc::clone(&call_count);
 
     let plugin = EmailVerificationPlugin::new()
         .send_on_sign_in(true)
@@ -667,9 +720,8 @@ async fn test_send_verification_on_sign_in_creates_token() {
 // Upstream reference: packages/better-auth/src/api/routes/email-verification.test.ts :: describe("Email Verification") and packages/better-auth/src/api/routes/email-verification.ts; adapted to the Rust email verification plugin.
 #[tokio::test]
 async fn test_on_user_created_custom_sender_fires_without_notifications() {
-    let call_count = Arc::new(AtomicU32::new(0));
-    let counter = call_count.clone();
     struct CountingSender(Arc<AtomicU32>);
+
     #[async_trait]
     impl SendVerificationEmail for CountingSender {
         async fn send(&self, _user: &UserView, _url: &str, _token: &str) -> AuthResult<()> {
@@ -677,6 +729,9 @@ async fn test_on_user_created_custom_sender_fires_without_notifications() {
             Ok(())
         }
     }
+
+    let call_count = Arc::new(AtomicU32::new(0));
+    let counter = std::sync::Arc::clone(&call_count);
 
     let plugin = EmailVerificationPlugin::new()
         .send_email_notifications(false)
@@ -703,9 +758,8 @@ async fn test_on_user_created_custom_sender_fires_without_notifications() {
 // Upstream reference: packages/better-auth/src/api/routes/email-verification.test.ts :: describe("Email Verification") and packages/better-auth/src/api/routes/email-verification.ts; adapted to the Rust email verification plugin.
 #[tokio::test]
 async fn test_on_user_created_verified_user_skips_email() {
-    let call_count = Arc::new(AtomicU32::new(0));
-    let counter = call_count.clone();
     struct CountingSender(Arc<AtomicU32>);
+
     #[async_trait]
     impl SendVerificationEmail for CountingSender {
         async fn send(&self, _user: &UserView, _url: &str, _token: &str) -> AuthResult<()> {
@@ -713,6 +767,9 @@ async fn test_on_user_created_verified_user_skips_email() {
             Ok(())
         }
     }
+
+    let call_count = Arc::new(AtomicU32::new(0));
+    let counter = std::sync::Arc::clone(&call_count);
 
     let plugin = EmailVerificationPlugin::new()
         .custom_send_verification_email(Arc::new(CountingSender(counter)));
@@ -765,15 +822,18 @@ async fn test_verify_email_basic_flow() {
 
     // Call verify-email
     let mut query = HashMap::new();
-    query.insert("token".to_string(), token_value.clone());
+    query.insert("token".to_owned(), token_value.clone());
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
     let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
 
     assert_eq!(response.status, 200);
     let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert_eq!(body["status"], true);
-    assert!(body["user"].is_null());
+    assert_eq!(
+        (*(body).get("status").unwrap_or(&serde_json::Value::Null)),
+        true
+    );
+    assert!((*(body).get("user").unwrap_or(&serde_json::Value::Null)).is_null());
 
     // User should now be verified in the database
     let updated = ctx
@@ -794,18 +854,18 @@ async fn test_verify_email_basic_flow() {
 async fn test_verify_email_calls_before_and_after_hooks() {
     let before_count = Arc::new(AtomicU32::new(0));
     let after_count = Arc::new(AtomicU32::new(0));
-    let bc = before_count.clone();
-    let ac = after_count.clone();
+    let bc = std::sync::Arc::clone(&before_count);
+    let ac = std::sync::Arc::clone(&after_count);
 
     let before_hook: EmailVerificationHook = Arc::new(move |_user: &UserView| {
-        let c = bc.clone();
+        let c = std::sync::Arc::clone(&bc);
         Box::pin(async move {
             c.fetch_add(1, Ordering::Relaxed);
             Ok(())
         })
     });
     let after_hook: EmailVerificationHook = Arc::new(move |_user: &UserView| {
-        let c = ac.clone();
+        let c = std::sync::Arc::clone(&ac);
         Box::pin(async move {
             c.fetch_add(1, Ordering::Relaxed);
             Ok(())
@@ -830,7 +890,7 @@ async fn test_verify_email_calls_before_and_after_hooks() {
     let token_value = jwt_token(&ctx, "hooks@test.com", None, None);
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), token_value);
+    query.insert("token".to_owned(), token_value);
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
     let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
@@ -844,9 +904,9 @@ async fn test_verify_email_calls_before_and_after_hooks() {
 #[tokio::test]
 async fn test_change_email_verification_after_hook_observes_updated_user() {
     let captured = Arc::new(std::sync::Mutex::new(Vec::<(Option<String>, bool)>::new()));
-    let hook_state = captured.clone();
+    let hook_state = std::sync::Arc::clone(&captured);
     let after_hook: EmailVerificationHook = Arc::new(move |user: &UserView| {
-        let hook_state = hook_state.clone();
+        let hook_state = std::sync::Arc::clone(&hook_state);
         let email = user.email.clone();
         let verified = user.email_verified;
         Box::pin(async move {
@@ -876,7 +936,7 @@ async fn test_change_email_verification_after_hook_observes_updated_user() {
     );
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), token_value);
+    query.insert("token".to_owned(), token_value);
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
     let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
@@ -884,7 +944,7 @@ async fn test_change_email_verification_after_hook_observes_updated_user() {
     assert_eq!(response.status, 200);
     assert_eq!(
         *captured.lock().unwrap(),
-        vec![(Some("updated-email@test.com".to_string()), true)]
+        vec![(Some("updated-email@test.com".to_owned()), true)]
     );
 
     let updated_user = ctx
@@ -900,9 +960,9 @@ async fn test_change_email_verification_after_hook_observes_updated_user() {
 #[tokio::test]
 async fn test_change_email_verification_does_not_fire_after_hook_when_update_fails() {
     let after_count = Arc::new(AtomicU32::new(0));
-    let counter = after_count.clone();
+    let counter = std::sync::Arc::clone(&after_count);
     let after_hook: EmailVerificationHook = Arc::new(move |_user: &UserView| {
-        let counter = counter.clone();
+        let counter = std::sync::Arc::clone(&counter);
         Box::pin(async move {
             counter.fetch_add(1, Ordering::Relaxed);
             Ok(())
@@ -939,7 +999,7 @@ async fn test_change_email_verification_does_not_fire_after_hook_when_update_fai
     );
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), token_value);
+    query.insert("token".to_owned(), token_value);
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
     let err = plugin.handle_verify_email(&req, &ctx).await.unwrap_err();
@@ -982,7 +1042,7 @@ async fn test_verify_email_before_hook_error_aborts() {
     let token_value = jwt_token(&ctx, "hook-err@test.com", None, None);
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), token_value.clone());
+    query.insert("token".to_owned(), token_value.clone());
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
     let err = plugin.handle_verify_email(&req, &ctx).await.unwrap_err();
@@ -1005,20 +1065,23 @@ async fn test_verify_email_before_hook_error_aborts() {
 // Upstream reference: packages/better-auth/src/api/routes/email-verification.test.ts :: describe("Email Verification") and packages/better-auth/src/api/routes/email-verification.ts; adapted to the Rust email verification plugin.
 #[tokio::test]
 async fn test_verify_email_auto_sign_in_creates_session() {
-    let captured = Arc::new(std::sync::Mutex::new(String::new()));
-
     struct CapturingSender(Arc<std::sync::Mutex<String>>);
+
     #[async_trait]
     impl SendVerificationEmail for CapturingSender {
         async fn send(&self, _user: &UserView, _url: &str, token: &str) -> AuthResult<()> {
-            *self.0.lock().unwrap() = token.to_string();
+            *self.0.lock().unwrap() = token.to_owned();
             Ok(())
         }
     }
 
+    let captured = Arc::new(std::sync::Mutex::new(String::new()));
+
     let plugin = EmailVerificationPlugin::new()
         .auto_sign_in_after_verification(true)
-        .custom_send_verification_email(Arc::new(CapturingSender(captured.clone())));
+        .custom_send_verification_email(Arc::new(CapturingSender(std::sync::Arc::clone(
+            &captured,
+        ))));
 
     let ctx = test_helpers::create_test_context().await;
     let _user = ctx
@@ -1033,10 +1096,10 @@ async fn test_verify_email_auto_sign_in_creates_session() {
 
     let body = serde_json::json!({ "email": "autosign@test.com" });
     let mut headers = HashMap::new();
-    headers.insert("content-type".to_string(), "application/json".to_string());
+    headers.insert("content-type".to_owned(), "application/json".to_owned());
     let send_req = AuthRequest::from_parts(
         HttpMethod::Post,
-        "/send-verification-email".to_string(),
+        "/send-verification-email".to_owned(),
         headers,
         Some(body.to_string().into_bytes()),
         HashMap::new(),
@@ -1048,19 +1111,24 @@ async fn test_verify_email_auto_sign_in_creates_session() {
     assert_eq!(send_response.status, 200);
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), captured.lock().unwrap().clone());
+    query.insert("token".to_owned(), captured.lock().unwrap().clone());
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
     let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
 
     assert_eq!(response.status, 200);
-    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert_eq!(body["status"], true);
-    assert!(body["user"].is_null());
+    let body_2: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(
+        (*(body_2).get("status").unwrap_or(&serde_json::Value::Null)),
+        true
+    );
+    assert!((*(body_2).get("user").unwrap_or(&serde_json::Value::Null)).is_null());
 
     // Set-Cookie header should be present
     assert!(response.headers.contains_key("Set-Cookie"));
-    let cookie_header = &response.headers["Set-Cookie"];
+    let cookie_header = (response.headers)
+        .get("Set-Cookie")
+        .expect("fixture contains the requested index");
     assert!(cookie_header.contains("better-auth.session"));
 }
 
@@ -1083,14 +1151,17 @@ async fn test_verify_email_no_auto_sign_in_no_session() {
     let token_value = jwt_token(&ctx, "noautosign@test.com", None, None);
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), token_value);
+    query.insert("token".to_owned(), token_value);
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
     let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
 
     assert_eq!(response.status, 200);
     let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert_eq!(body["status"], true);
+    assert_eq!(
+        (*(body).get("status").unwrap_or(&serde_json::Value::Null)),
+        true
+    );
     // No session field expected
     assert!(body.get("session").is_none());
     // No Set-Cookie header expected
@@ -1120,17 +1191,27 @@ async fn test_verify_email_auto_sign_in_redirect_includes_cookie() {
     let token_value = jwt_token(&ctx, "redirect@test.com", None, None);
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), token_value);
-    query.insert("callbackURL".to_string(), "/verified".to_string());
+    query.insert("token".to_owned(), token_value);
+    query.insert("callbackURL".to_owned(), "/verified".to_owned());
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
     let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
 
     assert_eq!(response.status, 302);
-    assert_eq!(response.headers["Location"], "/verified");
+    assert_eq!(
+        (*(response.headers)
+            .get("Location")
+            .expect("fixture contains the requested index")),
+        "/verified"
+    );
     // Session cookie should be present on the redirect
     assert!(response.headers.contains_key("Set-Cookie"));
-    assert!(response.headers["Set-Cookie"].contains("better-auth.session"));
+    assert!(
+        (*(response.headers)
+            .get("Set-Cookie")
+            .expect("fixture contains the requested index"))
+        .contains("better-auth.session")
+    );
 }
 
 // Upstream reference: packages/better-auth/src/api/routes/email-verification.test.ts :: describe("Email Verification") and packages/better-auth/src/api/routes/email-verification.ts; adapted to the Rust email verification plugin.
@@ -1152,8 +1233,8 @@ async fn test_verify_email_redirect_without_auto_sign_in_no_cookie() {
     let token_value = jwt_token(&ctx, "redir-nocookie@test.com", None, None);
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), token_value);
-    query.insert("callbackURL".to_string(), "/verified".to_string());
+    query.insert("token".to_owned(), token_value);
+    query.insert("callbackURL".to_owned(), "/verified".to_owned());
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
     let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
@@ -1173,7 +1254,7 @@ async fn test_verify_email_invalid_token() {
     let ctx = test_helpers::create_test_context().await;
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), "bogus-token".to_string());
+    query.insert("token".to_owned(), "bogus-token".to_owned());
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
     let err = plugin.handle_verify_email(&req, &ctx).await.unwrap_err();
@@ -1232,13 +1313,16 @@ async fn test_verify_email_already_verified_returns_ok() {
     let token_value = jwt_token(&ctx, "already@test.com", None, None);
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), token_value);
+    query.insert("token".to_owned(), token_value);
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
     let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
     assert_eq!(response.status, 200);
     let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert_eq!(body["status"], true);
+    assert_eq!(
+        (*(body).get("status").unwrap_or(&serde_json::Value::Null)),
+        true
+    );
 }
 
 // ------------------------------------------------------------------
@@ -1273,10 +1357,10 @@ async fn test_send_verification_email_already_verified_returns_error() {
 
     let body = serde_json::json!({ "email": "verified@test.com" });
     let mut headers = HashMap::new();
-    headers.insert("content-type".to_string(), "application/json".to_string());
+    headers.insert("content-type".to_owned(), "application/json".to_owned());
     let req = AuthRequest::from_parts(
         HttpMethod::Post,
-        "/send-verification-email".to_string(),
+        "/send-verification-email".to_owned(),
         headers,
         Some(body.to_string().into_bytes()),
         HashMap::new(),
@@ -1331,7 +1415,7 @@ async fn unauthenticated_verification_email_has_fixed_floor_for_all_mailbox_stat
         let calls = Arc::new(AtomicU32::new(0));
         let plugin =
             EmailVerificationPlugin::new().custom_send_verification_email(Arc::new(Sender {
-                calls: calls.clone(),
+                calls: std::sync::Arc::clone(&calls),
                 fail,
             }));
         let req = test_helpers::create_auth_json_request_no_query(
@@ -1426,10 +1510,10 @@ async fn test_verify_email_rejects_untrusted_callback_url() {
     let token_value = jwt_token(&ctx, "redirect-guard@test.com", None, None);
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), token_value);
+    query.insert("token".to_owned(), token_value);
     query.insert(
-        "callbackURL".to_string(),
-        "https://evil.com/phish".to_string(),
+        "callbackURL".to_owned(),
+        "https://evil.com/phish".to_owned(),
     );
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
@@ -1457,14 +1541,19 @@ async fn test_verify_email_allows_relative_callback_url() {
     let token_value = jwt_token(&ctx, "redirect-rel@test.com", None, None);
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), token_value);
-    query.insert("callbackURL".to_string(), "/dashboard".to_string());
+    query.insert("token".to_owned(), token_value);
+    query.insert("callbackURL".to_owned(), "/dashboard".to_owned());
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
     let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
 
     assert_eq!(response.status, 302);
-    assert_eq!(response.headers["Location"], "/dashboard");
+    assert_eq!(
+        (*(response.headers)
+            .get("Location")
+            .expect("fixture contains the requested index")),
+        "/dashboard"
+    );
 }
 
 // Upstream reference: packages/better-auth/src/api/routes/email-verification.ts :: `use: [originCheck((ctx) => ctx.query.callbackURL)]` on the verifyEmail endpoint.
@@ -1487,17 +1576,22 @@ async fn test_verify_email_allows_trusted_origin_callback_url() {
     let token_value = jwt_token(&ctx, "redirect-trusted@test.com", None, None);
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), token_value);
+    query.insert("token".to_owned(), token_value);
     query.insert(
-        "callbackURL".to_string(),
-        "https://trusted.com/verified".to_string(),
+        "callbackURL".to_owned(),
+        "https://trusted.com/verified".to_owned(),
     );
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);
     let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
 
     assert_eq!(response.status, 302);
-    assert_eq!(response.headers["Location"], "https://trusted.com/verified");
+    assert_eq!(
+        (*(response.headers)
+            .get("Location")
+            .expect("fixture contains the requested index")),
+        "https://trusted.com/verified"
+    );
 }
 
 // Upstream reference: packages/better-auth/src/api/routes/email-verification.ts :: `use: [originCheck((ctx) => ctx.query.callbackURL)]` on the verifyEmail endpoint; `advanced.disableOriginCheck` skips the check.
@@ -1520,10 +1614,10 @@ async fn test_verify_email_skips_origin_check_when_disabled() {
     let token_value = jwt_token(&ctx, "redirect-disabled@test.com", None, None);
 
     let mut query = HashMap::new();
-    query.insert("token".to_string(), token_value);
+    query.insert("token".to_owned(), token_value);
     query.insert(
-        "callbackURL".to_string(),
-        "https://evil.com/anywhere".to_string(),
+        "callbackURL".to_owned(),
+        "https://evil.com/anywhere".to_owned(),
     );
     let req =
         test_helpers::create_auth_request(HttpMethod::Get, "/verify-email", None, None, query);

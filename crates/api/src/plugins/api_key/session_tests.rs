@@ -22,9 +22,11 @@ async fn test_virtual_session_answers_get_and_post_get_session() {
 
     for method in [HttpMethod::Get, HttpMethod::Post] {
         let mut request = create_auth_request(method, "/get-session", None, None, None);
-        let _ = request
-            .headers
-            .insert("x-api-key".to_string(), raw_key.clone());
+        drop(
+            request
+                .headers
+                .insert("x-api-key".to_owned(), raw_key.clone()),
+        );
         let action = AuthPlugin::<TestSchema>::before_request(&plugin, &request, &ctx)
             .await
             .unwrap();
@@ -33,9 +35,24 @@ async fn test_virtual_session_answers_get_and_post_get_session() {
         };
         assert_eq!(response.status, 200);
         let body = json_body(&response);
-        assert_eq!(body["session"]["id"], id);
-        assert_eq!(body["session"]["token"], raw_key);
-        assert_eq!(body["session"]["userId"], user.id);
+        assert_eq!(
+            (*(*(body).get("session").unwrap_or(&serde_json::Value::Null))
+                .get("id")
+                .unwrap_or(&serde_json::Value::Null)),
+            id
+        );
+        assert_eq!(
+            (*(*(body).get("session").unwrap_or(&serde_json::Value::Null))
+                .get("token")
+                .unwrap_or(&serde_json::Value::Null)),
+            raw_key
+        );
+        assert_eq!(
+            (*(*(body).get("session").unwrap_or(&serde_json::Value::Null))
+                .get("userId")
+                .unwrap_or(&serde_json::Value::Null)),
+            user.id
+        );
     }
 }
 
@@ -46,7 +63,7 @@ async fn test_virtual_session_creates_no_db_session() {
     let plugin = ApiKeyPlugin::builder()
         .enable_session_for_api_keys(true)
         .build();
-    let (ctx, _user, session) = create_test_context_with_user().await;
+    let (ctx, fixture_user, session) = create_test_context_with_user().await;
 
     // Create an API key
     let (_id, raw_key) = create_key_and_get_raw(
@@ -60,17 +77,17 @@ async fn test_virtual_session_creates_no_db_session() {
     // Count sessions before
     let sessions_before = ctx
         .database
-        .get_user_sessions(&_user.id)
+        .get_user_sessions(&fixture_user.id)
         .await
         .unwrap()
         .len();
 
     // Simulate a request to a protected route with only x-api-key header
     let mut headers = HashMap::new();
-    headers.insert("x-api-key".to_string(), raw_key.clone());
+    headers.insert("x-api-key".to_owned(), raw_key.clone());
     let req = AuthRequest::from_parts(
         HttpMethod::Post,
-        "/update-user".to_string(),
+        "/update-user".to_owned(),
         headers,
         None,
         HashMap::new(),
@@ -80,8 +97,8 @@ async fn test_virtual_session_creates_no_db_session() {
     let action = plugin.before_request(&req, &ctx).await.unwrap();
     assert!(action.is_some(), "before_request should return an action");
     match action.unwrap() {
-        BeforeRequestAction::InjectSession { session } => {
-            assert_eq!(session.user_id, _user.id);
+        BeforeRequestAction::InjectSession { session: session_2 } => {
+            assert_eq!(session_2.user_id, fixture_user.id);
         }
         BeforeRequestAction::Respond(_) => {
             panic!("Expected InjectSession, got Respond");
@@ -91,7 +108,7 @@ async fn test_virtual_session_creates_no_db_session() {
     // Count sessions after -- should be unchanged (no DB writes)
     let sessions_after = ctx
         .database
-        .get_user_sessions(&_user.id)
+        .get_user_sessions(&fixture_user.id)
         .await
         .unwrap()
         .len();
@@ -120,10 +137,10 @@ async fn test_virtual_session_on_get_session() {
 
     // Send request to /get-session with x-api-key header
     let mut headers = HashMap::new();
-    headers.insert("x-api-key".to_string(), raw_key.clone());
+    headers.insert("x-api-key".to_owned(), raw_key.clone());
     let req = AuthRequest::from_parts(
         HttpMethod::Get,
-        "/get-session".to_string(),
+        "/get-session".to_owned(),
         headers,
         None,
         HashMap::new(),
@@ -136,11 +153,31 @@ async fn test_virtual_session_on_get_session() {
             assert_eq!(resp.status, 200);
             let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
             // Should contain user data
-            assert_eq!(body["user"]["id"], user.id);
-            assert_eq!(body["user"]["email"], "test@example.com");
+            assert_eq!(
+                (*(*(body).get("user").unwrap_or(&serde_json::Value::Null))
+                    .get("id")
+                    .unwrap_or(&serde_json::Value::Null)),
+                user.id
+            );
+            assert_eq!(
+                (*(*(body).get("user").unwrap_or(&serde_json::Value::Null))
+                    .get("email")
+                    .unwrap_or(&serde_json::Value::Null)),
+                "test@example.com"
+            );
             // Should contain session-like data
-            assert!(body["session"]["id"].is_string());
-            assert_eq!(body["session"]["userId"], user.id);
+            assert!(
+                (*(*(body).get("session").unwrap_or(&serde_json::Value::Null))
+                    .get("id")
+                    .unwrap_or(&serde_json::Value::Null))
+                .is_string()
+            );
+            assert_eq!(
+                (*(*(body).get("session").unwrap_or(&serde_json::Value::Null))
+                    .get("userId")
+                    .unwrap_or(&serde_json::Value::Null)),
+                user.id
+            );
         }
         BeforeRequestAction::InjectSession { .. } => {
             panic!("Expected Respond for /get-session, got InjectSession");
@@ -177,15 +214,32 @@ async fn test_rate_limiting_third_call_fails() {
 
     // First two pass
     let r1 = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(r1["valid"], true, "1st request should pass");
+    assert_eq!(
+        (*(r1).get("valid").unwrap_or(&serde_json::Value::Null)),
+        true,
+        "1st request should pass"
+    );
 
     let r2 = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(r2["valid"], true, "2nd request should pass");
+    assert_eq!(
+        (*(r2).get("valid").unwrap_or(&serde_json::Value::Null)),
+        true,
+        "2nd request should pass"
+    );
 
     // Third should fail
     let r3 = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(r3["valid"], false, "3rd request should be rate-limited");
-    assert_eq!(r3["error"]["code"], "RATE_LIMITED");
+    assert_eq!(
+        (*(r3).get("valid").unwrap_or(&serde_json::Value::Null)),
+        false,
+        "3rd request should be rate-limited"
+    );
+    assert_eq!(
+        (*(*(r3).get("error").unwrap_or(&serde_json::Value::Null))
+            .get("code")
+            .unwrap_or(&serde_json::Value::Null)),
+        "RATE_LIMITED"
+    );
 }
 
 // 4. Remaining consumption: remaining=2, no refill, 3rd fails
@@ -209,18 +263,42 @@ async fn test_remaining_consumption_no_refill() {
 
     // 1st: remaining 2->1
     let r1 = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(r1["valid"], true);
-    assert_eq!(r1["key"]["remaining"], 1);
+    assert_eq!(
+        (*(r1).get("valid").unwrap_or(&serde_json::Value::Null)),
+        true
+    );
+    assert_eq!(
+        (*(*(r1).get("key").unwrap_or(&serde_json::Value::Null))
+            .get("remaining")
+            .unwrap_or(&serde_json::Value::Null)),
+        1
+    );
 
     // 2nd: remaining 1->0
     let r2 = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(r2["valid"], true);
-    assert_eq!(r2["key"]["remaining"], 0);
+    assert_eq!(
+        (*(r2).get("valid").unwrap_or(&serde_json::Value::Null)),
+        true
+    );
+    assert_eq!(
+        (*(*(r2).get("key").unwrap_or(&serde_json::Value::Null))
+            .get("remaining")
+            .unwrap_or(&serde_json::Value::Null)),
+        0
+    );
 
     // 3rd: usage exceeded
     let r3 = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(r3["valid"], false);
-    assert_eq!(r3["error"]["code"], "USAGE_EXCEEDED");
+    assert_eq!(
+        (*(r3).get("valid").unwrap_or(&serde_json::Value::Null)),
+        false
+    );
+    assert_eq!(
+        (*(*(r3).get("error").unwrap_or(&serde_json::Value::Null))
+            .get("code")
+            .unwrap_or(&serde_json::Value::Null)),
+        "USAGE_EXCEEDED"
+    );
 }
 
 // 5. Refill logic: remaining=1, refillInterval=100ms, refillAmount=10,
@@ -249,16 +327,34 @@ async fn test_refill_resets_remaining_after_interval() {
 
     // First verify: remaining 1->0
     let r1 = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(r1["valid"], true);
-    assert_eq!(r1["key"]["remaining"], 0);
+    assert_eq!(
+        (*(r1).get("valid").unwrap_or(&serde_json::Value::Null)),
+        true
+    );
+    assert_eq!(
+        (*(*(r1).get("key").unwrap_or(&serde_json::Value::Null))
+            .get("remaining")
+            .unwrap_or(&serde_json::Value::Null)),
+        0
+    );
 
     // Wait for refill interval to elapse
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     // Second verify: should refill to 10 and then decrement -> 9
     let r2 = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(r2["valid"], true, "Should succeed after refill");
-    assert_eq!(r2["key"]["remaining"], 9, "Should be refillAmount - 1 = 9");
+    assert_eq!(
+        (*(r2).get("valid").unwrap_or(&serde_json::Value::Null)),
+        true,
+        "Should succeed after refill"
+    );
+    assert_eq!(
+        (*(*(r2).get("key").unwrap_or(&serde_json::Value::Null))
+            .get("remaining")
+            .unwrap_or(&serde_json::Value::Null)),
+        9,
+        "Should be refillAmount - 1 = 9"
+    );
 }
 
 // 6. Permissions: key with {"admin": ["read"]}, verify with
@@ -286,12 +382,18 @@ async fn test_permissions_mismatch_fails() {
     // Verify with matching permission -> pass
     let perms_ok = serde_json::json!({ "admin": ["read"] });
     let r1 = verify_key(&plugin, &ctx, &raw_key, Some(&perms_ok)).await;
-    assert_eq!(r1["valid"], true);
+    assert_eq!(
+        (*(r1).get("valid").unwrap_or(&serde_json::Value::Null)),
+        true
+    );
 
     // Verify with mismatched permission -> fail
     let perms_fail = serde_json::json!({ "admin": ["write"] });
     let r2 = verify_key(&plugin, &ctx, &raw_key, Some(&perms_fail)).await;
-    assert_eq!(r2["valid"], false);
+    assert_eq!(
+        (*(r2).get("valid").unwrap_or(&serde_json::Value::Null)),
+        false
+    );
 }
 
 // 7. Concurrent rate limiting: send 5 sequential verify requests with
@@ -328,11 +430,16 @@ async fn test_concurrent_rate_limiting() {
 
     for _ in 0..5 {
         let body = verify_key(&plugin, &ctx, &raw_key, None).await;
-        if body["valid"] == true {
+        if (*(body).get("valid").unwrap_or(&serde_json::Value::Null)) == true {
             success_count += 1;
         } else {
             fail_count += 1;
-            assert_eq!(body["error"]["code"], "RATE_LIMITED");
+            assert_eq!(
+                (*(*(body).get("error").unwrap_or(&serde_json::Value::Null))
+                    .get("code")
+                    .unwrap_or(&serde_json::Value::Null)),
+                "RATE_LIMITED"
+            );
         }
     }
 
@@ -345,7 +452,7 @@ async fn test_concurrent_rate_limiting() {
 // Upstream reference: packages/better-auth/src/plugins/api-key/api-key.test.ts :: describe("api-key"); adapted to the Rust API key plugin handlers.
 #[tokio::test]
 async fn test_delete_expired_api_keys_memory_adapter() {
-    let (ctx, _user, session) = create_test_context_with_user().await;
+    let (ctx, fixture_user, session) = create_test_context_with_user().await;
     let plugin = ApiKeyPlugin::builder().build();
 
     // Create two keys
@@ -384,7 +491,7 @@ async fn test_delete_expired_api_keys_memory_adapter() {
     // Verify only the non-expired key remains
     let remaining = ctx
         .database
-        .list_api_keys_by_reference(&_user.id)
+        .list_api_keys_by_reference(&fixture_user.id)
         .await
         .unwrap();
     assert_eq!(remaining.len(), 1);
@@ -394,7 +501,7 @@ async fn test_delete_expired_api_keys_memory_adapter() {
 #[tokio::test]
 async fn test_delete_expired_removes_only_expired() {
     let plugin = ApiKeyPlugin::builder().build();
-    let (ctx, _user, session) = create_test_context_with_user().await;
+    let (ctx, fixture_user, session) = create_test_context_with_user().await;
 
     // Create two keys, expire one
     let (id1, _) = create_key_and_get_raw(
@@ -429,7 +536,7 @@ async fn test_delete_expired_removes_only_expired() {
 
     let remaining = ctx
         .database
-        .list_api_keys_by_reference(&_user.id)
+        .list_api_keys_by_reference(&fixture_user.id)
         .await
         .unwrap();
     assert_eq!(remaining.len(), 1);
@@ -451,10 +558,10 @@ async fn test_before_request_disabled_returns_none() {
     .await;
 
     let mut headers = HashMap::new();
-    headers.insert("x-api-key".to_string(), raw_key);
+    headers.insert("x-api-key".to_owned(), raw_key);
     let req = AuthRequest::from_parts(
         HttpMethod::Get,
-        "/get-session".to_string(),
+        "/get-session".to_owned(),
         headers,
         None,
         HashMap::new(),
@@ -472,7 +579,7 @@ async fn test_before_request_disabled_returns_none() {
 #[tokio::test]
 async fn test_resolve_configuration_falls_back_to_default() {
     let plugin = ApiKeyPlugin::builder().build().configuration(ApiKeyConfig {
-        config_id: "billing".to_string(),
+        config_id: "billing".to_owned(),
         ..ApiKeyConfig::default()
     });
 
@@ -502,7 +609,7 @@ async fn test_resolve_configuration_falls_back_to_default() {
 #[tokio::test]
 async fn test_resolve_configuration_without_default_is_an_error() {
     let plugin = ApiKeyPlugin::builder()
-        .config_id("billing".to_string())
+        .config_id("billing".to_owned())
         .build();
 
     let err = plugin.resolve_configuration(None).unwrap_err();
@@ -514,10 +621,10 @@ async fn test_resolve_configuration_without_default_is_an_error() {
 // configId as the default, for keys written before the column existed.
 #[tokio::test]
 async fn test_config_id_matches_treats_missing_as_default() {
-    assert!(super::config_id_matches("", "default"));
-    assert!(super::config_id_matches("default", ""));
-    assert!(super::config_id_matches("billing", "billing"));
-    assert!(!super::config_id_matches("billing", "default"));
+    assert!(config_id_matches("", "default"));
+    assert!(config_id_matches("default", ""));
+    assert!(config_id_matches("billing", "billing"));
+    assert!(!config_id_matches("billing", "default"));
 }
 
 // Upstream reference: @better-auth/api-key :: create with `references:
@@ -580,11 +687,12 @@ async fn test_create_for_organization_rejects_non_member() {
 
     // Stand in for a registered organization plugin.
     let mut metadata: HashMap<String, serde_json::Value> = HashMap::new();
-    let _ = metadata.insert(
-        crate::plugins::organization::METADATA_ENABLED.to_string(),
+    drop(metadata.insert(
+        crate::plugins::organization::METADATA_ENABLED.to_owned(),
         serde_json::Value::Bool(true),
-    );
-    let ctx = AuthContext::with_metadata(ctx.config.clone(), ctx.database.clone(), metadata);
+    ));
+    let ctx =
+        AuthContext::with_metadata(Arc::clone(&ctx.config), Arc::clone(&ctx.database), metadata);
 
     let req = create_auth_request(
         HttpMethod::Post,

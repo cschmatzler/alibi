@@ -7,9 +7,9 @@ use sea_orm::{
 
 use better_auth_core::store::AccountStore;
 
-use crate::error::AuthResult;
 use crate::schema::{AuthSchema, SeaOrmAccountModel};
-use crate::types::{CreateAccount, UpdateAccount};
+use better_auth_core::error::AuthResult;
+use better_auth_core::types::{CreateAccount, UpdateAccount};
 
 use super::{SeaOrmStore, cancelled_by_hook, map_db_err};
 
@@ -112,7 +112,9 @@ where
             .await
             .map_err(map_db_err)?
         else {
-            return Err(crate::error::AuthError::not_found("Account not found"));
+            return Err(better_auth_core::error::AuthError::not_found(
+                "Account not found",
+            ));
         };
 
         let mut active = model.into_active_model();
@@ -133,7 +135,9 @@ where
             .await
             .map_err(map_db_err)?
         else {
-            return Err(crate::error::AuthError::not_found("Account not found"));
+            return Err(better_auth_core::error::AuthError::not_found(
+                "Account not found",
+            ));
         };
         let hook_context = self.hook_context(None);
         for hook in self.hooks() {
@@ -145,7 +149,7 @@ where
                 return Err(cancelled_by_hook("account deletion"));
             }
         }
-        let _ = <S::Account as SeaOrmAccountModel>::Entity::delete_many()
+        let _ignored_map_err = <S::Account as SeaOrmAccountModel>::Entity::delete_many()
             .filter(<S::Account as SeaOrmAccountModel>::id_column().eq(account_id))
             .exec(self.connection())
             .await

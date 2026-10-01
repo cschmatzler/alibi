@@ -6,7 +6,7 @@
 use super::schema::{OpenApiProfile, extract_success_schema};
 use super::validation::{ShapeDiff, validate_response};
 
-/// Validate that every endpoint's response matches the OpenAPI spec schema.
+/// Validate that every endpoint's response matches the `OpenAPI` spec schema.
 /// This is the core of the compatibility testing framework.
 pub struct SpecValidator {
     pub spec: oas3::spec::Spec,
@@ -44,10 +44,10 @@ impl std::fmt::Display for EndpointResult {
             self.status
         )?;
         for diff in &self.diffs {
-            write!(f, "\n      {}", diff)?;
+            write!(f, "\n      {diff}")?;
         }
         for v in &self.camel_case_violations {
-            write!(f, "\n      CAMEL_CASE {}", v)?;
+            write!(f, "\n      CAMEL_CASE {v}")?;
         }
         Ok(())
     }
@@ -58,7 +58,7 @@ impl SpecValidator {
         Self::with_profile(OpenApiProfile::Core)
     }
 
-    /// Construct a validator for a specific upstream OpenAPI profile.
+    /// Construct a validator for a specific upstream `OpenAPI` profile.
     pub fn with_profile(profile: OpenApiProfile) -> Self {
         Self {
             spec: super::schema::load_openapi_spec_with_profile(profile),
@@ -75,16 +75,16 @@ impl SpecValidator {
         body: &serde_json::Value,
     ) {
         let schema = extract_success_schema(&self.spec, path, method);
-        let (passed, skipped, diffs) = if let Some(schema) = &schema {
-            let diffs = validate_response(body, schema, "");
-            (diffs.is_empty(), false, diffs)
-        } else {
-            // No spec schema found -- mark as skipped, not passed
-            (false, true, vec![])
-        };
+        let (passed, skipped, diffs) = schema.as_ref().map_or_else(
+            || (false, true, vec![]),
+            |schema| {
+                let diffs = validate_response(body, schema, "");
+                (diffs.is_empty(), false, diffs)
+            },
+        );
 
         self.results.push(EndpointResult {
-            endpoint: path.to_string(),
+            endpoint: path.to_owned(),
             method: method.to_uppercase(),
             status,
             passed,
@@ -97,7 +97,7 @@ impl SpecValidator {
     /// Generate a human-readable compatibility report.
     pub fn report(&self) -> String {
         let mut lines = Vec::new();
-        lines.push("=== Spec-Driven Compatibility Report ===".to_string());
+        lines.push("=== Spec-Driven Compatibility Report ===".to_owned());
         lines.push(String::new());
 
         let total = self.results.len();
@@ -109,18 +109,18 @@ impl SpecValidator {
             .count();
         let failed = total - passed - skipped;
 
-        lines.push(format!("Total endpoints tested: {}", total));
-        lines.push(format!("Passed: {}", passed));
-        lines.push(format!("Failed: {}", failed));
-        lines.push(format!("Skipped (no spec schema): {}", skipped));
+        lines.push(format!("Total endpoints tested: {total}"));
+        lines.push(format!("Passed: {passed}"));
+        lines.push(format!("Failed: {failed}"));
+        lines.push(format!("Skipped (no spec schema): {skipped}"));
         lines.push(String::new());
 
         for result in &self.results {
-            lines.push(format!("{}", result));
+            lines.push(format!("{result}"));
         }
 
         lines.push(String::new());
-        lines.push("========================================".to_string());
+        lines.push("========================================".to_owned());
         lines.join("\n")
     }
 

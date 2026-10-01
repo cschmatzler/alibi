@@ -1,10 +1,21 @@
+#[path = "session_tests.rs"]
+mod session_tests;
+
+#[path = "verification_tests.rs"]
+mod verification_tests;
+
 use super::*;
+
 use better_auth_core::wire::{SessionView, UserView};
+
 use better_auth_core::{
     AuthContext, AuthPlugin, CreateSession, CreateUser, HttpMethod, UpdateApiKey,
 };
+
 use chrono::{Duration, Utc};
+
 use std::collections::HashMap;
+
 use std::sync::Arc;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
@@ -14,7 +25,7 @@ async fn create_test_context_with_user() -> (AuthContext<TestSchema>, UserView, 
         "test-secret-key-at-least-32-chars-long",
     ));
     let database = crate::plugins::test_helpers::create_test_database().await;
-    let ctx = AuthContext::new(config, database.clone());
+    let ctx = AuthContext::new(config, Arc::clone(&database));
 
     let user = database
         .create_user(
@@ -28,13 +39,13 @@ async fn create_test_context_with_user() -> (AuthContext<TestSchema>, UserView, 
 
     let session = database
         .create_session(CreateSession {
-            additional_fields: Default::default(),
+            additional_fields: better_auth_core::field_policy::FieldValues::default(),
             token: None,
             active_team_id: None,
             user_id: user.id().to_string(),
             expires_at: Utc::now() + Duration::hours(24),
-            ip_address: Some("127.0.0.1".to_string()),
-            user_agent: Some("test-agent".to_string()),
+            ip_address: Some("127.0.0.1".to_owned()),
+            user_agent: Some("test-agent".to_owned()),
             impersonated_by: None,
             active_organization_id: None,
         })
@@ -53,7 +64,7 @@ async fn create_user_with_session(
         .database
         .create_user(
             CreateUser::new()
-                .with_email(email.to_string())
+                .with_email(email.to_owned())
                 .with_name("Another User"),
         )
         .await
@@ -63,7 +74,7 @@ async fn create_user_with_session(
     let session = ctx
         .database
         .create_session(CreateSession {
-            additional_fields: Default::default(),
+            additional_fields: better_auth_core::field_policy::FieldValues::default(),
             token: None,
             active_team_id: None,
             user_id: user.id().to_string(),
@@ -90,7 +101,7 @@ fn create_auth_request(
     let mut headers = HashMap::new();
     if let Some(token) = token {
         headers.insert(
-            "cookie".to_string(),
+            "cookie".to_owned(),
             format!(
                 "better-auth.session_token={}",
                 better_auth_core::utils::cookie_utils::sign_cookie_value(
@@ -103,7 +114,7 @@ fn create_auth_request(
 
     AuthRequest::from_parts(
         method,
-        path.to_string(),
+        path.to_owned(),
         headers,
         body.map(|b| serde_json::to_vec(&b).unwrap()),
         query.unwrap_or_default(),
@@ -146,8 +157,8 @@ async fn verify_key(
 /// Create a key via the HTTP handler (client-allowed fields only), then
 /// patch server-only fields directly through the database.
 ///
-/// `server_fields` may contain: remaining, refill_interval, refill_amount,
-/// rate_limit_enabled, rate_limit_time_window, rate_limit_max, permissions.
+/// `server_fields` may contain: remaining, `refill_interval`, `refill_amount`,
+/// `rate_limit_enabled`, `rate_limit_time_window`, `rate_limit_max`, permissions.
 async fn create_key_with_server_fields(
     plugin: &ApiKeyPlugin,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -167,7 +178,7 @@ async fn create_key_with_server_fields(
 async fn delete_all_expired(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> serde_json::Value {
-    let _ = ctx.database.delete_expired_api_keys().await.unwrap();
+    let _ignored_result = ctx.database.delete_expired_api_keys().await.unwrap();
     serde_json::json!({ "success": true, "error": null })
 }
 
@@ -186,10 +197,15 @@ async fn create_key_and_get_id(
     );
     let response = plugin.handle_create(&req, ctx).await.unwrap();
     assert_eq!(response.status, 200);
-    json_body(&response)["id"].as_str().unwrap().to_string()
+    (*(json_body(&response))
+        .get("id")
+        .unwrap_or(&serde_json::Value::Null))
+    .as_str()
+    .unwrap()
+    .to_owned()
 }
 
-/// Helper: create a key and return (id, raw_key)
+/// Helper: create a key and return (id, `raw_key`)
 async fn create_key_and_get_raw(
     plugin: &ApiKeyPlugin,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
@@ -207,8 +223,16 @@ async fn create_key_and_get_raw(
     assert_eq!(response.status, 200);
     let b = json_body(&response);
     (
-        b["id"].as_str().unwrap().to_string(),
-        b["key"].as_str().unwrap().to_string(),
+        (*(b).get("id").expect("fixture contains the requested index"))
+            .as_str()
+            .unwrap()
+            .to_owned(),
+        (*(b)
+            .get("key")
+            .expect("fixture contains the requested index"))
+        .as_str()
+        .unwrap()
+        .to_owned(),
     )
 }
 
@@ -219,7 +243,7 @@ async fn create_key_and_get_raw(
 // Upstream reference: packages/better-auth/src/plugins/api-key/api-key.test.ts :: describe("api-key"); adapted to the Rust API key plugin handlers.
 #[tokio::test]
 async fn test_create_and_get_do_not_expose_hash() {
-    let plugin = ApiKeyPlugin::builder().prefix("ba_".to_string()).build();
+    let plugin = ApiKeyPlugin::builder().prefix("ba_".to_owned()).build();
     let (ctx, _user, session) = create_test_context_with_user().await;
 
     let create_req = create_auth_request(
@@ -237,9 +261,11 @@ async fn test_create_and_get_do_not_expose_hash() {
     assert!(body.get("key_hash").is_none());
     assert!(body.get("hash").is_none());
 
-    let id = body["id"].as_str().unwrap();
+    let id = (*(body).get("id").unwrap_or(&serde_json::Value::Null))
+        .as_str()
+        .unwrap();
     let mut query = HashMap::new();
-    query.insert("id".to_string(), id.to_string());
+    query.insert("id".to_owned(), id.to_owned());
 
     let get_req = create_auth_request(
         HttpMethod::Get,
@@ -283,7 +309,7 @@ async fn test_get_update_delete_return_404_for_non_owner() {
     let key_id = create_key_and_get_id(&plugin, &ctx, &session1.token, "owner-key").await;
 
     let mut get_query = HashMap::new();
-    get_query.insert("id".to_string(), key_id.clone());
+    get_query.insert("id".to_owned(), key_id.clone());
     let get_req = create_auth_request(
         HttpMethod::Get,
         "/api-key/get",
@@ -322,8 +348,8 @@ async fn test_list_returns_only_user_keys() {
     let (ctx, user1, session1) = create_test_context_with_user().await;
     let (_user2, session2) = create_user_with_session(&ctx, "other@example.com").await;
 
-    let _ = create_key_and_get_id(&plugin, &ctx, &session1.token, "u1-key").await;
-    let _ = create_key_and_get_id(&plugin, &ctx, &session2.token, "u2-key").await;
+    drop(create_key_and_get_id(&plugin, &ctx, &session1.token, "u1-key").await);
+    drop(create_key_and_get_id(&plugin, &ctx, &session2.token, "u2-key").await);
 
     let list_req = create_auth_request(
         HttpMethod::Get,
@@ -337,16 +363,59 @@ async fn test_list_returns_only_user_keys() {
 
     let list_body = json_body(&list_response);
     // Upstream returns a paginated envelope rather than a bare array.
-    let list = list_body["apiKeys"].as_array().unwrap();
+    let list = (*(list_body)
+        .get("apiKeys")
+        .unwrap_or(&serde_json::Value::Null))
+    .as_array()
+    .unwrap();
     assert_eq!(list.len(), 1);
-    assert_eq!(list_body["total"], 1);
+    assert_eq!(
+        (*(list_body).get("total").unwrap_or(&serde_json::Value::Null)),
+        1
+    );
     // Upstream renamed the owner field to `referenceId` (a user or an
     // organization id) and stamps the owning configuration on every key.
-    assert_eq!(list[0]["referenceId"].as_str().unwrap(), user1.id);
-    assert_eq!(list[0]["configId"].as_str().unwrap(), "default");
-    assert!(list[0].get("userId").is_none());
-    assert!(list[0].get("key").is_none());
-    assert!(list[0].get("key_hash").is_none());
+    assert_eq!(
+        (*(*(list)
+            .first()
+            .expect("fixture contains the requested index"))
+        .get("referenceId")
+        .expect("fixture contains the requested index"))
+        .as_str()
+        .unwrap(),
+        user1.id
+    );
+    assert_eq!(
+        (*(*(list)
+            .first()
+            .expect("fixture contains the requested index"))
+        .get("configId")
+        .expect("fixture contains the requested index"))
+        .as_str()
+        .unwrap(),
+        "default"
+    );
+    assert!(
+        (*(list)
+            .first()
+            .expect("fixture contains the requested index"))
+        .get("userId")
+        .is_none()
+    );
+    assert!(
+        (*(list)
+            .first()
+            .expect("fixture contains the requested index"))
+        .get("key")
+        .is_none()
+    );
+    assert!(
+        (*(list)
+            .first()
+            .expect("fixture contains the requested index"))
+        .get("key_hash")
+        .is_none()
+    );
 }
 
 // Upstream reference: packages/better-auth/src/plugins/api-key/api-key.test.ts :: describe("api-key"); adapted to the Rust API key plugin handlers.
@@ -389,8 +458,11 @@ async fn test_verify_valid_key() {
     .await;
 
     let body = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(body["valid"], true);
-    assert!(body["key"].is_object());
+    assert_eq!(
+        (*(body).get("valid").unwrap_or(&serde_json::Value::Null)),
+        true
+    );
+    assert!((*(body).get("key").unwrap_or(&serde_json::Value::Null)).is_object());
 }
 
 #[tokio::test]
@@ -399,8 +471,11 @@ async fn test_verify_invalid_key() {
     let (ctx, _user, _session) = create_test_context_with_user().await;
 
     let body = verify_key(&plugin, &ctx, "definitely-not-a-valid-key", None).await;
-    assert_eq!(body["valid"], false);
-    assert!(body["error"].is_object());
+    assert_eq!(
+        (*(body).get("valid").unwrap_or(&serde_json::Value::Null)),
+        false
+    );
+    assert!((*(body).get("error").unwrap_or(&serde_json::Value::Null)).is_object());
 }
 
 #[tokio::test]
@@ -423,8 +498,16 @@ async fn test_verify_disabled_key() {
     ctx.database.update_api_key(&id, update).await.unwrap();
 
     let body = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(body["valid"], false);
-    assert_eq!(body["error"]["code"], "KEY_DISABLED");
+    assert_eq!(
+        (*(body).get("valid").unwrap_or(&serde_json::Value::Null)),
+        false
+    );
+    assert_eq!(
+        (*(*(body).get("error").unwrap_or(&serde_json::Value::Null))
+            .get("code")
+            .unwrap_or(&serde_json::Value::Null)),
+        "KEY_DISABLED"
+    );
 }
 
 #[tokio::test]
@@ -448,8 +531,16 @@ async fn test_verify_expired_key() {
     ctx.database.update_api_key(&id, update).await.unwrap();
 
     let body = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(body["valid"], false);
-    assert_eq!(body["error"]["code"], "KEY_EXPIRED");
+    assert_eq!(
+        (*(body).get("valid").unwrap_or(&serde_json::Value::Null)),
+        false
+    );
+    assert_eq!(
+        (*(*(body).get("error").unwrap_or(&serde_json::Value::Null))
+            .get("code")
+            .unwrap_or(&serde_json::Value::Null)),
+        "KEY_EXPIRED"
+    );
 
     // The key should have been deleted
     let deleted = ctx.database.get_api_key_by_id(&id).await.unwrap();
@@ -476,18 +567,42 @@ async fn test_verify_remaining_consumption() {
 
     // First verify - remaining goes from 2 to 1
     let r1 = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(r1["valid"], true);
-    assert_eq!(r1["key"]["remaining"], 1);
+    assert_eq!(
+        (*(r1).get("valid").unwrap_or(&serde_json::Value::Null)),
+        true
+    );
+    assert_eq!(
+        (*(*(r1).get("key").unwrap_or(&serde_json::Value::Null))
+            .get("remaining")
+            .unwrap_or(&serde_json::Value::Null)),
+        1
+    );
 
     // Second verify - remaining goes from 1 to 0
     let r2 = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(r2["valid"], true);
-    assert_eq!(r2["key"]["remaining"], 0);
+    assert_eq!(
+        (*(r2).get("valid").unwrap_or(&serde_json::Value::Null)),
+        true
+    );
+    assert_eq!(
+        (*(*(r2).get("key").unwrap_or(&serde_json::Value::Null))
+            .get("remaining")
+            .unwrap_or(&serde_json::Value::Null)),
+        0
+    );
 
     // Third verify - should fail (usage exceeded)
     let r3 = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(r3["valid"], false);
-    assert_eq!(r3["error"]["code"], "USAGE_EXCEEDED");
+    assert_eq!(
+        (*(r3).get("valid").unwrap_or(&serde_json::Value::Null)),
+        false
+    );
+    assert_eq!(
+        (*(*(r3).get("error").unwrap_or(&serde_json::Value::Null))
+            .get("code")
+            .unwrap_or(&serde_json::Value::Null)),
+        "USAGE_EXCEEDED"
+    );
 }
 
 // Upstream reference: packages/better-auth/src/plugins/api-key/api-key.test.ts :: describe("api-key"); adapted to the Rust API key plugin handlers.
@@ -518,21 +633,35 @@ async fn test_verify_rate_limiting() {
 
     // First two should succeed
     let r1 = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(r1["valid"], true);
+    assert_eq!(
+        (*(r1).get("valid").unwrap_or(&serde_json::Value::Null)),
+        true
+    );
 
     let r2 = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(r2["valid"], true);
+    assert_eq!(
+        (*(r2).get("valid").unwrap_or(&serde_json::Value::Null)),
+        true
+    );
 
     // Third should fail with rate limit
     let r3 = verify_key(&plugin, &ctx, &raw_key, None).await;
-    assert_eq!(r3["valid"], false);
-    assert_eq!(r3["error"]["code"], "RATE_LIMITED");
+    assert_eq!(
+        (*(r3).get("valid").unwrap_or(&serde_json::Value::Null)),
+        false
+    );
+    assert_eq!(
+        (*(*(r3).get("error").unwrap_or(&serde_json::Value::Null))
+            .get("code")
+            .unwrap_or(&serde_json::Value::Null)),
+        "RATE_LIMITED"
+    );
 }
 
 #[tokio::test]
 async fn test_delete_all_expired() {
     let plugin = ApiKeyPlugin::builder().build();
-    let (ctx, _user, session) = create_test_context_with_user().await;
+    let (ctx, fixture_user, session) = create_test_context_with_user().await;
 
     // Create two keys
     let (id1, _) = create_key_and_get_raw(
@@ -564,12 +693,15 @@ async fn test_delete_all_expired() {
         .unwrap();
 
     let body = delete_all_expired(&ctx).await;
-    assert_eq!(body["success"], true);
+    assert_eq!(
+        (*(body).get("success").unwrap_or(&serde_json::Value::Null)),
+        true
+    );
 
     // Only the non-expired key should remain
     let remaining_keys = ctx
         .database
-        .list_api_keys_by_reference(&_user.id)
+        .list_api_keys_by_reference(&fixture_user.id)
         .await
         .unwrap();
     assert_eq!(remaining_keys.len(), 1);
@@ -602,12 +734,18 @@ async fn test_verify_permissions() {
     // Verify with matching permissions -> should pass
     let perms_ok = serde_json::json!({ "admin": ["read"] });
     let r1 = verify_key(&plugin, &ctx, &raw_key, Some(&perms_ok)).await;
-    assert_eq!(r1["valid"], true);
+    assert_eq!(
+        (*(r1).get("valid").unwrap_or(&serde_json::Value::Null)),
+        true
+    );
 
     // Verify with non-matching permissions -> should fail
     let perms_fail = serde_json::json!({ "superadmin": ["delete"] });
     let r2 = verify_key(&plugin, &ctx, &raw_key, Some(&perms_fail)).await;
-    assert_eq!(r2["valid"], false);
+    assert_eq!(
+        (*(r2).get("valid").unwrap_or(&serde_json::Value::Null)),
+        false
+    );
 }
 
 // Upstream reference: packages/better-auth/src/plugins/api-key/api-key.test.ts :: describe("api-key"); adapted to the Rust API key plugin handlers.
@@ -693,7 +831,12 @@ async fn test_config_metadata_enabled() {
     let resp = plugin.handle_create(&req, &ctx).await.unwrap();
     assert_eq!(resp.status, 200);
     let body = json_body(&resp);
-    assert_eq!(body["metadata"]["env"], "prod");
+    assert_eq!(
+        (*(*(body).get("metadata").unwrap_or(&serde_json::Value::Null))
+            .get("env")
+            .unwrap_or(&serde_json::Value::Null)),
+        "prod"
+    );
 }
 
 // Upstream reference: packages/better-auth/src/plugins/api-key/api-key.test.ts :: describe("api-key"); adapted to the Rust API key plugin handlers.
@@ -716,7 +859,7 @@ async fn test_update_with_expires_in() {
     let resp = plugin.handle_update(&update_req, &ctx).await.unwrap();
     assert_eq!(resp.status, 200);
     let body = json_body(&resp);
-    assert!(body["expiresAt"].is_string());
+    assert!((*(body).get("expiresAt").unwrap_or(&serde_json::Value::Null)).is_string());
 }
 
 // Note: /api-key/verify and /api-key/delete-all-expired-api-keys are
@@ -730,15 +873,9 @@ async fn test_refill_logic() {
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("refillAmount"));
 
-    let result = ApiKeyPlugin::validate_refill(None, Some(10.0));
-    assert!(result.is_err());
+    let result_2 = ApiKeyPlugin::validate_refill(None, Some(10.0));
+    assert!(result_2.is_err());
 
-    let result = ApiKeyPlugin::validate_refill(Some(60_000.0), Some(10.0));
-    assert!(result.is_ok());
+    let result_3 = ApiKeyPlugin::validate_refill(Some(60_000.0), Some(10.0));
+    assert!(result_3.is_ok());
 }
-
-#[path = "session_tests.rs"]
-mod session_tests;
-
-#[path = "verification_tests.rs"]
-mod verification_tests;

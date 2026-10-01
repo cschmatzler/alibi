@@ -71,11 +71,11 @@ fn decode(req: &AuthRequest) -> Result<Option<JsValue>, AuthResponse> {
     if !json_media {
         // An allowed but non-JSON media type reaches Better Call's ReadableStream
         // fallback. Zod sees an object with no declared own fields.
-        return Ok(Some(JsValue::Object(Default::default())));
+        return Ok(Some(JsValue::Object(indexmap::IndexMap::default())));
     }
     better_auth_core::utils::json::from_slice::<JsValue>(bytes)
         .map(Some)
-        .map_err(|_| response(400, "BAD_REQUEST", "Invalid JSON in request body"))
+        .map_err(|_error| response(400, "BAD_REQUEST", "Invalid JSON in request body"))
 }
 
 fn object(value: Option<&JsValue>, path: &str) -> Result<(), String> {
@@ -115,13 +115,13 @@ fn string(
 fn record(value: Option<&JsValue>, path: &str, issues: &mut Vec<String>) -> Option<Value> {
     match value {
         None => None,
-        Some(value) if value.is_object() => match value.to_json_value() {
-            Ok(value) => Some(value),
-            Err(_) => {
+        Some(value) if value.is_object() => value.to_json_value().map_or_else(
+            |_| {
                 issues.push(format!("[{path}] Invalid JSON value"));
                 None
-            }
-        },
+            },
+            Some,
+        ),
         value => {
             issues.push(expected(path, "record", value));
             None
@@ -129,7 +129,7 @@ fn record(value: Option<&JsValue>, path: &str, issues: &mut Vec<String>) -> Opti
     }
 }
 
-fn validate(issues: Vec<String>) -> Result<(), AuthResponse> {
+fn validate(issues: &[String]) -> Result<(), AuthResponse> {
     if issues.is_empty() {
         Ok(())
     } else {
@@ -142,7 +142,10 @@ pub(super) fn create(req: &AuthRequest) -> Result<CreateOrganizationRequest, Aut
     object(decoded.as_ref(), "body")
         .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
     let input = decoded.as_ref();
-    let get = |key| input.and_then(|value| value.get(key));
+    let get = |key| {
+        let value = input?;
+        value.get(key)
+    };
     let mut issues = Vec::new();
     let name = string(get("name"), "body.name", true, true, false, &mut issues);
     let slug = string(get("slug"), "body.slug", true, true, false, &mut issues);
@@ -160,7 +163,7 @@ pub(super) fn create(req: &AuthRequest) -> Result<CreateOrganizationRequest, Aut
         }
         parsed
     });
-    validate(issues)?;
+    validate(&(issues))?;
     Ok(CreateOrganizationRequest {
         name: name.unwrap_or_default(),
         slug: slug.unwrap_or_default(),
@@ -183,7 +186,10 @@ pub(super) fn update(
     object(decoded.as_ref(), "body")
         .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
     let input = decoded.as_ref();
-    let get = |key| input.and_then(|value| value.get(key));
+    let get = |key| {
+        let value = input?;
+        value.get(key)
+    };
     let mut issues = Vec::new();
     let data = get("data");
     let data_valid = match object(data, "body.data") {
@@ -200,9 +206,12 @@ pub(super) fn update(
         metadata: None,
     };
     if data_valid {
-        let get = |key| data.and_then(|value| value.get(key));
+        let get_2 = |key| {
+            let value = data?;
+            value.get(key)
+        };
         fields.name = string(
-            get("name"),
+            get_2("name"),
             "body.data.name",
             false,
             true,
@@ -210,17 +219,17 @@ pub(super) fn update(
             &mut issues,
         );
         fields.slug = string(
-            get("slug"),
+            get_2("slug"),
             "body.data.slug",
             false,
             true,
             false,
             &mut issues,
         );
-        let logo = get("logo");
+        let logo = get_2("logo");
         let parsed_logo = string(logo, "body.data.logo", false, false, true, &mut issues);
         fields.logo = logo.map(|_| parsed_logo);
-        fields.metadata = record(get("metadata"), "body.data.metadata", &mut issues);
+        fields.metadata = record(get_2("metadata"), "body.data.metadata", &mut issues);
     }
     let organization_id = string(
         get("organizationId"),
@@ -230,7 +239,7 @@ pub(super) fn update(
         false,
         &mut issues,
     );
-    validate(issues)?;
+    validate(&(issues))?;
     let raw_metadata = data
         .and_then(|data| data.get("metadata"))
         .and_then(JsValue::as_object)
@@ -260,7 +269,7 @@ pub(super) fn delete(req: &AuthRequest) -> Result<DeleteOrganizationRequest, Aut
         false,
         &mut issues,
     );
-    validate(issues)?;
+    validate(&(issues))?;
     Ok(DeleteOrganizationRequest {
         organization_id: id.unwrap_or_default(),
     })
@@ -270,7 +279,10 @@ pub(super) fn set_active(req: &AuthRequest) -> Result<SetActiveOrganizationReque
     let decoded = decode(req)?;
     object(decoded.as_ref(), "body")
         .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
-    let get = |key| decoded.as_ref().and_then(|value| value.get(key));
+    let get = |key| {
+        let value = decoded.as_ref()?;
+        value.get(key)
+    };
     let mut issues = Vec::new();
     let id = get("organizationId");
     let parsed_id = string(id, "body.organizationId", false, false, true, &mut issues);
@@ -287,7 +299,7 @@ pub(super) fn set_active(req: &AuthRequest) -> Result<SetActiveOrganizationReque
         false,
         &mut issues,
     );
-    validate(issues)?;
+    validate(&(issues))?;
     Ok(SetActiveOrganizationRequest {
         organization_id,
         organization_slug,
@@ -328,7 +340,10 @@ pub(super) fn member_role_update(
     let decoded = decode(req)?;
     object(decoded.as_ref(), "body")
         .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
-    let get = |key| decoded.as_ref().and_then(|value| value.get(key));
+    let get = |key| {
+        let value = decoded.as_ref()?;
+        value.get(key)
+    };
     let role = match get("role") {
         Some(JsValue::String(value)) => Some(RoleInput::One(value.clone())),
         Some(JsValue::Array(values)) => values
@@ -358,7 +373,7 @@ pub(super) fn member_role_update(
         false,
         &mut issues,
     );
-    validate(issues)?;
+    validate(&(issues))?;
     Ok(UpdateMemberRoleRequest {
         role: role.ok_or_else(|| response(400, "VALIDATION_ERROR", "[body.role] Invalid input"))?,
         member_id: member_id.ok_or_else(|| {
@@ -376,7 +391,10 @@ pub(super) fn member_remove(req: &AuthRequest) -> Result<RemoveMemberRequest, Au
     let decoded = decode(req)?;
     object(decoded.as_ref(), "body")
         .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
-    let get = |key| decoded.as_ref().and_then(|value| value.get(key));
+    let get = |key| {
+        let value = decoded.as_ref()?;
+        value.get(key)
+    };
     let mut issues = Vec::new();
     let member_id_or_email = string(
         get("memberIdOrEmail"),
@@ -394,7 +412,7 @@ pub(super) fn member_remove(req: &AuthRequest) -> Result<RemoveMemberRequest, Au
         false,
         &mut issues,
     );
-    validate(issues)?;
+    validate(&(issues))?;
     Ok(RemoveMemberRequest {
         member_id_or_email: member_id_or_email.ok_or_else(|| {
             response(

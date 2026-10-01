@@ -3,15 +3,20 @@ use jsonwebtoken::errors::ErrorKind;
 use crate::plugins::helpers::{
     SessionIssueError, issue_user_session, record_completed_session_user_view,
 };
+
 use better_auth_core::wire::{SessionView, UserView};
+
 use better_auth_core::{AuthContext, AuthError, AuthResult, UpdateUser};
+
 use better_auth_core::{AuthSession, AuthUser};
 
 use super::token::{create_email_verification_token, decode_email_verification_token};
-use super::types::*;
+
+use super::types::{SendVerificationEmailRequest, VerifyEmailQuery, VerifyEmailResult};
+
 use super::{EmailVerificationConfig, StatusResponse};
 
-pub(crate) fn verification_url(
+pub(in crate::plugins) fn verification_url(
     config: &better_auth_core::AuthConfig,
     token: &str,
     callback_url: Option<&str>,
@@ -40,77 +45,73 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
         return Err(AuthError::bad_request("Verification email isn't enabled"));
     }
 
-    match current_user {
-        Some(user) => {
-            let session_email = user.email().unwrap_or_default();
-            if session_email.to_lowercase() != body.email.to_lowercase() {
-                return Err(AuthError::bad_request("Email mismatch"));
-            }
-            if user.email_verified() {
-                return Err(AuthError::bad_request("Email is already verified"));
-            }
-
-            let token = create_email_verification_token(
-                &ctx.config.secret,
-                &body.email,
-                None,
-                config.verification_token_expiry,
-                None,
-            )?;
-            let url = verification_url(&ctx.config, &token, body.callback_url.as_deref());
-            let user = ctx.user_view(user);
-            if config.send_verification_email.is_none()
-                && let Some(sender) = ctx.email_verification_override()
-            {
-                sender.0.send(&user, None, ctx).await?;
-            } else if let Some(ref sender) = config.send_verification_email {
-                sender.send(&user, &url, &token).await?;
-            }
+    if let Some(user) = current_user {
+        let session_email = user.email().unwrap_or_default();
+        if session_email.to_lowercase() != body.email.to_lowercase() {
+            return Err(AuthError::bad_request("Email mismatch"));
         }
-        None => {
-            let start = tokio::time::Instant::now();
-            let user = ctx.database.get_user_by_email(&body.email).await?;
-            let result: AuthResult<()> = if let Some(user) =
-                user.filter(|user| !user.email_verified())
-            {
-                async {
-                    let token = create_email_verification_token(
-                        &ctx.config.secret,
-                        &body.email,
-                        None,
-                        config.verification_token_expiry,
-                        None,
-                    )?;
-                    let url = verification_url(&ctx.config, &token, body.callback_url.as_deref());
-                    let user = ctx.user_view(&user);
-                    if config.send_verification_email.is_none()
-                        && let Some(sender) = ctx.email_verification_override()
-                    {
-                        sender.0.send(&user, None, ctx).await?;
-                    } else if let Some(ref sender) = config.send_verification_email {
-                        sender.send(&user, &url, &token).await?;
-                    }
-                    Ok(())
-                }
-                .await
-            } else {
-                // Missing and already-verified mailboxes perform the same local
-                // signing work and retain the same timing floor without delivery.
-                let _ = create_email_verification_token(
+        if user.email_verified() {
+            return Err(AuthError::bad_request("Email is already verified"));
+        }
+
+        let token = create_email_verification_token(
+            &ctx.config.secret,
+            &body.email,
+            None,
+            config.verification_token_expiry,
+            None,
+        )?;
+        let url = verification_url(&ctx.config, &token, body.callback_url.as_deref());
+        let user = ctx.user_view(user);
+        if config.send_verification_email.is_none()
+            && let Some(sender) = ctx.email_verification_override()
+        {
+            sender.0.send(&user, None, ctx).await?;
+        } else if let Some(ref sender) = config.send_verification_email {
+            sender.send(&user, &url, &token).await?;
+        }
+    } else {
+        let start = tokio::time::Instant::now();
+        let user = ctx.database.get_user_by_email(&body.email).await?;
+        let result: AuthResult<()> = if let Some(user) = user.filter(|user| !user.email_verified())
+        {
+            async {
+                let token = create_email_verification_token(
                     &ctx.config.secret,
                     &body.email,
                     None,
                     config.verification_token_expiry,
                     None,
                 )?;
+                let url = verification_url(&ctx.config, &token, body.callback_url.as_deref());
+                let user = ctx.user_view(&user);
+                if config.send_verification_email.is_none()
+                    && let Some(sender) = ctx.email_verification_override()
+                {
+                    sender.0.send(&user, None, ctx).await?;
+                } else if let Some(ref sender) = config.send_verification_email {
+                    sender.send(&user, &url, &token).await?;
+                }
                 Ok(())
-            };
-            let remaining = std::time::Duration::from_millis(500).saturating_sub(start.elapsed());
-            if !remaining.is_zero() {
-                tokio::time::sleep(remaining).await;
             }
-            result?;
+            .await
+        } else {
+            // Missing and already-verified mailboxes perform the same local
+            // signing work and retain the same timing floor without delivery.
+            drop(create_email_verification_token(
+                &ctx.config.secret,
+                &body.email,
+                None,
+                config.verification_token_expiry,
+                None,
+            )?);
+            Ok(())
+        };
+        let remaining = std::time::Duration::from_millis(500).saturating_sub(start.elapsed());
+        if !remaining.is_zero() {
+            tokio::time::sleep(remaining).await;
         }
+        result?;
     }
 
     Ok(StatusResponse { status: true })
@@ -152,18 +153,25 @@ fn verification_error(
     code: &'static str,
     message: &'static str,
 ) -> AuthResult<VerifyEmailResult> {
-    if let Some(callback) = query.callback_url.as_deref().filter(|url| !url.is_empty()) {
-        Ok(VerifyEmailResult::Redirect {
-            url: redirect_url(callback, Some(code)),
-            session_token: None,
-        })
-    } else {
-        Err(AuthError::Upstream {
-            status: 401,
-            code,
-            message,
-        })
-    }
+    query
+        .callback_url
+        .as_deref()
+        .filter(|url| !url.is_empty())
+        .map_or_else(
+            || {
+                Err(AuthError::Upstream {
+                    status: 401,
+                    code,
+                    message,
+                })
+            },
+            |callback| {
+                Ok(VerifyEmailResult::Redirect {
+                    url: redirect_url(callback, Some(code)),
+                    session_token: None,
+                })
+            },
+        )
 }
 
 pub(super) async fn verify_email_core<U, S, A>(

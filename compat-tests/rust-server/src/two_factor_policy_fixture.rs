@@ -1,25 +1,25 @@
 use crate::TestSchema;
-use axum::{body::Bytes, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+use axum::{Json, Router, body::Bytes, http::StatusCode, response::IntoResponse, routing::post};
 use better_auth::{
+    AuthBuilder, AuthConfig, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{
+        EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin,
         two_factor::{
             AccountLockoutConfig, SendTwoFactorOtp, TwoFactorBackupCipher, TwoFactorBackupStorage,
             TwoFactorConfig,
         },
-        EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin,
     },
     wire::UserView,
-    AuthBuilder, AuthConfig, AuthResult, BetterAuth,
 };
 use better_auth_core::{
     store::{TwoFactorStore, VerificationStore},
     utils::json::{self, JsValue},
 };
 use better_auth_seaorm::{
-    sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
     DatabaseConnection, SeaOrmStore,
+    sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };
 use chrono::{Duration, Utc};
 use serde_json::json;

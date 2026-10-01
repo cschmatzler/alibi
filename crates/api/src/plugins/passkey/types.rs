@@ -1,21 +1,20 @@
-pub(crate) use better_auth_core::wire::PasskeyView;
+pub(in crate::plugins) use better_auth_core::wire::PasskeyView;
+
 use serde::{Deserialize, Serialize};
+
 use validator::Validate;
 
 // -- Request types --
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct VerifyRegistrationRequest {
+pub(in crate::plugins) struct VerifyRegistrationRequest {
     pub(super) response: better_auth_core::utils::json::JsValue,
     pub(super) name: Option<String>,
     #[serde(default = "no_registration_session")]
     pub(super) create_session: better_auth_core::utils::json::JsValue,
 }
 
-fn no_registration_session() -> better_auth_core::utils::json::JsValue {
-    better_auth_core::utils::json::JsValue::Bool(false)
-}
 impl Validate for VerifyRegistrationRequest {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         if self.create_session.is_boolean() {
@@ -45,9 +44,42 @@ impl Validate for VerifyRegistrationRequest {
 
 #[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct VerifyAuthenticationRequest {
+pub(in crate::plugins) struct VerifyAuthenticationRequest {
     #[validate(custom(function = "validate_authentication_response"))]
     pub(super) response: better_auth_core::utils::json::JsValue,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
+pub(in crate::plugins) struct DeletePasskeyRequest {
+    #[validate(length(min = 1))]
+    pub(super) id: String,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
+pub(in crate::plugins) struct UpdatePasskeyRequest {
+    #[validate(length(min = 1))]
+    pub(super) id: String,
+    #[validate(length(min = 1))]
+    pub(super) name: String,
+}
+
+// -- Response helpers --
+
+#[derive(Debug, Serialize)]
+pub(in crate::plugins) struct SessionResponse<S, U> {
+    pub(in crate::plugins) session: S,
+    pub(in crate::plugins) user: U,
+}
+
+#[derive(Debug, Serialize)]
+pub(in crate::plugins) struct PasskeyResponse {
+    pub(super) passkey: PasskeyView,
+}
+
+const fn no_registration_session() -> better_auth_core::utils::json::JsValue {
+    better_auth_core::utils::json::JsValue::Bool(false)
 }
 
 fn validate_authentication_response(
@@ -64,33 +96,4 @@ fn validate_authentication_response(
     };
     Err(validator::ValidationError::new("record")
         .with_message(format!("Invalid input: expected record, received {received}").into()))
-}
-
-#[derive(Debug, Deserialize, Validate)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct DeletePasskeyRequest {
-    #[validate(length(min = 1))]
-    pub(super) id: String,
-}
-
-#[derive(Debug, Deserialize, Validate)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct UpdatePasskeyRequest {
-    #[validate(length(min = 1))]
-    pub(super) id: String,
-    #[validate(length(min = 1))]
-    pub(super) name: String,
-}
-
-// -- Response helpers --
-
-#[derive(Debug, Serialize)]
-pub(crate) struct SessionResponse<S: Serialize, U: Serialize> {
-    pub(crate) session: S,
-    pub(crate) user: U,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct PasskeyResponse {
-    pub(super) passkey: PasskeyView,
 }

@@ -1,17 +1,140 @@
+#[cfg(test)]
+mod factor_extension_contract_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn unsupported_factor_security_extensions_fail_closed() {
+        let store = MemoryStore::default();
+        let now = Utc::now();
+        let errors = [
+            store
+                .update_two_factor("factor", crate::UpdateTwoFactor::default())
+                .await
+                .unwrap_err(),
+            store
+                .increment_two_factor_failure("factor")
+                .await
+                .unwrap_err(),
+            store
+                .set_two_factor_lock_if_count_at_least("factor", 0.0, now)
+                .await
+                .unwrap_err(),
+            store
+                .clear_expired_two_factor_lock("factor", now)
+                .await
+                .unwrap_err(),
+            store.reset_two_factor_failures("factor").await.unwrap_err(),
+            store
+                .compare_and_swap_two_factor_backup_codes("factor", "old", "new")
+                .await
+                .unwrap_err(),
+        ];
+        for error in errors {
+            assert!(matches!(error, AuthError::NotImplemented(_)));
+            assert_eq!(error.status_code(), 501);
+        }
+    }
+}
+
+#[cfg(test)]
+mod session_contract_tests {
+    use super::*;
+
+    #[tokio::test]
+    #[expect(
+        clippy::panic_in_result_fn,
+        reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+    )]
+    async fn default_batch_lookup_deduplicates_keys_and_preserves_expired_sessions()
+    -> AuthResult<()> {
+        let store = MemoryStore::new(test_config());
+        let user = store
+            .create_user(CreateUser::new().with_email("default-batch@example.com"))
+            .await?;
+        let now = Utc::now();
+        for (token, expiry) in [
+            (Some("z-token"), now + chrono::Duration::hours(1)),
+            (Some("a-token"), now - chrono::Duration::minutes(1)),
+            (None, now + chrono::Duration::hours(1)),
+        ] {
+            let row = store
+                .create_session(CreateSession {
+                    additional_fields: crate::field_policy::FieldValues::default(),
+                    token: token.map(str::to_owned),
+                    user_id: user.id.clone(),
+                    expires_at: expiry,
+                    ip_address: None,
+                    user_agent: None,
+                    impersonated_by: None,
+                    active_organization_id: None,
+                    active_team_id: None,
+                })
+                .await?;
+            if token.is_none() {
+                assert_eq!(row.token.len(), 32);
+                assert!(row.token.bytes().all(|byte| byte.is_ascii_alphanumeric()));
+            }
+        }
+        let result = store
+            .get_sessions_by_tokens(&[
+                "z-token".to_owned(),
+                "a-token".to_owned(),
+                "missing".to_owned(),
+                "z-token".to_owned(),
+            ])
+            .await?;
+        assert_eq!(
+            result
+                .iter()
+                .map(|row| row.token.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a-token", "z-token"]
+        );
+        assert!(result.first().is_some_and(|row| row.expires_at < now));
+        let duplicate = store
+            .create_session(CreateSession {
+                additional_fields: crate::field_policy::FieldValues::default(),
+                token: Some("a-token".to_owned()),
+                user_id: user.id,
+                expires_at: now + chrono::Duration::hours(1),
+                ip_address: None,
+                user_agent: None,
+                impersonated_by: None,
+                active_organization_id: None,
+                active_team_id: None,
+            })
+            .await;
+        assert!(duplicate.is_err());
+        assert!(
+            store
+                .get_session("a-token")
+                .await?
+                .is_some_and(|row| row.expires_at < now)
+        );
+        Ok(())
+    }
+}
+
 use std::collections::HashMap;
+
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+
 use chrono::{DateTime, Utc};
 
 use crate::config::AuthConfig;
+
 use crate::error::{AuthError, AuthResult};
+
 use crate::schema::AuthSchema;
+
 use crate::store::{
     AccountStore, ApiKeyStore, AuthStore, AuthTransaction, ConsumeApiKeyResult, DeviceCodeStore,
     InvitationStore, ListOrganizationMembersParams, MemberStore, OrganizationStore, PasskeyStore,
     SessionStore, TransactionStore, TwoFactorStore, UserStore, VerificationStore,
 };
+
 use crate::types::{
     ApiKey, CreateAccount, CreateApiKey, CreateDeviceCode, CreateInvitation, CreateMember,
     CreateOrganization, CreatePasskey, CreateSession, CreateTwoFactor, CreateUser,
@@ -19,9 +142,10 @@ use crate::types::{
     Organization, Passkey, TwoFactor, UpdateAccount, UpdateApiKey, UpdateDeviceCode,
     UpdateOrganization, UpdatePasskeyAuthentication, UpdateUser,
 };
+
 use crate::wire::{AccountView, SessionView, UserView, VerificationView};
 
-pub(crate) struct BundledSchema;
+pub struct BundledSchema;
 
 impl AuthSchema for BundledSchema {
     type User = UserView;
@@ -40,22 +164,28 @@ struct State {
 }
 
 #[derive(Default)]
-pub(crate) struct MemoryStore {
+pub struct MemoryStore {
     state: Mutex<State>,
 }
+
 impl crate::store::TeamStore for MemoryStore {}
+
 impl crate::store::OrganizationRoleStore for MemoryStore {}
+
 impl crate::store::WalletAddressStore for MemoryStore {}
 
 impl crate::store::JwkStore for MemoryStore {}
 
 impl MemoryStore {
+    #[must_use]
     pub(crate) fn new(_config: Arc<AuthConfig>) -> Self {
         Self::default()
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -120,7 +250,7 @@ impl UserStore<BundledSchema> for MemoryStore {
             phone_number: create_user.phone_number,
             phone_number_verified: create_user.phone_number_verified,
             last_login_method: create_user.last_login_method,
-            extension_fields: Default::default(),
+            extension_fields: std::collections::BTreeMap::default(),
         };
         self.lock().users.insert(id, user.clone());
         Ok(user)
@@ -222,7 +352,9 @@ impl UserStore<BundledSchema> for MemoryStore {
             user.last_login_method = last_login_method;
         }
         user.updated_at = Utc::now();
-        Ok(user.clone())
+        let locked_result = Ok(user.clone());
+        drop(state);
+        locked_result
     }
 
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
@@ -249,12 +381,16 @@ impl SessionStore<BundledSchema> for MemoryStore {
         };
         fields.apply_adapter_transforms()?;
         for (name, value) in fields {
-            let _ = session
-                .extension_fields
-                .insert(name, value.to_json_value()?);
+            drop(
+                session
+                    .extension_fields
+                    .insert(name, value.to_json_value()?),
+            );
         }
         session.updated_at = Utc::now();
-        Ok(Some(session.clone()))
+        let locked_result = Ok(Some(session.clone()));
+        drop(data);
+        locked_result
     }
     async fn create_session(&self, mut create_session: CreateSession) -> AuthResult<SessionView> {
         for (name, value) in [
@@ -292,7 +428,7 @@ impl SessionStore<BundledSchema> for MemoryStore {
             .token
             .unwrap_or_else(crate::utils::sessions::generate_session_token);
         let session = SessionView {
-            omitted_fields: Default::default(),
+            omitted_fields: std::collections::BTreeSet::default(),
             id: uuid::Uuid::new_v4().to_string(),
             expires_at: create_session.expires_at,
             token: token.clone(),
@@ -316,6 +452,8 @@ impl SessionStore<BundledSchema> for MemoryStore {
             return Err(AuthError::bad_request("Session token already exists"));
         }
         state.sessions.insert(token, session.clone());
+        drop(state);
+
         Ok(session)
     }
 
@@ -358,7 +496,9 @@ impl SessionStore<BundledSchema> for MemoryStore {
         };
         session.expires_at = expires_at;
         session.updated_at = Utc::now();
-        Ok(Some(session.clone()))
+        let locked_result = Ok(Some(session.clone()));
+        drop(state);
+        locked_result
     }
     async fn delete_session(&self, token: &str) -> AuthResult<()> {
         self.lock().sessions.remove(token);
@@ -394,7 +534,9 @@ impl SessionStore<BundledSchema> for MemoryStore {
             .ok_or(AuthError::SessionNotFound)?;
         session.active_organization_id = organization_id.map(str::to_owned);
         session.updated_at = Utc::now();
-        Ok(session.clone())
+        let locked_result = Ok(session.clone());
+        drop(state);
+        locked_result
     }
 
     async fn update_session_active_team(
@@ -409,7 +551,9 @@ impl SessionStore<BundledSchema> for MemoryStore {
             .ok_or(AuthError::SessionNotFound)?;
         session.active_team_id = team_id.map(str::to_owned);
         session.updated_at = Utc::now();
-        Ok(session.clone())
+        let locked_result = Ok(session.clone());
+        drop(state);
+        locked_result
     }
 }
 
@@ -491,7 +635,9 @@ impl AccountStore<BundledSchema> for MemoryStore {
             account.password = Some(password);
         }
         account.updated_at = Utc::now();
-        Ok(account.clone())
+        let locked_result = Ok(account.clone());
+        drop(state);
+        locked_result
     }
 
     async fn delete_account(&self, id: &str) -> AuthResult<()> {
@@ -586,6 +732,8 @@ impl VerificationStore<BundledSchema> for MemoryStore {
                 .verifications
                 .retain(|_, sibling| sibling.identifier != identifier);
         }
+        drop(state);
+
         Ok(found.filter(|verification| verification.expires_at >= Utc::now()))
     }
 
@@ -616,6 +764,8 @@ impl VerificationStore<BundledSchema> for MemoryStore {
         state
             .verifications
             .retain(|_, sibling| sibling.identifier != identifier);
+        drop(state);
+
         Ok(found.filter(|verification| verification.expires_at >= Utc::now()))
     }
 
@@ -643,6 +793,8 @@ impl VerificationStore<BundledSchema> for MemoryStore {
         verification.value = value.to_owned();
         verification.expires_at = expires_at;
         verification.updated_at = Utc::now();
+        drop(state);
+
         Ok(true)
     }
 
@@ -654,8 +806,9 @@ impl VerificationStore<BundledSchema> for MemoryStore {
         else {
             return Ok(false);
         };
+
         let now = Utc::now();
-        let _ = entry.insert(VerificationView {
+        let _ignored_insert = entry.insert(VerificationView {
             id,
             identifier: verification.identifier,
             value: verification.value,
@@ -663,6 +816,7 @@ impl VerificationStore<BundledSchema> for MemoryStore {
             created_at: now,
             updated_at: now,
         });
+        drop(state);
         Ok(true)
     }
 
@@ -840,44 +994,6 @@ impl TwoFactorStore for MemoryStore {
     }
 }
 
-#[cfg(test)]
-mod factor_extension_contract_tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn unsupported_factor_security_extensions_fail_closed() {
-        let store = MemoryStore::default();
-        let now = chrono::Utc::now();
-        let errors = [
-            store
-                .update_two_factor("factor", crate::UpdateTwoFactor::default())
-                .await
-                .unwrap_err(),
-            store
-                .increment_two_factor_failure("factor")
-                .await
-                .unwrap_err(),
-            store
-                .set_two_factor_lock_if_count_at_least("factor", 0.0, now)
-                .await
-                .unwrap_err(),
-            store
-                .clear_expired_two_factor_lock("factor", now)
-                .await
-                .unwrap_err(),
-            store.reset_two_factor_failures("factor").await.unwrap_err(),
-            store
-                .compare_and_swap_two_factor_backup_codes("factor", "old", "new")
-                .await
-                .unwrap_err(),
-        ];
-        for error in errors {
-            assert!(matches!(error, AuthError::NotImplemented(_)));
-            assert_eq!(error.status_code(), 501);
-        }
-    }
-}
-
 #[async_trait]
 impl ApiKeyStore for MemoryStore {
     async fn consume_api_key_usage_from_snapshot(
@@ -1015,7 +1131,9 @@ impl DeviceCodeStore for MemoryStore {
             device_code.last_polled_at = last_polled_at;
         }
 
-        Ok(device_code.clone())
+        let locked_result = Ok(device_code.clone());
+        drop(state);
+        locked_result
     }
 
     async fn update_device_code_if_status(
@@ -1042,6 +1160,7 @@ impl DeviceCodeStore for MemoryStore {
         if let Some(last_polled_at) = update.last_polled_at {
             device_code.last_polled_at = last_polled_at;
         }
+        drop(state);
 
         Ok(true)
     }
@@ -1056,7 +1175,9 @@ impl DeviceCodeStore for MemoryStore {
             return Ok(false);
         }
 
-        device_code.user_id = Some(user_id.to_string());
+        device_code.user_id = Some(user_id.to_owned());
+        drop(state);
+
         Ok(true)
     }
 
@@ -1076,7 +1197,9 @@ impl DeviceCodeStore for MemoryStore {
             state.device_codes.remove(id);
         }
 
-        Ok(should_delete)
+        let locked_result = Ok(should_delete);
+        drop(state);
+        locked_result
     }
 }
 
@@ -1091,85 +1214,10 @@ impl TransactionStore<BundledSchema> for MemoryStore {
     }
 }
 
-pub(crate) fn test_config() -> Arc<AuthConfig> {
+pub fn test_config() -> Arc<AuthConfig> {
     Arc::new(AuthConfig::new("test-secret-min-32-chars-1234567"))
 }
 
-pub(crate) async fn test_database() -> Arc<dyn AuthStore<BundledSchema>> {
+pub async fn test_database() -> Arc<dyn AuthStore<BundledSchema>> {
     Arc::new(MemoryStore::new(test_config()))
-}
-
-#[cfg(test)]
-mod session_contract_tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn default_batch_lookup_deduplicates_keys_and_preserves_expired_sessions()
-    -> AuthResult<()> {
-        let store = MemoryStore::new(test_config());
-        let user = store
-            .create_user(CreateUser::new().with_email("default-batch@example.com"))
-            .await?;
-        let now = Utc::now();
-        for (token, expiry) in [
-            (Some("z-token"), now + chrono::Duration::hours(1)),
-            (Some("a-token"), now - chrono::Duration::minutes(1)),
-            (None, now + chrono::Duration::hours(1)),
-        ] {
-            let row = store
-                .create_session(CreateSession {
-                    additional_fields: Default::default(),
-                    token: token.map(str::to_owned),
-                    user_id: user.id.clone(),
-                    expires_at: expiry,
-                    ip_address: None,
-                    user_agent: None,
-                    impersonated_by: None,
-                    active_organization_id: None,
-                    active_team_id: None,
-                })
-                .await?;
-            if token.is_none() {
-                assert_eq!(row.token.len(), 32);
-                assert!(row.token.bytes().all(|byte| byte.is_ascii_alphanumeric()));
-            }
-        }
-        let result = store
-            .get_sessions_by_tokens(&[
-                "z-token".to_owned(),
-                "a-token".to_owned(),
-                "missing".to_owned(),
-                "z-token".to_owned(),
-            ])
-            .await?;
-        assert_eq!(
-            result
-                .iter()
-                .map(|row| row.token.as_str())
-                .collect::<Vec<_>>(),
-            vec!["a-token", "z-token"]
-        );
-        assert!(result.first().is_some_and(|row| row.expires_at < now));
-        let duplicate = store
-            .create_session(CreateSession {
-                additional_fields: Default::default(),
-                token: Some("a-token".to_owned()),
-                user_id: user.id,
-                expires_at: now + chrono::Duration::hours(1),
-                ip_address: None,
-                user_agent: None,
-                impersonated_by: None,
-                active_organization_id: None,
-                active_team_id: None,
-            })
-            .await;
-        assert!(duplicate.is_err());
-        assert!(
-            store
-                .get_session("a-token")
-                .await?
-                .is_some_and(|row| row.expires_at < now)
-        );
-        Ok(())
-    }
 }

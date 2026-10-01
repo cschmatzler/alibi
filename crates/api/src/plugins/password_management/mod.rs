@@ -1,26 +1,41 @@
-use async_trait::async_trait;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-
-use better_auth_core::AuthSession;
-use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
-use better_auth_core::{AuthError, AuthResult};
-use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
-
-use better_auth_core::RequestMeta;
-use better_auth_core::utils::password::PasswordHasher;
-
-use super::StatusResponse;
-
 pub(super) mod handlers;
+
 pub(super) mod types;
 
 #[cfg(test)]
 mod tests;
 
-use handlers::*;
-use types::*;
+use async_trait::async_trait;
+
+use std::future::Future;
+
+use std::pin::Pin;
+
+use std::sync::Arc;
+
+use better_auth_core::AuthSession;
+
+use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
+
+use better_auth_core::{AuthError, AuthResult};
+
+use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
+
+use better_auth_core::RequestMeta;
+
+use better_auth_core::utils::password::PasswordHasher;
+
+use super::StatusResponse;
+
+use handlers::{
+    change_password_core, request_password_reset_core, reset_password_core,
+    reset_password_token_core, verify_password_core,
+};
+
+use types::{
+    ChangePasswordRequest, RequestPasswordResetRequest, ResetPasswordRequest,
+    ResetPasswordTokenQuery, ResetPasswordTokenResult, VerifyPasswordRequest,
+};
 
 /// Type alias for the async password-reset callback to keep Clippy happy.
 pub type OnPasswordResetCallback =
@@ -44,6 +59,13 @@ pub trait SendResetPassword: Send + Sync {
 /// Password management plugin for password reset and change functionality
 pub struct PasswordManagementPlugin {
     config: PasswordManagementConfig,
+}
+
+impl std::fmt::Debug for PasswordManagementPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PasswordManagementPlugin")
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Clone, better_auth_core::PluginConfig)]
@@ -225,7 +247,7 @@ impl PasswordManagementPlugin {
             // better-call's default body for a session-gated endpoint hit
             // without a session, which upstream returns verbatim.
             return Ok(
-                AuthError::AuthenticationFailed("Unauthorized".to_string()).to_auth_response()
+                AuthError::AuthenticationFailed("Unauthorized".to_owned()).to_auth_response()
             );
         };
         let response = verify_password_core(&body, &user, &self.config, ctx).await?;
@@ -244,8 +266,8 @@ impl PasswordManagementPlugin {
         match reset_password_token_core(token, &query, ctx).await? {
             ResetPasswordTokenResult::Redirect(url) => {
                 let mut headers = better_auth_core::Headers::new();
-                let _ = headers.insert("Location".to_string(), url);
-                let _ = headers.insert("content-type".to_string(), "application/json".to_string());
+                drop(headers.insert("Location".to_owned(), url));
+                drop(headers.insert("content-type".to_owned(), "application/json".to_owned()));
                 Ok(AuthResponse {
                     status: 302,
                     headers,
@@ -275,7 +297,6 @@ impl PasswordManagementPlugin {
 #[cfg(test)]
 impl PasswordManagementPlugin {
     fn validate_password(
-        &self,
         password: &str,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<()> {

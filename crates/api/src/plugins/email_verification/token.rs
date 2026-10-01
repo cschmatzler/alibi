@@ -5,15 +5,15 @@ use serde::{Deserialize, Serialize};
 use better_auth_core::{AuthError, AuthResult};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct EmailVerificationClaims {
-    pub(crate) email: String,
+pub(in crate::plugins) struct EmailVerificationClaims {
+    pub(in crate::plugins) email: String,
     #[serde(rename = "updateTo", skip_serializing_if = "Option::is_none")]
-    pub(crate) update_to: Option<String>,
+    pub(in crate::plugins) update_to: Option<String>,
     #[serde(rename = "requestType", skip_serializing_if = "Option::is_none")]
-    pub(crate) request_type: Option<String>,
+    pub(in crate::plugins) request_type: Option<String>,
 }
 
-pub(crate) fn create_email_verification_token(
+pub(in crate::plugins) fn create_email_verification_token(
     secret: &str,
     email: &str,
     update_to: Option<&str>,
@@ -24,16 +24,16 @@ pub(crate) fn create_email_verification_token(
     let mut claims = serde_json::to_value(EmailVerificationClaims {
         email: email.to_lowercase(),
         update_to: update_to.map(str::to_lowercase),
-        request_type: request_type.map(str::to_string),
+        request_type: request_type.map(str::to_owned),
     })?;
     let fields = claims
         .as_object_mut()
         .ok_or_else(|| AuthError::internal("Verification claims must serialize as an object"))?;
-    _ = fields.insert("iat".to_owned(), serde_json::json!(now.timestamp()));
-    _ = fields.insert(
+    drop(fields.insert("iat".to_owned(), serde_json::json!(now.timestamp())));
+    drop(fields.insert(
         "exp".to_owned(),
         serde_json::json!((now + expires_in).timestamp()),
-    );
+    ));
     let mut header = Header::new(Algorithm::HS256);
     header.typ = None;
 
@@ -44,7 +44,12 @@ pub(crate) fn create_email_verification_token(
     )?)
 }
 
-pub(crate) fn decode_email_verification_token(
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
+pub(in crate::plugins) fn decode_email_verification_token(
     secret: &str,
     token: &str,
 ) -> AuthResult<EmailVerificationClaims> {

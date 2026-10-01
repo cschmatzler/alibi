@@ -1,32 +1,31 @@
 use super::entities::member;
+
 use super::entities::organization_role::{self, Column, Entity};
+
 use super::{SeaOrmStore, map_db_err};
-use crate::error::{AuthError, AuthResult};
+
+use better_auth_core::error::{AuthError, AuthResult};
+
 use crate::schema::AuthSchema;
+
 use async_trait::async_trait;
+
 use better_auth_core::store::OrganizationRoleStore;
+
 use better_auth_core::types::{
     CreateOrganizationRole, OrganizationRole, OrganizationRoleSelector, UpdateOrganizationRole,
 };
+
 use chrono::Utc;
+
 use sea_orm::sea_query::Expr;
+
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, EntityTrait, PaginatorTrait, QueryFilter,
     QuerySelect, Set,
 };
+
 use uuid::Uuid;
-
-fn scope(organization_id: &str, selector: &OrganizationRoleSelector) -> Condition {
-    let predicate = Condition::all().add(Column::OrganizationId.eq(organization_id));
-    match selector {
-        OrganizationRoleSelector::Id(id) => predicate.add(Column::Id.eq(id)),
-        OrganizationRoleSelector::Name(name) => predicate.add(Column::Role.eq(name)),
-    }
-}
-
-fn scoped(organization_id: &str, selector: &OrganizationRoleSelector) -> sea_orm::Select<Entity> {
-    Entity::find().filter(scope(organization_id, selector))
-}
 
 #[async_trait]
 impl<S: AuthSchema> OrganizationRoleStore for SeaOrmStore<S> {
@@ -79,7 +78,8 @@ impl<S: AuthSchema> OrganizationRoleStore for SeaOrmStore<S> {
             .count(self.connection())
             .await
             .map_err(map_db_err)?;
-        usize::try_from(count).map_err(|_| AuthError::internal("Organization role count overflow"))
+        usize::try_from(count)
+            .map_err(|_error| AuthError::internal("Organization role count overflow"))
     }
     async fn has_organization_role_members(
         &self,
@@ -125,7 +125,7 @@ impl<S: AuthSchema> OrganizationRoleStore for SeaOrmStore<S> {
             query = query.col_expr(Column::Permission, Expr::value(permission.clone()));
             row.permission = permission;
         }
-        let _ = query.exec(self.connection()).await.map_err(map_db_err)?;
+        let _ignored_map_err = query.exec(self.connection()).await.map_err(map_db_err)?;
         row.updated_at = Some(updated_at);
         row.try_into()
     }
@@ -141,4 +141,16 @@ impl<S: AuthSchema> OrganizationRoleStore for SeaOrmStore<S> {
             .map(|r| r.rows_affected > 0)
             .map_err(map_db_err)
     }
+}
+
+fn scope(organization_id: &str, selector: &OrganizationRoleSelector) -> Condition {
+    let predicate = Condition::all().add(Column::OrganizationId.eq(organization_id));
+    match selector {
+        OrganizationRoleSelector::Id(id) => predicate.add(Column::Id.eq(id)),
+        OrganizationRoleSelector::Name(name) => predicate.add(Column::Role.eq(name)),
+    }
+}
+
+fn scoped(organization_id: &str, selector: &OrganizationRoleSelector) -> sea_orm::Select<Entity> {
+    Entity::find().filter(scope(organization_id, selector))
 }

@@ -8,9 +8,9 @@ use uuid::Uuid;
 
 use better_auth_core::store::PasskeyStore;
 
-use crate::error::{AuthError, AuthResult};
 use crate::schema::AuthSchema;
-use crate::types::{CreatePasskey, Passkey, UpdatePasskeyAuthentication};
+use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::types::{CreatePasskey, Passkey, UpdatePasskeyAuthentication};
 
 use super::entities::passkey::{ActiveModel, Column, Entity};
 use super::{SeaOrmStore, map_db_err};
@@ -25,7 +25,7 @@ where
         input: CreatePasskey,
     ) -> AuthResult<Passkey> {
         let counter = i64::try_from(input.counter)
-            .map_err(|_| AuthError::bad_request("Passkey counter exceeds i64 range"))?;
+            .map_err(|_error| AuthError::bad_request("Passkey counter exceeds i64 range"))?;
 
         ActiveModel {
             id: Set(Uuid::new_v4().to_string()),
@@ -101,7 +101,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
 
         let mut active = model.into_active_model();
         active.counter = Set(i64::try_from(update.counter)
-            .map_err(|_| AuthError::bad_request("Passkey counter exceeds i64 range"))?);
+            .map_err(|_error| AuthError::bad_request("Passkey counter exceeds i64 range"))?);
         active.backed_up = Set(update.backed_up);
         active.device_type = Set(update.device_type);
         active.credential = Set(update.credential);
@@ -109,7 +109,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
         active
             .update(self.connection())
             .await
-            .map(|model| Passkey::from(&model))
+            .map(|model_2| Passkey::from(&model_2))
             .map_err(map_db_err)
     }
 
@@ -128,7 +128,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
         active
             .update(self.connection())
             .await
-            .map(|model| Passkey::from(&model))
+            .map(|model_2| Passkey::from(&model_2))
             .map_err(map_db_err)
     }
 

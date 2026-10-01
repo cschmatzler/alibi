@@ -1,16 +1,22 @@
 use better_auth_core::entity::AuthAccount;
+
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, UpdateAccount,
 };
+
 use chrono::Utc;
 
 use super::encryption::{encrypt_token_set, maybe_decrypt};
+
 use super::handlers::{
     create_account_cookie_header, decode_account_cookie, fetch_user_info_from_provider,
     refresh_tokens_via_provider,
 };
+
 use super::providers::{OAuthConfig, OAuthTokenSet, OAuthUserInfoRequest};
+
 use super::state::AccountCookiePayload;
+
 use super::types::{
     AccessTokenResponse, AccountInfoAccount, AccountInfoResponse, AccountInfoUser,
     RefreshTokenResponse,
@@ -23,6 +29,7 @@ fn access_token_failure() -> AuthError {
         message: "Failed to get a valid access token",
     }
 }
+
 fn refresh_token_failure() -> AuthError {
     AuthError::Upstream {
         status: 400,
@@ -36,7 +43,7 @@ enum AccountSelection {
     Cookie,
 }
 
-fn invalid_selection(location: &str, message: String) -> AuthResult<AuthResponse> {
+fn invalid_selection(location: &str, message: &str) -> AuthResult<AuthResponse> {
     Ok(AuthResponse::json(
         400,
         &better_auth_core::ErrorCodeMessageResponse {
@@ -48,12 +55,14 @@ fn invalid_selection(location: &str, message: String) -> AuthResult<AuthResponse
 
 impl AccountSelection {
     fn from_body(req: &AuthRequest) -> Result<Self, String> {
-        let value = req.body_as_json().map_err(|_| "Invalid input".to_owned())?;
-        Self::from_value(value)
+        let value = req
+            .body_as_json()
+            .map_err(|_error| "Invalid input".to_owned())?;
+        Self::from_value(&value)
     }
 
     fn from_query(req: &AuthRequest) -> Result<Self, String> {
-        Self::from_value(serde_json::Value::Object(
+        Self::from_value(&serde_json::Value::Object(
             req.query
                 .iter()
                 .map(|(key, value)| (key.clone(), serde_json::Value::String(value.clone())))
@@ -61,11 +70,14 @@ impl AccountSelection {
         ))
     }
 
-    fn from_value(value: serde_json::Value) -> Result<Self, String> {
+    fn from_value(value: &serde_json::Value) -> Result<Self, String> {
         let object = value
             .as_object()
             .ok_or_else(|| "Invalid input".to_owned())?;
-        if object.get("userId").is_some_and(|value| !value.is_string()) {
+        if object
+            .get("userId")
+            .is_some_and(|value_2| !value_2.is_string())
+        {
             return Err("Invalid input".into());
         }
         let account_id = object.get("accountId").and_then(serde_json::Value::as_str);
@@ -331,7 +343,7 @@ pub(super) async fn handle_account_info(
 ) -> AuthResult<AuthResponse> {
     let selection = match AccountSelection::from_query(req) {
         Ok(selection) => selection,
-        Err(message) => return invalid_selection("query", message),
+        Err(message) => return invalid_selection("query", &(message)),
     };
     let (_, session) = ctx.require_session(req).await?;
     let mut account = selection.resolve(req, &session.user_id, ctx).await?;

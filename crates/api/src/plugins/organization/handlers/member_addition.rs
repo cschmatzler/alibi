@@ -15,7 +15,16 @@ use crate::plugins::organization::{
     types::{AddOrganizationMemberRequest, BasicMemberResponse, OrganizationResponse},
 };
 
-pub(crate) async fn add_member<S: AuthSchema>(
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep membership authorization and its transaction callbacks in one ordered operation"
+)]
+pub(in crate::plugins) async fn add_member<S: AuthSchema>(
     body: &AddOrganizationMemberRequest,
     headers: &HashMap<String, String>,
     config: &OrganizationConfig,
@@ -38,9 +47,8 @@ pub(crate) async fn add_member<S: AuthSchema>(
         .as_deref()
         .filter(|id| !id.is_empty())
         .or_else(|| {
-            session
-                .as_ref()
-                .and_then(|(_, session)| session.active_organization_id())
+            let (_, session) = session.as_ref()?;
+            session.active_organization_id()
         })
         .filter(|id| !id.is_empty())
         .ok_or_else(|| org_error(400, "NO_ACTIVE_ORGANIZATION"))?;

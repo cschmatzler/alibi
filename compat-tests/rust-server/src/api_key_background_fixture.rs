@@ -1,10 +1,10 @@
 //! Explicit application background-task integration around the real store.
 use crate::TestSchema;
 use axum::{
+    Json, Router,
     extract::Query,
     response::IntoResponse,
     routing::{get, post},
-    Json, Router,
 };
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
@@ -17,11 +17,11 @@ use better_auth::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BackgroundTaskCompletion, BackgroundTaskHandler,
 };
 use better_auth_seaorm::{
-    sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement},
     SeaOrmStore,
+    sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement},
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},

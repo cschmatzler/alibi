@@ -21,6 +21,10 @@ async fn raw_metadata(
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn public_store_distinguishes_omitted_and_literal_null_metadata()
 -> Result<(), Box<dyn std::error::Error>> {
     let database = Database::connect("sqlite::memory:").await?;
@@ -99,6 +103,11 @@ async fn public_store_distinguishes_omitted_and_literal_null_metadata()
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn installed_organization_upgrade_preserves_bytes_custom_schema_and_references()
 -> Result<(), Box<dyn std::error::Error>> {
     let database = Database::connect("sqlite::memory:").await?;
@@ -112,7 +121,7 @@ async fn installed_organization_upgrade_preserves_bytes_custom_schema_and_refere
         "CREATE TABLE organization_events (id TEXT, name TEXT)",
         "CREATE TRIGGER organization_name_event AFTER UPDATE OF name ON organization BEGIN INSERT INTO organization_events VALUES (NEW.id,NEW.name); END",
     ] {
-        let _ = database.execute_unprepared(sql).await?;
+        let _ignored_execute_unprepared = database.execute_unprepared(sql).await?;
     }
     run_migrations(&database).await?;
     let store = SeaOrmStore::<BundledSchema>::new(
@@ -229,6 +238,10 @@ async fn installed_organization_upgrade_preserves_bytes_custom_schema_and_refere
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn invalid_installed_reference_rolls_back_metadata_upgrade_and_restores_settings()
 -> Result<(), Box<dyn std::error::Error>> {
     let database = Database::connect("sqlite::memory:").await?;
@@ -245,7 +258,7 @@ async fn invalid_installed_reference_rolls_back_metadata_upgrade_and_restores_se
         "PRAGMA foreign_keys=ON",
         "DELETE FROM better_auth_migrations WHERE version='m20260930_000013_nullable_organization_metadata'",
     ] {
-        let _ = database.execute_unprepared(sql).await?;
+        let _ignored_execute_unprepared_2 = database.execute_unprepared(sql).await?;
     }
     let error = run_migrations(&database).await.err().ok_or_else(|| {
         std::io::Error::other("invalid foreign key did not reject the actual table rebuild")
@@ -278,14 +291,14 @@ async fn invalid_installed_reference_rolls_back_metadata_upgrade_and_restores_se
         ("PRAGMA foreign_keys", 1_i64),
         ("PRAGMA legacy_alter_table", 0),
     ] {
-        let row = database
+        let row_2 = database
             .query_one_raw(Statement::from_string(
                 database.get_database_backend(),
                 pragma,
             ))
             .await?
             .ok_or_else(|| std::io::Error::other("missing setting"))?;
-        assert_eq!(row.try_get_by_index::<i64>(0)?, expected);
+        assert_eq!(row_2.try_get_by_index::<i64>(0)?, expected);
     }
     assert!(
         database
@@ -301,6 +314,10 @@ async fn invalid_installed_reference_rolls_back_metadata_upgrade_and_restores_se
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn optional_organization_update_distinguishes_absence_from_database_write_failure()
 -> Result<(), Box<dyn std::error::Error>> {
     let database = Database::connect("sqlite::memory:").await?;
@@ -337,7 +354,7 @@ async fn optional_organization_update_distinguishes_absence_from_database_write_
         serde_json::to_value(store.get_organization_by_id(&target.id).await?)?,
         serde_json::to_value(Some(&updated))?
     );
-    let _ = database.execute_unprepared("CREATE TRIGGER veto_optional_organization BEFORE UPDATE ON organization WHEN OLD.slug='optional-target' BEGIN SELECT RAISE(ABORT,'optional organization storage veto'); END").await?;
+    let _ignored_execute_unprepared_3 = database.execute_unprepared("CREATE TRIGGER veto_optional_organization BEFORE UPDATE ON organization WHEN OLD.slug='optional-target' BEGIN SELECT RAISE(ABORT,'optional organization storage veto'); END").await?;
     let veto = store
         .update_organization_if_present(
             &target.id,
@@ -352,10 +369,10 @@ async fn optional_organization_update_distinguishes_absence_from_database_write_
         serde_json::to_value(store.get_organization_by_id(&target.id).await?)?,
         serde_json::to_value(Some(&updated))?
     );
-    let _ = database
+    let _ignored_execute_unprepared_4 = database
         .execute_unprepared("DROP TRIGGER veto_optional_organization")
         .await?;
-    let _ = database.execute_unprepared("CREATE TRIGGER ignore_optional_organization BEFORE UPDATE ON organization WHEN OLD.slug='optional-target' BEGIN SELECT RAISE(IGNORE); END").await?;
+    let _ignored_execute_unprepared_5 = database.execute_unprepared("CREATE TRIGGER ignore_optional_organization BEFORE UPDATE ON organization WHEN OLD.slug='optional-target' BEGIN SELECT RAISE(IGNORE); END").await?;
     assert!(
         store
             .update_organization_if_present(

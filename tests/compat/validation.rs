@@ -1,4 +1,4 @@
-//! Response validation against OpenAPI schemas.
+//! Response validation against `OpenAPI` schemas.
 //!
 //! Validates JSON responses field-by-field against `SchemaExpectation`,
 //! producing a list of `ShapeDiff` items for any mismatches.
@@ -26,7 +26,7 @@ pub enum DiffKind {
     MissingRequiredField,
     /// A field has an unexpected type
     TypeMismatch { expected: String, actual: String },
-    /// A field uses snake_case instead of camelCase
+    /// A field uses `snake_case` instead of camelCase
     SnakeCaseField,
 }
 
@@ -62,22 +62,19 @@ pub fn validate_response(
 ) -> Vec<ShapeDiff> {
     let mut diffs = Vec::new();
 
-    let obj = match response.as_object() {
-        Some(o) => o,
-        None => {
-            // If response is null and schema has no required fields, that's OK
-            if response.is_null() && schema.required_fields.is_empty() {
-                return diffs;
-            }
-            diffs.push(ShapeDiff {
-                path: path_prefix.to_string(),
-                kind: DiffKind::TypeMismatch {
-                    expected: "object".to_string(),
-                    actual: json_type_name(response).to_string(),
-                },
-            });
+    let Some(obj) = response.as_object() else {
+        // If response is null and schema has no required fields, that's OK
+        if response.is_null() && schema.required_fields.is_empty() {
             return diffs;
         }
+        diffs.push(ShapeDiff {
+            path: path_prefix.to_owned(),
+            kind: DiffKind::TypeMismatch {
+                expected: "object".to_owned(),
+                actual: json_type_name(response).to_owned(),
+            },
+        });
+        return diffs;
     };
 
     // Check required fields exist
@@ -85,7 +82,7 @@ pub fn validate_response(
         let field_path = if path_prefix.is_empty() {
             required.clone()
         } else {
-            format!("{}.{}", path_prefix, required)
+            format!("{path_prefix}.{required}")
         };
 
         if !obj.contains_key(required) {
@@ -101,7 +98,7 @@ pub fn validate_response(
         let field_path = if path_prefix.is_empty() {
             field_name.clone()
         } else {
-            format!("{}.{}", path_prefix, field_name)
+            format!("{path_prefix}.{field_name}")
         };
 
         if let Some(actual_value) = obj.get(field_name) {
@@ -120,7 +117,7 @@ pub fn validate_response(
         let field_path = if path_prefix.is_empty() {
             key.clone()
         } else {
-            format!("{}.{}", path_prefix, key)
+            format!("{path_prefix}.{key}")
         };
 
         if key.contains('_') && !key.starts_with('_') {
@@ -148,10 +145,10 @@ pub fn validate_field(
             && expectation.field_type != "date"
         {
             diffs.push(ShapeDiff {
-                path: path.to_string(),
+                path: path.to_owned(),
                 kind: DiffKind::TypeMismatch {
                     expected: expectation.field_type.clone(),
-                    actual: "null".to_string(),
+                    actual: "null".to_owned(),
                 },
             });
         }
@@ -163,22 +160,21 @@ pub fn validate_field(
 
     // Type compatibility check
     let type_ok = match expected_type.as_str() {
-        "string" => actual_type == "string",
         "boolean" => actual_type == "boolean",
         "number" | "integer" => actual_type == "number",
         "object" => actual_type == "object",
         "array" => actual_type == "array",
-        "date" => actual_type == "string", // dates are serialized as strings
+        "string" | "date" => actual_type == "string", // dates are serialized as strings
         "null" => actual_type == "null" || value.is_null(),
         _ => true, // Unknown types are accepted
     };
 
     if !type_ok {
         diffs.push(ShapeDiff {
-            path: path.to_string(),
+            path: path.to_owned(),
             kind: DiffKind::TypeMismatch {
                 expected: expected_type.clone(),
-                actual: actual_type.to_string(),
+                actual: actual_type.to_owned(),
             },
         });
         return;
@@ -197,14 +193,14 @@ pub fn validate_field(
         && let Some(arr) = value.as_array()
     {
         for (i, item) in arr.iter().enumerate() {
-            let item_path = format!("{}[{}]", path, i);
+            let item_path = format!("{path}[{i}]");
             validate_field(item, item_expectation, &item_path, diffs);
         }
     }
 }
 
 /// Return the JSON type name for a value.
-pub fn json_type_name(value: &Value) -> &'static str {
+pub const fn json_type_name(value: &Value) -> &'static str {
     match value {
         Value::Null => "null",
         Value::Bool(_) => "boolean",

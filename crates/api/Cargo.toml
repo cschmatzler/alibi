@@ -6,6 +6,10 @@ license = { workspace = true }
 description = "Plugin implementations for better-auth"
 repository = { workspace = true }
 
+readme = { workspace = true }
+keywords = { workspace = true }
+categories = { workspace = true }
+
 [lints]
 workspace = true
 
@@ -60,8 +64,6 @@ reqwest = { workspace = true }
 url = { workspace = true }
 urlencoding = "2"
 bon = "3.3"
-nonzero_ext = "0.3.0"
-axum = { workspace = true, optional = true }
 jsonwebtoken.workspace = true
 serde_with = "3.18.0"
 webauthn-rs = { version = "0.5.4", features = ["conditional-ui", "danger-allow-state-serialisation", "danger-credential-internals"] }
@@ -79,4 +81,4 @@ better-auth-seaorm = { path = "../seaorm" }
 default = ["native-tls"]
 native-tls = ["reqwest/default-tls"]
 rustls = ["reqwest/rustls-tls"]
-axum = ["dep:axum", "better-auth-core/axum"]
+axum = ["better-auth-core/axum"]

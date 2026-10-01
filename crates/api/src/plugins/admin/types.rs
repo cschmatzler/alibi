@@ -1,25 +1,26 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, SecondsFormat, Utc};
+
 use serde::{Deserialize, Serialize};
 
 /// Role input accepted by TypeScript admin routes.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum RoleInput {
+pub(in crate::plugins) enum RoleInput {
     One(String),
     Many(Vec<String>),
 }
 
 impl RoleInput {
-    pub(crate) fn joined(&self) -> String {
+    pub(in crate::plugins) fn joined(&self) -> String {
         match self {
             Self::One(role) => role.clone(),
             Self::Many(roles) => roles.join(","),
         }
     }
 
-    pub(crate) fn roles(&self) -> Vec<&str> {
+    pub(in crate::plugins) fn roles(&self) -> Vec<&str> {
         match self {
             Self::One(role) => vec![role.as_str()],
             Self::Many(roles) => roles.iter().map(String::as_str).collect(),
@@ -32,19 +33,19 @@ impl RoleInput {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct SetRoleRequest {
+pub(in crate::plugins) struct SetRoleRequest {
     #[serde(rename = "userId")]
     pub user_id: String,
     pub role: RoleInput,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct GetUserQuery {
+pub(in crate::plugins) struct GetUserQuery {
     pub id: String,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CreateUserRequest {
+pub(in crate::plugins) struct CreateUserRequest {
     pub email: String,
     pub password: Option<String>,
     pub name: String,
@@ -57,7 +58,7 @@ pub(crate) struct CreateUserRequest {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct AdminUpdateUserRequest {
+pub(in crate::plugins) struct AdminUpdateUserRequest {
     #[serde(rename = "userId")]
     pub user_id: String,
     #[serde(deserialize_with = "better_auth_core::utils::json::deserialize_map")]
@@ -65,13 +66,13 @@ pub(crate) struct AdminUpdateUserRequest {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct UserIdRequest {
+pub(in crate::plugins) struct UserIdRequest {
     #[serde(rename = "userId")]
     pub user_id: String,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct BanUserRequest {
+pub(in crate::plugins) struct BanUserRequest {
     #[serde(rename = "userId")]
     pub user_id: String,
     #[serde(rename = "banReason")]
@@ -84,25 +85,14 @@ pub(crate) struct BanUserRequest {
     pub ban_expires_in: Option<f64>,
 }
 
-fn finite_optional_duration<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let duration = Option::<f64>::deserialize(deserializer)?;
-    if duration.is_some_and(|value| !value.is_finite()) {
-        return Err(serde::de::Error::custom("banExpiresIn must be finite"));
-    }
-    Ok(duration)
-}
-
 #[derive(Debug, Deserialize)]
-pub(crate) struct RevokeSessionRequest {
+pub(in crate::plugins) struct RevokeSessionRequest {
     #[serde(rename = "sessionToken")]
     pub session_token: String,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct SetUserPasswordRequest {
+pub(in crate::plugins) struct SetUserPasswordRequest {
     #[serde(rename = "userId")]
     pub user_id: String,
     #[serde(rename = "newPassword")]
@@ -114,7 +104,7 @@ pub(crate) struct SetUserPasswordRequest {
     dead_code,
     reason = "server-side HTTP route currently checks session user only"
 )]
-pub(crate) struct HasPermissionRequest {
+pub(in crate::plugins) struct HasPermissionRequest {
     #[serde(rename = "userId")]
     pub user_id: Option<String>,
     pub role: Option<String>,
@@ -123,7 +113,9 @@ pub(crate) struct HasPermissionRequest {
 }
 
 impl HasPermissionRequest {
-    pub(crate) fn requested_permissions(&self) -> Option<&HashMap<String, Vec<String>>> {
+    pub(in crate::plugins) fn requested_permissions(
+        &self,
+    ) -> Option<&HashMap<String, Vec<String>>> {
         self.permissions.as_ref().or(self.permission.as_ref())
     }
 }
@@ -133,7 +125,7 @@ impl HasPermissionRequest {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize)]
-pub(crate) struct AdminUserView {
+pub(in crate::plugins) struct AdminUserView {
     pub id: String,
     pub name: Option<String>,
     pub email: Option<String>,
@@ -183,18 +175,18 @@ impl<T: better_auth_core::entity::AuthUser> From<&T> for AdminUserView {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct UserResponse<U: Serialize> {
+pub(in crate::plugins) struct UserResponse<U> {
     pub user: U,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct SessionUserResponse<S: Serialize, U: Serialize> {
+pub(in crate::plugins) struct SessionUserResponse<S, U> {
     pub session: S,
     pub user: U,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct ListUsersResponse<U: Serialize> {
+pub(in crate::plugins) struct ListUsersResponse<U> {
     pub users: Vec<U>,
     pub total: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -204,24 +196,24 @@ pub(crate) struct ListUsersResponse<U: Serialize> {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct ListSessionsResponse<S: Serialize> {
+pub(in crate::plugins) struct ListSessionsResponse<S> {
     pub sessions: Vec<S>,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct SuccessResponse {
+pub(in crate::plugins) struct SuccessResponse {
     pub success: bool,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct PermissionResponse {
+pub(in crate::plugins) struct PermissionResponse {
     pub error: Option<String>,
     pub success: bool,
 }
 
 /// Query parameters for `list_users`.
 #[derive(Debug, Default, Deserialize)]
-pub(crate) struct ListUsersQueryParams {
+pub(in crate::plugins) struct ListUsersQueryParams {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
     #[serde(rename = "searchField")]
@@ -240,4 +232,15 @@ pub(crate) struct ListUsersQueryParams {
     pub filter_value: Option<better_auth_core::UserFilterValue>,
     #[serde(rename = "filterOperator")]
     pub filter_operator: Option<String>,
+}
+
+fn finite_optional_duration<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let duration = Option::<f64>::deserialize(deserializer)?;
+    if duration.is_some_and(|value| !value.is_finite()) {
+        return Err(serde::de::Error::custom("banExpiresIn must be finite"));
+    }
+    Ok(duration)
 }

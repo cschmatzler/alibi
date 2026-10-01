@@ -7,9 +7,11 @@ use rand::Rng;
 use rand::distributions::Alphanumeric;
 use serde::{Deserialize, Serialize};
 
-/// An application callback may reject with an endpoint response or fail while
-/// contacting a wallet, identity, or nonce provider. SIWE preserves endpoint
-/// responses and translates provider failures to its documented HTTP error.
+/// An application callback may reject with an endpoint response or fail while contacting a wallet,
+/// identity, or nonce provider.
+///
+/// SIWE preserves endpoint responses and translates provider failures to its documented HTTP
+/// error.
 #[derive(Debug)]
 pub enum SiweCallbackError {
     Api(AuthResponse),
@@ -18,15 +20,13 @@ pub enum SiweCallbackError {
 }
 
 impl fmt::Display for SiweCallbackError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Api(response) => write!(
-                formatter,
-                "SIWE callback rejected with HTTP {}",
-                response.status
-            ),
-            Self::Failed(message) => formatter.write_str(message),
-            Self::Unknown => formatter.write_str("Unknown error"),
+            Self::Api(response) => {
+                write!(f, "SIWE callback rejected with HTTP {}", response.status)
+            }
+            Self::Failed(message) => f.write_str(message),
+            Self::Unknown => f.write_str("Unknown error"),
         }
     }
 }
@@ -129,6 +129,7 @@ pub struct SiweConfig {
 }
 
 impl SiweConfig {
+    #[must_use]
     pub fn new(
         domain: impl Into<String>,
         nonce_provider: Arc<dyn SiweNonceProvider>,
@@ -146,9 +147,8 @@ impl SiweConfig {
 }
 
 impl fmt::Debug for SiweConfig {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("SiweConfig")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SiweConfig")
             .field("domain", &self.domain)
             .field("email_domain_name", &self.email_domain_name)
             .field("anonymous", &self.anonymous)

@@ -1,34 +1,34 @@
 //! Application-owned server-only admission and genuine callback/storage observations.
-use crate::{organization_update_hooks_fixture::snapshot as base_snapshot, TestSchema};
+use crate::{TestSchema, organization_update_hooks_fixture::snapshot as base_snapshot};
 use async_trait::async_trait;
 use axum::{
+    Json, Router,
     extract::Query,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
 };
 use better_auth::plugins::organization::{
-    extensions::{OrganizationLimitResolver, TeamLimitContext},
-    types::AddOrganizationMemberRequest,
     OrganizationConfig, OrganizationMemberAddedContext, OrganizationMemberAdditionContext,
     OrganizationMemberAdditionHooks, OrganizationMemberCreatePatch, TeamsConfig,
+    extensions::{OrganizationLimitResolver, TeamLimitContext},
+    types::AddOrganizationMemberRequest,
 };
 use better_auth::{
+    AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin},
-    AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
 };
 use better_auth_core::{
-    store::{MemberStore, OrganizationStore, UserStore},
     CreateMember, CreateUser, UpdateUser,
+    store::{MemberStore, OrganizationStore, UserStore},
 };
 use better_auth_seaorm::{
-    sea_orm::{ConnectionTrait, DbBackend, Statement},
     DatabaseConnection, SeaOrmStore,
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, Notify};
 async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
@@ -88,7 +88,14 @@ async fn full_snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
         (
             "teams",
             "SELECT id,name,organization_id AS organizationId,member_count AS memberCount,created_at AS createdAt,updated_at AS updatedAt FROM team ORDER BY rowid",
-            &["id", "name", "organizationId", "memberCount", "createdAt", "updatedAt"][..],
+            &[
+                "id",
+                "name",
+                "organizationId",
+                "memberCount",
+                "createdAt",
+                "updatedAt",
+            ][..],
         ),
         (
             "teamMembers",
@@ -106,16 +113,19 @@ async fn full_snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
             let mut object = serde_json::Map::new();
             for column in columns {
                 let value = match *column {
-                    "memberCount" => json!(row
-                        .try_get::<i64>("", column)
-                        .map_err(|error| AuthError::internal(error.to_string()))?),
-                    "createdAt" | "updatedAt" => json!(row
-                        .try_get::<Option<chrono::DateTime<chrono::Utc>>>("", column)
-                        .map_err(|error| AuthError::internal(error.to_string()))?
-                        .map(|date| date.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))),
-                    _ => json!(row
-                        .try_get::<Option<String>>("", column)
-                        .map_err(|error| AuthError::internal(error.to_string()))?),
+                    "memberCount" => json!(
+                        row.try_get::<i64>("", column)
+                            .map_err(|error| AuthError::internal(error.to_string()))?
+                    ),
+                    "createdAt" | "updatedAt" => json!(
+                        row.try_get::<Option<chrono::DateTime<chrono::Utc>>>("", column)
+                            .map_err(|error| AuthError::internal(error.to_string()))?
+                            .map(|date| date.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+                    ),
+                    _ => json!(
+                        row.try_get::<Option<String>>("", column)
+                            .map_err(|error| AuthError::internal(error.to_string()))?
+                    ),
                 };
                 let _ = object.insert((*column).to_owned(), value);
             }

@@ -1,21 +1,30 @@
 //! Asymmetric session JWTs, public JWKS, and trusted server-side signing.
 
+mod crypto;
+
+#[cfg(test)]
+mod tests;
+
 use std::{str::FromStr, sync::Arc};
 
 use async_trait::async_trait;
+
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+
 use better_auth_core::wire::{SessionView, UserView};
+
 use better_auth_core::{
     AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
     AuthRoute, AuthSchema, CreateJwk, HttpMethod, Jwk,
 };
+
 use chrono::{DateTime, Duration, Utc};
+
 use serde::{Deserialize, Serialize};
+
 use serde_json::{Map, Value, json};
 
 use super::token_crypto::{decrypt, encrypt};
-
-mod crypto;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum JwtAlgorithm {
@@ -32,7 +41,8 @@ pub enum JwtAlgorithm {
 }
 
 impl JwtAlgorithm {
-    pub fn as_str(self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::EdDsa => "EdDSA",
             Self::Es256 => "ES256",
@@ -41,7 +51,8 @@ impl JwtAlgorithm {
             Self::Rs256 => "RS256",
         }
     }
-    pub fn curve(self) -> Option<&'static str> {
+    #[must_use]
+    pub const fn curve(self) -> Option<&'static str> {
         match self {
             Self::EdDsa => Some("Ed25519"),
             Self::Es256 => Some("P-256"),
@@ -50,6 +61,7 @@ impl JwtAlgorithm {
         }
     }
 }
+
 impl FromStr for JwtAlgorithm {
     type Err = AuthError;
     fn from_str(value: &str) -> AuthResult<Self> {
@@ -71,6 +83,7 @@ pub struct JwtKeyPairConfig {
     pub algorithm: JwtAlgorithm,
     pub modulus_length: Option<usize>,
 }
+
 impl Default for JwtKeyPairConfig {
     fn default() -> Self {
         Self {
@@ -86,12 +99,20 @@ pub enum JwtExpiration {
     At(DateTime<Utc>),
     Numeric(i64),
 }
+
 impl Default for JwtExpiration {
     fn default() -> Self {
         Self::After(Duration::minutes(15))
     }
 }
+
 impl JwtExpiration {
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+    )]
     fn timestamp(&self, issued_at: Option<&Value>) -> Value {
         let timestamp = match self {
             Self::After(duration) => {
@@ -126,10 +147,11 @@ pub enum JwtAudience {
     One(String),
     Many(Vec<String>),
 }
+
 impl JwtAudience {
     fn matches(&self, value: &Value) -> bool {
         let expected: Vec<&str> = match self {
-            Self::One(value) => vec![value],
+            Self::One(value_2) => vec![value_2],
             Self::Many(values) => values.iter().map(String::as_str).collect(),
         };
         match value {
@@ -137,8 +159,8 @@ impl JwtAudience {
             Value::Array(values) => values
                 .iter()
                 .filter_map(Value::as_str)
-                .any(|value| expected.contains(&value)),
-            _ => false,
+                .any(|value_3| expected.contains(&value_3)),
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_) => false,
         }
     }
 }
@@ -164,15 +186,18 @@ pub struct JwtSession {
 pub trait DefineJwtPayload: Send + Sync {
     async fn define_payload(&self, session: &JwtSession) -> AuthResult<Map<String, Value>>;
 }
+
 #[async_trait]
 pub trait DefineJwtSubject: Send + Sync {
     async fn subject(&self, session: &JwtSession) -> AuthResult<Option<String>>;
 }
+
 #[async_trait]
 pub trait JwtKeyring: Send + Sync {
     async fn keys(&self, request: Option<&AuthRequest>) -> AuthResult<Vec<Jwk>>;
     async fn create_key(&self, key: CreateJwk, request: Option<&AuthRequest>) -> AuthResult<Jwk>;
 }
+
 #[async_trait]
 pub trait SignRemoteJwt: Send + Sync {
     async fn sign(
@@ -198,6 +223,13 @@ pub struct JwtPluginConfig {
     pub keyring: Option<Arc<dyn JwtKeyring>>,
     pub remote_signer: Option<Arc<dyn SignRemoteJwt>>,
 }
+
+impl std::fmt::Debug for JwtPluginConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JwtPluginConfig").finish_non_exhaustive()
+    }
+}
+
 impl Default for JwtPluginConfig {
     fn default() -> Self {
         Self {
@@ -227,10 +259,21 @@ pub struct JwtSignOptions {
 }
 
 /// A selected server signing key. Private material stays inside the plugin.
+#[expect(
+    clippy::partial_pub_fields,
+    reason = "Public signing metadata keeps private key material encapsulated"
+)]
 pub struct ResolvedJwtSigningKey {
     pub algorithm: JwtAlgorithm,
     pub key_id: String,
     private_key: Value,
+}
+
+impl std::fmt::Debug for ResolvedJwtSigningKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResolvedJwtSigningKey")
+            .finish_non_exhaustive()
+    }
 }
 
 struct JwtVerifyPolicy<'a> {
@@ -244,11 +287,20 @@ struct JwtVerifyPolicy<'a> {
 pub struct JwtPlugin {
     config: JwtPluginConfig,
 }
+
+impl std::fmt::Debug for JwtPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JwtPlugin").finish_non_exhaustive()
+    }
+}
+
 impl JwtPlugin {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn with_config(config: JwtPluginConfig) -> Self {
+    #[must_use]
+    pub const fn with_config(config: JwtPluginConfig) -> Self {
         Self { config }
     }
 
@@ -264,6 +316,10 @@ impl JwtPlugin {
     }
 
     /// Provision a private signing key and its public JWK in persistent storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if key generation, key serialization, or JWK storage fails.
     pub async fn create_jwk(
         &self,
         config: Option<&JwtKeyPairConfig>,
@@ -299,6 +355,10 @@ impl JwtPlugin {
     }
 
     /// Select a live key, with explicit key or algorithm pinning when requested.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a usable signing key cannot be loaded or generated.
     pub async fn resolve_signing_key(
         &self,
         options: &JwtSignOptions,
@@ -320,8 +380,7 @@ impl JwtPlugin {
         let key_alg = |key: &Jwk| {
             key.alg
                 .as_deref()
-                .map(JwtAlgorithm::from_str)
-                .unwrap_or(Ok(primary))
+                .map_or(Ok(primary), JwtAlgorithm::from_str)
         };
         let now = Utc::now();
         let live = |key: &&Jwk| key.expires_at.is_none_or(|expiry| expiry > now);
@@ -341,42 +400,40 @@ impl JwtPlugin {
             }
             key
         } else if let Some(algorithm) = options.signing_algorithm {
-            match keys
+            if let Some(key) = keys
                 .iter()
                 .filter(live)
                 .find(|key| key_alg(key).is_ok_and(|alg| alg == algorithm))
                 .cloned()
             {
-                Some(key) => key,
-                None => {
-                    let config = self
-                        .config
-                        .additional_key_pairs
-                        .iter()
-                        .find(|config| config.algorithm == algorithm)
-                        .or_else(|| (primary == algorithm).then_some(&self.config.key_pair))
-                        .ok_or_else(|| {
-                            AuthError::config(format!(
-                                "No signing key configured for {}",
-                                algorithm.as_str()
-                            ))
-                        })?;
-                    self.create_jwk(Some(config), request, ctx).await?
-                }
+                key
+            } else {
+                let config = self
+                    .config
+                    .additional_key_pairs
+                    .iter()
+                    .find(|config| config.algorithm == algorithm)
+                    .or_else(|| (primary == algorithm).then_some(&self.config.key_pair))
+                    .ok_or_else(|| {
+                        AuthError::config(format!(
+                            "No signing key configured for {}",
+                            algorithm.as_str()
+                        ))
+                    })?;
+                self.create_jwk(Some(config), request, ctx).await?
             }
         } else {
-            match keys
+            if let Some(key) = keys
                 .iter()
                 .filter(live)
                 .find(|key| key_alg(key).is_ok_and(|alg| alg == primary))
                 .or_else(|| keys.iter().find(live))
                 .cloned()
             {
-                Some(key) => key,
-                None => {
-                    minted_unpinned_key = true;
-                    self.create_jwk(None, request, ctx).await?
-                }
+                key
+            } else {
+                minted_unpinned_key = true;
+                self.create_jwk(None, request, ctx).await?
             }
         };
         if !minted_unpinned_key && key.expires_at.is_some_and(|expiry| expiry < Utc::now()) {
@@ -391,7 +448,7 @@ impl JwtPlugin {
             key.private_key
         } else {
             let encrypted: String = serde_json::from_str(&key.private_key)?;
-            decrypt(&encrypted, &ctx.config.secret).map_err(|_| AuthError::config("Failed to decrypt private key. Make sure the secret currently in use is the same as the one used to encrypt the private key. If you are using a different secret, either clean up your JWKS or disable private key encryption."))?
+            decrypt(&encrypted, &ctx.config.secret).map_err(|_error| AuthError::config("Failed to decrypt private key. Make sure the secret currently in use is the same as the one used to encrypt the private key. If you are using a different secret, either clean up your JWKS or disable private key encryption."))?
         };
         Ok(Some(ResolvedJwtSigningKey {
             algorithm: key
@@ -405,6 +462,10 @@ impl JwtPlugin {
     }
 
     /// Sign an application-owned payload through the trusted server API.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if signing-key resolution or JWT encoding fails.
     pub async fn sign_jwt(
         &self,
         payload: Map<String, Value>,
@@ -419,8 +480,12 @@ impl JwtPlugin {
     /// Sign decoded JavaScript JSON through the trusted server API.
     ///
     /// The decoded representation retains nonfinite numbers until claim
-    /// validation. Registered NumericDates must be finite; ordinary claims
+    /// validation. Registered `NumericDates` must be finite; ordinary claims
     /// follow JSON.stringify, including rounding and null for nonfinite values.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if signing-key resolution, payload serialization, or JWT encoding fails.
     pub async fn sign_jwt_json(
         &self,
         payload: &better_auth_core::utils::json::JsValue,
@@ -433,12 +498,17 @@ impl JwtPlugin {
             .ok_or_else(|| AuthError::bad_request("JWT payload must be an object"))?;
         let validation = (|| {
             for field in ["exp", "iat", "nbf"] {
-                validate_numeric_date(field, object.get(field).and_then(|value| value.as_f64()))?;
+                validate_numeric_date(
+                    field,
+                    object
+                        .get(field)
+                        .and_then(better_auth_core::utils::json::JsValue::as_f64),
+                )?;
             }
             for field in ["iss", "sub", "jti"] {
                 if object
                     .get(field)
-                    .and_then(|value| value.as_f64())
+                    .and_then(better_auth_core::utils::json::JsValue::as_f64)
                     .is_some_and(|number| {
                         !number.is_finite() && (field == "iss" || !number.is_nan())
                     })
@@ -478,7 +548,7 @@ impl JwtPlugin {
             .ok_or_else(|| AuthError::internal("No local JWT signing key"))?;
         // Upstream resolves/mints the local key before JOSE validates claims.
         validation?;
-        self.sign_resolved(payload, options, &key)
+        Self::sign_resolved(payload, options, &key)
     }
 
     fn default_claims(
@@ -490,37 +560,38 @@ impl JwtPlugin {
         let config = override_claims.unwrap_or(&self.config.claims);
         if payload.get("exp").is_none_or(Value::is_null) {
             let expiration = config.expiration.timestamp(payload.get("iat"));
-            let _ = payload.insert("exp".to_owned(), expiration);
+            drop(payload.insert("exp".to_owned(), expiration));
         }
         if payload.get("iss").is_none_or(Value::is_null) {
-            let _ = payload.insert(
+            drop(payload.insert(
                 "iss".to_owned(),
                 json!(config.issuer.as_deref().unwrap_or(&ctx.config.base_url)),
-            );
+            ));
         }
         if payload.get("aud").is_none_or(Value::is_null) {
-            let _ = payload.insert(
-                "aud".to_owned(),
-                serde_json::to_value(
-                    config
-                        .audience
-                        .clone()
-                        .unwrap_or_else(|| JwtAudience::One(ctx.config.base_url.clone())),
-                )?,
+            drop(
+                payload.insert(
+                    "aud".to_owned(),
+                    serde_json::to_value(
+                        config
+                            .audience
+                            .clone()
+                            .unwrap_or_else(|| JwtAudience::One(ctx.config.base_url.clone())),
+                    )?,
+                ),
             );
         }
         Ok(payload)
     }
 
     fn sign_resolved(
-        &self,
         mut payload: Map<String, Value>,
         options: &JwtSignOptions,
         key: &ResolvedJwtSigningKey,
     ) -> AuthResult<String> {
         let mut header = options.header.clone();
-        let _ = header.insert("alg".to_owned(), json!(key.algorithm.as_str()));
-        let _ = header.insert("kid".to_owned(), json!(key.key_id));
+        drop(header.insert("alg".to_owned(), json!(key.algorithm.as_str())));
+        drop(header.insert("kid".to_owned(), json!(key.key_id)));
         validate_critical_header(&header, true)?;
         normalize_signing_claims(&mut payload)?;
         let input = format!(
@@ -534,6 +605,10 @@ impl JwtPlugin {
 
     /// Verify a token against the persisted keyring and configured claims.
     /// Invalid signatures, malformed tokens and claim failures return `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if key loading, signature verification, or claim validation fails.
     pub async fn verify_jwt(
         &self,
         token: &str,
@@ -561,6 +636,11 @@ impl JwtPlugin {
             .unwrap_or(None))
     }
 
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+    )]
     async fn verify_internal(
         &self,
         token: &str,
@@ -650,7 +730,7 @@ impl JwtPlugin {
         let (user, session, needs_refresh) = ctx
             .require_session_with_refresh_state(req)
             .await
-            .map_err(|_| unauthorized())?;
+            .map_err(|_error| unauthorized())?;
         let session = JwtSession {
             user: ctx.user_view(&user),
             session,
@@ -672,7 +752,7 @@ impl JwtPlugin {
                 .cloned()
                 .ok_or_else(|| AuthError::internal("User payload was not an object"))?,
         };
-        let _ = payload
+        let _ignored_timestamp = payload
             .entry("iat".to_owned())
             .or_insert_with(|| json!(Utc::now().timestamp()));
         let subject = match &self.config.define_subject {
@@ -682,7 +762,7 @@ impl JwtPlugin {
                 .unwrap_or_else(|| session.user.id.clone()),
             None => session.user.id.clone(),
         };
-        let _ = payload.insert("sub".to_owned(), json!(subject));
+        drop(payload.insert("sub".to_owned(), json!(subject)));
         self.sign_jwt(payload, &JwtSignOptions::default(), Some(req), ctx)
             .await
     }
@@ -697,7 +777,7 @@ impl JwtPlugin {
         }
         let mut keys = self.keys(Some(req), ctx).await?;
         if keys.is_empty() {
-            let _ = self.create_jwk(None, Some(req), ctx).await?;
+            drop(self.create_jwk(None, Some(req), ctx).await?);
             keys = self.keys(Some(req), ctx).await?;
         }
         if keys.is_empty() {
@@ -714,268 +794,24 @@ impl JwtPlugin {
             })
             .map(|key| {
                 let mut public = Map::new();
-                let _ = public.insert(
+                drop(public.insert(
                     "alg".to_owned(),
                     json!(
                         key.alg
                             .as_deref()
                             .unwrap_or(self.config.key_pair.algorithm.as_str())
                     ),
-                );
+                ));
                 if let Some(curve) = &key.crv {
-                    let _ = public.insert("crv".to_owned(), json!(curve));
+                    drop(public.insert("crv".to_owned(), json!(curve)));
                 }
                 let parsed: Map<String, Value> = serde_json::from_str(&key.public_key)?;
                 public.extend(parsed);
-                let _ = public.insert("kid".to_owned(), json!(key.id));
+                drop(public.insert("kid".to_owned(), json!(key.id)));
                 Ok::<_, AuthError>(public)
             })
             .collect::<AuthResult<Vec<_>>>()?;
         Ok(AuthResponse::json(200, &json!({ "keys": keys }))?)
-    }
-}
-
-fn js_truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(value) => *value,
-        Value::Number(value) => better_auth_core::utils::json::number_as_f64(value)
-            .is_some_and(|value| value != 0.0 && !value.is_nan()),
-        Value::String(value) => !value.is_empty(),
-        Value::Array(_) | Value::Object(_) => true,
-    }
-}
-
-fn js_primitive_string(value: &Value) -> String {
-    match value {
-        Value::Null => "null".to_owned(),
-        Value::String(value) => value.clone(),
-        Value::Bool(value) => value.to_string(),
-        Value::Number(value) => value.as_f64().unwrap_or_default().to_string(),
-        Value::Array(values) => values
-            .iter()
-            .map(|value| {
-                if value.is_null() {
-                    String::new()
-                } else {
-                    js_primitive_string(value)
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(","),
-        Value::Object(_) => "[object Object]".to_owned(),
-    }
-}
-
-fn decode_compact_part(value: &str, allow_whitespace: bool) -> AuthResult<Vec<u8>> {
-    use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
-    // Bun's JOSE decoder accepts these five ASCII whitespace characters and
-    // unused trailing bits, while requiring the exact optional padding count.
-    let bytes = value
-        .bytes()
-        .filter(|byte| !allow_whitespace || !matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0c))
-        .collect::<Vec<_>>();
-    let end = bytes
-        .iter()
-        .position(|byte| *byte == b'=')
-        .unwrap_or(bytes.len());
-    let (encoded, padded) = bytes
-        .split_at_checked(end)
-        .ok_or_else(|| AuthError::bad_request("Invalid JWT base64url encoding"))?;
-    let padding = padded.len();
-    if padding > 0
-        && (padding > 2
-            || !padded.iter().all(|byte| *byte == b'=')
-            || end % 4 == 0
-            || bytes.len() % 4 != 0)
-    {
-        return Err(AuthError::bad_request("Invalid JWT base64url encoding"));
-    }
-    GeneralPurpose::new(
-        &base64::alphabet::URL_SAFE,
-        GeneralPurposeConfig::new()
-            .with_decode_padding_mode(DecodePaddingMode::RequireNone)
-            .with_decode_allow_trailing_bits(true),
-    )
-    .decode(encoded)
-    .map_err(|_| AuthError::bad_request("Invalid JWT base64url encoding"))
-}
-
-fn decode_compact_json(value: &str, allow_whitespace: bool) -> AuthResult<Value> {
-    let bytes = decode_compact_part(value, allow_whitespace)?;
-    let text =
-        std::str::from_utf8(&bytes).map_err(|_| AuthError::bad_request("Invalid JWT JSON UTF8"))?;
-    Ok(better_auth_core::utils::json::parse_value(text)?.to_json_value()?)
-}
-
-fn validate_numeric_date(field: &str, number: Option<f64>) -> AuthResult<()> {
-    if number.is_some_and(|number| !number.is_finite()) {
-        return Err(AuthError::internal(format!("Invalid {field} input")));
-    }
-    Ok(())
-}
-
-fn normalize_signing_claims(payload: &mut Map<String, Value>) -> AuthResult<()> {
-    let now = Utc::now().timestamp();
-    for field in ["exp", "iat", "nbf"] {
-        if let Some(value) = payload.get(field)
-            && (field == "exp" || js_truthy(value))
-        {
-            let value = match value {
-                Value::Number(number) => {
-                    validate_numeric_date(
-                        field,
-                        better_auth_core::utils::json::number_as_f64(number),
-                    )?;
-                    value.clone()
-                }
-                Value::String(value) => json!(now as f64 + relative_numeric_date(value)?),
-                _ => return Err(AuthError::internal("Invalid time period format")),
-            };
-            let _ = payload.insert(field.to_owned(), value);
-        }
-    }
-    for field in ["iss", "sub", "jti"] {
-        if let Some(value) = payload.get(field)
-            && (field == "iss" || js_truthy(value))
-            && !value.is_string()
-        {
-            return Err(AuthError::internal(format!(
-                "\"{field}\" claim must be a string"
-            )));
-        }
-    }
-    if let Some(value) = payload.get("aud")
-        && !value.is_string()
-        && !value
-            .as_array()
-            .is_some_and(|values| values.iter().all(Value::is_string))
-    {
-        return Err(AuthError::internal(
-            "\"aud\" claim must be a string or an array of strings",
-        ));
-    }
-    Ok(())
-}
-
-// JOSE's relative NumericDate grammar, including its rounding and year length.
-fn relative_numeric_date(value: &str) -> AuthResult<f64> {
-    let invalid = || AuthError::internal("Invalid time period format");
-    let lower = value.to_ascii_lowercase();
-    let ago = value.ends_with(" ago");
-    let (value, suffix) = if lower.ends_with(" from now") {
-        (
-            value
-                .get(..value.len().saturating_sub(9))
-                .ok_or_else(invalid)?,
-            true,
-        )
-    } else if lower.ends_with(" ago") {
-        (
-            value
-                .get(..value.len().saturating_sub(4))
-                .ok_or_else(invalid)?,
-            true,
-        )
-    } else {
-        (value, false)
-    };
-    let (number, negative, signed) = if let Some(value) = value.strip_prefix('-') {
-        (value, true, true)
-    } else if let Some(value) = value.strip_prefix('+') {
-        (value, false, true)
-    } else {
-        (value, false, false)
-    };
-    if suffix && signed {
-        return Err(invalid());
-    }
-    let number = number.strip_prefix(' ').unwrap_or(number);
-    let split = number
-        .find(|character: char| !character.is_ascii_digit() && character != '.')
-        .ok_or_else(invalid)?;
-    let digits = number.get(..split).ok_or_else(invalid)?;
-    let unit = number.get(split..).ok_or_else(invalid)?;
-    let unit = unit.strip_prefix(' ').unwrap_or(unit).to_ascii_lowercase();
-    let mut parts = digits.split('.');
-    if !parts
-        .next()
-        .is_some_and(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
-        || parts
-            .next()
-            .is_some_and(|part| part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()))
-        || parts.next().is_some()
-    {
-        return Err(invalid());
-    }
-    let multiplier = match unit.as_str() {
-        "s" | "sec" | "secs" | "second" | "seconds" => 1.0,
-        "m" | "min" | "mins" | "minute" | "minutes" => 60.0,
-        "h" | "hr" | "hrs" | "hour" | "hours" => 3600.0,
-        "d" | "day" | "days" => 86400.0,
-        "w" | "week" | "weeks" => 604800.0,
-        "y" | "yr" | "yrs" | "year" | "years" => 31557600.0,
-        _ => return Err(invalid()),
-    };
-    let seconds = (digits.parse::<f64>().map_err(|_| invalid())? * multiplier + 0.5).floor();
-    if !seconds.is_finite() {
-        return Err(invalid());
-    }
-    // The reference regex is case insensitive; its `ago` sign check is literal.
-    let negative = negative || ago;
-    Ok(if negative { -seconds } else { seconds })
-}
-
-fn validate_critical_header(header: &Map<String, Value>, signing: bool) -> AuthResult<()> {
-    let Some(critical) = header.get("crit") else {
-        return Ok(());
-    };
-    let critical = critical.as_array().filter(|values| {
-        !values.is_empty() && values.iter().all(|value| value.as_str().is_some_and(|value| !value.is_empty()))
-    }).ok_or_else(|| AuthError::internal("\"crit\" (Critical) Header Parameter MUST be an array of non-empty strings when present"))?;
-    if signing {
-        let mut seen = std::collections::HashSet::new();
-        if critical
-            .iter()
-            .any(|value| !seen.insert(value.as_str().unwrap_or_default()))
-        {
-            return Err(AuthError::internal(
-                "\"crit\" (Critical) Header Parameter MUST NOT contain duplicate values",
-            ));
-        }
-    }
-    for value in critical {
-        let parameter = value.as_str().unwrap_or_default();
-        if parameter != "b64" {
-            return Err(AuthError::internal(format!(
-                "Extension Header Parameter \"{parameter}\" is not recognized"
-            )));
-        }
-        match header.get("b64") {
-            Some(Value::Bool(true)) => {}
-            Some(Value::Bool(false)) => {
-                return Err(AuthError::internal("JWTs MUST NOT use unencoded payload"));
-            }
-            None => {
-                return Err(AuthError::internal(
-                    "Extension Header Parameter \"b64\" is missing",
-                ));
-            }
-            _ => {
-                return Err(AuthError::internal(
-                    "The \"b64\" (base64url-encode payload) Header Parameter must be a boolean",
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn unauthorized() -> AuthError {
-    AuthError::Upstream {
-        status: 401,
-        code: "UNAUTHORIZED",
-        message: "Unauthorized",
     }
 }
 
@@ -1061,13 +897,268 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
         if !expose.iter().any(|header| header == "set-auth-jwt") {
             expose.push("set-auth-jwt".to_owned());
         }
-        let _ = response.headers.insert("set-auth-jwt", token);
-        let _ = response
-            .headers
-            .insert("access-control-expose-headers", expose.join(", "));
+        drop(response.headers.insert("set-auth-jwt", token));
+        drop(
+            response
+                .headers
+                .insert("access-control-expose-headers", expose.join(", ")),
+        );
         Ok(response)
     }
 }
 
-#[cfg(test)]
-mod tests;
+fn js_truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(value) => *value,
+        Value::Number(value) => better_auth_core::utils::json::number_as_f64(value)
+            .is_some_and(|value| value != 0.0 && !value.is_nan()),
+        Value::String(value) => !value.is_empty(),
+        Value::Array(_) | Value::Object(_) => true,
+    }
+}
+
+fn js_primitive_string(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_owned(),
+        Value::String(value) => value.clone(),
+        Value::Bool(value) => value.to_string(),
+        Value::Number(value) => value.as_f64().unwrap_or_default().to_string(),
+        Value::Array(values) => values
+            .iter()
+            .map(|value_2| {
+                if value_2.is_null() {
+                    String::new()
+                } else {
+                    js_primitive_string(value_2)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        Value::Object(_) => "[object Object]".to_owned(),
+    }
+}
+
+fn decode_compact_part(value: &str, allow_whitespace: bool) -> AuthResult<Vec<u8>> {
+    use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
+    // Bun's JOSE decoder accepts these five ASCII whitespace characters and
+    // unused trailing bits, while requiring the exact optional padding count.
+    let bytes = value
+        .bytes()
+        .filter(|byte| !allow_whitespace || !matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0c))
+        .collect::<Vec<_>>();
+    let end = bytes
+        .iter()
+        .position(|byte| *byte == b'=')
+        .unwrap_or(bytes.len());
+    let (encoded, padded) = bytes
+        .split_at_checked(end)
+        .ok_or_else(|| AuthError::bad_request("Invalid JWT base64url encoding"))?;
+    let padding = padded.len();
+    if padding > 0
+        && (padding > 2
+            || !padded.iter().all(|byte| *byte == b'=')
+            || end % 4 == 0
+            || bytes.len() % 4 != 0)
+    {
+        return Err(AuthError::bad_request("Invalid JWT base64url encoding"));
+    }
+    GeneralPurpose::new(
+        &base64::alphabet::URL_SAFE,
+        GeneralPurposeConfig::new()
+            .with_decode_padding_mode(DecodePaddingMode::RequireNone)
+            .with_decode_allow_trailing_bits(true),
+    )
+    .decode(encoded)
+    .map_err(|_error| AuthError::bad_request("Invalid JWT base64url encoding"))
+}
+
+fn decode_compact_json(value: &str, allow_whitespace: bool) -> AuthResult<Value> {
+    let bytes = decode_compact_part(value, allow_whitespace)?;
+    let text = std::str::from_utf8(&bytes)
+        .map_err(|_error| AuthError::bad_request("Invalid JWT JSON UTF8"))?;
+    Ok(better_auth_core::utils::json::parse_value(text)?.to_json_value()?)
+}
+
+fn validate_numeric_date(field: &str, number: Option<f64>) -> AuthResult<()> {
+    if number.is_some_and(|number| !number.is_finite()) {
+        return Err(AuthError::internal(format!("Invalid {field} input")));
+    }
+    Ok(())
+}
+
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
+fn normalize_signing_claims(payload: &mut Map<String, Value>) -> AuthResult<()> {
+    let now = Utc::now().timestamp();
+    for field in ["exp", "iat", "nbf"] {
+        if let Some(value) = payload.get(field)
+            && (field == "exp" || js_truthy(value))
+        {
+            let value = match value {
+                Value::Number(number) => {
+                    validate_numeric_date(
+                        field,
+                        better_auth_core::utils::json::number_as_f64(number),
+                    )?;
+                    value.clone()
+                }
+                Value::String(value) => json!(now as f64 + relative_numeric_date(value)?),
+                Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => {
+                    return Err(AuthError::internal("Invalid time period format"));
+                }
+            };
+            drop(payload.insert(field.to_owned(), value));
+        }
+    }
+    for field in ["iss", "sub", "jti"] {
+        if let Some(value) = payload.get(field)
+            && (field == "iss" || js_truthy(value))
+            && !value.is_string()
+        {
+            return Err(AuthError::internal(format!(
+                "\"{field}\" claim must be a string"
+            )));
+        }
+    }
+    if let Some(value) = payload.get("aud")
+        && !value.is_string()
+        && !value
+            .as_array()
+            .is_some_and(|values| values.iter().all(Value::is_string))
+    {
+        return Err(AuthError::internal(
+            "\"aud\" claim must be a string or an array of strings",
+        ));
+    }
+    Ok(())
+}
+
+// JOSE's relative NumericDate grammar, including its rounding and year length.
+fn relative_numeric_date(value: &str) -> AuthResult<f64> {
+    let invalid = || AuthError::internal("Invalid time period format");
+    let lower = value.to_ascii_lowercase();
+    let ago = value.ends_with(" ago");
+    let (value, suffix) = if lower.ends_with(" from now") {
+        (
+            value
+                .get(..value.len().saturating_sub(9))
+                .ok_or_else(invalid)?,
+            true,
+        )
+    } else if lower.ends_with(" ago") {
+        (
+            value
+                .get(..value.len().saturating_sub(4))
+                .ok_or_else(invalid)?,
+            true,
+        )
+    } else {
+        (value, false)
+    };
+    let (number, negative, signed) = value.strip_prefix('-').map_or_else(
+        || {
+            value
+                .strip_prefix('+')
+                .map_or((value, false, false), |value| (value, false, true))
+        },
+        |value| (value, true, true),
+    );
+    if suffix && signed {
+        return Err(invalid());
+    }
+    let number = number.strip_prefix(' ').unwrap_or(number);
+    let split = number
+        .find(|character: char| !character.is_ascii_digit() && character != '.')
+        .ok_or_else(invalid)?;
+    let digits = number.get(..split).ok_or_else(invalid)?;
+    let unit = number.get(split..).ok_or_else(invalid)?;
+    let unit = unit.strip_prefix(' ').unwrap_or(unit).to_ascii_lowercase();
+    let mut parts = digits.split('.');
+    if !parts
+        .next()
+        .is_some_and(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+        || parts
+            .next()
+            .is_some_and(|part| part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()))
+        || parts.next().is_some()
+    {
+        return Err(invalid());
+    }
+    let multiplier = match unit.as_str() {
+        "s" | "sec" | "secs" | "second" | "seconds" => 1.0,
+        "m" | "min" | "mins" | "minute" | "minutes" => 60.0,
+        "h" | "hr" | "hrs" | "hour" | "hours" => 3600.0,
+        "d" | "day" | "days" => 86400.0,
+        "w" | "week" | "weeks" => 604_800.0,
+        "y" | "yr" | "yrs" | "year" | "years" => 31_557_600.0,
+        _ => return Err(invalid()),
+    };
+    let seconds = digits
+        .parse::<f64>()
+        .map_err(|_error| invalid())?
+        .mul_add(multiplier, 0.5)
+        .floor();
+    if !seconds.is_finite() {
+        return Err(invalid());
+    }
+    // The reference regex is case insensitive; its `ago` sign check is literal.
+    let negative = negative || ago;
+    Ok(if negative { -seconds } else { seconds })
+}
+
+fn validate_critical_header(header: &Map<String, Value>, signing: bool) -> AuthResult<()> {
+    let Some(critical) = header.get("crit") else {
+        return Ok(());
+    };
+    let critical = critical.as_array().filter(|values| {
+        !values.is_empty() && values.iter().all(|value| value.as_str().is_some_and(|value| !value.is_empty()))
+    }).ok_or_else(|| AuthError::internal("\"crit\" (Critical) Header Parameter MUST be an array of non-empty strings when present"))?;
+    if signing {
+        let mut seen = std::collections::HashSet::new();
+        if critical
+            .iter()
+            .any(|value| !seen.insert(value.as_str().unwrap_or_default()))
+        {
+            return Err(AuthError::internal(
+                "\"crit\" (Critical) Header Parameter MUST NOT contain duplicate values",
+            ));
+        }
+    }
+    for value in critical {
+        let parameter = value.as_str().unwrap_or_default();
+        if parameter != "b64" {
+            return Err(AuthError::internal(format!(
+                "Extension Header Parameter \"{parameter}\" is not recognized"
+            )));
+        }
+        match header.get("b64") {
+            Some(Value::Bool(true)) => {}
+            Some(Value::Bool(false)) => {
+                return Err(AuthError::internal("JWTs MUST NOT use unencoded payload"));
+            }
+            None => {
+                return Err(AuthError::internal(
+                    "Extension Header Parameter \"b64\" is missing",
+                ));
+            }
+            _ => {
+                return Err(AuthError::internal(
+                    "The \"b64\" (base64url-encode payload) Header Parameter must be a boolean",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+const fn unauthorized() -> AuthError {
+    AuthError::Upstream {
+        status: 401,
+        code: "UNAUTHORIZED",
+        message: "Unauthorized",
+    }
+}

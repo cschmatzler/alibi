@@ -4,22 +4,56 @@ use better_auth_core::{
     AuthAccount, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema,
     AuthSession, AuthUser, CreateUser, CreateVerification, UpdateUser,
 };
+
 use chrono::{Duration, Utc};
+
 use serde::de::DeserializeOwned;
+
 use serde_json::Value;
+
+#[derive(Clone, Copy)]
+pub(in crate::plugins) enum JsonFieldKind {
+    String,
+    NonEmptyString,
+    Email,
+    Boolean,
+    Record,
+    OneOf(&'static [&'static str]),
+}
+
+pub(in crate::plugins) struct JsonField {
+    pub name: &'static str,
+    pub kind: JsonFieldKind,
+    pub required: bool,
+}
+
+impl JsonField {
+    #[must_use]
+    pub(in crate::plugins) const fn string(name: &'static str, required: bool) -> Self {
+        Self {
+            name,
+            kind: JsonFieldKind::String,
+            required,
+        }
+    }
+}
+
+pub(in crate::plugins) trait RequestBody: DeserializeOwned + 'static {
+    const FIELDS: &'static [JsonField];
+}
 
 /// The default upstream background-task policy awaits notifications, logs a
 /// rejected callback, and retains the endpoint's already issued state. Direct
 /// delivery endpoints deliberately do not use this policy.
-pub(crate) async fn run_notification(
-    notification: impl std::future::Future<Output = AuthResult<()>>,
+pub(in crate::plugins) async fn run_notification(
+    notification: impl Future<Output = AuthResult<()>>,
 ) {
     if let Err(error) = notification.await {
         tracing::error!(%error, "Failed to run background task");
     }
 }
 
-pub(crate) fn parse_email(email: &str) -> AuthResult<String> {
+pub(in crate::plugins) fn parse_email(email: &str) -> AuthResult<String> {
     let normalized = email.to_lowercase();
     if !is_valid_email(&normalized) {
         return Err(AuthError::Upstream {
@@ -33,7 +67,7 @@ pub(crate) fn parse_email(email: &str) -> AuthResult<String> {
 
 /// Preserve the newest lookup snapshot before the configured global cleanup.
 /// The atomic consume operation has its own expiry and concurrency contract.
-pub(crate) async fn find_verification<S: AuthSchema>(
+pub(in crate::plugins) async fn find_verification<S: AuthSchema>(
     ctx: &AuthContext<S>,
     identifier: &str,
 ) -> AuthResult<Option<S::Verification>> {
@@ -42,7 +76,8 @@ pub(crate) async fn find_verification<S: AuthSchema>(
         .get_latest_verification_by_identifier(identifier)
         .await?;
     if !ctx.config.verification.disable_cleanup {
-        let _ = ctx.database.delete_expired_verifications().await?;
+        let _ignored_delete_expired_verifications =
+            ctx.database.delete_expired_verifications().await?;
     }
     Ok(value)
 }
@@ -50,7 +85,7 @@ pub(crate) async fn find_verification<S: AuthSchema>(
 // This is the exact practical-email grammar used by the pinned Zod runtime.
 // The HTML5/validator grammar accepts addresses such as `x@y.c` and local
 // punctuation which Better Auth rejects, so those validators are unsuitable.
-pub(crate) fn is_valid_email(email: &str) -> bool {
+pub(in crate::plugins) fn is_valid_email(email: &str) -> bool {
     let Some((local, domain)) = email.split_once('@') else {
         return false;
     };
@@ -83,52 +118,23 @@ pub(crate) fn is_valid_email(email: &str) -> bool {
         })
 }
 
-#[derive(Clone, Copy)]
-pub(crate) enum JsonFieldKind {
-    String,
-    NonEmptyString,
-    Email,
-    Boolean,
-    Record,
-    OneOf(&'static [&'static str]),
-}
-
-pub(crate) struct JsonField {
-    pub name: &'static str,
-    pub kind: JsonFieldKind,
-    pub required: bool,
-}
-
-impl JsonField {
-    pub(crate) const fn string(name: &'static str, required: bool) -> Self {
-        Self {
-            name,
-            kind: JsonFieldKind::String,
-            required,
-        }
-    }
-}
-
-pub(crate) trait RequestBody: DeserializeOwned + 'static {
-    const FIELDS: &'static [JsonField];
-}
-
 /// Parse the upstream schema at the HTTP boundary. The error includes all
 /// failed fields in declaration order, including explicitly null optionals.
-pub(crate) fn parse_body<T: RequestBody>(req: &AuthRequest) -> Result<T, AuthResponse> {
+pub(in crate::plugins) fn parse_body<T: RequestBody>(req: &AuthRequest) -> Result<T, AuthResponse> {
     parse_body_with_fields(req, T::FIELDS)
 }
 
 /// Parse schemas whose required fields depend on trusted plugin configuration.
-pub(crate) fn parse_body_with_fields<T: DeserializeOwned + 'static>(
+pub(in crate::plugins) fn parse_body_with_fields<T: DeserializeOwned + 'static>(
     req: &AuthRequest,
     fields: &[JsonField],
 ) -> Result<T, AuthResponse> {
     parse_body_with_fields_and_ignored(req, fields, &[])
 }
 
-/// Remove configured unknown fields without serializing raw JavaScript numbers.
-pub(crate) fn parse_body_with_ignored_fields<T: RequestBody>(
+/// Remove configured unknown fields before schema validation without serializing
+/// the remaining JavaScript numbers (which may include infinity or signed zero).
+pub(in crate::plugins) fn parse_body_with_ignored_fields<T: RequestBody>(
     req: &AuthRequest,
     ignored: &[&str],
 ) -> Result<T, AuthResponse> {
@@ -140,16 +146,17 @@ fn parse_body_with_fields_and_ignored<T: DeserializeOwned + 'static>(
     fields: &[JsonField],
     ignored: &[&str],
 ) -> Result<T, AuthResponse> {
-    let mut value: better_auth_core::utils::json::JsValue = req.body_as_json().map_err(|_| {
-        AuthResponse::json(
-            400,
-            &serde_json::json!({"code":"BAD_REQUEST","message":"Invalid JSON in request body"}),
-        )
-        .unwrap_or_else(|_| AuthResponse::text(400, "Invalid JSON in request body"))
-    })?;
+    let mut value: better_auth_core::utils::json::JsValue =
+        req.body_as_json().map_err(|_error| {
+            AuthResponse::json(
+                400,
+                &serde_json::json!({"code":"BAD_REQUEST","message":"Invalid JSON in request body"}),
+            )
+            .unwrap_or_else(|_| AuthResponse::text(400, "Invalid JSON in request body"))
+        })?;
     if let better_auth_core::utils::json::JsValue::Object(object) = &mut value {
         for field in ignored {
-            let _ = object.shift_remove(*field);
+            drop(object.shift_remove(*field));
         }
     }
     let Some(object) = value.as_object() else {
@@ -160,45 +167,45 @@ fn parse_body_with_fields_and_ignored<T: DeserializeOwned + 'static>(
     };
     let mut issues = Vec::new();
     for field in fields {
-        let value = object.get(field.name);
-        if value.is_none() && !field.required {
+        let field_value = object.get(field.name);
+        if field_value.is_none() && !field.required {
             continue;
         }
         let issue = match field.kind {
             JsonFieldKind::String | JsonFieldKind::NonEmptyString | JsonFieldKind::Email
-                if !value.is_some_and(better_auth_core::utils::json::JsValue::is_string) =>
+                if !field_value.is_some_and(better_auth_core::utils::json::JsValue::is_string) =>
             {
                 Some(format!(
                     "Invalid input: expected string, received {}",
-                    json_type(value)
+                    json_type(field_value)
                 ))
             }
             JsonFieldKind::NonEmptyString
-                if value
+                if field_value
                     .and_then(better_auth_core::utils::json::JsValue::as_str)
                     .is_some_and(str::is_empty) =>
             {
                 Some("Too small: expected string to have >=1 characters".to_owned())
             }
             JsonFieldKind::Boolean
-                if !value.is_some_and(better_auth_core::utils::json::JsValue::is_boolean) =>
+                if !field_value.is_some_and(better_auth_core::utils::json::JsValue::is_boolean) =>
             {
                 Some(format!(
                     "Invalid input: expected boolean, received {}",
-                    json_type(value)
+                    json_type(field_value)
                 ))
             }
             JsonFieldKind::Email
-                if !value
+                if !field_value
                     .and_then(better_auth_core::utils::json::JsValue::as_str)
                     .is_some_and(is_valid_email) =>
             {
-                Some("Invalid email address".to_string())
+                Some("Invalid email address".to_owned())
             }
             JsonFieldKind::OneOf(choices)
-                if !value
+                if !field_value
                     .and_then(better_auth_core::utils::json::JsValue::as_str)
-                    .is_some_and(|value| choices.contains(&value)) =>
+                    .is_some_and(|value_2| choices.contains(&value_2)) =>
             {
                 Some(format!(
                     "Invalid option: expected one of {}",
@@ -210,14 +217,19 @@ fn parse_body_with_fields_and_ignored<T: DeserializeOwned + 'static>(
                 ))
             }
             JsonFieldKind::Record
-                if !value.is_some_and(better_auth_core::utils::json::JsValue::is_object) =>
+                if !field_value.is_some_and(better_auth_core::utils::json::JsValue::is_object) =>
             {
                 Some(format!(
                     "Invalid input: expected record, received {}",
-                    json_type(value)
+                    json_type(field_value)
                 ))
             }
-            _ => None,
+            JsonFieldKind::String
+            | JsonFieldKind::NonEmptyString
+            | JsonFieldKind::Email
+            | JsonFieldKind::Boolean
+            | JsonFieldKind::Record
+            | JsonFieldKind::OneOf(_) => None,
         };
         if let Some(issue) = issue {
             issues.push(format!("[body.{}] {issue}", field.name));
@@ -227,10 +239,12 @@ fn parse_body_with_fields_and_ignored<T: DeserializeOwned + 'static>(
         return Err(validation_response(&issues.join("; ")));
     }
     better_auth_core::utils::json::from_value(value)
-        .map_err(|_| validation_response("[body] Invalid input"))
+        .map_err(|_error| validation_response("[body] Invalid input"))
 }
 
-pub(crate) fn json_type(value: Option<&better_auth_core::utils::json::JsValue>) -> &'static str {
+pub(in crate::plugins) const fn json_type(
+    value: Option<&better_auth_core::utils::json::JsValue>,
+) -> &'static str {
     use better_auth_core::utils::json::JsValue;
     match value {
         None => "undefined",
@@ -247,7 +261,7 @@ pub(crate) fn json_type(value: Option<&better_auth_core::utils::json::JsValue>) 
     }
 }
 
-pub(crate) fn validation_response(message: &str) -> AuthResponse {
+pub(in crate::plugins) fn validation_response(message: &str) -> AuthResponse {
     AuthResponse::json(
         400,
         &serde_json::json!({"code":"VALIDATION_ERROR","message":message}),
@@ -257,7 +271,7 @@ pub(crate) fn validation_response(message: &str) -> AuthResponse {
 
 /// Default username create-hook behavior for auth methods whose additional
 /// inputs have already passed through the username input transform.
-pub(crate) async fn prepare_additional_user_fields(
+pub(in crate::plugins) async fn prepare_additional_user_fields(
     ctx: &AuthContext<impl AuthSchema>,
     data: &mut CreateUser,
 ) -> AuthResult<()> {
@@ -312,20 +326,20 @@ pub(crate) async fn prepare_additional_user_fields(
     Ok(())
 }
 
-pub(crate) async fn session_response<S: AuthSchema>(
+pub(in crate::plugins) async fn session_response<S: AuthSchema>(
     ctx: &AuthContext<S>,
     req: &AuthRequest,
     user_id: &str,
-) -> AuthResult<(serde_json::Value, AuthResponse)> {
+) -> AuthResult<(Value, AuthResponse)> {
     session_response_with_remember(ctx, req, user_id, None).await
 }
 
-pub(crate) async fn session_response_with_remember<S: AuthSchema>(
+pub(in crate::plugins) async fn session_response_with_remember<S: AuthSchema>(
     ctx: &AuthContext<S>,
     req: &AuthRequest,
     user_id: &str,
     remember_me: Option<bool>,
-) -> AuthResult<(serde_json::Value, AuthResponse)> {
+) -> AuthResult<(Value, AuthResponse)> {
     use better_auth_core::utils::cookie_utils::{
         create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
         sign_cookie_value, verify_cookie_value,
@@ -343,7 +357,7 @@ pub(crate) async fn session_response_with_remember<S: AuthSchema>(
     }
     let issuing_context = AuthContext {
         config: std::sync::Arc::new(config),
-        database: ctx.database.clone(),
+        database: std::sync::Arc::clone(&ctx.database),
         email_provider: ctx.email_provider.clone(),
         metadata: ctx.metadata.clone(),
         extensions: ctx.extensions.clone(),
@@ -390,7 +404,7 @@ pub(crate) async fn session_response_with_remember<S: AuthSchema>(
 
 /// Email-primary proof replaces access accrued before mailbox ownership was
 /// proven. The database reservation serializes cleanup across auth instances.
-pub(crate) async fn revoke_unproven_access<S: AuthSchema>(
+pub(in crate::plugins) async fn revoke_unproven_access<S: AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,
 ) -> AuthResult<Option<S::User>> {
@@ -399,7 +413,7 @@ pub(crate) async fn revoke_unproven_access<S: AuthSchema>(
         .database
         .reserve_verification(CreateVerification {
             identifier: identifier.clone(),
-            value: user_id.to_string(),
+            value: user_id.to_owned(),
             expires_at: Utc::now() + Duration::seconds(5),
         })
         .await?
@@ -440,14 +454,15 @@ pub(crate) async fn revoke_unproven_access<S: AuthSchema>(
             .map(Some)
     }
     .await;
-    let _ = ctx
-        .database
-        .delete_verifications_by_identifier(&identifier)
-        .await;
+    drop(
+        ctx.database
+            .delete_verifications_by_identifier(&identifier)
+            .await,
+    );
     result
 }
 
-pub(crate) fn redirect(url: &str) -> AuthResponse {
+pub(in crate::plugins) fn redirect(url: &str) -> AuthResponse {
     AuthResponse::text(302, "")
         .with_header("Location", url)
         .with_header("content-type", "application/json")

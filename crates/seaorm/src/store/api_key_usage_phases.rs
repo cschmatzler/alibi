@@ -1,6 +1,8 @@
 //! Source database usage writes are guarded separately, not one transaction.
 use better_auth_core::store::ConsumeApiKeyResult;
+
 use chrono::{DateTime, Utc};
+
 use sea_orm::{
     ColumnTrait, DbBackend, EntityTrait, QueryFilter,
     sea_query::{Expr, ExprTrait},
@@ -11,37 +13,21 @@ use super::{
     entities::api_key::{Column, Entity},
     map_db_err,
 };
-use crate::{
-    error::{AuthError, AuthResult},
-    schema::AuthSchema,
-    types::ApiKey,
-};
 
-fn invalid_key() -> AuthError {
-    AuthError::Upstream {
-        status: 401,
-        code: "INVALID_API_KEY",
-        message: "Invalid API key.",
-    }
-}
-fn stored_date(value: &str) -> AuthResult<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(value)
-        .map(|value| value.with_timezone(&Utc))
-        .map_err(|error| AuthError::internal(format!("Invalid stored API key date: {error}")))
-}
-fn window_start(now: DateTime<Utc>, window: f64) -> AuthResult<DateTime<Utc>> {
-    // JS Date subtraction applies TimeClip (truncate toward zero) to milliseconds.
-    let millis = (now.timestamp_millis() as f64 - window).trunc();
-    if !millis.is_finite() || millis.abs() > 8_640_000_000_000_000.0 {
-        return Err(AuthError::internal(
-            "Invalid API key rate-limit window date",
-        ));
-    }
-    DateTime::from_timestamp_millis(millis as i64)
-        .ok_or_else(|| AuthError::internal("Unsupported API key rate-limit window date"))
-}
+use better_auth_core::{ApiKey, AuthError, AuthResult};
+
+use crate::schema::AuthSchema;
 
 impl<S: AuthSchema> SeaOrmStore<S> {
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep separately guarded refill, usage, and rate-limit writes in reference adapter order"
+    )]
     pub(super) async fn consume_usage_phases(
         &self,
         observed: &ApiKey,
@@ -56,11 +42,9 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                 "snapshot-aware API key consumption requires UPDATE RETURNING",
             ));
         }
-        let mut row = observed.clone();
-        if observed.remaining.is_some() {
+        let mut row = if observed.remaining.is_some() {
             let now = Utc::now();
-            let mut refilled = None;
-            if let (Some(interval), Some(amount)) =
+            let refilled = if let (Some(interval), Some(amount)) =
                 (observed.refill_interval, observed.refill_amount)
                 && interval != 0.0
                 && amount != 0.0
@@ -82,12 +66,14 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                     Some(value) => update.filter(Column::LastRefillAt.eq(stored_date(value)?)),
                     None => update.filter(Column::LastRefillAt.is_null()),
                 };
-                refilled = update
+                update
                     .exec_with_returning(database)
                     .await
                     .map_err(map_db_err)?
-                    .pop();
-            }
+                    .pop()
+            } else {
+                None
+            };
             let consumed = match refilled {
                 Some(value) => Some(value),
                 None => Entity::update_many()
@@ -102,8 +88,10 @@ impl<S: AuthSchema> SeaOrmStore<S> {
             let Some(consumed) = consumed else {
                 return Ok(ConsumeApiKeyResult::UsageExhausted);
             };
-            row = ApiKey::from(&consumed);
-        }
+            ApiKey::from(&consumed)
+        } else {
+            observed.clone()
+        };
         loop {
             let now = Utc::now();
             if !global_rate_limit_enabled || !row.rate_limit_enabled {
@@ -182,4 +170,36 @@ impl<S: AuthSchema> SeaOrmStore<S> {
             &updated,
         ))))
     }
+}
+
+const fn invalid_key() -> AuthError {
+    AuthError::Upstream {
+        status: 401,
+        code: "INVALID_API_KEY",
+        message: "Invalid API key.",
+    }
+}
+
+fn stored_date(value: &str) -> AuthResult<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|value| value.with_timezone(&Utc))
+        .map_err(|error| AuthError::internal(format!("Invalid stored API key date: {error}")))
+}
+
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
+fn window_start(now: DateTime<Utc>, window: f64) -> AuthResult<DateTime<Utc>> {
+    // JS Date subtraction applies TimeClip (truncate toward zero) to milliseconds.
+    let millis = (now.timestamp_millis() as f64 - window).trunc();
+    if !millis.is_finite() || millis.abs() > 8_640_000_000_000_000.0 {
+        return Err(AuthError::internal(
+            "Invalid API key rate-limit window date",
+        ));
+    }
+    DateTime::from_timestamp_millis(millis as i64)
+        .ok_or_else(|| AuthError::internal("Unsupported API key rate-limit window date"))
 }

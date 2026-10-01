@@ -2,16 +2,16 @@
 use crate::TestSchema;
 use async_trait::async_trait;
 use axum::{
+    Json, Router,
     extract::State,
     http::StatusCode,
     routing::{get, post},
-    Json, Router,
 };
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::siwe::{
-    ethereum_message_hash, Eip191Verifier, EnsLookup, EnsProfile, SiweCallbackError,
-    SiweCallbackResult, SiweConfig, SiweNonceProvider, SiwePlugin, SiweVerification, SiweVerifier,
+    Eip191Verifier, EnsLookup, EnsProfile, SiweCallbackError, SiweCallbackResult, SiweConfig,
+    SiweNonceProvider, SiwePlugin, SiweVerification, SiweVerifier, ethereum_message_hash,
 };
 use better_auth::plugins::{
     AdminPlugin, EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin,
@@ -21,14 +21,14 @@ use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
 use better_auth_core::AuthResponse;
 use better_auth_seaorm::store::entities::{account, session, user, verification, wallet_address};
 use better_auth_seaorm::{
-    sea_orm::{
-        sea_query::Expr, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    },
     SeaOrmStore,
+    sea_orm::{
+        ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr,
+    },
 };
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify};
 
@@ -293,7 +293,7 @@ async fn configure(
             return Err((
                 StatusCode::BAD_REQUEST,
                 "Unknown SIWE fixture operation".to_owned(),
-            ))
+            ));
         }
     }
     Ok(Json(json!({"status":true})))

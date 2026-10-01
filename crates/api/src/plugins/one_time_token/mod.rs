@@ -1,25 +1,38 @@
 //! Short-lived, single-use credentials that hand an existing session to a client.
 
+#[cfg(test)]
+mod tests;
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
+
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+
 use better_auth_core::utils::cookie_utils::{
     create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
     sign_cookie_value, verify_cookie_value,
 };
+
 use better_auth_core::wire::{SessionView, UserView};
+
 use better_auth_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, AuthSession, AuthVerification, CreateVerification, HttpMethod,
 };
+
 use chrono::{Duration, Utc};
+
 use rand::{rngs::OsRng, seq::SliceRandom};
+
 use serde::{Deserialize, Serialize};
+
 use serde_json::json;
+
 use sha2::{Digest, Sha256};
 
 use super::authentication_helpers::{JsonField, RequestBody, parse_body};
+
 use super::helpers::{get_cookie, response_session};
 
 /// The authenticated account and session represented by a one-time token.
@@ -53,6 +66,16 @@ pub enum OneTimeTokenStorage {
     Custom(Arc<dyn HashOneTimeToken>),
 }
 
+impl std::fmt::Debug for OneTimeTokenStorage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Plain => f.write_str("OneTimeTokenStorage::Plain"),
+            Self::Hashed => f.write_str("OneTimeTokenStorage::Hashed"),
+            Self::Custom(..) => f.write_str("OneTimeTokenStorage::Custom"),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct OneTimeTokenConfig {
     pub expires_in: Duration,
@@ -61,6 +84,12 @@ pub struct OneTimeTokenConfig {
     pub disable_client_request: bool,
     pub disable_set_session_cookie: bool,
     pub set_ott_header_on_new_session: bool,
+}
+
+impl std::fmt::Debug for OneTimeTokenConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OneTimeTokenConfig").finish_non_exhaustive()
+    }
 }
 
 impl Default for OneTimeTokenConfig {
@@ -81,11 +110,19 @@ pub struct OneTimeTokenPlugin {
     config: OneTimeTokenConfig,
 }
 
+impl std::fmt::Debug for OneTimeTokenPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OneTimeTokenPlugin").finish_non_exhaustive()
+    }
+}
+
 impl OneTimeTokenPlugin {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn with_config(config: OneTimeTokenConfig) -> Self {
+    #[must_use]
+    pub const fn with_config(config: OneTimeTokenConfig) -> Self {
         Self { config }
     }
 
@@ -93,6 +130,10 @@ impl OneTimeTokenPlugin {
     ///
     /// The caller supplies the session it has already authenticated. The token
     /// preserves that session's identity and expiry; it does not create one.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if token generation, hashing, or persistence fails.
     pub async fn generate_for_session(
         &self,
         session: &OneTimeTokenSession,
@@ -104,18 +145,23 @@ impl OneTimeTokenPlugin {
             None => random_token(),
         };
         let stored = self.stored_token(&token).await?;
-        let _ = ctx
-            .database
-            .create_verification(CreateVerification {
-                identifier: format!("one-time-token:{stored}"),
-                value: session.session.token.clone(),
-                expires_at: Utc::now() + self.config.expires_in,
-            })
-            .await?;
+        drop(
+            ctx.database
+                .create_verification(CreateVerification {
+                    identifier: format!("one-time-token:{stored}"),
+                    value: session.session.token.clone(),
+                    expires_at: Utc::now() + self.config.expires_in,
+                })
+                .await?,
+        );
         Ok(token)
     }
 
     /// Consume a token and resolve its existing session for a server caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a missing, expired, or invalid token/session, or if storage fails.
     pub async fn verify_token(
         &self,
         token: &str,
@@ -175,7 +221,33 @@ impl OneTimeTokenPlugin {
             .await
             .map_err(|error| match error {
                 AuthError::Unauthenticated => unauthorized(),
-                error => error,
+                error @ (AuthError::Api { .. }
+                | AuthError::Upstream { .. }
+                | AuthError::BadRequest(_)
+                | AuthError::InvalidRequest(_)
+                | AuthError::Validation(_)
+                | AuthError::InvalidCredentials
+                | AuthError::AuthenticationFailed(_)
+                | AuthError::SessionNotFound
+                | AuthError::Forbidden(_)
+                | AuthError::SessionCreationCancelled
+                | AuthError::BannedUser(_)
+                | AuthError::Unauthorized
+                | AuthError::UserNotFound
+                | AuthError::NotFound(_)
+                | AuthError::Conflict(_)
+                | AuthError::MethodNotAllowed(_)
+                | AuthError::PayloadTooLarge(_)
+                | AuthError::UnprocessableEntity(_)
+                | AuthError::RateLimited
+                | AuthError::NotImplemented(_)
+                | AuthError::Config(_)
+                | AuthError::Database(_)
+                | AuthError::Serialization(_)
+                | AuthError::Plugin { .. }
+                | AuthError::Internal(_)
+                | AuthError::PasswordHash(_)
+                | AuthError::Jwt(_)) => error,
             })?;
         if self.config.disable_client_request {
             return message_response(400, "Client requests are disabled");
@@ -246,25 +318,9 @@ impl OneTimeTokenPlugin {
 struct VerifyRequest {
     token: String,
 }
+
 impl RequestBody for VerifyRequest {
     const FIELDS: &'static [JsonField] = &[JsonField::string("token", true)];
-}
-
-fn unauthorized() -> AuthError {
-    AuthError::Upstream {
-        status: 401,
-        code: "UNAUTHORIZED",
-        message: "Unauthorized",
-    }
-}
-fn message_response(status: u16, message: &str) -> AuthResult<AuthResponse> {
-    Ok(AuthResponse::json(status, &json!({ "message": message }))?)
-}
-fn random_token() -> String {
-    const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
-    (0..32)
-        .map(|_| char::from(ALPHABET.choose(&mut OsRng).copied().unwrap_or(b'a')))
-        .collect()
 }
 
 #[async_trait]
@@ -327,14 +383,32 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTimeTokenPlugin {
             if !expose.iter().any(|header| header == "set-ott") {
                 expose.push("set-ott".to_owned());
             }
-            let _ = response.headers.insert("set-ott", token);
-            let _ = response
-                .headers
-                .insert("access-control-expose-headers", expose.join(", "));
+            drop(response.headers.insert("set-ott", token));
+            drop(
+                response
+                    .headers
+                    .insert("access-control-expose-headers", expose.join(", ")),
+            );
         }
         Ok(response)
     }
 }
 
-#[cfg(test)]
-mod tests;
+const fn unauthorized() -> AuthError {
+    AuthError::Upstream {
+        status: 401,
+        code: "UNAUTHORIZED",
+        message: "Unauthorized",
+    }
+}
+
+fn message_response(status: u16, message: &str) -> AuthResult<AuthResponse> {
+    Ok(AuthResponse::json(status, &json!({ "message": message }))?)
+}
+
+fn random_token() -> String {
+    const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
+    (0..32)
+        .map(|_| char::from(ALPHABET.choose(&mut OsRng).copied().unwrap_or(b'a')))
+        .collect()
+}

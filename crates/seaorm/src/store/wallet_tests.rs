@@ -7,6 +7,10 @@ use better_auth_core::{AuthConfig, AuthError, CreateUser, CreateWalletAddress};
 use sea_orm::{ConnectionTrait, Database, EntityTrait, PaginatorTrait, Statement};
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn wallet_owner_lookup_and_user_deletion_keep_state_atomic()
 -> Result<(), Box<dyn std::error::Error>> {
     let database = Database::connect("sqlite::memory:").await?;
@@ -59,7 +63,7 @@ async fn wallet_owner_lookup_and_user_deletion_keep_state_atomic()
         Err(AuthError::UserNotFound)
     ));
     assert_eq!(wallet_address::Entity::find().count(&database).await?, 3);
-    let _ = database.execute_raw(Statement::from_string(database.get_database_backend(),
+    let _ignored_to_owned = database.execute_raw(Statement::from_string(database.get_database_backend(),
         "CREATE TRIGGER wallet_user_delete_abort BEFORE DELETE ON users BEGIN SELECT RAISE(ABORT,'wallet deletion veto'); END".to_owned())).await?;
     assert!(store.delete_user(&owner.id).await.is_err());
     assert!(store.get_user_by_id(&owner.id).await?.is_some());
@@ -75,7 +79,7 @@ async fn wallet_owner_lookup_and_user_deletion_keep_state_atomic()
         store.get_wallet_address(address, Some(1.0)).await?,
         Some(second.clone())
     );
-    let _ = database
+    let _ignored_to_owned_2 = database
         .execute_raw(Statement::from_string(
             database.get_database_backend(),
             "DROP TRIGGER wallet_user_delete_abort".to_owned(),
@@ -102,6 +106,10 @@ async fn wallet_owner_lookup_and_user_deletion_keep_state_atomic()
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn wallet_upgrade_preserves_installed_identity_and_defaults_primary_to_false()
 -> Result<(), Box<dyn std::error::Error>> {
     use sea_orm_migration::{MigrationTrait, MigratorTrait};
@@ -110,7 +118,7 @@ async fn wallet_upgrade_preserves_installed_identity_and_defaults_primary_to_fal
     impl MigratorTrait for InstalledSchema {
         fn migrations() -> Vec<Box<dyn MigrationTrait>> {
             let mut migrations = super::migrator::AuthMigrator::migrations();
-            let _ = migrations.pop();
+            drop(migrations.pop());
             migrations
         }
         fn migration_table_name() -> sea_orm::DynIden {
@@ -128,7 +136,7 @@ async fn wallet_upgrade_preserves_installed_identity_and_defaults_primary_to_fal
         .create_user(CreateUser::new().with_email("wallet-upgrade@fixture.test"))
         .await?;
     run_migrations(&database).await?;
-    let _ = database.execute_unprepared(&format!("INSERT INTO wallet_address (id,user_id,address,chain_id,created_at) VALUES ('upgraded-wallet','{}','0x52908400098527886E0F7030069857D2E4169EE7',1,'2026-09-30 00:00:00+00:00')",owner.id)).await?;
+    let _ignored_execute_unprepared = database.execute_unprepared(&format!("INSERT INTO wallet_address (id,user_id,address,chain_id,created_at) VALUES ('upgraded-wallet','{}','0x52908400098527886E0F7030069857D2E4169EE7',1,'2026-09-30 00:00:00+00:00')",owner.id)).await?;
     let wallet = store
         .get_wallet_address("0x52908400098527886E0F7030069857D2E4169EE7", Some(1.0))
         .await?

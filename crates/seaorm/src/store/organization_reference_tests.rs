@@ -58,23 +58,27 @@ async fn installed() -> Result<(DatabaseConnection, String), Box<dyn std::error:
         "CREATE TABLE team_link(team_id TEXT REFERENCES team(id))",
         "CREATE VIEW app_teams AS SELECT id,app_note,app_label FROM team",
     ] {
-        let _ = database.execute_unprepared(sql).await?;
+        let _ignored_execute_unprepared = database.execute_unprepared(sql).await?;
     }
-    let _ = database
+    let _ignored_into = database
         .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
             "INSERT INTO app_org_scope VALUES (?)",
             vec![org.id.clone().into()],
         ))
         .await?;
-    let _ = database.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"INSERT INTO team(rowid,id,name,organization_id,member_count,created_at,app_note) VALUES(97,'installed-team','Existing Team',?,1,'2026-01-02 03:04:05.125','kept,bytes')",vec![org.id.clone().into()])).await?;
-    let _ = database.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"INSERT INTO organization_role(rowid,id,organization_id,role,permission,created_at,app_note) VALUES(103,'installed-role',?,'retained-role','{ \"team\" : [\"create\"] }','2026-01-02 03:04:05.125','role-bytes')",vec![org.id.clone().into()])).await?;
-    let _ = database
+    let _ignored_into_2 = database.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"INSERT INTO team(rowid,id,name,organization_id,member_count,created_at,app_note) VALUES(97,'installed-team','Existing Team',?,1,'2026-01-02 03:04:05.125','kept,bytes')",vec![org.id.clone().into()])).await?;
+    let _ignored_into_3 = database.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"INSERT INTO organization_role(rowid,id,organization_id,role,permission,created_at,app_note) VALUES(103,'installed-role',?,'retained-role','{ \"team\" : [\"create\"] }','2026-01-02 03:04:05.125','role-bytes')",vec![org.id.clone().into()])).await?;
+    let _ignored_execute_unprepared_2 = database
         .execute_unprepared("INSERT INTO team_link VALUES('installed-team')")
         .await?;
     Ok((database, org.id))
 }
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn installed_organization_references_preserve_rows_and_unrelated_constraints()
 -> Result<(), Box<dyn std::error::Error>> {
     let (database, organization_id) = installed().await?;
@@ -82,8 +86,22 @@ async fn installed_organization_references_preserve_rows_and_unrelated_constrain
     AuthMigrator::up(&database, None).await?;
     AuthMigrator::up(&database, None).await?;
     let after = snapshot(&database).await?;
-    assert_eq!(before[1], after[1]);
-    assert_eq!(before[2], after[2]);
+    assert_eq!(
+        (*(before)
+            .get(1)
+            .expect("fixture contains the requested index")),
+        (*(after)
+            .get(1)
+            .expect("fixture contains the requested index"))
+    );
+    assert_eq!(
+        (*(before)
+            .get(2)
+            .expect("fixture contains the requested index")),
+        (*(after)
+            .get(2)
+            .expect("fixture contains the requested index"))
+    );
     for table in ["team", "organization_role"] {
         let rows = database
             .query_all_raw(Statement::from_string(
@@ -92,7 +110,13 @@ async fn installed_organization_references_preserve_rows_and_unrelated_constrain
             ))
             .await?;
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].try_get::<String>("", "table")?, "app_org_scope");
+        assert_eq!(
+            (*(rows)
+                .first()
+                .expect("fixture contains the requested index"))
+            .try_get::<String>("", "table")?,
+            "app_org_scope"
+        );
     }
     let row = database
         .query_one_raw(Statement::from_string(
@@ -111,7 +135,7 @@ async fn installed_organization_references_preserve_rows_and_unrelated_constrain
             .await
             .is_err()
     );
-    let _ = database
+    let _ignored_execute_unprepared_3 = database
         .execute_unprepared("UPDATE team SET app_note='changed' WHERE id='installed-team'")
         .await?;
     let trigger = database
@@ -140,18 +164,22 @@ async fn installed_organization_references_preserve_rows_and_unrelated_constrain
             .is_none()
     );
     for table in ["team", "organization_role"] {
-        let row = database
+        let row_2 = database
             .query_one_raw(Statement::from_string(
                 DatabaseBackend::Sqlite,
                 format!("SELECT COUNT(*) AS count FROM {table}"),
             ))
             .await?
             .ok_or_else(|| std::io::Error::other("count disappeared"))?;
-        assert_eq!(row.try_get::<i64>("", "count")?, 1);
+        assert_eq!(row_2.try_get::<i64>("", "count")?, 1);
     }
     Ok(())
 }
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn second_organization_reference_failure_rolls_back_first_table_and_settings()
 -> Result<(), Box<dyn std::error::Error>> {
     let (database, _) = installed().await?;
@@ -160,7 +188,7 @@ async fn second_organization_reference_failure_rolls_back_first_table_and_settin
         "UPDATE organization_role SET app_note='forbidden' WHERE id='installed-role'",
         "PRAGMA ignore_check_constraints=OFF",
     ] {
-        let _ = database.execute_unprepared(sql).await?;
+        let _ignored_execute_unprepared_4 = database.execute_unprepared(sql).await?;
     }
     let before = snapshot(&database).await?;
     let failure = AuthMigrator::up(&database, None)
@@ -200,7 +228,7 @@ async fn second_organization_reference_failure_rolls_back_first_table_and_settin
             .await
             .is_err()
     );
-    let _ = database
+    let _ignored_execute_unprepared_5 = database
         .execute_unprepared(
             "UPDATE organization_role SET app_note='repaired' WHERE id='installed-role'",
         )

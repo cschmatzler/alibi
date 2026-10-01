@@ -6,6 +6,10 @@ license = { workspace = true }
 description = "Proc macros used internally by the better-auth workspace"
 repository = { workspace = true }
 
+readme = { workspace = true }
+keywords = { workspace = true }
+categories = { workspace = true }
+
 [lints]
 workspace = true
 

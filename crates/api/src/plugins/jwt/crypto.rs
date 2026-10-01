@@ -24,8 +24,12 @@ pub(super) fn generate(config: &JwtKeyPairConfig) -> AuthResult<(Value, Value)> 
             ec_pair(
                 "P-256",
                 key.to_bytes().as_slice(),
-                point.x().map(|x| x.as_slice()),
-                point.y().map(|y| y.as_slice()),
+                point
+                    .x()
+                    .map(sha2::digest::generic_array::GenericArray::as_slice),
+                point
+                    .y()
+                    .map(sha2::digest::generic_array::GenericArray::as_slice),
             )
         }
         JwtAlgorithm::Es512 => {
@@ -34,8 +38,12 @@ pub(super) fn generate(config: &JwtKeyPairConfig) -> AuthResult<(Value, Value)> 
             ec_pair(
                 "P-521",
                 key.to_bytes().as_slice(),
-                point.x().map(|x| x.as_slice()),
-                point.y().map(|y| y.as_slice()),
+                point
+                    .x()
+                    .map(sha2::digest::generic_array::GenericArray::as_slice),
+                point
+                    .y()
+                    .map(sha2::digest::generic_array::GenericArray::as_slice),
             )
         }
         JwtAlgorithm::Ps256 | JwtAlgorithm::Rs256 => {
@@ -113,7 +121,7 @@ fn private_jwk<const N: usize>(public: &Value, fields: [(&str, Value); N]) -> Au
         .cloned()
         .ok_or_else(|| AuthError::internal("Public JWK must be an object"))?;
     for (name, value) in fields {
-        let _ = private.insert(name.to_owned(), value);
+        drop(private.insert(name.to_owned(), value));
     }
     Ok(Value::Object(private))
 }
@@ -128,7 +136,7 @@ pub(super) fn sign(
         JwtAlgorithm::EdDsa => {
             let seed: [u8; 32] = field(private, "d")?
                 .try_into()
-                .map_err(|_| AuthError::internal("Invalid Ed25519 private key"))?;
+                .map_err(|_error| AuthError::internal("Invalid Ed25519 private key"))?;
             Ok(ed25519_dalek::SigningKey::from_bytes(&seed)
                 .sign(message)
                 .to_bytes()
@@ -176,7 +184,7 @@ pub(super) fn verify(
         JwtAlgorithm::EdDsa => {
             let bytes: [u8; 32] = field(public, "x")?
                 .try_into()
-                .map_err(|_| AuthError::internal("Invalid Ed25519 public key"))?;
+                .map_err(|_error| AuthError::internal("Invalid Ed25519 public key"))?;
             let key = ed25519_dalek::VerifyingKey::from_bytes(&bytes).map_err(crypto_error)?;
             let signature =
                 ed25519_dalek::Signature::from_slice(signature).map_err(crypto_error)?;
@@ -310,11 +318,13 @@ fn validate_ec_pair(private: &Value, derived_public: &[u8]) -> AuthResult<()> {
 }
 
 fn field(key: &Value, field: &str) -> AuthResult<Vec<u8>> {
+    use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
+
     let value = key
         .get(field)
         .and_then(Value::as_str)
         .ok_or_else(|| AuthError::internal(format!("JWK {field} missing")))?;
-    use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
+
     // WebCrypto JWK import allows trailing padding of any length and unused
     // trailing bits. It rejects all whitespace and the ordinary base64 alphabet.
     GeneralPurpose::new(

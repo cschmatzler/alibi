@@ -1,5 +1,11 @@
 use chrono::{DateTime, Utc};
 
+use serde::{Deserialize, Serialize};
+
+use std::borrow::Cow;
+
+use crate::entity::{AuthApiKey, AuthPasskey, AuthTwoFactor};
+
 /// Private keyring persistence. Public JWKS responses must select public material explicitly.
 #[derive(Debug, Clone)]
 pub struct Jwk {
@@ -11,6 +17,7 @@ pub struct Jwk {
     pub alg: Option<String>,
     pub crv: Option<String>,
 }
+
 #[derive(Debug, Clone)]
 pub struct CreateJwk {
     pub id: Option<String>,
@@ -21,10 +28,6 @@ pub struct CreateJwk {
     pub alg: Option<String>,
     pub crv: Option<String>,
 }
-use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
-
-use crate::entity::{AuthApiKey, AuthPasskey, AuthTwoFactor};
 
 /// An address linked to a SIWE identity on one chain.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -49,6 +52,7 @@ pub struct CreateWalletAddress {
 }
 
 impl CreateWalletAddress {
+    #[must_use]
     pub fn new(user_id: impl Into<String>, address: impl Into<String>, chain_id: f64) -> Self {
         Self {
             user_id: user_id.into(),

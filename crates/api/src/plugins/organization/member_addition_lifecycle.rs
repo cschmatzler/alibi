@@ -30,11 +30,12 @@ pub struct OrganizationMemberAddedContext {
     pub organization: OrganizationResponse,
 }
 
-/// Admission phases are awaited separately. Before errors prevent the member
-/// write; after errors retain successful member/team writes. Team failures clean
-/// up the new member and the original user's configured page of team memberships.
-/// Supported typed patches are trusted and are not revalidated. Arbitrary custom
-/// columns and direct mutation of JavaScript arguments remain adapter boundaries.
+/// Admission phases are awaited separately.
+///
+/// Before errors prevent the member write; after errors retain successful member/team writes. Team
+/// failures clean up the new member and the original user's configured page of team memberships.
+/// Supported typed patches are trusted and are not revalidated. Arbitrary custom columns and
+/// direct mutation of JavaScript arguments remain adapter boundaries.
 #[async_trait]
 pub trait OrganizationMemberAdditionHooks: std::fmt::Debug + Send + Sync {
     async fn before_add_member(

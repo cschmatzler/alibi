@@ -6,6 +6,10 @@ license = { workspace = true }
 description = "SeaORM proc macros for better-auth"
 repository = { workspace = true }
 
+readme = { workspace = true }
+keywords = { workspace = true }
+categories = { workspace = true }
+
 [lints]
 workspace = true
 

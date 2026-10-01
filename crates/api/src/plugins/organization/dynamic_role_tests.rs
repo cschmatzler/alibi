@@ -1,11 +1,17 @@
 use super::extension_tests::{actor, assert_error, body, call, configured_context, id};
+
 use super::*;
+
 use crate::plugins::test_helpers::create_test_config;
+
 use better_auth_core::types::{
     CreateMember, CreateOrganizationRole, OrganizationPermissions, OrganizationRoleSelector,
 };
+
 use better_auth_core::wire::SessionView;
+
 use better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+
 use serde_json::{Value, json};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -25,6 +31,20 @@ impl OrganizationLimitResolver for PausingRoleLimits {
             self.release.notified().await;
         }
         Ok(Some(100))
+    }
+}
+
+#[derive(Debug)]
+struct RoleLimits(std::sync::Arc<std::sync::Mutex<HashMap<String, usize>>>);
+
+#[async_trait]
+impl OrganizationLimitResolver for RoleLimits {
+    async fn maximum_roles(&self, organization_id: &str) -> AuthResult<Option<usize>> {
+        let policies = self
+            .0
+            .lock()
+            .map_err(|_error| better_auth_core::AuthError::internal("Role policy unavailable"))?;
+        Ok(Some(policies.get(organization_id).copied().unwrap_or(0)))
     }
 }
 
@@ -69,6 +89,14 @@ fn permission(resource: &str, action: &str) -> OrganizationPermissions {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn dynamic_role_mutations_scope_the_tenant_and_apply_name_selectors_to_all_legacy_rows()
 -> TestResult {
     let plugin = OrganizationPlugin::with_config(configuration());
@@ -96,12 +124,21 @@ async fn dynamic_role_mutations_scope_the_tenant_and_apply_name_selectors_to_all
         HttpMethod::Get,
         "/organization/get-role",
         None,
-        &[("organizationId", &other), ("roleId", &rows[0].id)],
+        &[
+            ("organizationId", &other),
+            (
+                "roleId",
+                &(rows)
+                    .first()
+                    .expect("fixture contains the requested index")
+                    .id,
+            ),
+        ],
     )
     .await?;
     assert_error(&wrong_scope, 400, "ROLE_NOT_FOUND")?;
     let unauthorized_update = call(&plugin, &ctx, Some(&foreign.token), HttpMethod::Post,
-        "/organization/update-role", Some(json!({"organizationId":org,"roleId":rows[0].id,"data":{"permission":{"team":["delete"]}}})), &[]).await?;
+        "/organization/update-role", Some(json!({"organizationId":org,"roleId":(rows).first().expect("fixture contains the requested index").id,"data":{"permission":{"team":["delete"]}}})), &[]).await?;
     assert_error(
         &unauthorized_update,
         403,
@@ -109,7 +146,16 @@ async fn dynamic_role_mutations_scope_the_tenant_and_apply_name_selectors_to_all
     )?;
     assert_eq!(
         ctx.database
-            .get_organization_role(&org, &OrganizationRoleSelector::Id(rows[0].id.clone()))
+            .get_organization_role(
+                &org,
+                &OrganizationRoleSelector::Id(
+                    (rows)
+                        .first()
+                        .expect("fixture contains the requested index")
+                        .id
+                        .clone()
+                )
+            )
             .await?
             .ok_or("Role missing")?
             .permission,
@@ -117,19 +163,44 @@ async fn dynamic_role_mutations_scope_the_tenant_and_apply_name_selectors_to_all
     );
 
     let by_id = call(&plugin, &ctx, Some(&owner.token), HttpMethod::Post,
-        "/organization/update-role", Some(json!({"organizationId":org,"roleId":rows[0].id,"data":{"permission":{"team":["update"]}}})), &[]).await?;
+        "/organization/update-role", Some(json!({"organizationId":org,"roleId":(rows).first().expect("fixture contains the requested index").id,"data":{"permission":{"team":["update"]}}})), &[]).await?;
     assert_eq!(by_id.status, 200);
-    assert_eq!(body::<Value>(&by_id)?["roleData"]["updatedAt"], Value::Null);
+    assert_eq!(
+        (*(*(body::<Value>(&by_id)?)
+            .get("roleData")
+            .unwrap_or(&Value::Null))
+        .get("updatedAt")
+        .unwrap_or(&Value::Null)),
+        Value::Null
+    );
     let first_snapshot = ctx
         .database
-        .get_organization_role(&org, &OrganizationRoleSelector::Id(rows[0].id.clone()))
+        .get_organization_role(
+            &org,
+            &OrganizationRoleSelector::Id(
+                (rows)
+                    .first()
+                    .expect("fixture contains the requested index")
+                    .id
+                    .clone(),
+            ),
+        )
         .await?
         .ok_or("Role missing")?;
     assert_eq!(first_snapshot.permission, permission("team", "update"));
     assert!(first_snapshot.updated_at.is_some());
     assert_eq!(
         ctx.database
-            .get_organization_role(&org, &OrganizationRoleSelector::Id(rows[1].id.clone()))
+            .get_organization_role(
+                &org,
+                &OrganizationRoleSelector::Id(
+                    (rows)
+                        .get(1)
+                        .expect("fixture contains the requested index")
+                        .id
+                        .clone()
+                )
+            )
             .await?
             .ok_or("Role missing")?
             .permission,
@@ -139,10 +210,26 @@ async fn dynamic_role_mutations_scope_the_tenant_and_apply_name_selectors_to_all
     let by_name = call(&plugin, &ctx, Some(&owner.token), HttpMethod::Post,
         "/organization/update-role", Some(json!({"organizationId":org,"roleName":"legacy-editor","data":{"permission":{"member":["update"]}}})), &[]).await?;
     assert_eq!(by_name.status, 200);
-    assert_eq!(body::<Value>(&by_name)?["roleData"]["id"], rows[0].id);
     assert_eq!(
-        body::<Value>(&by_name)?["roleData"]["updatedAt"],
-        serde_json::to_value(first_snapshot)?["updatedAt"]
+        (*(*(body::<Value>(&by_name)?)
+            .get("roleData")
+            .unwrap_or(&Value::Null))
+        .get("id")
+        .unwrap_or(&Value::Null)),
+        (rows)
+            .first()
+            .expect("fixture contains the requested index")
+            .id
+    );
+    assert_eq!(
+        (*(*(body::<Value>(&by_name)?)
+            .get("roleData")
+            .unwrap_or(&Value::Null))
+        .get("updatedAt")
+        .unwrap_or(&Value::Null)),
+        (*(serde_json::to_value(first_snapshot)?)
+            .get("updatedAt")
+            .unwrap_or(&Value::Null))
     );
     let updated = ctx.database.list_organization_roles(&org).await?;
     assert_eq!(updated.len(), 2);
@@ -151,11 +238,35 @@ async fn dynamic_role_mutations_scope_the_tenant_and_apply_name_selectors_to_all
             .iter()
             .all(|row| row.permission == permission("member", "update"))
     );
-    assert!(updated[0].updated_at.is_some());
-    assert_eq!(updated[0].updated_at, updated[1].updated_at);
+    assert!(
+        (updated)
+            .first()
+            .expect("persisted rows contain the requested index")
+            .updated_at
+            .is_some()
+    );
+    assert_eq!(
+        (updated)
+            .first()
+            .expect("persisted rows contain the requested index")
+            .updated_at,
+        (updated)
+            .get(1)
+            .expect("persisted rows contain the requested index")
+            .updated_at
+    );
     let unaffected = ctx
         .database
-        .get_organization_role(&other, &OrganizationRoleSelector::Id(rows[2].id.clone()))
+        .get_organization_role(
+            &other,
+            &OrganizationRoleSelector::Id(
+                (rows)
+                    .get(2)
+                    .expect("fixture contains the requested index")
+                    .id
+                    .clone(),
+            ),
+        )
         .await?
         .ok_or("Foreign role missing")?;
     assert_eq!(unaffected.permission, permission("team", "create"));
@@ -181,7 +292,7 @@ async fn dynamic_role_mutations_scope_the_tenant_and_apply_name_selectors_to_all
         Some(&owner.token),
         HttpMethod::Post,
         "/organization/delete-role",
-        Some(json!({"organizationId":org,"roleId":rows[0].id})),
+        Some(json!({"organizationId":org,"roleId":(rows).first().expect("fixture contains the requested index").id})),
         &[],
     )
     .await?;
@@ -203,7 +314,7 @@ async fn dynamic_role_mutations_scope_the_tenant_and_apply_name_selectors_to_all
             permission: permission("team", "create"),
         })
         .await?;
-    let deleted = call(
+    let deleted_2 = call(
         &plugin,
         &ctx,
         Some(&owner.token),
@@ -213,7 +324,7 @@ async fn dynamic_role_mutations_scope_the_tenant_and_apply_name_selectors_to_all
         &[],
     )
     .await?;
-    assert_eq!(deleted.status, 200);
+    assert_eq!(deleted_2.status, 200);
     assert_eq!(ctx.database.count_organization_roles(&org).await?, 1);
     assert!(
         ctx.database
@@ -225,6 +336,10 @@ async fn dynamic_role_mutations_scope_the_tenant_and_apply_name_selectors_to_all
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn dynamic_role_creation_preserves_the_membership_resource_and_name_check_order() -> TestResult
 {
     let plugin = OrganizationPlugin::with_config(configuration());
@@ -301,6 +416,10 @@ async fn dynamic_role_creation_preserves_the_membership_resource_and_name_check_
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn assigned_role_checks_filter_the_tenant_before_the_configured_adapter_page() -> TestResult {
     let plugin = OrganizationPlugin::with_config(configuration());
     let mut config = create_test_config();
@@ -407,6 +526,10 @@ async fn assigned_role_checks_filter_the_tenant_before_the_configured_adapter_pa
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn permission_requests_preserve_empty_legacy_xor_and_membership_wire_behavior() -> TestResult
 {
     let plugin = OrganizationPlugin::with_config(configuration());
@@ -460,7 +583,9 @@ async fn permission_requests_preserve_empty_legacy_xor_and_membership_wire_behav
     .await?;
     assert_error(&both, 400, "VALIDATION_ERROR")?;
     assert_eq!(
-        body::<Value>(&both)?["message"],
+        (*(body::<Value>(&both)?)
+            .get("message")
+            .unwrap_or(&Value::Null)),
         "[body] Invalid input: more than one option matched"
     );
     let denied = call(
@@ -486,7 +611,9 @@ async fn permission_requests_preserve_empty_legacy_xor_and_membership_wire_behav
     .await?;
     assert_error(&invalid_without_authentication, 400, "VALIDATION_ERROR")?;
     assert_eq!(
-        body::<Value>(&invalid_without_authentication)?["message"],
+        (*(body::<Value>(&invalid_without_authentication)?)
+            .get("message")
+            .unwrap_or(&Value::Null)),
         "[body.role] Invalid input: expected string, received number"
     );
     assert_eq!(ctx.database.count_organization_roles(&org).await?, 0);
@@ -494,6 +621,10 @@ async fn permission_requests_preserve_empty_legacy_xor_and_membership_wire_behav
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn role_wire_validation_preserves_union_selection_and_rejects_null_updates_without_mutation()
 -> TestResult {
     let plugin = OrganizationPlugin::with_config(configuration());
@@ -546,7 +677,12 @@ async fn role_wire_validation_preserves_union_selection_and_rejects_null_updates
         )
         .await?;
         assert_error(&response, 400, "VALIDATION_ERROR")?;
-        assert_eq!(body::<Value>(&response)?["message"], message);
+        assert_eq!(
+            (*(body::<Value>(&response)?)
+                .get("message")
+                .unwrap_or(&Value::Null)),
+            message
+        );
         let persisted = ctx
             .database
             .get_organization_role(&org, &OrganizationRoleSelector::Id(role.id.clone()))
@@ -566,7 +702,14 @@ async fn role_wire_validation_preserves_union_selection_and_rejects_null_updates
     )
     .await?;
     assert_eq!(selected.status, 200);
-    assert_eq!(body::<Value>(&selected)?["roleData"]["id"], role.id);
+    assert_eq!(
+        (*(*(body::<Value>(&selected)?)
+            .get("roleData")
+            .unwrap_or(&Value::Null))
+        .get("id")
+        .unwrap_or(&Value::Null)),
+        role.id
+    );
     assert_eq!(
         ctx.database
             .get_organization_role(&org, &OrganizationRoleSelector::Id(role.id.clone()))
@@ -580,19 +723,21 @@ async fn role_wire_validation_preserves_union_selection_and_rejects_null_updates
 
 fn delegated_configuration() -> OrganizationConfig {
     let mut config = configuration();
-    let _ = config
-        .access_control
-        .as_mut()
-        .expect("Access control configured")
-        .insert(
-            "apiKey".to_owned(),
-            vec![
-                "create".to_owned(),
-                "read".to_owned(),
-                "update".to_owned(),
-                "delete".to_owned(),
-            ],
-        );
+    drop(
+        config
+            .access_control
+            .as_mut()
+            .expect("Access control configured")
+            .insert(
+                "apiKey".to_owned(),
+                vec![
+                    "create".to_owned(),
+                    "read".to_owned(),
+                    "update".to_owned(),
+                    "delete".to_owned(),
+                ],
+            ),
+    );
     config.roles = Some(
         [
             (
@@ -648,6 +793,14 @@ fn delegated_configuration() -> OrganizationConfig {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn delegation_checks_each_grant_without_unioning_full_requests_and_revokes_api_key_authority()
 -> TestResult {
     let plugin = OrganizationPlugin::with_config(delegated_configuration());
@@ -676,7 +829,7 @@ async fn delegation_checks_each_grant_without_unioning_full_requests_and_revokes
     // A member may hold both grants, but one role must authorize the entire request.
     // The session still needs explicit organization selection for this direct actor.
     assert_error(&combined, 400, "NO_ACTIVE_ORGANIZATION")?;
-    let combined = call(
+    let combined_2 = call(
         &plugin,
         &ctx,
         Some(&delegate_session.token),
@@ -687,14 +840,16 @@ async fn delegation_checks_each_grant_without_unioning_full_requests_and_revokes
     )
     .await?;
     assert_eq!(
-        body::<Value>(&combined)?,
+        body::<Value>(&combined_2)?,
         json!({"error":null,"success":false})
     );
     let denied = call(&plugin, &ctx, Some(&delegate_session.token), HttpMethod::Post,
         "/organization/create-role", Some(json!({"organizationId":org,"role":"escalated","permission":{"team":["delete","delete"],"apiKey":["create"]}})), &[]).await?;
     assert_error(&denied, 403, "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_ROLE")?;
     assert_eq!(
-        body::<Value>(&denied)?["missingPermissions"],
+        (*(body::<Value>(&denied)?)
+            .get("missingPermissions")
+            .unwrap_or(&Value::Null)),
         json!(["team:delete", "team:delete", "apiKey:create"])
     );
     assert_eq!(ctx.database.count_organization_roles(&org).await?, 0);
@@ -702,21 +857,28 @@ async fn delegation_checks_each_grant_without_unioning_full_requests_and_revokes
         "/organization/create-role", Some(json!({"organizationId":org,"role":"combined","permission":{"team":["create"],"member":["update"]}})), &[]).await?;
     assert_eq!(allowed.status, 200);
     assert_eq!(
-        body::<Value>(&allowed)?["statements"],
+        (*(body::<Value>(&allowed)?)
+            .get("statements")
+            .unwrap_or(&Value::Null)),
         json!({"team":["create"],"member":["update"]})
     );
 
     let key_role = call(&plugin, &ctx, Some(&owner.token), HttpMethod::Post,
         "/organization/create-role", Some(json!({"organizationId":org,"role":"key-editor","permission":{"apiKey":["create","read"]}})), &[]).await?;
     assert_eq!(key_role.status, 200);
-    let role_id = body::<Value>(&key_role)?["roleData"]["id"]
-        .as_str()
-        .ok_or("Role ID missing")?
-        .to_owned();
-    let _ = ctx
-        .database
-        .update_member_role(&member.id, "key-editor")
-        .await?;
+    let role_id = (*(*(body::<Value>(&key_role)?)
+        .get("roleData")
+        .unwrap_or(&Value::Null))
+    .get("id")
+    .unwrap_or(&Value::Null))
+    .as_str()
+    .ok_or("Role ID missing")?
+    .to_owned();
+    drop(
+        ctx.database
+            .update_member_role(&member.id, "key-editor")
+            .await?,
+    );
     crate::plugins::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "create")
         .await?;
     crate::plugins::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "read")
@@ -742,71 +904,63 @@ async fn delegation_checks_each_grant_without_unioning_full_requests_and_revokes
     )
     .await?;
     assert_eq!(changed.status, 200);
-    let error =
+    let error_2 =
         crate::plugins::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "read")
             .await
             .err()
             .ok_or("Revoked key permission granted")?;
     assert_error(
-        &error.to_auth_response(),
+        &error_2.to_auth_response(),
         403,
         "INSUFFICIENT_API_KEY_PERMISSIONS",
     )?;
-    let _ = ctx
-        .database
-        .update_member_role(&member.id, " owner ")
-        .await?;
-    let error =
+    drop(
+        ctx.database
+            .update_member_role(&member.id, " owner ")
+            .await?,
+    );
+    let error_3 =
         crate::plugins::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "read")
             .await
             .err()
             .ok_or("Whitespace role bypassed creator check")?;
     assert_error(
-        &error.to_auth_response(),
+        &error_3.to_auth_response(),
         403,
         "INSUFFICIENT_API_KEY_PERMISSIONS",
     )?;
-    let _ = ctx.database.update_member_role(&member.id, "owner").await?;
+    drop(ctx.database.update_member_role(&member.id, "owner").await?);
     crate::plugins::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "delete")
         .await?;
     Ok(())
 }
 
-#[derive(Debug)]
-struct RoleLimits(std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, usize>>>);
-
-#[async_trait]
-impl OrganizationLimitResolver for RoleLimits {
-    async fn maximum_roles(&self, organization_id: &str) -> AuthResult<Option<usize>> {
-        let policies = self
-            .0
-            .lock()
-            .map_err(|_| better_auth_core::AuthError::internal("Role policy unavailable"))?;
-        Ok(Some(policies.get(organization_id).copied().unwrap_or(0)))
-    }
-}
-
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn callback_role_limits_are_scoped_and_count_rows_beyond_the_list_page() -> TestResult {
-    let policies = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let policies = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
     let mut config = configuration();
     config.dynamic_access_control.maximum_roles_per_organization = Some(99);
-    config.dynamic_access_control.limit_resolver =
-        Some(std::sync::Arc::new(RoleLimits(policies.clone())));
+    config.dynamic_access_control.limit_resolver = Some(std::sync::Arc::new(RoleLimits(
+        std::sync::Arc::clone(&policies),
+    )));
     let plugin = OrganizationPlugin::with_config(config);
-    let mut config = create_test_config();
-    config.advanced.database.default_find_many_limit = 1;
-    let ctx = configured_context(&plugin, config).await?;
+    let mut config_2 = create_test_config();
+    config_2.advanced.database.default_find_many_limit = 1;
+    let ctx = configured_context(&plugin, config_2).await?;
     let (_, owner) = actor(&ctx, "quota-owner").await;
     let first = organization(&plugin, &ctx, &owner, "native-role-quota-one").await?;
     let second = organization(&plugin, &ctx, &owner, "native-role-quota-two").await?;
-    let _ = policies
+    let _ignored_clone = policies
         .lock()
-        .map_err(|_| "Role policy unavailable")?
+        .map_err(|_error| "Role policy unavailable")?
         .insert(first.clone(), 1);
-    let _ = policies
+    let _ignored_clone_2 = policies
         .lock()
-        .map_err(|_| "Role policy unavailable")?
+        .map_err(|_error| "Role policy unavailable")?
         .insert(second.clone(), 2);
     for (org, names) in [(&first, vec!["one"]), (&second, vec!["one", "two"])] {
         for name in names {
@@ -874,12 +1028,21 @@ async fn callback_role_limits_are_scoped_and_count_rows_beyond_the_list_page() -
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn overlapping_permission_reloads_change_pending_delegation_only_in_the_selected_organization()
 -> TestResult {
     for refreshed_organization in [None, Some(false), Some(true)] {
         let policy = std::sync::Arc::new(PausingRoleLimits::default());
         let mut config = configuration();
-        config.dynamic_access_control.limit_resolver = Some(policy.clone());
+        config.dynamic_access_control.limit_resolver =
+            Some(std::sync::Arc::<PausingRoleLimits>::clone(&policy));
         let plugin = OrganizationPlugin::with_config(config);
         let ctx = configured_context(&plugin, create_test_config()).await?;
         let (_, owner) = actor(&ctx, "cache-owner").await;
@@ -896,10 +1059,14 @@ async fn overlapping_permission_reloads_change_pending_delegation_only_in_the_se
             &[],
         ).await?;
         assert_eq!(manager.status, 200);
-        let manager_id = body::<Value>(&manager)?["roleData"]["id"]
-            .as_str()
-            .ok_or("Manager role id missing")?
-            .to_owned();
+        let manager_id = (*(*(body::<Value>(&manager)?)
+            .get("roleData")
+            .unwrap_or(&Value::Null))
+        .get("id")
+        .unwrap_or(&Value::Null))
+        .as_str()
+        .ok_or("Manager role id missing")?
+        .to_owned();
         ctx.database
             .create_member(CreateMember {
                 organization_id: org.clone(),
@@ -942,7 +1109,12 @@ async fn overlapping_permission_reloads_change_pending_delegation_only_in_the_se
                     &[],
                 ).await?;
                 assert_eq!(refreshed.status, 200);
-                assert_eq!(body::<Value>(&refreshed)?["success"], true);
+                assert_eq!(
+                    (*(body::<Value>(&refreshed)?)
+                        .get("success")
+                        .unwrap_or(&Value::Null)),
+                    true
+                );
             }
             policy.release.notify_one();
             Ok::<_, Box<dyn std::error::Error>>(())
@@ -956,18 +1128,20 @@ async fn overlapping_permission_reloads_change_pending_delegation_only_in_the_se
         if refreshed_organization == Some(true) {
             assert_error(&pending, 403, "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_ROLE")?;
             assert_eq!(
-                body::<Value>(&pending)?["missingPermissions"],
+                (*(body::<Value>(&pending)?)
+                    .get("missingPermissions")
+                    .unwrap_or(&Value::Null)),
                 json!(["team:create"])
             );
         } else {
             assert_eq!(pending.status, 200);
         }
-        let manager = ctx
+        let manager_2 = ctx
             .database
             .get_organization_role(&org, &OrganizationRoleSelector::Id(manager_id))
             .await?
             .ok_or("Updated manager role missing")?;
-        assert_eq!(manager.permission, permission("ac", "create"));
+        assert_eq!(manager_2.permission, permission("ac", "create"));
         let created = ctx
             .database
             .get_organization_role(
@@ -991,6 +1165,14 @@ async fn overlapping_permission_reloads_change_pending_delegation_only_in_the_se
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn default_role_validation_collects_ordered_issues_before_authorization_and_persistence()
 -> TestResult {
     let plugin = OrganizationPlugin::with_config(configuration());
@@ -1035,18 +1217,24 @@ async fn default_role_validation_collects_ordered_issues_before_authorization_an
         ),
     ] {
         let mut request = AuthRequest::new(HttpMethod::Post, "/organization/create-role");
-        let _ = request
-            .headers
-            .insert("content-type".to_owned(), "application/json".to_owned());
-        if let Some(value) = transfer_encoding {
-            let _ = request
+        drop(
+            request
                 .headers
-                .insert("transfer-encoding".to_owned(), value.to_owned());
+                .insert("content-type".to_owned(), "application/json".to_owned()),
+        );
+        if let Some(value) = transfer_encoding {
+            drop(
+                request
+                    .headers
+                    .insert("transfer-encoding".to_owned(), value.to_owned()),
+            );
         }
         if let Some(value) = length {
-            let _ = request
-                .headers
-                .insert("content-length".to_owned(), value.to_owned());
+            drop(
+                request
+                    .headers
+                    .insert("content-length".to_owned(), value.to_owned()),
+            );
         }
         request.body = bytes;
         let response = plugin
@@ -1054,7 +1242,12 @@ async fn default_role_validation_collects_ordered_issues_before_authorization_an
             .await?
             .ok_or("Role route missing")?;
         assert_error(&response, 400, code)?;
-        assert_eq!(body::<Value>(&response)?["message"], message);
+        assert_eq!(
+            (*(body::<Value>(&response)?)
+                .get("message")
+                .unwrap_or(&Value::Null)),
+            message
+        );
         assert_eq!(ctx.database.count_organization_roles(&org).await?, 0);
     }
     for (path, input, expected) in [
@@ -1111,7 +1304,12 @@ async fn default_role_validation_collects_ordered_issues_before_authorization_an
             )
             .await?;
             assert_error(&response, 400, "VALIDATION_ERROR")?;
-            assert_eq!(body::<Value>(&response)?["message"], expected);
+            assert_eq!(
+                (*(body::<Value>(&response)?)
+                    .get("message")
+                    .unwrap_or(&Value::Null)),
+                expected
+            );
             assert_eq!(ctx.database.count_organization_roles(&org).await?, 0);
         }
     }
@@ -1127,10 +1325,22 @@ async fn default_role_validation_collects_ordered_issues_before_authorization_an
     .await?;
     assert_eq!(created.status, 200);
     let value = body::<Value>(&created)?;
-    assert_eq!(value["roleData"]["role"], "ος");
-    assert!(value["roleData"].get("ignored").is_none());
     assert_eq!(
-        ctx.database.list_organization_roles(&org).await?[0].role,
+        (*(*(value).get("roleData").unwrap_or(&Value::Null))
+            .get("role")
+            .unwrap_or(&Value::Null)),
+        "ος"
+    );
+    assert!(
+        (*(value).get("roleData").unwrap_or(&Value::Null))
+            .get("ignored")
+            .is_none()
+    );
+    assert_eq!(
+        (ctx.database.list_organization_roles(&org).await?)
+            .first()
+            .expect("fixture contains the requested index")
+            .role,
         "ος"
     );
     let duplicate = call(
@@ -1149,6 +1359,10 @@ async fn default_role_validation_collects_ordered_issues_before_authorization_an
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
 async fn expired_and_revoked_role_sessions_cannot_mutate_existing_permissions() -> TestResult {
     let plugin = OrganizationPlugin::with_config(configuration());
     let ctx = configured_context(&plugin, create_test_config()).await?;

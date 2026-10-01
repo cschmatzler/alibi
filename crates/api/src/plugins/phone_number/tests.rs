@@ -1,15 +1,19 @@
-#![expect(clippy::unwrap_used, reason = "test setup and decoding must succeed")]
 use super::*;
+
 use crate::plugins::test_helpers;
+
 use better_auth_core::{
     AuthError, AuthPlugin, AuthResponse, AuthSession, AuthUser, AuthVerification, CreateAccount,
     CreateUser, CreateVerification, HttpMethod,
 };
+
 use serde_json::{Value, json};
+
 use std::sync::Mutex;
 
 #[derive(Default)]
 struct Outbox(Mutex<Vec<PhoneOtpDelivery>>);
+
 #[async_trait]
 impl SendPhoneOtp for Outbox {
     async fn send(&self, delivery: &PhoneOtpDelivery) -> AuthResult<()> {
@@ -27,19 +31,63 @@ impl SendPhoneOtp for RejectingSender {
         Err(AuthError::bad_request("fixture delivery failed"))
     }
 }
+
 struct SignupIdentity;
+
 impl PhoneSignupIdentity for SignupIdentity {
-    fn temporary_email(&self, phone: &str) -> String {
-        format!("{phone}@phone.fixture.test")
+    fn temporary_email(&self, phone_number: &str) -> String {
+        format!("{phone_number}@phone.fixture.test")
     }
 }
+
+struct Provider(Mutex<Option<PhoneOtpDelivery>>);
+
+#[async_trait]
+impl PhoneOtpVerifier for Provider {
+    async fn verify(&self, delivery: &PhoneOtpDelivery) -> AuthResult<bool> {
+        let mut challenge = self.0.lock().unwrap();
+        let verified = if challenge.as_ref().is_some_and(|expected| {
+            expected.phone_number == delivery.phone_number && expected.code == delivery.code
+        }) {
+            drop(challenge.take());
+            Ok(true)
+        } else {
+            Ok(false)
+        };
+        drop(challenge);
+        verified
+    }
+}
+
+#[derive(Default)]
+struct VerificationCallback {
+    captured: Mutex<Vec<PhoneNumberVerification>>,
+    reject: bool,
+}
+
+#[async_trait]
+impl PhoneVerificationHook for VerificationCallback {
+    async fn verified(&self, result: &PhoneNumberVerification) -> AuthResult<()> {
+        self.captured.lock().unwrap().push(result.clone());
+        if self.reject {
+            Err(AuthError::Upstream {
+                status: 400,
+                code: "PHONE_CALLBACK_REJECTED",
+                message: "Phone callback rejected the authentication",
+            })
+        } else {
+            Ok(())
+        }
+    }
+}
+
 fn configured() -> (PhoneNumberPlugin, Arc<Outbox>, Arc<Outbox>) {
     let outbox = Arc::new(Outbox::default());
     let reset = Arc::new(Outbox::default());
     (
         PhoneNumberPlugin::new(PhoneNumberConfig {
-            send_otp: Some(outbox.clone()),
-            send_password_reset_otp: Some(reset.clone()),
+            send_otp: Some(Arc::<Outbox>::clone(&outbox)),
+            send_password_reset_otp: Some(Arc::<Outbox>::clone(&reset)),
             sign_up_on_verification: Some(Arc::new(SignupIdentity)),
             ..Default::default()
         }),
@@ -47,12 +95,14 @@ fn configured() -> (PhoneNumberPlugin, Arc<Outbox>, Arc<Outbox>) {
         reset,
     )
 }
+
 async fn context()
 -> AuthContext<better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema> {
     let mut ctx = test_helpers::create_test_context().await;
     ctx.set_metadata("phone-number.enabled", json!(true));
     ctx
 }
+
 async fn post(
     plugin: &PhoneNumberPlugin,
     ctx: &AuthContext<impl AuthSchema>,
@@ -67,6 +117,7 @@ async fn post(
         Err(error) => error.to_auth_response(),
     }
 }
+
 async fn phone_user(ctx: &AuthContext<impl AuthSchema>, phone: &str, verified: bool) -> String {
     let mut user = CreateUser::new()
         .with_email(format!("{phone}@registered.fixture.test"))
@@ -77,36 +128,41 @@ async fn phone_user(ctx: &AuthContext<impl AuthSchema>, phone: &str, verified: b
     let hash = better_auth_core::utils::password::hash_password(None, "original-password123")
         .await
         .unwrap();
-    let _ = ctx
-        .database
-        .create_account(CreateAccount {
-            user_id: user.id().to_string(),
-            account_id: user.id().to_string(),
-            provider_id: "credential".into(),
-            access_token: None,
-            refresh_token: None,
-            id_token: None,
-            access_token_expires_at: None,
-            refresh_token_expires_at: None,
-            scope: None,
-            password: Some(hash),
-        })
-        .await
-        .unwrap();
+    drop(
+        ctx.database
+            .create_account(CreateAccount {
+                user_id: user.id().to_string(),
+                account_id: user.id().to_string(),
+                provider_id: "credential".into(),
+                access_token: None,
+                refresh_token: None,
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: None,
+                password: Some(hash),
+            })
+            .await
+            .unwrap(),
+    );
     user.id().to_string()
 }
 
 // Upstream awaits sendOTP directly for /send-otp, but uses its nonfatal
 // background policy for unverified password signin and password reset delivery.
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn notification_failure_preserves_phone_authentication_gates_and_issued_proofs() {
     let ctx = context().await;
     let phone = "+15551110099";
     let user_id = phone_user(&ctx, phone, false).await;
     let outbox = Arc::new(Outbox::default());
-    let sender = Arc::new(RejectingSender(outbox.clone()));
+    let sender = Arc::new(RejectingSender(Arc::<Outbox>::clone(&outbox)));
     let plugin = PhoneNumberPlugin::new(PhoneNumberConfig {
-        send_otp: Some(sender.clone()),
+        send_otp: Some(Arc::<RejectingSender>::clone(&sender)),
         send_password_reset_otp: Some(sender),
         require_verification: true,
         ..Default::default()
@@ -336,17 +392,23 @@ async fn phone_signup_and_replay_preserve_verification_identity_and_session() {
 // Upstream: attempts and expiry delete proofs, and a code for one phone cannot
 // authorize another. The server-only consumer cannot create any user/session.
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn phone_consumer_enforces_scope_expiry_budget_and_single_use() {
     let ctx = context().await;
     let (plugin, outbox, _) = configured();
     let phone = "+15551110002";
-    let _ = post(
-        &plugin,
-        &ctx,
-        "/phone-number/send-otp",
-        json!({"phoneNumber":phone}),
-    )
-    .await;
+    drop(
+        post(
+            &plugin,
+            &ctx,
+            "/phone-number/send-otp",
+            json!({"phoneNumber":phone}),
+        )
+        .await,
+    );
     let code = outbox.0.lock().unwrap().last().unwrap().code.clone();
     assert_eq!(
         plugin
@@ -397,15 +459,16 @@ async fn phone_consumer_enforces_scope_expiry_budget_and_single_use() {
             .unwrap()
             .is_none()
     );
-    let _ = ctx
-        .database
-        .create_verification(CreateVerification {
-            identifier: phone.into(),
-            value: "654321:0".into(),
-            expires_at: chrono::Utc::now() - Duration::seconds(1),
-        })
-        .await
-        .unwrap();
+    drop(
+        ctx.database
+            .create_verification(CreateVerification {
+                identifier: phone.into(),
+                value: "654321:0".into(),
+                expires_at: chrono::Utc::now() - Duration::seconds(1),
+            })
+            .await
+            .unwrap(),
+    );
     assert_eq!(
         plugin
             .consume_otp(&ctx, phone, "654321")
@@ -416,15 +479,17 @@ async fn phone_consumer_enforces_scope_expiry_budget_and_single_use() {
             .as_deref(),
         Some("OTP_EXPIRED")
     );
-    let _ = post(
-        &plugin,
-        &ctx,
-        "/phone-number/send-otp",
-        json!({"phoneNumber":phone}),
-    )
-    .await;
-    let code = outbox.0.lock().unwrap().last().unwrap().code.clone();
-    plugin.consume_otp(&ctx, phone, &code).await.unwrap();
+    drop(
+        post(
+            &plugin,
+            &ctx,
+            "/phone-number/send-otp",
+            json!({"phoneNumber":phone}),
+        )
+        .await,
+    );
+    let code_2 = outbox.0.lock().unwrap().last().unwrap().code.clone();
+    plugin.consume_otp(&ctx, phone, &code_2).await.unwrap();
     assert!(
         ctx.database
             .get_user_by_phone_number(phone)
@@ -432,7 +497,7 @@ async fn phone_consumer_enforces_scope_expiry_budget_and_single_use() {
             .unwrap()
             .is_none()
     );
-    assert!(plugin.consume_otp(&ctx, phone, &code).await.is_err());
+    assert!(plugin.consume_otp(&ctx, phone, &code_2).await.is_err());
 }
 
 // Upstream: password sign-in can require phone verification before password
@@ -533,7 +598,7 @@ async fn phone_credentials_reject_another_users_signed_trust_before_authenticati
     use sha2::Sha256;
 
     let mut ctx = context().await;
-    let mut init = AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+    let mut init = AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
     crate::plugins::two_factor::TwoFactorPlugin::new()
         .on_init(&mut init)
         .await
@@ -543,27 +608,29 @@ async fn phone_credentials_reject_another_users_signed_trust_before_authenticati
     let phone = "+15551110012";
     let user_id = phone_user(&ctx, phone, true).await;
     let foreign_id = phone_user(&ctx, "+15551110013", true).await;
-    let _ = ctx
-        .database
-        .update_user(
-            &user_id,
-            UpdateUser {
-                two_factor_enabled: Some(true),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
+    drop(
+        ctx.database
+            .update_user(
+                &user_id,
+                UpdateUser {
+                    two_factor_enabled: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap(),
+    );
     let trust_id = "trust-device-other-user";
-    let _ = ctx
-        .database
-        .create_verification(CreateVerification {
-            identifier: trust_id.into(),
-            value: foreign_id.clone(),
-            expires_at: chrono::Utc::now() + Duration::days(30),
-        })
-        .await
-        .unwrap();
+    drop(
+        ctx.database
+            .create_verification(CreateVerification {
+                identifier: trust_id.into(),
+                value: foreign_id.clone(),
+                expires_at: chrono::Utc::now() + Duration::days(30),
+            })
+            .await
+            .unwrap(),
+    );
     let mut mac = Hmac::<Sha256>::new_from_slice(ctx.config.secret.as_bytes()).unwrap();
     mac.update(format!("{foreign_id}!{trust_id}").as_bytes());
     let token = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
@@ -574,13 +641,13 @@ async fn phone_credentials_reject_another_users_signed_trust_before_authenticati
         None,
         Some(json!({"phoneNumber":phone,"password":"original-password123","rememberMe":false})),
     );
-    _ = req.headers.insert(
+    drop(req.headers.insert(
         "cookie".into(),
         format!(
             "{}={cookie}",
             related_cookie_name(&ctx.config, "trust_device")
         ),
-    );
+    ));
     let response = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
     assert_eq!(response.status, 200);
     let body: Value = serde_json::from_slice(&response.body).unwrap();
@@ -606,7 +673,7 @@ async fn phone_credentials_reject_another_users_signed_trust_before_authenticati
     let challenge_cookie = response
         .headers
         .get_all("set-cookie")
-        .find_map(|cookie| cookie.strip_prefix(&prefix))
+        .find_map(|cookie_2| cookie_2.strip_prefix(&prefix))
         .unwrap()
         .split(';')
         .next()
@@ -641,14 +708,16 @@ async fn phone_update_rejects_occupied_number_and_keeps_requester_session() {
         .await
         .unwrap();
     let occupied = "+15551110005";
-    let _ = phone_user(&ctx, occupied, true).await;
-    let _ = post(
-        &plugin,
-        &ctx,
-        "/phone-number/send-otp",
-        json!({"phoneNumber":occupied}),
-    )
-    .await;
+    drop(phone_user(&ctx, occupied, true).await);
+    drop(
+        post(
+            &plugin,
+            &ctx,
+            "/phone-number/send-otp",
+            json!({"phoneNumber":occupied}),
+        )
+        .await,
+    );
     let code = outbox.0.lock().unwrap().last().unwrap().code.clone();
     let req = test_helpers::create_auth_json_request_no_query(
         HttpMethod::Post,
@@ -676,21 +745,23 @@ async fn phone_update_rejects_occupied_number_and_keeps_requester_session() {
         Some("+15551110004")
     );
     let target = "+15551110006";
-    let _ = post(
-        &plugin,
-        &ctx,
-        "/phone-number/send-otp",
-        json!({"phoneNumber":target}),
-    )
-    .await;
-    let code = outbox.0.lock().unwrap().last().unwrap().code.clone();
-    let req = test_helpers::create_auth_json_request_no_query(
+    drop(
+        post(
+            &plugin,
+            &ctx,
+            "/phone-number/send-otp",
+            json!({"phoneNumber":target}),
+        )
+        .await,
+    );
+    let code_2 = outbox.0.lock().unwrap().last().unwrap().code.clone();
+    let req_2 = test_helpers::create_auth_json_request_no_query(
         HttpMethod::Post,
         "/phone-number/verify",
         Some(session.token()),
-        Some(json!({"phoneNumber":target,"code":code,"updatePhoneNumber":true})),
+        Some(json!({"phoneNumber":target,"code":code_2,"updatePhoneNumber":true})),
     );
-    let response = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
+    let response = plugin.on_request(&req_2, &ctx).await.unwrap().unwrap();
     let payload: Value = serde_json::from_slice(&response.body).unwrap();
     assert_eq!(
         payload.get("token").and_then(Value::as_str),
@@ -719,18 +790,24 @@ async fn phone_update_rejects_occupied_number_and_keeps_requester_session() {
 // Upstream phone reset burns proof on password-policy rejection and never
 // marks email verified, unlike the email OTP reset path.
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn phone_reset_rejects_reuse_after_policy_failure_then_updates_owned_credential() {
     let ctx = context().await;
     let (plugin, _, reset) = configured();
     let phone = "+15551110007";
     let user_id = phone_user(&ctx, phone, true).await;
-    let _ = post(
-        &plugin,
-        &ctx,
-        "/phone-number/request-password-reset",
-        json!({"phoneNumber":phone}),
-    )
-    .await;
+    drop(
+        post(
+            &plugin,
+            &ctx,
+            "/phone-number/request-password-reset",
+            json!({"phoneNumber":phone}),
+        )
+        .await,
+    );
     let otp = reset.0.lock().unwrap().last().unwrap().code.clone();
     assert_eq!(
         post(
@@ -761,20 +838,22 @@ async fn phone_reset_rejects_reuse_after_policy_failure_then_updates_owned_crede
         .status,
         400
     );
-    let _ = post(
-        &plugin,
-        &ctx,
-        "/phone-number/request-password-reset",
-        json!({"phoneNumber":phone}),
-    )
-    .await;
-    let otp = reset.0.lock().unwrap().last().unwrap().code.clone();
+    drop(
+        post(
+            &plugin,
+            &ctx,
+            "/phone-number/request-password-reset",
+            json!({"phoneNumber":phone}),
+        )
+        .await,
+    );
+    let otp_2 = reset.0.lock().unwrap().last().unwrap().code.clone();
     assert_eq!(
         post(
             &plugin,
             &ctx,
             "/phone-number/reset-password",
-            json!({"phoneNumber":phone,"otp":otp,"newPassword":"replacement-password123"})
+            json!({"phoneNumber":phone,"otp":otp_2,"newPassword":"replacement-password123"})
         )
         .await
         .status,
@@ -811,13 +890,15 @@ async fn phone_reset_rejects_reuse_after_policy_failure_then_updates_owned_crede
         1
     );
     let missing = "+15559990000";
-    let _ = post(
-        &plugin,
-        &ctx,
-        "/phone-number/request-password-reset",
-        json!({"phoneNumber":missing}),
-    )
-    .await;
+    drop(
+        post(
+            &plugin,
+            &ctx,
+            "/phone-number/request-password-reset",
+            json!({"phoneNumber":missing}),
+        )
+        .await,
+    );
     assert!(
         ctx.database
             .get_latest_verification_by_identifier(&format!("{missing}-request-password-reset"))
@@ -826,22 +907,6 @@ async fn phone_reset_rejects_reuse_after_policy_failure_then_updates_owned_crede
             .is_some()
     );
     assert_eq!(reset.0.lock().unwrap().len(), 2);
-}
-
-struct Provider(Mutex<Option<PhoneOtpDelivery>>);
-#[async_trait]
-impl PhoneOtpVerifier for Provider {
-    async fn verify(&self, delivery: &PhoneOtpDelivery) -> AuthResult<bool> {
-        let mut challenge = self.0.lock().unwrap();
-        if challenge.as_ref().is_some_and(|expected| {
-            expected.phone_number == delivery.phone_number && expected.code == delivery.code
-        }) {
-            let _ = challenge.take();
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
 }
 
 // Upstream: a custom provider owns code expiry/replay. Successful provider
@@ -855,15 +920,16 @@ async fn provider_verification_binds_phone_consumes_once_and_clears_local_rows()
         phone_number: phone.into(),
         code: "provider-approved".into(),
     })))));
-    let _ = ctx
-        .database
-        .create_verification(CreateVerification {
-            identifier: phone.into(),
-            value: "unrelated:100".into(),
-            expires_at: chrono::Utc::now() - Duration::days(1),
-        })
-        .await
-        .unwrap();
+    drop(
+        ctx.database
+            .create_verification(CreateVerification {
+                identifier: phone.into(),
+                value: "unrelated:100".into(),
+                expires_at: chrono::Utc::now() - Duration::days(1),
+            })
+            .await
+            .unwrap(),
+    );
     assert!(
         plugin
             .consume_otp(&ctx, "+15559999999", "provider-approved")
@@ -918,13 +984,13 @@ async fn direct_phone_mutation_and_invalid_body_cannot_bypass_ownership() {
             .as_deref(),
         Some("PHONE_NUMBER_CANNOT_BE_UPDATED")
     );
-    let req = test_helpers::create_auth_json_request_no_query(
+    let req_2 = test_helpers::create_auth_json_request_no_query(
         HttpMethod::Post,
         "/update-user",
         None,
         Some(json!({"phoneNumber":null})),
     );
-    assert!(plugin.before_request(&req, &ctx).await.unwrap().is_none());
+    assert!(plugin.before_request(&req_2, &ctx).await.unwrap().is_none());
     let response = post(
         &plugin,
         &ctx,
@@ -949,13 +1015,15 @@ async fn concurrent_phone_consumers_cannot_reuse_a_local_proof() {
     let ctx = context().await;
     let (plugin, outbox, _) = configured();
     let phone = "+15551110010";
-    let _ = post(
-        &plugin,
-        &ctx,
-        "/phone-number/send-otp",
-        json!({"phoneNumber":phone}),
-    )
-    .await;
+    drop(
+        post(
+            &plugin,
+            &ctx,
+            "/phone-number/send-otp",
+            json!({"phoneNumber":phone}),
+        )
+        .await,
+    );
     let code = outbox.0.lock().unwrap().last().unwrap().code.clone();
     let (first, second) = tokio::join!(
         plugin.consume_otp(&ctx, phone, &code),
@@ -971,28 +1039,6 @@ async fn concurrent_phone_consumers_cannot_reuse_a_local_proof() {
     );
 }
 
-#[derive(Default)]
-struct VerificationCallback {
-    captured: Mutex<Vec<PhoneNumberVerification>>,
-    reject: bool,
-}
-
-#[async_trait]
-impl PhoneVerificationHook for VerificationCallback {
-    async fn verified(&self, result: &PhoneNumberVerification) -> AuthResult<()> {
-        self.captured.lock().unwrap().push(result.clone());
-        if self.reject {
-            Err(better_auth_core::AuthError::Upstream {
-                status: 400,
-                code: "PHONE_CALLBACK_REJECTED",
-                message: "Phone callback rejected the authentication",
-            })
-        } else {
-            Ok(())
-        }
-    }
-}
-
 // The callback observes the persisted verified owner before session issuance.
 // Its failure consumes the proof and preserves the user, without a new session.
 #[tokio::test]
@@ -1000,15 +1046,17 @@ async fn verification_callback_observes_owner_and_rejection_prevents_session_iss
     let ctx = context().await;
     let (mut plugin, outbox, _) = configured();
     let callback = Arc::new(VerificationCallback::default());
-    plugin.config.callback_on_verification = Some(callback.clone());
+    plugin.config.callback_on_verification = Some(Arc::<VerificationCallback>::clone(&callback));
     let phone = "+15551110011";
-    let _ = post(
-        &plugin,
-        &ctx,
-        "/phone-number/send-otp",
-        json!({"phoneNumber":phone}),
-    )
-    .await;
+    drop(
+        post(
+            &plugin,
+            &ctx,
+            "/phone-number/send-otp",
+            json!({"phoneNumber":phone}),
+        )
+        .await,
+    );
     let code = outbox.0.lock().unwrap().last().unwrap().code.clone();
     let success = post(
         &plugin,
@@ -1032,40 +1080,43 @@ async fn verification_callback_observes_owner_and_rejection_prevents_session_iss
         assert_eq!(proof.user.id, user.id());
         assert_eq!(proof.user.phone_number.as_deref(), Some(phone));
         assert_eq!(proof.user.phone_number_verified, Some(true));
+        drop(captured);
     }
     let rejecting = Arc::new(VerificationCallback {
         reject: true,
         ..Default::default()
     });
-    plugin.config.callback_on_verification = Some(rejecting.clone());
+    plugin.config.callback_on_verification = Some(Arc::<VerificationCallback>::clone(&rejecting));
     let rejected_phone = "+15551110012";
-    let _ = post(
-        &plugin,
-        &ctx,
-        "/phone-number/send-otp",
-        json!({"phoneNumber":rejected_phone}),
-    )
-    .await;
-    let code = outbox.0.lock().unwrap().last().unwrap().code.clone();
+    drop(
+        post(
+            &plugin,
+            &ctx,
+            "/phone-number/send-otp",
+            json!({"phoneNumber":rejected_phone}),
+        )
+        .await,
+    );
+    let code_2 = outbox.0.lock().unwrap().last().unwrap().code.clone();
     let rejected = post(
         &plugin,
         &ctx,
         "/phone-number/verify",
-        json!({"phoneNumber":rejected_phone,"code":code}),
+        json!({"phoneNumber":rejected_phone,"code":code_2}),
     )
     .await;
     assert_eq!(rejected.status, 400);
     assert_eq!(rejecting.captured.lock().unwrap().len(), 1);
-    let user = ctx
+    let user_2 = ctx
         .database
         .get_user_by_phone_number(rejected_phone)
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(user.phone_number_verified(), Some(true));
+    assert_eq!(user_2.phone_number_verified(), Some(true));
     assert!(
         ctx.database
-            .get_user_sessions(&user.id())
+            .get_user_sessions(&user_2.id())
             .await
             .unwrap()
             .is_empty()
@@ -1086,15 +1137,16 @@ async fn server_consumer_rejects_exhausted_decimal_exponent_and_radix_counters()
     let (plugin, _, _) = configured();
     for attempts in ["3.0", "3e0", " 3 ", "0x3", "0o3", "0b11"] {
         let phone = format!("counter:{attempts}");
-        let _ = ctx
-            .database
-            .create_verification(CreateVerification {
-                identifier: phone.clone(),
-                value: format!("654321:{attempts}"),
-                expires_at: chrono::Utc::now() + Duration::minutes(5),
-            })
-            .await
-            .unwrap();
+        drop(
+            ctx.database
+                .create_verification(CreateVerification {
+                    identifier: phone.clone(),
+                    value: format!("654321:{attempts}"),
+                    expires_at: chrono::Utc::now() + Duration::minutes(5),
+                })
+                .await
+                .unwrap(),
+        );
         let result = plugin
             .consume_otp(&ctx, &phone, "654321")
             .await

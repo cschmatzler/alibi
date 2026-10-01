@@ -1,27 +1,37 @@
+pub(super) mod handlers;
+
+pub(in crate::plugins) mod token;
+
+pub(super) mod types;
+
+#[cfg(test)]
+mod tests;
+
 use async_trait::async_trait;
+
 use chrono::Duration;
+
 use std::future::Future;
+
 use std::pin::Pin;
+
 use std::sync::Arc;
 
 use better_auth_core::AuthUser;
+
 use better_auth_core::wire::UserView;
+
 use better_auth_core::{AuthContext, AuthError, AuthResult};
+
 use better_auth_core::{AuthRequest, AuthResponse};
 
 use better_auth_core::utils::cookie_utils::create_session_cookie;
 
 use super::StatusResponse;
 
-pub(super) mod handlers;
-pub(crate) mod token;
-pub(super) mod types;
+use handlers::{send_verification_email_core, verification_url, verify_email_core};
 
-#[cfg(test)]
-mod tests;
-
-use handlers::*;
-use types::*;
+use types::{SendVerificationEmailRequest, VerifyEmailQuery, VerifyEmailResult};
 
 /// Trait for custom email sending logic.
 ///
@@ -43,8 +53,19 @@ pub struct EmailVerificationPlugin {
     config: EmailVerificationConfig,
 }
 
+impl std::fmt::Debug for EmailVerificationPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EmailVerificationPlugin")
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Clone, better_auth_core::PluginConfig)]
 #[plugin(name = "EmailVerificationPlugin")]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
+)]
 pub struct EmailVerificationConfig {
     /// How long a verification token stays valid. Default: one hour.
     #[config(default = Duration::hours(1))]
@@ -82,7 +103,15 @@ pub struct EmailVerificationConfig {
     pub after_email_verification: Option<EmailVerificationHook>,
 }
 
+impl std::fmt::Debug for EmailVerificationConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EmailVerificationConfig")
+            .finish_non_exhaustive()
+    }
+}
+
 impl EmailVerificationPlugin {
+    #[must_use]
     pub fn custom_send_verification_email(
         mut self,
         sender: Arc<dyn SendVerificationEmail>,
@@ -90,52 +119,6 @@ impl EmailVerificationPlugin {
         self.config.send_verification_email = Some(sender);
         self
     }
-}
-
-/// Password registration emits verification before creating its session. The
-/// transaction handle keeps OTP challenges in the same transaction as the user.
-pub(crate) async fn send_signup_verification<S: better_auth_core::AuthSchema>(
-    user: &S::User,
-    callback_url: Option<&str>,
-    required: bool,
-    ctx: &AuthContext<S>,
-    tx: &dyn better_auth_core::store::AuthTransaction<S>,
-) -> AuthResult<()> {
-    let config = ctx.extensions.get::<EmailVerificationConfig>();
-    if !config
-        .as_ref()
-        .and_then(|config| config.send_on_sign_up)
-        .unwrap_or(required)
-    {
-        return Ok(());
-    }
-    let user = ctx.user_view(user);
-    if !config
-        .as_ref()
-        .is_some_and(|config| config.send_verification_email.is_some())
-        && let Some(sender) = ctx.email_verification_override()
-    {
-        return sender.0.send_in_transaction(&user, None, ctx, tx).await;
-    }
-    let Some(config) = config else {
-        return Ok(());
-    };
-    let Some(sender) = &config.send_verification_email else {
-        return Ok(());
-    };
-    let Some(email) = user.email.as_deref() else {
-        return Ok(());
-    };
-    let token = token::create_email_verification_token(
-        &ctx.config.secret,
-        email,
-        None,
-        config.verification_token_expiry,
-        None,
-    )?;
-    let url = handlers::verification_url(&ctx.config, &token, callback_url);
-    super::authentication_helpers::run_notification(sender.send(&user, &url, &token)).await;
-    Ok(())
 }
 
 better_auth_core::impl_auth_plugin! {
@@ -238,11 +221,11 @@ impl EmailVerificationPlugin {
         {
             VerifyEmailResult::Redirect { url, session_token } => {
                 let mut headers = better_auth_core::Headers::new();
-                _ = headers.insert("Location".to_string(), url);
-                _ = headers.insert("content-type".to_string(), "application/json".to_string());
-                if let Some(token) = session_token {
-                    let cookie = create_session_cookie(&token, &ctx.config);
-                    headers.append("Set-Cookie".to_string(), cookie);
+                drop(headers.insert("Location".to_owned(), url));
+                drop(headers.insert("content-type".to_owned(), "application/json".to_owned()));
+                if let Some(token_2) = session_token {
+                    let cookie = create_session_cookie(&token_2, &ctx.config);
+                    headers.append("Set-Cookie".to_owned(), cookie);
                 }
                 Ok(AuthResponse {
                     status: 302,
@@ -255,8 +238,8 @@ impl EmailVerificationPlugin {
                 session_token,
             } => {
                 let mut response = AuthResponse::json(200, &body)?;
-                if let Some(token) = session_token {
-                    let cookie = create_session_cookie(&token, &ctx.config);
+                if let Some(token_3) = session_token {
+                    let cookie = create_session_cookie(&token_3, &ctx.config);
                     response = response.with_header("Set-Cookie", cookie);
                 }
                 Ok(response)
@@ -269,7 +252,7 @@ impl EmailVerificationPlugin {
     /// If [`EmailVerificationConfig::send_verification_email`] is set the
     /// custom callback is used; otherwise the default `EmailProvider` path is
     /// taken.
-    pub(crate) async fn send_verification_email_for_user(
+    pub(in crate::plugins) async fn send_verification_email_for_user(
         &self,
         user: &impl AuthUser,
         email: &str,
@@ -288,8 +271,7 @@ impl EmailVerificationPlugin {
             self.config.verification_token_expiry,
             None,
         )?;
-        let verification_url =
-            handlers::verification_url(&ctx.config, &verification_token, callback_url);
+        let verification_url = verification_url(&ctx.config, &verification_token, callback_url);
 
         // Use custom sender if configured, otherwise fall back to EmailProvider
         if let Some(ref custom_sender) = self.config.send_verification_email {
@@ -306,10 +288,9 @@ impl EmailVerificationPlugin {
                 let subject = "Verify your email address";
                 let html = format!(
                     "<p>Click the link below to verify your email address:</p>\
-                     <p><a href=\"{url}\">Verify Email</a></p>",
-                    url = verification_url
+                     <p><a href=\"{verification_url}\">Verify Email</a></p>"
                 );
-                let text = format!("Verify your email address: {}", verification_url);
+                let text = format!("Verify your email address: {verification_url}");
 
                 super::authentication_helpers::run_notification(
                     ctx.email_provider()?.send(email, subject, &html, &text),
@@ -331,6 +312,10 @@ impl EmailVerificationPlugin {
     /// Callers (e.g. the sign-in plugin) should invoke this when
     /// [`EmailVerificationConfig::send_on_sign_in`] is `true` and the user is
     /// not yet verified.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if verification token creation or email delivery fails.
     pub async fn send_verification_on_sign_in(
         &self,
         user: &impl AuthUser,
@@ -354,12 +339,14 @@ impl EmailVerificationPlugin {
     }
 
     /// Check if `send_on_sign_in` is enabled.
-    pub fn should_send_on_sign_in(&self) -> bool {
+    #[must_use]
+    pub const fn should_send_on_sign_in(&self) -> bool {
         self.config.send_on_sign_in
     }
 
     /// Check if email verification is required for signin
-    pub fn is_verification_required(&self) -> bool {
+    #[must_use]
+    pub const fn is_verification_required(&self) -> bool {
         self.config.require_verification_for_signin
     }
 
@@ -367,6 +354,52 @@ impl EmailVerificationPlugin {
     pub fn is_user_verified_or_not_required(&self, user: &impl AuthUser) -> bool {
         user.email_verified() || !self.config.require_verification_for_signin
     }
+}
+
+/// Password registration emits verification before creating its session. The
+/// transaction handle keeps OTP challenges in the same transaction as the user.
+pub(in crate::plugins) async fn send_signup_verification<S: better_auth_core::AuthSchema>(
+    user: &S::User,
+    callback_url: Option<&str>,
+    required: bool,
+    ctx: &AuthContext<S>,
+    tx: &dyn better_auth_core::store::AuthTransaction<S>,
+) -> AuthResult<()> {
+    let config = ctx.extensions.get::<EmailVerificationConfig>();
+    if !config
+        .as_ref()
+        .and_then(|config| config.send_on_sign_up)
+        .unwrap_or(required)
+    {
+        return Ok(());
+    }
+    let user = ctx.user_view(user);
+    if config
+        .as_ref()
+        .is_none_or(|config| config.send_verification_email.is_none())
+        && let Some(sender) = ctx.email_verification_override()
+    {
+        return sender.0.send_in_transaction(&user, None, ctx, tx).await;
+    }
+    let Some(config) = config else {
+        return Ok(());
+    };
+    let Some(sender) = &config.send_verification_email else {
+        return Ok(());
+    };
+    let Some(email) = user.email.as_deref() else {
+        return Ok(());
+    };
+    let token = token::create_email_verification_token(
+        &ctx.config.secret,
+        email,
+        None,
+        config.verification_token_expiry,
+        None,
+    )?;
+    let url = verification_url(&ctx.config, &token, callback_url);
+    super::authentication_helpers::run_notification(sender.send(&user, &url, &token)).await;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

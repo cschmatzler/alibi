@@ -1,14 +1,17 @@
 //! JavaScript JSON numbers at request, response, callback and storage boundaries.
 //!
 //! `JsValue` carries IEEE754 numbers, including Infinity and signed zero, without
-//! enabling serde_json features that reserve otherwise valid application keys.
+//! enabling `serde_json` features that reserve otherwise valid application keys.
 
 use indexmap::IndexMap;
+
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{DeserializeOwned, IntoDeserializer, MapAccess, SeqAccess, Visitor},
 };
+
 use serde_json::{Number, Value};
+
 use std::{
     any::{Any, TypeId},
     fmt,
@@ -25,13 +28,15 @@ pub enum JsValue {
 }
 
 impl JsValue {
-    pub fn as_f64(&self) -> Option<f64> {
+    #[must_use]
+    pub const fn as_f64(&self) -> Option<f64> {
         if let Self::Number(n) = self {
             Some(*n)
         } else {
             None
         }
     }
+    #[must_use]
     pub fn as_str(&self) -> Option<&str> {
         if let Self::String(s) = self {
             Some(s)
@@ -39,20 +44,23 @@ impl JsValue {
             None
         }
     }
-    pub fn as_bool(&self) -> Option<bool> {
+    #[must_use]
+    pub const fn as_bool(&self) -> Option<bool> {
         if let Self::Bool(b) = self {
             Some(*b)
         } else {
             None
         }
     }
-    pub fn as_object(&self) -> Option<&IndexMap<String, Self>> {
+    #[must_use]
+    pub const fn as_object(&self) -> Option<&IndexMap<String, Self>> {
         if let Self::Object(m) = self {
             Some(m)
         } else {
             None
         }
     }
+    #[must_use]
     pub fn as_array(&self) -> Option<&[Self]> {
         if let Self::Array(a) = self {
             Some(a)
@@ -60,25 +68,35 @@ impl JsValue {
             None
         }
     }
+    #[must_use]
     pub fn get(&self, key: &str) -> Option<&Self> {
         self.as_object()?.get(key)
     }
-    pub fn is_null(&self) -> bool {
+    #[must_use]
+    pub const fn is_null(&self) -> bool {
         matches!(self, Self::Null)
     }
-    pub fn is_string(&self) -> bool {
+    #[must_use]
+    pub const fn is_string(&self) -> bool {
         matches!(self, Self::String(_))
     }
-    pub fn is_boolean(&self) -> bool {
+    #[must_use]
+    pub const fn is_boolean(&self) -> bool {
         matches!(self, Self::Bool(_))
     }
-    pub fn is_array(&self) -> bool {
+    #[must_use]
+    pub const fn is_array(&self) -> bool {
         matches!(self, Self::Array(_))
     }
-    pub fn is_object(&self) -> bool {
+    #[must_use]
+    pub const fn is_object(&self) -> bool {
         matches!(self, Self::Object(_))
     }
-    /// Apply JSON.stringify before converting to serde_json's finite representation.
+    /// Apply JSON.stringify before converting to `serde_json`'s finite representation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the JavaScript value cannot be represented as JSON.
     pub fn to_json_value(&self) -> Result<Value, serde_json::Error> {
         finite_value(self)
     }
@@ -117,8 +135,8 @@ impl<'de> Deserialize<'de> for JsValue {
         struct JsVisitor;
         impl<'de> Visitor<'de> for JsVisitor {
             type Value = JsValue;
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("a JSON value")
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a JSON value")
             }
             fn visit_unit<E>(self) -> Result<Self::Value, E> {
                 Ok(JsValue::Null)
@@ -126,23 +144,33 @@ impl<'de> Deserialize<'de> for JsValue {
             fn visit_none<E>(self) -> Result<Self::Value, E> {
                 Ok(JsValue::Null)
             }
-            fn visit_bool<E>(self, b: bool) -> Result<Self::Value, E> {
-                Ok(JsValue::Bool(b))
+            fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E> {
+                Ok(JsValue::Bool(v))
             }
-            fn visit_i64<E>(self, n: i64) -> Result<Self::Value, E> {
-                Ok(JsValue::Number(n as f64))
+            #[expect(
+                clippy::as_conversions,
+                clippy::cast_precision_loss,
+                reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+            )]
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E> {
+                Ok(JsValue::Number(v as f64))
             }
-            fn visit_u64<E>(self, n: u64) -> Result<Self::Value, E> {
-                Ok(JsValue::Number(n as f64))
+            #[expect(
+                clippy::as_conversions,
+                clippy::cast_precision_loss,
+                reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+            )]
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> {
+                Ok(JsValue::Number(v as f64))
             }
-            fn visit_f64<E>(self, n: f64) -> Result<Self::Value, E> {
-                Ok(JsValue::Number(n))
+            fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E> {
+                Ok(JsValue::Number(v))
             }
-            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
-                Ok(JsValue::String(s.into()))
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                Ok(JsValue::String(v.into()))
             }
-            fn visit_string<E>(self, s: String) -> Result<Self::Value, E> {
-                Ok(JsValue::String(s))
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
+                Ok(JsValue::String(v))
             }
             fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
                 let mut values = Vec::new();
@@ -154,7 +182,7 @@ impl<'de> Deserialize<'de> for JsValue {
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
                 let mut values = IndexMap::new();
                 while let Some((key, value)) = map.next_entry()? {
-                    let _ = values.insert(key, value);
+                    drop(values.insert(key, value));
                 }
                 Ok(JsValue::Object(values))
             }
@@ -163,7 +191,7 @@ impl<'de> Deserialize<'de> for JsValue {
     }
 }
 
-impl<'de> IntoDeserializer<'de, serde_json::Error> for JsValue {
+impl IntoDeserializer<'_, serde_json::Error> for JsValue {
     type Deserializer = Self;
     fn into_deserializer(self) -> Self {
         self
@@ -172,19 +200,22 @@ impl<'de> IntoDeserializer<'de, serde_json::Error> for JsValue {
 
 macro_rules! signed_number {
     ($($method:ident),*) => {$(
+#[expect(clippy::as_conversions, clippy::cast_possible_truncation, reason = "Finite integral values are checked against the target integer bounds before conversion")]
         fn $method<V: Visitor<'de>>(self,visitor:V)->Result<V::Value,Self::Error> {
             match self {
-                Self::Number(n) if n.is_finite() && n.fract()==0.0 && (-9_223_372_036_854_775_808.0..9_223_372_036_854_775_808.0).contains(&n) => visitor.visit_i64(n as i64),
+                Self::Number(n) if n.is_finite() && n.fract()==0.0 && (-9_223_372_036_854_776_000.0..9_223_372_036_854_776_000.0).contains(&n) => visitor.visit_i64(n as i64),
                 value => value.deserialize_any(visitor),
             }
         }
     )*};
 }
+
 macro_rules! unsigned_number {
     ($($method:ident),*) => {$(
+#[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "Finite integral values are checked against the target integer bounds before conversion")]
         fn $method<V: Visitor<'de>>(self,visitor:V)->Result<V::Value,Self::Error> {
             match self {
-                Self::Number(n) if n.is_finite() && n.fract()==0.0 && (0.0..18_446_744_073_709_551_616.0).contains(&n) => visitor.visit_u64(n as u64),
+                Self::Number(n) if n.is_finite() && n.fract()==0.0 && (0.0..18_446_744_073_709_552_000.0).contains(&n) => visitor.visit_u64(n as u64),
                 value => value.deserialize_any(visitor),
             }
         }
@@ -232,7 +263,9 @@ impl<'de> Deserializer<'de> for JsValue {
             Self::Object(map) => visitor.visit_enum(serde::de::value::MapAccessDeserializer::new(
                 serde::de::value::MapDeserializer::new(map.into_iter()),
             )),
-            value => value.deserialize_any(visitor),
+            value @ (Self::Null | Self::Bool(_) | Self::Number(_) | Self::Array(_)) => {
+                value.deserialize_any(visitor)
+            }
         }
     }
     signed_number!(
@@ -255,89 +288,11 @@ impl<'de> Deserializer<'de> for JsValue {
     }
 }
 
-/// Parse RFC8259 structure with JavaScript f64 conversion. Strings use serde_json's
-/// escape/UTF8 validation; structural recursion is bounded to its default depth.
-pub fn parse_value(input: &str) -> Result<JsValue, serde_json::Error> {
-    let mut parser = Parser { input, position: 0 };
-    let value = parser.value(0)?;
-    parser.whitespace();
-    if parser.position != input.len() {
-        return Err(invalid("trailing JSON input"));
-    }
-    Ok(value)
-}
-
-pub fn from_slice<T: DeserializeOwned + 'static>(input: &[u8]) -> Result<T, serde_json::Error> {
-    let text = std::str::from_utf8(input).map_err(|_| invalid("invalid JSON UTF8"))?;
-    from_value(parse_value(text)?)
-}
-
-/// Decode an owned DTO. Root `Value` is constructed without serde_json's private
-/// map markers. Arbitrary nested `Value` fields must use `deserialize_value` or
-/// `deserialize_optional_value`; `JsValue` fields require no adapter.
-pub fn from_value<T: DeserializeOwned + 'static>(input: JsValue) -> Result<T, serde_json::Error> {
-    if TypeId::of::<T>() == TypeId::of::<Value>() {
-        let value: Box<dyn Any> = Box::new(input.to_json_value()?);
-        return value
-            .downcast::<T>()
-            .map(|value| *value)
-            .map_err(|_| invalid("invalid JSON value type"));
-    }
-    T::deserialize(input)
-}
-
-/// Preserve arbitrary JSON object keys in a typed serde_json::Value field.
-pub fn deserialize_value<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Value, D::Error> {
-    JsValue::deserialize(deserializer)?
-        .to_json_value()
-        .map_err(serde::de::Error::custom)
-}
-
-/// Optional arbitrary JSON field adapter; null retains normal Option semantics.
-pub fn deserialize_optional_value<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<Value>, D::Error> {
-    Option::<JsValue>::deserialize(deserializer)?
-        .map(|value| value.to_json_value().map_err(serde::de::Error::custom))
-        .transpose()
-}
-
-/// Typed object adapter for arbitrary values inside a string-keyed map.
-pub fn deserialize_map<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<serde_json::Map<String, Value>, D::Error> {
-    match deserialize_value(deserializer)? {
-        Value::Object(map) => Ok(map),
-        _ => Err(serde::de::Error::custom("expected JSON object")),
-    }
-}
-
-/// Deserialize arbitrary values in an optional object field.
-pub fn deserialize_optional_map<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<serde_json::Map<String, Value>>, D::Error> {
-    deserialize_optional_value(deserializer)?
-        .map(|value| match value {
-            Value::Object(map) => Ok(map),
-            _ => Err(serde::de::Error::custom("expected JSON object")),
-        })
-        .transpose()
-}
-
-/// Preserve arbitrary values in flattened public view extension fields.
-pub fn deserialize_btree_map<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<std::collections::BTreeMap<String, Value>, D::Error> {
-    deserialize_map(deserializer).map(|map| map.into_iter().collect())
-}
-
-fn invalid(message: &str) -> serde_json::Error {
-    <serde_json::Error as serde::de::Error>::custom(message)
-}
 struct Parser<'a> {
     input: &'a str,
     position: usize,
 }
+
 impl Parser<'_> {
     fn peek(&self) -> Option<u8> {
         self.input.as_bytes().get(self.position).copied()
@@ -407,7 +362,7 @@ impl Parser<'_> {
                         return Err(invalid("expected JSON colon"));
                     }
                     let value = self.value(depth + 1)?;
-                    let _ = values.insert(key, value);
+                    drop(values.insert(key, value));
                     self.whitespace();
                     if self.take(b'}') {
                         break;
@@ -468,7 +423,7 @@ impl Parser<'_> {
     }
     fn number(&mut self) -> Result<JsValue, serde_json::Error> {
         let start = self.position;
-        let _ = self.take(b'-');
+        let _ignored_take = self.take(b'-');
         if !self.take(b'0') && !self.digits() {
             return Err(invalid("invalid JSON number"));
         }
@@ -476,7 +431,7 @@ impl Parser<'_> {
             return Err(invalid("invalid JSON fraction"));
         }
         if self.take(b'e') || self.take(b'E') {
-            let _ = self.take(b'+') || self.take(b'-');
+            let _ignored_take_2 = self.take(b'+') || self.take(b'-');
             if !self.digits() {
                 return Err(invalid("invalid JSON exponent"));
             }
@@ -486,13 +441,139 @@ impl Parser<'_> {
             .ok_or_else(|| invalid("invalid JSON number bounds"))?
             .parse::<f64>()
             .map(JsValue::Number)
-            .map_err(|_| invalid("invalid JSON number"))
+            .map_err(|_error| invalid("invalid JSON number"))
     }
 }
 
+/// Parse RFC8259 structure with JavaScript f64 conversion. Strings use `serde_json`'s
+/// escape/UTF8 validation; structural recursion is bounded to its default depth.
+///
+/// # Errors
+///
+/// Returns an error if the input is not valid JSON.
+pub fn parse_value(input: &str) -> Result<JsValue, serde_json::Error> {
+    let mut parser = Parser { input, position: 0 };
+    let value = parser.value(0)?;
+    parser.whitespace();
+    if parser.position != input.len() {
+        return Err(invalid("trailing JSON input"));
+    }
+    Ok(value)
+}
+
+///
+/// # Errors
+///
+/// Returns an error if the input is not valid JSON or cannot be deserialized into the requested type.
+pub fn from_slice<T: DeserializeOwned + 'static>(input: &[u8]) -> Result<T, serde_json::Error> {
+    let text = std::str::from_utf8(input).map_err(|_error| invalid("invalid JSON UTF8"))?;
+    from_value(parse_value(text)?)
+}
+
+/// Decode an owned DTO.
+///
+/// Root `Value` is constructed without `serde_json`'s private map markers. Arbitrary nested
+/// `Value` fields must use `deserialize_value` or `deserialize_optional_value`; `JsValue` fields
+/// require no adapter.
+///
+/// # Errors
+///
+/// Returns an error if the value cannot be deserialized into the requested type.
+pub fn from_value<T: DeserializeOwned + 'static>(input: JsValue) -> Result<T, serde_json::Error> {
+    if TypeId::of::<T>() == TypeId::of::<Value>() {
+        let value: Box<dyn Any> = Box::new(input.to_json_value()?);
+        return value
+            .downcast::<T>()
+            .map(|value| *value)
+            .map_err(|_error| invalid("invalid JSON value type"));
+    }
+    T::deserialize(input)
+}
+
+/// Preserve arbitrary JSON object keys in a typed `serde_json::Value` field.
+///
+/// # Errors
+///
+/// Propagates errors from deserializing the JavaScript-compatible JSON representation.
+pub fn deserialize_value<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Value, D::Error> {
+    JsValue::deserialize(deserializer)?
+        .to_json_value()
+        .map_err(serde::de::Error::custom)
+}
+
+/// Optional arbitrary JSON field adapter; null retains normal Option semantics.
+///
+/// # Errors
+///
+/// Propagates errors from deserializing the optional JSON representation.
+pub fn deserialize_optional_value<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Value>, D::Error> {
+    Option::<JsValue>::deserialize(deserializer)?
+        .map(|value| value.to_json_value().map_err(serde::de::Error::custom))
+        .transpose()
+}
+
+/// Typed object adapter for arbitrary values inside a string-keyed map.
+///
+/// # Errors
+///
+/// Returns an error if the deserializer does not supply a valid JSON object.
+pub fn deserialize_map<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<serde_json::Map<String, Value>, D::Error> {
+    match deserialize_value(deserializer)? {
+        Value::Object(map) => Ok(map),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+            Err(serde::de::Error::custom("expected JSON object"))
+        }
+    }
+}
+
+/// Deserialize arbitrary values in an optional object field.
+///
+/// # Errors
+///
+/// Returns an error if the supplied non-null value is not a valid JSON object.
+pub fn deserialize_optional_map<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<serde_json::Map<String, Value>>, D::Error> {
+    deserialize_optional_value(deserializer)?
+        .map(|value| match value {
+            Value::Object(map) => Ok(map),
+            Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_)
+            | Value::Array(_) => Err(serde::de::Error::custom("expected JSON object")),
+        })
+        .transpose()
+}
+
+/// Preserve arbitrary values in flattened public view extension fields.
+///
+/// # Errors
+///
+/// Returns an error if the deserializer does not supply a valid JSON object.
+pub fn deserialize_btree_map<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<std::collections::BTreeMap<String, Value>, D::Error> {
+    deserialize_map(deserializer).map(|map| map.into_iter().collect())
+}
+
+fn invalid(message: &str) -> serde_json::Error {
+    <serde_json::Error as serde::de::Error>::custom(message)
+}
+
+#[must_use]
 pub fn number_as_f64(number: &Number) -> Option<f64> {
     number.as_f64()
 }
+
+///
+/// # Errors
+///
+/// Returns an error if the number cannot be serialized in JavaScript-compatible notation.
 pub fn number_to_string(number: &Number) -> Result<String, serde_json::Error> {
     Ok(ryu_js::Buffer::new()
         .format(number_as_f64(number).ok_or_else(|| invalid("invalid JSON number"))?)
@@ -500,18 +581,37 @@ pub fn number_to_string(number: &Number) -> Result<String, serde_json::Error> {
 }
 
 /// Encode Serialize data exactly as JSON.stringify would encode its numbers.
+///
+/// # Errors
+///
+/// Returns an error if the input cannot be serialized as JavaScript-compatible JSON.
 pub fn to_vec<T: Serialize + ?Sized>(data: &T) -> Result<Vec<u8>, serde_json::Error> {
     let value = JsValue::from(serde_json::to_value(data)?);
     let mut bytes = Vec::new();
     write_value(&value, &mut bytes)?;
     Ok(bytes)
 }
+
+///
+/// # Errors
+///
+/// Returns an error if the input cannot be serialized as JavaScript-compatible JSON.
 pub fn to_string<T: Serialize + ?Sized>(data: &T) -> Result<String, serde_json::Error> {
-    String::from_utf8(to_vec(data)?).map_err(|_| invalid("invalid JSON output UTF8"))
+    String::from_utf8(to_vec(data)?).map_err(|_error| invalid("invalid JSON output UTF8"))
 }
+
+///
+/// # Errors
+///
+/// Returns an error if the `OpenAPI` document cannot be serialized.
 pub fn to_value<T: Serialize + ?Sized>(data: &T) -> Result<Value, serde_json::Error> {
     finite_value(&JsValue::from(serde_json::to_value(data)?))
 }
+
+///
+/// # Errors
+///
+/// Propagates errors from the serializer.
 pub fn serialize<T: Serialize + ?Sized, S: Serializer>(
     data: &T,
     serializer: S,
@@ -521,6 +621,12 @@ pub fn serialize<T: Serialize + ?Sized, S: Serializer>(
         .serialize(serializer)
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
 fn finite_value(value: &JsValue) -> Result<Value, serde_json::Error> {
     match value {
         JsValue::Null => Ok(Value::Null),
@@ -528,12 +634,12 @@ fn finite_value(value: &JsValue) -> Result<Value, serde_json::Error> {
         JsValue::Number(n) if !n.is_finite() => Ok(Value::Null),
         JsValue::Number(n)
             if n.fract() == 0.0
-                && (-9_223_372_036_854_775_808.0..9_223_372_036_854_775_808.0).contains(n) =>
+                && (-9_223_372_036_854_776_000.0..9_223_372_036_854_776_000.0).contains(n) =>
         {
             Ok(Value::Number(Number::from(*n as i64)))
         }
         JsValue::Number(n)
-            if n.fract() == 0.0 && (0.0..18_446_744_073_709_551_616.0).contains(n) =>
+            if n.fract() == 0.0 && (0.0..18_446_744_073_709_552_000.0).contains(n) =>
         {
             Ok(Value::Number(Number::from(*n as u64)))
         }
@@ -550,8 +656,8 @@ fn finite_value(value: &JsValue) -> Result<Value, serde_json::Error> {
             let mut entries: Vec<_> = m.iter().collect();
             entries.sort_by_key(|(name, _)| array_index(name).unwrap_or(u32::MAX));
             let mut values = serde_json::Map::new();
-            for (key, value) in entries {
-                let _ = values.insert(key.clone(), finite_value(value)?);
+            for (key, value_2) in entries {
+                drop(values.insert(key.clone(), finite_value(value_2)?));
             }
             Ok(Value::Object(values))
         }
@@ -573,11 +679,11 @@ fn write_value(value: &JsValue, bytes: &mut Vec<u8>) -> Result<(), serde_json::E
         JsValue::String(s) => serde_json::to_writer(bytes, s)?,
         JsValue::Array(a) => {
             bytes.push(b'[');
-            for (index, value) in a.iter().enumerate() {
+            for (index, value_2) in a.iter().enumerate() {
                 if index != 0 {
                     bytes.push(b',');
                 }
-                write_value(value, bytes)?;
+                write_value(value_2, bytes)?;
             }
             bytes.push(b']');
         }
@@ -585,19 +691,20 @@ fn write_value(value: &JsValue, bytes: &mut Vec<u8>) -> Result<(), serde_json::E
             let mut entries: Vec<_> = m.iter().collect();
             entries.sort_by_key(|(name, _)| array_index(name).unwrap_or(u32::MAX));
             bytes.push(b'{');
-            for (index, (key, value)) in entries.into_iter().enumerate() {
+            for (index, (key, value_3)) in entries.into_iter().enumerate() {
                 if index != 0 {
                     bytes.push(b',');
                 }
                 serde_json::to_writer(&mut *bytes, key)?;
                 bytes.push(b':');
-                write_value(value, bytes)?;
+                write_value(value_3, bytes)?;
             }
             bytes.push(b'}');
         }
     }
     Ok(())
 }
+
 fn array_index(name: &str) -> Option<u32> {
     let index = name.parse::<u32>().ok()?;
     (index != u32::MAX && index.to_string() == name).then_some(index)

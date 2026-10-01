@@ -1,86 +1,39 @@
+#![cfg(test)]
+#![expect(
+    unused_crate_dependencies,
+    reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
+)]
 #![allow(
     clippy::expect_used,
     clippy::indexing_slicing,
     reason = "database hook tests intentionally fail fast on fixture setup and use direct JSON indexing for focused assertions"
 )]
 
+#[cfg(test)]
+#[path = "database_hooks_tests/tests.rs"]
+mod tests;
+
 use std::sync::atomic::{AtomicBool, Ordering};
+
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+
 use better_auth::error::{AuthResult, DatabaseError};
+
 use better_auth::plugins::EmailPasswordPlugin;
+
 use better_auth::prelude::{AuthRequest, AuthUser, CreateUser, HttpMethod};
+
 use better_auth::{AuthBuilder, AuthConfig};
+
 use better_auth_seaorm::sea_orm::sea_query::{Alias, ColumnDef, Expr, ExprTrait, Query, Table};
+
 use better_auth_seaorm::sea_orm::{ConnectionTrait, Database, DatabaseConnection};
+
 use better_auth_seaorm::{HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore};
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
-
-fn test_config() -> AuthConfig {
-    AuthConfig::new("test-secret-key-that-is-at-least-32-characters-long")
-        .base_url("http://localhost:3000")
-}
-
-async fn test_database() -> DatabaseConnection {
-    let database = Database::connect("sqlite::memory:")
-        .await
-        .expect("sqlite test database should connect");
-    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
-        .await
-        .expect("sqlite test migrations should run");
-    database
-}
-
-async fn test_store(config: &AuthConfig) -> SeaOrmStore<TestSchema> {
-    SeaOrmStore::<TestSchema>::new(config.clone(), test_database().await)
-}
-
-fn signup_request(email: &str) -> AuthRequest {
-    let mut request = AuthRequest::new(HttpMethod::Post, "/sign-up/email");
-    request.body = Some(
-        serde_json::json!({
-            "email": email,
-            "password": "Password123!",
-            "name": "Test User",
-        })
-        .to_string()
-        .into_bytes(),
-    );
-    let _ = request
-        .headers
-        .insert("content-type".to_string(), "application/json".to_string());
-    request
-}
-
-async fn create_app_workspace_table(database: &DatabaseConnection) {
-    let statement = Table::create()
-        .table(Alias::new("app_workspaces"))
-        .if_not_exists()
-        .col(ColumnDef::new(Alias::new("user_id")).string().not_null())
-        .col(ColumnDef::new(Alias::new("name")).string().not_null())
-        .to_owned();
-
-    let _ = database
-        .execute(&statement)
-        .await
-        .expect("app workspace table should be created");
-}
-
-async fn app_workspace_rows_for_user(database: &DatabaseConnection, user_id: &str) -> usize {
-    let statement = Query::select()
-        .column(Alias::new("user_id"))
-        .from(Alias::new("app_workspaces"))
-        .and_where(Expr::col(Alias::new("user_id")).eq(user_id))
-        .to_owned();
-
-    database
-        .query_all(&statement)
-        .await
-        .expect("workspace rows should load")
-        .len()
-}
 
 #[derive(Clone)]
 struct OrderingHook {
@@ -119,8 +72,7 @@ impl SeaOrmHooks<TestSchema> for RequestContextHook {
             ctx.request.is_some(),
             ctx.request
                 .as_ref()
-                .map(|request| request.path.clone())
-                .unwrap_or_else(|| "<none>".to_string()),
+                .map_or_else(|| "<none>".to_owned(), |request| request.path.clone()),
         );
         self.seen
             .lock()
@@ -145,7 +97,7 @@ impl ProvisioningService {
         let statement = Query::insert()
             .into_table(Alias::new("app_workspaces"))
             .columns([Alias::new("user_id"), Alias::new("name")])
-            .values_panic([user.id().to_owned().into(), "Default Workspace".into()])
+            .values_panic([user.id().into_owned().into(), "Default Workspace".into()])
             .to_owned();
 
         self.tx_seen.store(ctx.tx.is_some(), Ordering::SeqCst);
@@ -167,7 +119,7 @@ impl ProvisioningService {
             1
         );
 
-        let _ = self
+        let _ignored_to_string = self
             .db
             .execute(&statement)
             .await
@@ -215,152 +167,68 @@ impl SeaOrmHooks<TestSchema> for DeleteCaptureHook {
     }
 }
 
-// Upstream reference: packages/better-auth/src/db/db.test.ts :: describe("db") and packages/better-auth/src/plugins/organization/organization-hook.test.ts; adapted to the Rust database hook surface.
-#[tokio::test]
-async fn plugin_database_hooks_run_before_builder_hooks() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let config = test_config();
-    let store = test_store(&config)
+fn test_config() -> AuthConfig {
+    AuthConfig::new("test-secret-key-that-is-at-least-32-characters-long")
+        .base_url("http://localhost:3000")
+}
+
+async fn test_database() -> DatabaseConnection {
+    let database = Database::connect("sqlite::memory:")
         .await
-        .hook(OrderingHook {
-            label: "plugin",
-            events: events.clone(),
+        .expect("sqlite test database should connect");
+    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        .await
+        .expect("sqlite test migrations should run");
+    database
+}
+
+async fn test_store(config: &AuthConfig) -> SeaOrmStore<TestSchema> {
+    SeaOrmStore::<TestSchema>::new(config.clone(), test_database().await)
+}
+
+fn signup_request(email: &str) -> AuthRequest {
+    let mut request = AuthRequest::new(HttpMethod::Post, "/sign-up/email");
+    request.body = Some(
+        serde_json::json!({
+            "email": email,
+            "password": "Password123!",
+            "name": "Test User",
         })
-        .hook(OrderingHook {
-            label: "builder",
-            events: events.clone(),
-        });
-    let auth = AuthBuilder::<TestSchema>::new(config)
-        .store(store)
-        .build()
-        .await
-        .expect("auth should build");
-
-    let _ = auth
-        .store()
-        .create_user(
-            CreateUser::new()
-                .with_email("ordering@example.com")
-                .with_name("Ordering"),
-        )
-        .await
-        .expect("user should be created");
-
-    assert_eq!(
-        *events.lock().expect("events mutex should lock"),
-        vec!["plugin", "builder"]
+        .to_string()
+        .into_bytes(),
     );
+    drop(
+        request
+            .headers
+            .insert("content-type".to_owned(), "application/json".to_owned()),
+    );
+    request
 }
 
-// Upstream reference: packages/better-auth/src/db/db.test.ts :: describe("db") and packages/better-auth/src/plugins/organization/organization-hook.test.ts; adapted to the Rust database hook surface.
-#[tokio::test]
-async fn request_context_is_present_for_requests_and_absent_for_direct_store_calls() {
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let config = test_config();
-    let store = test_store(&config)
-        .await
-        .hook(RequestContextHook { seen: seen.clone() });
-    let auth = AuthBuilder::<TestSchema>::new(config)
-        .store(store)
-        .plugin(EmailPasswordPlugin::new())
-        .build()
-        .await
-        .expect("auth should build");
+async fn create_app_workspace_table(database: &DatabaseConnection) {
+    let statement = Table::create()
+        .table(Alias::new("app_workspaces"))
+        .if_not_exists()
+        .col(ColumnDef::new(Alias::new("user_id")).string().not_null())
+        .col(ColumnDef::new(Alias::new("name")).string().not_null())
+        .to_owned();
 
-    let response = auth
-        .handle_request(signup_request("request-context@example.com"))
+    let _ignored_result = database
+        .execute(&statement)
         .await
-        .expect("sign-up request should succeed");
-    assert_eq!(response.status, 200);
-
-    let _ = auth
-        .store()
-        .create_user(
-            CreateUser::new()
-                .with_email("direct-store@example.com")
-                .with_name("Direct Store"),
-        )
-        .await
-        .expect("direct store call should succeed");
-
-    assert_eq!(
-        *seen.lock().expect("request context mutex should lock"),
-        vec![
-            (true, "/sign-up/email".to_string()),
-            (false, "<none>".to_string()),
-        ]
-    );
+        .expect("app workspace table should be created");
 }
 
-// Upstream reference: packages/better-auth/src/db/db.test.ts :: describe("db") and packages/better-auth/src/plugins/organization/organization-hook.test.ts; adapted to the Rust database hook surface.
-#[tokio::test]
-async fn onboarding_hook_provisions_app_data_after_the_auth_transaction_commits() {
-    let database = test_database().await;
-    create_app_workspace_table(&database).await;
+async fn app_workspace_rows_for_user(database: &DatabaseConnection, user_id: &str) -> usize {
+    let statement = Query::select()
+        .column(Alias::new("user_id"))
+        .from(Alias::new("app_workspaces"))
+        .and_where(Expr::col(Alias::new("user_id")).eq(user_id))
+        .to_owned();
 
-    let tx_seen = Arc::new(AtomicBool::new(false));
-    let config = test_config();
-    let store =
-        SeaOrmStore::<TestSchema>::new(config.clone(), database.clone()).hook(OnboardingHook {
-            service: ProvisioningService {
-                db: database.clone(),
-                tx_seen: tx_seen.clone(),
-            },
-        });
-    let auth = AuthBuilder::<TestSchema>::new(config)
-        .store(store)
-        .plugin(EmailPasswordPlugin::new())
-        .build()
+    database
+        .query_all(&statement)
         .await
-        .expect("auth should build");
-
-    let response = auth
-        .handle_request(signup_request("onboarding@example.com"))
-        .await
-        .expect("sign-up request should succeed");
-    assert_eq!(response.status, 200);
-
-    let body: serde_json::Value =
-        serde_json::from_slice(&response.body).expect("response body should be valid JSON");
-    let user_id = body["user"]["id"]
-        .as_str()
-        .expect("user id should be present");
-
-    assert_eq!(app_workspace_rows_for_user(&database, user_id).await, 1);
-    assert!(!tx_seen.load(Ordering::SeqCst));
-}
-
-// Upstream reference: packages/better-auth/src/db/db.test.ts :: describe("db") and packages/better-auth/src/plugins/organization/organization-hook.test.ts; adapted to the Rust database hook surface.
-#[tokio::test]
-async fn delete_hooks_receive_the_loaded_user_entity() {
-    let emails = Arc::new(Mutex::new(Vec::new()));
-    let config = test_config();
-    let store = test_store(&config).await.hook(DeleteCaptureHook {
-        emails: emails.clone(),
-    });
-    let auth = AuthBuilder::<TestSchema>::new(config)
-        .store(store)
-        .build()
-        .await
-        .expect("auth should build");
-
-    let user = auth
-        .store()
-        .create_user(
-            CreateUser::new()
-                .with_email("delete-capture@example.com")
-                .with_name("Delete Capture"),
-        )
-        .await
-        .expect("user should be created");
-
-    auth.store()
-        .delete_user(&user.id())
-        .await
-        .expect("user should be deleted");
-
-    assert_eq!(
-        *emails.lock().expect("delete capture mutex should lock"),
-        vec![Some("delete-capture@example.com".to_string())]
-    );
+        .expect("workspace rows should load")
+        .len()
 }

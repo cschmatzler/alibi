@@ -42,7 +42,7 @@ mod organizations;
 mod passkeys;
 mod sessions;
 mod siwe_wallets;
-pub(crate) mod sqlite_number;
+mod sqlite_number;
 mod teams;
 mod two_factor;
 #[cfg(test)]
@@ -77,12 +77,12 @@ use better_auth_core::store::{
 use chrono::{DateTime, Utc};
 use sea_orm::{DatabaseConnection, DatabaseTransaction, DbErr, SqlErr, TransactionTrait};
 
-use crate::config::AuthConfig;
-use crate::error::{AuthError, AuthResult, DatabaseError};
 use crate::hooks::{SeaOrmHookContext, SeaOrmHooks, current_request_hook_context};
 use crate::schema::{
     AuthSchema, SeaOrmAccountModel, SeaOrmSessionModel, SeaOrmUserModel, SeaOrmVerificationModel,
 };
+use better_auth_core::config::AuthConfig;
+use better_auth_core::error::{AuthError, AuthResult, DatabaseError};
 
 #[derive(Clone)]
 pub struct SeaOrmStore<S: AuthSchema> {
@@ -92,7 +92,14 @@ pub struct SeaOrmStore<S: AuthSchema> {
     _schema: PhantomData<S>,
 }
 
+impl<S: AuthSchema> std::fmt::Debug for SeaOrmStore<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SeaOrmStore").finish_non_exhaustive()
+    }
+}
+
 impl<S: AuthSchema> SeaOrmStore<S> {
+    #[must_use]
     pub fn new(config: impl Into<Arc<AuthConfig>>, db: DatabaseConnection) -> Self {
         Self {
             config: config.into(),
@@ -102,21 +109,25 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         }
     }
 
+    #[must_use]
     pub fn with_hooks(mut self, hooks: Vec<Arc<dyn SeaOrmHooks<S>>>) -> Self {
         self.hooks = hooks;
         self
     }
 
+    #[must_use]
     pub fn hook<H: SeaOrmHooks<S> + 'static>(mut self, hook: H) -> Self {
         self.hooks.push(Arc::new(hook));
         self
     }
 
-    pub fn connection(&self) -> &DatabaseConnection {
+    #[must_use]
+    pub const fn connection(&self) -> &DatabaseConnection {
         &self.db
     }
 
-    pub fn config(&self) -> &Arc<AuthConfig> {
+    #[must_use]
+    pub const fn config(&self) -> &Arc<AuthConfig> {
         &self.config
     }
 
@@ -136,6 +147,10 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         }
     }
 
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database connection check fails.
     pub async fn test_connection(&self) -> Result<(), DbErr> {
         self.db.ping().await
     }
@@ -319,17 +334,17 @@ where
                     for hook in self.hooks() {
                         match &created {
                             AfterCreate::User(user) => {
-                                hook.after_create_user(user, &hook_context).await?
+                                hook.after_create_user(user, &hook_context).await?;
                             }
                             AfterCreate::Account(account) => {
-                                hook.after_create_account(account, &hook_context).await?
+                                hook.after_create_account(account, &hook_context).await?;
                             }
                             AfterCreate::Session(session) => {
-                                hook.after_create_session(session, &hook_context).await?
+                                hook.after_create_session(session, &hook_context).await?;
                             }
                             AfterCreate::Verification(verification) => {
                                 hook.after_create_verification(verification, &hook_context)
-                                    .await?
+                                    .await?;
                             }
                         }
                     }
@@ -344,14 +359,16 @@ where
     }
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Result::map_err transfers ownership to this error-boundary adapter"
+)]
 pub(crate) fn map_db_err(err: DbErr) -> AuthError {
     match err.sql_err() {
-        Some(SqlErr::UniqueConstraintViolation(message)) => {
-            AuthError::Database(DatabaseError::Constraint(message))
-        }
-        Some(SqlErr::ForeignKeyConstraintViolation(message)) => {
-            AuthError::Database(DatabaseError::Constraint(message))
-        }
+        Some(
+            SqlErr::UniqueConstraintViolation(message)
+            | SqlErr::ForeignKeyConstraintViolation(message),
+        ) => AuthError::Database(DatabaseError::Constraint(message)),
         Some(_) | None => AuthError::Database(DatabaseError::Query(err.to_string())),
     }
 }
@@ -363,7 +380,7 @@ pub(crate) fn cancelled_by_hook(operation: &str) -> AuthError {
 fn parse_rfc3339(value: &str, field: &str) -> Result<DateTime<Utc>, AuthError> {
     DateTime::parse_from_rfc3339(value)
         .map(|dt| dt.with_timezone(&Utc))
-        .map_err(|_| AuthError::bad_request(format!("Invalid RFC 3339 timestamp for {field}")))
+        .map_err(|_error| AuthError::bad_request(format!("Invalid RFC 3339 timestamp for {field}")))
 }
 
 fn parse_optional_rfc3339(
@@ -371,4 +388,9 @@ fn parse_optional_rfc3339(
     field: &str,
 ) -> Result<Option<DateTime<Utc>>, AuthError> {
     value.map(|inner| parse_rfc3339(inner, field)).transpose()
+}
+
+/// Match the pinned SQLite adapter's decimal formatting of finite REAL values.
+pub(crate) fn sqlite_real_text(input: f64) -> String {
+    sqlite_number::real_text(input)
 }

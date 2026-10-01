@@ -23,6 +23,13 @@ pub struct PasskeyRegistrationContext<'a> {
     pub extensions: &'a ContextExtensions,
 }
 
+impl std::fmt::Debug for PasskeyRegistrationContext<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PasskeyRegistrationContext")
+            .finish_non_exhaustive()
+    }
+}
+
 /// Resolve an authorized registration identity when no session is available.
 #[async_trait]
 pub trait PasskeyUserResolver: Send + Sync {
@@ -99,7 +106,7 @@ pub(super) fn trim_name(value: &str) -> &str {
 }
 
 /// Domain client errors and explicit public API errors preserve their wire contract.
-pub(super) fn is_application_error(error: &better_auth_core::AuthError) -> bool {
+pub(super) const fn is_application_error(error: &better_auth_core::AuthError) -> bool {
     matches!(
         error,
         better_auth_core::AuthError::Upstream { .. } | better_auth_core::AuthError::Api { .. }

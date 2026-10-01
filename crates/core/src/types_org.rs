@@ -1,54 +1,14 @@
 use chrono::{DateTime, Utc};
+
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 use std::borrow::Cow;
+
 use uuid::Uuid;
 
 use crate::entity::{AuthInvitation, AuthMember, AuthOrganization};
 
-fn serialize_json_option_as_string<S>(
-    value: &Option<serde_json::Value>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    match value {
-        Some(inner) => serializer
-            .serialize_some(&serde_json::to_string(inner).map_err(serde::ser::Error::custom)?),
-        None => serializer.serialize_none(),
-    }
-}
-
-fn deserialize_json_option_from_string<'de, D>(
-    deserializer: D,
-) -> Result<Option<serde_json::Value>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum MetadataValue {
-        Json(
-            #[serde(deserialize_with = "crate::utils::json::deserialize_value")] serde_json::Value,
-        ),
-        String(String),
-    }
-
-    let value = Option::<MetadataValue>::deserialize(deserializer)?;
-    value
-        .map(|inner| match inner {
-            MetadataValue::Json(value) => Ok(value),
-            MetadataValue::String(value) => {
-                match crate::utils::json::from_slice(value.as_bytes()) {
-                    Ok(parsed) => Ok(parsed),
-                    Err(_) => Ok(serde_json::Value::String(value)),
-                }
-            }
-        })
-        .transpose()
-}
-
-/// Organization entity - matches OpenAPI schema
+/// Organization entity - matches `OpenAPI` schema
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Organization {
     pub id: String,
@@ -139,11 +99,21 @@ pub struct Invitation {
 
 impl Invitation {
     /// Check if the invitation is still pending
+    #[must_use]
+    #[expect(
+        clippy::same_name_method,
+        reason = "The inherent convenience method preserves the public API for callers without a trait import"
+    )]
     pub fn is_pending(&self) -> bool {
         self.status == InvitationStatus::Pending
     }
 
     /// Check if the invitation has expired
+    #[must_use]
+    #[expect(
+        clippy::same_name_method,
+        reason = "The inherent convenience method preserves the public API for callers without a trait import"
+    )]
     pub fn is_expired(&self) -> bool {
         self.expires_at < Utc::now()
     }
@@ -160,6 +130,7 @@ pub struct CreateOrganization {
 }
 
 impl CreateOrganization {
+    #[must_use]
     pub fn new(name: impl Into<String>, slug: impl Into<String>) -> Self {
         Self {
             id: Some(Uuid::new_v4().to_string()),
@@ -170,11 +141,13 @@ impl CreateOrganization {
         }
     }
 
+    #[must_use]
     pub fn with_logo(mut self, logo: impl Into<String>) -> Self {
         self.logo = Some(logo.into());
         self
     }
 
+    #[must_use]
     pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
         self.metadata = Some(metadata);
         self
@@ -200,6 +173,7 @@ pub struct CreateMember {
 }
 
 impl CreateMember {
+    #[must_use]
     pub fn new(
         organization_id: impl Into<String>,
         user_id: impl Into<String>,
@@ -226,6 +200,7 @@ pub struct CreateInvitation {
 }
 
 impl CreateInvitation {
+    #[must_use]
     pub fn new(
         organization_id: impl Into<String>,
         email: impl Into<String>,
@@ -439,4 +414,47 @@ pub struct UpdateOrganizationRole {
 pub enum OrganizationRoleSelector {
     Id(String),
     Name(String),
+}
+
+#[expect(
+    clippy::ref_option,
+    reason = "Serde field serializers receive a reference to the declared Option field type"
+)]
+fn serialize_json_option_as_string<S>(
+    value: &Option<serde_json::Value>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match value {
+        Some(inner) => serializer
+            .serialize_some(&serde_json::to_string(inner).map_err(serde::ser::Error::custom)?),
+        None => serializer.serialize_none(),
+    }
+}
+
+fn deserialize_json_option_from_string<'de, D>(
+    deserializer: D,
+) -> Result<Option<serde_json::Value>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum MetadataValue {
+        Json(
+            #[serde(deserialize_with = "crate::utils::json::deserialize_value")] serde_json::Value,
+        ),
+        String(String),
+    }
+
+    let value = Option::<MetadataValue>::deserialize(deserializer)?;
+    value
+        .map(|inner| match inner {
+            MetadataValue::Json(value_2) => Ok(value_2),
+            MetadataValue::String(value_3) => crate::utils::json::from_slice(value_3.as_bytes())
+                .map_or_else(|_| Ok(serde_json::Value::String(value_3)), Ok),
+        })
+        .transpose()
 }

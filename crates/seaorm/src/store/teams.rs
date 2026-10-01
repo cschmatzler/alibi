@@ -1,76 +1,31 @@
+#[cfg(test)]
+#[path = "team_tests.rs"]
+mod tests;
+
 use async_trait::async_trait;
+
 use chrono::Utc;
+
 use sea_orm::ExprTrait;
+
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
     QueryOrder, QuerySelect, Set, SqliteTransactionMode, TransactionOptions, TransactionTrait,
 };
 
 use super::entities::{invitation, team, team_member};
+
 use super::{SeaOrmStore, map_db_err};
-use crate::error::{AuthError, AuthResult};
+
 use crate::schema::{AuthSchema, SeaOrmUserModel};
+
 use better_auth_core::store::{TeamStore, team_membership_key};
+
 use better_auth_core::types::{AddTeamMemberResult, CreateTeam, Team, TeamMember, UpdateTeam};
+
 use uuid::Uuid;
 
-/// Delete owned memberships and release exactly the seats those rows occupied.
-pub(super) async fn remove_owned_team_members(
-    connection: &sea_orm::DatabaseTransaction,
-    user_id: &str,
-    organization_id: Option<&str>,
-) -> AuthResult<()> {
-    use sea_orm_migration::SchemaManager;
-    if !SchemaManager::new(connection)
-        .has_table("team_member")
-        .await
-        .map_err(map_db_err)?
-    {
-        return Ok(());
-    }
-    let mut teams = team::Entity::find();
-    if let Some(org) = organization_id {
-        teams = teams.filter(team::Column::OrganizationId.eq(org));
-    }
-    let rooms = teams
-        .order_by_asc(team::Column::Id)
-        .lock_exclusive()
-        .all(connection)
-        .await
-        .map_err(map_db_err)?;
-    release_owned_team_members(connection, user_id, rooms).await
-}
-
-/// Remove memberships from an already selected adapter page and release seats.
-pub(super) async fn release_owned_team_members(
-    connection: &sea_orm::DatabaseTransaction,
-    user_id: &str,
-    rooms: Vec<team::Model>,
-) -> AuthResult<()> {
-    for room in rooms {
-        let deleted = team_member::Entity::delete_many()
-            .filter(team_member::Column::TeamId.eq(&room.id))
-            .filter(team_member::Column::UserId.eq(user_id))
-            .exec(connection)
-            .await
-            .map_err(map_db_err)?;
-        if deleted.rows_affected > 0 {
-            let count = i64::try_from(deleted.rows_affected)
-                .map_err(|_| AuthError::internal("Team membership count overflow"))?;
-            let _ = team::Entity::update_many()
-                .filter(team::Column::Id.eq(&room.id))
-                .filter(team::Column::MemberCount.gte(count))
-                .col_expr(
-                    team::Column::MemberCount,
-                    sea_orm::sea_query::Expr::col(team::Column::MemberCount).sub(count),
-                )
-                .exec(connection)
-                .await
-                .map_err(map_db_err)?;
-        }
-    }
-    Ok(())
-}
+use better_auth_core::error::{AuthError, AuthResult};
 
 impl<S> SeaOrmStore<S>
 where
@@ -132,7 +87,12 @@ where
             .count(tx)
             .await
             .map_err(map_db_err)?;
-        if maximum.is_some_and(|max| count >= max as u64) {
+        if maximum
+            .map(u64::try_from)
+            .transpose()
+            .map_err(|_error| AuthError::internal("Team capacity exceeds u64"))?
+            .is_some_and(|max| count >= max)
+        {
             return Ok(AddTeamMemberResult::LimitReached);
         }
         let key = team_membership_key(team_id, user_id)?;
@@ -148,8 +108,8 @@ where
         .map_err(map_db_err)?;
         let mut active = room.into_active_model();
         active.member_count = Set(i64::try_from(count + 1)
-            .map_err(|_| AuthError::internal("Team membership count overflow"))?);
-        let _ = active.update(tx).await.map_err(map_db_err)?;
+            .map_err(|_error| AuthError::internal("Team membership count overflow"))?);
+        drop(active.update(tx).await.map_err(map_db_err)?);
         Ok(AddTeamMemberResult::Added(member.into()))
     }
 }
@@ -234,7 +194,7 @@ where
             tx.commit().await.map_err(map_db_err)?;
             return Ok(false);
         }
-        let _ = team_member::Entity::delete_many()
+        let _ignored_map_err = team_member::Entity::delete_many()
             .filter(team_member::Column::TeamId.eq(team_id))
             .exec(&tx)
             .await
@@ -260,7 +220,7 @@ where
                 .join(",");
             let mut active = invite.into_active_model();
             active.team_id = Set((!remaining.is_empty()).then_some(remaining));
-            let _ = active.update(&tx).await.map_err(map_db_err)?;
+            drop(active.update(&tx).await.map_err(map_db_err)?);
         }
         tx.commit().await.map_err(map_db_err)?;
         Ok(true)
@@ -307,11 +267,13 @@ where
             })
             .await
             .map_err(map_db_err)?;
-        let _ = team::Entity::find_by_id(team_id.to_owned())
-            .lock_exclusive()
-            .one(&tx)
-            .await
-            .map_err(map_db_err)?;
+        drop(
+            team::Entity::find_by_id(team_id.to_owned())
+                .lock_exclusive()
+                .one(&tx)
+                .await
+                .map_err(map_db_err)?,
+        );
         let removed = team_member::Entity::delete_many()
             .filter(team_member::Column::TeamId.eq(team_id))
             .filter(team_member::Column::UserId.eq(user_id))
@@ -320,9 +282,9 @@ where
             .map_err(map_db_err)?
             .rows_affected;
         let count = i64::try_from(removed)
-            .map_err(|_| AuthError::internal("Team membership count overflow"))?;
+            .map_err(|_error| AuthError::internal("Team membership count overflow"))?;
         if count > 0 {
-            let _ = team::Entity::update_many()
+            let _ignored_map_err_2 = team::Entity::update_many()
                 .filter(team::Column::Id.eq(team_id))
                 .filter(team::Column::MemberCount.gte(count))
                 .col_expr(
@@ -334,7 +296,8 @@ where
                 .map_err(map_db_err)?;
         }
         tx.commit().await.map_err(map_db_err)?;
-        usize::try_from(removed).map_err(|_| AuthError::internal("Team membership count overflow"))
+        usize::try_from(removed)
+            .map_err(|_error| AuthError::internal("Team membership count overflow"))
     }
     async fn list_team_members(&self, team_id: &str) -> AuthResult<Vec<TeamMember>> {
         team_member::Entity::find()
@@ -372,6 +335,60 @@ where
     }
 }
 
-#[cfg(test)]
-#[path = "team_tests.rs"]
-mod tests;
+/// Delete owned memberships and release exactly the seats those rows occupied.
+pub(super) async fn remove_owned_team_members(
+    connection: &sea_orm::DatabaseTransaction,
+    user_id: &str,
+    organization_id: Option<&str>,
+) -> AuthResult<()> {
+    use sea_orm_migration::SchemaManager;
+    if !SchemaManager::new(connection)
+        .has_table("team_member")
+        .await
+        .map_err(map_db_err)?
+    {
+        return Ok(());
+    }
+    let mut teams = team::Entity::find();
+    if let Some(org) = organization_id {
+        teams = teams.filter(team::Column::OrganizationId.eq(org));
+    }
+    let rooms = teams
+        .order_by_asc(team::Column::Id)
+        .lock_exclusive()
+        .all(connection)
+        .await
+        .map_err(map_db_err)?;
+    release_owned_team_members(connection, user_id, rooms).await
+}
+
+/// Remove memberships from an already selected adapter page and release seats.
+pub(super) async fn release_owned_team_members(
+    connection: &sea_orm::DatabaseTransaction,
+    user_id: &str,
+    rooms: Vec<team::Model>,
+) -> AuthResult<()> {
+    for room in rooms {
+        let deleted = team_member::Entity::delete_many()
+            .filter(team_member::Column::TeamId.eq(&room.id))
+            .filter(team_member::Column::UserId.eq(user_id))
+            .exec(connection)
+            .await
+            .map_err(map_db_err)?;
+        if deleted.rows_affected > 0 {
+            let count = i64::try_from(deleted.rows_affected)
+                .map_err(|_error| AuthError::internal("Team membership count overflow"))?;
+            let _ignored_map_err = team::Entity::update_many()
+                .filter(team::Column::Id.eq(&room.id))
+                .filter(team::Column::MemberCount.gte(count))
+                .col_expr(
+                    team::Column::MemberCount,
+                    sea_orm::sea_query::Expr::col(team::Column::MemberCount).sub(count),
+                )
+                .exec(connection)
+                .await
+                .map_err(map_db_err)?;
+        }
+    }
+    Ok(())
+}

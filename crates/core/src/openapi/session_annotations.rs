@@ -1,10 +1,10 @@
 //! Source-declared core session endpoint schemas (Better Auth 1.7.6).
 use super::OpenApiEndpoint;
 use serde_json::{Value, json};
-fn response(description: &str, schema: Value) -> Value {
+fn response(description: &str, schema: &Value) -> Value {
     json!({"description":description,"content":{"application/json":{"schema":schema}}})
 }
-fn body(schema: Value) -> Value {
+fn body(schema: &Value) -> Value {
     json!({"content":{"application/json":{"schema":schema}}})
 }
 fn status(description: &str) -> Value {
@@ -21,26 +21,26 @@ pub(super) fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
                     "type":"object","propertyNames":{"type":"string","description":"Field name must be a string"},"additionalProperties":{}
                 }}}}),
             );
-            let _ = metadata.responses.insert(
+            drop(metadata.responses.insert(
                 "200".into(),
                 response(
                     "Success",
-                    json!({"type":"object","properties":{
+                    &(json!({"type":"object","properties":{
                         "session":{"type":"object","$ref":"#/components/schemas/Session"}
-                    }}),
+                    }})),
                 ),
-            );
+            ));
         }
         "/list-sessions" => {
             metadata.operation_id = Some("listUserSessions".into());
             metadata.description = Some("List all active sessions for the user".into());
-            let _ = metadata.responses.insert(
+            drop(metadata.responses.insert(
                 "200".into(),
                 response(
                     "Success",
-                    json!({"type":"array","items":{"$ref":"#/components/schemas/Session"}}),
+                    &(json!({"type":"array","items":{"$ref":"#/components/schemas/Session"}})),
                 ),
-            );
+            ));
         }
         "/sign-out" => {
             metadata.operation_id = Some("signOut".into());
@@ -52,44 +52,44 @@ pub(super) fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
                  "state":{"type":"string","description":"State to pass to the provider logout endpoint"}
                 }}}}}),
             );
-            let _=metadata.responses.insert("200".into(),response("Success",json!({"type":"object","properties":{
+            drop(metadata.responses.insert("200".into(),response("Success",&(json!({"type":"object","properties":{
     "success":{"type":"boolean"},"url":{"type":"string","description":"Provider logout URL when RP-initiated logout is available"},
     "redirect":{"type":"boolean","description":"Whether the client should redirect to the provider logout URL"}
-   }})));
+   }})))));
         }
         "/revoke-session" => {
             metadata.description = Some("Revoke a single session".into());
             metadata.request_body = Some(body(
-                json!({"type":"object","properties":{"token":{"type":"string","description":"The token to revoke"}},"required":["token"]}),
+                &(json!({"type":"object","properties":{"token":{"type":"string","description":"The token to revoke"}},"required":["token"]})),
             ));
-            let _ = metadata.responses.insert(
+            drop(metadata.responses.insert(
                 "200".into(),
                 response(
                     "Success",
-                    status("Indicates if the session was revoked successfully"),
+                    &(status("Indicates if the session was revoked successfully")),
                 ),
-            );
+            ));
         }
         "/revoke-sessions" => {
             metadata.description = Some("Revoke all sessions for the user".into());
-            let _ = metadata.responses.insert(
+            drop(metadata.responses.insert(
                 "200".into(),
                 response(
                     "Success",
-                    status("Indicates if all sessions were revoked successfully"),
+                    &(status("Indicates if all sessions were revoked successfully")),
                 ),
-            );
+            ));
         }
         "/revoke-other-sessions" => {
             metadata.description =
                 Some("Revoke all other sessions for the user except the current one".into());
-            let _ = metadata.responses.insert(
+            drop(metadata.responses.insert(
                 "200".into(),
                 response(
                     "Success",
-                    status("Indicates if all other sessions were revoked successfully"),
+                    &(status("Indicates if all other sessions were revoked successfully")),
                 ),
-            );
+            ));
         }
         _ => return None,
     }

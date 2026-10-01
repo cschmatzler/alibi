@@ -7,6 +7,14 @@ use tokio::sync::Barrier;
 use tokio::task::JoinSet;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "Assertions report test failures; Result propagates setup and fixture errors"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn file_sqlite_connections_consume_quota_without_lock_upgrade_errors()
 -> Result<(), Box<dyn std::error::Error>> {
     let directory = std::env::temp_dir().join(format!("better-auth-api-key-{}", Uuid::new_v4()));
@@ -16,7 +24,7 @@ async fn file_sqlite_connections_consume_quota_without_lock_upgrade_errors()
             "sqlite://{}?mode=rwc",
             directory.join("auth.sqlite").display()
         ));
-        let _ = options.min_connections(8).max_connections(8);
+        let _ignored_max_connections = options.min_connections(8).max_connections(8);
         let database = Database::connect(options).await?;
         let result = async {
             run_migrations(&database).await?;
@@ -26,11 +34,11 @@ async fn file_sqlite_connections_consume_quota_without_lock_upgrade_errors()
             ));
             let key = store
                 .create_api_key(CreateApiKey {
-                    reference_id: "owner".to_string(),
-                    config_id: "default".to_string(),
+                    reference_id: "owner".to_owned(),
+                    config_id: "default".to_owned(),
                     name: None,
                     prefix: None,
-                    key_hash: "concurrent-key-hash".to_string(),
+                    key_hash: "concurrent-key-hash".to_owned(),
                     start: None,
                     expires_at: None,
                     remaining: Some(12.5),
@@ -47,13 +55,13 @@ async fn file_sqlite_connections_consume_quota_without_lock_upgrade_errors()
             let barrier = Arc::new(Barrier::new(32));
             let mut tasks = JoinSet::new();
             for _ in 0..32 {
-                let store = store.clone();
-                let barrier = barrier.clone();
+                let store = Arc::clone(&store);
+                let barrier = Arc::clone(&barrier);
                 let id = key.id.clone();
-                let _ = tasks.spawn(async move {
-                    let _ = barrier.wait().await;
+                drop(tasks.spawn(async move {
+                    let _ignored_wait = barrier.wait().await;
                     store.consume_api_key_usage(&id, true).await
-                });
+                }));
             }
             let mut counts = [0; 3];
             while let Some(result) = tasks.join_next().await {
@@ -74,21 +82,21 @@ async fn file_sqlite_connections_consume_quota_without_lock_upgrade_errors()
                     },
                 )
                 .await?;
-            let barrier = Arc::new(Barrier::new(32));
-            let mut tasks = JoinSet::new();
+            let barrier_2 = Arc::new(Barrier::new(32));
+            let mut tasks_2 = JoinSet::new();
             for _ in 0..32 {
-                let store = store.clone();
+                let store = Arc::clone(&store);
                 let observed = observed.clone();
-                let barrier = barrier.clone();
-                let _ = tasks.spawn(async move {
-                    let _ = barrier.wait().await;
+                let barrier_2_3 = Arc::clone(&barrier_2);
+                drop(tasks_2.spawn(async move {
+                    let _ignored_wait_2 = barrier_2_3.wait().await;
                     store
                         .consume_api_key_usage_from_snapshot(&observed, true)
                         .await
-                });
+                }));
             }
             let mut phased_counts = [0; 3];
-            while let Some(result) = tasks.join_next().await {
+            while let Some(result) = tasks_2.join_next().await {
                 match result?? {
                     ConsumeApiKeyResult::Allowed(_) => phased_counts[0] += 1,
                     ConsumeApiKeyResult::RateLimited { .. } => phased_counts[1] += 1,
@@ -118,6 +126,11 @@ async fn file_sqlite_connections_consume_quota_without_lock_upgrade_errors()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[expect(
+    clippy::panic_in_result_fn,
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn independent_connections_reject_final_quota_loser_without_deleting_credential()
 -> Result<(), Box<dyn std::error::Error>> {
     let directory =
@@ -128,7 +141,7 @@ async fn independent_connections_reject_final_quota_loser_without_deleting_crede
             "sqlite://{}?mode=rwc",
             directory.join("auth.sqlite").display()
         ));
-        let _ = options.min_connections(1).max_connections(1);
+        let _ignored_max_connections = options.min_connections(1).max_connections(1);
         let first = Database::connect(options.clone()).await?;
         let second = Database::connect(options).await?;
         let result = async {
@@ -166,21 +179,21 @@ async fn independent_connections_reject_final_quota_loser_without_deleting_crede
             let barrier = Arc::new(Barrier::new(2));
             let mut tasks = JoinSet::new();
             for store in &stores {
-                let store = store.clone();
+                let store = Arc::clone(store);
                 let id = key.id.clone();
-                let barrier = barrier.clone();
-                let _ = tasks.spawn(async move {
-                    let _ = barrier.wait().await;
+                let barrier = Arc::clone(&barrier);
+                drop(tasks.spawn(async move {
+                    let _ignored_wait = barrier.wait().await;
                     store.consume_api_key_usage(&id, false).await
-                });
+                }));
             }
             let mut allowed = None;
             let mut exhausted = 0;
             while let Some(result) = tasks.join_next().await {
                 match result?? {
-                    ConsumeApiKeyResult::Allowed(key) => {
+                    ConsumeApiKeyResult::Allowed(key_2) => {
                         assert!(allowed.is_none());
-                        allowed = Some(*key);
+                        allowed = Some(*key_2);
                     }
                     ConsumeApiKeyResult::UsageExhausted => exhausted += 1,
                     ConsumeApiKeyResult::RateLimited { .. } => {
@@ -245,33 +258,37 @@ async fn independent_connections_reject_final_quota_loser_without_deleting_crede
                     },
                 )
                 .await?;
-            let barrier = Arc::new(Barrier::new(8));
-            let mut tasks = JoinSet::new();
+            let barrier_2 = Arc::new(Barrier::new(8));
+            let mut tasks_2 = JoinSet::new();
             for index in 0..8 {
-                let store = stores[index % stores.len()].clone();
+                let store = Arc::clone(
+                    (stores)
+                        .get(index % stores.len())
+                        .expect("fixture contains the requested index"),
+                );
                 let id = key.id.clone();
-                let barrier = barrier.clone();
-                let _ = tasks.spawn(async move {
-                    let _ = barrier.wait().await;
+                let barrier_2_3 = Arc::clone(&barrier_2);
+                drop(tasks_2.spawn(async move {
+                    let _ignored_wait_3 = barrier_2_3.wait().await;
                     store.consume_api_key_usage(&id, false).await
-                });
+                }));
             }
             let mut accepted = 0;
-            let mut exhausted = 0;
-            while let Some(result) = tasks.join_next().await {
+            let mut exhausted_2 = 0;
+            while let Some(result) = tasks_2.join_next().await {
                 match result?? {
                     ConsumeApiKeyResult::Allowed(value) => {
                         accepted += 1;
                         assert_eq!(value.id, due.id);
                         assert_eq!(value.reference_id, due.reference_id);
                     }
-                    ConsumeApiKeyResult::UsageExhausted => exhausted += 1,
+                    ConsumeApiKeyResult::UsageExhausted => exhausted_2 += 1,
                     ConsumeApiKeyResult::RateLimited { .. } => {
                         panic!("disabled rate limit must not deny refill")
                     }
                 }
             }
-            assert_eq!((accepted, exhausted), (3, 5));
+            assert_eq!((accepted, exhausted_2), (3, 5));
             let final_row = stores[1]
                 .get_api_key_by_id(&key.id)
                 .await?
@@ -294,21 +311,25 @@ async fn independent_connections_reject_final_quota_loser_without_deleting_crede
                     },
                 )
                 .await?;
-            let barrier = Arc::new(Barrier::new(8));
-            let mut tasks = JoinSet::new();
+            let barrier_3 = Arc::new(Barrier::new(8));
+            let mut tasks_3 = JoinSet::new();
             for index in 0..8 {
-                let store = stores[index % stores.len()].clone();
+                let store = Arc::clone(
+                    (stores)
+                        .get(index % stores.len())
+                        .expect("fixture contains the requested index"),
+                );
                 let observed = observed.clone();
-                let barrier = barrier.clone();
-                let _ = tasks.spawn(async move {
-                    let _ = barrier.wait().await;
+                let barrier_4 = Arc::clone(&barrier_3);
+                drop(tasks_3.spawn(async move {
+                    let _ignored_wait_4 = barrier_4.wait().await;
                     store
                         .consume_api_key_usage_from_snapshot(&observed, false)
                         .await
-                });
+                }));
             }
             let mut counts = [0, 0];
-            while let Some(result) = tasks.join_next().await {
+            while let Some(result) = tasks_3.join_next().await {
                 match result?? {
                     ConsumeApiKeyResult::Allowed(value) => {
                         counts[0] += 1;
@@ -322,14 +343,14 @@ async fn independent_connections_reject_final_quota_loser_without_deleting_crede
                 }
             }
             assert_eq!(counts, [3, 5]);
-            let persisted = stores[1]
+            let persisted_2 = stores[1]
                 .get_api_key_by_id(&key.id)
                 .await?
                 .ok_or("phased refill must retain zero row")?;
-            assert_eq!(persisted.remaining, Some(0.0));
-            assert_ne!(persisted.last_refill_at, observed.last_refill_at);
-            assert_eq!(persisted.key_hash, observed.key_hash);
-            assert_eq!(persisted.reference_id, observed.reference_id);
+            assert_eq!(persisted_2.remaining, Some(0.0));
+            assert_ne!(persisted_2.last_refill_at, observed.last_refill_at);
+            assert_eq!(persisted_2.key_hash, observed.key_hash);
+            assert_eq!(persisted_2.reference_id, observed.reference_id);
             assert_eq!(
                 serde_json::to_value(stores[0].get_api_key_by_id(&foreign.id).await?)?,
                 serde_json::to_value(Some(&foreign))?
@@ -346,6 +367,10 @@ async fn independent_connections_reject_final_quota_loser_without_deleting_crede
     outcome
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn assert_usage_source_phase(phase: &str) -> Result<(), Box<dyn std::error::Error>> {
     {
         let database = Database::connect("sqlite::memory:").await?;
@@ -399,7 +424,7 @@ async fn assert_usage_source_phase(phase: &str) -> Result<(), Box<dyn std::error
                 "CREATE TRIGGER phase_veto BEFORE UPDATE ON api_keys WHEN OLD.name='phase-target' AND ({condition}) BEGIN SELECT RAISE(ABORT,'actual phase storage veto'); END"
             )
         };
-        let _ = database
+        let _ignored_execute_raw = database
             .execute_raw(sea_orm::Statement::from_string(
                 sea_orm::DbBackend::Sqlite,
                 sql,

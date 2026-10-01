@@ -1,9 +1,9 @@
 use crate::error::{AuthError, AuthResult};
+
 use crate::types::{CreateJwk, Jwk};
+
 use async_trait::async_trait;
-fn unsupported() -> AuthError {
-    AuthError::NotImplemented("JWKS storage is not supported by this store".to_owned())
-}
+
 #[async_trait]
 pub trait JwkStore: Send + Sync {
     /// All keys, including expired signing keys that remain valid for public verification.
@@ -16,4 +16,8 @@ pub trait JwkStore: Send + Sync {
     async fn create_jwk(&self, _data: CreateJwk) -> AuthResult<Jwk> {
         Err(unsupported())
     }
+}
+
+fn unsupported() -> AuthError {
+    AuthError::NotImplemented("JWKS storage is not supported by this store".to_owned())
 }

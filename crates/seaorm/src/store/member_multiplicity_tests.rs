@@ -64,7 +64,7 @@ async fn installed_member_upgrade_preserves_rows_and_application_schema_then_all
         "CREATE TRIGGER app_member_changes AFTER UPDATE ON member BEGIN INSERT INTO app_member_audit VALUES(NEW.id); END",
         "CREATE VIEW app_members AS SELECT id,app_note FROM member",
     ] {
-        let _ = db.execute_unprepared(sql).await?;
+        let _ignored_execute_unprepared = db.execute_unprepared(sql).await?;
     }
     let row_sql = "SELECT json_group_array(json_object('rowid',rowid,'id',id,'org',organization_id,'user',user_id,'role',role,'created',created_at,'note',app_note)) AS value FROM (SELECT rowid,* FROM member ORDER BY rowid)";
     let schema_sql = "SELECT json_group_array(json_object('type',type,'name',name,'sql',sql)) AS value FROM (SELECT type,name,sql FROM sqlite_schema WHERE (tbl_name='member' OR name='app_members') AND name <> 'idx_member_org_user_unique' ORDER BY type,name)";
@@ -125,13 +125,17 @@ async fn installed_member_upgrade_preserves_rows_and_application_schema_then_all
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn organization_list_pages_physical_members_before_joining_and_keeps_full_peer_rows()
 -> TestResult {
     let db = Database::connect("sqlite::memory:").await?;
     AuthMigrator::up(&db, None).await?;
     // A published SQLite installation already has this unconstrained shape.
     // It isolates consumer behavior from whether the upgrade itself ran.
-    let _ = db
+    let _ignored_execute_unprepared_2 = db
         .execute_unprepared("DROP INDEX IF EXISTS idx_member_org_user_unique")
         .await?;
     let config = AuthConfig::new("physical-member-page-secret");
@@ -155,7 +159,7 @@ async fn organization_list_pages_physical_members_before_joining_and_keeps_full_
         (&old.id, "2020-01-01 00:00:00+00:00"),
         (&new.id, "2021-01-01 00:00:00+00:00"),
     ] {
-        let _ = db
+        let _ignored_into = db
             .execute_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
                 "UPDATE organization SET created_at=? WHERE id=?",
@@ -218,9 +222,9 @@ async fn organization_list_pages_physical_members_before_joining_and_keeps_full_
             updated_at: None,
         })
         .await?;
-    let _ = store.add_team_member(&team.id, &user.id, None).await?;
-    let _ = store.add_team_member(&team.id, &foreign.id, None).await?;
-    let _ = store.add_team_member(&peer_team.id, &user.id, None).await?;
+    drop(store.add_team_member(&team.id, &user.id, None).await?);
+    drop(store.add_team_member(&team.id, &foreign.id, None).await?);
+    drop(store.add_team_member(&peer_team.id, &user.id, None).await?);
     let foreign_team_before = store.get_team(Some(&other.id), &peer_team.id).await?;
     let foreign_link_before = store.get_team_member(&peer_team.id, &user.id).await?;
     store
@@ -338,6 +342,10 @@ async fn independent_connections_admit_distinct_member_ids_for_the_same_pair() -
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
 async fn installed_pair_upgrade_preserves_dependent_foreign_key_then_retries_after_app_id_migration()
 -> TestResult {
     let db = Database::connect("sqlite::memory:").await?;
@@ -368,12 +376,12 @@ async fn installed_pair_upgrade_preserves_dependent_foreign_key_then_retries_aft
     let peer = store
         .create_member(CreateMember::new(&other.id, &foreign.id, "member"))
         .await?;
-    let _ = db.execute_unprepared("CREATE TABLE \"app \"\"pair\"\" refs\"(org TEXT NOT NULL,user TEXT NOT NULL,note TEXT NOT NULL,FOREIGN KEY(org,user) REFERENCES member(organization_id,user_id))").await?;
+    let _ignored_execute_unprepared_3 = db.execute_unprepared("CREATE TABLE \"app \"\"pair\"\" refs\"(org TEXT NOT NULL,user TEXT NOT NULL,note TEXT NOT NULL,FOREIGN KEY(org,user) REFERENCES member(organization_id,user_id))").await?;
     for (organization_id, user_id, note) in [
         (&org.id, &user.id, "owned,bytes"),
         (&other.id, &foreign.id, "peer'bytes"),
     ] {
-        let _ = db
+        let _ignored_into_2 = db
             .execute_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
                 "INSERT INTO \"app \"\"pair\"\" refs\" VALUES(?,?,?)",
@@ -473,7 +481,7 @@ async fn installed_pair_upgrade_preserves_dependent_foreign_key_then_retries_aft
     );
     // Only the application changes its reference contract, preserving both
     // actual rows and their byte payloads while moving to the member's identity.
-    let _ = db.execute_unprepared("CREATE TABLE app_member_ids(member_id TEXT NOT NULL REFERENCES member(id),note TEXT NOT NULL); INSERT INTO app_member_ids SELECT m.id,a.note FROM \"app \"\"pair\"\" refs\" a JOIN member m ON m.organization_id=a.org AND m.user_id=a.user; DROP TABLE \"app \"\"pair\"\" refs\"").await?;
+    let _ignored_execute_unprepared_4 = db.execute_unprepared("CREATE TABLE app_member_ids(member_id TEXT NOT NULL REFERENCES member(id),note TEXT NOT NULL); INSERT INTO app_member_ids SELECT m.id,a.note FROM \"app \"\"pair\"\" refs\" a JOIN member m ON m.organization_id=a.org AND m.user_id=a.user; DROP TABLE \"app \"\"pair\"\" refs\"").await?;
     let app_ids_sql = "SELECT json_group_array(json_object('member',member_id,'note',note)) AS value FROM (SELECT * FROM app_member_ids ORDER BY rowid)";
     let migrated_app = scalar(&db, app_ids_sql).await?;
     AuthMigrator::up(&db, None).await?;

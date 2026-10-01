@@ -1,15 +1,42 @@
 //! Shared dual-server comparison infrastructure and test-control helpers.
 
+#[cfg(test)]
+mod harness_tests {
+    use super::*;
+
+    #[test]
+    fn shape_comparison_rejects_structural_mutations() {
+        for (left, right) in [
+            (serde_json::json!(null), serde_json::json!({})),
+            (serde_json::json!([]), serde_json::json!([1])),
+            (
+                serde_json::json!([1, {"ok": true}]),
+                serde_json::json!([1, {"ok": null}]),
+            ),
+        ] {
+            assert!(!compare_shapes(&json_shape(&left), &json_shape(&right), "").is_empty());
+        }
+    }
+}
+
 use std::collections::{BTreeMap, BTreeSet};
+
 use std::sync::Mutex;
+
 use std::time::Duration;
 
 use better_auth::BetterAuth;
+
 use better_auth::prelude::{CreateAccount, CreateVerification};
+
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
+
 use reqwest::StatusCode;
+
 use serde::Serialize;
+
 use serde_json::Value;
+
 use tokio::sync::Mutex as TokioMutex;
 
 use super::helpers::{
@@ -17,101 +44,19 @@ use super::helpers::{
     get_with_auth, post_json, take_reset_password_token, unique_email,
 };
 
+use std::io::Write;
+
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+
 type TestAuth = BetterAuth<TestSchema>;
 
 pub const REFERENCE_PORT: u16 = 3100;
+
 pub const REFERENCE_BASE: &str = "http://localhost:3100/api/auth";
 
-fn env_flag_set(name: &str) -> bool {
-    std::env::var(name)
-        .map(|value| !value.is_empty() && value != "0" && !value.eq_ignore_ascii_case("false"))
-        .unwrap_or(false)
-}
-
-fn reference_server_required() -> bool {
-    env_flag_set("CI") || env_flag_set("BETTER_AUTH_REQUIRE_REFERENCE_SERVER")
-}
-
-async fn reference_server_available() -> bool {
-    let client = localhost_client();
-    client
-        .get(format!("http://127.0.0.1:{REFERENCE_PORT}/__health"))
-        .send()
-        .await
-        .map(|response| response.status().is_success())
-        .unwrap_or(false)
-}
-
-fn try_start_reference_server() -> Result<std::process::Child, String> {
-    let server_dir = std::path::Path::new("compat-tests/reference-server");
-    if !server_dir.join("node_modules").exists() {
-        return Err(format!(
-            "node_modules not found in {}. Run:\n  cd {} && bun install",
-            server_dir.display(),
-            server_dir.display()
-        ));
-    }
-
-    std::process::Command::new("bun")
-        .args(["run", "server.ts"])
-        .current_dir(server_dir)
-        .env("PORT", REFERENCE_PORT.to_string())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map_err(|error| {
-            format!(
-                "failed to start reference server in {}: {error}",
-                server_dir.display()
-            )
-        })
-}
-
 static SERIAL: TokioMutex<()> = TokioMutex::const_new(());
+
 static REF_SERVER: Mutex<Option<std::process::Child>> = Mutex::new(None);
-
-pub async fn serial_lock() -> tokio::sync::MutexGuard<'static, ()> {
-    SERIAL.lock().await
-}
-
-async fn ensure_reference_server() -> Result<(), String> {
-    if reference_server_available().await {
-        return Ok(());
-    }
-
-    {
-        let mut slot = REF_SERVER.lock().unwrap_or_else(|e| e.into_inner());
-        if slot.is_none() {
-            *slot = Some(try_start_reference_server()?);
-        }
-    }
-
-    for _ in 0..30 {
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        if reference_server_available().await {
-            return Ok(());
-        }
-    }
-
-    Err("reference server did not become ready within 15 seconds".to_string())
-}
-
-pub async fn ensure_reference_server_or_skip() -> bool {
-    match ensure_reference_server().await {
-        Ok(()) => true,
-        Err(reason) => {
-            if reference_server_required() {
-                panic!("[dual-server] reference server is required: {reason}");
-            }
-            eprintln!("[dual-server] SKIPPED locally: {reason}");
-            eprintln!(
-                "[dual-server] Set CI=1 or BETTER_AUTH_REQUIRE_REFERENCE_SERVER=1 to make this a hard failure."
-            );
-            false
-        }
-    }
-}
 
 #[derive(Debug, Clone, Default)]
 pub struct CookieAttrs {
@@ -124,37 +69,6 @@ pub struct CookieAttrs {
     domain: Option<String>,
 }
 
-fn parse_set_cookie(header_value: &str) -> (String, CookieAttrs) {
-    let parts: Vec<&str> = header_value.split(';').collect();
-    let name_value = parts.first().unwrap_or(&"");
-    let (name, value) = name_value.split_once('=').unwrap_or((name_value, ""));
-
-    let mut attrs = CookieAttrs {
-        _value: value.to_string(),
-        ..Default::default()
-    };
-
-    for part in parts.iter().skip(1) {
-        let trimmed = part.trim();
-        let lower = trimmed.to_lowercase();
-        if lower == "httponly" {
-            attrs.http_only = true;
-        } else if lower == "secure" {
-            attrs.secure = true;
-        } else if let Some(v) = lower.strip_prefix("path=") {
-            attrs.path = Some(v.to_string());
-        } else if let Some(v) = lower.strip_prefix("samesite=") {
-            attrs.same_site = Some(v.to_string());
-        } else if let Some(v) = lower.strip_prefix("domain=") {
-            attrs.domain = Some(v.to_string());
-        } else if let Some(v) = lower.strip_prefix("max-age=") {
-            attrs.max_age = Some(v.to_string());
-        }
-    }
-
-    (name.to_string(), attrs)
-}
-
 #[derive(Debug)]
 pub struct FullResponse {
     pub status: u16,
@@ -163,16 +77,10 @@ pub struct FullResponse {
     pub body: Value,
 }
 
-pub fn ref_error_response(error: String) -> FullResponse {
-    eprintln!("[dual-server] ref request failed: {}", error);
-    FullResponse {
-        status: 0,
-        headers: BTreeMap::new(),
-        cookies: BTreeMap::new(),
-        body: Value::String(format!("error: {}", error)),
-    }
-}
-
+#[expect(
+    clippy::partial_pub_fields,
+    reason = "The fixture exposes its session cookie while retaining ownership of server process cleanup"
+)]
 pub struct RefClient {
     client: reqwest::Client,
     pub session_cookie: Option<String>,
@@ -187,7 +95,7 @@ impl RefClient {
     }
 
     fn apply_headers(&self, mut req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        req = req.header("origin", format!("http://localhost:{}", REFERENCE_PORT));
+        req = req.header("origin", format!("http://localhost:{REFERENCE_PORT}"));
         if let Some(ref cookie) = self.session_cookie {
             req = req.header("cookie", format!("better-auth.session_token={cookie}"));
         }
@@ -200,7 +108,7 @@ impl RefClient {
                 && let Some(rest) = s.strip_prefix("better-auth.session_token=")
             {
                 let token = rest.split(';').next().unwrap_or(rest);
-                self.session_cookie = (!token.is_empty()).then(|| token.to_string());
+                self.session_cookie = (!token.is_empty()).then(|| token.to_owned());
                 return;
             }
         }
@@ -217,10 +125,10 @@ impl RefClient {
             if name_lower == "set-cookie" {
                 if let Ok(v) = value.to_str() {
                     let (cookie_name, attrs) = parse_set_cookie(v);
-                    let _ = cookies.insert(cookie_name, attrs);
+                    drop(cookies.insert(cookie_name, attrs));
                 }
             } else if let Ok(v) = value.to_str() {
-                let _ = headers.insert(name_lower, v.to_string());
+                drop(headers.insert(name_lower, v.to_owned()));
             }
         }
 
@@ -228,7 +136,7 @@ impl RefClient {
     }
 
     pub async fn post_full(&mut self, path: &str, body: &Value) -> Result<FullResponse, String> {
-        let url = format!("{}{}", REFERENCE_BASE, path);
+        let url = format!("{REFERENCE_BASE}{path}");
         let req = self.apply_headers(
             self.client
                 .post(&url)
@@ -257,7 +165,7 @@ impl RefClient {
     }
 
     pub async fn get_full(&mut self, path: &str) -> Result<FullResponse, String> {
-        let url = format!("{}{}", REFERENCE_BASE, path);
+        let url = format!("{REFERENCE_BASE}{path}");
         let req = self.apply_headers(self.client.get(&url));
         let resp = req
             .send()
@@ -281,15 +189,6 @@ impl RefClient {
     }
 }
 
-pub fn localhost_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(10))
-        .build()
-        .unwrap_or_default()
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlMode {
     Capture,
@@ -299,7 +198,7 @@ pub enum ControlMode {
 }
 
 impl ControlMode {
-    fn as_str(self) -> &'static str {
+    const fn as_str(self) -> &'static str {
         match self {
             Self::Capture => "capture",
             Self::Fail => "throw",
@@ -333,23 +232,205 @@ impl OAuthSeed {
     pub fn expired(email: impl Into<String>) -> Self {
         Self {
             email: email.into(),
-            provider_id: "mock".to_string(),
-            account_id: "mock-account-id".to_string(),
-            access_token: Some("stale-access-token".to_string()),
-            refresh_token: Some("seed-refresh-token".to_string()),
-            id_token: Some("seed-id-token".to_string()),
-            access_token_expires_at: Some("2000-01-01T00:00:00Z".to_string()),
-            refresh_token_expires_at: Some("2099-01-01T00:00:00Z".to_string()),
-            scope: Some("openid,email,profile".to_string()),
+            provider_id: "mock".to_owned(),
+            account_id: "mock-account-id".to_owned(),
+            access_token: Some("stale-access-token".to_owned()),
+            refresh_token: Some("seed-refresh-token".to_owned()),
+            id_token: Some("seed-id-token".to_owned()),
+            access_token_expires_at: Some("2000-01-01T00:00:00Z".to_owned()),
+            refresh_token_expires_at: Some("2099-01-01T00:00:00Z".to_owned()),
+            scope: Some("openid,email,profile".to_owned()),
         }
     }
 
     pub fn valid(email: impl Into<String>) -> Self {
         Self {
-            access_token_expires_at: Some("2099-01-01T00:00:00Z".to_string()),
+            access_token_expires_at: Some("2099-01-01T00:00:00Z".to_owned()),
             ..Self::expired(email)
         }
     }
+}
+
+const KNOWN_EXTRA_RUST_USER_FIELDS: &[&str] = &[
+    "banned",
+    "banReason",
+    "banExpires",
+    "role",
+    "twoFactorEnabled",
+    "username",
+    "displayUsername",
+];
+
+const KNOWN_EXTRA_RUST_SESSION_FIELDS: &[&str] = &["activeOrganizationId", "impersonatedBy"];
+
+pub struct EndpointReport {
+    name: String,
+    status_match: bool,
+    rust_status: u16,
+    ref_status: u16,
+    shape_diffs: Vec<String>,
+    unexpected_shape_diffs: Vec<String>,
+    cookie_diffs: Vec<String>,
+    header_diffs: Vec<String>,
+}
+
+impl EndpointReport {
+    const fn is_pass(&self) -> bool {
+        self.status_match
+            && self.unexpected_shape_diffs.is_empty()
+            && self.cookie_diffs.is_empty()
+            && self.header_diffs.is_empty()
+    }
+}
+
+fn env_flag_set(name: &str) -> bool {
+    std::env::var(name).is_ok_and(|value| {
+        !value.is_empty() && value != "0" && !value.eq_ignore_ascii_case("false")
+    })
+}
+
+fn reference_server_required() -> bool {
+    env_flag_set("CI") || env_flag_set("BETTER_AUTH_REQUIRE_REFERENCE_SERVER")
+}
+
+async fn reference_server_available() -> bool {
+    let client = localhost_client();
+    client
+        .get(format!("http://127.0.0.1:{REFERENCE_PORT}/__health"))
+        .send()
+        .await
+        .is_ok_and(|response| response.status().is_success())
+}
+
+fn try_start_reference_server() -> Result<std::process::Child, String> {
+    let server_dir = std::path::Path::new("compat-tests/reference-server");
+    if !server_dir.join("node_modules").exists() {
+        return Err(format!(
+            "node_modules not found in {}. Run:\n  cd {} && bun install",
+            server_dir.display(),
+            server_dir.display()
+        ));
+    }
+
+    std::process::Command::new("bun")
+        .args(["run", "server.ts"])
+        .current_dir(server_dir)
+        .env("PORT", REFERENCE_PORT.to_string())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|error| {
+            format!(
+                "failed to start reference server in {}: {error}",
+                server_dir.display()
+            )
+        })
+}
+
+pub async fn serial_lock() -> tokio::sync::MutexGuard<'static, ()> {
+    SERIAL.lock().await
+}
+
+async fn ensure_reference_server() -> Result<(), String> {
+    if reference_server_available().await {
+        return Ok(());
+    }
+
+    {
+        let mut slot = REF_SERVER
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.is_none() {
+            *slot = Some(try_start_reference_server()?);
+        }
+    }
+
+    for _ in 0..30 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        if reference_server_available().await {
+            return Ok(());
+        }
+    }
+
+    Err("reference server did not become ready within 15 seconds".to_owned())
+}
+
+pub async fn ensure_reference_server_or_skip() -> bool {
+    match ensure_reference_server().await {
+        Ok(()) => true,
+        Err(reason) => {
+            assert!(
+                !reference_server_required(),
+                "[dual-server] reference server is required: {reason}"
+            );
+            drop(writeln!(
+                std::io::stderr().lock(),
+                "[dual-server] SKIPPED locally: {reason}"
+            ));
+            drop(writeln!(
+                std::io::stderr().lock(),
+                "[dual-server] Set CI=1 or BETTER_AUTH_REQUIRE_REFERENCE_SERVER=1 to make this a hard failure."
+            ));
+            false
+        }
+    }
+}
+
+fn parse_set_cookie(header_value: &str) -> (String, CookieAttrs) {
+    let parts: Vec<&str> = header_value.split(';').collect();
+    let name_value = parts.first().unwrap_or(&"");
+    let (name, value) = name_value.split_once('=').unwrap_or((name_value, ""));
+
+    let mut attrs = CookieAttrs {
+        _value: value.to_owned(),
+        ..Default::default()
+    };
+
+    for part in parts.iter().skip(1) {
+        let trimmed = part.trim();
+        let lower = trimmed.to_lowercase();
+        if lower == "httponly" {
+            attrs.http_only = true;
+        } else if lower == "secure" {
+            attrs.secure = true;
+        } else if let Some(v) = lower.strip_prefix("path=") {
+            attrs.path = Some(v.to_owned());
+        } else if let Some(v) = lower.strip_prefix("samesite=") {
+            attrs.same_site = Some(v.to_owned());
+        } else if let Some(v) = lower.strip_prefix("domain=") {
+            attrs.domain = Some(v.to_owned());
+        } else if let Some(v) = lower.strip_prefix("max-age=") {
+            attrs.max_age = Some(v.to_owned());
+        }
+    }
+
+    (name.to_owned(), attrs)
+}
+
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Result::unwrap_or_else transfers ownership to this reference-server error adapter"
+)]
+pub fn ref_error_response(error: String) -> FullResponse {
+    drop(writeln!(
+        std::io::stderr().lock(),
+        "[dual-server] ref request failed: {error}"
+    ));
+    FullResponse {
+        status: 0,
+        headers: BTreeMap::new(),
+        cookies: BTreeMap::new(),
+        body: Value::String(format!("error: {error}")),
+    }
+}
+
+pub fn localhost_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(10))
+        .build()
+        .unwrap_or_default()
 }
 
 pub async fn reset_reference_state() -> Result<(), String> {
@@ -413,7 +494,7 @@ pub async fn ref_reset_password_token(email: &str) -> Result<String, String> {
         .map_err(|error| format!("reset token JSON parse failed: {error}"))?;
     body.get("token")
         .and_then(|token| token.as_str())
-        .map(str::to_string)
+        .map(str::to_owned)
         .ok_or_else(|| format!("reset token missing in response: {body}"))
 }
 
@@ -467,18 +548,20 @@ pub async fn seed_rust_reset_password_token(
         .await
         .unwrap_or_else(|error| panic!("user lookup should succeed: {error}"))
         .unwrap_or_else(|| panic!("expected user for email {email}"))
-        .id
-        .to_string();
+        .id;
 
-    let _ = auth
-        .store()
-        .create_verification(CreateVerification {
-            identifier: format!("reset-password:{token}"),
-            value: user_id,
-            expires_at,
-        })
-        .await
-        .unwrap_or_else(|error| panic!("reset-password verification should be created: {error}"));
+    drop(
+        auth.store()
+            .create_verification(CreateVerification {
+                identifier: format!("reset-password:{token}"),
+                value: user_id,
+                expires_at,
+            })
+            .await
+            .unwrap_or_else(|error| {
+                panic!("reset-password verification should be created: {error}")
+            }),
+    );
 }
 
 pub async fn seed_rust_oauth_account(auth: &TestAuth, user_id: &str, seed: &OAuthSeed) {
@@ -495,22 +578,23 @@ pub async fn seed_rust_oauth_account(auth: &TestAuth, user_id: &str, seed: &OAut
         .transpose()
         .unwrap_or_else(|error| panic!("refresh token expiry should parse: {error}"));
 
-    let _ = auth
-        .store()
-        .create_account(CreateAccount {
-            user_id: user_id.to_string(),
-            account_id: seed.account_id.clone(),
-            provider_id: seed.provider_id.clone(),
-            access_token: seed.access_token.clone(),
-            refresh_token: seed.refresh_token.clone(),
-            id_token: seed.id_token.clone(),
-            access_token_expires_at,
-            refresh_token_expires_at,
-            scope: seed.scope.clone(),
-            password: None,
-        })
-        .await
-        .unwrap_or_else(|error| panic!("oauth account should be created: {error}"));
+    drop(
+        auth.store()
+            .create_account(CreateAccount {
+                user_id: user_id.to_owned(),
+                account_id: seed.account_id.clone(),
+                provider_id: seed.provider_id.clone(),
+                access_token: seed.access_token.clone(),
+                refresh_token: seed.refresh_token.clone(),
+                id_token: seed.id_token.clone(),
+                access_token_expires_at,
+                refresh_token_expires_at,
+                scope: seed.scope.clone(),
+                password: None,
+            })
+            .await
+            .unwrap_or_else(|error| panic!("oauth account should be created: {error}")),
+    );
 }
 
 fn parse_rfc3339(value: &str) -> Result<DateTime<Utc>, chrono::ParseError> {
@@ -530,24 +614,26 @@ pub async fn signup_on_both(
     });
 
     let rust_signup = rust_send(auth, post_json("/sign-up/email", body.clone())).await;
-    let _ = ref_client
-        .post_full("/sign-up/email", &body)
-        .await
-        .unwrap_or_else(ref_error_response);
+    drop(
+        ref_client
+            .post_full("/sign-up/email", &body)
+            .await
+            .unwrap_or_else(ref_error_response),
+    );
 
     let rust_token = rust_signup
         .body
         .get("token")
         .and_then(|token| token.as_str())
         .unwrap_or("")
-        .to_string();
+        .to_owned();
     let rust_user_id = rust_signup
         .body
         .get("user")
         .and_then(|user| user.get("id"))
         .and_then(|id| id.as_str())
         .unwrap_or("")
-        .to_string();
+        .to_owned();
 
     (email, rust_token, rust_user_id)
 }
@@ -561,11 +647,13 @@ pub async fn request_reset_on_both(
         "email": email,
         "redirectTo": "/reset",
     });
-    let _ = rust_send(auth, post_json("/request-password-reset", body.clone())).await;
-    let _ = ref_client
-        .post_full("/request-password-reset", &body)
-        .await
-        .unwrap_or_else(ref_error_response);
+    drop(rust_send(auth, post_json("/request-password-reset", body.clone())).await);
+    drop(
+        ref_client
+            .post_full("/request-password-reset", &body)
+            .await
+            .unwrap_or_else(ref_error_response),
+    );
 
     let rust_token = take_reset_password_token(email)
         .unwrap_or_else(|| panic!("rust reset token missing for {email}"));
@@ -589,9 +677,9 @@ pub async fn rust_send(auth: &TestAuth, req: better_auth::prelude::AuthRequest) 
         let name_lower = name.to_lowercase();
         if name_lower == "set-cookie" {
             let (cookie_name, attrs) = parse_set_cookie(value);
-            let _ = cookies.insert(cookie_name, attrs);
+            drop(cookies.insert(cookie_name, attrs));
         } else {
-            let _ = headers.insert(name_lower, value.clone());
+            drop(headers.insert(name_lower, value.clone()));
         }
     }
 
@@ -616,7 +704,7 @@ fn json_shape(value: &Value) -> Value {
         Value::Object(map) => {
             let shaped: serde_json::Map<String, Value> = map
                 .iter()
-                .map(|(key, value)| (key.clone(), json_shape(value)))
+                .map(|(key, value_2)| (key.clone(), json_shape(value_2)))
                 .collect();
             Value::Object(shaped)
         }
@@ -633,21 +721,19 @@ fn compare_shapes(rust_shape: &Value, ref_shape: &Value, path: &str) -> Vec<Stri
 
             for key in rust_keys.difference(&ref_keys) {
                 diffs.push(format!(
-                    "{}.{}: present in Rust, missing in reference",
-                    path, key
+                    "{path}.{key}: present in Rust, missing in reference"
                 ));
             }
             for key in ref_keys.difference(&rust_keys) {
                 diffs.push(format!(
-                    "{}.{}: missing in Rust, present in reference",
-                    path, key
+                    "{path}.{key}: missing in Rust, present in reference"
                 ));
             }
             for key in rust_keys.intersection(&ref_keys) {
                 let child_path = if path.is_empty() {
-                    key.to_string()
+                    (*key).clone()
                 } else {
-                    format!("{}.{}", path, key)
+                    format!("{path}.{key}")
                 };
                 if let (Some(rust_value), Some(ref_value)) = (rust_obj.get(*key), ref_obj.get(*key))
                 {
@@ -677,29 +763,17 @@ fn compare_shapes(rust_shape: &Value, ref_shape: &Value, path: &str) -> Vec<Stri
     diffs
 }
 
-const KNOWN_EXTRA_RUST_USER_FIELDS: &[&str] = &[
-    "banned",
-    "banReason",
-    "banExpires",
-    "role",
-    "twoFactorEnabled",
-    "username",
-    "displayUsername",
-];
-
-const KNOWN_EXTRA_RUST_SESSION_FIELDS: &[&str] = &["activeOrganizationId", "impersonatedBy"];
-
 fn filter_known_diffs(diffs: &[String]) -> Vec<String> {
     diffs
         .iter()
         .filter(|diff| {
             for field in KNOWN_EXTRA_RUST_USER_FIELDS {
-                if diff.contains(&format!(".{}: present in Rust", field)) {
+                if diff.contains(&format!(".{field}: present in Rust")) {
                     return false;
                 }
             }
             for field in KNOWN_EXTRA_RUST_SESSION_FIELDS {
-                if diff.contains(&format!(".{}: present in Rust", field)) {
+                if diff.contains(&format!(".{field}: present in Rust")) {
                     return false;
                 }
             }
@@ -716,26 +790,6 @@ fn filter_known_diffs(diffs: &[String]) -> Vec<String> {
         })
         .cloned()
         .collect()
-}
-
-pub struct EndpointReport {
-    name: String,
-    status_match: bool,
-    rust_status: u16,
-    ref_status: u16,
-    shape_diffs: Vec<String>,
-    unexpected_shape_diffs: Vec<String>,
-    cookie_diffs: Vec<String>,
-    header_diffs: Vec<String>,
-}
-
-impl EndpointReport {
-    fn is_pass(&self) -> bool {
-        self.status_match
-            && self.unexpected_shape_diffs.is_empty()
-            && self.cookie_diffs.is_empty()
-            && self.header_diffs.is_empty()
-    }
 }
 
 fn compare_cookies(
@@ -836,7 +890,7 @@ pub fn compare_full(name: &str, rust: &FullResponse, reference: &FullResponse) -
     let header_diffs = compare_headers(&rust.headers, &reference.headers);
 
     EndpointReport {
-        name: name.to_string(),
+        name: name.to_owned(),
         status_match,
         rust_status: rust.status,
         ref_status: reference.status,
@@ -848,12 +902,19 @@ pub fn compare_full(name: &str, rust: &FullResponse, reference: &FullResponse) -
 }
 
 pub fn print_report(title: &str, reports: &[EndpointReport]) {
-    eprintln!("\n╔══════════════════════════════════════════════════════╗");
-    eprintln!(
+    drop(writeln!(
+        std::io::stderr().lock(),
+        "\n╔══════════════════════════════════════════════════════╗"
+    ));
+    drop(writeln!(
+        std::io::stderr().lock(),
         "║ {:<52} ║",
         format!("Dual-Server Alignment Report ({title})")
-    );
-    eprintln!("╚══════════════════════════════════════════════════════╝\n");
+    ));
+    drop(writeln!(
+        std::io::stderr().lock(),
+        "╚══════════════════════════════════════════════════════╝\n"
+    ));
 
     let mut total_pass = 0;
     let mut total_fail = 0;
@@ -866,42 +927,55 @@ pub fn print_report(title: &str, reports: &[EndpointReport]) {
             total_fail += 1;
         }
 
-        eprintln!(
+        drop(writeln!(
+            std::io::stderr().lock(),
             "[{}] {} (status: Rust={} Ref={})",
-            icon, report.name, report.rust_status, report.ref_status
-        );
+            icon,
+            report.name,
+            report.rust_status,
+            report.ref_status
+        ));
 
         if !report.status_match {
-            eprintln!(
+            drop(writeln!(
+                std::io::stderr().lock(),
                 "      STATUS MISMATCH: Rust={}, Ref={}",
-                report.rust_status, report.ref_status
-            );
+                report.rust_status,
+                report.ref_status
+            ));
         }
 
         if !report.shape_diffs.is_empty() {
             for diff in &report.shape_diffs {
                 let is_known = !report.unexpected_shape_diffs.contains(diff);
                 let marker = if is_known { "known" } else { "UNEXPECTED" };
-                eprintln!("      [{marker}] shape: {diff}");
+                drop(writeln!(
+                    std::io::stderr().lock(),
+                    "      [{marker}] shape: {diff}"
+                ));
             }
         }
 
         for diff in &report.cookie_diffs {
-            eprintln!("      [COOKIE] {diff}");
+            drop(writeln!(std::io::stderr().lock(), "      [COOKIE] {diff}"));
         }
         for diff in &report.header_diffs {
-            eprintln!("      [HEADER] {diff}");
+            drop(writeln!(std::io::stderr().lock(), "      [HEADER] {diff}"));
         }
     }
 
-    eprintln!();
-    eprintln!(
+    drop(writeln!(std::io::stderr().lock()));
+    drop(writeln!(
+        std::io::stderr().lock(),
         "Summary: {} passed, {} failed out of {} endpoints",
         total_pass,
         total_fail,
         reports.len()
-    );
-    eprintln!("─────────────────────────────────────────────────────\n");
+    ));
+    drop(writeln!(
+        std::io::stderr().lock(),
+        "─────────────────────────────────────────────────────\n"
+    ));
 }
 
 pub fn log_alignment_gaps(reports: &[EndpointReport]) {
@@ -909,29 +983,52 @@ pub fn log_alignment_gaps(reports: &[EndpointReport]) {
     if gaps.is_empty() {
         return;
     }
-    eprintln!(
+    drop(writeln!(
+        std::io::stderr().lock(),
         "[alignment] {} endpoint(s) have alignment gaps:",
         gaps.len()
-    );
+    ));
     for report in &gaps {
         if !report.status_match {
-            eprintln!(
+            drop(writeln!(
+                std::io::stderr().lock(),
                 "  - {}: status Rust={} Ref={}",
-                report.name, report.rust_status, report.ref_status
-            );
+                report.name,
+                report.rust_status,
+                report.ref_status
+            ));
         }
         for diff in &report.unexpected_shape_diffs {
-            eprintln!("  - {}: shape: {}", report.name, diff);
+            drop(writeln!(
+                std::io::stderr().lock(),
+                "  - {}: shape: {}",
+                report.name,
+                diff
+            ));
         }
         for diff in &report.cookie_diffs {
-            eprintln!("  - {}: cookie: {}", report.name, diff);
+            drop(writeln!(
+                std::io::stderr().lock(),
+                "  - {}: cookie: {}",
+                report.name,
+                diff
+            ));
         }
         for diff in &report.header_diffs {
-            eprintln!("  - {}: header: {}", report.name, diff);
+            drop(writeln!(
+                std::io::stderr().lock(),
+                "  - {}: header: {}",
+                report.name,
+                diff
+            ));
         }
     }
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Consume the completed report after asserting its final compatibility outcome"
+)]
 pub fn assert_report_pass(report: EndpointReport) {
     if !report.is_pass() {
         print_report("unexpected diff", std::slice::from_ref(&report));
@@ -963,23 +1060,4 @@ pub fn expired_at(minutes_ago: i64) -> DateTime<Utc> {
 
 pub fn future_at(hours_from_now: i64) -> DateTime<Utc> {
     Utc::now() + ChronoDuration::hours(hours_from_now)
-}
-
-#[cfg(test)]
-mod harness_tests {
-    use super::*;
-
-    #[test]
-    fn shape_comparison_rejects_structural_mutations() {
-        for (left, right) in [
-            (serde_json::json!(null), serde_json::json!({})),
-            (serde_json::json!([]), serde_json::json!([1])),
-            (
-                serde_json::json!([1, {"ok": true}]),
-                serde_json::json!([1, {"ok": null}]),
-            ),
-        ] {
-            assert!(!compare_shapes(&json_shape(&left), &json_shape(&right), "").is_empty());
-        }
-    }
 }

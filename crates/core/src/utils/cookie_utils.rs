@@ -12,12 +12,14 @@ use sha2::Sha256;
 
 /// Build a `Set-Cookie` header value for an arbitrary cookie using the auth
 /// config's session cookie attributes for consistency.
+#[must_use]
 pub fn create_cookie(name: &str, value: &str, max_age_seconds: i64, config: &AuthConfig) -> String {
     create_session_like_cookie(name, value, Some(max_age_seconds), config)
 }
 
 /// Build a `Set-Cookie` header value for a session token using the `cookie`
 /// crate for correct formatting and escaping.
+#[must_use]
 pub fn create_session_cookie(token: &str, config: &AuthConfig) -> String {
     create_session_cookie_with_max_age(
         Some(token),
@@ -29,6 +31,7 @@ pub fn create_session_cookie(token: &str, config: &AuthConfig) -> String {
 /// Build a `Set-Cookie` header value for a session token using the session
 /// cookie attributes, optionally omitting `Max-Age` / `Expires` to create a
 /// browser-session cookie.
+#[must_use]
 pub fn create_session_cookie_with_max_age(
     token: Option<&str>,
     max_age_seconds: Option<i64>,
@@ -50,10 +53,12 @@ pub fn create_session_cookie_with_max_age(
     clippy::expect_used,
     reason = "HMAC-SHA256 accepts keys of every length"
 )]
+#[must_use]
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "HMAC accepts keys of every length, so key construction cannot fail"
+)]
 pub fn sign_cookie_value(value: &str, secret: &str) -> String {
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key");
-    mac.update(value.as_bytes());
-    let signed = format!("{value}.{}", STANDARD.encode(mac.finalize().into_bytes()));
     const COMPONENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
         .remove(b'-')
         .remove(b'_')
@@ -64,10 +69,16 @@ pub fn sign_cookie_value(value: &str, secret: &str) -> String {
         .remove(b'\'')
         .remove(b'(')
         .remove(b')');
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key");
+    mac.update(value.as_bytes());
+    let signed = format!("{value}.{}", STANDARD.encode(mac.finalize().into_bytes()));
+
     percent_encoding::utf8_percent_encode(&signed, COMPONENT).to_string()
 }
 
 /// Return a cookie's payload only when its signature verifies.
+#[must_use]
 pub fn verify_cookie_value(value: &str, secret: &str) -> Option<String> {
     let decoded = percent_encoding::percent_decode_str(value)
         .decode_utf8()
@@ -77,11 +88,12 @@ pub fn verify_cookie_value(value: &str, secret: &str) -> Option<String> {
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).ok()?;
     mac.update(payload.as_bytes());
     mac.verify_slice(&signature).ok()?;
-    Some(payload.to_string())
+    Some(payload.to_owned())
 }
 
 /// Build a `Set-Cookie` header value using the session cookie attributes for
 /// an arbitrary cookie name.
+#[must_use]
 pub fn create_session_like_cookie(
     name: &str,
     value: &str,
@@ -117,6 +129,7 @@ pub fn create_session_like_cookie(
 }
 
 /// Build a `Set-Cookie` header value that clears the session cookie.
+#[must_use]
 pub fn create_clear_session_cookie(config: &AuthConfig) -> String {
     create_clear_cookie(&config.session.cookie_name, config)
 }
@@ -126,6 +139,7 @@ pub fn create_clear_session_cookie(config: &AuthConfig) -> String {
 ///
 /// Mirrors the TypeScript `expireCookie`, which clears a cookie with `Max-Age=0`
 /// while preserving its attributes, and emits no `Expires`.
+#[must_use]
 pub fn create_clear_cookie(name: &str, config: &AuthConfig) -> String {
     let session_config = &config.session;
     let same_site = map_same_site(&session_config.cookie_same_site);
@@ -151,16 +165,19 @@ pub fn create_clear_cookie(name: &str, config: &AuthConfig) -> String {
 /// Build a Better Auth related cookie name using the configured session cookie
 /// prefix. For example, `better-auth.session_token` + `session_data` becomes
 /// `better-auth.session_data`.
+#[must_use]
 pub fn related_cookie_name(config: &AuthConfig, suffix: &str) -> String {
     config
         .session
         .cookie_name
         .strip_suffix("session_token")
-        .map(|prefix| format!("{}{}", prefix, suffix))
-        .unwrap_or_else(|| format!("better-auth.{}", suffix))
+        .map_or_else(
+            || format!("better-auth.{suffix}"),
+            |prefix| format!("{prefix}{suffix}"),
+        )
 }
 
-fn map_same_site(s: &crate::config::SameSite) -> CookieSameSite {
+const fn map_same_site(s: &crate::config::SameSite) -> CookieSameSite {
     match s {
         crate::config::SameSite::Strict => CookieSameSite::Strict,
         crate::config::SameSite::Lax => CookieSameSite::Lax,
@@ -169,6 +186,7 @@ fn map_same_site(s: &crate::config::SameSite) -> CookieSameSite {
 }
 
 /// Clear all cookies associated with the current session.
+#[must_use]
 pub fn delete_session_cookie_headers(config: &AuthConfig) -> Vec<String> {
     let mut cookies = vec![
         create_clear_session_cookie(config),

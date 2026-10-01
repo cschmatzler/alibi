@@ -1,23 +1,34 @@
 //! Google One Tap authentication with verified Google ID tokens.
 use crate::plugins::authentication_helpers::{JsonField, RequestBody, parse_body};
+
 use crate::plugins::oauth::{
     OAuthConfig, OAuthProcessPolicy, OAuthSignInError, OAuthTokenSet, OAuthUserInfo,
     process_oauth_sign_in,
 };
+
 use async_trait::async_trait;
+
 use base64::Engine;
+
 use better_auth_core::utils::json::{JsValue, parse_value};
+
 use better_auth_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
     HttpMethod,
 };
+
 use chrono::Utc;
+
 use jsonwebtoken::{Algorithm, DecodingKey};
+
 use serde::{Deserialize, Serialize};
+
 use serde_json::{Value, json};
+
 use std::sync::Arc;
 
 const GOOGLE_JWKS_URL: &str = "https://www.googleapis.com/oauth2/v3/certs";
+
 const MISSING_CLIENT: &str = "Google client ID is required for One Tap. Set it on the oneTap plugin (clientId) or on socialProviders.google.";
 
 /// Google client IDs accepted as the ID-token audience.
@@ -27,16 +38,19 @@ pub enum OneTapClientId {
     Single(String),
     Multiple(Vec<String>),
 }
+
 impl From<String> for OneTapClientId {
     fn from(value: String) -> Self {
         Self::Single(value)
     }
 }
+
 impl From<&str> for OneTapClientId {
     fn from(value: &str) -> Self {
         Self::Single(value.into())
     }
 }
+
 impl From<Vec<String>> for OneTapClientId {
     fn from(value: Vec<String>) -> Self {
         Self::Multiple(value)
@@ -49,7 +63,9 @@ impl From<Vec<String>> for OneTapClientId {
 pub trait GoogleJwksSource: Send + Sync {
     async fn fetch_keys(&self) -> Result<Vec<Value>, String>;
 }
+
 struct DefaultGoogleJwksSource(reqwest::Client);
+
 #[async_trait]
 impl GoogleJwksSource for DefaultGoogleJwksSource {
     async fn fetch_keys(&self) -> Result<Vec<Value>, String> {
@@ -82,19 +98,35 @@ pub struct OneTapConfig {
     pub jwks_source: Option<Arc<dyn GoogleJwksSource>>,
 }
 
+impl std::fmt::Debug for OneTapConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OneTapConfig").finish_non_exhaustive()
+    }
+}
+
 pub struct OneTapPlugin {
     config: OneTapConfig,
     keys: Arc<dyn GoogleJwksSource>,
 }
+
+impl std::fmt::Debug for OneTapPlugin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OneTapPlugin").finish_non_exhaustive()
+    }
+}
+
 impl Default for OneTapPlugin {
     fn default() -> Self {
         Self::new()
     }
 }
+
 impl OneTapPlugin {
+    #[must_use]
     pub fn new() -> Self {
         Self::with_config(OneTapConfig::default())
     }
+    #[must_use]
     pub fn with_config(config: OneTapConfig) -> Self {
         let keys = config
             .jwks_source
@@ -102,11 +134,20 @@ impl OneTapPlugin {
             .unwrap_or_else(|| Arc::new(DefaultGoogleJwksSource(reqwest::Client::new())));
         Self { config, keys }
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep provider token validation, account linking policy, and session issuance in their request order"
+    )]
     async fn callback<S: AuthSchema>(
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<AuthResponse> {
+        use better_auth_core::utils::cookie_utils::{
+            create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
+            sign_cookie_value, verify_cookie_value,
+        };
+
         let content_type = req.headers.get("content-type");
         let media = content_type.map(|value| {
             value
@@ -117,12 +158,14 @@ impl OneTapPlugin {
                 .to_ascii_lowercase()
         });
         if media.as_deref() != Some("application/json") {
-            let message = match media {
-                Some(media) => format!(
-                    "Content-Type \"{media}\" is not allowed. Allowed types: application/json"
-                ),
-                None => "Content-Type is required. Allowed types: application/json".to_owned(),
-            };
+            let message = media.map_or_else(
+                || "Content-Type is required. Allowed types: application/json".to_owned(),
+                |media| {
+                    format!(
+                        "Content-Type \"{media}\" is not allowed. Allowed types: application/json"
+                    )
+                },
+            );
             return AuthResponse::json(
                 415,
                 &json!({"code":"UNSUPPORTED_MEDIA_TYPE","message":message}),
@@ -255,10 +298,7 @@ impl OneTapPlugin {
                 .map_err(Into::into);
             }
         };
-        use better_auth_core::utils::cookie_utils::{
-            create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
-            sign_cookie_value, verify_cookie_value,
-        };
+
         let dont_remember_name = related_cookie_name(&ctx.config, "dont_remember");
         let dont_remember = crate::plugins::helpers::get_cookie(req, &dont_remember_name)
             .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
@@ -305,7 +345,7 @@ impl OneTapPlugin {
             .decode(header_encoded)
             .ok()?;
         let raw_header = parse_value(std::str::from_utf8(&raw_header).ok()?).ok()?;
-        let _ = raw_header.as_object()?;
+        let _ignored_as_object = raw_header.as_object()?;
         if raw_header.get("alg").and_then(JsValue::as_str) != Some("RS256") {
             return None;
         }
@@ -351,6 +391,46 @@ impl OneTapPlugin {
         None
     }
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CallbackBody {
+    id_token: String,
+    callback_url: Option<String>,
+}
+
+impl RequestBody for CallbackBody {
+    const FIELDS: &'static [JsonField] = &[
+        JsonField::string("idToken", true),
+        JsonField::string("callbackURL", false),
+    ];
+}
+
+#[async_trait]
+impl<S: AuthSchema> AuthPlugin<S> for OneTapPlugin {
+    fn name(&self) -> &'static str {
+        "one-tap"
+    }
+    fn routes(&self) -> Vec<AuthRoute> {
+        vec![AuthRoute::post("/one-tap/callback", "one_tap_callback")]
+    }
+    async fn on_request(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<AuthResponse>> {
+        if req.method() == &HttpMethod::Post && req.path() == "/one-tap/callback" {
+            return self.callback(req, ctx).await.map(Some);
+        }
+        Ok(None)
+    }
+}
+
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+)]
 fn valid_claims(payload: &JsValue, audiences: &[String]) -> bool {
     if !payload
         .get("iss")
@@ -396,46 +476,17 @@ fn valid_claims(payload: &JsValue, audiences: &[String]) -> bool {
     }
     true
 }
+
 fn js_truthy(value: &JsValue) -> bool {
     match value {
         JsValue::Null => false,
         JsValue::Bool(value) => *value,
         JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
         JsValue::String(value) => !value.is_empty(),
-        _ => true,
+        JsValue::Array(_) | JsValue::Object(_) => true,
     }
 }
+
 fn message(status: u16, message: &str) -> AuthResult<AuthResponse> {
     AuthResponse::json(status, &json!({"message":message})).map_err(Into::into)
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CallbackBody {
-    id_token: String,
-    callback_url: Option<String>,
-}
-impl RequestBody for CallbackBody {
-    const FIELDS: &'static [JsonField] = &[
-        JsonField::string("idToken", true),
-        JsonField::string("callbackURL", false),
-    ];
-}
-#[async_trait]
-impl<S: AuthSchema> AuthPlugin<S> for OneTapPlugin {
-    fn name(&self) -> &'static str {
-        "one-tap"
-    }
-    fn routes(&self) -> Vec<AuthRoute> {
-        vec![AuthRoute::post("/one-tap/callback", "one_tap_callback")]
-    }
-    async fn on_request(
-        &self,
-        req: &AuthRequest,
-        ctx: &AuthContext<S>,
-    ) -> AuthResult<Option<AuthResponse>> {
-        if req.method() == &HttpMethod::Post && req.path() == "/one-tap/callback" {
-            return self.callback(req, ctx).await.map(Some);
-        }
-        Ok(None)
-    }
 }

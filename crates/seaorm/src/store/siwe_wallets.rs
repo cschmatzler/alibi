@@ -8,13 +8,17 @@ use sea_orm_migration::prelude::*;
 pub(super) struct SiweWallets;
 
 impl MigrationName for SiweWallets {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "m20260930_000006_siwe_wallets"
     }
 }
 
 #[async_trait::async_trait]
 impl MigrationTrait for SiweWallets {
+    #[expect(
+        elided_lifetimes_in_paths,
+        reason = "SeaORM MigrationTrait requires its implicit manager lifetime to remain late-bound"
+    )]
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
             .create_table(

@@ -2,15 +2,15 @@
 use crate::TestSchema;
 use async_trait::async_trait;
 use axum::{
+    Json, Router,
     extract::Query,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
-    Json, Router,
 };
 use base64::{
-    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
     Engine,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
@@ -22,20 +22,20 @@ use better_auth::plugins::{
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use better_auth_core::{
+    AuthRequest, AuthUser, CreateSession, HttpMethod,
     utils::{
         cookie_utils::{sign_cookie_value, verify_cookie_value},
         json::JsValue,
     },
-    AuthRequest, AuthUser, CreateSession, HttpMethod,
 };
 use better_auth_seaorm::{
+    DatabaseConnection, SeaOrmStore,
     hooks::{HookControl, SeaOrmHookContext, SeaOrmHooks},
     sea_orm::{ConnectionTrait, DbBackend, Statement},
-    DatabaseConnection, SeaOrmStore,
 };
 use chrono::Utc;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},

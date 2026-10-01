@@ -1,9 +1,9 @@
 //! Stored application fields and awaited callbacks on the real admin lifecycle.
 use crate::TestSchema;
 use axum::{
+    Json, Router,
     extract::{Query, State},
     routing::get,
-    Json, Router,
 };
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
@@ -17,7 +17,7 @@ use better_auth_core::{AuthUser, CreateUser};
 use better_auth_seaorm::store::entities::user::Model;
 use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 

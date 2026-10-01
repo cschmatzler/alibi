@@ -42,7 +42,7 @@ pub struct OrganizationCreatePatch {
     pub metadata: Option<Option<Map<String, Value>>>,
 }
 impl OrganizationCreatePatch {
-    pub(crate) fn apply(self, data: &mut CreateOrganization) {
+    pub(in crate::plugins) fn apply(self, data: &mut CreateOrganization) {
         if let Some(id) = self.id {
             data.id = Some(id);
         }
@@ -69,7 +69,7 @@ pub struct OrganizationMemberCreatePatch {
     pub role: Option<String>,
 }
 impl OrganizationMemberCreatePatch {
-    pub(crate) fn apply(self, data: &mut CreateMember) {
+    pub(in crate::plugins) fn apply(self, data: &mut CreateMember) {
         if let Some(id) = self.organization_id {
             data.organization_id = id;
         }
@@ -82,12 +82,13 @@ impl OrganizationMemberCreatePatch {
     }
 }
 
-/// Creation hooks are awaited at their individual source phases. Errors retain
-/// previous writes; the framework does not wrap this lifecycle in a transaction.
-/// Authority snapshots cannot be changed by an HTTP body or by mutating context.
-/// Typed patches cover bundled model fields, not arbitrary JavaScript columns
-/// or direct mutation of callback arguments. Capture an application store when
-/// the callback needs independent persistence or additional field access.
+/// Creation hooks are awaited at their individual source phases.
+///
+/// Errors retain previous writes; the framework does not wrap this lifecycle in a transaction.
+/// Authority snapshots cannot be changed by an HTTP body or by mutating context. Typed patches
+/// cover bundled model fields, not arbitrary JavaScript columns or direct mutation of callback
+/// arguments. Capture an application store when the callback needs independent persistence or
+/// additional field access.
 #[async_trait]
 pub trait OrganizationCreationHooks: std::fmt::Debug + Send + Sync {
     async fn before_create(
@@ -110,9 +111,10 @@ pub trait OrganizationCreationHooks: std::fmt::Debug + Send + Sync {
     }
 }
 
-/// The original authenticated user/session and raw stored organization. Selection
-/// has already been cleared in storage when `before_delete` runs. The same
-/// snapshots reach `after_delete`, after scoped deletion has committed.
+/// The original authenticated user/session and raw stored organization.
+///
+/// Selection has already been cleared in storage when `before_delete` runs. The same snapshots
+/// reach `after_delete`, after scoped deletion has committed.
 #[derive(Debug, Clone)]
 pub struct OrganizationDeleteContext {
     pub organization: super::types::OrganizationResponse,
@@ -121,20 +123,21 @@ pub struct OrganizationDeleteContext {
     /// Actual supplied values; a trusted header-only call does not invent headers.
     pub headers: std::collections::HashMap<String, String>,
     /// None for the trusted header-only helper. HTTP snapshots use the native
-    /// AuthRequest's canonical route path and independent public request parts.
+    /// `AuthRequest`'s canonical route path and independent public request parts.
     pub request: Option<better_auth_core::AuthRequest>,
 }
 
-pub(crate) struct DeleteInvocation<'a> {
+pub(in crate::plugins) struct DeleteInvocation<'a> {
     pub headers: &'a std::collections::HashMap<String, String>,
     pub request: Option<&'a better_auth_core::AuthRequest>,
 }
 
-/// Awaited deletion phases, without a lifecycle-wide transaction. A before-hook
-/// error retains rows after selection clearing; an after-hook error retains the
-/// committed deletion. Capture an application store for independent operations.
-/// Direct JavaScript argument mutation, global server-API dispatch and continuation
-/// after HTTP request cancellation are separate framework boundaries.
+/// Awaited deletion phases, without a lifecycle-wide transaction.
+///
+/// A before-hook error retains rows after selection clearing; an after-hook error retains the
+/// committed deletion. Capture an application store for independent operations. Direct JavaScript
+/// argument mutation, global server-API dispatch and continuation after HTTP request cancellation
+/// are separate framework boundaries.
 #[async_trait]
 pub trait OrganizationDeletionHooks: std::fmt::Debug + Send + Sync {
     async fn before_delete(&self, _context: &OrganizationDeleteContext) -> AuthResult<()> {

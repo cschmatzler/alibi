@@ -2,36 +2,36 @@
 
 use super::TestSchema;
 use axum::{
+    Json, Router,
     extract::Query,
     http::StatusCode,
     routing::{get, post},
-    Json, Router,
 };
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::organization::{
-    default_organization_statements, DynamicAccessControlConfig, OrganizationConfig,
-    OrganizationLimitResolver, RolePermissions, TeamsConfig,
+    DynamicAccessControlConfig, OrganizationConfig, OrganizationLimitResolver, RolePermissions,
+    TeamsConfig, default_organization_statements,
 };
 use better_auth::plugins::{
     AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, EmailPasswordPlugin,
     EmailVerificationPlugin, OrganizationPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use better_auth_core::AuthUser;
 use better_auth_core::types::{
     CreateMember, CreateOrganizationRole, CreateTeam, CreateUser, OrganizationPermissions,
 };
-use better_auth_core::AuthUser;
+use better_auth_seaorm::SeaOrmStore;
 use better_auth_seaorm::sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
 };
 use better_auth_seaorm::store::entities::{
     invitation, member, organization, organization_role, team, team_member,
 };
-use better_auth_seaorm::SeaOrmStore;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 

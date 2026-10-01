@@ -14,10 +14,11 @@ pub struct RequestHookContext {
 
 impl RequestHookContext {
     /// Build a request hook context from an incoming auth request.
+    #[must_use]
     pub fn from_request(request: &AuthRequest) -> Self {
         Self {
             method: request.method().clone(),
-            path: request.path().to_string(),
+            path: request.path().to_owned(),
             headers: request.headers.clone(),
             query: request.query.clone(),
             meta: RequestMeta::from_request(request),
@@ -33,7 +34,7 @@ tokio::task_local! {
 /// Run a future with request context available to downstream integrations.
 pub async fn with_request_hook_context<T>(
     request: &AuthRequest,
-    future: impl std::future::Future<Output = T>,
+    future: impl Future<Output = T>,
 ) -> T {
     with_request_hook_context_value(RequestHookContext::from_request(request), future).await
 }
@@ -41,7 +42,7 @@ pub async fn with_request_hook_context<T>(
 /// Run a future with an explicit request hook context.
 pub async fn with_request_hook_context_value<T>(
     request_context: RequestHookContext,
-    future: impl std::future::Future<Output = T>,
+    future: impl Future<Output = T>,
 ) -> T {
     REQUEST_HOOK_CONTEXT.scope(request_context, future).await
 }

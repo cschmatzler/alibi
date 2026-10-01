@@ -19,7 +19,7 @@ pub(crate) fn is_core(plugin: &str) -> bool {
 }
 fn wire_name(name: &str) -> String {
     let mut words = name.split('_');
-    let mut output = words.next().unwrap_or_default().to_string();
+    let mut output = words.next().unwrap_or_default().to_owned();
     for word in words {
         let mut letters = word.chars();
         if let Some(first) = letters.next() {
@@ -53,12 +53,13 @@ fn field(field: &FieldDef, core: bool) -> Option<OpenApiField> {
     if core && field.name == "emailVerified" {
         field.input = false;
         if let Some(object) = field.schema.as_object_mut() {
-            let _ = object.insert("default".into(), json!(false));
+            drop(object.insert("default".into(), json!(false)));
         }
     }
     Some(field)
 }
 /// Core wire projection guaranteed by the schema's mandatory entity accessors.
+#[must_use]
 pub fn core_models() -> Vec<OpenApiModel> {
     [
         ("User", EntityRole::User),
@@ -80,6 +81,7 @@ pub fn core_models() -> Vec<OpenApiModel> {
 }
 /// Default annotations for registered built-in routes and plugin model fields.
 /// Custom plugins should override their metadata hook to describe additional constraints.
+#[must_use]
 pub fn plugin_metadata(plugin: &str, routes: &[AuthRoute]) -> PluginOpenApiMetadata {
     let mut metadata = PluginOpenApiMetadata::default();
     for route in routes {
@@ -132,7 +134,11 @@ pub fn plugin_metadata(plugin: &str, routes: &[AuthRoute]) -> PluginOpenApiMetad
             let mut chars = wire.chars();
             let name = chars
                 .next()
-                .map(|first| first.to_uppercase().collect::<String>() + chars.as_str())
+                .map(|first| {
+                    let mut name = first.to_uppercase().collect::<String>();
+                    name.push_str(chars.as_str());
+                    name
+                })
                 .unwrap_or_default();
             metadata.models.push(OpenApiModel::new(
                 name,
@@ -146,6 +152,7 @@ pub fn plugin_metadata(plugin: &str, routes: &[AuthRoute]) -> PluginOpenApiMetad
     }
     metadata
 }
+#[must_use]
 pub fn instance_plugin_metadata<S: crate::AuthSchema>(
     plugin: &str,
     routes: &[AuthRoute],
@@ -155,6 +162,7 @@ pub fn instance_plugin_metadata<S: crate::AuthSchema>(
     super::model_annotations::apply(plugin, ctx, &mut metadata);
     metadata
 }
+#[must_use]
 pub fn core_routes() -> Vec<AuthRoute> {
     vec![
         AuthRoute::get(crate::core_paths::OPENAPI_SPEC, "openapi_spec"),
@@ -163,7 +171,7 @@ pub fn core_routes() -> Vec<AuthRoute> {
         AuthRoute::post("/update-user", "update_user"),
     ]
 }
-fn response(description: &str, schema: Value) -> Value {
+fn response(description: &str, schema: &Value) -> Value {
     json!({"description":description,"content":{"application/json":{"schema":schema}}})
 }
 fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
@@ -204,7 +212,7 @@ fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
                 "user",
                 "iss",
             ] {
-                let _ = properties.insert(name.into(), json!({"type":"string"}));
+                drop(properties.insert(name.into(), json!({"type":"string"})));
             }
             metadata.request_body = Some(
                 json!({"required":false,"content":{"application/json":{"schema":{"type":"object","properties":properties}}}}),
@@ -212,18 +220,18 @@ fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
         }
         "/ok" => {
             metadata.description = Some("Check if the API is working".into());
-            let _ = metadata.responses.insert("200".into(), response("API is working",json!({"type":"object","properties":{"ok":{"type":"boolean","description":"Indicates if the API is working"}},"required":["ok"]})));
+            drop(metadata.responses.insert("200".into(), response("API is working",&(json!({"type":"object","properties":{"ok":{"type":"boolean","description":"Indicates if the API is working"}},"required":["ok"]})))));
         }
         "/error" => {
             metadata.description = Some("Displays an error page".into());
-            let _ = metadata.responses.insert("200".into(),json!({"description":"Success","content":{"text/html":{"schema":{"type":"string","description":"The HTML content of the error page"}}}}));
+            drop(metadata.responses.insert("200".into(),json!({"description":"Success","content":{"text/html":{"schema":{"type":"string","description":"The HTML content of the error page"}}}})));
         }
         "/get-session" => {
             metadata.operation_id = Some("getSession".into());
             metadata.description = Some("Get the current session".into());
             // The upstream query is an optional wrapper; getParameters only
             // reflects a direct object, so its generated parameter list is empty.
-            let _ = metadata.responses.insert("200".into(),response("Success",json!({"type":["object","null"],"properties":{"session":{"$ref":"#/components/schemas/Session"},"user":{"$ref":"#/components/schemas/User"}},"required":["session","user"]})));
+            drop(metadata.responses.insert("200".into(),response("Success",&(json!({"type":["object","null"],"properties":{"session":{"$ref":"#/components/schemas/Session"},"user":{"$ref":"#/components/schemas/User"}},"required":["session","user"]})))));
         }
         _ => return None,
     }

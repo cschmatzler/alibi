@@ -9,10 +9,9 @@ use sea_orm::{
 use better_auth_core::AuthUser;
 use better_auth_core::store::{NumericTextInput, UserStore};
 
-use crate::error::{AuthError, AuthResult};
 use crate::schema::{AuthSchema, SeaOrmUserModel};
-use crate::types::{CreateUser, ListUsersParams, UpdateUser};
-use crate::utils::email::{normalize_optional_user_email, normalize_user_email};
+use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::types::{CreateUser, ListUsersParams, UpdateUser};
 
 use super::{SeaOrmStore, cancelled_by_hook, map_db_err};
 
@@ -30,7 +29,7 @@ where
     where
         C: ConnectionTrait,
     {
-        create_user.email = normalize_optional_user_email(create_user.email);
+        create_user.email = create_user.email.map(|email| normalize_user_email(&email));
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
             if hook
@@ -115,8 +114,8 @@ where
         // executing the actual bound numeric CAST; errors still come from the
         // configured backend. Other adapters retain their own CAST result.
         match (backend, input) {
-            (DbBackend::Sqlite, NumericTextInput::Real(value)) if value.is_finite() => {
-                Ok(super::sqlite_number::real_text(value))
+            (DbBackend::Sqlite, NumericTextInput::Real(value_2)) if value_2.is_finite() => {
+                Ok(super::sqlite_real_text(value_2))
             }
             _ => Ok(actual),
         }
@@ -198,7 +197,7 @@ where
     }
 
     async fn update_user(&self, id: &str, mut update: UpdateUser) -> AuthResult<S::User> {
-        update.email = normalize_optional_user_email(update.email);
+        update.email = update.email.map(|email| normalize_user_email(&email));
         let user_id = S::User::parse_id(id)?;
         let hook_context = self.hook_context(None);
         for hook in self.hooks() {
@@ -259,21 +258,23 @@ where
             })
             .await
             .map_err(map_db_err)?;
-        let _ = <S::User as SeaOrmUserModel>::Entity::find()
-            .filter(S::User::id_column().eq(user_id.clone()))
-            .lock_exclusive()
-            .one(&transaction)
-            .await
-            .map_err(map_db_err)?;
+        drop(
+            <S::User as SeaOrmUserModel>::Entity::find()
+                .filter(S::User::id_column().eq(user_id.clone()))
+                .lock_exclusive()
+                .one(&transaction)
+                .await
+                .map_err(map_db_err)?,
+        );
         super::teams::remove_owned_team_members(&transaction, &user.id(), None).await?;
         super::wallets::remove_owned_wallets(&transaction, &user.id()).await?;
-        let _ = super::entities::api_key::Entity::delete_many()
+        let _ignored_map_err = super::entities::api_key::Entity::delete_many()
             .filter(super::entities::api_key::Column::ReferenceId.eq(user.id().into_owned()))
             .exec(&transaction)
             .await
             .map_err(map_db_err)?;
 
-        let _ = <S::User as SeaOrmUserModel>::Entity::delete_many()
+        let _ignored_map_err_2 = <S::User as SeaOrmUserModel>::Entity::delete_many()
             .filter(<S::User as SeaOrmUserModel>::id_column().eq(user_id))
             .exec(&transaction)
             .await
@@ -320,7 +321,7 @@ where
                     ) {
                     operands
                         .iter()
-                        .map(|value| (value == "true").into())
+                        .map(|value_2| (value_2 == "true").into())
                         .collect()
                 } else {
                     operands.iter().cloned().map(Into::into).collect()
@@ -355,4 +356,8 @@ where
             models, &params,
         ))
     }
+}
+
+fn normalize_user_email(email: &str) -> String {
+    email.to_lowercase()
 }

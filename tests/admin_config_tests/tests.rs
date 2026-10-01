@@ -1,0 +1,250 @@
+use super::*;
+
+#[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+)]
+async fn admin_explicit_role_validation_rejects_before_application_bootstrap_and_preserves_implicit_defaults()
+ {
+    let config = AuthConfig::new("admin-role-contract-secret-at-least-32-characters");
+    let database = Database::connect("sqlite::memory:").await.unwrap();
+    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        .await
+        .unwrap();
+    let store = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database));
+    let seeded = store
+        .create_user(
+            CreateUser::new()
+                .with_email("existing-owner@roles.fixture.test")
+                .with_name("Existing owner")
+                .with_role("user"),
+        )
+        .await
+        .unwrap();
+    let session = store
+        .create_session(CreateSession {
+            additional_fields: better_auth_core::field_policy::FieldValues::default(),
+            token: None,
+            active_team_id: None,
+            user_id: seeded.id.clone(),
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(24),
+            ip_address: None,
+            user_agent: None,
+            impersonated_by: None,
+            active_organization_id: None,
+        })
+        .await
+        .unwrap();
+    let session_before = better_auth_core::utils::json::to_value(&session).unwrap();
+    let seeded_before = better_auth_core::utils::json::to_value(&seeded).unwrap();
+    let custom = HashMap::from([(
+        "manager".into(),
+        RolePermissions::new().allow("user", ["get"]),
+    )]);
+    let cases = [
+        ("omitted-empty", Some(HashMap::new()), None, None),
+        (
+            "explicit-empty",
+            Some(HashMap::new()),
+            Some(Vec::new()),
+            None,
+        ),
+        (
+            "invalid-empty",
+            Some(HashMap::new()),
+            Some(vec!["admin".into()]),
+            Some("admin"),
+        ),
+        ("omitted-custom", Some(custom.clone()), None, None),
+        (
+            "valid-custom",
+            Some(custom.clone()),
+            Some(vec!["manager".into()]),
+            None,
+        ),
+        (
+            "case-custom",
+            Some(custom.clone()),
+            Some(vec!["MANAGER".into()]),
+            None,
+        ),
+        (
+            "space-custom",
+            Some(custom),
+            Some(vec![" manager".into()]),
+            Some(" manager"),
+        ),
+        (
+            "duplicate-missing",
+            None,
+            Some(vec!["foreign".into(), "missing".into(), "foreign".into()]),
+            Some("foreign, missing, foreign"),
+        ),
+        ("case-builtins", None, Some(vec!["ADMIN".into()]), None),
+    ];
+    for (name, roles, admin_roles, invalid) in cases {
+        let marker = format!("{name}@bootstrap.fixture.test");
+        let result = AuthBuilder::<Schema>::new(config.clone())
+            .store_arc(Arc::<SeaOrmStore<Schema>>::clone(&store))
+            .plugin(AdminPlugin::with_config(AdminConfig {
+                roles,
+                admin_roles,
+                ..AdminConfig::default()
+            }))
+            .plugin(ApplicationBootstrap(marker.clone()))
+            .build()
+            .await;
+        if let Some(invalid) = invalid {
+            match result {
+                Err(AuthError::Config(message)) => assert_eq!(
+                    message,
+                    format!(
+                        "Invalid admin roles: {invalid}. Admin roles must be defined in the 'roles' configuration."
+                    )
+                ),
+                Err(error) => panic!("{name}: wrong error {error}"),
+                Ok(_) => panic!("{name}: invalid role configuration initialized"),
+            }
+            assert!(
+                store.get_user_by_email(&marker).await.unwrap().is_none(),
+                "invalid configuration must not run application bootstrap"
+            );
+        } else {
+            let auth = result.unwrap();
+            assert!(store.get_user_by_email(&marker).await.unwrap().is_some());
+            let created = auth
+                .store()
+                .create_user(
+                    CreateUser::new()
+                        .with_email(format!("{name}@owner.roles.fixture.test"))
+                        .with_name("Actual application owner"),
+                )
+                .await
+                .unwrap();
+            assert_eq!(created.role(), Some("user"));
+            assert!(!created.banned());
+            assert_eq!(
+                auth.store()
+                    .get_user_by_id(created.id().as_ref())
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .id(),
+                created.id()
+            );
+        }
+        assert_eq!(
+            better_auth_core::utils::json::to_value(
+                &store.get_session(&session.token).await.unwrap().unwrap()
+            )
+            .unwrap(),
+            session_before
+        );
+        assert_eq!(
+            better_auth_core::utils::json::to_value(
+                &store.get_user_by_id(&seeded.id).await.unwrap().unwrap()
+            )
+            .unwrap(),
+            seeded_before
+        );
+    }
+}
+
+#[tokio::test]
+
+async fn admin_message_callback_model_is_validated_before_initialization_side_effects() {
+    let config = AuthConfig::new("admin-message-schema-contract-secret-0000000000");
+    let database = Database::connect("sqlite::memory:").await.unwrap();
+    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        .await
+        .unwrap();
+    let store = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database));
+    let owner = store
+        .create_user(
+            CreateUser::new()
+                .with_email("existing@message.fixture.test")
+                .with_name("Existing owner")
+                .with_role("user"),
+        )
+        .await
+        .unwrap();
+    let session = store
+        .create_session(CreateSession {
+            additional_fields: better_auth_core::field_policy::FieldValues::default(),
+            token: None,
+            active_team_id: None,
+            user_id: owner.id.clone(),
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+            ip_address: None,
+            user_agent: None,
+            impersonated_by: None,
+            active_organization_id: None,
+        })
+        .await
+        .unwrap();
+    let before_user = better_auth_core::utils::json::to_value(&owner).unwrap();
+    let before_session = better_auth_core::utils::json::to_value(&session).unwrap();
+    let invalid = AuthBuilder::<Schema>::new(config.clone())
+        .store_arc(Arc::<SeaOrmStore<Schema>>::clone(&store))
+        .plugin(
+            AdminPlugin::new().banned_user_message_callback::<better_auth_core::wire::UserView, _>(
+                ProjectedUserMessage,
+            ),
+        )
+        .plugin(ApplicationBootstrap(
+            "invalid-bootstrap@message.fixture.test".into(),
+        ))
+        .build()
+        .await;
+    match invalid {
+        Err(AuthError::Config(message)) => assert_eq!(
+            message,
+            "Admin banned-user message callback user type does not match the authentication schema"
+        ),
+        Err(error) => panic!("Wrong schema mismatch error: {error}"),
+        Ok(_) => panic!("Projected callback initialized for stored application schema"),
+    }
+    assert!(
+        store
+            .get_user_by_email("invalid-bootstrap@message.fixture.test")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let auth = AuthBuilder::<Schema>::new(config).store_arc(Arc::<SeaOrmStore<Schema>>::clone(&store))
+        .plugin(AdminPlugin::new().banned_user_message_callback::<better_auth_seaorm::store::entities::user::Model,_>(StoredUserMessage))
+        .plugin(ApplicationBootstrap("valid-bootstrap@message.fixture.test".into())).build().await.unwrap();
+    assert!(
+        store
+            .get_user_by_email("valid-bootstrap@message.fixture.test")
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let created = auth
+        .store()
+        .create_user(
+            CreateUser::new()
+                .with_email("valid-owner@message.fixture.test")
+                .with_name("Valid owner"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.role(), Some("user"));
+    assert!(!created.banned());
+    assert_eq!(
+        better_auth_core::utils::json::to_value(
+            &store.get_user_by_id(&owner.id).await.unwrap().unwrap()
+        )
+        .unwrap(),
+        before_user
+    );
+    assert_eq!(
+        better_auth_core::utils::json::to_value(
+            &store.get_session(&session.token).await.unwrap().unwrap()
+        )
+        .unwrap(),
+        before_session
+    );
+}

@@ -1,5 +1,7 @@
 use sea_orm::entity::prelude::*;
 
+pub use crate::json_metadata::JsonMetadata;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "organization")]
 pub struct Model {
@@ -17,5 +19,3 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
-
-pub use crate::json_metadata::JsonMetadata;

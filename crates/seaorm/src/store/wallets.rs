@@ -1,37 +1,27 @@
 use async_trait::async_trait;
+
 use better_auth_core::store::WalletAddressStore;
+
 use better_auth_core::{AuthUser, CreateWalletAddress, WalletAddress};
+
 use chrono::Utc;
+
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect, Set,
     SqliteTransactionMode, TransactionOptions, TransactionTrait,
 };
+
 use sea_orm_migration::SchemaManager;
+
 use uuid::Uuid;
 
 use super::entities::wallet_address;
+
 use super::{SeaOrmStore, map_db_err};
-use crate::error::{AuthError, AuthResult};
+
 use crate::schema::{AuthSchema, SeaOrmUserModel};
 
-pub(super) async fn remove_owned_wallets(
-    transaction: &DatabaseTransaction,
-    user_id: &str,
-) -> AuthResult<()> {
-    if !SchemaManager::new(transaction)
-        .has_table("wallet_address")
-        .await
-        .map_err(map_db_err)?
-    {
-        return Ok(());
-    }
-    let _ = wallet_address::Entity::delete_many()
-        .filter(wallet_address::Column::UserId.eq(user_id))
-        .exec(transaction)
-        .await
-        .map_err(map_db_err)?;
-    Ok(())
-}
+use better_auth_core::error::{AuthError, AuthResult};
 
 #[async_trait]
 impl<S> WalletAddressStore for SeaOrmStore<S>
@@ -93,4 +83,23 @@ where
         transaction.commit().await.map_err(map_db_err)?;
         Ok(created.into())
     }
+}
+
+pub(super) async fn remove_owned_wallets(
+    transaction: &DatabaseTransaction,
+    user_id: &str,
+) -> AuthResult<()> {
+    if !SchemaManager::new(transaction)
+        .has_table("wallet_address")
+        .await
+        .map_err(map_db_err)?
+    {
+        return Ok(());
+    }
+    let _ignored_map_err = wallet_address::Entity::delete_many()
+        .filter(wallet_address::Column::UserId.eq(user_id))
+        .exec(transaction)
+        .await
+        .map_err(map_db_err)?;
+    Ok(())
 }

@@ -2,16 +2,16 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use axum::{
+    Json, Router,
     extract::{Query, State},
     routing::get,
-    Json, Router,
 };
 use better_auth::{AuthError, BetterAuth};
 use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
 use better_auth_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, BeforeRequestAction,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::TestSchema;
 
