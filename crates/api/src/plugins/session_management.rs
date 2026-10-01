@@ -325,7 +325,9 @@ impl SessionManagementPlugin {
             } else {
                 match self.get_session_response(req, ctx).await {
                     Ok(response) => response,
-                    Err(error @ AuthError::Upstream { .. }) => error.to_auth_response(),
+                    Err(error @ (AuthError::Upstream { .. } | AuthError::Api { .. })) => {
+                        error.to_auth_response()
+                    }
                     Err(_) => AuthError::Upstream {
                         status: 500,
                         code: "FAILED_TO_GET_SESSION",
@@ -344,92 +346,21 @@ impl SessionManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        if let Some(session) = req.virtual_session() {
-            let Some(user) = ctx.database.get_user_by_id(&session.user_id).await? else {
-                return Ok(AuthResponse::json(200, &serde_json::Value::Null)?);
-            };
-            req.set_session_hook_snapshot(ctx.user_view(&user), ctx.session_view(session));
-            return Ok(AuthResponse::json(
-                200,
-                &GetSessionResponse {
-                    session: ctx.session_view(session),
-                    user: ctx.user_view(&user),
-                    needs_refresh: None,
-                },
-            )?);
-        }
-        let manager = ctx.session_manager();
-        let Some(token) = manager.extract_session_token(req) else {
+        let Some(read) = better_auth_core::cache::runtime::authenticated(ctx, req, true).await?
+        else {
             return Ok(AuthResponse::json(200, &serde_json::Value::Null)?);
         };
-        let suppressed = manager.request_disables_refresh(req);
-        let deferred_read =
-            ctx.config.session.defer_session_refresh && req.method() == &HttpMethod::Get;
-        let Some(original_session) = ctx.database.get_session(&token).await? else {
-            let mut response = AuthResponse::json(200, &serde_json::Value::Null)?;
-            for header in delete_session_cookie_headers(&ctx.config) {
-                response.headers.append("Set-Cookie", header);
-            }
-            return Ok(response);
-        };
-        let Some(user) = ctx
-            .database
-            .get_user_by_id(original_session.user_id().as_ref())
-            .await?
-        else {
-            let mut response = AuthResponse::json(200, &serde_json::Value::Null)?;
-            for header in delete_session_cookie_headers(&ctx.config) {
-                response.headers.append("Set-Cookie", header);
-            }
-            return Ok(response);
-        };
-        // The pinned direct endpoint keeps this original context through a
-        // refresh or expired-row cleanup. Response hooks observe it even when
-        // the endpoint ultimately returns null or an update error.
-        req.set_session_hook_snapshot(ctx.user_view(&user), ctx.session_view(&original_session));
-        let read = manager
-            .read_loaded_session(
-                original_session,
-                better_auth_core::session::SessionReadOptions {
-                    allow_refresh: !suppressed && !deferred_read,
-                    cleanup_expired: !deferred_read,
-                },
-            )
-            .await?;
-        let Some(session) = read.session else {
-            let mut response = if read.needs_refresh {
-                AuthError::Upstream {
-                    status: 401,
-                    code: "FAILED_TO_GET_SESSION",
-                    message: "Failed to get session",
-                }
-                .to_auth_response()
-            } else {
-                AuthResponse::json(200, &serde_json::Value::Null)?
-            };
-            for header in delete_session_cookie_headers(&ctx.config) {
-                response.headers.append("Set-Cookie", header);
-            }
-            return Ok(response);
-        };
-        let mut response = AuthResponse::json(
+        Ok(AuthResponse::json(
             200,
             &GetSessionResponse {
-                session: ctx.session_view(&session),
-                user: ctx.user_view(&user),
-                needs_refresh: (deferred_read && !suppressed).then_some(read.needs_refresh),
+                session: read.session,
+                user: match read.user {
+                    better_auth_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user),
+                    better_auth_core::AuthenticatedUser::Cached(user) => *user,
+                },
+                needs_refresh: read.needs_refresh,
             },
-        )?;
-        if read.refreshed {
-            response.headers.append(
-                "Set-Cookie",
-                better_auth_core::utils::cookie_utils::create_session_cookie(
-                    session.token(),
-                    &ctx.config,
-                ),
-            );
-        }
-        Ok(response)
+        )?)
     }
 
     async fn handle_sign_out(

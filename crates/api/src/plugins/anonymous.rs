@@ -13,7 +13,7 @@ use serde_json::json;
 
 use super::helpers::{
     apply_default_role, completed_response_session, delete_session_cookie_headers, get_cookie,
-    issue_user_session, record_completed_session,
+    issue_user_session, record_completed_session, response_has_session_cookie,
 };
 
 /// Application-owned generation of anonymous display names and email addresses.
@@ -236,16 +236,16 @@ impl AnonymousPlugin {
 async fn anonymous_session<S: AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
-) -> Option<(S::User, SessionView)> {
+) -> Option<(better_auth_core::AuthenticatedUser<S>, SessionView)> {
     let mut read = req.clone();
     let _ = read.query.insert("disableRefresh".into(), "true".into());
-    ctx.require_session(&read).await.ok()
+    ctx.require_cached_session(&read).await.ok()
 }
 
 async fn resolve_anonymous_session<S: AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
-) -> AuthResult<Option<(S::User, SessionView)>> {
+) -> AuthResult<Option<(better_auth_core::AuthenticatedUser<S>, SessionView)>> {
     if let Some((user, session)) = anonymous_session(req, ctx).await
         && user.is_anonymous() == Some(true)
     {
@@ -273,7 +273,12 @@ async fn resolve_anonymous_session<S: AuthSchema>(
         .await?
         .into_iter()
         .find(|session| session.expires_at() > chrono::Utc::now());
-    Ok(session.map(|session| (user, ctx.session_view(&session))))
+    Ok(session.map(|session| {
+        (
+            better_auth_core::AuthenticatedUser::Stored(user),
+            ctx.session_view(&session),
+        )
+    }))
 }
 
 fn error(status: u16, code: &'static str, message: &'static str) -> AuthResponse {
@@ -357,20 +362,27 @@ impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
         if !matches {
             return Ok(response);
         }
-        let Some(issued) = completed_response_session(req, ctx, &response) else {
+        if !response_has_session_cookie(ctx, &response) {
             return Ok(response);
-        };
+        }
         let Some((old_user, old_session)) = resolve_anonymous_session(req, ctx).await? else {
             return Ok(response);
         };
         if old_user.is_anonymous() != Some(true) {
             return Ok(response);
         }
+        let Some(issued) = completed_response_session(req, ctx, &response) else {
+            return Ok(response);
+        };
+        let old_user_view = match &old_user {
+            better_auth_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+            better_auth_core::AuthenticatedUser::Cached(user) => user.as_ref().clone(),
+        };
         if let Some(linker) = &self.config.on_link_account {
             linker
                 .link(
                     &AnonymousLink {
-                        anonymous_user: ctx.user_view(&old_user),
+                        anonymous_user: old_user_view,
                         anonymous_session: ctx.session_view(&old_session),
                         new_user: issued
                             .user_view

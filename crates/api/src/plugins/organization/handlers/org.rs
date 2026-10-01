@@ -739,7 +739,7 @@ pub async fn handle_list_organizations(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
-    let (user, _session) = require_session(req, ctx).await?;
+    let (user, _session) = ctx.require_cached_session(req).await?;
     let organizations = list_organizations_core(&user, ctx).await?;
     Ok(AuthResponse::json(200, &organizations)?)
 }

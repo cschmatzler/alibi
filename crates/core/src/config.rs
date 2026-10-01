@@ -587,7 +587,8 @@ pub struct SessionConfig {
     /// Optional cookie-based session cache to avoid DB lookups.
     ///
     /// When enabled, session data is cached in a signed/encrypted cookie.
-    /// `SessionManager` checks the cookie cache before hitting the database.
+    /// Cache-aware HTTP guards check it before hitting the database; physical
+    /// session APIs continue to read authoritative stored state.
     pub cookie_cache: Option<CookieCacheConfig>,
 }
 
@@ -650,13 +651,21 @@ pub struct CookieCacheConfig {
     /// Whether the cookie cache is active.
     pub enabled: bool,
 
-    /// Maximum age of the cached cookie before a fresh DB lookup is required.
+    /// Maximum age in seconds before a fresh DB lookup is required.
+    ///
+    /// JavaScript falsy zero/NaN selects 300; other IEEE754 values are retained.
     ///
     /// Default: 5 minutes.
-    pub max_age: Duration,
+    pub max_age: f64,
 
     /// Strategy used to protect the cached cookie value.
+    ///
+    /// The stateful HTTP implementation currently supports Compact. Enabling
+    /// Jwt or Jwe returns a configuration error during builder initialization.
     pub strategy: CookieCacheStrategy,
+
+    /// Literal or asynchronous application-owned version policy.
+    pub version: Option<crate::cache::CookieCacheVersion>,
 }
 
 /// Strategy for signing / encrypting the cookie cache.
@@ -666,7 +675,7 @@ pub enum CookieCacheStrategy {
     Compact,
     /// Standard JWT with HMAC signing.
     Jwt,
-    /// JWE with AES-256-GCM encryption.
+    /// JWE; source writes A256CBC-HS512 and also accepts A256GCM.
     Jwe,
 }
 
@@ -674,8 +683,9 @@ impl Default for CookieCacheConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            max_age: Duration::minutes(5),
+            max_age: 300.0,
             strategy: CookieCacheStrategy::Compact,
+            version: None,
         }
     }
 }
@@ -1436,7 +1446,7 @@ mod tests {
     fn cookie_cache_config_defaults() {
         let c = CookieCacheConfig::default();
         assert!(!c.enabled);
-        assert_eq!(c.max_age, Duration::minutes(5));
+        assert_eq!(c.max_age, 300.0);
         assert_eq!(c.strategy, CookieCacheStrategy::Compact);
     }
 
@@ -1495,8 +1505,9 @@ mod tests {
     fn session_cookie_cache_builder() {
         let cache = CookieCacheConfig {
             enabled: true,
-            max_age: Duration::minutes(10),
+            max_age: 600.0,
             strategy: CookieCacheStrategy::Jwt,
+            ..CookieCacheConfig::default()
         };
         let cfg = AuthConfig::new("test-secret-min-32-chars-1234567").session_cookie_cache(cache);
 

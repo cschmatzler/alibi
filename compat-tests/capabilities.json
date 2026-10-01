@@ -232,34 +232,44 @@
       "implemented": true,
       "evidence": {
         "success": [
-          "admin impersonation restores the original admin session and hides impersonated sessions",
-          "JWT session headers preserve original refresh expiry cleanup and exposed header order",
+          "Discord callback exchanges without PKCE and preserves current foreign and replay state",
+          "Discord profile defaults persist original provider owners names and avatar URLs",
           "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged",
-          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
-          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
-          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
-          "api-key custom getter replaces headers and validator binds the request owner before usage",
-          "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization",
-          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
-          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
-          "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer",
-          "api-key automatic middleware default admits one concurrent cleanup and retains both credential owners",
-          "api-key automatic middleware observe admits one concurrent cleanup and retains both credential owners",
-          "api-key automatic middleware ignore admits one concurrent cleanup and retains both credential owners",
-          "api-key trusted deferred verification catches actual cleanup errors and forced retry bypasses the shared throttle",
-          "api-key api-key-automatic successful database usage awaits actual refill and preserves non-due quota and foreign state",
-          "api-key api-key-automatic-deferred successful database usage awaits actual refill and preserves non-due quota and foreign state",
-          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions",
-          "api-key api-key-usage-rate rate SQL failure retains genuine prior quota phases and owner-safe retry",
-          "api-key api-key-usage-rate final SQL failure retains genuine prior quota phases and owner-safe retry",
-          "api-key api-key-usage-rate-deferred rate SQL failure retains genuine prior quota phases and owner-safe retry",
-          "api-key api-key-usage-rate-deferred final SQL failure retains genuine prior quota phases and owner-safe retry",
-          "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
-          "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
+          "JWT session headers preserve original refresh expiry cleanup and exposed header order",
           "admin impersonation legacy uses original actor permissions for admin targets and self sessions",
           "admin impersonation no-base uses original actor permissions for admin targets and self sessions",
-          "Discord callback exchanges without PKCE and preserves current foreign and replay state",
-          "Discord profile defaults persist original provider owners names and avatar URLs"
+          "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
+          "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
+          "admin impersonation restores the original admin session and hides impersonated sessions",
+          "api-key api-key-automatic successful database usage awaits actual refill and preserves non-due quota and foreign state",
+          "api-key api-key-automatic-deferred successful database usage awaits actual refill and preserves non-due quota and foreign state",
+          "api-key api-key-usage-rate final SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate rate SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate-deferred final SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate-deferred rate SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization",
+          "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer",
+          "api-key automatic middleware default admits one concurrent cleanup and retains both credential owners",
+          "api-key automatic middleware ignore admits one concurrent cleanup and retains both credential owners",
+          "api-key automatic middleware observe admits one concurrent cleanup and retains both credential owners",
+          "api-key custom getter replaces headers and validator binds the request owner before usage",
+          "api-key trusted deferred verification catches actual cleanup errors and forced retry bypasses the shared throttle",
+          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions",
+          "compact asynchronous version receives real stored private fields then filtered cache fields and invalidation falls back without mutating foreign state",
+          "compact browser preference authenticates dontRemember and refreshes a sixty-second browser cache without persistent cookie attributes",
+          "compact cache authenticates the signed token and complete payload while retaining revoked ordinary authority only until explicit bypass",
+          "compact cache chunking uses real writer limits and canonical server chunk indices with base-cookie precedence",
+          "compact date-version preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
+          "compact infinite Max-Age fails actual cookie emission with empty500 and email signup rolls every new row back",
+          "compact negative preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
+          "compact negative-infinite preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
+          "compact version-api issuance failure rolls email transaction back and does not link the authenticated anonymous account",
+          "compact version-ordinary issuance failure rolls email transaction back and does not link the authenticated anonymous account",
+          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
+          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
+          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
+          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
+          "phone signup preserves raw JSON numeric bindings and rounded uniqueness"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -281,35 +291,45 @@
           "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority"
         ],
         "state": [
-          "session reads refresh from persisted expiry and renew the signed cookie",
-          "JWT session headers preserve original refresh expiry cleanup and exposed header order",
+          "Discord callback exchanges without PKCE and preserves current foreign and replay state",
+          "Discord profile defaults persist original provider owners names and avatar URLs",
           "JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged",
-          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
-          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
-          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
-          "api-key custom getter replaces headers and validator binds the request owner before usage",
+          "JWT session headers preserve original refresh expiry cleanup and exposed header order",
+          "api-key api-key-automatic successful database usage awaits actual refill and preserves non-due quota and foreign state",
+          "api-key api-key-automatic-deferred successful database usage awaits actual refill and preserves non-due quota and foreign state",
+          "api-key api-key-usage-rate final SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate rate SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate-deferred final SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate-deferred rate SQL failure retains genuine prior quota phases and owner-safe retry",
           "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization",
           "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer",
           "api-key automatic middleware default admits one concurrent cleanup and retains both credential owners",
-          "api-key automatic middleware observe admits one concurrent cleanup and retains both credential owners",
           "api-key automatic middleware ignore admits one concurrent cleanup and retains both credential owners",
-          "api-key background handler failures preserve consumed usage running cleanup and genuine application 403",
-          "api-key trusted deferred verification catches actual cleanup errors and forced retry bypasses the shared throttle",
-          "api-key deferred individual expired deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
-          "api-key deferred individual exhausted deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
-          "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
+          "api-key automatic middleware observe admits one concurrent cleanup and retains both credential owners",
           "api-key awaited individual exhausted deletion waits for actual adapter release and rejects without observer registration",
+          "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
+          "api-key background handler failures preserve consumed usage running cleanup and genuine application 403",
+          "api-key custom getter replaces headers and validator binds the request owner before usage",
+          "api-key deferred individual exhausted deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
+          "api-key deferred individual expired deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
           "api-key deferred individual storage failure resolves caught completion retains the exact row and awaited retry preserves failure then deletes only its owner",
           "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority",
-          "api-key api-key-automatic successful database usage awaits actual refill and preserves non-due quota and foreign state",
-          "api-key api-key-automatic-deferred successful database usage awaits actual refill and preserves non-due quota and foreign state",
+          "api-key trusted deferred verification catches actual cleanup errors and forced retry bypasses the shared throttle",
           "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions",
-          "api-key api-key-usage-rate rate SQL failure retains genuine prior quota phases and owner-safe retry",
-          "api-key api-key-usage-rate final SQL failure retains genuine prior quota phases and owner-safe retry",
-          "api-key api-key-usage-rate-deferred rate SQL failure retains genuine prior quota phases and owner-safe retry",
-          "api-key api-key-usage-rate-deferred final SQL failure retains genuine prior quota phases and owner-safe retry",
-          "Discord callback exchanges without PKCE and preserves current foreign and replay state",
-          "Discord profile defaults persist original provider owners names and avatar URLs"
+          "compact asynchronous version receives real stored private fields then filtered cache fields and invalidation falls back without mutating foreign state",
+          "compact browser preference authenticates dontRemember and refreshes a sixty-second browser cache without persistent cookie attributes",
+          "compact cache authenticates the signed token and complete payload while retaining revoked ordinary authority only until explicit bypass",
+          "compact cache chunking uses real writer limits and canonical server chunk indices with base-cookie precedence",
+          "compact date-version preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
+          "compact infinite Max-Age fails actual cookie emission with empty500 and email signup rolls every new row back",
+          "compact negative preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
+          "compact negative-infinite preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
+          "compact version-api issuance failure rolls email transaction back and does not link the authenticated anonymous account",
+          "compact version-ordinary issuance failure rolls email transaction back and does not link the authenticated anonymous account",
+          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
+          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
+          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
+          "session reads refresh from persisted expiry and renew the signed cookie"
         ]
       }
     },
@@ -330,6 +350,7 @@
       "implemented": true,
       "evidence": {
         "success": [
+          "compact cache authenticates the signed token and complete payload while retaining revoked ordinary authority only until explicit bypass",
           "github link social creates an account that listAccounts returns",
           "social sign-in preserves previously granted account scopes"
         ],
@@ -340,6 +361,7 @@
           "social sign-in preserves previously granted account scopes"
         ],
         "state": [
+          "compact cache authenticates the signed token and complete payload while retaining revoked ordinary authority only until explicit bypass",
           "social sign-in preserves previously granted account scopes"
         ]
       }
@@ -558,18 +580,20 @@
       "implemented": true,
       "evidence": {
         "success": [
+          "compact cache authenticates the signed token and complete payload while retaining revoked ordinary authority only until explicit bypass",
+          "organization concurrent normal admissions pass real prechecks and retain both physical members",
           "organization core lifecycle matches TS",
           "organization legacy literal JSON null stays distinct from SQL null through owner endpoints",
-          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers",
           "organization physical membership pages preserve newer older newer rows and visible organization limits",
-          "organization concurrent normal admissions pass real prechecks and retain both physical members"
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
         ],
         "rejection": null,
         "authorization": null,
         "state": [
-          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers",
+          "compact cache authenticates the signed token and complete payload while retaining revoked ordinary authority only until explicit bypass",
+          "organization concurrent normal admissions pass real prechecks and retain both physical members",
           "organization physical membership pages preserve newer older newer rows and visible organization limits",
-          "organization concurrent normal admissions pass real prechecks and retain both physical members"
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
         ]
       }
     },
@@ -2847,10 +2871,12 @@
       "evidence": {
         "success": [
           "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
-          "anonymous upgrade transfers original completed user and session snapshots before cleanup",
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
+          "anonymous issuance inherits only a real signed browser-session preference",
           "anonymous official client issues repeats and deletes only its actual authenticated owner",
-          "anonymous issuance inherits only a real signed browser-session preference"
+          "anonymous upgrade transfers original completed user and session snapshots before cleanup",
+          "compact version-api issuance failure rolls email transaction back and does not link the authenticated anonymous account",
+          "compact version-ordinary issuance failure rolls email transaction back and does not link the authenticated anonymous account"
         ],
         "rejection": [
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
@@ -2873,28 +2899,29 @@
       "implemented": true,
       "evidence": {
         "success": [
-          "admin ban, unban, and user-session routes match TS",
-          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
-          "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions",
-          "two-factor two-factor-trust-fractional retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-zero-challenge retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-negative-challenge retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
-          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state",
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "two-factor two-factor-skip-verification checks outer and inner trust syntax before deletion and cleanup",
-          "two-factor two-factor-skip-verification checks authenticated trust ownership missing rows expiry and cleanup",
-          "two-factor two-factor-skip-verification rotates real trust proofs accepts HMAC aliases and rejects replay",
-          "two-factor two-factor-trust-cleanup-disabled checks outer and inner trust syntax before deletion and cleanup",
-          "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
-          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay",
+          "admin ban, unban, and user-session routes match TS",
+          "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions",
+          "compact browser preference authenticates dontRemember and refreshes a sixty-second browser cache without persistent cookie attributes",
           "core cookie origin validation uses canonical HTTP origin and rejects foreign authorities before session writes",
-          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
-          "core redirect controls reject path controls while preserving encoded query and fragment values",
           "core redirect controls preserve whitespace absolute callbacks and explicit empty callbacks",
-          "core redirect controls reject authority-shaped paths while permitting owned safe paths"
+          "core redirect controls reject authority-shaped paths while permitting owned safe paths",
+          "core redirect controls reject path controls while preserving encoded query and fragment values",
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
+          "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
+          "two-factor two-factor-skip-verification checks authenticated trust ownership missing rows expiry and cleanup",
+          "two-factor two-factor-skip-verification checks outer and inner trust syntax before deletion and cleanup",
+          "two-factor two-factor-skip-verification rotates real trust proofs accepts HMAC aliases and rejects replay",
+          "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
+          "two-factor two-factor-trust-cleanup-disabled checks outer and inner trust syntax before deletion and cleanup",
+          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay",
+          "two-factor two-factor-trust-fractional retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-negative-challenge retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-zero-challenge retains configured cookie and database lifetimes through real trust and challenge state"
         ],
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -3083,13 +3110,23 @@
       "evidence": {
         "success": [
           "account info requires an explicit account selector",
-          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
-          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
-          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
-          "anonymous upgrade transfers original completed user and session snapshots before cleanup",
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
+          "anonymous issuance inherits only a real signed browser-session preference",
           "anonymous official client issues repeats and deletes only its actual authenticated owner",
-          "anonymous issuance inherits only a real signed browser-session preference"
+          "anonymous upgrade transfers original completed user and session snapshots before cleanup",
+          "compact asynchronous version receives real stored private fields then filtered cache fields and invalidation falls back without mutating foreign state",
+          "compact browser preference authenticates dontRemember and refreshes a sixty-second browser cache without persistent cookie attributes",
+          "compact cache authenticates the signed token and complete payload while retaining revoked ordinary authority only until explicit bypass",
+          "compact cache chunking uses real writer limits and canonical server chunk indices with base-cookie precedence",
+          "compact date-version preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
+          "compact fractional raw max-age preserves actual writer lifetime and header flooring",
+          "compact nan raw max-age preserves actual writer lifetime and header flooring",
+          "compact negative preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
+          "compact negative-infinite preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
+          "compact zero raw max-age preserves actual writer lifetime and header flooring",
+          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
+          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
+          "phone signup preserves raw JSON numeric bindings and rounded uniqueness"
         ],
         "rejection": [
           "sign up with duplicate email returns error",
@@ -3099,12 +3136,18 @@
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state"
         ],
         "state": [
-          "official client signs in with imported TypeScript scrypt credentials",
-          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
-          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
-          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
+          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
           "anonymous upgrade transfers original completed user and session snapshots before cleanup",
-          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state"
+          "compact fractional raw max-age preserves actual writer lifetime and header flooring",
+          "compact infinite Max-Age fails actual cookie emission with empty500 and email signup rolls every new row back",
+          "compact nan raw max-age preserves actual writer lifetime and header flooring",
+          "compact version-api issuance failure rolls email transaction back and does not link the authenticated anonymous account",
+          "compact version-ordinary issuance failure rolls email transaction back and does not link the authenticated anonymous account",
+          "compact zero raw max-age preserves actual writer lifetime and header flooring",
+          "official client signs in with imported TypeScript scrypt credentials",
+          "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
+          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
+          "phone signup preserves raw JSON numeric bindings and rounded uniqueness"
         ]
       }
     },

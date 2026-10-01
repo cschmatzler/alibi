@@ -371,6 +371,10 @@ impl EmailPasswordPlugin {
             }
         }
 
+        better_auth_core::cache::runtime::set_issuance_preference(
+            req,
+            signup_req.remember_me == Some(false),
+        );
         let meta = RequestMeta::from_request(req);
         let (response, session_token) = sign_up_core(&signup_req, &self.config, &meta, ctx).await?;
 
@@ -404,6 +408,10 @@ impl EmailPasswordPlugin {
                 message: "Invalid email",
             });
         }
+        better_auth_core::cache::runtime::set_issuance_preference(
+            req,
+            signin_req.remember_me == Some(false),
+        );
         let meta = RequestMeta::from_request(req);
         match sign_in_core(
             req,
@@ -750,6 +758,8 @@ pub(crate) async fn sign_up_core<S: better_auth_core::AuthSchema>(
                     })
                     .await?;
                 let token = session.token().to_string();
+                better_auth_core::cache::runtime::emit_issuance(&signup_context, &user, &session)
+                    .await?;
                 super::helpers::record_completed_session::<S>(&user, &session);
 
                 Ok((

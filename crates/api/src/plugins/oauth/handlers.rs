@@ -384,13 +384,14 @@ fn redirect_response(location: &str) -> AuthResponse {
         .with_header("Location", location)
 }
 
-fn account_cookie_max_age(config: &better_auth_core::AuthConfig) -> Duration {
-    config
-        .session
-        .cookie_cache
-        .as_ref()
-        .map(|cache| cache.max_age)
-        .unwrap_or_else(|| Duration::minutes(5))
+fn account_cookie_max_age(config: &better_auth_core::AuthConfig) -> f64 {
+    better_auth_core::cache::effective_max_age(
+        config
+            .session
+            .cookie_cache
+            .as_ref()
+            .map_or(300.0, |cache| cache.max_age),
+    )
 }
 
 pub(crate) fn create_account_cookie_header(
@@ -400,12 +401,12 @@ pub(crate) fn create_account_cookie_header(
 ) -> AuthResult<String> {
     let max_age = account_cookie_max_age(config);
     let value = create_account_cookie_value(secret, payload, max_age)?;
-    Ok(better_auth_core::utils::cookie_utils::create_cookie(
+    better_auth_core::cache::cookie_header(
         &account_cookie_name(config),
         &value,
-        max_age.num_seconds(),
+        Some(max_age),
         config,
-    ))
+    )
 }
 
 pub(super) fn decode_account_cookie(

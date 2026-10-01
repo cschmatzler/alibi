@@ -8,6 +8,7 @@ mod organization_member_role_hooks_fixture;
 mod organization_membership_policy_fixture;
 mod organization_transport_probe;
 mod organization_update_hooks_fixture;
+mod session_cookie_cache_fixture;
 mod team_fixture;
 
 use axum::{
@@ -718,6 +719,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (anonymous_router, anonymous_reset) =
         anonymous_fixture::router(&config, database.clone()).await?;
     let session_fields_router = session_fields_fixture::router(&config, database.clone()).await?;
+    let session_cookie_cache_router =
+        session_cookie_cache_fixture::router(&config, database.clone()).await?;
     let api_key_generation_router =
         api_key_generation_fixture::router(&config, database.clone()).await?;
     let passkey_auth_events: passkey_authentication_fixture::Events = Arc::default();
@@ -1752,6 +1755,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(api_key_background_router)
         .merge(api_key_hook_router)
         .merge(session_fields_router)
+        .merge(session_cookie_cache_router)
         .merge(open_api_router)
         .merge(passkey_auth_router)
         .merge(passkey_router)

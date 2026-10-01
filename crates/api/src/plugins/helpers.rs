@@ -280,6 +280,22 @@ pub(crate) fn record_completed_session_user_view<S: better_auth_core::AuthSchema
     }
 }
 
+pub(crate) fn response_has_session_cookie<S: better_auth_core::AuthSchema>(
+    ctx: &AuthContext<S>,
+    response: &better_auth_core::AuthResponse,
+) -> bool {
+    response.headers.get_all("set-cookie").any(|header| {
+        cookie::Cookie::parse(header.clone()).is_ok_and(|cookie| {
+            cookie.name() == ctx.config.session.cookie_name
+                && cookie
+                    .value()
+                    .split('.')
+                    .next()
+                    .is_some_and(|value| !value.is_empty())
+        })
+    })
+}
+
 pub(crate) fn completed_response_session<S: better_auth_core::AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
@@ -287,11 +303,7 @@ pub(crate) fn completed_response_session<S: better_auth_core::AuthSchema>(
 ) -> Option<std::sync::Arc<CompletedSession<S>>> {
     // A clearing cookie is not a completed login. The snapshot comes from the
     // trusted issuer, never the response body or a freshly mutated database row.
-    let selected = response.headers.get_all("set-cookie").any(|header| {
-        cookie::Cookie::parse(header.clone()).is_ok_and(|cookie| {
-            cookie.name() == ctx.config.session.cookie_name && !cookie.value().is_empty()
-        })
-    });
+    let selected = response_has_session_cookie(ctx, response);
     selected
         .then(|| req.extensions().get::<CompletedSession<S>>())
         .flatten()
@@ -458,6 +470,7 @@ async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
         }
     };
 
+    better_auth_core::cache::runtime::emit_issuance(ctx, &user, &session).await?;
     record_completed_session::<S>(&user, &session);
     Ok(IssuedSession { user, session })
 }
