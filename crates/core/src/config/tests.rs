@@ -104,7 +104,7 @@ fn builder_chaining() {
     assert_eq!(cfg.app_name, "MyApp");
     assert_eq!(cfg.base_path, "/auth");
     assert_eq!(cfg.password.min_length, 12);
-    assert!(cfg.advanced.disable_csrf_check);
+    assert_eq!(cfg.advanced.disable_csrf_check, Some(true));
     assert!(cfg.advanced.disable_origin_check);
     assert_eq!(cfg.advanced.cookie_prefix, Some("myapp".to_owned()));
 }

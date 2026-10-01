@@ -42,6 +42,7 @@ pub enum HttpMethod {
 pub struct AuthRequest {
     pub method: HttpMethod,
     pub path: String,
+    request_url: Option<url::Url>,
     pub headers: HashMap<String, String>,
     pub body: Option<Vec<u8>>,
     pub query: HashMap<String, String>,
@@ -61,6 +62,26 @@ pub struct AuthRequest {
 /// instance, so fields supplied by an embedding caller never become authority.
 #[derive(Clone, Default)]
 pub struct RequestExtensions(Arc<Mutex<crate::plugin::ContextExtensions>>);
+
+/// Body decoded by trusted dispatch after its media policy has been checked.
+/// Original request bytes and headers remain available to application hooks.
+#[derive(Clone, Debug)]
+pub enum ParsedRequestBody {
+    Value(crate::utils::json::JsValue),
+    /// A transport body that has no JSON value; original bytes remain in body.
+    Opaque(&'static str),
+}
+
+/// Multipart file contents retained for application handlers alongside decoded fields.
+#[derive(Clone, Debug, Default)]
+pub struct MultipartFiles(pub std::collections::HashMap<String, MultipartFile>);
+
+#[derive(Clone, Debug)]
+pub struct MultipartFile {
+    pub filename: String,
+    pub content_type: Option<String>,
+    pub bytes: Vec<u8>,
+}
 
 impl std::fmt::Debug for RequestExtensions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -413,6 +434,7 @@ impl AuthRequest {
         Self {
             method,
             path: path.into(),
+            request_url: None,
             headers: HashMap::new(),
             body: None,
             query: HashMap::new(),
@@ -438,6 +460,7 @@ impl AuthRequest {
         Self {
             method,
             path,
+            request_url: None,
             headers,
             body,
             query,
@@ -447,6 +470,20 @@ impl AuthRequest {
             session_hook_snapshot: Arc::new(Mutex::new(None)),
             extensions: RequestExtensions::default(),
         }
+    }
+
+    /// Retain the absolute URL received by the HTTP transport.
+    /// Origin inference uses this URL, independently of routing and forwarded headers.
+    #[must_use]
+    pub fn with_url(mut self, url: url::Url) -> Self {
+        self.request_url = Some(url);
+        self
+    }
+
+    /// The absolute transport URL, when supplied by the embedding integration.
+    #[must_use]
+    pub const fn url(&self) -> Option<&url::Url> {
+        self.request_url.as_ref()
     }
 
     /// Replace query parameters with decoded pairs, preserving repeated values.
@@ -580,6 +617,14 @@ impl AuthRequest {
     pub fn body_as_json<T: for<'de> Deserialize<'de> + 'static>(
         &self,
     ) -> Result<T, serde_json::Error> {
+        if let Some(body) = self.extensions.get::<ParsedRequestBody>() {
+            return match &*body {
+                ParsedRequestBody::Value(value) => crate::utils::json::from_value(value.clone()),
+                ParsedRequestBody::Opaque(kind) => Err(serde::de::Error::custom(format!(
+                    "Expected JSON body, received {kind}"
+                ))),
+            };
+        }
         self.body.as_ref().map_or_else(
             || crate::utils::json::from_slice(b"{}"),
             |body| crate::utils::json::from_slice(body),

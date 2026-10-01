@@ -347,23 +347,22 @@ impl EmailOtpPlugin {
     ) -> AuthResult<AuthResponse> {
         // Extra user inputs come from the configured schema. An absent username
         // plugin must not deserialize, validate or persist its additional fields.
-        let mut configured_request = req.clone();
-        if !ctx
+        let username_enabled = ctx
             .get_metadata("username.enabled")
             .and_then(Value::as_bool)
-            .unwrap_or(false)
-            && let Some(body) = &req.body
-            && let Ok(mut value) = serde_json::from_slice::<Value>(body)
-            && let Some(object) = value.as_object_mut()
-        {
-            drop(object.remove("username"));
-            drop(object.remove("displayUsername"));
-            configured_request.body = Some(serde_json::to_vec(&value)?);
-        }
-        let body: SignInRequest = match parse_body(&configured_request) {
-            Ok(value) => value,
-            Err(response) => return Ok(response),
+            .unwrap_or(false);
+        let ignored = if username_enabled {
+            &[][..]
+        } else {
+            &["username", "displayUsername"][..]
         };
+        let body: SignInRequest =
+            match crate::plugins::authentication_helpers::parse_body_with_ignored_fields(
+                req, ignored,
+            ) {
+                Ok(value) => value,
+                Err(response) => return Ok(response),
+            };
         let email = body.email.to_lowercase();
         self.consume_code(ctx, &identifier(EmailOtpType::SignIn, &email), &body.otp)
             .await?;

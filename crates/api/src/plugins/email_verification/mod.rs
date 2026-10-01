@@ -182,7 +182,7 @@ impl EmailVerificationPlugin {
         // Validate callbackURL against trusted origins, matching the TS
         // `originCheck` middleware applied to the verify-email endpoint.
         if let Some(ref url) = callback_url
-            && !ctx.config.advanced.disable_origin_check
+            && !ctx.config.current_origin_check_disabled()
             && !ctx.config.is_redirect_target_trusted(url)
         {
             return Ok(AuthError::forbidden("Invalid callbackURL").to_auth_response());

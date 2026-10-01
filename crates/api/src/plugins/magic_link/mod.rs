@@ -222,7 +222,7 @@ impl MagicLinkPlugin {
         // Each pinned originCheck closure labels its input callbackURL,
         // including the new-user and error callbacks.
         for value in [&callback, &new_user_callback, &error_callback] {
-            if !ctx.config.advanced.disable_origin_check
+            if !ctx.config.current_origin_check_disabled()
                 && value
                     .as_deref()
                     .is_some_and(|value| !ctx.config.is_redirect_target_trusted(value))

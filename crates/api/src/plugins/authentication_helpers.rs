@@ -158,14 +158,29 @@ fn parse_body_with_fields_and_ignored<T: DeserializeOwned + 'static>(
     fields: &[JsonField],
     ignored: &[&str],
 ) -> Result<T, AuthResponse> {
-    let mut value: better_auth_core::utils::json::JsValue =
+    // Source object schemas inspect fields on decoded streams/buffers too.
+    // Those transport objects have no schema fields; retain their raw bytes,
+    // but validate missing properties instead of reparsing them as JSON.
+    let opaque = req
+        .extensions()
+        .get::<better_auth_core::types::ParsedRequestBody>()
+        .is_some_and(|body| {
+            matches!(
+                &*body,
+                better_auth_core::types::ParsedRequestBody::Opaque(_)
+            )
+        });
+    let mut value: better_auth_core::utils::json::JsValue = if opaque {
+        better_auth_core::utils::json::JsValue::Object(Default::default())
+    } else {
         req.body_as_json().map_err(|_error| {
             AuthResponse::json(
                 400,
                 &serde_json::json!({"code":"BAD_REQUEST","message":"Invalid JSON in request body"}),
             )
             .unwrap_or_else(|_| AuthResponse::text(400, "Invalid JSON in request body"))
-        })?;
+        })?
+    };
     if let better_auth_core::utils::json::JsValue::Object(object) = &mut value {
         for field in ignored {
             drop(object.shift_remove(*field));
@@ -183,13 +198,22 @@ fn parse_body_with_fields_and_ignored<T: DeserializeOwned + 'static>(
         if field_value.is_none() && !field.required {
             continue;
         }
+        let received_type = if req
+            .extensions()
+            .get::<better_auth_core::types::MultipartFiles>()
+            .is_some_and(|files| files.0.contains_key(field.name))
+        {
+            "Blob"
+        } else {
+            json_type(field_value)
+        };
         let issue = match field.kind {
             JsonFieldKind::String | JsonFieldKind::NonEmptyString | JsonFieldKind::Email
                 if !field_value.is_some_and(better_auth_core::utils::json::JsValue::is_string) =>
             {
                 Some(format!(
                     "Invalid input: expected string, received {}",
-                    json_type(field_value)
+                    received_type
                 ))
             }
             JsonFieldKind::NonEmptyString
@@ -204,7 +228,7 @@ fn parse_body_with_fields_and_ignored<T: DeserializeOwned + 'static>(
             {
                 Some(format!(
                     "Invalid input: expected boolean, received {}",
-                    json_type(field_value)
+                    received_type
                 ))
             }
             JsonFieldKind::Email
@@ -233,7 +257,7 @@ fn parse_body_with_fields_and_ignored<T: DeserializeOwned + 'static>(
             {
                 Some(format!(
                     "Invalid input: expected record, received {}",
-                    json_type(field_value)
+                    received_type
                 ))
             }
             JsonFieldKind::String

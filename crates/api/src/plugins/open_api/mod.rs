@@ -101,10 +101,10 @@ impl<S: AuthSchema> AuthPlugin<S> for OpenApiPlugin {
             return Ok(Some(AuthResponse::json(200, &spec)?));
         }
         let schema = serde_json::to_string(&spec)?;
-        Ok(Some(AuthResponse::html(
-            200,
-            reference_html(&schema, &self.config),
-        )))
+        Ok(Some(
+            AuthResponse::html(200, reference_html(&schema, &self.config))
+                .with_header("content-type", "text/html"),
+        ))
     }
 }
 fn reference_html(schema: &str, config: &OpenApiConfig) -> String {

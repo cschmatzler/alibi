@@ -100,10 +100,13 @@ async fn sign_in_blocks_cross_site_navigation_login_attempts() {
 
 // Rust-specific surface: Rust middleware implementations are library-specific behavior with no direct TS analogue.
 #[tokio::test]
-async fn sign_up_allows_legacy_first_login_requests_without_metadata() {
+async fn sign_up_rejects_untrusted_origin_without_metadata() {
     let mw = CsrfMiddleware::new(CsrfConfig::new(), test_auth_config(vec![]));
     let req = make_request("/sign-up/email", Some("http://evil.com"), false, &[]);
-    assert!(mw.before_request(&req).await.unwrap().is_none());
+    assert_eq!(
+        forbidden_message(mw.before_request(&req).await.unwrap()),
+        "Invalid origin"
+    );
 }
 
 // Pinned origin-check middleware applies JavaScript truthiness, then checks

@@ -679,13 +679,17 @@ pub fn delete_with_auth(path: &str, token: &str) -> AuthRequest {
     req
 }
 
-/// Build an authenticated POST request with an empty `{}` body (no content-type).
+/// Build an authenticated POST request with an empty JSON `{}` body.
 ///
 /// Matches the pattern used by many integration tests for action endpoints
 /// like `/sign-out`, `/revoke-sessions`, `/delete-user`, etc.
 pub fn post_with_auth(path: &str, token: &str) -> AuthRequest {
     let mut req = AuthRequest::new(HttpMethod::Post, path);
     req.body = Some(b"{}".to_vec());
+    drop(
+        req.headers
+            .insert("content-type".to_owned(), "application/json".to_owned()),
+    );
     drop(
         req.headers
             .insert("cookie".to_owned(), test_session_cookie(token)),

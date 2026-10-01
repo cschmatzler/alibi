@@ -107,7 +107,6 @@ rustls = ["better-auth-api/rustls"]
 axum = [
     "dep:axum",
     "dep:tower",
-    "dep:url",
     "dep:http-body-util",
     "better-auth-core/axum",
     "better-auth-api/axum",
@@ -129,6 +128,7 @@ async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = "0.9"
+multer = { version = "3.1", features = ["tokio-io"] }
 clap = { version = "4.5", features = ["derive"] }
 
 # Error handling
@@ -148,7 +148,7 @@ jsonwebtoken = { workspace = true }
 # Web framework (optional)
 axum = { workspace = true, optional = true }
 tower = { workspace = true, optional = true }
-url = { workspace = true, optional = true }
+url = { workspace = true }
 
 # Cache (optional)
 tracing.workspace = true
@@ -158,6 +158,7 @@ http-body-util = { version = "0.1", optional = true }
 better-auth-seaorm = { workspace = true }
 tokio = { workspace = true, features = ["full", "test-util"] }
 serde_yaml = "0.9"
+multer = { version = "3.1", features = ["tokio-io"] }
 tower-http = { version = "0.6", features = ["cors"] }
 tracing-subscriber = { workspace = true }
 oas3 = { version = "0.20.1", features = ["yaml-spec"] }

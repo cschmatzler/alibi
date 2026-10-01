@@ -422,14 +422,23 @@ pub struct AdvancedConfig {
     /// IP address extraction configuration.
     pub ip_address: IpAddressConfig,
 
-    /// If `true`, the CSRF-check middleware is disabled.
-    pub disable_csrf_check: bool,
+    /// Explicit CSRF override. `None` preserves the pinned compatibility behavior
+    /// where disabling all origin checks also disables first-login CSRF checks.
+    pub disable_csrf_check: Option<bool>,
 
     /// If `true`, callback / redirect target origin validation is skipped.
     ///
     /// This mirrors Better Auth TS `advanced.disableOriginCheck`.
-    /// It does **not** disable the request-origin CSRF checks.
+    /// Request-origin validation is also skipped. First-login Fetch Metadata
+    /// checks remain enabled when `disable_csrf_check` is explicitly `Some(false)`.
     pub disable_origin_check: bool,
+
+    /// Skip origin validation for a literal path and its descendants. This does
+    /// not disable first-login cross-site navigation protection.
+    pub disable_origin_check_paths: Vec<String>,
+
+    /// Admit trailing slashes while resolving the original registered endpoint.
+    pub skip_trailing_slashes: bool,
 
     /// Cross-subdomain cookie sharing configuration.
     pub cross_sub_domain_cookies: Option<CrossSubDomainConfig>,
@@ -728,8 +737,37 @@ impl AuthConfig {
 
     #[must_use]
     pub const fn disable_csrf_check(mut self, disabled: bool) -> Self {
-        self.advanced.disable_csrf_check = disabled;
+        self.advanced.disable_csrf_check = Some(disabled);
         self
+    }
+
+    /// Determine whether this request path opts out of origin validation.
+    #[must_use]
+    pub fn origin_check_disabled_for(&self, path: &str) -> bool {
+        if self.advanced.disable_origin_check {
+            return true;
+        }
+        let path = path
+            .strip_prefix(self.base_path.trim_end_matches('/'))
+            .filter(|suffix| suffix.starts_with('/'))
+            .unwrap_or(path)
+            .trim_end_matches('/');
+        self.advanced.disable_origin_check_paths.iter().any(|skip| {
+            let skip = skip.trim_end_matches('/');
+            path == skip
+                || path
+                    .strip_prefix(skip)
+                    .is_some_and(|suffix| suffix.starts_with('/'))
+        })
+    }
+
+    /// Apply the configured origin policy at an initialized request callback.
+    #[must_use]
+    pub fn current_origin_check_disabled(&self) -> bool {
+        crate::hooks::current_request_hook_context()
+            .map_or(self.advanced.disable_origin_check, |request| {
+                self.origin_check_disabled_for(&request.path)
+            })
     }
 
     #[must_use]

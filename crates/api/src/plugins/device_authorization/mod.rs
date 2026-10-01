@@ -708,6 +708,15 @@ better_auth_core::impl_auth_plugin! {
         post "/device/approve" => handle_device_approve, "device_approve";
         post "/device/deny" => handle_device_deny, "device_deny";
     }
+    extra {
+        fn allowed_media_types(&self, route: &better_auth_core::AuthRoute) -> Vec<&'static str> {
+            if route.path == "/device/code" {
+                vec!["application/json", "application/x-www-form-urlencoded"]
+            } else {
+                vec!["application/json"]
+            }
+        }
+    }
 }
 
 fn is_unique_constraint_error(error: &AuthError) -> bool {
