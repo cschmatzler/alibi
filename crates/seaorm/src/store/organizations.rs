@@ -2,8 +2,9 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DbBackend, DbErr, EntityTrait, IntoActiveModel, QueryFilter,
-    QueryOrder, Set, TransactionTrait,
+    QuerySelect, Set, TransactionTrait,
 };
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use better_auth_core::store::OrganizationStore;
@@ -143,6 +144,7 @@ where
     async fn list_user_organizations(&self, user_id: &str) -> AuthResult<Vec<Organization>> {
         let member_models = entities::member::Entity::find()
             .filter(entities::member::Column::UserId.eq(user_id))
+            .limit(self.config().advanced.database.default_find_many_limit as u64)
             .all(self.connection())
             .await
             .map_err(map_db_err)?;
@@ -152,17 +154,26 @@ where
         }
 
         let organization_ids: Vec<String> = member_models
-            .into_iter()
-            .map(|member| member.organization_id)
+            .iter()
+            .map(|member| member.organization_id.clone())
             .collect();
 
-        Entity::find()
+        let organizations: HashMap<String, Organization> = Entity::find()
             .filter(Column::Id.is_in(organization_ids))
-            .order_by_asc(Column::CreatedAt)
             .all(self.connection())
             .await
-            .map(|models| models.iter().map(Organization::from).collect())
-            .map_err(map_db_err)
+            .map_err(map_db_err)?
+            .into_iter()
+            .map(|model| (model.id.clone(), Organization::from(&model)))
+            .collect();
+        // The source maps the member page's joined organizations. Repeated
+        // memberships repeat the organization; organization creation order
+        // cannot reorder this page. Missing joins retain the existing store's
+        // omission behavior, rather than inventing a nullable public result.
+        Ok(member_models
+            .into_iter()
+            .filter_map(|member| organizations.get(&member.organization_id).cloned())
+            .collect())
     }
 }
 

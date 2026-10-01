@@ -406,10 +406,15 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "organization member queries reflect non-public add-member and active member endpoints",
+        "success": [
+          "organization member queries reflect non-public add-member and active member endpoints",
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
+        ],
         "rejection": null,
         "authorization": null,
-        "state": null
+        "state": [
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
+        ]
       }
     },
     {
@@ -493,11 +498,18 @@
       "evidence": {
         "success": [
           "organization core lifecycle matches TS",
-          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
+          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints",
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers",
+          "organization physical membership pages preserve newer older newer rows and visible organization limits",
+          "organization concurrent normal admissions pass real prechecks and retain both physical members"
         ],
         "rejection": null,
         "authorization": null,
-        "state": null
+        "state": [
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers",
+          "organization physical membership pages preserve newer older newer rows and visible organization limits",
+          "organization concurrent normal admissions pass real prechecks and retain both physical members"
+        ]
       }
     },
     {
@@ -516,10 +528,15 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "organization list members supports sort and filter queries",
+        "success": [
+          "organization list members supports sort and filter queries",
+          "organization concurrent normal admissions pass real prechecks and retain both physical members"
+        ],
         "rejection": null,
         "authorization": null,
-        "state": null
+        "state": [
+          "organization concurrent normal admissions pass real prechecks and retain both physical members"
+        ]
       }
     },
     {
@@ -1771,7 +1788,8 @@
           "organization addition trusted role patches are unvalidated and before versus after errors retain exact writes",
           "organization addition genuine SQL failures retain source before member team and after phases with successful retries",
           "organization addition team limits require actual headers and clean the original target page while preserving foreign sessions",
-          "organization addition retargeted trusted patches still roll back with captured original scope and cleanup SQL errors retain the new member"
+          "organization addition retargeted trusted patches still roll back with captured original scope and cleanup SQL errors retain the new member",
+          "organization physical membership pages preserve newer older newer rows and visible organization limits"
         ],
         "rejection": [
           "organization creation static denial and negative limits preserve ownership while trusted creation bypasses only the allow policy",
@@ -1782,13 +1800,15 @@
           "organization input schemas reject ordered invalid fields before guest authentication and persist no mutations",
           "organization JSON media checks reject before parsing or policies and permit uppercase retries and long slugs",
           "organization creation rejected hooks retain exact earlier rows without selecting the current or sibling session",
-          "organization creation policies and duplicate checks precede hooks while trusted creation has no request selection"
+          "organization creation policies and duplicate checks precede hooks while trusted creation has no request selection",
+          "organization physical membership pages preserve newer older newer rows and visible organization limits"
         ],
         "authorization": [
           "organization creation static denial and negative limits preserve ownership while trusted creation bypasses only the allow policy",
           "organization creation async policy sees the persisted principal and true limit results deny public and trusted creation",
           "organization creation callback errors propagate before writes even for trusted callers",
-          "organization creation policies and duplicate checks precede hooks while trusted creation has no request selection"
+          "organization creation policies and duplicate checks precede hooks while trusted creation has no request selection",
+          "organization physical membership pages preserve newer older newer rows and visible organization limits"
         ],
         "state": [
           "organization metadata stores rounded JavaScript numbers before readback",
@@ -1816,7 +1836,8 @@
           "organization addition trusted role patches are unvalidated and before versus after errors retain exact writes",
           "organization addition genuine SQL failures retain source before member team and after phases with successful retries",
           "organization addition team limits require actual headers and clean the original target page while preserving foreign sessions",
-          "organization addition retargeted trusted patches still roll back with captured original scope and cleanup SQL errors retain the new member"
+          "organization addition retargeted trusted patches still roll back with captured original scope and cleanup SQL errors retain the new member",
+          "organization physical membership pages preserve newer older newer rows and visible organization limits"
         ]
       }
     },
@@ -1853,7 +1874,8 @@
           "organization deletion leaves an unrelated active organization selected when deleting another owned organization",
           "organization deletion hooks receive raw rows and original authority after token clearing and before committed deletion",
           "organization deletion keeps its original callback and response snapshots after a real before hook write",
-          "organization deletion awaits its actual asynchronous before hook before deleting persisted records"
+          "organization deletion awaits its actual asynchronous before hook before deleting persisted records",
+          "organization physical membership pages preserve newer older newer rows and visible organization limits"
         ],
         "rejection": [
           "organization deletion rejects other tenants and member roles before changing any selection or record",
@@ -1877,7 +1899,8 @@
           "organization deletion hook rejections preserve their exact nontransactional partial writes",
           "organization deletion guards prevent configured callbacks for denied authority and genuine missing rows",
           "organization deletion keeps its original callback and response snapshots after a real before hook write",
-          "organization deletion awaits its actual asynchronous before hook before deleting persisted records"
+          "organization deletion awaits its actual asynchronous before hook before deleting persisted records",
+          "organization physical membership pages preserve newer older newer rows and visible organization limits"
         ]
       }
     },
@@ -1955,7 +1978,8 @@
           "organization removal awaits its actual before callback before member and team writes",
           "organization removal without callbacks returns real SQL veto empty 500 after permission and rolls back all scoped writes",
           "organization real SQL errors in removal callbacks retain before and self after persistence phases",
-          "organization removal distinguishes actual SQL IGNORE success from database errors and retries without double releasing seats"
+          "organization removal distinguishes actual SQL IGNORE success from database errors and retries without double releasing seats",
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
         ],
         "rejection": [
           "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
@@ -1965,7 +1989,8 @@
           "organization self removal clears only the current organization before after-hook rejection",
           "organization last owner checks its configured raw page before callbacks",
           "organization removal without callbacks returns real SQL veto empty 500 after permission and rolls back all scoped writes",
-          "organization real SQL errors in removal callbacks retain before and self after persistence phases"
+          "organization real SQL errors in removal callbacks retain before and self after persistence phases",
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
         ],
         "authorization": [
           "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
@@ -1987,7 +2012,8 @@
           "organization removal without callbacks returns real SQL veto empty 500 after permission and rolls back all scoped writes",
           "organization real SQL errors in removal callbacks retain before and self after persistence phases",
           "organization removal distinguishes actual SQL IGNORE success from database errors and retries without double releasing seats",
-          "organization removal preserves explicit public callback 500 JSON rather than classifying it as a database failure"
+          "organization removal preserves explicit public callback 500 JSON rather than classifying it as a database failure",
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
         ]
       }
     },
@@ -2140,7 +2166,8 @@
           "organization member role media and malformed JSON rejection precede authentication with a valid retry",
           "organization member role selectors retain source empty-role precedence and literal whitespace IDs",
           "organization member role ECMAScript whitespace normalizes arrays and duplicates before callbacks and storage",
-          "organization member role preserves NEL as a non-whitespace unknown role without callbacks or writes"
+          "organization member role preserves NEL as a non-whitespace unknown role without callbacks or writes",
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
         ],
         "rejection": [
           "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
@@ -2154,13 +2181,15 @@
           "organization member role media and malformed JSON rejection precede authentication with a valid retry",
           "organization member role selectors retain source empty-role precedence and literal whitespace IDs",
           "organization member role ECMAScript whitespace normalizes arrays and duplicates before callbacks and storage",
-          "organization member role preserves NEL as a non-whitespace unknown role without callbacks or writes"
+          "organization member role preserves NEL as a non-whitespace unknown role without callbacks or writes",
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
         ],
         "authorization": [
           "organization member role callbacks use the target user and normalized initial role with source patch fallback",
           "organization member role validation and foreign authorization reject before any callback or write",
           "organization member role revoked and expired sessions preserve cleanup and sibling authority",
-          "organization member role ordered union and field validation runs before guest authentication without side effects"
+          "organization member role ordered union and field validation runs before guest authentication without side effects",
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
         ],
         "state": [
           "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
@@ -2177,7 +2206,8 @@
           "organization member role media and malformed JSON rejection precede authentication with a valid retry",
           "organization member role selectors retain source empty-role precedence and literal whitespace IDs",
           "organization member role ECMAScript whitespace normalizes arrays and duplicates before callbacks and storage",
-          "organization member role preserves NEL as a non-whitespace unknown role without callbacks or writes"
+          "organization member role preserves NEL as a non-whitespace unknown role without callbacks or writes",
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
         ]
       }
     },
