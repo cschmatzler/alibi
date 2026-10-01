@@ -62,10 +62,46 @@ for (const mode of ["missing", "tampered", "revoked"] as const) {
         return result;
       };
       const ownerSignup = await signup(owner, `guest-wire-${mode}-owner`);
+      await ctx.promoteAdmin({ email: ownerSignup.data!.user.email });
+      // Run the successful transition before the long no-write rejection matrix.
+      // The subsequent real login restores a live target token; every original
+      // guest operation and complete state assertion remains below.
       const targetSignup = await signup(target, `guest-wire-${mode}-target`);
+      const targetId = targetSignup.data!.user.id;
+      const ban = await owner.admin.banUser({
+        userId: targetId,
+        banReason: "Authorized Ban",
+      });
+      expect(ban.error).toBeNull();
+      const banned = {
+        persisted: await ctx.readUserState({ userId: targetId }),
+        user: await owner.admin.getUser({ query: { id: targetId } }),
+      };
+      expect(banned).toMatchObject({
+        user: {
+          data: { id: targetId, banned: true, banReason: "Authorized Ban" },
+        },
+        persisted: { sessions: [] },
+      });
+      const unban = await owner.admin.unbanUser({ userId: targetId });
+      expect(unban.error).toBeNull();
+      const unbanned = {
+        persisted: await ctx.readUserState({ userId: targetId }),
+        user: await owner.admin.getUser({ query: { id: targetId } }),
+      };
+      expect(unbanned).toMatchObject({
+        user: { data: { id: targetId, banned: false, banReason: null } },
+        persisted: { sessions: [] },
+      });
+      const targetSignin = await target.signIn.email({
+        email: targetSignup.data!.user.email,
+        password,
+      });
+      expect(targetSignin.error).toBeNull();
+      expect(targetSignin.data!.token).not.toBe(targetSignup.data!.token);
+
       const otherSignup = await signup(other, `guest-wire-${mode}-other`);
       const retiredSignup = await signup(retired, `guest-wire-${mode}-retired`);
-      await ctx.promoteAdmin({ email: ownerSignup.data!.user.email });
       const issued = cookies.get(mode === "revoked" ? "retired" : "owner");
       if (!issued) throw new Error("actual signed session cookie required");
       const signout = await retired.signOut();
@@ -104,11 +140,10 @@ for (const mode of ["missing", "tampered", "revoked"] as const) {
       });
       expect(before.persisted[1]).toMatchObject({
         user: { id: ids[1] },
-        sessions: [{ token: targetSignup.data!.token, userId: ids[1] }],
+        sessions: [{ token: targetSignin.data!.token, userId: ids[1] }],
       });
       expect(before.persisted[3]).toMatchObject({ sessions: [] });
-      const targetId = ids[1]!;
-      const targetToken = targetSignup.data!.token,
+      const targetToken = targetSignin.data!.token,
         ownerToken = ownerSignup.data!.token;
       if (!targetToken || !ownerToken)
         throw new Error("actual issued tokens required");
@@ -245,37 +280,13 @@ for (const mode of ["missing", "tampered", "revoked"] as const) {
         },
       });
       expect(noCreatedUser.data?.users).toEqual([]);
-      const ban = await owner.admin.banUser({
-        userId: targetId,
-        banReason: "Authorized Ban",
-      });
-      expect(ban.error).toBeNull();
-      const banned = {
-        persisted: await ctx.readUserState({ userId: targetId }),
-        user: await owner.admin.getUser({ query: { id: targetId } }),
-      };
-      expect(banned).toMatchObject({
-        user: {
-          data: { id: targetId, banned: true, banReason: "Authorized Ban" },
-        },
-        persisted: { sessions: [] },
-      });
-      const unban = await owner.admin.unbanUser({ userId: targetId });
-      expect(unban.error).toBeNull();
-      const unbanned = {
-        persisted: await ctx.readUserState({ userId: targetId }),
-        user: await owner.admin.getUser({ query: { id: targetId } }),
-      };
-      expect(unbanned).toMatchObject({
-        user: { data: { id: targetId, banned: false, banReason: null } },
-        persisted: { sessions: [] },
-      });
       const current = await owner.getSession();
       expect(current.data?.user.id).toBe(ids[0]);
       expect(current.data?.session.token).toBe(ownerToken);
       return {
         ownerSignup: ctx.snapshot(ownerSignup),
         targetSignup: ctx.snapshot(targetSignup),
+        targetSignin: ctx.snapshot(targetSignin),
         otherSignup: ctx.snapshot(otherSignup),
         retiredSignup: ctx.snapshot(retiredSignup),
         signout: ctx.snapshot(signout),
