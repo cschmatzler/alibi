@@ -416,29 +416,7 @@ impl OAuthProvider {
                 ..OAuthAuthorizationPolicy::default()
             }),
             authorization_params: Vec::new(),
-            map_user_info: Some(|v| {
-                Ok(OAuthUserInfo {
-                    id: v
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .ok_or("missing id")?
-                        .to_string(),
-                    email: v
-                        .get("email")
-                        .and_then(|v| v.as_str())
-                        .ok_or("missing email")?
-                        .to_string(),
-                    name: v.get("username").and_then(|v| v.as_str()).map(String::from),
-                    image: v.get("avatar").and_then(|v| v.as_str()).map(|a| {
-                        format!(
-                            "https://cdn.discordapp.com/avatars/{}/{}.png",
-                            v.get("id").and_then(|v| v.as_str()).unwrap_or(""),
-                            a
-                        )
-                    }),
-                    email_verified: v.get("verified").and_then(|v| v.as_bool()).unwrap_or(false),
-                })
-            }),
+            map_user_info: Some(discord_user_info),
             get_user_info: None,
             refresh_access_token: None,
             verify_id_token: None,
@@ -447,6 +425,74 @@ impl OAuthProvider {
             override_user_info_on_sign_in: false,
         }
     }
+}
+
+/// Discord's normalized user fields for its declared string profile schema.
+fn discord_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
+    let id = profile
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or("missing id")?;
+    let email = profile
+        .get("email")
+        .and_then(Value::as_str)
+        .ok_or("missing email")?;
+    let image = if profile.get("avatar").is_some_and(Value::is_null) {
+        let discriminator = profile
+            .get("discriminator")
+            .and_then(Value::as_str)
+            .ok_or("missing discriminator")?;
+        let index = if discriminator == "0" {
+            // Source converts the shifted BigInt to Number before remainder.
+            // This must retain f64 rounding and overflow, rather than exact mod.
+            if id.is_empty() || !id.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err("invalid Discord decimal snowflake".to_owned());
+            }
+            let snowflake =
+                rsa::BigUint::parse_bytes(id.as_bytes(), 10).ok_or("invalid Discord snowflake")?;
+            let shifted = (snowflake >> 22usize)
+                .to_str_radix(10)
+                .parse::<f64>()
+                .map_err(|_| "invalid Discord snowflake number")?;
+            shifted % 6.0
+        } else {
+            // Discord's declared discriminator consists of decimal digits.
+            discriminator
+                .parse::<f64>()
+                .map_err(|_| "invalid Discord discriminator")?
+                % 5.0
+        };
+        format!("https://cdn.discordapp.com/embed/avatars/{index}.png")
+    } else {
+        let avatar = profile
+            .get("avatar")
+            .and_then(Value::as_str)
+            .ok_or("missing avatar")?;
+        let format = if avatar.starts_with("a_") {
+            "gif"
+        } else {
+            "png"
+        };
+        format!("https://cdn.discordapp.com/avatars/{id}/{avatar}.{format}")
+    };
+    Ok(OAuthUserInfo {
+        id: id.to_owned(),
+        email: email.to_owned(),
+        name: Some(
+            profile
+                .get("global_name")
+                .and_then(Value::as_str)
+                .filter(|name| !name.is_empty())
+                .or_else(|| profile.get("username").and_then(Value::as_str))
+                .unwrap_or_default()
+                .to_owned(),
+        ),
+        image: Some(image),
+        email_verified: profile
+            .get("verified")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    })
 }
 
 #[cfg(test)]
