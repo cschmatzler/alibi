@@ -97,15 +97,20 @@
         "success": [
           "api-key concurrent verification cannot overdraw quota",
           "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
-          "api-key custom getter replaces headers and validator binds the request owner before usage"
+          "api-key custom getter replaces headers and validator binds the request owner before usage",
+          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions"
         ],
         "rejection": [
           "api-key CRUD isolates configurations and preserves all-config listing",
           "api-key custom getter replaces headers and validator binds the request owner before usage",
-          "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization"
+          "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization",
+          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions"
         ],
         "authorization": "api-key organization ownership rejects unrelated users",
-        "state": "api-key custom getter replaces headers and validator binds the request owner before usage"
+        "state": [
+          "api-key custom getter replaces headers and validator binds the request owner before usage",
+          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions"
+        ]
       }
     },
     {
@@ -113,10 +118,13 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "api-key CRUD isolates configurations and preserves all-config listing",
+        "success": [
+          "api-key CRUD isolates configurations and preserves all-config listing",
+          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions"
+        ],
         "rejection": "api-key list validates pagination and sort direction",
         "authorization": null,
-        "state": null
+        "state": "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions"
       }
     },
     {
@@ -201,7 +209,10 @@
           "api-key automatic middleware default admits one concurrent cleanup and retains both credential owners",
           "api-key automatic middleware observe admits one concurrent cleanup and retains both credential owners",
           "api-key automatic middleware ignore admits one concurrent cleanup and retains both credential owners",
-          "api-key trusted deferred verification catches actual cleanup errors and forced retry bypasses the shared throttle"
+          "api-key trusted deferred verification catches actual cleanup errors and forced retry bypasses the shared throttle",
+          "api-key api-key-automatic successful database usage awaits actual refill and preserves non-due quota and foreign state",
+          "api-key api-key-automatic-deferred successful database usage awaits actual refill and preserves non-due quota and foreign state",
+          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -242,7 +253,10 @@
           "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
           "api-key awaited individual exhausted deletion waits for actual adapter release and rejects without observer registration",
           "api-key deferred individual storage failure resolves caught completion retains the exact row and awaited retry preserves failure then deletes only its owner",
-          "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority"
+          "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority",
+          "api-key api-key-automatic successful database usage awaits actual refill and preserves non-due quota and foreign state",
+          "api-key api-key-automatic-deferred successful database usage awaits actual refill and preserves non-due quota and foreign state",
+          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions"
         ]
       }
     },
@@ -1881,7 +1895,10 @@
           "organization self removal clears only the current organization before after-hook rejection",
           "organization removal honors disabled team cleanup and the actual default team page",
           "organization last owner checks its configured raw page before callbacks",
-          "organization removal awaits its actual before callback before member and team writes"
+          "organization removal awaits its actual before callback before member and team writes",
+          "organization removal without callbacks returns real SQL veto empty 500 after permission and rolls back all scoped writes",
+          "organization real SQL errors in removal callbacks retain before and self after persistence phases",
+          "organization removal distinguishes actual SQL IGNORE success from database errors and retries without double releasing seats"
         ],
         "rejection": [
           "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
@@ -1889,12 +1906,15 @@
           "organization removal callbacks reject at the actual before and after persistence phases",
           "organization removal guards and body validation prevent configured callbacks and permit a legitimate retry",
           "organization self removal clears only the current organization before after-hook rejection",
-          "organization last owner checks its configured raw page before callbacks"
+          "organization last owner checks its configured raw page before callbacks",
+          "organization removal without callbacks returns real SQL veto empty 500 after permission and rolls back all scoped writes",
+          "organization real SQL errors in removal callbacks retain before and self after persistence phases"
         ],
         "authorization": [
           "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
           "organization removal validates ordered string fields and media before guest authentication",
-          "organization removal guards and body validation prevent configured callbacks and permit a legitimate retry"
+          "organization removal guards and body validation prevent configured callbacks and permit a legitimate retry",
+          "organization removal without callbacks returns real SQL veto empty 500 after permission and rolls back all scoped writes"
         ],
         "state": [
           "organization ID removal omits the email join and preserves the target and foreign selected sessions",
@@ -1906,7 +1926,11 @@
           "organization self removal clears only the current organization before after-hook rejection",
           "organization removal honors disabled team cleanup and the actual default team page",
           "organization last owner checks its configured raw page before callbacks",
-          "organization removal awaits its actual before callback before member and team writes"
+          "organization removal awaits its actual before callback before member and team writes",
+          "organization removal without callbacks returns real SQL veto empty 500 after permission and rolls back all scoped writes",
+          "organization real SQL errors in removal callbacks retain before and self after persistence phases",
+          "organization removal distinguishes actual SQL IGNORE success from database errors and retries without double releasing seats",
+          "organization removal preserves explicit public callback 500 JSON rather than classifying it as a database failure"
         ]
       }
     },
@@ -2164,7 +2188,9 @@
           "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history",
           "passkey none-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication"
+          "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication",
+          "passkey eddsa-none-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication"
         ],
         "rejection": [
           "passkey registration authentication ownership and deletion round trip",
@@ -2182,13 +2208,16 @@
           "passkey Source verifier rejects actual signed invalid flags presence RP origins challenge signature and counters before callbacks",
           "passkey overlapping issued challenges verify against the current saved counter rather than a stale generation snapshot",
           "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
-          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history"
+          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history",
+          "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes"
         ],
         "authorization": [
           "passkey rejected cryptographic attempts consume challenges without credential or session writes",
           "passkey passkey-auth-forbidden callback rejects after real proof and burns challenge without counter session or cookie writes",
           "passkey cryptographic challenge and signature failures never invoke application callback and cannot reuse consumed context",
-          "passkey Source verifier rejects actual signed invalid flags presence RP origins challenge signature and counters before callbacks"
+          "passkey Source verifier rejects actual signed invalid flags presence RP origins challenge signature and counters before callbacks",
+          "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication"
         ],
         "state": [
           "passkey registration authentication ownership and deletion round trip",
@@ -2210,7 +2239,10 @@
           "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history",
           "passkey none-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication"
+          "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication",
+          "passkey eddsa-none-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes"
         ]
       }
     },
@@ -2230,7 +2262,10 @@
           "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior",
           "passkey none-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication"
+          "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication",
+          "passkey eddsa-none-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes"
         ],
         "rejection": [
           "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
@@ -2241,7 +2276,11 @@
           "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
           "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
           "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior",
-          "passkey registration rejects actual packed signature failures malformed proofs flags origins and wrong owner before writes"
+          "passkey registration rejects actual packed signature failures malformed proofs flags origins and wrong owner before writes",
+          "passkey eddsa-none-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
+          "passkey Ed448 packed self attestation rejects genuine false and malformed signatures before callback enrollment or session"
         ],
         "authorization": [
           "passkey foreign owner, expired challenge and wrong ceremony retire the actual persisted generation",
@@ -2263,7 +2302,11 @@
           "passkey none-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication",
-          "passkey registration rejects actual packed signature failures malformed proofs flags origins and wrong owner before writes"
+          "passkey registration rejects actual packed signature failures malformed proofs flags origins and wrong owner before writes",
+          "passkey eddsa-none-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
+          "passkey Ed448 packed self attestation rejects genuine false and malformed signatures before callback enrollment or session"
         ]
       }
     },

@@ -28,4 +28,9 @@ genuine success or authorization flows that their original scenarios did not
 exercise. Those scenarios are being extended with actual successful retries
 and a guest creation rejection, retaining their original failures and full
 persisted-state checks. No declared requirement is removed to obtain green.
-The canonical gate and independent migration review are pending.
+Independent organization-owner review verified the exact ordered union for every
+route and category: all 751 additions and all original requirements survive,
+without duplicate names or reclassification. The completed guest control passes
+1 scenario / 132 assertions; the two successful recovery owners pass 2 / 374,
+with Source-to-Source repetition 6 / 1,122. Original failures and all stored-state
+observations remain. The canonical gate is pending.
