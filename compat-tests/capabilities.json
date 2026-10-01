@@ -2348,7 +2348,8 @@
           "passkey packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication",
           "passkey eddsa-none-uv-absent registration verifies genuine credential before callback session and signed authentication",
-          "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication"
+          "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges"
         ],
         "rejection": [
           "passkey registration authentication ownership and deletion round trip",
@@ -2369,14 +2370,16 @@
           "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history",
           "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
-          "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes"
+          "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
+          "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges"
         ],
         "authorization": [
           "passkey rejected cryptographic attempts consume challenges without credential or session writes",
           "passkey passkey-auth-forbidden callback rejects after real proof and burns challenge without counter session or cookie writes",
           "passkey cryptographic challenge and signature failures never invoke application callback and cannot reuse consumed context",
           "passkey Source verifier rejects actual signed invalid flags presence RP origins challenge signature and counters before callbacks",
-          "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication"
+          "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges"
         ],
         "state": [
           "passkey registration authentication ownership and deletion round trip",
@@ -2402,7 +2405,8 @@
           "passkey eddsa-none-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey eddsa-packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
           "passkey Ed448 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
-          "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes"
+          "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
+          "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges"
         ]
       }
     },
@@ -2429,7 +2433,8 @@
           "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
           "passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks",
           "passkey raw none passkey-first-trusted-origin verifies current request origin and configured precedence",
-          "passkey raw none passkey-first-configured-origin verifies current request origin and configured precedence"
+          "passkey raw none passkey-first-configured-origin verifies current request origin and configured precedence",
+          "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges"
         ],
         "rejection": [
           "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
@@ -2450,7 +2455,8 @@
           "passkey raw curve8 none admission validates the actual ceremony before callback persistence and owner issuance",
           "passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks",
           "passkey raw none passkey-first-trusted-origin verifies current request origin and configured precedence",
-          "passkey raw none passkey-first-configured-origin verifies current request origin and configured precedence"
+          "passkey raw none passkey-first-configured-origin verifies current request origin and configured precedence",
+          "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges"
         ],
         "authorization": [
           "passkey foreign owner, expired challenge and wrong ceremony retire the actual persisted generation",
@@ -2460,7 +2466,8 @@
           "passkey registration rejects actual packed signature failures malformed proofs flags origins and wrong owner before writes",
           "passkey raw curve8 none admission validates the actual ceremony before callback persistence and owner issuance",
           "passkey raw none passkey-first-trusted-origin verifies current request origin and configured precedence",
-          "passkey raw none passkey-first-configured-origin verifies current request origin and configured precedence"
+          "passkey raw none passkey-first-configured-origin verifies current request origin and configured precedence",
+          "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges"
         ],
         "state": [
           "passkey registration authentication ownership and deletion round trip",
@@ -2485,7 +2492,8 @@
           "passkey raw curve8 none admission validates the actual ceremony before callback persistence and owner issuance",
           "passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks",
           "passkey raw none passkey-first-trusted-origin verifies current request origin and configured precedence",
-          "passkey raw none passkey-first-configured-origin verifies current request origin and configured precedence"
+          "passkey raw none passkey-first-configured-origin verifies current request origin and configured precedence",
+          "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges"
         ]
       }
     },
@@ -2677,19 +2685,25 @@
           "two-factor two-factor-skip-verification rotates real trust proofs accepts HMAC aliases and rejects replay",
           "two-factor two-factor-trust-cleanup-disabled checks outer and inner trust syntax before deletion and cleanup",
           "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
-          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay"
+          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay",
+          "core cookie origin validation uses canonical HTTP origin and rejects foreign authorities before session writes",
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics"
         ],
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
           "admin zero duration and empty reason use source defaults while owned sessions transition",
           "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions",
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "core cookie origin validation uses canonical HTTP origin and rejects foreign authorities before session writes",
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics"
         ],
         "authorization": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
-          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests"
+          "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
+          "core cookie origin validation uses canonical HTTP origin and rejects foreign authorities before session writes",
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics"
         ],
         "state": [
           "official client signs in with imported TypeScript scrypt credentials",
@@ -2709,7 +2723,9 @@
           "two-factor two-factor-skip-verification rotates real trust proofs accepts HMAC aliases and rejects replay",
           "two-factor two-factor-trust-cleanup-disabled checks outer and inner trust syntax before deletion and cleanup",
           "two-factor two-factor-trust-cleanup-disabled checks authenticated trust ownership missing rows expiry and cleanup",
-          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay"
+          "two-factor two-factor-trust-cleanup-disabled rotates real trust proofs accepts HMAC aliases and rejects replay",
+          "core cookie origin validation uses canonical HTTP origin and rejects foreign authorities before session writes",
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics"
         ]
       }
     },
@@ -2787,10 +2803,21 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "sign in with differently cased username returns user and token",
-        "rejection": "sign in with nonexistent username returns error",
-        "authorization": "sign in with nonexistent username returns error",
-        "state": null
+        "success": [
+          "sign in with differently cased username returns user and token",
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics"
+        ],
+        "rejection": [
+          "sign in with nonexistent username returns error",
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics"
+        ],
+        "authorization": [
+          "sign in with nonexistent username returns error",
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics"
+        ],
+        "state": [
+          "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics"
+        ]
       }
     },
     {
