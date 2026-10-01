@@ -6,7 +6,9 @@
 )]
 //! Application storage and native hook contracts; the SDK owns built-in wire parity.
 use async_trait::async_trait;
-use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
+use better_auth::plugins::{
+    EmailPasswordPlugin, OpenApiPlugin, OrganizationPlugin, SessionManagementPlugin,
+};
 use better_auth::{
     AuthBuilder, AuthConfig,
     field_policy::{FieldConfig, FieldValues},
@@ -138,6 +140,7 @@ async fn real_custom_session_columns_preserve_affinity_json_defaults_owner_and_m
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .plugin(SessionManagementPlugin::new())
         .plugin(OrganizationPlugin::new())
+        .plugin(OpenApiPlugin::new())
         .build()
         .await
         .unwrap();
@@ -156,6 +159,16 @@ async fn real_custom_session_columns_preserve_affinity_json_defaults_owner_and_m
         "better-auth.session_token={}",
         better_auth_core::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
     );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let documentation = AuthRequest::new(HttpMethod::Get, "/api/auth/open-api/generate-schema");
+    let document = auth.handle_request(documentation).await.unwrap();
+    assert_eq!(document.status, 200);
+    let document: Value = serde_json::from_slice(&document.body).unwrap();
+    assert_eq!(
+        document["components"]["schemas"]["Session"]["properties"]["label"],
+        json!({"type":"string"})
+    );
+    // Public document generation must never invoke a stateful default callback.
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     let initial = auth.store().get_session(token).await.unwrap().unwrap();
     assert_eq!(initial.label.as_deref(), Some("configured-default"));

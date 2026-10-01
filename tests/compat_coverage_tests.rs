@@ -32,18 +32,29 @@ async fn runtime_routes_match_capability_inventory() {
         ..Default::default()
     })
     .await;
-    let spec = auth
-        .openapi_spec()
-        .to_value()
-        .expect("runtime schema must serialize");
-    let mut actual = BTreeSet::new();
-    for (path, item) in spec["paths"].as_object().expect("paths") {
-        for method in ["get", "post", "put", "patch", "delete", "head", "options"] {
-            if item.get(method).is_some() {
-                let _ = actual.insert(format!("{} {}", method.to_uppercase(), canonical(path)));
-            }
-        }
-    }
+    // Documentation intentionally hides its own endpoints and native extensions.
+    // Inventory actual dispatch registrations, retaining every upstream route.
+    let registered = auth.registered_routes();
+    assert!(
+        registered
+            .iter()
+            .any(|route| route.method == better_auth_core::HttpMethod::Get
+                && route.path == better_auth_core::core_paths::OPENAPI_SPEC)
+    );
+    let actual: BTreeSet<String> = registered
+        .into_iter()
+        .filter(|route| {
+            !(route.method == better_auth_core::HttpMethod::Get
+                && route.path == better_auth_core::core_paths::OPENAPI_SPEC)
+        })
+        .map(|route| {
+            format!(
+                "{} {}",
+                format!("{:?}", route.method).to_uppercase(),
+                canonical(&route.path)
+            )
+        })
+        .collect();
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     std::fs::create_dir_all(root.join("coverage")).expect("artifact directory");
     std::fs::write(

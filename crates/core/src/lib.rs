@@ -58,7 +58,10 @@ pub use middleware::{
     BodyLimitConfig, BodyLimitMiddleware, CorsConfig, CorsMiddleware, CsrfConfig, CsrfMiddleware,
     EndpointRateLimit, Middleware, RateLimitConfig, RateLimitMiddleware,
 };
-pub use openapi::{OpenApiBuilder, OpenApiInfo, OpenApiOperation, OpenApiResponse, OpenApiSpec};
+pub use openapi::{
+    OpenApiBuilder, OpenApiEndpoint, OpenApiField, OpenApiInfo, OpenApiModel, OpenApiOperation,
+    OpenApiRegistry, OpenApiResponse, OpenApiSpec, PluginOpenApiMetadata,
+};
 pub use plugin::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRoute, BeforeRequestAction, ContextExtensions,
     VerificationEmailOverride, VerificationEmailOverrideHandle,

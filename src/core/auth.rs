@@ -5,9 +5,9 @@ use better_auth_core::utils::username::{
 };
 use better_auth_core::{
     AuthConfig, AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse,
-    AuthResult, AuthSchema, AuthStore, BeforeRequestAction, EmailProvider,
-    ErrorCodeMessageResponse, HttpMethod, OkResponse, OpenApiBuilder, OpenApiSpec, SessionManager,
-    UpdateUser, UpdateUserRequest, core_paths,
+    AuthResult, AuthRoute, AuthSchema, AuthStore, BeforeRequestAction, EmailProvider,
+    ErrorCodeMessageResponse, HttpMethod, OkResponse, OpenApiBuilder, OpenApiRegistry, OpenApiSpec,
+    SessionManager, UpdateUser, UpdateUserRequest, core_paths,
     entity::{AuthSession, AuthUser},
     hooks::{RequestHookContext, with_request_hook_context_value},
     middleware::{
@@ -35,6 +35,7 @@ pub struct BetterAuth<S: AuthSchema> {
     store: Arc<dyn AuthStore<S>>,
     session_manager: SessionManager<S>,
     context: AuthContext<S>,
+    openapi: Arc<OpenApiRegistry>,
 }
 
 /// Initial builder for configuring BetterAuth.
@@ -152,6 +153,23 @@ impl<S: AuthSchema> AuthBuilder<S> {
                 Arc::new(adapter_fields),
             ));
         init_context.extensions.insert(session_fields);
+        let mut openapi = OpenApiRegistry::configured(S::openapi_models(), &config);
+        let core_routes = better_auth_core::openapi::annotations::core_routes();
+        let core_metadata =
+            better_auth_core::openapi::annotations::plugin_metadata("core", &core_routes);
+        openapi.register("core", core_routes, core_metadata);
+        for plugin in &self.plugins {
+            openapi.register(
+                plugin.name(),
+                plugin.routes(),
+                plugin.openapi_metadata(&init_context),
+            );
+        }
+        init_context.extensions.insert(openapi);
+        let openapi = init_context
+            .extensions
+            .get::<OpenApiRegistry>()
+            .ok_or_else(|| AuthError::internal("OpenAPI registry initialization failed"))?;
 
         let store = init_context.database_with_registered_transforms();
         let init_parts = init_context.into_parts();
@@ -190,6 +208,7 @@ impl<S: AuthSchema> AuthBuilder<S> {
             store,
             session_manager,
             context,
+            openapi,
         })
     }
 }
@@ -412,6 +431,12 @@ impl<S: AuthSchema> BetterAuth<S> {
         routes
     }
 
+    /// Snapshot of actual registered routes, independent of documentation filters.
+    /// The native embedding endpoint `/__test/openapi.json` is a Rust extension.
+    pub fn registered_routes(&self) -> Vec<AuthRoute> {
+        self.openapi.registered_routes()
+    }
+
     /// Get all plugins.
     pub fn plugins(&self) -> &[Box<dyn AuthPlugin<S>>] {
         &self.plugins
@@ -432,15 +457,12 @@ impl<S: AuthSchema> BetterAuth<S> {
 
     /// Generate the OpenAPI spec for all registered routes.
     pub fn openapi_spec(&self) -> OpenApiSpec {
-        let mut builder = OpenApiBuilder::new("Better Auth", env!("CARGO_PKG_VERSION"))
-            .description("Authentication API")
-            .core_routes();
+        OpenApiBuilder::registered(&self.config, &self.openapi).build()
+    }
 
-        for plugin in &self.plugins {
-            builder = builder.plugin(plugin.as_ref());
-        }
-
-        builder.build()
+    /// Generate documentation including registered Rust extension endpoints.
+    pub fn openapi_spec_with_native_extensions(&self) -> OpenApiSpec {
+        OpenApiBuilder::registered_with_native_extensions(&self.config, &self.openapi, true).build()
     }
 
     /// Handle core authentication requests.

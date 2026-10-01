@@ -51,6 +51,7 @@ jsonwebtoken = { workspace = true }
 redis = { workspace = true, optional = true }
 
 better-auth-macros = { workspace = true }
+better-auth-schema-registry = { workspace = true }
 axum = { workspace = true, optional = true }
 url = { workspace = true }
 tracing.workspace = true
