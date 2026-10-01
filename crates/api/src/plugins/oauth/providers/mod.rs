@@ -1,3 +1,6 @@
+mod atlassian;
+pub use atlassian::AtlassianOptions;
+
 mod apple;
 pub use apple::AppleOptions;
 
@@ -272,6 +275,8 @@ pub enum OAuthScopeOrder {
 pub struct OAuthAuthorizationPolicy {
     pub configured_scopes: Vec<String>,
     pub response_type: String,
+    /// Application callback URI overrides the generated provider callback.
+    pub redirect_uri: Option<String>,
     pub response_mode: Option<String>,
     pub require_client_secret: bool,
     pub login_hint: bool,
@@ -290,6 +295,7 @@ impl Default for OAuthAuthorizationPolicy {
         Self {
             configured_scopes: Vec::new(),
             response_type: "code".into(),
+            redirect_uri: None,
             response_mode: None,
             require_client_secret: false,
             login_hint: true,

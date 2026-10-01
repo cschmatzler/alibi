@@ -48,6 +48,7 @@ import { createAccessControl } from "better-auth/plugins/access";
 import { defaultStatements } from "better-auth/plugins/organization/access";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { anonymousFixture } from "./anonymous-fixture";
+import {atlassianProviderFixture} from "./atlassian-provider-fixture";
 import { appleProviderFixture } from "./apple-provider-fixture";
 import { socialProviderFixture } from "./social-provider-fixture";
 import { oauthProxyFixture } from "./oauth-proxy-fixture";
@@ -447,6 +448,7 @@ const organizationUpdateFixture = organizationUpdateHooksFixture(database, authO
 const organizationDeletionFixture = organizationDeletionHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
 const passkeyRegistration = passkeyRegistrationFixture(authOptions);
 const passkeyAuthentication = passkeyAuthenticationFixture(database, authOptions, `http://localhost:${PORT}`);
+const atlassianFixture=atlassianProviderFixture(authOptions);
 const appleFixture = appleProviderFixture(authOptions);
 const socialProvidersFixture = socialProviderFixture(authOptions);
 const oauthProxyProfiles = await oauthProxyFixture(authOptions);
@@ -455,6 +457,7 @@ const sessionCookieCacheProfiles = await sessionCookieCacheFixture(authOptions, 
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
+for(const [path,instance] of atlassianFixture.profiles) verificationProfiles.set(path,instance);
 for (const [path, instance] of appleFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of socialProvidersFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of anonymousProfiles.profiles) verificationProfiles.set(path, instance);
@@ -818,6 +821,8 @@ const server = Bun.serve({
       if (anonymousControl) return anonymousControl;
       const proxyControl = await oauthProxyProfiles.handle(request);
       if (proxyControl) return proxyControl;
+      const atlassianControl=await atlassianFixture.handle(request);
+      if(atlassianControl)return atlassianControl;
       const appleControl = await appleFixture.handle(request);
       if (appleControl) return appleControl;
       const socialProviderControl = await socialProvidersFixture.handle(request);
@@ -1084,6 +1089,7 @@ const server = Bun.serve({
         return jsonResponse({message:"unknown server operation"},{status:400});
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
+        atlassianFixture.reset();
         appleFixture.reset();
         socialProvidersFixture.reset();
         await oauthProxyProfiles.reset();
