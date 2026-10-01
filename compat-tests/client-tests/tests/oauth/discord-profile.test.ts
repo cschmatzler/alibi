@@ -67,4 +67,4 @@ compatScenario("Discord profile defaults persist original provider owners names 
   expect(foreignAfter).toEqual(foreignBefore);
   expect(foreignCurrent.data!.session.token).toBe(foreignSignup.data!.token!);
   return { foreignSignup: ctx.snapshot(foreignSignup), foreignBefore, before, results, foreignAfter, foreignCurrent: ctx.snapshot(foreignCurrent) };
-}, ["state"]);
+}, ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"]);
