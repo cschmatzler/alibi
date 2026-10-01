@@ -109,3 +109,5 @@ PostgreSQL/MySQL placeholders compile but their runtime numeric behavior is not
 claimed. Legacy/custom stores must explicitly implement the new raw-page APIs to
 support these plugin read paths. No schema, migration, dependency lock or inventory
 change is part of this policy capability.
+
+Independent JWT-owner review of final frozen `c7084d18` is clear within the documented scope. Coordinator publication retains the same production/public custom-schema consumers and all four actual SDK owners; physical duplicate-member profiles remain present from master. Twenty-five additive requirements anchor actual create/read/invite/accept/removal consumers, including setup for trusted private addition; no fictitious public add-member endpoint is registered. The next complete integrated gate is pending.

@@ -444,11 +444,13 @@
           "organization core lifecycle matches TS",
           "organization metadata lookup default scopes selectors and clears only the denied session",
           "organization metadata lookup org-teams scopes selectors and clears only the denied session",
-          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
+          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints",
+          "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks"
         ],
         "rejection": [
           "organization metadata lookup default scopes selectors and clears only the denied session",
-          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session",
+          "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks"
         ],
         "authorization": [
           "organization metadata lookup default scopes selectors and clears only the denied session",
@@ -456,7 +458,8 @@
         ],
         "state": [
           "organization metadata lookup default scopes selectors and clears only the denied session",
-          "organization metadata lookup org-teams scopes selectors and clears only the denied session"
+          "organization metadata lookup org-teams scopes selectors and clears only the denied session",
+          "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks"
         ]
       }
     },
@@ -479,7 +482,8 @@
         "success": [
           "organization metadata lookup default scopes selectors and clears only the denied session",
           "organization metadata lookup org-teams scopes selectors and clears only the denied session",
-          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
+          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints",
+          "organization asynchronous membership resolver observes target and raw organization after count and keeps raw zero NaN errors"
         ],
         "rejection": [
           "organization metadata lookup default scopes selectors and clears only the denied session",
@@ -494,7 +498,8 @@
         "state": [
           "organization metadata lookup default scopes selectors and clears only the denied session",
           "organization metadata lookup org-teams scopes selectors and clears only the denied session",
-          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints"
+          "organization legacy literal JSON null stays distinct from SQL null through owner endpoints",
+          "organization asynchronous membership resolver observes target and raw organization after count and keeps raw zero NaN errors"
         ]
       }
     },
@@ -548,12 +553,16 @@
       "evidence": {
         "success": [
           "organization list members supports sort and filter queries",
-          "organization concurrent normal admissions pass real prechecks and retain both physical members"
+          "organization concurrent normal admissions pass real prechecks and retain both physical members",
+          "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks"
         ],
-        "rejection": null,
+        "rejection": [
+          "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks"
+        ],
         "authorization": null,
         "state": [
-          "organization concurrent normal admissions pass real prechecks and retain both physical members"
+          "organization concurrent normal admissions pass real prechecks and retain both physical members",
+          "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks"
         ]
       }
     },
@@ -1745,10 +1754,19 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "api-key organization ownership rejects unrelated users",
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "success": [
+          "api-key organization ownership rejects unrelated users",
+          "organization invitation creation stays permitted at capacity and admission checks recipient then membership policy before writes"
+        ],
+        "rejection": [
+          "organization invitation creation stays permitted at capacity and admission checks recipient then membership policy before writes"
+        ],
+        "authorization": [
+          "organization invitation creation stays permitted at capacity and admission checks recipient then membership policy before writes"
+        ],
+        "state": [
+          "organization invitation creation stays permitted at capacity and admission checks recipient then membership policy before writes"
+        ]
       }
     },
     {
@@ -1820,7 +1838,9 @@
           "organization addition genuine SQL failures retain source before member team and after phases with successful retries",
           "organization addition team limits require actual headers and clean the original target page while preserving foreign sessions",
           "organization addition retargeted trusted patches still roll back with captured original scope and cleanup SQL errors retain the new member",
-          "organization physical membership pages preserve newer older newer rows and visible organization limits"
+          "organization physical membership pages preserve newer older newer rows and visible organization limits",
+          "organization fixed membership policies retain falsy defaults and raw Number admission without read callbacks",
+          "organization asynchronous membership resolver observes target and raw organization after count and keeps raw zero NaN errors"
         ],
         "rejection": [
           "organization creation static denial and negative limits preserve ownership while trusted creation bypasses only the allow policy",
@@ -1868,7 +1888,9 @@
           "organization addition genuine SQL failures retain source before member team and after phases with successful retries",
           "organization addition team limits require actual headers and clean the original target page while preserving foreign sessions",
           "organization addition retargeted trusted patches still roll back with captured original scope and cleanup SQL errors retain the new member",
-          "organization physical membership pages preserve newer older newer rows and visible organization limits"
+          "organization physical membership pages preserve newer older newer rows and visible organization limits",
+          "organization fixed membership policies retain falsy defaults and raw Number admission without read callbacks",
+          "organization asynchronous membership resolver observes target and raw organization after count and keeps raw zero NaN errors"
         ]
       }
     },
@@ -1962,10 +1984,21 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "api-key organization ownership rejects unrelated users",
-        "rejection": "organization invitation validation, reject, and cancel flows match TS",
-        "authorization": "organization invitation validation, reject, and cancel flows match TS",
-        "state": null
+        "success": [
+          "api-key organization ownership rejects unrelated users",
+          "organization invitation creation stays permitted at capacity and admission checks recipient then membership policy before writes"
+        ],
+        "rejection": [
+          "organization invitation validation, reject, and cancel flows match TS",
+          "organization invitation creation stays permitted at capacity and admission checks recipient then membership policy before writes"
+        ],
+        "authorization": [
+          "organization invitation validation, reject, and cancel flows match TS",
+          "organization invitation creation stays permitted at capacity and admission checks recipient then membership policy before writes"
+        ],
+        "state": [
+          "organization invitation creation stays permitted at capacity and admission checks recipient then membership policy before writes"
+        ]
       }
     },
     {
@@ -2010,7 +2043,8 @@
           "organization removal without callbacks returns real SQL veto empty 500 after permission and rolls back all scoped writes",
           "organization real SQL errors in removal callbacks retain before and self after persistence phases",
           "organization removal distinguishes actual SQL IGNORE success from database errors and retries without double releasing seats",
-          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers",
+          "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks"
         ],
         "rejection": [
           "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
@@ -2021,7 +2055,8 @@
           "organization last owner checks its configured raw page before callbacks",
           "organization removal without callbacks returns real SQL veto empty 500 after permission and rolls back all scoped writes",
           "organization real SQL errors in removal callbacks retain before and self after persistence phases",
-          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers",
+          "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks"
         ],
         "authorization": [
           "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
@@ -2044,7 +2079,8 @@
           "organization real SQL errors in removal callbacks retain before and self after persistence phases",
           "organization removal distinguishes actual SQL IGNORE success from database errors and retries without double releasing seats",
           "organization removal preserves explicit public callback 500 JSON rather than classifying it as a database failure",
-          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers",
+          "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks"
         ]
       }
     },
@@ -2198,7 +2234,8 @@
           "organization member role selectors retain source empty-role precedence and literal whitespace IDs",
           "organization member role ECMAScript whitespace normalizes arrays and duplicates before callbacks and storage",
           "organization member role preserves NEL as a non-whitespace unknown role without callbacks or writes",
-          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers",
+          "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks"
         ],
         "rejection": [
           "organization creator role customization preserves explicit grants and prevents removing the only effective owner",
@@ -2238,7 +2275,8 @@
           "organization member role selectors retain source empty-role precedence and literal whitespace IDs",
           "organization member role ECMAScript whitespace normalizes arrays and duplicates before callbacks and storage",
           "organization member role preserves NEL as a non-whitespace unknown role without callbacks or writes",
-          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
+          "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers",
+          "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks"
         ]
       }
     },
