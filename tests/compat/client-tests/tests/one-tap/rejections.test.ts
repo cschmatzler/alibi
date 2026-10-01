@@ -17,16 +17,17 @@ compatScenario(
       email: ctx.uniqueEmail("rejection"),
       email_verified: true,
     };
+    const rejectionTime = Math.floor(Date.now() / 1000);
     const tokens = [
       await credential(claims, {}, true),
       await credential(claims, { kid: "unknown-google-key" }),
       await credential({ ...claims, iss: "https://issuer.fixture.test" }),
       await credential({ ...claims, aud: "wrong-google-audience" }),
       await credential({ ...claims, iat: undefined }),
-      await credential({ ...claims, iat: issuedAt - 3700 }),
-      await credential({ ...claims, iat: issuedAt + 120 }),
-      await credential({ ...claims, exp: issuedAt - 1 }),
-      await credential({ ...claims, nbf: issuedAt + 120 }),
+      await credential({ ...claims, iat: rejectionTime - 3700 }),
+      await credential({ ...claims, iat: rejectionTime + 120 }),
+      await credential({ ...claims, exp: rejectionTime - 1 }),
+      await credential({ ...claims, nbf: rejectionTime + 120 }),
       await credential({ ...claims, iat: "yesterday" }),
       await credential({ ...claims, exp: null }),
       await credential({ ...claims, sub: "" }),
