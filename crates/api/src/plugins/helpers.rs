@@ -288,7 +288,10 @@ pub(crate) async fn resolve_admin_banned_user_message<S: better_auth_core::AuthS
     ctx: &AuthContext<S>,
     user: &S::User,
 ) -> AuthResult<String> {
-    if let Some(policy) = ctx.extensions.get::<super::admin::BannedUserMessagePolicy>() {
+    if let Some(policy) = ctx
+        .extensions
+        .get::<super::admin::BannedUserMessagePolicy>()
+    {
         return policy.message(user).await;
     }
     Ok(admin_banned_user_message(ctx).unwrap_or_else(|| {
