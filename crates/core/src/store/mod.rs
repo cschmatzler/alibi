@@ -326,6 +326,17 @@ pub trait MemberStore: Send + Sync {
     async fn get_member(&self, organization_id: &str, user_id: &str) -> AuthResult<Option<Member>>;
     async fn get_member_by_id(&self, id: &str) -> AuthResult<Option<Member>>;
     async fn update_member_role(&self, member_id: &str, role: &str) -> AuthResult<Member>;
+    /// Update a matching member while preserving adapter model hooks.
+    /// Absence is `None`; other storage failures remain errors.
+    async fn update_member_role_if_present(
+        &self,
+        _member_id: &str,
+        _role: &str,
+    ) -> AuthResult<Option<Member>> {
+        Err(AuthError::NotImplemented(
+            "Optional member role updates are not supported by this store".into(),
+        ))
+    }
     async fn delete_member(&self, member_id: &str) -> AuthResult<()>;
     async fn list_organization_members(&self, org_id: &str) -> AuthResult<Vec<Member>>;
     /// Query organization members with filter, sort, and pagination applied in
