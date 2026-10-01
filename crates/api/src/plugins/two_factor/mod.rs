@@ -50,8 +50,14 @@ const METADATA_TWO_FACTOR_COOKIE_MAX_AGE: &str = "two_factor.two_factor_cookie_m
 const METADATA_TRUST_DEVICE_MAX_AGE: &str = "two_factor.trust_device_max_age";
 const METADATA_TOTP_DISABLED: &str = "two_factor.totp_disabled";
 
-const DEFAULT_TWO_FACTOR_COOKIE_MAX_AGE_SECS: i64 = 10 * 60;
-const DEFAULT_TRUST_DEVICE_MAX_AGE_SECS: i64 = 30 * 24 * 60 * 60;
+const DEFAULT_TWO_FACTOR_COOKIE_MAX_AGE_SECS: f64 = 600.0;
+const DEFAULT_TRUST_DEVICE_MAX_AGE_SECS: f64 = 2_592_000.0;
+#[derive(Clone, Copy)]
+struct TwoFactorCookiePolicy {
+    challenge_max_age: f64,
+    trust_max_age: f64,
+}
+
 const DEFAULT_TOTP_PERIOD_SECS: u64 = 30;
 const DEFAULT_TOTP_DIGITS: usize = 6;
 
@@ -123,12 +129,12 @@ pub struct TwoFactorConfig {
     /// Skip the enrollment verification step and enable 2FA immediately.
     #[config(default = false)]
     pub skip_verification_on_enable: bool,
-    /// Maximum lifetime for the pending two-factor cookie used during sign-in.
+    /// Pending challenge lifetime in seconds, including fractions and explicit zero.
     #[config(default = DEFAULT_TWO_FACTOR_COOKIE_MAX_AGE_SECS)]
-    pub two_factor_cookie_max_age: i64,
-    /// Maximum lifetime for the trusted-device cookie.
+    pub two_factor_cookie_max_age: f64,
+    /// Trusted proof lifetime in seconds; negative values omit cookie Max-Age.
     #[config(default = DEFAULT_TRUST_DEVICE_MAX_AGE_SECS)]
-    pub trust_device_max_age: i64,
+    pub trust_device_max_age: f64,
     /// TOTP period in seconds.
     #[config(default = DEFAULT_TOTP_PERIOD_SECS)]
     pub totp_period: u64,
@@ -387,10 +393,8 @@ pub(crate) async fn inspect_trusted_device(
         });
     }
 
-    let Some(verification) = ctx
-        .database
-        .get_verification_by_identifier(trust_identifier)
-        .await?
+    let Some(verification) =
+        super::authentication_helpers::find_verification(ctx, trust_identifier).await?
     else {
         return Ok(TrustedDeviceCheck {
             trusted: false,
@@ -422,7 +426,7 @@ pub(crate) async fn begin_sign_in_challenge(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<SignInTwoFactorRedirect> {
     let identifier = format!("2fa-{}", uuid::Uuid::new_v4());
-    let expires_at = Utc::now() + Duration::seconds(two_factor_cookie_max_age(ctx));
+    let expires_at = cookie_expiry(two_factor_cookie_max_age(ctx))?;
     _ = ctx
         .database
         .create_verification(CreateVerification {
@@ -557,12 +561,18 @@ better_auth_core::impl_auth_plugin! {
             );
             ctx.set_metadata(
                 METADATA_TWO_FACTOR_COOKIE_MAX_AGE,
-                serde_json::Value::Number(self.config.two_factor_cookie_max_age.into()),
+                serde_json::Number::from_f64(self.config.two_factor_cookie_max_age)
+                    .map_or(serde_json::Value::Null, serde_json::Value::Number),
             );
             ctx.set_metadata(
                 METADATA_TRUST_DEVICE_MAX_AGE,
-                serde_json::Value::Number(self.config.trust_device_max_age.into()),
+                serde_json::Number::from_f64(self.config.trust_device_max_age)
+                    .map_or(serde_json::Value::Null, serde_json::Value::Number),
             );
+            ctx.extensions.insert(TwoFactorCookiePolicy {
+                challenge_max_age: self.config.two_factor_cookie_max_age,
+                trust_max_age: self.config.trust_device_max_age,
+            });
             Ok(())
         }
     }
@@ -2043,15 +2053,34 @@ fn otp_verification_identifier(key: &str) -> String {
     format!("2fa-otp-{}", key)
 }
 
-fn two_factor_cookie_max_age(ctx: &AuthContext<impl better_auth_core::AuthSchema>) -> i64 {
-    ctx.get_metadata(METADATA_TWO_FACTOR_COOKIE_MAX_AGE)
-        .and_then(|value| value.as_i64())
+fn cookie_expiry(seconds: f64) -> AuthResult<chrono::DateTime<Utc>> {
+    let milliseconds = Utc::now().timestamp_millis() as f64 + seconds * 1000.0;
+    if !milliseconds.is_finite() || milliseconds.abs() > 8_640_000_000_000_000.0 {
+        return Err(AuthError::internal("Invalid two-factor cookie expiry"));
+    }
+    chrono::DateTime::from_timestamp_millis(milliseconds.trunc() as i64)
+        .ok_or_else(|| AuthError::internal("Invalid two-factor cookie expiry"))
+}
+
+fn two_factor_cookie_max_age(ctx: &AuthContext<impl better_auth_core::AuthSchema>) -> f64 {
+    ctx.extensions
+        .get::<TwoFactorCookiePolicy>()
+        .map(|policy| policy.challenge_max_age)
+        .or_else(|| {
+            ctx.get_metadata(METADATA_TWO_FACTOR_COOKIE_MAX_AGE)
+                .and_then(serde_json::Value::as_f64)
+        })
         .unwrap_or(DEFAULT_TWO_FACTOR_COOKIE_MAX_AGE_SECS)
 }
 
-fn trust_device_max_age(ctx: &AuthContext<impl better_auth_core::AuthSchema>) -> i64 {
-    ctx.get_metadata(METADATA_TRUST_DEVICE_MAX_AGE)
-        .and_then(|value| value.as_i64())
+fn trust_device_max_age(ctx: &AuthContext<impl better_auth_core::AuthSchema>) -> f64 {
+    ctx.extensions
+        .get::<TwoFactorCookiePolicy>()
+        .map(|policy| policy.trust_max_age)
+        .or_else(|| {
+            ctx.get_metadata(METADATA_TRUST_DEVICE_MAX_AGE)
+                .and_then(serde_json::Value::as_f64)
+        })
         .unwrap_or(DEFAULT_TRUST_DEVICE_MAX_AGE_SECS)
 }
 
@@ -2078,7 +2107,7 @@ async fn create_trust_device_cookie_header(
     let identifier = format!("trust-device-{}", uuid::Uuid::new_v4());
     let token = sign_value(&ctx.config.secret, &format!("{}!{}", user.id(), identifier))?;
     let value = format!("{}!{}", token, identifier);
-    let expires_at = Utc::now() + Duration::seconds(trust_device_max_age(ctx));
+    let expires_at = cookie_expiry(trust_device_max_age(ctx))?;
     _ = ctx
         .database
         .create_verification(CreateVerification {
@@ -2101,16 +2130,22 @@ fn create_signed_cookie_header(
     config: &better_auth_core::AuthConfig,
     suffix: &str,
     value: &str,
-    max_age_seconds: Option<i64>,
+    max_age_seconds: Option<f64>,
 ) -> AuthResult<String> {
     let cookie_name = related_cookie_name(config, suffix);
     let signed_value = sign_cookie_value(secret, value)?;
-    Ok(create_session_like_cookie(
-        &cookie_name,
-        &signed_value,
-        max_age_seconds,
-        config,
-    ))
+    // The pinned cookie serializer floors nonnegative Max-Age, omits negative
+    // values and does not synthesize an Expires attribute from Max-Age.
+    let mut header = create_session_like_cookie(&cookie_name, &signed_value, None, config);
+    if let Some(seconds) = max_age_seconds.filter(|seconds| *seconds >= 0.0) {
+        if seconds > 34_560_000.0 {
+            return Err(AuthError::internal(
+                "Two-factor cookie lifetime exceeds 400 days",
+            ));
+        }
+        header.push_str(&format!("; Max-Age={}", seconds.floor() as u32));
+    }
+    Ok(header)
 }
 
 fn read_signed_cookie<S: better_auth_core::AuthSchema>(

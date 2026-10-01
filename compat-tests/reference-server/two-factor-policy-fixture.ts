@@ -50,8 +50,9 @@ export function createTwoFactorPolicyFixture(base: Parameters<typeof betterAuth>
                     },
                   }
                 : {};
-  const profiles = new Map(["two-factor-lockout-fractional", "two-factor-lockout-zero", "two-factor-lockout-disabled", "two-factor-skip-verification", "two-factor-skip-user-hook", "two-factor-skip-session-cancel", "two-factor-skip-session-forbidden", "two-factor-pending-session-cancel", "two-factor-pending-session-forbidden", "two-factor-passwordless", "two-factor-passwordless-child-required", "two-factor-passwordless-child-optional", "two-factor-backup-plain", "two-factor-backup-zero", "two-factor-backup-negative", "two-factor-backup-encrypted", "two-factor-backup-invalid-length", "two-factor-backup-custom"].map(name => [name, betterAuth({
+  const profiles = new Map(["two-factor-lockout-fractional", "two-factor-lockout-zero", "two-factor-lockout-disabled", "two-factor-skip-verification", "two-factor-skip-user-hook", "two-factor-skip-session-cancel", "two-factor-skip-session-forbidden", "two-factor-pending-session-cancel", "two-factor-pending-session-forbidden", "two-factor-passwordless", "two-factor-passwordless-child-required", "two-factor-passwordless-child-optional", "two-factor-backup-plain", "two-factor-backup-zero", "two-factor-backup-negative", "two-factor-backup-encrypted", "two-factor-backup-invalid-length", "two-factor-backup-custom", "two-factor-trust-fractional", "two-factor-trust-zero-challenge", "two-factor-trust-negative-challenge", "two-factor-trust-zero", "two-factor-trust-negative", "two-factor-trust-cleanup-disabled"].map(name => [name, betterAuth({
     ...base, appName: "Fixture Auth", basePath: `/__test/profiles/${name}/api/auth`,
+    ...(name === "two-factor-trust-cleanup-disabled" ? {verification:{...base.verification,disableCleanup:true}} : {}),
     ...(name === "two-factor-skip-user-hook" ? {databaseHooks:{...base.databaseHooks,user:{...base.databaseHooks?.user,update:{...base.databaseHooks?.user?.update,before:async data=>{if(data.twoFactorEnabled===true)throw new APIError("BAD_REQUEST",{message:"Configured user update denied",code:"USER_UPDATE_DENIED"});}}}}} : {}),
     ...(name.includes("-session-") ? {databaseHooks:{...base.databaseHooks,session:{...base.databaseHooks?.session,create:{...base.databaseHooks?.session?.create,before:async (_data,context)=>{
       if(name.startsWith("two-factor-pending-") ? context?.path.startsWith("/two-factor/verify-") : context?.path.endsWith("/two-factor/enable")) {
@@ -60,10 +61,12 @@ export function createTwoFactorPolicyFixture(base: Parameters<typeof betterAuth>
       }
     }}}}} : {}),
     plugins: [twoFactor({
+      twoFactorCookieMaxAge: name === "two-factor-trust-zero-challenge" ? 0 : name === "two-factor-trust-negative-challenge" ? -.25 : name.startsWith("two-factor-trust-") ? 600.75 : undefined,
+      trustDeviceMaxAge: name === "two-factor-trust-zero" ? 0 : name === "two-factor-trust-negative" ? -.25 : name.startsWith("two-factor-trust-") ? 1200.875 : undefined,
       allowPasswordless: name === "two-factor-passwordless" || name === "two-factor-passwordless-child-required",
       totpOptions: { allowPasswordless: name === "two-factor-passwordless-child-required" ? false : name === "two-factor-passwordless-child-optional" ? true : undefined },
       backupCodeOptions: { ...backupOptions(name), allowPasswordless: name === "two-factor-passwordless-child-required" ? false : name === "two-factor-passwordless-child-optional" ? true : undefined },
-      skipVerificationOnEnable: name.startsWith("two-factor-skip-") || name.startsWith("two-factor-pending-") || name.startsWith("two-factor-backup-"),
+      skipVerificationOnEnable: name.startsWith("two-factor-skip-") || name.startsWith("two-factor-pending-") || name.startsWith("two-factor-backup-") || name.startsWith("two-factor-trust-"),
       accountLockout: name === "two-factor-lockout-fractional" ? { maxFailedAttempts: 2.5, durationSeconds: 600.25 }
         : name === "two-factor-lockout-zero" ? { maxFailedAttempts: 0, durationSeconds: 0 }
         : name === "two-factor-lockout-disabled" ? { enabled: false } : {},

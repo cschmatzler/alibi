@@ -1833,12 +1833,24 @@
       "requiredEvidence": {
         "success": [
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
-          "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions"
+          "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions",
+          "two-factor two-factor-trust-fractional retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-zero-challenge retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-negative-challenge retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state"
         ],
         "state": [
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
           "admin zero duration and empty reason use source defaults while owned sessions transition",
-          "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions"
+          "admin explicit fractional and negative bans persist milliseconds and revoke only target sessions",
+          "two-factor two-factor-trust-fractional retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-zero-challenge retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-negative-challenge retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state"
         ],
         "rejection": [
           "admin zero duration and empty reason use source defaults while owned sessions transition",
@@ -2408,10 +2420,18 @@
       },
       "requiredEvidence": {
         "success": [
-          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
+          "two-factor two-factor-trust-fractional retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state"
         ],
         "state": [
-          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
+          "two-factor two-factor-trust-fractional retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-zero retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-negative retains configured cookie and database lifetimes through real trust and challenge state",
+          "two-factor two-factor-trust-cleanup-disabled retains configured cookie and database lifetimes through real trust and challenge state"
         ]
       }
     },
