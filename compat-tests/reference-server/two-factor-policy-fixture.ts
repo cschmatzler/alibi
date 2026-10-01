@@ -30,7 +30,7 @@ export function createTwoFactorPolicyFixture(base: Parameters<typeof betterAuth>
       if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return auth.handler(request);
     }
     if (url.pathname !== "/__test/two-factor-policy" || request.method !== "POST") return;
-    const body = await request.json() as { userId?: unknown; count?: unknown; verified?: unknown; expireLock?: unknown; deliveryEmail?: unknown; credentialState?: unknown; emptyCredentialPassword?: unknown; pendingState?: unknown; pendingKey?: unknown };
+    const body = await request.json() as { userId?: unknown; count?: unknown; verified?: unknown; expireLock?: unknown; deliveryEmail?: unknown; credentialState?: unknown; emptyCredentialPassword?: unknown; pendingState?: unknown; pendingKey?: unknown; importFactor?: unknown };
     if (typeof body.deliveryEmail === "string") return Response.json(deliveries.get(body.deliveryEmail) ?? null);
     if (typeof body.userId !== "string") return Response.json({ message: "userId required" }, { status: 400 });
     if(body.pendingState === true){
@@ -40,6 +40,11 @@ export function createTwoFactorPolicyFixture(base: Parameters<typeof betterAuth>
     }
     if (body.emptyCredentialPassword === true) database.query("UPDATE account SET password='' WHERE userId=? AND providerId='credential'").run(body.userId);
     if (body.credentialState === true) return Response.json(database.query("SELECT userId,providerId,password FROM account WHERE userId=? ORDER BY providerId").all(body.userId).map(row => { const account=row as {userId:string;providerId:string;password:string|null}; return {userId:account.userId,providerId:account.providerId,hasPassword:Boolean(account.password)}; }));
+    if (body.importFactor && typeof body.importFactor === "object") {
+      const factor = body.importFactor as { secret?: unknown; backupCodes?: unknown };
+      if (typeof factor.secret !== "string" || typeof factor.backupCodes !== "string") return Response.json({message:"invalid factor import"},{status:400});
+      database.query("UPDATE twoFactor SET secret=?,backupCodes=? WHERE userId=?").run(factor.secret,factor.backupCodes,body.userId);
+    }
     if (Object.hasOwn(body, "count")) database.query('UPDATE twoFactor SET failedVerificationCount=? WHERE userId=?').run(body.count as number | null, body.userId);
     if (typeof body.verified === "boolean") database.query('UPDATE twoFactor SET verified=? WHERE userId=?').run(body.verified ? 1 : 0, body.userId);
     if (body.expireLock === true) database.query('UPDATE twoFactor SET lockedUntil=? WHERE userId=?').run(new Date(Date.now() - 1000).toISOString(), body.userId);

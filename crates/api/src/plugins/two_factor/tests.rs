@@ -1309,3 +1309,164 @@ async fn otp_enable_without_delivery_checks_password_then_rejects_without_mutati
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].token, session.token);
 }
+
+#[tokio::test]
+async fn installed_legacy_factor_reads_authenticates_and_consumes_backups_without_rewriting_secret()
+{
+    // Fixed independent WebCrypto HKDF/AES-GCM vectors for the previous Rust
+    // persistence format. The producer under test does not generate this row.
+    let legacy_secret =
+        "AAECAwQFBgcICQoL9NYPdhHpe_5gn4m4X_opqjMmxni2EyB3YCXHFEgQIyla3Fd0gf3_j1wgttJLPrPp";
+    let legacy_codes =
+        "DA0ODxAREhMUFRYXMc-xHuks-lR5NpeRiTHkuDgsOlsOZwvsxoEufAsjDonqpW0x_ZMYlL0UMdsH";
+    let plaintext = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef";
+    let plugin = TwoFactorPlugin::new();
+    let (ctx, user, session) =
+        create_test_context_with_credential_user("legacy-factor@fixture.test", true).await;
+    let installed = ctx
+        .database
+        .create_two_factor(CreateTwoFactor {
+            user_id: user.id.clone(),
+            secret: legacy_secret.into(),
+            backup_codes: legacy_codes.into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        plugin.view_backup_codes(&user.id, &ctx).await.unwrap(),
+        ["ABCDE-12345", "FGHIJ-67890"]
+    );
+    let request = |path: &str, body: serde_json::Value| {
+        let mut request = AuthRequest::new(HttpMethod::Post, path);
+        let cookie = create_session_cookie(&session.token, &ctx.config);
+        request
+            .headers
+            .insert("cookie".into(), cookie.split(';').next().unwrap().into());
+        request.body = Some(serde_json::to_vec(&body).unwrap());
+        request
+    };
+    let uri = plugin
+        .on_request(
+            &request(
+                "/two-factor/get-totp-uri",
+                serde_json::json!({"password":"password123"}),
+            ),
+            &ctx,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(uri.status, 200);
+    let verified = plugin
+        .on_request(
+            &request(
+                "/two-factor/verify-totp",
+                serde_json::json!({"code": plugin.generate_totp(plaintext).unwrap()}),
+            ),
+            &ctx,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(verified.status, 200);
+    let consumed = plugin
+        .on_request(
+            &request(
+                "/two-factor/verify-backup-code",
+                serde_json::json!({"code":"ABCDE-12345"}),
+            ),
+            &ctx,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(consumed.status, 200);
+    assert_eq!(
+        plugin.view_backup_codes(&user.id, &ctx).await.unwrap(),
+        ["FGHIJ-67890"]
+    );
+    let after = ctx
+        .database
+        .get_two_factor_by_user_id(&user.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.id, installed.id);
+    assert_eq!(after.secret, legacy_secret);
+    assert_ne!(after.backup_codes, legacy_codes);
+    assert!(after.backup_codes.len().is_multiple_of(2));
+    assert!(
+        after
+            .backup_codes
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    );
+    let stored = after.backup_codes.clone();
+    let replay = plugin
+        .on_request(
+            &request(
+                "/two-factor/verify-backup-code",
+                serde_json::json!({"code":"ABCDE-12345"}),
+            ),
+            &ctx,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(replay.to_string(), "Invalid backup code");
+    assert_eq!(
+        ctx.database
+            .get_two_factor_by_user_id(&user.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .backup_codes,
+        stored
+    );
+    assert_eq!(
+        ctx.database
+            .get_session(&session.token)
+            .await
+            .unwrap()
+            .unwrap()
+            .user_id,
+        user.id
+    );
+    let tampered = format!("{}A", &legacy_secret[..legacy_secret.len() - 1]);
+    ctx.database
+        .update_two_factor(
+            &installed.id,
+            UpdateTwoFactor {
+                secret: Some(tampered.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let rejected = plugin
+        .on_request(
+            &request(
+                "/two-factor/get-totp-uri",
+                serde_json::json!({"password":"password123"}),
+            ),
+            &ctx,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(rejected, AuthError::Internal(_)));
+    let rejected_row = ctx
+        .database
+        .get_two_factor_by_user_id(&user.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(rejected_row.secret, tampered);
+    assert_eq!(rejected_row.backup_codes, stored);
+    assert!(
+        ctx.database
+            .get_session(&session.token)
+            .await
+            .unwrap()
+            .is_some()
+    );
+}

@@ -276,6 +276,39 @@ async fn control(
             Err(error) => error.into_response(),
         };
     }
+    if let Some(factor) = value.get("importFactor") {
+        let (Some(secret), Some(backup_codes)) = (
+            factor.get("secret").and_then(JsValue::as_str),
+            factor.get("backupCodes").and_then(JsValue::as_str),
+        ) else {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"message":"invalid factor import"})),
+            )
+                .into_response();
+        };
+        let imported = async {
+            let row = store
+                .get_two_factor_by_user_id(user_id)
+                .await?
+                .ok_or(better_auth::AuthError::SessionNotFound)?;
+            store
+                .update_two_factor(
+                    &row.id,
+                    better_auth_core::UpdateTwoFactor {
+                        secret: Some(secret.into()),
+                        backup_codes: Some(backup_codes.into()),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            Ok::<_, better_auth::AuthError>(())
+        }
+        .await;
+        if let Err(error) = imported {
+            return error.into_response();
+        }
+    }
     let mutation = async {
         if let Some(count) = value.get("count") {
             let _ = database
