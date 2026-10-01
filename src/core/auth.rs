@@ -125,6 +125,9 @@ impl<S: AuthSchema> AuthBuilder<S> {
     pub async fn build(self) -> AuthResult<BetterAuth<S>> {
         // Validate configuration
         self.config.validate()?;
+        if let Some(cache) = &self.config.session.cookie_cache {
+            better_auth_core::cache::validate_config(cache)?;
+        }
 
         let config = Arc::new(self.config);
         let store = self
@@ -257,6 +260,13 @@ impl<S: AuthSchema> BetterAuth<S> {
                 Ok(response) => response,
                 Err(err) => err.to_auth_response(),
             };
+            let (cache_headers, ordinary_cache_error) =
+                better_auth_core::cache::runtime::take_issuance(req.extensions());
+            if ordinary_cache_error {
+                run_after_hooks = false;
+                response = AuthResponse::new(500);
+                _ = req.take_response_headers();
+            }
             let mut nested_headers = req.take_response_headers();
             for (name, value) in response.headers {
                 if name.eq_ignore_ascii_case("set-cookie") {
@@ -264,6 +274,9 @@ impl<S: AuthSchema> BetterAuth<S> {
                 } else {
                     _ = nested_headers.insert(name, value);
                 }
+            }
+            for header in cache_headers {
+                nested_headers.append("Set-Cookie", header);
             }
             response.headers = nested_headers;
             let mut hook_request = req.clone();

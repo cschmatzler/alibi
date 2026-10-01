@@ -14,7 +14,9 @@
 
 extern crate self as better_auth;
 
+pub mod authenticated_user;
 pub mod background_tasks;
+pub mod cache;
 pub mod config;
 pub mod email;
 pub mod entity;
@@ -39,8 +41,12 @@ pub mod utils;
 pub mod wire;
 
 // Re-export commonly used items
+pub use authenticated_user::AuthenticatedUser;
 pub use background_tasks::{BackgroundTaskCompletion, BackgroundTaskHandler};
 pub use better_auth_macros::{AuthSchema, PluginConfig};
+pub use cache::{
+    CacheVersionContext, CacheVersionSource, CookieCacheVersion, CookieCacheVersionResolver,
+};
 pub use config::{
     AccountConfig, AccountLinkingConfig, AdvancedConfig, AdvancedDatabaseConfig, AuthConfig,
     CookieAttributes, CookieCacheConfig, CookieCacheStrategy, CookieOverride, CrossSubDomainConfig,

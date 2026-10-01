@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { sessionCookieCacheFixture } from "./session-cookie-cache-fixture";
 import { organizationMembershipPolicyFixture } from "./organization-membership-policy-fixture";
 import { organizationInvitationAcceptanceFixture } from "./organization-invitation-acceptance-fixture";
 import { organizationMemberAdditionFixture } from "./organization-member-addition-fixture";
@@ -431,11 +432,13 @@ const passkeyRegistration = passkeyRegistrationFixture(authOptions);
 const passkeyAuthentication = passkeyAuthenticationFixture(database, authOptions, `http://localhost:${PORT}`);
 const socialProvidersFixture = socialProviderFixture(authOptions);
 const anonymousProfiles = await anonymousFixture(authOptions, database);
+const sessionCookieCacheProfiles = await sessionCookieCacheFixture(authOptions, database);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
 for (const [path, instance] of socialProvidersFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of anonymousProfiles.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of sessionCookieCacheProfiles.profiles) verificationProfiles.set(path, instance);
 const apiKeyBackground = await apiKeyBackgroundFixture(database, authOptions);
 for (const [path, instance] of apiKeyBackground.profiles) verificationProfiles.set(path, instance);
 const apiKeyGenerationFixture = createApiKeyGenerationFixture(database, authOptions);
@@ -794,6 +797,8 @@ const server = Bun.serve({
       const transportControl = await organizationTransport.handle(request, url);
       if (transportControl) return transportControl;
       if(url.pathname==="/__test/session-field-state")return jsonResponse(sessionFieldsFixture.state(url.searchParams.get("email")??""));
+      const cacheControl = await sessionCookieCacheProfiles.handle(request);
+      if (cacheControl) return cacheControl;
       for(const [name,profile] of sessionFieldsFixture.profiles)if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return profile.handler(request);
       for (const [name, profile] of organizationCreationFixture.profiles) {
         if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return profile.handler(request);

@@ -297,7 +297,7 @@ pub(crate) fn decode_cookie_state_value(
 pub(crate) fn create_account_cookie_value(
     secret: &str,
     payload: &AccountCookiePayload,
-    max_age: Duration,
+    max_age: f64,
 ) -> AuthResult<String> {
     super::account_cookie::encode(secret, payload, max_age)
 }

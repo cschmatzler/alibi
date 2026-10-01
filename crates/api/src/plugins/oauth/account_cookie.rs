@@ -15,7 +15,7 @@ use better_auth_core::{
     AuthError, AuthResult,
     utils::json::{JsValue, parse_value},
 };
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use rand::{RngCore, rngs::OsRng};
@@ -78,7 +78,7 @@ fn authentication(
 pub(super) fn encode(
     secret: &str,
     payload: &AccountCookiePayload,
-    max_age: Duration,
+    max_age: f64,
 ) -> AuthResult<String> {
     let key = key(secret)?;
     let header = BASE64.encode(serde_json::to_vec(
@@ -88,9 +88,15 @@ pub(super) fn encode(
     let mut claims = serde_json::to_value(payload)?;
     let claims = claims.as_object_mut().ok_or_else(invalid)?;
     _ = claims.insert("iat".into(), json!(now));
-    _ = claims.insert("exp".into(), json!(now + max_age.num_seconds()));
+    let expiry = now as f64 + max_age;
+    if !expiry.is_finite() {
+        return Err(AuthError::internal(
+            "Invalid account-cookie expiration time",
+        ));
+    }
+    _ = claims.insert("exp".into(), json!(expiry));
     _ = claims.insert("jti".into(), json!(uuid::Uuid::new_v4().to_string()));
-    let mut ciphertext = serde_json::to_vec(claims)?;
+    let mut ciphertext = better_auth_core::utils::json::to_vec(claims)?;
     let padding = 16 - ciphertext.len() % 16;
     ciphertext.resize(ciphertext.len() + padding, padding as u8);
     let mut iv = [0; 16];

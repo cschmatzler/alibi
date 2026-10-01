@@ -602,6 +602,21 @@ impl<S: AuthSchema> AuthContext<S> {
         Ok((user, session))
     }
 
+    /// Read an ordinary HTTP session from the configured cache or storage.
+    /// Sensitive stateful operations must continue using the physical APIs.
+    /// Nested source get-session errors become an unauthenticated session;
+    /// errors from later application/store operations are not caught here.
+    pub async fn require_cached_session(
+        &self,
+        req: &AuthRequest,
+    ) -> AuthResult<(crate::AuthenticatedUser<S>, crate::wire::SessionView)> {
+        let read = crate::cache::runtime::authenticated(self, req, false)
+            .await
+            .map_err(|_| AuthError::Unauthenticated)?
+            .ok_or(AuthError::Unauthenticated)?;
+        Ok((read.user, read.session))
+    }
+
     /// Authorize once and retain the optional deferred-refresh response field.
     /// Payload callbacks can observe the same context as nested session middleware
     /// without issuing another session read or refresh.

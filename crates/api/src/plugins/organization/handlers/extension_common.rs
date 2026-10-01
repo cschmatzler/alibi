@@ -103,11 +103,15 @@ pub fn org_error(status: u16, code: &'static str) -> AuthError {
 pub async fn session<S: AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
-) -> AuthResult<(S::User, SessionView)> {
-    ctx.require_session(req).await.map_err(|error| match error {
-        AuthError::Unauthenticated | AuthError::SessionNotFound => org_error(401, "UNAUTHORIZED"),
-        error => error,
-    })
+) -> AuthResult<(better_auth_core::AuthenticatedUser<S>, SessionView)> {
+    ctx.require_cached_session(req)
+        .await
+        .map_err(|error| match error {
+            AuthError::Unauthenticated | AuthError::SessionNotFound => {
+                org_error(401, "UNAUTHORIZED")
+            }
+            error => error,
+        })
 }
 
 fn configured_roles(config: &OrganizationConfig) -> OrganizationRoles {
