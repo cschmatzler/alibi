@@ -1470,3 +1470,381 @@ async fn installed_legacy_factor_reads_authenticates_and_consumes_backups_withou
             .is_some()
     );
 }
+
+#[tokio::test]
+async fn configured_backup_callback_errors_preserve_factor_user_and_current_session() {
+    // This guards Rust callback error identity, which the cross-runtime happy-path
+    // cipher fixture cannot exercise. Pinned runtime independently preserves both
+    // 400 and 403 callback errors with this cancellation-like message.
+    type Observed = Arc<std::sync::Mutex<Vec<(String, String)>>>;
+    fn denied(status: u16) -> AuthError {
+        AuthError::Upstream {
+            status,
+            code: "BACKUP_CALLBACK_DENIED",
+            message: "session creation cancelled by database hook",
+        }
+    }
+    struct RejectingCipher {
+        status: u16,
+        observed: Observed,
+    }
+    #[async_trait]
+    impl TwoFactorBackupCipher for RejectingCipher {
+        async fn encrypt(&self, input: &str) -> AuthResult<String> {
+            self.observed
+                .lock()
+                .unwrap()
+                .push(("encrypt".into(), input.into()));
+            Err(denied(self.status))
+        }
+        async fn decrypt(&self, _stored: &str) -> AuthResult<String> {
+            panic!("enrollment and regeneration must not decode an existing factor")
+        }
+    }
+    for phase in ["generate", "encrypt"] {
+        for status in [400, 403] {
+            let (ctx, user, session) =
+                create_test_context_with_credential_user("backup-callback@fixture.test", false)
+                    .await;
+            let observed: Observed = Default::default();
+            let generator_observed = observed.clone();
+            let plugin = TwoFactorPlugin::with_config(TwoFactorConfig {
+                skip_verification_on_enable: true,
+                custom_backup_codes_generate: Some(Arc::new(move || {
+                    generator_observed
+                        .lock()
+                        .unwrap()
+                        .push(("generate".into(), String::new()));
+                    if phase == "generate" {
+                        Err(denied(status))
+                    } else {
+                        Ok(vec!["callback-code".into(), "callback-code".into()])
+                    }
+                })),
+                backup_storage: TwoFactorBackupStorage::CustomCipher(Arc::new(RejectingCipher {
+                    status,
+                    observed: observed.clone(),
+                })),
+                ..Default::default()
+            });
+            let cookie = create_session_cookie(&session.token, &ctx.config);
+            let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
+            _ = request
+                .headers
+                .insert("cookie".into(), cookie.split(';').next().unwrap().into());
+            request.body = Some(br#"{"password":"password123"}"#.to_vec());
+            // Resolve the short-lived native fixture session before observing
+            // callback effects; this performs the ordinary expiry refresh.
+            _ = ctx.require_session(&request).await.unwrap();
+            let before_sessions =
+                serde_json::to_value(ctx.database.get_user_sessions(&user.id).await.unwrap())
+                    .unwrap();
+            let error = plugin.on_request(&request, &ctx).await.unwrap_err();
+            assert!(
+                matches!(error, AuthError::Upstream { status: actual, code: "BACKUP_CALLBACK_DENIED", .. } if actual == status)
+            );
+            assert!(
+                ctx.database
+                    .get_two_factor_by_user_id(&user.id)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(
+                !ctx.database
+                    .get_user_by_id(&user.id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .two_factor_enabled()
+            );
+            assert_eq!(
+                serde_json::to_value(ctx.database.get_user_sessions(&user.id).await.unwrap())
+                    .unwrap(),
+                before_sessions
+            );
+            let expected = if phase == "generate" {
+                vec![("generate".into(), String::new())]
+            } else {
+                vec![
+                    ("generate".into(), String::new()),
+                    (
+                        "encrypt".into(),
+                        "[\"callback-code\",\"callback-code\"]".into(),
+                    ),
+                ]
+            };
+            assert_eq!(*observed.lock().unwrap(), expected);
+
+            _ = ctx
+                .database
+                .update_user(
+                    &user.id,
+                    UpdateUser {
+                        two_factor_enabled: Some(true),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            let factor = ctx
+                .database
+                .create_two_factor(CreateTwoFactor {
+                    user_id: user.id.clone(),
+                    secret: "installed-factor-secret".into(),
+                    backup_codes: "installed-factor-codes".into(),
+                    verified: Some(true),
+                    failed_verification_count: Some(2.5),
+                    locked_until: Some(Utc::now() + Duration::minutes(1)),
+                })
+                .await
+                .unwrap();
+            let before_user =
+                serde_json::to_value(ctx.database.get_user_by_id(&user.id).await.unwrap()).unwrap();
+            observed.lock().unwrap().clear();
+            request.path = "/two-factor/generate-backup-codes".into();
+            let error = plugin.on_request(&request, &ctx).await.unwrap_err();
+            assert!(
+                matches!(error, AuthError::Upstream { status: actual, code: "BACKUP_CALLBACK_DENIED", .. } if actual == status)
+            );
+            assert_eq!(*observed.lock().unwrap(), expected);
+            assert_eq!(
+                serde_json::to_value(
+                    ctx.database
+                        .get_two_factor_by_user_id(&user.id)
+                        .await
+                        .unwrap()
+                )
+                .unwrap(),
+                serde_json::json!(factor)
+            );
+            assert_eq!(
+                serde_json::to_value(ctx.database.get_user_by_id(&user.id).await.unwrap()).unwrap(),
+                before_user
+            );
+            assert_eq!(
+                serde_json::to_value(ctx.database.get_user_sessions(&user.id).await.unwrap())
+                    .unwrap(),
+                before_sessions
+            );
+            assert_eq!(
+                ctx.require_session(&request).await.unwrap().1.token,
+                session.token
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn pending_backup_cipher_errors_restore_only_decode_stage_attempts() {
+    type Observed = Arc<std::sync::Mutex<Vec<(String, String)>>>;
+    struct Cipher {
+        phase: &'static str,
+        rejected: Arc<std::sync::atomic::AtomicBool>,
+        observed: Observed,
+    }
+    #[async_trait]
+    impl TwoFactorBackupCipher for Cipher {
+        async fn encrypt(&self, input: &str) -> AuthResult<String> {
+            self.observed
+                .lock()
+                .unwrap()
+                .push(("encrypt".into(), input.into()));
+            if self.phase == "encrypt" && self.rejected.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(AuthError::Upstream {
+                    status: 400,
+                    code: "BACKUP_CALLBACK_DENIED",
+                    message: "Callback denied",
+                });
+            }
+            Ok(format!("backup-{input}"))
+        }
+        async fn decrypt(&self, input: &str) -> AuthResult<String> {
+            self.observed
+                .lock()
+                .unwrap()
+                .push(("decrypt".into(), input.into()));
+            if self.phase == "decrypt" && self.rejected.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(AuthError::Upstream {
+                    status: 400,
+                    code: "BACKUP_CALLBACK_DENIED",
+                    message: "Callback denied",
+                });
+            }
+            Ok(input.strip_prefix("backup-").unwrap().into())
+        }
+    }
+    for phase in ["decrypt", "encrypt"] {
+        let (ctx, user, session) =
+            create_test_context_with_credential_user("backup-pending-callback@fixture.test", true)
+                .await;
+        ctx.database.delete_session(&session.token).await.unwrap();
+        let factor = ctx
+            .database
+            .create_two_factor(CreateTwoFactor {
+                user_id: user.id.clone(),
+                secret: "installed-factor-secret".into(),
+                backup_codes: "backup-[\"same\",\"same\",\"remaining\"]".into(),
+                verified: Some(true),
+                failed_verification_count: Some(2.5),
+                locked_until: None,
+            })
+            .await
+            .unwrap();
+        let challenge = begin_sign_in_challenge(&user, None, &ctx).await.unwrap();
+        let cookie_name = related_cookie_name(&ctx.config, TWO_FACTOR_COOKIE_SUFFIX);
+        let cookie = challenge
+            .set_cookie_headers
+            .iter()
+            .find(|header| header.starts_with(&format!("{cookie_name}=")))
+            .unwrap();
+        let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/verify-backup-code");
+        request
+            .headers
+            .insert("cookie".into(), cookie.split(';').next().unwrap().into());
+        request.body =
+            Some(br#"{"code":"same","disableSession":true,"trustDevice":true}"#.to_vec());
+        let key = read_signed_cookie(&request, TWO_FACTOR_COOKIE_SUFFIX, &ctx)
+            .unwrap()
+            .unwrap();
+        let attempt_id = format!("2fa-attempts-{key}");
+        let before_challenge = serde_json::to_value(
+            ctx.database
+                .get_verification_by_identifier(&key)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let before_user =
+            serde_json::to_value(ctx.database.get_user_by_id(&user.id).await.unwrap()).unwrap();
+        let rejected = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let observed: Observed = Default::default();
+        let plugin = TwoFactorPlugin::with_config(TwoFactorConfig {
+            backup_storage: TwoFactorBackupStorage::CustomCipher(Arc::new(Cipher {
+                phase,
+                rejected: rejected.clone(),
+                observed: observed.clone(),
+            })),
+            ..Default::default()
+        });
+        let error = plugin.on_request(&request, &ctx).await.unwrap_err();
+        assert!(matches!(
+            error,
+            AuthError::Upstream {
+                status: 400,
+                code: "BACKUP_CALLBACK_DENIED",
+                ..
+            }
+        ));
+        assert_eq!(
+            serde_json::to_value(
+                ctx.database
+                    .get_two_factor_by_user_id(&user.id)
+                    .await
+                    .unwrap()
+            )
+            .unwrap(),
+            serde_json::json!(factor)
+        );
+        assert_eq!(
+            serde_json::to_value(
+                ctx.database
+                    .get_verification_by_identifier(&key)
+                    .await
+                    .unwrap()
+            )
+            .unwrap(),
+            before_challenge
+        );
+        assert_eq!(
+            serde_json::to_value(ctx.database.get_user_by_id(&user.id).await.unwrap()).unwrap(),
+            before_user
+        );
+        assert!(
+            ctx.database
+                .get_user_sessions(&user.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        let attempts = ctx
+            .database
+            .get_verification_by_identifier(&attempt_id)
+            .await
+            .unwrap();
+        if phase == "decrypt" {
+            assert_eq!(attempts.unwrap().value(), "0");
+            assert_eq!(
+                *observed.lock().unwrap(),
+                vec![("decrypt".into(), factor.backup_codes.clone())]
+            );
+        } else {
+            assert!(attempts.is_none());
+            assert_eq!(
+                *observed.lock().unwrap(),
+                vec![
+                    ("decrypt".into(), factor.backup_codes.clone()),
+                    ("encrypt".into(), "[\"remaining\"]".into())
+                ]
+            );
+        }
+        rejected.store(false, std::sync::atomic::Ordering::SeqCst);
+        let retry = plugin.on_request(&request, &ctx).await;
+        if phase == "decrypt" {
+            let response = retry.unwrap().unwrap();
+            assert_eq!(response.status, 200);
+            let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+            assert!(body.get("token").is_none());
+            assert_eq!(body["user"]["id"], user.id);
+            assert!(response.headers.get("set-cookie").is_none());
+            let updated = ctx
+                .database
+                .get_two_factor_by_user_id(&user.id)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(updated.id, factor.id);
+            assert_eq!(updated.secret, factor.secret);
+            assert_eq!(updated.backup_codes, "backup-[\"remaining\"]");
+            assert_eq!(updated.failed_verification_count, Some(0.0));
+        } else {
+            let error = retry.unwrap_err();
+            assert_eq!(error.status_code(), 401);
+            assert_eq!(error.to_string(), "Invalid two factor cookie");
+            assert_eq!(
+                serde_json::to_value(
+                    ctx.database
+                        .get_two_factor_by_user_id(&user.id)
+                        .await
+                        .unwrap()
+                )
+                .unwrap(),
+                serde_json::json!(factor)
+            );
+        }
+        assert!(
+            ctx.database
+                .get_verification_by_identifier(&attempt_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            serde_json::to_value(
+                ctx.database
+                    .get_verification_by_identifier(&key)
+                    .await
+                    .unwrap()
+            )
+            .unwrap(),
+            before_challenge
+        );
+        assert!(
+            ctx.database
+                .get_user_sessions(&user.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+}

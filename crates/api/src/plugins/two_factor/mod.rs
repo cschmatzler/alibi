@@ -31,6 +31,9 @@ use crate::plugins::helpers::{
 
 use super::StatusResponse;
 
+mod backup_storage;
+pub use backup_storage::{TwoFactorBackupCipher, TwoFactorBackupStorage};
+
 mod otp_storage;
 pub use otp_storage::{TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage};
 
@@ -51,8 +54,6 @@ const DEFAULT_TWO_FACTOR_COOKIE_MAX_AGE_SECS: i64 = 10 * 60;
 const DEFAULT_TRUST_DEVICE_MAX_AGE_SECS: i64 = 30 * 24 * 60 * 60;
 const DEFAULT_TOTP_PERIOD_SECS: u64 = 30;
 const DEFAULT_TOTP_DIGITS: usize = 6;
-const DEFAULT_BACKUP_CODE_COUNT: usize = 10;
-const DEFAULT_BACKUP_CODE_LENGTH: usize = 10;
 
 const ENCRYPTION_INFO: &[u8] = b"better-auth-two-factor-encryption";
 
@@ -102,6 +103,18 @@ pub struct TwoFactorConfig {
     /// Override the global passwordless policy for backup regeneration.
     #[config(default = None)]
     pub backup_allow_passwordless: Option<bool>,
+    /// Number of generated backup codes, using JS array-length coercion.
+    #[config(default = 10.0)]
+    pub backup_code_amount: f64,
+    /// Generated characters per code, before the separator after character five.
+    #[config(default = 10.0)]
+    pub backup_code_length: f64,
+    /// Optional synchronous generator. Its strings are persisted unchanged.
+    #[config(default = None, skip)]
+    pub custom_backup_codes_generate:
+        Option<Arc<dyn Fn() -> AuthResult<Vec<String>> + Send + Sync>>,
+    #[config(default = TwoFactorBackupStorage::default(), skip)]
+    pub backup_storage: TwoFactorBackupStorage,
     #[config(default = AccountLockoutConfig::default())]
     pub account_lockout: AccountLockoutConfig,
     /// Override the issuer embedded in enrollment TOTP URIs.
@@ -150,6 +163,13 @@ impl std::fmt::Debug for TwoFactorConfig {
             .field("allow_passwordless", &self.allow_passwordless)
             .field("totp_allow_passwordless", &self.totp_allow_passwordless)
             .field("backup_allow_passwordless", &self.backup_allow_passwordless)
+            .field("backup_code_amount", &self.backup_code_amount)
+            .field("backup_code_length", &self.backup_code_length)
+            .field(
+                "custom_backup_codes_generate",
+                &self.custom_backup_codes_generate.is_some(),
+            )
+            .field("backup_storage", &self.backup_storage)
             .field("account_lockout", &self.account_lockout)
             .field("issuer", &self.issuer)
             .field(
@@ -262,6 +282,21 @@ pub(crate) struct TotpUriResponse {
 pub(crate) struct SessionTokenResponse<U: Serialize> {
     token: String,
     user: U,
+}
+
+#[derive(Debug, Serialize)]
+struct BackupVerificationResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    token: Option<String>,
+    user: UserView,
+}
+impl From<SessionTokenResponse<UserView>> for BackupVerificationResponse {
+    fn from(response: SessionTokenResponse<UserView>) -> Self {
+        Self {
+            token: Some(response.token),
+            user: response.user,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -489,7 +524,7 @@ impl TwoFactorPlugin {
         user_id: &str,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Vec<String>> {
-        view_backup_codes_core(user_id, ctx).await
+        view_backup_codes_core(user_id, &self.config, ctx).await
     }
 }
 
@@ -559,8 +594,11 @@ impl TwoFactorPlugin {
         let (response, set_cookie_headers) =
             match enable_core(&body, &user, &session, &self.config, ctx).await {
                 Ok(result) => result,
-                Err(AuthError::SessionCreationCancelled) => return Ok(AuthResponse::new(500)),
-                Err(error) => return Err(error),
+                Err(BackupOperationError::Auth(AuthError::SessionCreationCancelled))
+                | Err(BackupOperationError::InvalidGeneration) => {
+                    return Ok(AuthResponse::new(500));
+                }
+                Err(BackupOperationError::Auth(error)) => return Err(error),
             };
         let mut auth_response = AuthResponse::json(200, &response)?;
         for cookie in set_cookie_headers {
@@ -704,7 +742,11 @@ impl TwoFactorPlugin {
                 Err(resp) => return Ok(resp),
             };
 
-        let response = generate_backup_codes_core(&body, &user, &self.config, ctx).await?;
+        let response = match generate_backup_codes_core(&body, &user, &self.config, ctx).await {
+            Ok(response) => response,
+            Err(BackupOperationError::InvalidGeneration) => return Ok(AuthResponse::new(500)),
+            Err(BackupOperationError::Auth(error)) => return Err(error),
+        };
         AuthResponse::json(200, &response).map_err(AuthError::from)
     }
 
@@ -737,7 +779,7 @@ async fn enable_core(
     current_session: &impl AuthSession,
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<(EnableResponse, Vec<String>)> {
+) -> Result<(EnableResponse, Vec<String>), BackupOperationError> {
     verify_user_password(
         ctx,
         user,
@@ -751,7 +793,8 @@ async fn enable_core(
                 status: 400,
                 code: "OTP_NOT_CONFIGURED",
                 message: "OTP is not available",
-            });
+            }
+            .into());
         }
         let updated_user = ctx
             .database
@@ -783,7 +826,8 @@ async fn enable_core(
             status: 400,
             code: "TOTP_NOT_CONFIGURED",
             message: "TOTP is not available",
-        });
+        }
+        .into());
     }
 
     let existing = ctx
@@ -798,14 +842,14 @@ async fn enable_core(
             status: 400,
             code: "TOTP_ALREADY_ENABLED",
             message: "TOTP is already enabled",
-        });
+        }
+        .into());
     }
 
     let secret = generate_secret();
     let encrypted_secret = encrypt_value(&ctx.config.secret, &secret)?;
-    let backup_codes = generate_backup_codes();
-    let encrypted_backup_codes =
-        encrypt_value(&ctx.config.secret, &serde_json::to_string(&backup_codes)?)?;
+    let (backup_codes, encrypted_backup_codes) =
+        generate_backup_codes(config, &ctx.config.secret).await?;
 
     let mut set_cookie_headers = Vec::new();
     if config.skip_verification_on_enable {
@@ -1253,9 +1297,9 @@ async fn generate_backup_codes_core(
     user: &impl AuthUser,
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<BackupCodesResponse> {
+) -> Result<BackupCodesResponse, BackupOperationError> {
     if !user.two_factor_enabled() {
-        return Err(AuthError::bad_request("Two factor isn't enabled"));
+        return Err(AuthError::bad_request("Two factor isn't enabled").into());
     }
 
     verify_user_password(
@@ -1267,13 +1311,22 @@ async fn generate_backup_codes_core(
             .unwrap_or(config.allow_passwordless),
     )
     .await?;
-    let _ = load_two_factor_record(user, ctx).await?;
+    let factor = ctx
+        .database
+        .get_two_factor_by_user_id(user.id().as_ref())
+        .await?
+        .ok_or_else(|| AuthError::bad_request("Two factor isn't enabled"))?;
 
-    let backup_codes = generate_backup_codes();
-    let encrypted = encrypt_value(&ctx.config.secret, &serde_json::to_string(&backup_codes)?)?;
+    let (backup_codes, encrypted) = generate_backup_codes(config, &ctx.config.secret).await?;
     _ = ctx
         .database
-        .update_two_factor_backup_codes(user.id().as_ref(), &encrypted)
+        .update_two_factor(
+            factor.id().as_ref(),
+            UpdateTwoFactor {
+                backup_codes: Some(encrypted),
+                ..Default::default()
+            },
+        )
         .await?;
 
     Ok(BackupCodesResponse {
@@ -1287,7 +1340,7 @@ async fn verify_backup_code_core(
     body: &VerifyBackupCodeRequest,
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<(SessionTokenResponse<UserView>, Vec<String>)> {
+) -> AuthResult<(BackupVerificationResponse, Vec<String>)> {
     let state = resolve_two_factor_state(req, ctx).await?;
     let two_factor = ctx
         .database
@@ -1300,7 +1353,11 @@ async fn verify_backup_code_core(
     }
     let attempt = begin_factor_attempt(&state, ctx).await?;
 
-    let codes = match decrypt_backup_codes(two_factor.backup_codes(), &ctx.config.secret) {
+    let codes = match config
+        .backup_storage
+        .load_codes(two_factor.backup_codes(), &ctx.config.secret)
+        .await
+    {
         Ok(codes) => codes,
         Err(error) => {
             rearm_factor_attempt(attempt.as_ref(), false, ctx).await;
@@ -1316,7 +1373,10 @@ async fn verify_backup_code_core(
     };
     backup_codes.retain(|candidate| candidate != &body.code);
 
-    let encrypted = encrypt_value(&ctx.config.secret, &serde_json::to_string(&backup_codes)?)?;
+    let encrypted = config
+        .backup_storage
+        .store_codes(&backup_codes, &ctx.config.secret)
+        .await?;
     if !ctx
         .database
         .compare_and_swap_two_factor_backup_codes(
@@ -1338,31 +1398,38 @@ async fn verify_backup_code_core(
         ResolvedTwoFactorState::Session { user, session, .. } => {
             if body.disable_session.unwrap_or(false) {
                 Ok((
-                    SessionTokenResponse {
-                        token: session.token().to_string(),
+                    BackupVerificationResponse {
+                        token: Some(session.token().to_string()),
                         user: ctx.user_view(&user),
                     },
                     Vec::new(),
                 ))
             } else {
-                verify_existing_session_factor(user, *session, false, false, ctx).await
+                verify_existing_session_factor(user, *session, false, false, ctx)
+                    .await
+                    .map(|(response, headers)| (response.into(), headers))
             }
         }
         ResolvedTwoFactorState::Pending(pending) => {
-            finalize_pending_two_factor(
-                pending,
-                req,
-                body.trust_device.unwrap_or(false),
-                !body.disable_session.unwrap_or(false),
-                ctx,
-            )
-            .await
+            if body.disable_session.unwrap_or(false) {
+                return Ok((
+                    BackupVerificationResponse {
+                        token: None,
+                        user: ctx.user_view(&pending.user),
+                    },
+                    Vec::new(),
+                ));
+            }
+            finalize_pending_two_factor(pending, req, body.trust_device.unwrap_or(false), true, ctx)
+                .await
+                .map(|(response, headers)| (response.into(), headers))
         }
     }
 }
 
 async fn view_backup_codes_core<S: better_auth_core::AuthSchema>(
     user_id: &str,
+    config: &TwoFactorConfig,
     ctx: &AuthContext<S>,
 ) -> AuthResult<Vec<String>> {
     let two_factor = ctx
@@ -1370,7 +1437,10 @@ async fn view_backup_codes_core<S: better_auth_core::AuthSchema>(
         .get_two_factor_by_user_id(user_id)
         .await?
         .ok_or_else(|| AuthError::bad_request("Backup codes aren't enabled"))?;
-    let Some(backup_codes) = decrypt_backup_codes(two_factor.backup_codes(), &ctx.config.secret)?
+    let Some(backup_codes) = config
+        .backup_storage
+        .load_codes(two_factor.backup_codes(), &ctx.config.secret)
+        .await?
     else {
         return Err(AuthError::bad_request("Invalid backup code"));
     };
@@ -1919,24 +1989,54 @@ fn generate_secret() -> String {
         .collect()
 }
 
-fn generate_backup_codes() -> Vec<String> {
-    (0..DEFAULT_BACKUP_CODE_COUNT)
-        .map(|_| {
-            rand::thread_rng()
-                .sample_iter(&Alphanumeric)
-                .take(DEFAULT_BACKUP_CODE_LENGTH)
-                .map(char::from)
-                .collect::<String>()
-        })
-        .map(|code| format!("{}-{}", &code[..5], &code[5..]))
-        .collect()
+enum BackupOperationError {
+    Auth(AuthError),
+    InvalidGeneration,
+}
+impl From<AuthError> for BackupOperationError {
+    fn from(error: AuthError) -> Self {
+        Self::Auth(error)
+    }
 }
 
-fn decrypt_backup_codes(backup_codes: &str, secret: &str) -> AuthResult<Option<Vec<String>>> {
-    let decrypted = decrypt_value(secret, backup_codes)?;
-    serde_json::from_str(&decrypted)
-        .ok()
-        .map_or(Ok(None), |codes| Ok(Some(codes)))
+async fn generate_backup_codes(
+    config: &TwoFactorConfig,
+    secret: &str,
+) -> Result<(Vec<String>, String), BackupOperationError> {
+    let codes = if let Some(generate) = &config.custom_backup_codes_generate {
+        generate()?
+    } else {
+        let amount = config.backup_code_amount;
+        let count = if amount.is_nan() || amount <= 0.0 {
+            0
+        } else {
+            if amount.is_infinite() || amount > 32768.5 {
+                return Err(BackupOperationError::InvalidGeneration);
+            }
+            amount.floor() as usize
+        };
+        (0..count)
+            .map(|_| {
+                let length = config.backup_code_length;
+                if length <= 0.0
+                    || (length > 0.0 && length < 0.5)
+                    || length.is_infinite()
+                    || length > 32768.5
+                {
+                    return Err(BackupOperationError::InvalidGeneration);
+                }
+                let code: String = rand::thread_rng()
+                    .sample_iter(&Alphanumeric)
+                    .take(length.ceil() as usize)
+                    .map(char::from)
+                    .collect();
+                let split = code.len().min(5);
+                Ok(format!("{}-{}", &code[..split], &code[split..]))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    let stored = config.backup_storage.store_codes(&codes, secret).await?;
+    Ok((codes, stored))
 }
 
 fn otp_verification_identifier(key: &str) -> String {

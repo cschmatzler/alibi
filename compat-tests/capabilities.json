@@ -2122,10 +2122,30 @@
       },
       "requiredEvidence": {
         "success": [
-          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
+          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor",
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
         ],
         "state": [
-          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
+          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor",
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
+        ],
+        "rejection": [
+          "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor"
+        ],
+        "authorization": [
+          "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor"
         ]
       }
     },
@@ -2152,10 +2172,29 @@
       },
       "requiredEvidence": {
         "success": [
-          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
+          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration"
         ],
         "state": [
-          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
+          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor"
+        ],
+        "rejection": [
+          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor"
         ]
       }
     },
@@ -2238,7 +2277,11 @@
           "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation"
         ],
         "state": [
-          "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation"
+          "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation",
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
+        ],
+        "success": [
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
         ]
       }
     },
@@ -2284,13 +2327,29 @@
       },
       "requiredEvidence": {
         "success": [
-          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
+          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
         ],
         "state": [
-          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
+          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
         ],
         "rejection": [
-          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows"
+          "two-factor actual persisted factors decrypt with pinned crypto and imported pinned factors complete public TOTP and backup flows",
+          "two-factor two-factor-backup-plain applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-zero applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-negative applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
         ]
       }
     },
@@ -2345,6 +2404,14 @@
           "two-factor two-factor-otp-encrypted applies decimal-prefix counters, fractional or zero-default budgets and consumes the exhausted row",
           "two-factor OTP resends retain generations until the newest code is consumed once under concurrent requests",
           "two-factor passwordless OTP enrollment rotates the social owner's session and preserves OTP owner and replay boundaries"
+        ]
+      },
+      "requiredEvidence": {
+        "success": [
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
+        ],
+        "state": [
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
         ]
       }
     },

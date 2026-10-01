@@ -5,7 +5,52 @@ import { APIError } from "better-auth/api";
 
 export function createTwoFactorPolicyFixture(base: Parameters<typeof betterAuth>[0], database: Database) {
   const deliveries = new Map<string, { otp: string }>();
-  const profiles = new Map(["two-factor-lockout-fractional", "two-factor-lockout-zero", "two-factor-lockout-disabled", "two-factor-skip-verification", "two-factor-skip-user-hook", "two-factor-skip-session-cancel", "two-factor-skip-session-forbidden", "two-factor-pending-session-cancel", "two-factor-pending-session-forbidden", "two-factor-passwordless", "two-factor-passwordless-child-required", "two-factor-passwordless-child-optional"].map(name => [name, betterAuth({
+  const backupReceipts = new Map<
+    string,
+    Array<{ phase: string; input: string }>
+  >();
+  const recordBackup = (profile: string, phase: string, input: string) => {
+    const rows = backupReceipts.get(profile) ?? [];
+    rows.push({ phase, input });
+    backupReceipts.set(profile, rows);
+  };
+  const backupOptions = (name: string) =>
+    name === "two-factor-backup-plain"
+      ? { amount: 2.5, length: 3.5, storeBackupCodes: "plain" as const }
+      : name === "two-factor-backup-zero"
+        ? { amount: 0, length: 0, storeBackupCodes: "plain" as const }
+        : name === "two-factor-backup-negative"
+          ? { amount: -1, length: -2, storeBackupCodes: "plain" as const }
+          : name === "two-factor-backup-encrypted"
+            ? { amount: 3, length: 6, storeBackupCodes: "encrypted" as const }
+            : name === "two-factor-backup-invalid-length"
+              ? { amount: 2, length: 0, storeBackupCodes: "plain" as const }
+              : name === "two-factor-backup-custom"
+                ? {
+                    customBackupCodesGenerate: () => {
+                      recordBackup(name, "generate", "");
+                      const count = backupReceipts
+                        .get(name)!
+                        .filter((row) => row.phase === "generate").length;
+                      return [
+                        `same-${count}`,
+                        `same-${count}`,
+                        `other-${count}`,
+                      ];
+                    },
+                    storeBackupCodes: {
+                      encrypt: async (input: string) => {
+                        recordBackup(name, "encrypt", input);
+                        return "backup-" + input;
+                      },
+                      decrypt: async (input: string) => {
+                        recordBackup(name, "decrypt", input);
+                        return input.slice(7);
+                      },
+                    },
+                  }
+                : {};
+  const profiles = new Map(["two-factor-lockout-fractional", "two-factor-lockout-zero", "two-factor-lockout-disabled", "two-factor-skip-verification", "two-factor-skip-user-hook", "two-factor-skip-session-cancel", "two-factor-skip-session-forbidden", "two-factor-pending-session-cancel", "two-factor-pending-session-forbidden", "two-factor-passwordless", "two-factor-passwordless-child-required", "two-factor-passwordless-child-optional", "two-factor-backup-plain", "two-factor-backup-zero", "two-factor-backup-negative", "two-factor-backup-encrypted", "two-factor-backup-invalid-length", "two-factor-backup-custom"].map(name => [name, betterAuth({
     ...base, appName: "Fixture Auth", basePath: `/__test/profiles/${name}/api/auth`,
     ...(name === "two-factor-skip-user-hook" ? {databaseHooks:{...base.databaseHooks,user:{...base.databaseHooks?.user,update:{...base.databaseHooks?.user?.update,before:async data=>{if(data.twoFactorEnabled===true)throw new APIError("BAD_REQUEST",{message:"Configured user update denied",code:"USER_UPDATE_DENIED"});}}}}} : {}),
     ...(name.includes("-session-") ? {databaseHooks:{...base.databaseHooks,session:{...base.databaseHooks?.session,create:{...base.databaseHooks?.session?.create,before:async (_data,context)=>{
@@ -17,22 +62,40 @@ export function createTwoFactorPolicyFixture(base: Parameters<typeof betterAuth>
     plugins: [twoFactor({
       allowPasswordless: name === "two-factor-passwordless" || name === "two-factor-passwordless-child-required",
       totpOptions: { allowPasswordless: name === "two-factor-passwordless-child-required" ? false : name === "two-factor-passwordless-child-optional" ? true : undefined },
-      backupCodeOptions: { allowPasswordless: name === "two-factor-passwordless-child-required" ? false : name === "two-factor-passwordless-child-optional" ? true : undefined },
-      skipVerificationOnEnable: name.startsWith("two-factor-skip-") || name.startsWith("two-factor-pending-"),
+      backupCodeOptions: { ...backupOptions(name), allowPasswordless: name === "two-factor-passwordless-child-required" ? false : name === "two-factor-passwordless-child-optional" ? true : undefined },
+      skipVerificationOnEnable: name.startsWith("two-factor-skip-") || name.startsWith("two-factor-pending-") || name.startsWith("two-factor-backup-"),
       accountLockout: name === "two-factor-lockout-fractional" ? { maxFailedAttempts: 2.5, durationSeconds: 600.25 }
         : name === "two-factor-lockout-zero" ? { maxFailedAttempts: 0, durationSeconds: 0 }
         : name === "two-factor-lockout-disabled" ? { enabled: false } : {},
       otpOptions: { sendOTP: async ({ user, otp }) => { if (user.email) deliveries.set(user.email, { otp }); } },
     })],
   })] as const));
-  return async function handle(request: Request, url: URL): Promise<Response | undefined> {
+  const handle = async function handle(request: Request, url: URL): Promise<Response | undefined> {
     for (const [name, auth] of profiles) {
       if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return auth.handler(request);
     }
     if (url.pathname !== "/__test/two-factor-policy" || request.method !== "POST") return;
-    const body = await request.json() as { userId?: unknown; count?: unknown; verified?: unknown; expireLock?: unknown; deliveryEmail?: unknown; credentialState?: unknown; emptyCredentialPassword?: unknown; pendingState?: unknown; pendingKey?: unknown; importFactor?: unknown };
+    const body = await request.json() as { userId?: unknown; count?: unknown; verified?: unknown; expireLock?: unknown; deliveryEmail?: unknown; credentialState?: unknown; emptyCredentialPassword?: unknown; pendingState?: unknown; pendingKey?: unknown; importFactor?: unknown; backupProfile?: unknown; viewBackupCodes?: unknown };
     if (typeof body.deliveryEmail === "string") return Response.json(deliveries.get(body.deliveryEmail) ?? null);
     if (typeof body.userId !== "string") return Response.json({ message: "userId required" }, { status: 400 });
+    if (
+      typeof body.backupProfile === "string" &&
+      body.viewBackupCodes === true
+    ) {
+      const selected = profiles.get(body.backupProfile);
+      if (!selected)
+        return Response.json(
+          { message: "unknown backup profile" },
+          { status: 400 },
+        );
+      const result = await selected.api.viewBackupCodes({
+        body: { userId: body.userId },
+      });
+      return Response.json({
+        ...result,
+        receipts: backupReceipts.get(body.backupProfile) ?? [],
+      });
+    }
     if(body.pendingState === true){
       const key=typeof body.pendingKey === "string" ? body.pendingKey : (database.query("SELECT identifier FROM verification WHERE value=? AND identifier LIKE '2fa-%'").get(body.userId) as {identifier:string}|null)?.identifier;
       const record=(identifier:string)=>database.query("SELECT value FROM verification WHERE identifier=?").get(identifier) as {value:string}|null;
@@ -52,4 +115,5 @@ export function createTwoFactorPolicyFixture(base: Parameters<typeof betterAuth>
     if (row && row.verified !== null) row.verified = Boolean(row.verified);
     return Response.json(row);
   };
+  return Object.assign(handle, { reset: () => backupReceipts.clear() });
 }
