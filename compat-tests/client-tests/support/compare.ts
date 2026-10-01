@@ -1,6 +1,7 @@
 import { sessionSchema, userSchema } from "@better-auth/core/db";
 import { safeJSONParse } from "@better-auth/core/utils/json";
 import { z } from "zod";
+import { Cookie } from "tough-cookie";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { normalizeClientValue } from "./normalize";
 
@@ -155,8 +156,38 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     return JSON.stringify(value) ?? "undefined";
   }
   const cachePayloadSchema = z.looseObject({session: sessionSchema.loose(), user: userSchema.loose(), updatedAt: z.number(), version: z.string().optional()});
+  function compactCookieHeaders(value: Record<string,unknown>): {name:string;attributes:string;tombstone:boolean}[] | undefined {
+    if (!Object.hasOwn(value,"rawCookies")) return [];
+    if (!Array.isArray(value.rawCookies) || !value.rawCookies.length || typeof value.token!=="string") return;
+    const result: {name:string;attributes:string;tombstone:boolean}[]=[];
+    const live: {name:string;value:string;attributes:string;raw:string}[]=[];
+    for (const raw of value.rawCookies) {
+      if (typeof raw!=="string") return;
+      const cookie=Cookie.parse(raw);
+      if (!cookie || !/^better-auth\.session_data(?:\.(?:0|[1-9]\d*))?$/.test(cookie.key)) return;
+      const separator=raw.indexOf(";"),pair=separator<0?raw:raw.slice(0,separator),attributes=separator<0?"":raw.slice(separator);
+      let decoded:string;try{decoded=decodeURIComponent(cookie.value);}catch{return;}
+      if (pair!==`${cookie.key}=${encodeURIComponent(decoded)}`) return;
+      const tombstone=decoded==="" && cookie.maxAge===0;
+      if (decoded==="" && !tombstone) return;
+      result.push({name:cookie.key,attributes,tombstone});
+      if (!tombstone) live.push({name:cookie.key,value:decoded,attributes,raw});
+    }
+    if (!live.length || live.length>100 || live.map(part=>part.value).join("")!==value.token) return;
+    const attributes=live[0]!.attributes,capacity=4050-(`better-auth.session_data.99=${attributes}`).length;
+    if (capacity<=0) return;
+    for (let index=0;index<live.length;index++) {
+      const part=live[index]!;
+      const name=live.length===1?"better-auth.session_data":`better-auth.session_data.${index}`;
+      if (part.name!==name || part.attributes!==attributes || Buffer.byteLength(part.raw)>4050
+        || part.value.length!==Math.min(capacity,value.token.length-index*capacity)) return;
+    }
+    if (live.length!==Math.ceil(value.token.length/capacity)) return;
+    return result;
+  }
   function authenticatedCompactCache(value: Record<string, unknown>, start: number, finish: number | undefined): boolean {
-    if (!context.compactSessionCacheSecret || Object.keys(value).sort().join(",") !== "decoded,effectiveMaxAgeSeconds,envelope,observedAt,token"
+    if (!context.compactSessionCacheSecret || Object.keys(value).sort().join(",") !== (Object.hasOwn(value,"rawCookies") ? "decoded,effectiveMaxAgeSeconds,envelope,observedAt,rawCookies,token" : "decoded,effectiveMaxAgeSeconds,envelope,observedAt,token")
+      || compactCookieHeaders(value)===undefined
       || typeof value.effectiveMaxAgeSeconds !== "number" || !value.effectiveMaxAgeSeconds
       || typeof value.token !== "string" || !/^[A-Za-z0-9_-]+$/.test(value.token)
       || !record(value.envelope) || Object.keys(value.envelope).sort().join(",") !== "expiresAt,session,signature"
@@ -330,6 +361,8 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           if (stableJSON(a) !== stableJSON(b)) fail(path,"unverified compact cache observation differs literally");
           return;
         }
+        if (Object.hasOwn(a,"rawCookies")!==Object.hasOwn(b,"rawCookies")) fail(`${path}.rawCookies`,"raw compact cookie presence differs");
+        visit(compactCookieHeaders(a),compactCookieHeaders(b),`${path}.rawCookies`,"",false,false,false,false,undefined,false,false);
         const leftEnvelope = a.envelope as Record<string,unknown>, rightEnvelope = b.envelope as Record<string,unknown>;
         const leftPayload = leftEnvelope.session as Record<string,unknown>, rightPayload = rightEnvelope.session as Record<string,unknown>;
         if (!Object.is(a.effectiveMaxAgeSeconds,b.effectiveMaxAgeSeconds)) fail(path,"compact cache effective lifetime differs");
