@@ -224,7 +224,26 @@
       "requiredEvidence": {
         "success": [
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
-          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban"
+          "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
+          "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer",
+          "api-key automatic middleware default admits one concurrent cleanup and retains both credential owners",
+          "api-key automatic middleware observe admits one concurrent cleanup and retains both credential owners",
+          "api-key automatic middleware ignore admits one concurrent cleanup and retains both credential owners",
+          "api-key trusted deferred verification catches actual cleanup errors and forced retry bypasses the shared throttle"
+        ],
+        "state": [
+          "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer",
+          "api-key automatic middleware default admits one concurrent cleanup and retains both credential owners",
+          "api-key automatic middleware observe admits one concurrent cleanup and retains both credential owners",
+          "api-key automatic middleware ignore admits one concurrent cleanup and retains both credential owners",
+          "api-key background handler failures preserve consumed usage running cleanup and genuine application 403",
+          "api-key trusted deferred verification catches actual cleanup errors and forced retry bypasses the shared throttle"
+        ],
+        "rejection": [
+          "api-key background handler failures preserve consumed usage running cleanup and genuine application 403"
+        ],
+        "authorization": [
+          "api-key background handler failures preserve consumed usage running cleanup and genuine application 403"
         ]
       }
     },
@@ -1283,6 +1302,14 @@
           "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
           "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization",
           "api-key creation rejects client authority before callbacks and preserves deliberate callback errors without secret writes"
+        ]
+      },
+      "requiredEvidence": {
+        "state": [
+          "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer"
+        ],
+        "rejection": [
+          "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer"
         ]
       }
     },
