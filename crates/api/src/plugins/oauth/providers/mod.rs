@@ -1,3 +1,6 @@
+mod apple;
+pub use apple::AppleOptions;
+
 #[cfg(test)]
 mod tests;
 

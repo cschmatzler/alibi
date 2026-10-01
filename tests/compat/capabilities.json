@@ -147,7 +147,14 @@
           "OAuth proxy linking follows the saved authenticated owner without creating any session",
           "OAuth proxy restoration and session failures preserve exact stages rows and retry",
           "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
-          "OAuth proxy exchanges on production then consumes preview state for only the provider owner"
+          "OAuth proxy exchanges on production then consumes preview state for only the provider owner",
+          "apple real code exchange persists tokens and consumes callback state",
+          "apple token transport preserves absent expiry and scope",
+          "apple token transport preserves zero expiry and scope",
+          "apple token transport preserves fractional expiry and scope",
+          "apple token transport preserves array-scope expiry and scope",
+          "apple token transport preserves comma-scope expiry and scope",
+          "apple provider refresh rotates stored credentials and excludes foreign owners"
         ],
         "rejection": [
           "social callback rejects consumed database state while retaining the issued session and foreign state",
@@ -156,14 +163,18 @@
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
           "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
-          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie"
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
+          "apple real code exchange persists tokens and consumes callback state",
+          "apple rejects wrong provider and callback state without creating identities"
         ],
         "authorization": [
           "social linking rejects missing tampered and revoked sessions without changing any principal",
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
           "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
-          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie"
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
+          "apple real code exchange persists tokens and consumes callback state",
+          "apple rejects wrong provider and callback state without creating identities"
         ],
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -175,7 +186,14 @@
           "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
           "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
           "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
-          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie"
+          "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
+          "apple real code exchange persists tokens and consumes callback state",
+          "apple token transport preserves absent expiry and scope",
+          "apple token transport preserves zero expiry and scope",
+          "apple token transport preserves fractional expiry and scope",
+          "apple token transport preserves array-scope expiry and scope",
+          "apple token transport preserves comma-scope expiry and scope",
+          "apple provider refresh rotates stored credentials and excludes foreign owners"
         ]
       }
     },
@@ -2882,22 +2900,26 @@
         "success": [
           "refresh token returns a fresh token set",
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
-          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets"
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
+          "apple provider refresh rotates stored credentials and excludes foreign owners"
         ],
         "rejection": [
           "account token routes reject conflicting and foreign account selectors",
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
-          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets"
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
+          "apple provider refresh rotates stored credentials and excludes foreign owners"
         ],
         "authorization": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
-          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets"
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
+          "apple provider refresh rotates stored credentials and excludes foreign owners"
         ],
         "state": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
           "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
-          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets"
+          "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
+          "apple provider refresh rotates stored credentials and excludes foreign owners"
         ]
       }
     },
@@ -3161,10 +3183,73 @@
           "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
           "OAuth proxy restoration and session failures preserve exact stages rows and retry",
           "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
-          "OAuth proxy exchanges on production then consumes preview state for only the provider owner"
+          "OAuth proxy exchanges on production then consumes preview state for only the provider owner",
+          "apple published default authorization scopes and form-post PKCE",
+          "apple published configured authorization scopes and form-post PKCE",
+          "apple published disabled-scope authorization scopes and form-post PKCE",
+          "apple published disabled-configured authorization scopes and form-post PKCE",
+          "apple signed ID token named profile and ownership",
+          "apple signed ID token numeric-name profile and ownership",
+          "apple signed ID token zero-name profile and ownership",
+          "apple signed ID token missing-name profile and ownership",
+          "apple signed ID token null-name profile and ownership",
+          "apple signed ID token empty-name profile and ownership",
+          "apple signed ID token supplied-name profile and ownership",
+          "apple signed ID token numeric profile and ownership",
+          "apple signed ID token unverified profile and ownership",
+          "apple signed ID token false-string profile and ownership",
+          "apple signed configured exact-nonce admission",
+          "apple signed configured hashed-nonce admission",
+          "apple signed configured bundle admission",
+          "apple signed configured audience admission",
+          "apple signed configured client-array admission",
+          "apple signed configured explicit-signup admission",
+          "apple JWKS rotation is observed on each signed token admission",
+          "apple profile mapping receives supplied name and cannot replace raw subject"
         ],
-        "rejection": "social sign-in rejects invalid callbackURL",
-        "authorization": "social sign-in rejects invalid callbackURL",
+        "rejection": [
+          "social sign-in rejects invalid callbackURL",
+          "apple signed ID token rejects signature without writes",
+          "apple signed ID token rejects issuer without writes",
+          "apple signed ID token rejects audience without writes",
+          "apple signed ID token rejects expired without writes",
+          "apple signed ID token rejects old without writes",
+          "apple signed ID token rejects nonce without writes",
+          "apple signed ID token rejects subject without writes",
+          "apple signed ID token rejects disabled without writes",
+          "apple signed ID token rejects implicit-disabled without writes",
+          "apple signed ID token missing-email profile and ownership",
+          "apple signed ID token null-email profile and ownership",
+          "apple rejects wrong provider and callback state without creating identities",
+          "apple JWKS rotation is observed on each signed token admission"
+        ],
+        "authorization": [
+          "social sign-in rejects invalid callbackURL",
+          "apple signed ID token named profile and ownership",
+          "apple signed ID token numeric-name profile and ownership",
+          "apple signed ID token zero-name profile and ownership",
+          "apple signed ID token missing-name profile and ownership",
+          "apple signed ID token null-name profile and ownership",
+          "apple signed ID token empty-name profile and ownership",
+          "apple signed ID token supplied-name profile and ownership",
+          "apple signed ID token numeric profile and ownership",
+          "apple signed ID token missing-email profile and ownership",
+          "apple signed ID token null-email profile and ownership",
+          "apple signed ID token unverified profile and ownership",
+          "apple signed ID token false-string profile and ownership",
+          "apple signed ID token rejects signature without writes",
+          "apple signed ID token rejects issuer without writes",
+          "apple signed ID token rejects audience without writes",
+          "apple signed ID token rejects expired without writes",
+          "apple signed ID token rejects old without writes",
+          "apple signed ID token rejects nonce without writes",
+          "apple signed ID token rejects subject without writes",
+          "apple signed ID token rejects disabled without writes",
+          "apple signed ID token rejects implicit-disabled without writes",
+          "apple JWKS rotation is observed on each signed token admission",
+          "apple profile mapping receives supplied name and cannot replace raw subject",
+          "apple rejects wrong provider and callback state without creating identities"
+        ],
         "state": [
           "builtin social authorization retains ordered default configured and requested scopes",
           "Discord authorization conditions JS permissions on effective bot scope and defaults prompt",
@@ -3178,7 +3263,41 @@
           "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
           "OAuth proxy restoration and session failures preserve exact stages rows and retry",
           "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
-          "OAuth proxy exchanges on production then consumes preview state for only the provider owner"
+          "OAuth proxy exchanges on production then consumes preview state for only the provider owner",
+          "apple published default authorization scopes and form-post PKCE",
+          "apple published configured authorization scopes and form-post PKCE",
+          "apple published disabled-scope authorization scopes and form-post PKCE",
+          "apple published disabled-configured authorization scopes and form-post PKCE",
+          "apple signed ID token named profile and ownership",
+          "apple signed ID token numeric-name profile and ownership",
+          "apple signed ID token zero-name profile and ownership",
+          "apple signed ID token missing-name profile and ownership",
+          "apple signed ID token null-name profile and ownership",
+          "apple signed ID token empty-name profile and ownership",
+          "apple signed ID token supplied-name profile and ownership",
+          "apple signed ID token numeric profile and ownership",
+          "apple signed ID token missing-email profile and ownership",
+          "apple signed ID token null-email profile and ownership",
+          "apple signed ID token unverified profile and ownership",
+          "apple signed ID token false-string profile and ownership",
+          "apple signed ID token rejects signature without writes",
+          "apple signed ID token rejects issuer without writes",
+          "apple signed ID token rejects audience without writes",
+          "apple signed ID token rejects expired without writes",
+          "apple signed ID token rejects old without writes",
+          "apple signed ID token rejects nonce without writes",
+          "apple signed ID token rejects subject without writes",
+          "apple signed ID token rejects disabled without writes",
+          "apple signed ID token rejects implicit-disabled without writes",
+          "apple signed configured exact-nonce admission",
+          "apple signed configured hashed-nonce admission",
+          "apple signed configured bundle admission",
+          "apple signed configured audience admission",
+          "apple signed configured client-array admission",
+          "apple signed configured explicit-signup admission",
+          "apple JWKS rotation is observed on each signed token admission",
+          "apple profile mapping receives supplied name and cannot replace raw subject",
+          "apple rejects wrong provider and callback state without creating identities"
         ]
       }
     },
