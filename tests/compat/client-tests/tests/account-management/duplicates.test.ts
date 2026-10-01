@@ -188,6 +188,13 @@ for (const ownership of ["same", "foreign"] as const)
       const afterDenied = await state(ctx);
       expect(rows(afterDenied)).toEqual(rows(before));
       expect(afterDenied.receipts).toHaveLength(before.receipts.length + 2);
+      const replay = await complete(guest, signin.data!.url!);
+      expect(replay).toEqual({
+        status: 302,
+        location: `${ctx.baseURL}${authProfilePath(fixture)}/error?error=state_mismatch`,
+        body: "",
+      });
+      expect(await state(ctx)).toEqual(afterDenied);
       const guestSession = await guest.client.getSession();
       expect(guestSession.data).toBeNull();
       const linking = await s.owner.client.linkSocial({
@@ -264,6 +271,7 @@ for (const ownership of ["same", "foreign"] as const)
         signin: ctx.snapshot(signin),
         denied,
         afterDenied: observed(afterDenied),
+        replay,
         guestSession: ctx.snapshot(guestSession),
         linking: ctx.snapshot(linking),
         deniedLink,
@@ -433,7 +441,9 @@ compatScenario(
       idToken: { token },
     });
     expect(signed.error).toBeNull();
-    const ownerId = signed.data!.user!.id,
+    if (!signed.data || !("user" in signed.data))
+      throw new Error("Signed token did not return the actual owner");
+    const ownerId = signed.data.user.id,
       before = await state(ctx),
       account = before.accounts.find(
         (row) => row.userId === ownerId && row.providerId === "google",

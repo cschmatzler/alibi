@@ -39,7 +39,9 @@ Primary official-client evidence is `account-management/duplicates.test.ts`:
 
 - Same-owner and foreign-owner duplicates are real adapter inserts after genuine
   GitLab authorize/token/profile linking. Global sign-in and link denial preserve
-  every physical account/user/session. Own row-ID access, refresh and unlink work;
+  every physical account/user/session. Replaying the consumed callback returns
+  state_mismatch without another token/profile request or write. Own row-ID access,
+  refresh and unlink work;
   foreign operations reach and fail the actual ownership guard while its other
   linked account prevents an unrelated last-account denial.
 - A backdated second credential retains full genuine scrypt bytes. Sign-in and
@@ -70,7 +72,7 @@ second insert), `/tmp/issue-187-credential-before.log` (the native selector acce
 the second password when Source rejects), and `/tmp/issue-187-direct-before.log`
 (the signed-token path returns JSON 500 instead of Source's 302). The focused
 final differential run is `/tmp/issue-187-final-primary-proof.log`: four owners,
-326 assertions. Stable-dependency exact-head checks and independent review are
+342 assertions. Stable-dependency exact-head checks and independent review are
 recorded with the final PR; focused evidence is not a complete canonical gate.
 
 No comparison exception, oracle normalization, test-only production export,
