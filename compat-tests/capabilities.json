@@ -2300,7 +2300,10 @@
           "passkey signed backup-downgrade authenticates original owner without historical verifier restrictions",
           "passkey overlapping issued challenges verify against the current saved counter rather than a stale generation snapshot",
           "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
-          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history"
+          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history",
+          "passkey none-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication"
         ],
         "state": [
           "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners",
@@ -2316,7 +2319,10 @@
           "passkey Source verifier rejects actual signed invalid flags presence RP origins challenge signature and counters before callbacks",
           "passkey overlapping issued challenges verify against the current saved counter rather than a stale generation snapshot",
           "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
-          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history"
+          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history",
+          "passkey none-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication"
         ],
         "rejection": [
           "passkey passkey-auth-forbidden callback rejects after real proof and burns challenge without counter session or cookie writes",
@@ -2374,23 +2380,32 @@
           "passkey registration policy resolves a proven existing owner and creates its real session with callback facts",
           "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
           "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
-          "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior"
+          "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior",
+          "passkey none-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication"
         ],
         "rejection": [
           "passkey registration policy resolves a proven existing owner and creates its real session with callback facts",
           "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
           "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
-          "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior"
+          "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior",
+          "passkey registration rejects actual packed signature failures malformed proofs flags origins and wrong owner before writes"
         ],
         "authorization": [
           "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
-          "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry"
+          "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
+          "passkey registration rejects actual packed signature failures malformed proofs flags origins and wrong owner before writes"
         ],
         "state": [
           "passkey registration policy resolves a proven existing owner and creates its real session with callback facts",
           "passkey registration trusted stored owner resists swapped forged expired proofs and authenticated reassignment",
           "passkey registration callback failures burn proofs and cancelled session creation rolls back credentials before retry",
-          "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior"
+          "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior",
+          "passkey none-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey packed-uv-absent registration verifies genuine credential before callback session and signed authentication",
+          "passkey packed-uv-absent-backed registration verifies genuine credential before callback session and signed authentication",
+          "passkey registration rejects actual packed signature failures malformed proofs flags origins and wrong owner before writes"
         ]
       }
     },
