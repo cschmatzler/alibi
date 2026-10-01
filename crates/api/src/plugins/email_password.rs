@@ -428,6 +428,13 @@ impl EmailPasswordPlugin {
                         &ctx.config,
                     ),
                 );
+                if let Some(url) = signin_req
+                    .callback_url
+                    .as_deref()
+                    .filter(|url| !url.is_empty())
+                {
+                    auth_response = auth_response.with_header("Location", url);
+                }
                 for cookie in set_cookie_headers {
                     auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
                 }
@@ -523,6 +530,13 @@ impl EmailPasswordPlugin {
                             &ctx.config,
                         ),
                     );
+                if let Some(url) = signin_req
+                    .callback_url
+                    .as_deref()
+                    .filter(|url| !url.is_empty())
+                {
+                    auth_response = auth_response.with_header("Location", url);
+                }
                 for cookie in set_cookie_headers {
                     auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
                 }
@@ -807,7 +821,7 @@ async fn finalize_sign_in_with_user_core(
         }
     }
 
-    let _ = (email_verification, callback_url);
+    let _ = email_verification;
 
     let mut issuing_config = (*ctx.config).clone();
     if remember_me == Some(false) {
@@ -832,9 +846,9 @@ async fn finalize_sign_in_with_user_core(
     let token = session.token().to_string();
 
     let response = SignInResponse {
-        redirect: false,
+        redirect: callback_url.is_some_and(|url| !url.is_empty()),
         token: token.clone(),
-        url: None,
+        url: callback_url.map(str::to_owned),
         user: ctx.user_view(&issued.user),
     };
     Ok(SignInCoreResult::Success {

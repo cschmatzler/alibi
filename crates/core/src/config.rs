@@ -1037,13 +1037,16 @@ impl AuthConfig {
     pub fn is_origin_trusted(&self, origin: &str) -> bool {
         // Check base_url origin
         if let Some(base_origin) = extract_origin(&self.base_url)
-            && origin == base_origin
+            && (origin == base_origin
+                || (self.base_url.split_once(':').is_some_and(|(scheme, _)| {
+                    scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
+                }) && extract_origin(origin).as_deref() == Some(base_origin.as_str())))
         {
             return true;
         }
         // Check trusted_origins patterns
         self.trusted_origins.iter().any(|pattern| {
-            let pattern_origin = extract_origin(pattern).unwrap_or_default();
+            let pattern_origin = legacy_pattern_origin(pattern).unwrap_or_default();
             glob_match::glob_match(&pattern_origin, origin)
         })
     }
@@ -1090,13 +1093,23 @@ impl AuthConfig {
 /// This is used by [`AuthConfig::is_redirect_target_trusted`] and the
 /// CSRF middleware.
 pub fn is_safe_relative_path(value: &str) -> bool {
-    if !value.starts_with('/') || value.starts_with("//") || value.contains('\\') {
+    if !value.starts_with('/')
+        || value.starts_with("//")
+        || value.contains('\\')
+        || value
+            .chars()
+            .any(|character| matches!(character, '\u{0000}'..='\u{001f}' | '\u{007f}'..='\u{009f}'))
+    {
         return false;
     }
 
-    let tail = &value[1..];
-    let lower = tail.to_ascii_lowercase();
-    !lower.starts_with("%2f") && !lower.starts_with("%5c")
+    let path = value.split(['?', '#']).next().unwrap_or(value);
+    let lower = path.to_ascii_lowercase();
+    !lower.contains("%2f")
+        && !lower.contains("%5c")
+        && url::Url::parse("https://better-auth.invalid")
+            .and_then(|base| base.join(value))
+            .is_ok_and(|url| url.origin().ascii_serialization() == "https://better-auth.invalid")
 }
 
 /// Extract the origin (scheme + host + port) from a URL string.
@@ -1106,6 +1119,22 @@ pub fn is_safe_relative_path(value: &str) -> bool {
 /// This is used by [`AuthConfig::is_origin_trusted`] and the CSRF middleware
 /// so that origin comparison is centralised in one place.
 pub fn extract_origin(url: &str) -> Option<String> {
+    if let Ok(parsed) = url::Url::parse(url)
+        && matches!(parsed.scheme(), "http" | "https")
+    {
+        return match parsed.origin() {
+            url::Origin::Tuple(..) => Some(parsed.origin().ascii_serialization()),
+            url::Origin::Opaque(_) => None,
+        };
+    }
+    // Custom schemes retain the existing Rust contract. Their upstream
+    // authority/path matcher is a separate capability.
+    legacy_pattern_origin(url)
+}
+
+// Configured glob/custom-scheme matching keeps its existing contract; avoid
+// normalizing an explicit pattern into a newly trusted authority.
+fn legacy_pattern_origin(url: &str) -> Option<String> {
     let scheme_end = url.find("://")?;
     let rest = &url[scheme_end + 3..];
     let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
@@ -1269,6 +1298,10 @@ mod tests {
     fn is_origin_trusted_matches_base_url() {
         let cfg = AuthConfig::new("test-secret-min-32-chars-1234567").base_url("https://myapp.com");
         assert!(cfg.is_origin_trusted("https://myapp.com"));
+        let native_custom =
+            AuthConfig::new("test-secret-min-32-chars-1234567").base_url("myapp://auth");
+        assert!(native_custom.is_origin_trusted("myapp://auth"));
+        assert!(!native_custom.is_origin_trusted("myapp://auth/callback"));
     }
 
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
