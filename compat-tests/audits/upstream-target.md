@@ -14,6 +14,20 @@ confirmed a further bundled route, `GET /oauth-popup/start`, missing from those
 profiles. Server-only functions and middleware have no route evidence in that
 inventory. Additional packages listed below are also outside the profiles.
 
+## Current wrap checkpoint
+
+The original counts above describe that named initial baseline. The final wrap
+inventory retains all 143 identities and marks the two now-proved database-state
+OAuth proxy completion routes implemented, with 2,076 retained/additive named
+requirements. These selected-profile HTTP counts are not the complete target.
+The omitted OAuth-popup route, middleware-only plugins, modes, dedicated provider
+factories and wider integration branches remain accounted for by the
+[96-issue triage index](https://github.com/cschmatzler/better-auth-rs/issues/234)
+and [remaining-behavior backlog](../PARITY-BACKLOG.md). The excluded nine package
+boundaries remain explicit and have no implementation tasks. The
+[implementation ledger](../IMPLEMENTATION-LEDGER.md) separates focused evidence
+from canonical measurements on named trees.
+
 ## Shared contracts and implementation dependencies
 
 - Email OTP, magic links, one-time tokens, OAuth state, SIWE, and phone OTP all

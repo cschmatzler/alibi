@@ -54,6 +54,15 @@ Outside devenv, run `bunx playwright install --with-deps chromium` in
   The explicit evidence container tracks random JWT IDs, token rotation and
   repeated claims without normalizing application JWT-shaped data. See the
   [comparison regression audit](audits/encrypted-cookie-comparison.md).
+- Compact session-cache evidence authenticates complete cookies with the
+  published decoder, retains raw ordered chunk cookies and attributes, and
+  compares the full user/session projection, version and effective lifetime.
+  Cached endpoint reads and physical session storage are separate contracts.
+  See the [cache audit](audits/session-cookie-cache-compact.md).
+- OAuth proxy evidence uses two real local auth instances and a deterministic
+  provider that verifies the actual PKCE exchange. It decrypts and retains the
+  complete original package, state and profile, including all relationships and
+  callback URL components. See the [proxy audit](audits/oauth-proxy.md).
 - Harness negative controls deliberately corrupt identity relationships,
   lifetimes, redirects, array structure and cookies. A live HTTP/SDK canary
   confirms wrong session ownership and removed cookie protection are detected.
@@ -177,3 +186,28 @@ physical column renames. Manual `SeaOrmUserModel` implementations can override
 `list_users_column` to add typed plugin/application columns. See the
 [admin array-filter audit](audits/admin-array-filters.md) for actual SQL, SDK,
 custom-model and authorization evidence and the remaining adapter boundaries.
+
+## Supported scope and remaining behavior
+
+The current wrap checkpoint and review/evidence owners are recorded in the
+[implementation ledger](IMPLEMENTATION-LEDGER.md). The
+[GitHub triage index](https://github.com/cschmatzler/better-auth-rs/issues/234)
+links the remaining 96 scoped issues; [the backlog](PARITY-BACKLOG.md) summarizes
+missing plugins, modes, providers and unproved configuration/integration branches.
+All selected-profile HTTP routes being registered is not a full-parity claim.
+The nine package/integration exclusions requested by the user remain explicit.
+
+The stateful compact-cache implementation exposes `CookieCacheConfig` with a
+floating-point maximum age and async version callback. Created callbacks receive
+actual model references; stored/cached reads receive their filtered public
+projections. Selected ordinary endpoint guards use cached projections, while
+`SessionManager::require_session` retains physical authorization. JWT/JWE cache
+and stateless modes are not implemented. `OAuthProxyConfig` configures explicit
+current/production URLs, an optional dedicated secret and a floating-point maximum
+payload age; `OAuthProxyPlugin` implements database-state GET completion and
+retains the legacy completion route. Cookie-state mode is rejected explicitly.
+
+OAuth account encryption uses the pinned SHA-256/XChaCha20-Poly1305 wire format.
+Previously persisted native AES ciphertext has no live fallback and is not
+silently migrated. The installed-data conversion boundary is tracked in
+[issue #190](https://github.com/cschmatzler/better-auth-rs/issues/190).
