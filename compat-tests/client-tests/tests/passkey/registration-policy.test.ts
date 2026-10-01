@@ -431,7 +431,75 @@ compatScenario(
     expect(
       observed.find((event) => event.stage === "verified")?.clientData,
     ).toEqual(authenticatedResponse);
+    const foreignBeforeSuccess = await ctx.readUserState({ userId: foreign.id });
+    const authorized = await owner.actor.client.signIn.email({
+      email: owner.email,
+      password: "password123",
+    });
+    expect(authorized.error).toBeNull();
+    const freshContext = ctx.uniqueToken("fresh-owner-context");
+    const freshEnrollment = await enroll(ctx, freshContext, "normal", "owner", {
+      userId: foreign.id,
+    });
+    expect(freshEnrollment.result.userId).toBe(owner.id);
+    const signedOut = await owner.actor.client.signOut();
+    expect(signedOut.error).toBeNull();
+    const freshChallenge = await options(ctx, freshContext);
+    const freshResponse = new Authenticator().register(
+      freshChallenge.result.data,
+      ctx.baseURL,
+    );
+    const success = await client(ctx).$fetch("/passkey/verify-registration", {
+      method: "POST",
+      body: {
+        response: freshResponse,
+        createSession: true,
+        userId: foreign.id,
+        context: "client-cannot-select-owner",
+      },
+    });
+    expect(success.error).toBeNull();
+    const credential = z.object({
+      id: z.string(), userId: z.string(), credentialID: z.string(),
+      publicKey: z.string(), counter: z.number(), aaguid: z.string(),
+      session: z.object({ id: z.string(), token: z.string(), userId: z.string() }),
+      user: z.object({ id: z.string() }),
+    }).parse(success.data);
+    expect(credential.userId).toBe(owner.id);
+    expect(credential.user.id).toBe(owner.id);
+    expect(credential.session.userId).toBe(owner.id);
+    expect(credential.credentialID).toBe(freshResponse.id);
+    const current = await owner.actor.client.getSession();
+    expect(current.error).toBeNull();
+    expect(current.data?.user.id).toBe(owner.id);
+    expect(current.data?.session.id).toBe(credential.session.id);
+    expect(current.data?.session.token).toBe(credential.session.token);
+    const successEvents = await events(ctx);
+    expect(successEvents).toHaveLength(2);
+    expect(successEvents[0]).toMatchObject({
+      stage: "resolved", context: freshContext, userId: owner.id,
+    });
+    expect(successEvents[1]).toMatchObject({
+      stage: "verified", context: freshContext, userId: owner.id,
+      credentialID: freshResponse.id, publicKey: credential.publicKey,
+      counter: 0, aaguid: credential.aaguid,
+      deviceType: "singleDevice", backedUp: false,
+      clientData: freshResponse,
+    });
+    expect(successEvents[1]?.clientData).toEqual(freshResponse);
+    const final = await state(ctx, owner.id);
+    expect(final).toEqual({
+      passkeys: [{ userId: owner.id, counter: 0, name: "Callback Label" }],
+      sessions: { count: 1 }, challenges: { count: 0 },
+    });
+    const foreignAfterSuccess = await ctx.readUserState({ userId: foreign.id });
+    expect(foreignAfterSuccess).toEqual(foreignBeforeSuccess);
     return {
+      authorized: ctx.snapshot(authorized), signedOut: ctx.snapshot(signedOut),
+      freshEnrollment: freshEnrollment.result, freshChallenge: freshChallenge.result,
+      success: ctx.snapshot(success), current: ctx.snapshot(current),
+      successEvents: observation(successEvents), final,
+      foreignBeforeSuccess, foreignAfterSuccess,
       ownProof: ownProof.result,
       foreignProof: foreignProof.result,
       swapped: ctx.snapshot(swapped),

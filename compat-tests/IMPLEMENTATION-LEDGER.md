@@ -231,3 +231,31 @@ before considering a phased storage contract. Source advertised EdDSA passkeys,
 callback-deleted credentials, custom/JSON filter coercion, secondary storage,
 provider defaults and the other audited boundaries remain open. Excluded
 integration packages remain excluded; no full-parity claim is made.
+
+## Current reviewed integration and enforced evidence
+
+The 501-scenario integration failed its canonical gate: 499 passed and two
+failed on actual API-key wire timestamp corruption through the pinned official
+client. Its native/build/harness checks passed, but browser, documentation and
+coverage checks were not reached. The failure is retained in
+`/tmp/next-removal-array-registration-canonical.log`; it is not a passing gate.
+No host clock or comparison tolerance was changed.
+
+The next integration retains all eight reviewed draft slices (PRs #96–103) and
+adds these separately reviewed capabilities:
+
+| Slice | Owner/review | Evidence and dependencies |
+| --- | --- | --- |
+| Successful database API-key usage | Phone owner; coordinator and JWT review clear | Frozen 4b831494: 55 SDK / 2,852, two actual awaited refill owners / 180; distinct-connection refill CAS and full foreign state. Depends on exhaustion/individual deletion. |
+| Advertised Ed25519 passkeys | JWT owner; coordinator review clear | Frozen 6f7df290: 31 passkey SDK / 3,136, genuine signed none/packed success and false/malformed proof rejection. Existing pinned dependencies unchanged. |
+| Ed448 stage-specific policy | JWT owner; coordinator review clear | Frozen 2046fcc7: 33 passkey SDK / 3,456, actual none enrollment then login rejection and packed rejection, before 0/2, Source repetition and original proof/owner/callback state. Wider raw COSE admission remains open. |
+| Removal database failures | Organization owner; independent JWT review clear | Frozen 35dd7ba3: 113 organization/OpenAPI SDK / 8,524; real SQL ABORT/IGNORE, exact empty 500 versus explicit API error JSON, rollback versus committed callback/self-removal state. |
+| API-key wire dates | Organization owner; coordinator review clear | Frozen 2fd5e0ca: 93 API-key/JWT/session/OpenAPI SDK / 5,080, deterministic stored-fraction before failures for both wire paths. UTC millisecond DTOs preserve physical native precision. |
+| Enforced capability declarations | Coordinator; organization-owner review clear | All 751 mistakenly ignored additional category entries move into the actual enforced `evidence` field. Exact ordered union preserves every requirement; strict schema rejects unknown fields. Meaningful CLI regression, 42 harness / 344, genuine guest/recovery flows close three previously misdeclared categories. |
+
+This integrated tree is awaiting the complete serialized canonical gate. Source
+coverage remains last measured at 78.8992% on the delivered 475-scenario tree,
+not on this pending integration. Source staged API-key writes are a separately
+owned storage implementation under independent review. Anonymous authentication
+is under investigation after the selected priorities. The pinned oracle, empty
+exception list, browser checks and 75% coverage floor remain unchanged.
