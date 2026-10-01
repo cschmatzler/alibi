@@ -65,6 +65,7 @@ impl OAuthProvider {
             scopes: Vec::new(),
             authorization: None,
             authorization_params: Vec::new(),
+            account_subject: None,
             map_user_info: None,
             get_user_info: None,
             refresh_access_token: None,

@@ -1,6 +1,9 @@
 mod cloudflare;
 pub use cloudflare::CloudflareOptions;
 
+mod cognito;
+pub use cognito::CognitoOptions;
+
 mod atlassian;
 pub use atlassian::AtlassianOptions;
 
@@ -252,6 +255,8 @@ pub struct OAuthProvider {
     /// and request scopes in the provider's published order.
     pub authorization: Option<OAuthAuthorizationPolicy>,
     pub authorization_params: Vec<(String, String)>,
+    /// Selects the factory account subject from the original provider profile.
+    pub account_subject: Option<fn(&Value) -> Result<String, String>>,
     pub map_user_info: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
     pub get_user_info: Option<Arc<dyn OAuthUserInfoHandler>>,
     pub refresh_access_token: Option<Arc<dyn OAuthRefreshTokenHandler>>,
@@ -272,6 +277,14 @@ pub enum OAuthScopeOrder {
     RequestedThenConfigured,
 }
 
+/// Encoding of the scope query value required by a provider's authorization endpoint.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum OAuthScopeEncoding {
+    #[default]
+    Form,
+    UriComponent,
+}
+
 /// OAuth token-endpoint credential transport selected by a provider.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OAuthTokenEndpointAuth {
@@ -286,6 +299,7 @@ pub enum OAuthTokenEndpointAuth {
 #[derive(Debug, Clone)]
 pub struct OAuthAuthorizationPolicy {
     pub configured_scopes: Vec<String>,
+    pub scope_encoding: OAuthScopeEncoding,
     /// Retain the first occurrence of each scope, as Cloudflare requires.
     pub deduplicate_scopes: bool,
     pub require_client_id: bool,
@@ -311,6 +325,7 @@ impl Default for OAuthAuthorizationPolicy {
     fn default() -> Self {
         Self {
             configured_scopes: Vec::new(),
+            scope_encoding: OAuthScopeEncoding::Form,
             deduplicate_scopes: false,
             require_client_id: false,
             token_endpoint_auth: None,
@@ -358,6 +373,7 @@ impl OAuthProvider {
             scopes: vec!["read_user".into()],
             authorization: Some(OAuthAuthorizationPolicy::default()),
             authorization_params: Vec::new(),
+            account_subject: None,
             map_user_info: Some(gitlab_user_info),
             get_user_info: None,
             refresh_access_token: None,
@@ -418,6 +434,7 @@ impl OAuthProvider {
                 ..Default::default()
             }),
             authorization_params: vec![("include_granted_scopes".to_owned(), "true".to_owned())],
+            account_subject: None,
             map_user_info: Some(|v| {
                 Ok(OAuthUserInfo {
                     id: v
@@ -486,6 +503,7 @@ impl OAuthProvider {
             scopes: vec!["read:user".to_owned(), "user:email".to_owned()],
             authorization: Some(OAuthAuthorizationPolicy::default()),
             authorization_params: Vec::new(),
+            account_subject: None,
             map_user_info: None,
             get_user_info: Some(Arc::new(GitHubUserInfoHandler::new(
                 user_info_url.to_owned(),
@@ -520,6 +538,7 @@ impl OAuthProvider {
                 ..OAuthAuthorizationPolicy::default()
             }),
             authorization_params: Vec::new(),
+            account_subject: None,
             map_user_info: Some(discord_user_info),
             get_user_info: None,
             refresh_access_token: None,

@@ -56,6 +56,7 @@ import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { anonymousFixture } from "./anonymous-fixture";
 import { createUserValidationFixture } from "./user-validation-fixture";
 import {cloudflareProviderFixture} from "./cloudflare-provider-fixture";
+import {cognitoProviderFixture} from "./cognito-provider-fixture";
 import {atlassianProviderFixture} from "./atlassian-provider-fixture";
 import { appleProviderFixture } from "./apple-provider-fixture";
 import { socialProviderFixture } from "./social-provider-fixture";
@@ -459,6 +460,7 @@ const organizationDeletionFixture = organizationDeletionHooksFixture(database, a
 const passkeyRegistration = passkeyRegistrationFixture(authOptions);
 const passkeyAuthentication = passkeyAuthenticationFixture(database, authOptions, `http://localhost:${PORT}`);
 const cloudflareFixture=cloudflareProviderFixture(authOptions);
+const cognitoFixture=cognitoProviderFixture(authOptions);
 const atlassianFixture=atlassianProviderFixture(authOptions);
 const appleFixture = appleProviderFixture(authOptions);
 const socialProvidersFixture = socialProviderFixture(authOptions);
@@ -471,6 +473,7 @@ const userLifecycleFixture = createUserLifecycleFixture(authOptions, database);
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
 for (const [path, instance] of userLifecycleFixture.profiles) verificationProfiles.set(path, instance);
 for(const [path,instance] of cloudflareFixture.profiles) verificationProfiles.set(path,instance);
+for(const [path,instance] of cognitoFixture.profiles) verificationProfiles.set(path,instance);
 for(const [path,instance] of atlassianFixture.profiles) verificationProfiles.set(path,instance);
 for (const [path, instance] of appleFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of socialProvidersFixture.profiles) verificationProfiles.set(path, instance);
@@ -843,6 +846,8 @@ const server = Bun.serve({
       if (proxyControl) return proxyControl;
       const cloudflareControl=await cloudflareFixture.handle(request);
       if(cloudflareControl)return cloudflareControl;
+      const cognitoControl=await cognitoFixture.handle(request);
+      if(cognitoControl)return cognitoControl;
       const atlassianControl=await atlassianFixture.handle(request);
       if(atlassianControl)return atlassianControl;
       const appleControl = await appleFixture.handle(request);
@@ -1131,6 +1136,7 @@ const server = Bun.serve({
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         cloudflareFixture.reset();
+        cognitoFixture.reset();
         atlassianFixture.reset();
         appleFixture.reset();
         socialProvidersFixture.reset();

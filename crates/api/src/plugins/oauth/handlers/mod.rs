@@ -123,6 +123,7 @@ struct FlowStartRequest<'a> {
     error_callback_url: Option<String>,
     scopes: Option<&'a [String]>,
     login_hint: Option<&'a str>,
+    additional_params: Option<&'a std::collections::BTreeMap<String, String>>,
     request_sign_up: Option<bool>,
     additional_data: serde_json::Map<String, serde_json::Value>,
     link: Option<OAuthStateLink>,
@@ -192,6 +193,7 @@ fn build_authorization_url(
     state: &str,
     code_challenge: &str,
     login_hint: Option<&str>,
+    additional_params: Option<&std::collections::BTreeMap<String, String>>,
 ) -> AuthResult<String> {
     if provider
         .authorization
@@ -323,7 +325,78 @@ fn build_authorization_url(
     for (key, value) in &provider.authorization_params {
         _ = url.query_pairs_mut().append_pair(key, value);
     }
+    if let Some(params) = additional_params {
+        for (key, value) in params {
+            let existing: Vec<_> = url
+                .query_pairs()
+                .filter(|(name, _)| name != key)
+                .map(|(name, value)| (name.into_owned(), value.into_owned()))
+                .collect();
+            _ = url
+                .query_pairs_mut()
+                .clear()
+                .extend_pairs(existing)
+                .append_pair(key, value);
+        }
+    }
+    if provider.authorization.as_ref().is_some_and(|policy| {
+        matches!(
+            policy.scope_encoding,
+            super::providers::OAuthScopeEncoding::UriComponent
+        )
+    }) && let Some(scope) = url
+        .query_pairs()
+        .find_map(|(key, value)| (key == "scope").then(|| value.into_owned()))
+        .filter(|value| !value.is_empty())
+    {
+        let existing: Vec<_> = url
+            .query_pairs()
+            .filter(|(key, _)| key != "scope")
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect();
+        _ = url.query_pairs_mut().clear().extend_pairs(existing);
+        let encoded = [
+            ("%21", "!"),
+            ("%27", "'"),
+            ("%28", "("),
+            ("%29", ")"),
+            ("%2A", "*"),
+        ]
+        .into_iter()
+        .fold(
+            urlencoding::encode(&scope).into_owned(),
+            |value, (encoded, literal)| value.replace(encoded, literal),
+        );
+        let query = format!("{}&scope={encoded}", url.query().unwrap_or_default());
+        url.set_query(Some(&query));
+    }
     Ok(url.to_string())
+}
+
+fn validate_authorization_params(
+    params: Option<&std::collections::BTreeMap<String, String>>,
+) -> AuthResult<()> {
+    const RESERVED: [&str; 8] = [
+        "state",
+        "client_id",
+        "redirect_uri",
+        "response_type",
+        "code_challenge",
+        "code_challenge_method",
+        "nonce",
+        "scope",
+    ];
+    if params.is_some_and(|params| params.keys().any(|key| RESERVED.contains(&key.as_str()))) {
+        return Err(AuthError::Api {
+            status: 400,
+            code: Some("VALIDATION_ERROR".into()),
+            message: format!(
+                "[body.additionalParams] additionalParams cannot include reserved OAuth parameters: {}",
+                RESERVED.join(", ")
+            ),
+        });
+    }
+    Ok(())
 }
 
 ///
@@ -547,10 +620,12 @@ pub(in crate::plugins) async fn fetch_user_info_from_provider(
     request: OAuthUserInfoRequest,
 ) -> AuthResult<OAuthUserInfoResponse> {
     if let Some(handler) = &provider.get_user_info {
-        return handler
+        let mut response = handler
             .get_user_info(request)
             .await
-            .map_err(AuthError::internal);
+            .map_err(AuthError::internal)?;
+        resolve_account_subject(provider, &mut response)?;
+        return Ok(response);
     }
 
     if let Some(token) = request
@@ -579,10 +654,12 @@ pub(in crate::plugins) async fn fetch_user_info_from_provider(
             .map_user_info
             .ok_or_else(|| AuthError::internal("Missing user-info mapper"))?;
         let user = mapper(profile.clone()).map_err(AuthError::internal)?;
-        return Ok(OAuthUserInfoResponse {
+        let mut response = OAuthUserInfoResponse {
             user,
             data: profile,
-        });
+        };
+        resolve_account_subject(provider, &mut response)?;
+        return Ok(response);
     }
 
     let user_info_url = provider
@@ -624,10 +701,25 @@ pub(in crate::plugins) async fn fetch_user_info_from_provider(
     let user = mapper(user_info_json.clone())
         .map_err(|e| AuthError::internal(format!("Failed to map user info: {e}")))?;
 
-    Ok(OAuthUserInfoResponse {
+    let mut response = OAuthUserInfoResponse {
         user,
         data: user_info_json,
-    })
+    };
+    resolve_account_subject(provider, &mut response)?;
+    Ok(response)
+}
+
+fn resolve_account_subject(
+    provider: &OAuthProvider,
+    response: &mut OAuthUserInfoResponse,
+) -> AuthResult<()> {
+    // Source rejects a missing email before resolving the provider account key.
+    if !response.user.email.is_empty()
+        && let Some(subject) = provider.account_subject
+    {
+        response.user.id = subject(&response.data).map_err(AuthError::internal)?;
+    }
+    Ok(())
 }
 
 pub(in crate::plugins) fn parse_callback_user_payload(
@@ -1685,6 +1777,7 @@ async fn social_sign_in_core(
             error_callback_url: body.error_callback_url.clone(),
             scopes: body.scopes.as_deref(),
             login_hint: body.login_hint.as_deref(),
+            additional_params: body.additional_params.as_ref(),
             request_sign_up: body.request_sign_up,
             additional_data: filter_additional_state_data(body.additional_data.clone()),
             link: None,
@@ -1733,6 +1826,7 @@ async fn link_social_core(
             error_callback_url: body.error_callback_url.clone(),
             scopes: body.scopes.as_deref(),
             login_hint: None,
+            additional_params: body.additional_params.as_ref(),
             request_sign_up: body.request_sign_up,
             additional_data: filter_additional_state_data(body.additional_data.clone()),
             link: Some(OAuthStateLink {
@@ -1817,6 +1911,7 @@ async fn initiate_oauth_flow_core(
         &state,
         &code_challenge,
         request.login_hint,
+        request.additional_params,
     )?;
 
     Ok(InitiatedOAuthFlow {
@@ -1848,6 +1943,7 @@ pub(super) async fn handle_social_sign_in(
         Ok(v) => v,
         Err(resp) => return Ok(resp),
     };
+    validate_authorization_params(body.additional_params.as_ref())?;
     let meta = better_auth_core::RequestMeta::from_request(req);
     if let Some(id_token) = &body.id_token {
         let provider = config
@@ -2271,6 +2367,7 @@ pub(super) async fn handle_link_social(
         Ok(v) => v,
         Err(resp) => return Ok(resp),
     };
+    validate_authorization_params(body.additional_params.as_ref())?;
     if let Some(id_token) = &body.id_token {
         let provider = config
             .providers

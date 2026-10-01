@@ -95,6 +95,7 @@ impl OAuthProvider {
                 ..OAuthAuthorizationPolicy::default()
             }),
             authorization_params: Vec::new(),
+            account_subject: None,
             map_user_info: None,
             get_user_info: Some(Arc::new(AppleUserInfo {
                 map_profile_to_user: options.map_profile_to_user,

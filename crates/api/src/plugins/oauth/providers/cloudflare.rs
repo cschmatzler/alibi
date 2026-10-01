@@ -93,6 +93,7 @@ impl OAuthProvider {
                 ..OAuthAuthorizationPolicy::default()
             }),
             authorization_params: Vec::new(),
+            account_subject: None,
             map_user_info: None,
             get_user_info: Some(std::sync::Arc::new(CloudflareUserInfo {
                 url: user_info_url,

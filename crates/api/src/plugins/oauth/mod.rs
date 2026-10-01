@@ -26,11 +26,11 @@ pub use id_token::{
     OAuthNonceComparison,
 };
 pub use providers::{
-    AppleOptions, AtlassianOptions, CloudflareOptions, OAuthAuthorizationPolicy,
+    AppleOptions, AtlassianOptions, CloudflareOptions, CognitoOptions, OAuthAuthorizationPolicy,
     OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthConfig, OAuthIdTokenVerifier,
-    OAuthProvider, OAuthRefreshTokenHandler, OAuthScopeOrder, OAuthTokenEndpointAuth,
-    OAuthTokenSet, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
-    OAuthUserInfoResponse,
+    OAuthProvider, OAuthRefreshTokenHandler, OAuthScopeEncoding, OAuthScopeOrder,
+    OAuthTokenEndpointAuth, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoHandler,
+    OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 pub(in crate::plugins) use state::{
     CapturedOAuthServerContext, OAuthServerContext, RecoveredOAuthServerContext,
