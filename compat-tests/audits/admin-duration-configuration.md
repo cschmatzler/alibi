@@ -70,3 +70,11 @@ slow callback timing and nonstandard stores are unproved. The preserved native
 Async banned-user-message callbacks and trusted public server API dispatch are
 later capabilities. No schema, migration, lock, inventory or dependency edit
 belongs to this duration commit.
+
+Coordinator integration and independent phone-owner review are complete. The
+connected permission/initialization/input/snapshot/duration stack passes the
+full canonical gate: 342 SDK scenarios / 12,140 assertions, 39 harness tests /
+243 assertions, two Chromium tests / 22 assertions, all native/optional/
+Rustls/Redis/TypeScript/documentation checks, and 79.96% source coverage
+(27,044 / 33,823). Each capability has a separate PR (#50–54); this result
+describes their integrated final code tree rather than five separate gate runs.
