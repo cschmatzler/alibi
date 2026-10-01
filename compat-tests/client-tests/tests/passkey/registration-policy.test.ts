@@ -274,6 +274,7 @@ compatScenario(
       replay: ctx.snapshot(replay),
     };
   },
+  ["POST /passkey/verify-registration"],
 );
 
 compatScenario(
@@ -446,6 +447,7 @@ compatScenario(
       persisted,
     };
   },
+  ["POST /passkey/verify-registration"],
 );
 
 compatScenario(
@@ -565,6 +567,7 @@ compatScenario(
       observed: observation(observed),
     };
   },
+  ["POST /passkey/verify-registration"],
 );
 
 compatScenario(
@@ -690,4 +693,5 @@ compatScenario(
       verified: observation(verified),
     };
   },
+  ["POST /passkey/verify-registration", "GET /passkey/generate-register-options"],
 );
