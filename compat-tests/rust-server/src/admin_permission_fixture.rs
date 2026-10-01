@@ -18,6 +18,40 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 
+struct ApplicationDateErrors;
+#[async_trait::async_trait]
+impl better_auth_seaorm::SeaOrmHooks<TestSchema> for ApplicationDateErrors {
+    async fn before_update_user(
+        &self,
+        _id: &str,
+        update: &mut better_auth_core::UpdateUser,
+        _context: &better_auth_seaorm::SeaOrmHookContext<'_>,
+    ) -> AuthResult<better_auth_seaorm::HookControl> {
+        if update.banned == Some(true) {
+            return Err(better_auth_core::AuthError::Upstream {
+                status: 403,
+                code: "APPLICATION_BAN_REFUSED",
+                message: "Invalid Date",
+            });
+        }
+        Ok(better_auth_seaorm::HookControl::Continue)
+    }
+    async fn before_create_session(
+        &self,
+        session: &mut better_auth_core::CreateSession,
+        _context: &better_auth_seaorm::SeaOrmHookContext<'_>,
+    ) -> AuthResult<better_auth_seaorm::HookControl> {
+        if session.impersonated_by.is_some() {
+            return Err(better_auth_core::AuthError::Upstream {
+                status: 500,
+                code: "APPLICATION_SESSION_REFUSED",
+                message: "Invalid Date",
+            });
+        }
+        Ok(better_auth_seaorm::HookControl::Continue)
+    }
+}
+
 pub(super) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
@@ -30,6 +64,12 @@ pub(super) async fn router(
         "admin-empty-role",
         "admin-role-manager",
         "admin-role-creator",
+        "admin-duration-zero",
+        "admin-duration-fractional",
+        "admin-duration-negative",
+        "admin-duration-invalid",
+        "admin-duration-nan",
+        "admin-duration-hook-error",
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let config = config.clone().base_path(&path);
@@ -51,9 +91,15 @@ pub(super) async fn router(
         } else {
             HashMap::new()
         };
+        let store = SeaOrmStore::<TestSchema>::new(config.clone(), database.clone());
+        let store = if name == "admin-duration-hook-error" {
+            store.hook(ApplicationDateErrors)
+        } else {
+            store
+        };
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+                .store(store)
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new())
                 .plugin(SessionManagementPlugin::new())
@@ -72,6 +118,27 @@ pub(super) async fn router(
                             Some(roles)
                         }
                         "admin-deny-all" => Some(HashMap::new()),
+                        _ => None,
+                    },
+                    default_ban_reason: match name {
+                        "admin-duration-zero" => Some(String::new()),
+                        "admin-duration-fractional" => Some("configured reason".into()),
+                        _ => None,
+                    },
+                    default_ban_expires_in: match name {
+                        "admin-duration-zero" => Some(0.0),
+                        "admin-duration-fractional" => Some(300.875),
+                        "admin-duration-negative" => Some(-60.25),
+                        "admin-duration-invalid" => Some(f64::INFINITY),
+                        "admin-duration-nan" => Some(f64::NAN),
+                        _ => None,
+                    },
+                    impersonation_session_duration: match name {
+                        "admin-duration-zero" => Some(0.0),
+                        "admin-duration-fractional" => Some(120.75),
+                        "admin-duration-negative" => Some(-10.5),
+                        "admin-duration-invalid" => Some(f64::INFINITY),
+                        "admin-duration-nan" => Some(f64::NAN),
                         _ => None,
                     },
                     ..AdminConfig::default()
@@ -109,6 +176,6 @@ async fn state(
     let mut sessions = store.get_user_sessions(&user.id).await?;
     sessions.sort_by_key(|session| session.created_at);
     Ok(Json(
-        json!({"user":{"id":user.id,"email":user.email,"name":user.name,"role":user.role},"accounts":accounts.into_iter().map(|a|json!({"id":a.id,"userId":a.user_id,"providerId":a.provider_id,"accountId":a.account_id})).collect::<Vec<_>>(),"sessions":sessions.into_iter().map(|s|json!({"id":s.id,"userId":s.user_id,"token":s.token,"impersonatedBy":s.impersonated_by})).collect::<Vec<_>>()}),
+        json!({"user":{"id":user.id,"email":user.email,"name":user.name,"role":user.role,"banned":user.banned,"banReason":user.ban_reason,"banExpires":user.ban_expires,"createdAt":user.created_at,"updatedAt":user.updated_at},"accounts":accounts.into_iter().map(|a|json!({"id":a.id,"userId":a.user_id,"providerId":a.provider_id,"accountId":a.account_id})).collect::<Vec<_>>(),"sessions":sessions.into_iter().map(|s|json!({"id":s.id,"userId":s.user_id,"token":s.token,"impersonatedBy":s.impersonated_by,"createdAt":s.created_at,"expiresAt":s.expires_at})).collect::<Vec<_>>()}),
     ))
 }

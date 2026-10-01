@@ -1,4 +1,4 @@
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +23,32 @@ const MESSAGE_CANNOT_IMPERSONATE_ADMINS: &str = "You cannot impersonate admins";
 const MESSAGE_NOT_IMPERSONATING: &str = "You are not impersonating anyone";
 const MESSAGE_FAILED_TO_FIND_USER: &str = "Failed to find user";
 const MESSAGE_FAILED_TO_FIND_ADMIN_SESSION: &str = "Failed to find admin session";
+
+/// Date-construction failures have the route-local empty 500 response.
+/// Storage, application hook and authorization errors retain their own identity.
+#[derive(Debug)]
+pub(crate) enum AdminDateOperationError {
+    InvalidDate,
+    Auth(AuthError),
+}
+impl From<AuthError> for AdminDateOperationError {
+    fn from(error: AuthError) -> Self {
+        Self::Auth(error)
+    }
+}
+fn truthy_duration(duration: Option<f64>) -> Option<f64> {
+    duration.filter(|value| *value != 0.0 && !value.is_nan())
+}
+fn date_after_seconds(seconds: f64) -> Result<DateTime<Utc>, AdminDateOperationError> {
+    let milliseconds = Utc::now().timestamp_millis() as f64 + seconds * 1000.0;
+    // Date TimeClip truncates the complete timestamp, not the duration. These
+    // checked bounds are inside i64 and the exact integer range of f64.
+    if !milliseconds.is_finite() || milliseconds.abs() > 8_640_000_000_000_000.0 {
+        return Err(AdminDateOperationError::InvalidDate);
+    }
+    DateTime::from_timestamp_millis(milliseconds.trunc() as i64)
+        .ok_or(AdminDateOperationError::InvalidDate)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AdminSessionCookieClaims {
@@ -347,9 +373,9 @@ pub(crate) async fn ban_user_core(
     admin_user_id: impl AsRef<str>,
     config: &AdminConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<UserResponse<AdminUserView>> {
+) -> Result<UserResponse<AdminUserView>, AdminDateOperationError> {
     if body.user_id == admin_user_id.as_ref() {
-        return Err(AuthError::bad_request("You cannot ban yourself"));
+        return Err(AuthError::bad_request("You cannot ban yourself").into());
     }
 
     let _target = ctx
@@ -358,21 +384,26 @@ pub(crate) async fn ban_user_core(
         .await?
         .ok_or_else(|| AuthError::not_found(MESSAGE_USER_NOT_FOUND))?;
 
-    let ban_expires = body
-        .ban_expires_in
-        .or(config.default_ban_expires_in)
-        .and_then(Duration::try_seconds)
-        .map(|duration| Utc::now() + duration);
+    let ban_expires = truthy_duration(body.ban_expires_in)
+        .or_else(|| truthy_duration(config.default_ban_expires_in))
+        .map(date_after_seconds)
+        .transpose()?;
 
     let update = UpdateUser {
         banned: Some(true),
         ban_reason: Some(
             body.ban_reason
                 .clone()
-                .or_else(|| config.default_ban_reason.clone())
+                .filter(|reason| !reason.is_empty())
+                .or_else(|| {
+                    config
+                        .default_ban_reason
+                        .clone()
+                        .filter(|reason| !reason.is_empty())
+                })
                 .unwrap_or_else(|| "No reason".to_string()),
         ),
-        ban_expires: ban_expires.map(Some),
+        ban_expires: Some(ban_expires),
         ..Default::default()
     };
 
@@ -417,9 +448,9 @@ pub(crate) async fn impersonate_user_core(
     user_agent: Option<&str>,
     config: &AdminConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<(SessionUserResponse<SessionView, UserView>, String)> {
+) -> Result<(SessionUserResponse<SessionView, UserView>, String), AdminDateOperationError> {
     if body.user_id == admin_user_id.as_ref() {
-        return Err(AuthError::bad_request("Cannot impersonate yourself"));
+        return Err(AuthError::bad_request("Cannot impersonate yourself").into());
     }
 
     let target = ctx
@@ -431,7 +462,7 @@ pub(crate) async fn impersonate_user_core(
     if !config.allow_impersonating_admins
         && target_is_admin(Some(&body.user_id), target.role(), config)
     {
-        return Err(AuthError::forbidden(MESSAGE_CANNOT_IMPERSONATE_ADMINS));
+        return Err(AuthError::forbidden(MESSAGE_CANNOT_IMPERSONATE_ADMINS).into());
     }
 
     if target.banned() {
@@ -452,13 +483,13 @@ pub(crate) async fn impersonate_user_core(
                 )
                 .await?;
         } else {
-            return Err(AuthError::banned_user(config.banned_user_message.clone()));
+            return Err(AuthError::banned_user(config.banned_user_message.clone()).into());
         }
     }
 
-    let expires_at = Utc::now()
-        + Duration::try_seconds(config.impersonation_session_duration.unwrap_or(60 * 60))
-            .unwrap_or(Duration::hours(1));
+    let expires_at = date_after_seconds(
+        truthy_duration(config.impersonation_session_duration).unwrap_or(3600.0),
+    )?;
     let create_session = CreateSession {
         additional_fields: Default::default(),
         token: None,

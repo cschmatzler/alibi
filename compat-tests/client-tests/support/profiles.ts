@@ -1,6 +1,6 @@
 /** Explicit equivalent configurations of the pinned runtime. */
 export type FixtureProfile =
-  | "org-creation-denied" | "org-creation-limit" | "org-creation-negative" | "org-creation-infinity" | "org-creation-nan" | "org-creation-callback" | "org-creation-founder" | "org-creation-empty-role"
+  | "org-creation-denied" | "org-creation-limit" | "org-creation-negative" | "org-creation-infinity" | "org-creation-nan" | "org-creation-callback" | "org-creation-founder" | "org-creation-empty-role" | "admin-duration-hook-error" | "admin-duration-zero" | "admin-duration-fractional" | "admin-duration-negative" | "admin-duration-invalid" | "admin-duration-nan"
   | "admin-role-manager" | "admin-role-creator"
   | "admin-standard" | "admin-deny-all" | "admin-exact-role" | "admin-empty-role"
   | "multi-session" | "multi-session-limited"
