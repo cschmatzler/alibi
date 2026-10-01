@@ -135,15 +135,18 @@
         "success": [
           "banned users are denied email and social session creation",
           "social linking rejects missing tampered and revoked sessions without changing owners",
-          "social callback rejects consumed database state while retaining the issued session and foreign state"
+          "social callback rejects consumed database state while retaining the issued session and foreign state",
+          "Discord callback exchanges without PKCE and preserves current foreign and replay state"
         ],
         "rejection": [
-          "social callback rejects consumed database state while retaining the issued session and foreign state"
+          "social callback rejects consumed database state while retaining the issued session and foreign state",
+          "Discord callback exchanges without PKCE and preserves current foreign and replay state"
         ],
         "authorization": null,
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
-          "social callback rejects consumed database state while retaining the issued session and foreign state"
+          "social callback rejects consumed database state while retaining the issued session and foreign state",
+          "Discord callback exchanges without PKCE and preserves current foreign and replay state"
         ]
       }
     },
@@ -229,7 +232,8 @@
           "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
           "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
           "admin impersonation legacy uses original actor permissions for admin targets and self sessions",
-          "admin impersonation no-base uses original actor permissions for admin targets and self sessions"
+          "admin impersonation no-base uses original actor permissions for admin targets and self sessions",
+          "Discord callback exchanges without PKCE and preserves current foreign and replay state"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -277,7 +281,8 @@
           "api-key api-key-usage-rate rate SQL failure retains genuine prior quota phases and owner-safe retry",
           "api-key api-key-usage-rate final SQL failure retains genuine prior quota phases and owner-safe retry",
           "api-key api-key-usage-rate-deferred rate SQL failure retains genuine prior quota phases and owner-safe retry",
-          "api-key api-key-usage-rate-deferred final SQL failure retains genuine prior quota phases and owner-safe retry"
+          "api-key api-key-usage-rate-deferred final SQL failure retains genuine prior quota phases and owner-safe retry",
+          "Discord callback exchanges without PKCE and preserves current foreign and replay state"
         ]
       }
     },
@@ -1625,16 +1630,20 @@
       "evidence": {
         "success": [
           "github link social creates an account that listAccounts returns",
-          "social linking rejects missing tampered and revoked sessions without changing owners"
+          "social linking rejects missing tampered and revoked sessions without changing owners",
+          "builtin social link authorization requires a session and retains configured scope additions"
         ],
         "rejection": [
-          "social linking rejects missing tampered and revoked sessions without changing owners"
+          "social linking rejects missing tampered and revoked sessions without changing owners",
+          "builtin social link authorization requires a session and retains configured scope additions"
         ],
         "authorization": [
-          "social linking rejects missing tampered and revoked sessions without changing owners"
+          "social linking rejects missing tampered and revoked sessions without changing owners",
+          "builtin social link authorization requires a session and retains configured scope additions"
         ],
         "state": [
-          "social linking rejects missing tampered and revoked sessions without changing owners"
+          "social linking rejects missing tampered and revoked sessions without changing owners",
+          "builtin social link authorization requires a session and retains configured scope additions"
         ]
       }
     },
@@ -2712,10 +2721,19 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "banned users are denied email and social session creation",
+        "success": [
+          "banned users are denied email and social session creation",
+          "builtin social authorization retains ordered default configured and requested scopes",
+          "Discord authorization conditions JS permissions on effective bot scope and defaults prompt",
+          "Discord callback exchanges without PKCE and preserves current foreign and replay state"
+        ],
         "rejection": "social sign-in rejects invalid callbackURL",
         "authorization": "social sign-in rejects invalid callbackURL",
-        "state": null
+        "state": [
+          "builtin social authorization retains ordered default configured and requested scopes",
+          "Discord authorization conditions JS permissions on effective bot scope and defaults prompt",
+          "Discord callback exchanges without PKCE and preserves current foreign and replay state"
+        ]
       }
     },
     {
