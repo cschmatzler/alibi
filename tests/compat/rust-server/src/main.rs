@@ -13,6 +13,7 @@ mod organization_update_hooks_fixture;
 mod session_cookie_cache_fixture;
 mod team_fixture;
 mod two_factor_pending_lookup_fixture;
+mod user_lifecycle_fixture;
 
 // Bun's Response.json adds UTF-8 to private control responses. Public auth
 // responses are owned by the pinned runtime and must retain their own headers.
@@ -797,6 +798,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let session_fields_router = session_fields_fixture::router(&config, database.clone()).await?;
     let session_cookie_cache_router =
         session_cookie_cache_fixture::router(&config, database.clone()).await?;
+    let user_lifecycle_router = user_lifecycle_fixture::router(&config, database.clone()).await?;
     let api_key_generation_router =
         api_key_generation_fixture::router(&config, database.clone()).await?;
     let passkey_auth_events: passkey_authentication_fixture::Events = Arc::default();
@@ -1871,6 +1873,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(api_key_hook_router)
         .merge(session_fields_router)
         .merge(session_cookie_cache_router)
+        .merge(user_lifecycle_router)
         .merge(open_api_router)
         .merge(passkey_auth_router)
         .merge(passkey_router)

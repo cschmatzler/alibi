@@ -221,15 +221,37 @@ async fn build_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
+pub async fn emit_issuance<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    user: &S::User,
+    session: &S::Session,
+) -> AuthResult<()> {
+    emit_issuance_snapshot(
+        ctx,
+        CacheVersionContext::created(
+            user.clone(),
+            session.clone(),
+            ctx.user_view(user),
+            ctx.session_view(session),
+        ),
+    )
+    .await
+}
+
+/// Publish the user snapshot chosen by a completed authentication stage.
+/// The caller must establish the session and retain its owner and token.
+///
+/// # Errors
+/// Propagates cookie encoding and configured cache-version callback errors.
+#[doc(hidden)]
 #[expect(
     clippy::as_conversions,
     clippy::cast_precision_loss,
     reason = "Preserve JavaScript Number rounding at the compatibility boundary"
 )]
-pub async fn emit_issuance<S: AuthSchema>(
+pub async fn emit_issuance_snapshot<S: AuthSchema>(
     ctx: &AuthContext<S>,
-    user: &S::User,
-    session: &S::Session,
+    context: CacheVersionContext,
 ) -> AuthResult<()> {
     if !ctx
         .config
@@ -262,7 +284,7 @@ pub async fn emit_issuance<S: AuthSchema>(
         let token_header = super::cookie_header(
             &ctx.config.session.cookie_name,
             &percent_encoding::percent_decode_str(&sign_cookie_value(
-                session.token(),
+                &context.session().token,
                 &ctx.config.secret,
             ))
             .decode_utf8_lossy(),
@@ -287,7 +309,7 @@ pub async fn emit_issuance<S: AuthSchema>(
             )?);
         }
     }
-    match stored_headers(ctx, user, session, &headers, dont_remember).await {
+    match build_headers(ctx, context, &headers, dont_remember).await {
         Ok(cache_headers) => {
             if let Some(pending) = pending {
                 let mut data = pending

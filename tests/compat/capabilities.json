@@ -378,10 +378,24 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "delete user callback deletes the current account with a seeded token",
-        "rejection": null,
+        "success": [
+          "delete user callback deletes the current account with a seeded token",
+          "configured delete-mail issues and delivers a real deletion proof, retains sessions and owns expiry and replay",
+          "configured deletion consumes its real proof before the application hook so concurrent replay cannot delete twice"
+        ],
+        "rejection": [
+          "configured delete-expired issues and delivers a real deletion proof, retains sessions and owns expiry and replay",
+          "configured deletion wrong-owner retains exact delivery, consumption and callback-error ordering",
+          "configured deletion before-delete retains exact delivery, consumption and callback-error ordering",
+          "configured deletion after-delete retains exact delivery, consumption and callback-error ordering",
+          "configured deletion consumes its real proof before the application hook so concurrent replay cannot delete twice"
+        ],
         "authorization": null,
-        "state": null
+        "state": [
+          "configured delete-zero issues and delivers a real deletion proof, retains sessions and owns expiry and replay",
+          "configured deletion wrong-owner retains exact delivery, consumption and callback-error ordering",
+          "configured deletion consumes its real proof before the application hook so concurrent replay cannot delete twice"
+        ]
       }
     },
     {
@@ -1251,25 +1265,40 @@
           "change email for a verified user requires old-email confirmation first",
           "anonymous email-verification verified login transfers only the actual anonymous owner and preserves rejected proof state",
           "client IP client-ip-trusted verified email auto-signin applies initialized policy",
-          "client IP client-ip-disabled verified email auto-signin applies initialized policy"
+          "client IP client-ip-disabled verified email auto-signin applies initialized policy",
+          "configured existing-session verification success preserves callbacks, cache snapshot and failure stage",
+          "configured verified mailbox existing preserves old confirmation, new verification and persisted stage",
+          "configured verified mailbox anonymous preserves old confirmation, new verification and persisted stage",
+          "configured unverified mailbox promotion protects promotion and new-mail verification with the original session snapshot",
+          "configured verification foreign creates a real owner session without changing foreign authority"
         ],
         "rejection": [
           "verify email rejects untrusted callbackURL",
           "anonymous email-verification verified login transfers only the actual anonymous owner and preserves rejected proof state",
           "client IP client-ip-trusted verified email auto-signin applies initialized policy",
-          "client IP client-ip-disabled verified email auto-signin applies initialized policy"
+          "client IP client-ip-disabled verified email auto-signin applies initialized policy",
+          "configured existing-session verification before-verification preserves callbacks, cache snapshot and failure stage",
+          "configured existing-session verification after-verification preserves callbacks, cache snapshot and failure stage",
+          "configured verified mailbox after-verification preserves old confirmation, new verification and persisted stage",
+          "configured expired email verification preserves every row and rejects its real delivered proof on replay"
         ],
         "authorization": [
           "verify email rejects untrusted callbackURL",
           "anonymous email-verification verified login transfers only the actual anonymous owner and preserves rejected proof state",
           "client IP client-ip-trusted verified email auto-signin applies initialized policy",
-          "client IP client-ip-disabled verified email auto-signin applies initialized policy"
+          "client IP client-ip-disabled verified email auto-signin applies initialized policy",
+          "configured verified mailbox existing preserves old confirmation, new verification and persisted stage",
+          "configured expired email verification preserves every row and rejects its real delivered proof on replay"
         ],
         "state": [
           "required email verification issues proof without a session and gates sign-in until verification",
           "anonymous email-verification verified login transfers only the actual anonymous owner and preserves rejected proof state",
           "client IP client-ip-trusted verified email auto-signin applies initialized policy",
-          "client IP client-ip-disabled verified email auto-signin applies initialized policy"
+          "client IP client-ip-disabled verified email auto-signin applies initialized policy",
+          "configured existing-session verification success preserves callbacks, cache snapshot and failure stage",
+          "configured verified mailbox after-verification preserves old confirmation, new verification and persisted stage",
+          "configured unverified mailbox promotion protects promotion and new-mail verification with the original session snapshot",
+          "configured verification anonymous creates a real owner session without changing foreign authority"
         ]
       }
     },
@@ -1888,10 +1917,28 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "change email for a verified user requires old-email confirmation first",
-        "rejection": "change email rejects setting the same email",
-        "authorization": null,
-        "state": null
+        "success": [
+          "change email for a verified user requires old-email confirmation first",
+          "configured verified mailbox existing preserves old confirmation, new verification and persisted stage",
+          "configured verified mailbox confirmation-mail preserves old confirmation, new verification and persisted stage",
+          "configured unverified mailbox change protects promotion and new-mail verification with the original session snapshot",
+          "configured unverified mailbox promotion protects promotion and new-mail verification with the original session snapshot",
+          "configured unverified mailbox promotion-no-mail protects promotion and new-mail verification with the original session snapshot",
+          "configured direct verification delivery propagates the application error while notification delivery retains its pending stage"
+        ],
+        "rejection": [
+          "change email rejects setting the same email",
+          "configured no-mail mailbox-change guard keeps occupied and available stages private",
+          "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes"
+        ],
+        "authorization": [
+          "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes"
+        ],
+        "state": [
+          "configured mailbox changes conceal occupied addresses and preserve complete foreign rows",
+          "configured verified mailbox existing preserves old confirmation, new verification and persisted stage",
+          "configured unverified mailbox promotion protects promotion and new-mail verification with the original session snapshot"
+        ]
       }
     },
     {
@@ -1924,12 +1971,33 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "delete user with a fresh session deletes the current account",
-        "rejection": "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
-        "authorization": "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
+        "success": [
+          "delete user with a fresh session deletes the current account",
+          "configured delete-mail issues and delivers a real deletion proof, retains sessions and owns expiry and replay",
+          "configured deletion valid-password enforces the initialized password policy and fresh-session authority",
+          "configured deletion no-freshness enforces the initialized password policy and fresh-session authority",
+          "configured deletion body proof checks maximum before consumption and revokes only its owner after valid retry"
+        ],
+        "rejection": [
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
+          "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes",
+          "configured deletion maximum enforces the initialized password policy and fresh-session authority",
+          "configured deletion verify-error enforces the initialized password policy and fresh-session authority",
+          "configured deletion empty-stale enforces the initialized password policy and fresh-session authority",
+          "configured deletion propagates after-delete and preserves its persisted stage and foreign rows",
+          "configured deletion body proof checks after-delete before consumption and revokes only its owner after valid retry"
+        ],
+        "authorization": [
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
+          "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes"
+        ],
         "state": [
           "delete user with a fresh session deletes the current account",
-          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
+          "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
+          "configured delete-mail issues and delivers a real deletion proof, retains sessions and owns expiry and replay",
+          "configured deletion propagates before-delete and preserves its persisted stage and foreign rows",
+          "configured deletion propagates after-delete and preserves its persisted stage and foreign rows",
+          "configured deletion body proof checks wrong-password before consumption and revokes only its owner after valid retry"
         ]
       }
     },
@@ -3430,12 +3498,16 @@
           "client IP client-ip-trusted verified email auto-signin applies initialized policy",
           "client IP client-ip-disabled verified email auto-signin applies initialized policy"
         ],
-        "rejection": "send verification email rejects already verified user",
+        "rejection": [
+          "send verification email rejects already verified user",
+          "configured direct verification delivery propagates the application error while notification delivery retains its pending stage"
+        ],
         "authorization": null,
         "state": [
           "email OTP override inherits automatic verification sign-in and requires current mailbox proof",
           "client IP client-ip-trusted verified email auto-signin applies initialized policy",
-          "client IP client-ip-disabled verified email auto-signin applies initialized policy"
+          "client IP client-ip-disabled verified email auto-signin applies initialized policy",
+          "configured direct verification delivery propagates the application error while notification delivery retains its pending stage"
         ]
       }
     },
@@ -3580,7 +3652,8 @@
           "client IP IPv4-mapped client normalizes to IPv4 persists authoritative session context",
           "client IP rightmost untrusted hop persists authoritative session context",
           "client IP empty configured headers persists authoritative session context",
-          "client IP zero IPv6 prefix persists authoritative session context"
+          "client IP zero IPv6 prefix persists authoritative session context",
+          "configured verification delivery protects signup and sign-in delivery defaults and original request receipts"
         ],
         "authorization": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -3712,7 +3785,8 @@
           "client IP IPv4-mapped client normalizes to IPv4 persists authoritative session context",
           "client IP rightmost untrusted hop persists authoritative session context",
           "client IP empty configured headers persists authoritative session context",
-          "client IP zero IPv6 prefix persists authoritative session context"
+          "client IP zero IPv6 prefix persists authoritative session context",
+          "configured verification delivery protects signup and sign-in delivery defaults and original request receipts"
         ]
       }
     },
@@ -4261,7 +4335,8 @@
           "client IP client-ip-disabled verified email auto-signin applies initialized policy",
           "client IP empty configured headers persists authoritative session context",
           "client IP zero IPv6 prefix persists authoritative session context",
-          "client IP disabled tracking disables IP rate limiting selects real HTTP rate buckets"
+          "client IP disabled tracking disables IP rate limiting selects real HTTP rate buckets",
+          "configured verification required protects signup and sign-in delivery defaults and original request receipts"
         ],
         "rejection": [
           "sign up with duplicate email returns error",
@@ -4363,7 +4438,9 @@
           "client IP IPv4-mapped client normalizes to IPv4 persists authoritative session context",
           "client IP rightmost untrusted hop persists authoritative session context",
           "client IP empty configured headers persists authoritative session context",
-          "client IP zero IPv6 prefix persists authoritative session context"
+          "client IP zero IPv6 prefix persists authoritative session context",
+          "configured verification default protects signup and sign-in delivery defaults and original request receipts",
+          "configured verification required protects signup and sign-in delivery defaults and original request receipts"
         ]
       }
     },
@@ -5087,9 +5164,12 @@
           "last login policy preserves real cookie consent database updates and failed authentication ownership",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
-          "last login negative preserves real cookie consent database updates and failed authentication ownership"
+          "last login negative preserves real cookie consent database updates and failed authentication ownership",
+          "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes"
         ],
-        "authorization": null,
+        "authorization": [
+          "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes"
+        ],
         "state": [
           "last login database preserves real cookie consent database updates and failed authentication ownership",
           "last login custom preserves real cookie consent database updates and failed authentication ownership",
@@ -5101,7 +5181,8 @@
           "last login policy preserves real cookie consent database updates and failed authentication ownership",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
-          "last login negative preserves real cookie consent database updates and failed authentication ownership"
+          "last login negative preserves real cookie consent database updates and failed authentication ownership",
+          "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes"
         ]
       }
     },

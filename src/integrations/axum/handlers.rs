@@ -391,11 +391,14 @@ async fn convert_axum_request(
         .authority()
         .map(|value| value.as_str())
         .or_else(|| headers.get("host").map(String::as_str));
+    let original_uri = parts
+        .extensions
+        .get::<axum::extract::OriginalUri>()
+        .map_or(&parts.uri, |original| &original.0);
     let request_url = authority.and_then(|authority| {
         url::Url::parse(&format!(
             "{scheme}://{authority}{}",
-            parts
-                .uri
+            original_uri
                 .path_and_query()
                 .map_or("/", |value| value.as_str())
         ))

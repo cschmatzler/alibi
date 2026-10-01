@@ -2,6 +2,7 @@ use super::token::create_email_verification_token;
 use super::*;
 use crate::plugins::test_helpers;
 use async_trait::async_trait;
+use better_auth_core::utils::cookie_utils::create_session_cookie;
 use better_auth_core::wire::UserView;
 use better_auth_core::{AuthPlugin, HttpMethod};
 use better_auth_core::{AuthResult, AuthSession, CreateUser, UpdateUser};

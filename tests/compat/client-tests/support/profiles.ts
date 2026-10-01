@@ -10,6 +10,7 @@ function variants<P extends string, S extends string>(prefix: P, suffixes: reado
  * profile parity scenario proves that both fixture servers serve each entry.
  */
 export const FIXTURE_PROFILES = [
+  ...variants("user-lifecycle-", ["default", "required", "delivery", "auto", "change", "promotion", "promotion-no-mail", "verification-expired", "no-mail", "delete", "delete-mail", "delete-zero", "delete-expired", "delete-policy", "delete-no-freshness"] as const),
   ...variants("social-cloudflare-",["default","configured","disabled-scope","disabled-configured","public","post","encoded","mapped","implicit-disabled","signup-disabled","required","configured-endpoint"] as const),
   ...variants("social-atlassian-",["default","configured","disabled-scope","disabled-configured","mapped","implicit-disabled","signup-disabled","required","configured-endpoint"] as const),
   "signup-standard", "signup-disabled", "signup-password-disabled", "signup-no-auto", "signup-required", "signup-custom", "signup-policy", "signup-zero-policy", "signup-username", "signup-otp", "signup-background",
