@@ -71,6 +71,11 @@ async function setup(
 ) {
   const owner = ctx.actor("owner", profile),
     foreign = ctx.actor("foreign", profile);
+  const reset = await call(ctx, "owner", profile, {
+    operation: "mode",
+    mode: "normal",
+  });
+  expect(reset.status).toBe(200);
   const signup = await owner.client.signUp.email({
     email: ctx.uniqueEmail("owner"),
     password: "initial-password123",
@@ -94,6 +99,7 @@ async function setup(
   });
   expect(configured.status).toBe(200);
   return {
+    reset,
     owner,
     foreign,
     signup,
@@ -153,20 +159,16 @@ compatScenario(
     ).toHaveLength(2);
     const original = await s.owner.client.getSession();
     expect(original.data?.user.id).toBe(s.signup.data!.user.id);
-    const signin = await ctx
-      .actor("credential-login", p)
-      .client.signIn.email({
-        email: ctx.uniqueEmail("owner"),
-        password: "Auth-e\u0301-🔒123",
-      });
+    const signin = await ctx.actor("credential-login", p).client.signIn.email({
+      email: ctx.uniqueEmail("owner"),
+      password: "Auth-e\u0301-🔒123",
+    });
     expect(signin.error).toBeNull();
     expect(signin.data?.user.id).toBe(s.signup.data!.user.id);
-    const old = await ctx
-      .actor("old", p)
-      .client.signIn.email({
-        email: ctx.uniqueEmail("owner"),
-        password: "initial-password123",
-      });
+    const old = await ctx.actor("old", p).client.signIn.email({
+      email: ctx.uniqueEmail("owner"),
+      password: "initial-password123",
+    });
     expect(old.error?.status).toBe(401);
     const wrong = await ctx
       .actor("wrong-owner", p)
@@ -426,80 +428,113 @@ for (const mode of ["hash-error", "create-error", "update-error"] as const)
       };
     },
   );
-compatScenario(
-  "server-only setPassword simultaneous null-credential updates retain Source outcomes and original authority",
-  async (ctx) => {
-    const p = "set-password-default",
-      s = await setup(ctx, p, true),
-      account = s.before.accounts.find(
+for (const admission of [
+  "null-credential updates",
+  "missing-credential creates",
+] as const)
+  compatScenario(
+    `server-only setPassword simultaneous ${admission} retain Source outcomes and original authority`,
+    async (ctx) => {
+      const p = "set-password-default",
+        s = await setup(ctx, p, admission === "null-credential updates"),
+        account = s.before.accounts.find(
+          (a) => a.userId === s.signup.data!.user.id,
+        )!;
+      if (admission === "null-credential updates")
+        expect(
+          (
+            await call(ctx, "owner", p, {
+              operation: "clear-password",
+              accountId: account.id,
+            })
+          ).status,
+        ).toBe(200);
+      expect(
+        (
+          await call(ctx, "owner", p, {
+            operation: "mode",
+            mode: "barrier",
+            userId: s.signup.data!.user.id,
+          })
+        ).status,
+      ).toBe(200);
+      const before = await read(ctx),
+        password = "same-concurrent-password123";
+      const [left, right] = await Promise.all([
+        call(ctx, "owner", p, { operation: "set", newPassword: password }),
+        call(ctx, "owner", p, { operation: "set", newPassword: password }),
+      ]);
+      expect(left.status).toBe(200);
+      expect(right.status).toBe(200);
+      const after = await read(ctx);
+      expect(after.accounts).toHaveLength(
+        before.accounts.length +
+          (admission === "missing-credential creates" ? 2 : 0),
+      );
+      const owned = after.accounts.filter(
         (a) => a.userId === s.signup.data!.user.id,
-      )!;
-    expect(
-      (
-        await call(ctx, "owner", p, {
-          operation: "clear-password",
-          accountId: account.id,
-        })
-      ).status,
-    ).toBe(200);
-    expect(
-      (
-        await call(ctx, "owner", p, {
-          operation: "mode",
-          mode: "barrier",
+      );
+      expect(owned).toHaveLength(
+        admission === "missing-credential creates" ? 2 : 1,
+      );
+      for (const row of owned) {
+        expect(row).toMatchObject({
           userId: s.signup.data!.user.id,
-        })
-      ).status,
-    ).toBe(200);
-    const before = await read(ctx),
-      password = "same-concurrent-password123";
-    const [left, right] = await Promise.all([
-      call(ctx, "owner", p, { operation: "set", newPassword: password }),
-      call(ctx, "owner", p, { operation: "set", newPassword: password }),
-    ]);
-    expect(left.status).toBe(200);
-    expect(right.status).toBe(200);
-    const after = await read(ctx);
-    expect(after.accounts).toHaveLength(before.accounts.length);
-    expect(after.accounts.find((a) => a.id === account.id)).toMatchObject({
-      userId: account.userId,
-      accountId: account.accountId,
-    });
-    expect(after.users).toEqual(before.users);
-    expect(after.sessions).toEqual(before.sessions);
-    expect(after.events.filter((e) => e.stage === "hash-enter")).toHaveLength(
-      2,
-    );
-    expect(
-      await verifyPassword({
-        hash: String(after.accounts.find((a) => a.id === account.id)!.password),
-        password,
-      }),
-    ).toBe(true);
-    const restored = await call(ctx, "owner", p, {
-      operation: "mode",
-      mode: "normal",
-    });
-    expect(restored.status).toBe(200);
-    const signin = await ctx
-      .actor("after-race", p)
-      .client.signIn.email({ email: ctx.uniqueEmail("owner"), password });
-    expect(signin.data?.user.id).toBe(s.signup.data!.user.id);
-    return {
-      signup: ctx.snapshot(s.signup),
-      other: ctx.snapshot(s.other),
-      before: observed(before),
-      left,
-      right,
-      after: observed(after),
-      restored,
-      signin: ctx.snapshot(signin),
-      final: observed(await read(ctx)),
-      foreignBefore: s.foreignBefore,
-      foreignAfter: await ctx.readUserState({ userId: s.other.data!.user.id }),
-    };
-  },
-);
+          accountId: s.signup.data!.user.id,
+          providerId: "credential",
+        });
+        expect(
+          await verifyPassword({ hash: String(row.password), password }),
+        ).toBe(true);
+      }
+      expect(new Set(owned.map((row) => row.id)).size).toBe(owned.length);
+      if (admission === "null-credential updates")
+        expect(owned[0]!.id).toBe(account.id);
+      else {
+        const hashes = after.events.filter(
+          (event) => event.stage === "hash-result",
+        );
+        expect(owned.map((row) => row.password)).toEqual(
+          hashes.map((event) => event.hash),
+        );
+      }
+      expect(after.users).toEqual(before.users);
+      expect(after.sessions).toEqual(before.sessions);
+      expect(after.events.filter((e) => e.stage === "hash-enter")).toHaveLength(
+        2,
+      );
+
+      const restored = await call(ctx, "owner", p, {
+        operation: "mode",
+        mode: "normal",
+      });
+      expect(restored.status).toBe(200);
+      const signin = await ctx
+        .actor("after-race", p)
+        .client.signIn.email({ email: ctx.uniqueEmail("owner"), password });
+      expect(signin.data?.user.id).toBe(s.signup.data!.user.id);
+      expect(
+        await ctx.readUserState({ userId: s.other.data!.user.id }),
+      ).toEqual(s.foreignBefore);
+      return {
+        admission,
+        removed: s.removed,
+        signup: ctx.snapshot(s.signup),
+        other: ctx.snapshot(s.other),
+        before: observed(before),
+        left,
+        right,
+        after: observed(after),
+        restored,
+        signin: ctx.snapshot(signin),
+        final: observed(await read(ctx)),
+        foreignBefore: s.foreignBefore,
+        foreignAfter: await ctx.readUserState({
+          userId: s.other.data!.user.id,
+        }),
+      };
+    },
+  );
 compatScenario(
   "server-only setPassword ignores an actual credential row with a foreign account identity",
   async (ctx) => {
