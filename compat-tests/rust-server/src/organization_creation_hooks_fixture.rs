@@ -206,6 +206,7 @@ fn failure(error: AuthError) -> (StatusCode, Json<Value>) {
 pub(super) async fn router(
     base: &AuthConfig,
     database: DatabaseConnection,
+    transport: crate::organization_transport_probe::Probe,
 ) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
     let hooks = Arc::new(Hooks {
         database: database.clone(),
@@ -243,6 +244,7 @@ pub(super) async fn router(
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(SessionManagementPlugin::new())
                 .plugin(OrganizationPlugin::with_config(config.clone()))
+                .plugin(transport.clone())
                 .build()
                 .await?,
         );

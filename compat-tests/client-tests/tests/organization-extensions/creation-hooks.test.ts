@@ -1,3 +1,4 @@
+import { disconnectedRequest } from "./disconnect";
 import {expect} from "bun:test";
 import {z} from "zod";
 import {compatScenario,type ScenarioContext} from "../../support/scenario";
@@ -70,15 +71,143 @@ compatScenario("organization creation after hooks retain immutable member snapsh
  return {result:ctx.snapshot(result),after};
 }, ["POST /organization/create"]);
 
-compatScenario("organization creation awaits async member hooks before team writes and session selection",async ctx=>{
- const owner=await signup(ctx,"await-owner");await configure(ctx,"pause-after-member");const before=await state(ctx);let completed=false;
- const pending=create(ctx,owner,"awaited-creation").then(result=>{completed=true;return result;});let paused:Awaited<ReturnType<typeof state>>|undefined;
- try {paused=await state(ctx,"after-member");expect(paused.receipts.some(r=>r.phase==="after-member")).toBe(true);expect(completed).toBe(false);expect(paused!.receipts.map(r=>r.phase)).toEqual(["before-org","before-member","after-member"]);expect(paused!.snapshot.organizations).toHaveLength(1);expect(paused!.snapshot.members).toHaveLength(1);expect(paused!.snapshot.teams).toEqual([]);expect(paused!.snapshot.teamMembers).toEqual([]);expect(paused!.snapshot.sessions).toEqual(before.snapshot.sessions);}
- finally {expect((await ctx.rawRequest({path:"/__test/organization-hooks-release",method:"POST"})).status).toBe(200);}
- const result=await pending;expect(result.error).toBeNull();const after=await state(ctx);expect(after.receipts.map(r=>r.phase)).toEqual(phases);expect(after.snapshot.teams).toHaveLength(1);expect(after.snapshot.sessions[0]).toMatchObject({activeOrganizationId:organization.parse(result.data).id,activeTeamId:after.snapshot.teams[0]!.id});
- // The private waiter observes real callback delivery; all requests remain traced.
- return {before,paused,result:ctx.snapshot(result),after};
-}, ["POST /organization/create"]);
+compatScenario(
+  "organization creation awaits async member hooks before team writes and session selection",
+  async (ctx) => {
+    const owner = await signup(ctx, "await-owner");
+    await configure(ctx, "pause-after-member");
+    const before = await state(ctx);
+    let completed = false;
+    const pending = create(ctx, owner, "awaited-creation").then((result) => {
+      completed = true;
+      return result;
+    });
+    let paused: Awaited<ReturnType<typeof state>> | undefined;
+    try {
+      paused = await state(ctx, "after-member");
+      expect(paused.receipts.some((r) => r.phase === "after-member")).toBe(
+        true,
+      );
+      expect(completed).toBe(false);
+      expect(paused!.receipts.map((r) => r.phase)).toEqual([
+        "before-org",
+        "before-member",
+        "after-member",
+      ]);
+      expect(paused!.snapshot.organizations).toHaveLength(1);
+      expect(paused!.snapshot.members).toHaveLength(1);
+      expect(paused!.snapshot.teams).toEqual([]);
+      expect(paused!.snapshot.teamMembers).toEqual([]);
+      expect(paused!.snapshot.sessions).toEqual(before.snapshot.sessions);
+    } finally {
+      expect(
+        (
+          await ctx.rawRequest({
+            path: "/__test/organization-hooks-release",
+            method: "POST",
+          })
+        ).status,
+      ).toBe(200);
+    }
+    const result = await pending;
+    expect(result.error).toBeNull();
+    const after = await state(ctx);
+    expect(after.receipts.map((r) => r.phase)).toEqual(phases);
+    expect(after.snapshot.teams).toHaveLength(1);
+    expect(after.snapshot.sessions[0]).toMatchObject({
+      activeOrganizationId: organization.parse(result.data).id,
+      activeTeamId: after.snapshot.teams[0]!.id,
+    });
+    // The private waiter observes real callback delivery; all requests remain traced.
+    const abortName = "disconnected-creation";
+    const marker = ctx.uniqueToken(abortName);
+    await configure(ctx, "pause-after-member");
+    let abortBefore!: Awaited<ReturnType<typeof state>>;
+    const wire = await disconnectedRequest(
+      ctx,
+      "await-owner",
+      "org-creation-hooks",
+      owner.email,
+      "/organization/create",
+      {
+        name: abortName,
+        slug: ctx.uniqueToken(abortName),
+        metadata: { disconnected: true },
+      },
+      marker,
+      async () => {
+        abortBefore = await state(ctx);
+      },
+    );
+    let dropped: unknown;
+    let abortPaused: Awaited<ReturnType<typeof state>> | undefined;
+    try {
+      abortPaused = await state(ctx, "after-member");
+      expect(abortPaused.receipts.map((r) => r.phase)).toEqual([
+        "before-org",
+        "before-member",
+        "after-member",
+      ]);
+      expect(abortPaused.snapshot.teams).toEqual(abortBefore.snapshot.teams);
+      dropped = await wire.close();
+    } finally {
+      wire.dispose();
+      expect(
+        (
+          await ctx.rawRequest({
+            path: "/__test/organization-hooks-release",
+            method: "POST",
+          })
+        ).status,
+      ).toBe(200);
+    }
+    const continued = await state(ctx, "after-org");
+    expect(continued.receipts.map((r) => r.phase)).toEqual(phases);
+    const stored = continued.snapshot.organizations.find(
+      (r) => r.slug === ctx.uniqueToken(abortName),
+    )!;
+    expect(stored).toMatchObject({
+      name: abortName,
+      metadata: '{"disconnected":true}',
+    });
+    expect(
+      continued.snapshot.members.find((r) => r.organizationId === stored.id),
+    ).toMatchObject({ userId: owner.userId, role: "owner" });
+    const team = continued.snapshot.teams.find(
+      (r) => r.organizationId === stored.id,
+    )!;
+    expect(team).toMatchObject({ name: abortName });
+    expect(
+      continued.snapshot.teamMembers.find((r) => r.teamId === team.id),
+    ).toMatchObject({ userId: owner.userId });
+    // after-org precedes selection; the genuine after-dispatch receipt precedes this single session read.
+    const completion = await ctx.rawRequest({
+      path: `/__test/organization-transport-completion?marker=${encodeURIComponent(marker)}`,
+    });
+    expect(completion.status).toBe(200);
+    expect(completion.body).toEqual({ marker, completed: true });
+    const current = await owner.client.getSession();
+    expect(current.data?.session).toMatchObject({
+      userId: owner.userId,
+      activeOrganizationId: stored.id,
+      activeTeamId: team.id,
+    });
+    return {
+      before,
+      paused,
+      result: ctx.snapshot(result),
+      after,
+      wire: { signin: wire.signin, request: wire.request },
+      abortBefore,
+      abortPaused,
+      dropped,
+      continued,
+      completion,
+      current,
+    };
+  },
+  ["POST /organization/create"],
+);
 
 compatScenario("organization trusted creation hook member overrides retain actor authority and original default team membership",async ctx=>{
  const owner=await signup(ctx,"authority-owner");const foreign=await signup(ctx,"authority-foreign");await configure(ctx,"record");const prior=await create(ctx,owner,"authority-prior");expect(prior.error).toBeNull();const existing=organization.parse(prior.data);const before=await state(ctx);

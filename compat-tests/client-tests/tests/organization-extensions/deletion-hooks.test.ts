@@ -1,3 +1,4 @@
+import { disconnectedRequest } from "./disconnect";
 import { expect } from "bun:test";
 import { z } from "zod";
 import { createTracingFetch, type TraceEntry } from "../../support/trace";
@@ -474,7 +475,84 @@ compatScenario(
       after.snapshot.organizations.some((r) => r.id === target.org.id),
     ).toBe(false);
     isolation(before.snapshot, after.snapshot, target);
-    return { before, paused, deleted: ctx.snapshot(deleted), after };
+    await configure(ctx, "record");
+    const abortTarget = await setup(ctx, "disconnected-delete");
+    await configure(ctx, "pause-before");
+    const marker = ctx.uniqueToken("disconnected-delete");
+    let abortBefore!: Awaited<ReturnType<typeof state>>;
+    const wire = await disconnectedRequest(
+      ctx,
+      "disconnected-delete-owner",
+      profile,
+      abortTarget.owner.email,
+      "/organization/delete",
+      {
+        organizationId: abortTarget.org.id,
+        userId: abortTarget.foreign.user.id,
+      },
+      marker,
+      async () => {
+        data(
+          await abortTarget.owner.client.organization.setActive({
+            organizationId: abortTarget.org.id,
+          }),
+        );
+        abortTarget.session = data(
+          await abortTarget.owner.client.getSession(),
+        ).session;
+        abortBefore = await state(ctx);
+      },
+    );
+    // The actual signed-in token was selected before the raw request was sent.
+    let abortPaused: Awaited<ReturnType<typeof state>> | undefined;
+    let dropped: unknown;
+    try {
+      abortPaused = await state(ctx, "before");
+      expect(abortPaused.receipts.map((r) => r.phase)).toEqual(["before"]);
+      expect(abortPaused.snapshot.organizations).toEqual(
+        abortBefore.snapshot.organizations,
+      );
+      dropped = await wire.close();
+    } finally {
+      wire.dispose();
+      expect(
+        (
+          await ctx.rawRequest({
+            path: "/__test/organization-delete-hooks-release",
+            method: "POST",
+          })
+        ).status,
+      ).toBe(200);
+    }
+    const completion = await ctx.rawRequest({
+      path: `/__test/organization-transport-completion?marker=${encodeURIComponent(marker)}`,
+    });
+    expect(completion.status).toBe(200);
+    expect(completion.body).toEqual({ marker, completed: true });
+    const continued = await state(ctx, "after");
+    expect(continued.receipts.map((r) => r.phase)).toEqual(["before", "after"]);
+    for (const key of ["organizations", "members", "invitations"] as const)
+      expect(
+        continued.snapshot[key].some(
+          (r) =>
+            r.id === abortTarget.org.id ||
+            r.organizationId === abortTarget.org.id,
+        ),
+      ).toBe(false);
+    isolation(abortBefore.snapshot, continued.snapshot, abortTarget);
+    expect(continued.receipts[1]!.user.id).toBe(abortTarget.owner.user.id);
+    return {
+      before,
+      paused,
+      deleted: ctx.snapshot(deleted),
+      after,
+      wire: { signin: wire.signin, request: wire.request },
+      abortBefore,
+      abortPaused,
+      dropped,
+      completion,
+      continued,
+    };
   },
   ["POST /organization/delete"],
 );

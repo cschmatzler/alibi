@@ -1,10 +1,11 @@
+import type { organizationTransportProbe } from "./organization-transport-probe";
 /** Configured callbacks are application-owned; HTTP authentication remains pinned. */
 import {betterAuth} from "better-auth";
 import {organization} from "better-auth/plugins";
 import {APIError} from "better-auth/api";
 import type {Database} from "bun:sqlite";
 
-export function organizationCreationHooksFixture(database:Database,shared:Parameters<typeof betterAuth>[0],origin:string) {
+export function organizationCreationHooksFixture(database:Database,shared:Parameters<typeof betterAuth>[0],origin:string, transport:ReturnType<typeof organizationTransportProbe>) {
   let plan:Record<string,unknown>={mode:"record"};
   const receipts:unknown[]=[];
   let release:(()=>void)|undefined;
@@ -63,7 +64,7 @@ export function organizationCreationHooksFixture(database:Database,shared:Parame
   };
   const profiles=new Map(["org-creation-hooks","org-creation-hooks-no-team","org-creation-hooks-denied"].map(name=>[name,betterAuth({
     ...shared,database,baseURL:origin,basePath:`/__test/profiles/${name}/api/auth`,
-    plugins:[organization({allowUserToCreateOrganization:name!=="org-creation-hooks-denied",teams:{enabled:name!=="org-creation-hooks-no-team"},organizationHooks:hooks})],
+    plugins:[transport.plugin,organization({allowUserToCreateOrganization:name!=="org-creation-hooks-denied",teams:{enabled:name!=="org-creation-hooks-no-team"},organizationHooks:hooks})],
   })]));
   return {
     profiles,

@@ -1,3 +1,4 @@
+import type { organizationTransportProbe } from "./organization-transport-probe";
 /** Application callbacks observe the pinned handler and actual persisted rows. */
 import { betterAuth } from "better-auth";
 import { organization } from "better-auth/plugins";
@@ -7,6 +8,7 @@ export function organizationDeletionHooksFixture(
   database: Database,
   shared: Parameters<typeof betterAuth>[0],
   origin: string,
+  transport: ReturnType<typeof organizationTransportProbe>,
 ) {
   let mode = "record";
   const receipts: unknown[] = [];
@@ -114,6 +116,7 @@ export function organizationDeletionHooksFixture(
         baseURL: origin,
         basePath: `/__test/profiles/${name}/api/auth`,
         plugins: [
+          transport.plugin,
           organization({
             teams: { enabled: true },
             disableOrganizationDeletion: name.endsWith("disabled"),

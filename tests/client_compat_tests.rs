@@ -374,3 +374,13 @@ async fn two_factor_passwordless_client_compat() {
 async fn two_factor_otp_config_client_compat() {
     run_client_compat(&["tests/two-factor/otp-config.test.ts"]).await;
 }
+
+#[tokio::test]
+#[ignore = "starts external TS and Rust servers"]
+async fn organization_hooks_client_compat() {
+    run_client_compat(&[
+        "tests/organization-extensions/creation-hooks.test.ts",
+        "tests/organization-extensions/deletion-hooks.test.ts",
+    ])
+    .await;
+}

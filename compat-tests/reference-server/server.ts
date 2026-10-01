@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { organizationTransportProbe } from "./organization-transport-probe";
 
 import { Database } from "bun:sqlite";
 import { openApiProfiles } from "./open-api-fixture";
@@ -402,8 +403,9 @@ const adminBannedMessageFixture = createAdminBannedMessageFixture(authOptions, d
 const adminPermissionFixture = createAdminPermissionFixture(authOptions, database);
 const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 const organizationCreationFixture = createOrganizationCreationFixture(database, authOptions, `http://localhost:${PORT}`);
-const organizationHooksFixture = organizationCreationHooksFixture(database, authOptions, `http://localhost:${PORT}`);
-const organizationDeletionFixture = organizationDeletionHooksFixture(database, authOptions, `http://localhost:${PORT}`);
+const organizationTransport = organizationTransportProbe();
+const organizationHooksFixture = organizationCreationHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
+const organizationDeletionFixture = organizationDeletionHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
 const passkeyRegistration = passkeyRegistrationFixture(authOptions);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
@@ -753,6 +755,9 @@ const server = Bun.serve({
   async fetch(request) {
     try {
       const url = new URL(request.url);
+      organizationTransport.observe(request);
+      const transportControl = await organizationTransport.handle(request, url);
+      if (transportControl) return transportControl;
       if(url.pathname==="/__test/session-field-state")return jsonResponse(sessionFieldsFixture.state(url.searchParams.get("email")??""));
       for(const [name,profile] of sessionFieldsFixture.profiles)if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return profile.handler(request);
       for (const [name, profile] of organizationCreationFixture.profiles) {
