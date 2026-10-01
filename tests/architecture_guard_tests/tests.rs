@@ -49,13 +49,7 @@ fn behavior_tests_must_include_behavior_source_comments() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
 
-    for relative in [
-        "tests",
-        "src",
-        "crates/api/src",
-        "crates/api/tests",
-        "crates/core/src",
-    ] {
+    for relative in ["tests", "src", "crates/api/src", "crates/core/src"] {
         collect_rust_files(&root.join(relative), &mut files);
     }
 
@@ -113,13 +107,7 @@ fn upstream_markers_must_not_use_broad_bundle_patterns() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
 
-    for relative in [
-        "tests",
-        "src",
-        "crates/api/src",
-        "crates/api/tests",
-        "crates/core/src",
-    ] {
+    for relative in ["tests", "src", "crates/api/src", "crates/core/src"] {
         collect_rust_files(&root.join(relative), &mut files);
     }
 
@@ -173,13 +161,7 @@ fn stale_test_drift_phrasing_is_gone() {
     ];
     let mut files = Vec::new();
 
-    for relative in [
-        "tests",
-        "src",
-        "crates/api/src",
-        "crates/api/tests",
-        "crates/core/src",
-    ] {
+    for relative in ["tests", "src", "crates/api/src", "crates/core/src"] {
         collect_rust_files(&root.join(relative), &mut files);
     }
 

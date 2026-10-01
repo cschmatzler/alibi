@@ -14,6 +14,7 @@
     reason = "compat contract tests use direct assertions and JSON indexing for endpoint checks"
 )]
 
+#[path = "support/compat/mod.rs"]
 mod compat;
 
 #[cfg(test)]

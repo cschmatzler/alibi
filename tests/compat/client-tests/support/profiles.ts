@@ -1,0 +1,94 @@
+/** Explicit equivalent configurations of the pinned runtime. */
+
+function variants<P extends string, S extends string>(prefix: P, suffixes: readonly S[]): `${P}${S}`[] {
+  return suffixes.map(suffix => `${prefix}${suffix}` as `${P}${S}`);
+}
+
+/**
+ * Every fixture profile the scenarios may address. This runtime registry is the
+ * single source of profile names: the type below derives from it, and the
+ * profile parity scenario proves that both fixture servers serve each entry.
+ */
+export const FIXTURE_PROFILES = [
+  "oauth-proxy",
+  ...variants("session-cache-", ["standard", "disabled", "version", "version-api", "version-ordinary", "zero", "nan", "fractional", "negative", "infinite", "negative-infinite", "date-version"] as const),
+  ...variants("anonymous-", ["standard", "disabled", "link-error", "user-cancel", "user-forbidden", "session-cancel", "session-forbidden", "snapshot", "invalid-email", "empty-name", "methods"] as const),
+  "admin-impersonation-privileged", "admin-impersonation-ordinary", "admin-impersonation-legacy", "admin-impersonation-no-base",
+  "org-member-multiplicity", "org-member-multiplicity-page-zero", "org-member-multiplicity-page-one", "org-member-multiplicity-page-two",
+  "passkey-first-trusted-origin", "passkey-first-configured-origin",
+  ...variants("social-gitlab-", ["default", "configured", "disabled", "disabled-configured", "issuer", "issuer-slashes", "encrypted"] as const),
+  ...variants("social-google-", ["default", "configured", "disabled", "disabled-configured"] as const),
+  ...variants("social-github-", ["default", "configured", "disabled", "disabled-configured"] as const),
+  ...variants("social-discord-", ["default", "configured", "disabled", "disabled-configured"] as const),
+  ...variants("social-discord-", ["permissions", "bot", "zero", "fractional", "infinite", "prompt", "empty-prompt"] as const),
+  "org-membership-default", "org-membership-none", "org-membership-zero", "org-membership-nan", "org-membership-one", "org-membership-fractional", "org-membership-negative", "org-membership-infinity", "org-membership-resolver-zero", "org-membership-resolver-nan", "org-membership-resolver-fractional", "org-membership-resolver-error", "org-membership-page-one", "org-membership-page-zero", "org-membership-resolver-zero-team-limit", "org-membership-team-limit", "org-membership-pending-one",
+  "org-invitation-stage", "org-invitation-stage-no-team", "org-invitation-stage-limit-two",
+  "two-factor-delivery-default", "two-factor-delivery-observe", "two-factor-delivery-ignore", "two-factor-delivery-throw",
+  "org-member-addition", "org-member-addition-no-team", "org-member-addition-limit-one", "org-member-addition-zero", "org-member-addition-none", "org-member-addition-team-limit", "org-member-addition-team-callback", "org-member-addition-team-page-one", "org-member-addition-team-page-zero",
+  "org-creation-denied", "org-creation-limit", "org-creation-negative", "org-creation-infinity", "org-creation-nan", "org-creation-callback", "org-creation-founder", "org-creation-empty-role", "admin-duration-hook-error", "admin-duration-zero", "admin-duration-fractional", "admin-duration-negative", "admin-duration-invalid", "admin-duration-nan", "admin-role-manager", "admin-role-creator", "admin-standard", "admin-deny-all", "admin-exact-role", "admin-empty-role", "org-update-hooks", "org-member-role-hooks", "org-creation-hooks", "org-creation-hooks-no-team", "org-creation-hooks-denied", "two-factor-trust-fractional", "two-factor-trust-zero-challenge", "two-factor-trust-negative-challenge", "two-factor-trust-zero", "two-factor-trust-negative", "two-factor-trust-cleanup-disabled", "admin-banned-message", "admin-banned-message-error", "api-key-hooks", "passkey-auth-mutation", "passkey-auth-accept", "passkey-auth-forbidden", "passkey-auth-public-error", "passkey-auth-internal-error", "org-member-removal-hooks", "org-member-removal-hooks-teams-disabled", "org-member-removal-hooks-page-one", "org-member-removal-hooks-team-page-one", "org-member-removal-no-hooks",
+  "multi-session", "multi-session-limited",
+  "two-factor-backup-plain", "two-factor-backup-zero", "two-factor-backup-negative", "two-factor-backup-encrypted", "two-factor-backup-custom", "two-factor-backup-invalid-length",
+  "two-factor-otp-zero", "two-factor-otp-negative", "two-factor-otp-plain", "two-factor-otp-hashed", "two-factor-otp-encrypted", "two-factor-otp-custom-hash", "two-factor-otp-custom-cipher",
+  "two-factor-pending-session-cancel", "two-factor-pending-session-forbidden",
+  "two-factor-skip-session-cancel", "two-factor-skip-session-forbidden",
+  "two-factor-skip-user-hook",
+  "two-factor-passwordless", "two-factor-passwordless-child-required", "two-factor-passwordless-child-optional",
+  "two-factor-lockout-fractional", "two-factor-lockout-zero", "two-factor-lockout-disabled", "two-factor-skip-verification",
+  "two-factor-totp-default", "two-factor-totp-config", "two-factor-totp-disabled", "two-factor-totp-zero",
+  "session-fields", "session-fields-plugins",
+  "api-key-automatic", "api-key-automatic-deferred", "api-key-automatic-other",
+  "api-key-usage-rate", "api-key-usage-rate-deferred",
+  "api-key-generation", "passkey-fresh", "passkey-no-freshness", "passkey-first", "passkey-first-missing",
+  "device-custom", "device-configured", "device-unicode", "device-too-long",
+  "siwe", "siwe-email", "siwe-contract",
+  "phone-default", "phone-signup", "phone-proof", "phone-custom",
+  "openapi-default", "openapi-configured", "openapi-disabled", "openapi-jwt", "openapi-username", "openapi-custom-schema", "openapi-plugins", "openapi-plugins-teams", "openapi-plugins-configured",
+  "one-tap-update-link", "one-tap-encrypted", "one-tap-retain-account",
+  "one-tap-default", "one-tap-fallback", "one-tap-plugin-only", "one-tap-missing", "one-tap-empty-array", "one-tap-empty-audience-member",
+  "one-tap-domain", "one-tap-domain-any", "one-tap-disabled", "one-tap-provider-disabled",
+  "one-tap-required", "one-tap-required-no-mail", "one-tap-no-override", "one-tap-account-cookie",
+  "session-deferred",
+  "session-no-refresh",
+  "session-deferred-no-refresh",
+  "session-no-freshness",
+  "session-cookie-cleanup",
+  "magic-link-hashed",
+  "magic-link-disabled",
+  "passwordless-hashed",
+  "passwordless-encrypted-reuse",
+  "passwordless-proof",
+  "passwordless-proof-explicit",
+  "passwordless-disabled",
+  "verification-cleanup",
+  "verification-no-cleanup",
+  "email-verification-required",
+  "email-verification-no-signup-mail",
+  "email-verification-failing-notifications",
+  "ott-default",
+  "ott-hashed",
+  "ott-no-cookie",
+  "ott-server-header",
+  "ott-refresh-disabled",
+  "ott-refresh-deferred",
+  "jwt-default", "jwt-es256", "jwt-es512", "jwt-rs256", "jwt-ps256",
+  "jwt-session-normal", "jwt-session-disabled", "jwt-session-deferred",
+  "jwt-claims", "jwt-path-header", "jwt-plain-rotation",
+  "org-teams-dynamic",
+  "org-roles-limited",
+  "org-roles-no-ac",
+  "org-roles-delegated",
+  "org-roles-callback",
+  "org-deletion-disabled",
+  "org-deletion-hooks",
+  "org-deletion-hooks-disabled",
+  "org-teams",
+  "org-teams-no-default",
+  "org-teams-limited",
+  "org-teams-removable",
+] as const;
+
+export type FixtureProfile = (typeof FIXTURE_PROFILES)[number];
+
+export function authProfilePath(profile: FixtureProfile): string {
+  return `/__test/profiles/${profile}/api/auth`;
+}

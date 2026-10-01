@@ -1020,8 +1020,10 @@ async fn delegated_signing_uses_external_keys_and_preserves_explicit_payload_and
 // Rust consumes the imported encrypted row rather than encrypting its own key.
 #[tokio::test]
 async fn signs_pinned_typescript_encrypted_key_and_refuses_a_changed_secret() {
-    let fixture: Value =
-        serde_json::from_str(include_str!("fixtures/typescript-1.7.6-encrypted-jwk.json")).unwrap();
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../../../tests/fixtures/jwt/typescript-1.7.6-encrypted-jwk.json"
+    ))
+    .unwrap();
     assert_eq!(fixture["referenceVersion"], "better-auth@1.7.6");
     let config = better_auth_core::AuthConfig::new(fixture["secret"].as_str().unwrap())
         .base_url(fixture["origin"].as_str().unwrap());

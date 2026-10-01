@@ -14,6 +14,7 @@
     reason = "organization compatibility tests intentionally use direct JSON assertions over generated fixtures"
 )]
 
+#[path = "support/compat/mod.rs"]
 mod compat;
 
 #[cfg(test)]

@@ -15,6 +15,7 @@
     reason = "unit tests intentionally use panic-on-failure assertions and direct indexing for compact fixture checks"
 )]
 
+#[path = "support/compat/mod.rs"]
 mod compat;
 
 #[cfg(test)]

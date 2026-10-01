@@ -48,7 +48,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: rust-sources-v2-${{ runner.os }}-${{ hashFiles('devenv.nix', 'devenv.lock', 'Cargo.lock', 'compat-tests/rust-server/Cargo.lock') }}
+          key: rust-sources-v2-${{ runner.os }}-${{ hashFiles('devenv.nix', 'devenv.lock', 'Cargo.lock', 'tests/compat/rust-server/Cargo.lock') }}
           restore-keys: rust-sources-v2-${{ runner.os }}-
       - name: Run the complete test gate
         run: devenv test
@@ -58,5 +58,5 @@ jobs:
           name: test-reports
           path: |
             coverage/lcov.info
-            compat-tests/client-tests/artifacts/
+            tests/compat/client-tests/artifacts/
           if-no-files-found: warn

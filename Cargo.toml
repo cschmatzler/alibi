@@ -16,7 +16,7 @@ workspace = true
 [workspace]
 resolver = "2"
 members = ["crates/core", "crates/api", "crates/derive", "crates/seaorm", "crates/seaorm-macros", "crates/schema-registry", "crates/cli"]
-exclude = ["compat-tests/rust-server"]
+exclude = ["tests/compat/rust-server"]
 
 [workspace.package]
 readme = "README.md"

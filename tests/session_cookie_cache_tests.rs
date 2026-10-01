@@ -9,7 +9,7 @@
     reason = "Assert real SQLite-backed public handler and independently specified application-model callback snapshots"
 )]
 //! Native-only application schema contract. Official SDK scenarios own built-in wire parity.
-#[path = "../compat-tests/rust-server/src/session_field_model.rs"]
+#[path = "compat/rust-server/src/session_field_model.rs"]
 mod application_model;
 
 #[cfg(test)]

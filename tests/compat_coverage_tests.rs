@@ -9,6 +9,7 @@
     clippy::indexing_slicing,
     reason = "test fixture validation fails immediately"
 )]
+#[path = "support/compat/mod.rs"]
 mod compat;
 
 #[cfg(test)]
