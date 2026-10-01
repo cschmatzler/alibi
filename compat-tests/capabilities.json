@@ -1606,23 +1606,34 @@
       "requiredEvidence": {
         "success": [
           "organization deletion retains extension rows and valid keys while clearing only its current selected token",
-          "organization deletion leaves an unrelated active organization selected when deleting another owned organization"
+          "organization deletion leaves an unrelated active organization selected when deleting another owned organization",
+          "organization deletion hooks receive raw rows and original authority after token clearing and before committed deletion",
+          "organization deletion keeps its original callback and response snapshots after a real before hook write",
+          "organization deletion awaits its actual asynchronous before hook before deleting persisted records"
         ],
         "rejection": [
           "organization deletion rejects other tenants and member roles before changing any selection or record",
           "organization deletion body and media validation precede disabled configuration and session authentication",
-          "organization deletion of a real legacy orphan clears only the authenticated token before empty missing-row rejection"
+          "organization deletion of a real legacy orphan clears only the authenticated token before empty missing-row rejection",
+          "organization deletion hook rejections preserve their exact nontransactional partial writes",
+          "organization deletion guards prevent configured callbacks for denied authority and genuine missing rows"
         ],
         "authorization": [
           "organization deletion rejects other tenants and member roles before changing any selection or record",
-          "organization deletion body and media validation precede disabled configuration and session authentication"
+          "organization deletion body and media validation precede disabled configuration and session authentication",
+          "organization deletion guards prevent configured callbacks for denied authority and genuine missing rows"
         ],
         "state": [
           "organization deletion retains extension rows and valid keys while clearing only its current selected token",
           "organization deletion rejects other tenants and member roles before changing any selection or record",
           "organization deletion body and media validation precede disabled configuration and session authentication",
           "organization deletion of a real legacy orphan clears only the authenticated token before empty missing-row rejection",
-          "organization deletion leaves an unrelated active organization selected when deleting another owned organization"
+          "organization deletion leaves an unrelated active organization selected when deleting another owned organization",
+          "organization deletion hooks receive raw rows and original authority after token clearing and before committed deletion",
+          "organization deletion hook rejections preserve their exact nontransactional partial writes",
+          "organization deletion guards prevent configured callbacks for denied authority and genuine missing rows",
+          "organization deletion keeps its original callback and response snapshots after a real before hook write",
+          "organization deletion awaits its actual asynchronous before hook before deleting persisted records"
         ]
       }
     },

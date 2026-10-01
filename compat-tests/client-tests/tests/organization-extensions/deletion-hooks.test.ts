@@ -196,6 +196,7 @@ compatScenario(
       after,
     };
   },
+  ["POST /organization/delete"],
 );
 compatScenario(
   "organization deletion hook rejections preserve their exact nontransactional partial writes",
@@ -232,6 +233,7 @@ compatScenario(
     }
     return observations;
   },
+  ["POST /organization/delete"],
 );
 compatScenario(
   "organization deletion guards prevent configured callbacks for denied authority and genuine missing rows",
@@ -307,6 +309,7 @@ compatScenario(
       denied,
     };
   },
+  ["POST /organization/delete"],
 );
 compatScenario(
   "organization trusted header deletion invokes callbacks without an HTTP request and honors cookie ownership",
@@ -430,6 +433,7 @@ compatScenario(
     isolation(before.snapshot, after.snapshot, target);
     return { before, deleted: ctx.snapshot(deleted), after };
   },
+  ["POST /organization/delete"],
 );
 compatScenario(
   "organization deletion awaits its actual asynchronous before hook before deleting persisted records",
@@ -472,4 +476,5 @@ compatScenario(
     isolation(before.snapshot, after.snapshot, target);
     return { before, paused, deleted: ctx.snapshot(deleted), after };
   },
+  ["POST /organization/delete"],
 );
