@@ -12,6 +12,8 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import { compareValues } from "../support/compare";
 import { jsonShape, normalizeClientValue } from "../support/normalize";
 import { RAW_DIFF_ALLOWLIST } from "../support/allowlist";
+import { createAuthClient } from "better-auth/client";
+import { adminClient } from "better-auth/client/plugins";
 
 const context = { leftBaseURL: "http://localhost:3100", rightBaseURL: "http://localhost:3200", leftStartedAt: 0, rightStartedAt: 0 };
 
@@ -488,4 +490,53 @@ test("actual admin URLs preserve literal empty selectors without admitting empty
   const right = { user: { id: "owner-right" }, path: "/admin/get-user?id=owner-right" };
   expect(compareValues(left, right, context)).toEqual([]);
   expect(compareValues(left, { ...right, path: "/admin/get-user?id=foreign" }, context).length).toBeGreaterThan(0);
+});
+
+test("actual admin ID filter URLs retain observed user identities and every literal selector and operand", async () => {
+  async function observe(baseURL: string) {
+    const database = new Database(":memory:");
+    const auth = betterAuth({ baseURL, secret: "array-filter-harness-application-secret32", database, emailAndPassword: { enabled: true }, plugins: [admin()], rateLimit: { enabled: false } });
+    try {
+      await (await getMigrations(auth.options)).runMigrations();
+      const users = [];
+      for (const name of ["First", "Second"]) {
+        const created = await auth.api.signUpEmail({ body: { name, email: `${name.toLowerCase()}@example.test`, password: "password123" }, headers: new Headers({ origin: baseURL }) });
+        users.push(created.user);
+      }
+      let path = "";
+      const client = createAuthClient({ baseURL, plugins: [adminClient()], fetchOptions: { customFetchImpl: async (input, init) => {
+        const request = new Request(input, init); path = request.url;
+        return auth.handler(request);
+      } } });
+      const result = await client.admin.listUsers({ query: { filterField: "id", filterOperator: "in", filterValue: [users[0]!.id, users[1]!.id, users[0]!.id] } });
+      expect(result.error?.status).toBe(401);
+      expect(new URL(path).searchParams.getAll("filterValue")).toEqual([users[0]!.id, users[1]!.id, users[0]!.id]);
+      return { users, path, result };
+    } finally { database.close(); }
+  }
+  const left = await observe(context.leftBaseURL), right = await observe(context.rightBaseURL);
+  expect(compareValues(left, right, context)).toEqual([]);
+  function changed(value: typeof right, mutate: (url: URL) => void) {
+    const url = new URL(value.path); mutate(url); return { ...value, path: url.href };
+  }
+  for (const operands of [[right.users[1]!.id, right.users[0]!.id, right.users[0]!.id], [right.users[0]!.id, right.users[1]!.id], [right.users[0]!.id, right.users[1]!.id, "foreign"], [right.users[0]!.id, right.users[1]!.id, right.users[1]!.id]]) {
+    expect(compareValues(left, changed(right, url => { url.searchParams.delete("filterValue"); for (const id of operands) url.searchParams.append("filterValue", id); }), context).length).toBeGreaterThan(0);
+  }
+  for (const mutate of [
+    (url: URL) => url.searchParams.set("filterField", "email"),
+    (url: URL) => url.searchParams.delete("filterField"),
+    (url: URL) => url.searchParams.delete("filterOperator"),
+    (url: URL) => url.searchParams.delete("filterValue"),
+    (url: URL) => url.searchParams.append("filterField", "id"),
+    (url: URL) => url.searchParams.set("filterOperator", "not_in"),
+    (url: URL) => url.searchParams.set("filterValue", ""),
+    (url: URL) => { url.hash = "changed"; },
+  ]) expect(compareValues(left, changed(right, mutate), context).length).toBeGreaterThan(0);
+  // The same full observed ID strings are literal outside this known ID selector.
+  for (const mutate of [
+    (url: URL) => url.searchParams.set("filterField", "name"),
+    (url: URL) => { url.hostname = "external.example.test"; url.port = ""; },
+    (url: URL) => { url.pathname = "/application/list-users"; },
+  ]) expect(compareValues(changed(left, mutate), changed(right, mutate), context).length).toBeGreaterThan(0);
+  expect(compareValues({ ...left, metadata: { filterValue: left.users[0]!.id } }, { ...right, metadata: { filterValue: right.users[0]!.id } }, context).length).toBeGreaterThan(0);
 });
