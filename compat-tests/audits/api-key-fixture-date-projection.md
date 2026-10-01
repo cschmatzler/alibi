@@ -35,5 +35,5 @@ Source 42344 and Native 42343. An initial mixed-fixture setup run is preserved i
 `/tmp/api-key-default-state-connected-final.log`; its seven missing-action failures
 are setup errors, while the timestamp owner passed. Independent organization-owner
 review is clear for the exact bounded projection and lossless physical checks.
-TypeScript and the locked fixture build pass. Strict fixture checks and the full
-canonical gate are pending.
+TypeScript, the locked fixture build and strict fixture Clippy pass. The full
+canonical gate is pending.
