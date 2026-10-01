@@ -123,16 +123,6 @@ pub(crate) async fn invite_member_core(
         ));
     }
 
-    if let Some(limit) = config.membership_limit {
-        let members = ctx.database.count_organization_members(&org_id).await? as usize;
-        if members >= limit {
-            return Err(AuthError::bad_request(format!(
-                "Membership limit of {} reached",
-                limit
-            )));
-        }
-    }
-
     if let Some(limit) = config.invitation_limit {
         let pending_count = ctx
             .database
@@ -396,6 +386,30 @@ pub(crate) async fn accept_invitation_core(
         ctx,
         "Email verification required before accepting or rejecting invitation",
     )?;
+    let count = ctx
+        .database
+        .count_organization_members(invitation.organization_id().as_ref())
+        .await?;
+    let organization = ctx
+        .database
+        .get_organization_by_id(invitation.organization_id().as_ref())
+        .await?
+        .ok_or_else(|| super::extension_common::org_error(400, "ORGANIZATION_NOT_FOUND"))?;
+    let limit = crate::plugins::organization::membership_policy::admission_limit(
+        config.membership_limit.as_ref(),
+        &ctx.user_view(user),
+        &crate::plugins::organization::types::OrganizationResponse::from_stored_organization(
+            &organization,
+        )?,
+    )
+    .await?;
+    if count as f64 >= limit {
+        return Err(AuthError::Upstream {
+            status: 403,
+            code: "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED",
+            message: "Organization membership limit reached",
+        });
+    }
     if config.teams.enabled {
         let mut team_limits = Vec::new();
         for team_id in invitation
@@ -424,7 +438,7 @@ pub(crate) async fn accept_invitation_core(
                 user.id().as_ref(),
                 session.token(),
                 &team_limits,
-                config.membership_limit,
+                None,
             )
             .await?
             .ok_or_else(|| AuthError::bad_request("Invitation not found"))?;
@@ -432,18 +446,6 @@ pub(crate) async fn accept_invitation_core(
             invitation: ctx.invitation_view(&invitation),
             member: BasicMemberResponse::from_member(&member),
         });
-    }
-
-    if let Some(limit) = config.membership_limit {
-        let members = ctx
-            .database
-            .list_organization_members(invitation.organization_id().as_ref())
-            .await?;
-        if members.len() >= limit {
-            return Err(AuthError::bad_request(
-                "Organization membership limit reached",
-            ));
-        }
     }
 
     if ctx

@@ -99,19 +99,21 @@ pub(crate) async fn add_member<S: AuthSchema>(
         .get_organization_by_id(organization_id)
         .await?
         .ok_or_else(|| org_error(400, "ORGANIZATION_NOT_FOUND"))?;
-    let limit = config
-        .membership_limit
-        .filter(|value| *value != 0)
-        .unwrap_or(100);
-    if count as f64 >= limit as f64 {
+    let original_user = ctx.user_view(&user);
+    let original_organization = OrganizationResponse::from_stored_organization(&organization)?;
+    let limit = crate::plugins::organization::membership_policy::admission_limit(
+        config.membership_limit.as_ref(),
+        &original_user,
+        &original_organization,
+    )
+    .await?;
+    if count as f64 >= limit {
         return Err(AuthError::Upstream {
             status: 403,
             code: "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED",
             message: "Organization membership limit reached",
         });
     }
-    let original_user = ctx.user_view(&user);
-    let original_organization = OrganizationResponse::from_stored_organization(&organization)?;
     let mut draft = CreateMember {
         organization_id: organization_id.to_owned(),
         user_id: user.id().into_owned(),

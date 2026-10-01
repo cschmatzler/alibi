@@ -1,42 +1,80 @@
 //! Application-owned server-only admission and genuine callback/storage observations.
-use crate::{organization_update_hooks_fixture::snapshot as base_snapshot, TestSchema};
+use crate::{TestSchema, organization_update_hooks_fixture::snapshot as base_snapshot};
 use async_trait::async_trait;
 use axum::{
+    Json, Router,
     extract::Query,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
 };
 use better_auth::plugins::organization::{
-    extensions::{OrganizationLimitResolver, TeamLimitContext},
-    types::AddOrganizationMemberRequest,
     OrganizationConfig, OrganizationMemberAddedContext, OrganizationMemberAdditionContext,
     OrganizationMemberAdditionHooks, OrganizationMemberCreatePatch, TeamsConfig,
+    extensions::{OrganizationLimitResolver, TeamLimitContext},
+    types::AddOrganizationMemberRequest,
 };
 use better_auth::{
+    AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin},
-    AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
 };
 use better_auth_core::{
-    store::{MemberStore, OrganizationStore, UserStore},
     CreateMember, CreateUser, UpdateUser,
+    store::{MemberStore, OrganizationStore, UserStore},
 };
 use better_auth_seaorm::{
-    sea_orm::{ConnectionTrait, DbBackend, Statement},
     DatabaseConnection, SeaOrmStore,
+    sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, Notify};
 async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
     let mut value = base_snapshot(database).await?;
-    for(name,sql,columns)in[("members","SELECT m.id,m.organization_id AS organizationId,m.user_id AS userId,m.role FROM member m JOIN organization o ON o.id=m.organization_id JOIN users u ON u.id=m.user_id ORDER BY o.slug,u.email,m.created_at,m.rowid",&["id","organizationId","userId","role"][..]),("teams","SELECT id,organization_id AS organizationId,name,member_count AS memberCount FROM team ORDER BY name,id",&["id","organizationId","name","memberCount"][..]),("teamMembers","SELECT m.id,m.team_id AS teamId,m.user_id AS userId FROM team_member m JOIN team t ON t.id=m.team_id JOIN users u ON u.id=m.user_id ORDER BY t.name,u.email,m.id",&["id","teamId","userId"][..])]{
- let rows=database.query_all_raw(Statement::from_string(DbBackend::Sqlite,sql)).await.map_err(|error|AuthError::internal(error.to_string()))?;
- let mut values=Vec::new();for row in rows{let mut object=serde_json::Map::new();for column in columns{let field=if *column=="memberCount"{json!(row.try_get::<i64>("",column).map_err(|error|AuthError::internal(error.to_string()))?)}else{json!(row.try_get::<Option<String>>("",column).map_err(|error|AuthError::internal(error.to_string()))?)};let _=object.insert((*column).into(),field);}values.push(Value::Object(object));}value[name]=Value::Array(values);
- }
+    for (name, sql, columns) in [
+        (
+            "members",
+            "SELECT m.id,m.organization_id AS organizationId,m.user_id AS userId,m.role FROM member m JOIN organization o ON o.id=m.organization_id JOIN users u ON u.id=m.user_id ORDER BY o.slug,u.email,m.created_at,m.rowid",
+            &["id", "organizationId", "userId", "role"][..],
+        ),
+        (
+            "teams",
+            "SELECT id,organization_id AS organizationId,name,member_count AS memberCount FROM team ORDER BY name,id",
+            &["id", "organizationId", "name", "memberCount"][..],
+        ),
+        (
+            "teamMembers",
+            "SELECT m.id,m.team_id AS teamId,m.user_id AS userId FROM team_member m JOIN team t ON t.id=m.team_id JOIN users u ON u.id=m.user_id ORDER BY t.name,u.email,m.id",
+            &["id", "teamId", "userId"][..],
+        ),
+    ] {
+        let rows = database
+            .query_all_raw(Statement::from_string(DbBackend::Sqlite, sql))
+            .await
+            .map_err(|error| AuthError::internal(error.to_string()))?;
+        let mut values = Vec::new();
+        for row in rows {
+            let mut object = serde_json::Map::new();
+            for column in columns {
+                let field = if *column == "memberCount" {
+                    json!(
+                        row.try_get::<i64>("", column)
+                            .map_err(|error| AuthError::internal(error.to_string()))?
+                    )
+                } else {
+                    json!(
+                        row.try_get::<Option<String>>("", column)
+                            .map_err(|error| AuthError::internal(error.to_string()))?
+                    )
+                };
+                let _ = object.insert((*column).into(), field);
+            }
+            values.push(Value::Object(object));
+        }
+        value[name] = Value::Array(values);
+    }
     Ok(value)
 }
 async fn full_snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
@@ -142,7 +180,20 @@ impl Application {
             user_id: body["patchUserId"].as_str().map(str::to_owned),
             role: body["patchRole"].as_str().map(str::to_owned),
         };
-        for sql in ["DROP TRIGGER IF EXISTS addition_guard_member","DROP TRIGGER IF EXISTS addition_guard_team","DROP TRIGGER IF EXISTS addition_guard_cleanup","DROP TRIGGER IF EXISTS addition_guard_user","CREATE TABLE IF NOT EXISTS __test_addition_guard(userId TEXT,organizationId TEXT,teamId TEXT)","DELETE FROM __test_addition_guard"]{let _=self.database.execute_unprepared(sql).await.map_err(|error|AuthError::internal(error.to_string()))?;}
+        for sql in [
+            "DROP TRIGGER IF EXISTS addition_guard_member",
+            "DROP TRIGGER IF EXISTS addition_guard_team",
+            "DROP TRIGGER IF EXISTS addition_guard_cleanup",
+            "DROP TRIGGER IF EXISTS addition_guard_user",
+            "CREATE TABLE IF NOT EXISTS __test_addition_guard(userId TEXT,organizationId TEXT,teamId TEXT)",
+            "DELETE FROM __test_addition_guard",
+        ] {
+            let _ = self
+                .database
+                .execute_unprepared(sql)
+                .await
+                .map_err(|error| AuthError::internal(error.to_string()))?;
+        }
         if mode.starts_with("sql-") {
             let user_id = body["userId"].as_str().unwrap_or_default();
             let org_id = body["organizationId"].as_str().unwrap_or_default();
@@ -166,11 +217,21 @@ impl Application {
                 ))
                 .await
                 .map_err(|error| AuthError::internal(error.to_string()))?;
-            let sql=match mode{
-    "sql-member-abort"=>Some("CREATE TRIGGER addition_guard_member BEFORE INSERT ON member WHEN NEW.user_id=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission member veto'); END"),
-    "sql-team-abort"=>Some("CREATE TRIGGER addition_guard_team BEFORE INSERT ON team_member WHEN NEW.user_id=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission team veto'); END"),
-    "sql-cleanup-abort"=>Some("CREATE TRIGGER addition_guard_cleanup BEFORE DELETE ON member WHEN OLD.user_id=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission cleanup veto'); END"),
-    "sql-before-error"|"sql-after-error"=>Some("CREATE TRIGGER addition_guard_user BEFORE UPDATE ON users WHEN OLD.id=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission callback veto'); END"),_=>None};
+            let sql = match mode {
+                "sql-member-abort" => Some(
+                    "CREATE TRIGGER addition_guard_member BEFORE INSERT ON member WHEN NEW.user_id=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission member veto'); END",
+                ),
+                "sql-team-abort" => Some(
+                    "CREATE TRIGGER addition_guard_team BEFORE INSERT ON team_member WHEN NEW.user_id=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission team veto'); END",
+                ),
+                "sql-cleanup-abort" => Some(
+                    "CREATE TRIGGER addition_guard_cleanup BEFORE DELETE ON member WHEN OLD.user_id=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission cleanup veto'); END",
+                ),
+                "sql-before-error" | "sql-after-error" => Some(
+                    "CREATE TRIGGER addition_guard_user BEFORE UPDATE ON users WHEN OLD.id=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission callback veto'); END",
+                ),
+                _ => None,
+            };
             if let Some(sql) = sql {
                 let _ = self
                     .database
@@ -351,10 +412,16 @@ pub(super) async fn router(
             member_addition_hooks: Some(application.clone()),
             organization_limit: name.starts_with("org-member-multiplicity").then_some(3.0),
             membership_limit: match name {
-                "org-member-addition-limit-one" => Some(1),
-                "org-member-addition-zero" => Some(0),
+                "org-member-addition-limit-one" => Some(
+                    better_auth::plugins::organization::MembershipLimit::Fixed(1.0),
+                ),
+                "org-member-addition-zero" => Some(
+                    better_auth::plugins::organization::MembershipLimit::Fixed(0.0),
+                ),
                 "org-member-addition-none" => None,
-                _ => Some(100),
+                _ => Some(better_auth::plugins::organization::MembershipLimit::Fixed(
+                    100.0,
+                )),
             },
             teams: TeamsConfig {
                 enabled: name != "org-member-addition-no-team",

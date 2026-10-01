@@ -1,5 +1,7 @@
+use super::page::OrganizationPageError;
 use super::require_session;
 use crate::plugins::organization::OrganizationConfig;
+use crate::plugins::organization::membership_policy::{read_page_limit, truthy_number};
 use crate::plugins::organization::types::{
     BasicMemberResponse, CheckSlugRequest, CheckSlugResponse, CreateOrganizationRequest,
     CreateOrganizationResponse, CreatedOrganizationResponse, DeleteOrganizationRequest,
@@ -10,7 +12,7 @@ use crate::plugins::organization::types::{
 use better_auth_core::entity::{AuthMember, AuthOrganization, AuthSession, AuthUser};
 use better_auth_core::error::{AuthError, AuthResult};
 use better_auth_core::plugin::AuthContext;
-use better_auth_core::store::ListOrganizationMembersParams;
+use better_auth_core::store::MemberPageQuery;
 use better_auth_core::types::{
     AuthRequest, AuthResponse, CreateMember, CreateOrganization, UpdateOrganization,
 };
@@ -387,7 +389,10 @@ pub(crate) async fn get_full_organization_core(
     session: &impl AuthSession,
     config: &OrganizationConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<Option<FullOrganizationResponse<OrganizationResponse, InvitationView>>> {
+) -> Result<
+    Option<FullOrganizationResponse<OrganizationResponse, InvitationView>>,
+    OrganizationPageError,
+> {
     let org_id = if let Some(slug) = query
         .organization_slug
         .as_deref()
@@ -413,30 +418,18 @@ pub(crate) async fn get_full_organization_core(
         .await?
         .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
 
-    if ctx
-        .database
-        .get_member(&org_id, &user.id())
-        .await?
-        .is_none()
-    {
-        let _ = ctx
-            .database
-            .update_session_active_organization(session.token(), None)
-            .await?;
-        return Err(AuthError::forbidden(
-            "User is not a member of the organization",
-        ));
-    }
-
-    let members_limit = query.members_limit.or(config.membership_limit);
-    let member_params = ListOrganizationMembersParams {
+    let members_limit = query
+        .members_limit
+        .filter(|limit| truthy_number(*limit))
+        .unwrap_or(ctx.config.advanced.database.default_find_many_limit as f64);
+    let member_params = MemberPageQuery {
         organization_id: org_id.clone(),
-        limit: members_limit,
+        limit: Some(members_limit),
         ..Default::default()
     };
     let (members_raw, _) = ctx
         .database
-        .query_organization_members(&member_params)
+        .query_organization_members_page(&member_params)
         .await?;
     let user_ids = members_raw
         .iter()
@@ -444,7 +437,7 @@ pub(crate) async fn get_full_organization_core(
         .collect::<Vec<_>>();
     let users_by_id = ctx
         .database
-        .list_users_by_ids(&user_ids)
+        .list_users_by_ids_page(&user_ids, read_page_limit(config.membership_limit.as_ref()))
         .await?
         .into_iter()
         .map(|user| (user.id().to_string(), user))
@@ -452,15 +445,17 @@ pub(crate) async fn get_full_organization_core(
     let mut members = Vec::with_capacity(members_raw.len());
 
     for member in &members_raw {
-        if let Some(user_info) = users_by_id.get(&member.user_id) {
-            members.push(MemberResponse::from_member_and_user(member, user_info));
-        }
+        let user_info = users_by_id
+            .get(&member.user_id)
+            .ok_or(OrganizationPageError::MissingUser)?;
+        members.push(MemberResponse::from_member_and_user(member, user_info));
     }
 
     let invitations = ctx.database.list_organization_invitations(&org_id).await?;
 
-    Ok(Some(FullOrganizationResponse {
-        organization: OrganizationResponse::from_stored_organization(&organization)?,
+    let response = FullOrganizationResponse {
+        organization: OrganizationResponse::from_stored_organization(&organization)
+            .map_err(AuthError::from)?,
         members,
         invitations: invitations
             .iter()
@@ -478,7 +473,21 @@ pub(crate) async fn get_full_organization_core(
         } else {
             None
         },
-    }))
+    };
+    if ctx
+        .database
+        .get_member(&org_id, &user.id())
+        .await?
+        .is_none()
+    {
+        let _ = ctx
+            .database
+            .update_session_active_organization(session.token(), None)
+            .await?;
+        return Err(AuthError::forbidden("User is not a member of the organization").into());
+    }
+
+    Ok(Some(response))
 }
 
 pub(crate) async fn check_slug_core(
@@ -798,7 +807,10 @@ pub async fn handle_get_full_organization(
 ) -> AuthResult<AuthResponse> {
     let (user, session) = require_session(req, ctx).await?;
     let query = parse_query::<GetFullOrganizationQuery>(&req.query);
-    let response = get_full_organization_core(&query, &user, &session, config, ctx).await?;
+    let response = match get_full_organization_core(&query, &user, &session, config, ctx).await {
+        Ok(response) => response,
+        Err(error) => return error.response(),
+    };
     Ok(AuthResponse::json(200, &response)?)
 }
 
@@ -930,7 +942,7 @@ mod tests {
             member_removal_hooks: None,
             member_addition_hooks: None,
             deletion_hooks: None,
-            membership_limit: Some(100),
+            membership_limit: Some(crate::plugins::organization::MembershipLimit::Fixed(100.0)),
             creator_role: "owner".to_string(),
             invitation_expires_in: 60 * 60 * 48,
             invitation_limit: Some(100),
@@ -1088,7 +1100,7 @@ mod tests {
             &GetFullOrganizationQuery {
                 organization_id: Some(organization.id.clone()),
                 organization_slug: None,
-                members_limit: Some(1),
+                members_limit: Some(1.0),
             },
             &user,
             &session,

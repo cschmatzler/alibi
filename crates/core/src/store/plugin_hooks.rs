@@ -61,6 +61,9 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
     async fn list_users_by_ids(&self, ids: &[String]) -> AuthResult<Vec<S::User>> {
         self.inner.list_users_by_ids(ids).await
     }
+    async fn list_users_by_ids_page(&self, ids: &[String], limit: f64) -> AuthResult<Vec<S::User>> {
+        self.inner.list_users_by_ids_page(ids, limit).await
+    }
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
         self.inner.get_user_by_email(email).await
     }
@@ -339,6 +342,12 @@ impl<S: AuthSchema> MemberStore for PluginStore<S> {
         params: &ListOrganizationMembersParams,
     ) -> AuthResult<(Vec<Member>, usize)> {
         self.inner.query_organization_members(params).await
+    }
+    async fn query_organization_members_page(
+        &self,
+        params: &MemberPageQuery,
+    ) -> AuthResult<(Vec<Member>, usize)> {
+        self.inner.query_organization_members_page(params).await
     }
     async fn count_organization_members(&self, org_id: &str) -> AuthResult<i64> {
         self.inner.count_organization_members(org_id).await

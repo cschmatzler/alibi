@@ -38,28 +38,137 @@ where
     string(&value).map_err(serde::de::Error::custom)
 }
 
-fn deserialize_optional_usize_from_string<'de, D>(
-    deserializer: D,
-) -> Result<Option<usize>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum Value {
-        Number(usize),
-        String(String),
+// These routes intentionally use different published query conversions:
+// list-members Number(string), get-full-organization parseInt(string).
+fn query_whitespace(c: char) -> bool {
+    matches!(c, '\u{0009}'..='\u{000D}' | '\u{0020}' | '\u{00A0}' | '\u{1680}' | '\u{2000}'..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{202F}' | '\u{205F}' | '\u{3000}' | '\u{FEFF}')
+}
+fn number_query(value: &str) -> f64 {
+    let value = value.trim_matches(query_whitespace);
+    if value.is_empty() {
+        return 0.0;
     }
-
-    let value = Option::<Value>::deserialize(deserializer)?;
+    for (prefixes, radix, bits) in [
+        (["0x", "0X"], 16, 4),
+        (["0o", "0O"], 8, 3),
+        (["0b", "0B"], 2, 1),
+    ] {
+        if let Some(digits) = prefixes
+            .iter()
+            .find_map(|prefix| value.strip_prefix(prefix))
+        {
+            return radix_number(digits, radix, bits).unwrap_or(f64::NAN);
+        }
+    }
     match value {
-        None => Ok(None),
-        Some(Value::Number(number)) => Ok(Some(number)),
-        Some(Value::String(string)) => string
-            .parse::<usize>()
-            .map(Some)
-            .map_err(serde::de::Error::custom),
+        "Infinity" | "+Infinity" => f64::INFINITY,
+        "-Infinity" => f64::NEG_INFINITY,
+        _ if value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || b"+-.eE".contains(&byte)) =>
+        {
+            value.parse().unwrap_or(f64::NAN)
+        }
+        _ => f64::NAN,
     }
+}
+fn integer_query(value: &str) -> f64 {
+    let value = value.trim_start_matches(query_whitespace);
+    let (value, sign) = if let Some(value) = value.strip_prefix('-') {
+        (value, -1.0)
+    } else {
+        (value.strip_prefix('+').unwrap_or(value), 1.0)
+    };
+    if let Some(value) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        let length = value.bytes().take_while(u8::is_ascii_hexdigit).count();
+        return sign
+            * radix_number(value.get(..length).unwrap_or_default(), 16, 4).unwrap_or(f64::NAN);
+    }
+    let length = value.bytes().take_while(u8::is_ascii_digit).count();
+    sign * value
+        .get(..length)
+        .unwrap_or_default()
+        .parse::<f64>()
+        .unwrap_or(f64::NAN)
+}
+fn deserialize_query_number<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+    integer_string: bool,
+) -> Result<Option<f64>, D::Error> {
+    match Option::<JsValue>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(JsValue::Number(number)) => Ok(Some(number)),
+        Some(JsValue::String(value)) => Ok(Some(if integer_string {
+            integer_query(&value)
+        } else {
+            number_query(&value)
+        })),
+        _ => Err(serde::de::Error::custom(
+            "Page limits must be a string or number",
+        )),
+    }
+}
+fn deserialize_optional_number<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    deserialize_query_number(deserializer, false)
+}
+fn deserialize_optional_integer_query<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    deserialize_query_number(deserializer, true)
+}
+// Retain one-rounded radix conversion already used for JS Number SIWE inputs.
+fn radix_number(digits: &str, radix: u32, bits_per_digit: usize) -> Option<f64> {
+    if digits.is_empty() {
+        return None;
+    }
+    let digits = digits
+        .chars()
+        .map(|character| character.to_digit(radix))
+        .collect::<Option<Vec<_>>>()?;
+    let Some(first_nonzero) = digits.iter().position(|digit| *digit != 0) else {
+        return Some(0.0);
+    };
+    let significant = digits.get(first_nonzero..)?;
+    let first = *significant.first()?;
+    let first_bits = (u32::BITS - first.leading_zeros()) as usize;
+    let bit_length = first_bits + (significant.len() - 1) * bits_per_digit;
+    if bit_length > 1024 {
+        return Some(f64::INFINITY);
+    }
+    let mut mantissa = 0u64;
+    let mut position = 0;
+    let mut guard = false;
+    let mut sticky = false;
+    for (index, digit) in significant.iter().enumerate() {
+        let width = if index == 0 {
+            first_bits
+        } else {
+            bits_per_digit
+        };
+        for bit in (0..width).rev() {
+            let set = (*digit >> bit) & 1 != 0;
+            if position < 53 {
+                mantissa = (mantissa << 1) | u64::from(set);
+            } else if position == 53 {
+                guard = set;
+            } else {
+                sticky |= set;
+            }
+            position += 1;
+        }
+    }
+    if bit_length <= 53 {
+        return Some(mantissa as f64);
+    }
+    if guard && (sticky || mantissa & 1 != 0) {
+        mantissa += 1;
+    }
+    Some(mantissa as f64 * 2.0f64.powi((bit_length - 53) as i32))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -206,9 +315,9 @@ pub struct GetFullOrganizationQuery {
     #[serde(
         default,
         rename = "membersLimit",
-        deserialize_with = "deserialize_optional_usize_from_string"
+        deserialize_with = "deserialize_optional_integer_query"
     )]
-    pub members_limit: Option<usize>,
+    pub members_limit: Option<f64>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -260,10 +369,10 @@ pub struct ListMembersQuery {
     pub organization_id: Option<String>,
     #[serde(rename = "organizationSlug")]
     pub organization_slug: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_optional_usize_from_string")]
-    pub limit: Option<usize>,
-    #[serde(default, deserialize_with = "deserialize_optional_usize_from_string")]
-    pub offset: Option<usize>,
+    #[serde(default, deserialize_with = "deserialize_optional_number")]
+    pub limit: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_number")]
+    pub offset: Option<f64>,
     #[serde(rename = "sortBy")]
     pub sort_by: Option<String>,
     #[serde(rename = "sortDirection")]
@@ -614,7 +723,7 @@ mod tests {
         }))
         .expect("number limit should deserialize");
 
-        assert_eq!(string_limit.members_limit, Some(1));
-        assert_eq!(number_limit.members_limit, Some(2));
+        assert_eq!(string_limit.members_limit, Some(1.0));
+        assert_eq!(number_limit.members_limit, Some(2.0));
     }
 }
