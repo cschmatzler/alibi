@@ -128,6 +128,14 @@ where
             api_key.rate_limit.time_window = 7654321.0;
         }
         builder = builder
+            .plugin(better_auth::plugins::one_tap::OneTapPlugin::with_config(
+                better_auth::plugins::one_tap::OneTapConfig {
+                    client_id: Some(better_auth::plugins::one_tap::OneTapClientId::Single(
+                        "openapi-one-tap-client".into(),
+                    )),
+                    ..Default::default()
+                },
+            ))
             .plugin(AdminPlugin::new())
             .plugin(OrganizationPlugin::with_config(organization))
             .plugin(TwoFactorPlugin::new())

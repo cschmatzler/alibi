@@ -217,6 +217,7 @@ pub(super) fn models(plugin: &str) -> Option<Vec<OpenApiModel>> {
             ],
         )],
         "one-time-token" => vec![],
+        "one-tap" => vec![],
         "email-otp" => vec![],
         "magic-link" => vec![],
         "phone-number" => vec![OpenApiModel::new(
