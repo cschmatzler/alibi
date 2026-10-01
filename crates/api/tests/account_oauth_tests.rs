@@ -376,6 +376,7 @@ fn make_test_provider(mock_url: &str) -> OAuthProvider {
         token_url: format!("{}/token", mock_url),
         user_info_url: Some(format!("{}/userinfo", mock_url)),
         scopes: vec!["email".to_string()],
+        authorization: None,
         authorization_params: Vec::new(),
         map_user_info: Some(|v| {
             Ok(OAuthUserInfo {
@@ -475,6 +476,7 @@ async fn test_encrypt_oauth_tokens_stored_encrypted_in_db() {
             token_url: provider.token_url,
             user_info_url: provider.user_info_url,
             scopes: provider.scopes,
+            authorization: None,
             authorization_params: provider.authorization_params,
             map_user_info: provider.map_user_info,
             get_user_info: provider.get_user_info,
@@ -1385,6 +1387,7 @@ async fn test_link_social_returns_redirect_url_with_state() {
             token_url: "https://github.com/login/oauth/access_token".to_string(),
             user_info_url: Some("https://api.github.com/user".to_string()),
             scopes: vec!["user:email".to_string()],
+            authorization: None,
             authorization_params: Vec::new(),
             map_user_info: Some(|_| unreachable!()),
             get_user_info: None,

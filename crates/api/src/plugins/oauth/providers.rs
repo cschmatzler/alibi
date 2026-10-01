@@ -232,6 +232,10 @@ pub struct OAuthProvider {
     pub token_url: String,
     pub user_info_url: Option<String>,
     pub scopes: Vec<String>,
+    /// Built-in authorization behavior. `None` preserves custom-provider behavior.
+    /// `scopes` remains the provider's base scope list; this policy adds configured
+    /// and request scopes in the provider's published order.
+    pub authorization: Option<OAuthAuthorizationPolicy>,
     pub authorization_params: Vec<(String, String)>,
     pub map_user_info: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
     pub get_user_info: Option<Arc<dyn OAuthUserInfoHandler>>,
@@ -240,6 +244,42 @@ pub struct OAuthProvider {
     pub disable_implicit_sign_up: bool,
     pub disable_sign_up: bool,
     pub override_user_info_on_sign_in: bool,
+}
+
+/// Ordering of configured and per-request additions to a provider's base scopes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OAuthScopeOrder {
+    ConfiguredThenRequested,
+    RequestedThenConfigured,
+}
+
+/// Immutable authorization configuration used by the built-in social providers.
+/// Scope entries retain their original order, duplicates and whitespace.
+#[derive(Debug, Clone)]
+pub struct OAuthAuthorizationPolicy {
+    pub configured_scopes: Vec<String>,
+    pub disable_default_scopes: bool,
+    pub scope_order: OAuthScopeOrder,
+    pub pkce: bool,
+    pub prompt: Option<String>,
+    /// Used when `prompt` is absent or empty; Discord defaults to `none`.
+    pub default_prompt: Option<String>,
+    /// Discord emits this JS number only when the effective scopes contain `bot`.
+    pub discord_permissions: Option<f64>,
+}
+
+impl Default for OAuthAuthorizationPolicy {
+    fn default() -> Self {
+        Self {
+            configured_scopes: Vec::new(),
+            disable_default_scopes: false,
+            scope_order: OAuthScopeOrder::ConfiguredThenRequested,
+            pkce: true,
+            prompt: None,
+            default_prompt: None,
+            discord_permissions: None,
+        }
+    }
 }
 
 impl OAuthProvider {
@@ -279,6 +319,7 @@ impl OAuthProvider {
                 "profile".to_string(),
                 "openid".to_string(),
             ],
+            authorization: Some(OAuthAuthorizationPolicy::default()),
             authorization_params: vec![("include_granted_scopes".to_string(), "true".to_string())],
             map_user_info: Some(|v| {
                 Ok(OAuthUserInfo {
@@ -342,6 +383,7 @@ impl OAuthProvider {
             token_url: token_url.to_string(),
             user_info_url: Some(user_info_url.to_string()),
             scopes: vec!["read:user".to_string(), "user:email".to_string()],
+            authorization: Some(OAuthAuthorizationPolicy::default()),
             authorization_params: Vec::new(),
             map_user_info: None,
             get_user_info: Some(Arc::new(GitHubUserInfoHandler::new(
@@ -367,6 +409,12 @@ impl OAuthProvider {
             token_url: "https://discord.com/api/oauth2/token".to_string(),
             user_info_url: Some("https://discord.com/api/users/@me".to_string()),
             scopes: vec!["identify".to_string(), "email".to_string()],
+            authorization: Some(OAuthAuthorizationPolicy {
+                scope_order: OAuthScopeOrder::RequestedThenConfigured,
+                pkce: false,
+                default_prompt: Some("none".into()),
+                ..OAuthAuthorizationPolicy::default()
+            }),
             authorization_params: Vec::new(),
             map_user_info: Some(|v| {
                 Ok(OAuthUserInfo {

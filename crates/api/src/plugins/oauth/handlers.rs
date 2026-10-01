@@ -14,8 +14,8 @@ use better_auth_core::{
 
 use super::encryption::encrypt_token_set;
 use super::providers::{
-    OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthConfig, OAuthProvider, OAuthTokenSet,
-    OAuthUserInfo, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthConfig, OAuthProvider, OAuthScopeOrder,
+    OAuthTokenSet, OAuthUserInfo, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use super::state::{
     AccountCookiePayload, OAuthStateLink, OAuthStatePayload, account_cookie_name,
@@ -69,9 +69,29 @@ fn build_authorization_url(
     code_challenge: &str,
     login_hint: Option<&str>,
 ) -> AuthResult<String> {
-    let effective_scopes: Vec<&str> = scopes
-        .map(|s| s.iter().map(|s| s.as_str()).collect())
-        .unwrap_or_else(|| provider.scopes.iter().map(|s| s.as_str()).collect());
+    let effective_scopes: Vec<&str> = if let Some(policy) = &provider.authorization {
+        let mut effective = Vec::new();
+        if !policy.disable_default_scopes {
+            effective.extend(provider.scopes.iter().map(String::as_str));
+        }
+        let configured = policy.configured_scopes.iter().map(String::as_str);
+        let requested = scopes.unwrap_or_default().iter().map(String::as_str);
+        match policy.scope_order {
+            OAuthScopeOrder::ConfiguredThenRequested => {
+                effective.extend(configured);
+                effective.extend(requested);
+            }
+            OAuthScopeOrder::RequestedThenConfigured => {
+                effective.extend(requested);
+                effective.extend(configured);
+            }
+        }
+        effective
+    } else {
+        scopes
+            .map(|s| s.iter().map(String::as_str).collect())
+            .unwrap_or_else(|| provider.scopes.iter().map(String::as_str).collect())
+    };
     let scope_str = effective_scopes.join(" ");
 
     let mut url = url::Url::parse(&provider.auth_url)
@@ -80,11 +100,49 @@ fn build_authorization_url(
         .query_pairs_mut()
         .append_pair("response_type", "code")
         .append_pair("client_id", &provider.client_id)
-        .append_pair("state", state)
-        .append_pair("scope", &scope_str)
-        .append_pair("redirect_uri", callback_url)
-        .append_pair("code_challenge_method", "S256")
-        .append_pair("code_challenge", code_challenge);
+        .append_pair("state", state);
+    if provider.authorization.is_none() || !effective_scopes.is_empty() {
+        let _ = url.query_pairs_mut().append_pair("scope", &scope_str);
+    }
+    let _ = url
+        .query_pairs_mut()
+        .append_pair("redirect_uri", callback_url);
+    if provider
+        .authorization
+        .as_ref()
+        .is_none_or(|policy| policy.pkce)
+    {
+        let _ = url
+            .query_pairs_mut()
+            .append_pair("code_challenge_method", "S256")
+            .append_pair("code_challenge", code_challenge);
+    }
+    if let Some(policy) = &provider.authorization {
+        if let Some(prompt) = policy
+            .prompt
+            .as_deref()
+            .filter(|prompt| !prompt.is_empty())
+            .or(policy.default_prompt.as_deref())
+        {
+            let _ = url.query_pairs_mut().append_pair("prompt", prompt);
+        }
+        if effective_scopes.contains(&"bot")
+            && let Some(permissions) = policy.discord_permissions
+        {
+            let value = if permissions.is_nan() {
+                "NaN".into()
+            } else if permissions == f64::INFINITY {
+                "Infinity".into()
+            } else if permissions == f64::NEG_INFINITY {
+                "-Infinity".into()
+            } else {
+                let number = serde_json::Number::from_f64(permissions)
+                    .ok_or_else(|| AuthError::internal("Invalid Discord permissions number"))?;
+                better_auth_core::utils::json::number_to_string(&number)?
+            };
+            let _ = url.query_pairs_mut().append_pair("permissions", &value);
+        }
+    }
     if let Some(login_hint) = login_hint {
         let _ = url.query_pairs_mut().append_pair("login_hint", login_hint);
     }
@@ -1621,7 +1679,11 @@ pub(crate) async fn handle_callback(
         provider,
         &code,
         &format!("{}/callback/{}", auth_base_url(ctx), provider_name),
-        Some(&payload.code_verifier),
+        provider
+            .authorization
+            .as_ref()
+            .is_none_or(|policy| policy.pkce)
+            .then_some(payload.code_verifier.as_str()),
         merged.get("device_id").map(String::as_str),
     )
     .await
