@@ -160,6 +160,7 @@ pub struct TestAuthOptions {
     pub phone_enabled: bool,
     pub multi_session_enabled: bool,
     pub one_tap_enabled: bool,
+    pub anonymous_enabled: bool,
 }
 
 struct TestResetSender {
@@ -398,6 +399,11 @@ pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth
     };
     let builder = if options.one_tap_enabled {
         builder.plugin(OneTapPlugin::new())
+    } else {
+        builder
+    };
+    let builder = if options.anonymous_enabled {
+        builder.plugin(better_auth::plugins::AnonymousPlugin::new())
     } else {
         builder
     };
