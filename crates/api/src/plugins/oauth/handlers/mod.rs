@@ -4,7 +4,8 @@ mod tests;
 use super::encryption::encrypt_token_set;
 use super::providers::{
     OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthConfig, OAuthProvider, OAuthScopeOrder,
-    OAuthTokenSet, OAuthUserInfo, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthTokenEndpointAuth, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoRequest,
+    OAuthUserInfoResponse,
 };
 use super::state::{
     AccountCookiePayload, OAuthStateLink, OAuthStatePayload, RecoveredOAuthServerContext,
@@ -190,6 +191,14 @@ fn build_authorization_url(
             "Client ID and client secret are required",
         ));
     }
+    if provider
+        .authorization
+        .as_ref()
+        .is_some_and(|policy| policy.require_client_id)
+        && provider.client_id.is_empty()
+    {
+        return Err(AuthError::config("Client ID is required"));
+    }
     let effective_scopes: Vec<&str> = provider.authorization.as_ref().map_or_else(
         || {
             scopes.map_or_else(
@@ -213,6 +222,10 @@ fn build_authorization_url(
                     effective.extend(requested);
                     effective.extend(configured);
                 }
+            }
+            if policy.deduplicate_scopes {
+                let mut seen = std::collections::HashSet::new();
+                effective.retain(|scope| seen.insert(*scope));
             }
             effective
         },
@@ -315,16 +328,13 @@ pub(super) async fn refresh_tokens_via_provider(
             .map_err(AuthError::internal);
     }
 
-    let client = reqwest::Client::new();
-    let token_resp = client
-        .post(&provider.token_url)
-        .header("Accept", "application/json")
-        .form(&[
-            ("grant_type", "refresh_token"),
-            ("refresh_token", refresh_token),
-            ("client_id", &provider.client_id),
-            ("client_secret", &provider.client_secret),
-        ])
+    let mut form = vec![
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh_token),
+    ];
+    let request = provider_token_request(provider, &mut form)?;
+    let token_resp = request
+        .form(&form)
         .send()
         .await
         .map_err(|e| AuthError::internal(format!("Token refresh failed: {e}")))?;
@@ -345,6 +355,64 @@ pub(super) async fn refresh_tokens_via_provider(
         .map_err(|e| AuthError::internal(format!("Failed to parse refresh response: {e}")))?;
 
     parse_token_response(token_data)
+}
+
+fn provider_token_request<'a>(
+    provider: &'a OAuthProvider,
+    form: &mut Vec<(&'a str, &'a str)>,
+) -> AuthResult<reqwest::RequestBuilder> {
+    let request = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| AuthError::internal(format!("Token HTTP client failed: {error}")))?
+        .post(&provider.token_url)
+        .header("Accept", "application/json");
+    match provider
+        .authorization
+        .as_ref()
+        .and_then(|policy| policy.token_endpoint_auth)
+    {
+        None => {
+            form.extend([
+                ("client_id", provider.client_id.as_str()),
+                ("client_secret", provider.client_secret.as_str()),
+            ]);
+            Ok(request)
+        }
+        Some(OAuthTokenEndpointAuth::None) => {
+            if provider.client_id.is_empty() || !provider.client_secret.is_empty() {
+                return Err(AuthError::config(
+                    "Public token authentication requires client ID and no secret",
+                ));
+            }
+            form.push(("client_id", &provider.client_id));
+            Ok(request)
+        }
+        Some(method) => {
+            if provider.client_id.is_empty() || provider.client_secret.is_empty() {
+                return Err(AuthError::config(
+                    "Client ID and client secret are required",
+                ));
+            }
+            if method == OAuthTokenEndpointAuth::ClientSecretBasic {
+                let encode = |value: &str| {
+                    url::form_urlencoded::Serializer::new(String::new())
+                        .append_key_only(value)
+                        .finish()
+                };
+                Ok(request.basic_auth(
+                    encode(&provider.client_id),
+                    Some(encode(&provider.client_secret)),
+                ))
+            } else {
+                form.extend([
+                    ("client_id", provider.client_id.as_str()),
+                    ("client_secret", provider.client_secret.as_str()),
+                ]);
+                Ok(request)
+            }
+        }
+    }
 }
 
 fn parse_token_response(token_data: serde_json::Value) -> AuthResult<OAuthTokenSet> {
@@ -427,8 +495,6 @@ pub(in crate::plugins) async fn validate_authorization_code_via_provider(
         ("grant_type", "authorization_code"),
         ("code", code),
         ("redirect_uri", redirect_uri),
-        ("client_id", &provider.client_id),
-        ("client_secret", &provider.client_secret),
     ];
     if let Some(code_verifier) = code_verifier {
         form.push(("code_verifier", code_verifier));
@@ -437,10 +503,8 @@ pub(in crate::plugins) async fn validate_authorization_code_via_provider(
         form.push(("device_id", device_id));
     }
 
-    let client = reqwest::Client::new();
-    let token_resp = client
-        .post(&provider.token_url)
-        .header("Accept", "application/json")
+    let request = provider_token_request(provider, &mut form)?;
+    let token_resp = request
         .form(&form)
         .send()
         .await

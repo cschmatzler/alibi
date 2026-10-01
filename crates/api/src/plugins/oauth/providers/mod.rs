@@ -1,3 +1,6 @@
+mod cloudflare;
+pub use cloudflare::CloudflareOptions;
+
 mod atlassian;
 pub use atlassian::AtlassianOptions;
 
@@ -269,11 +272,25 @@ pub enum OAuthScopeOrder {
     RequestedThenConfigured,
 }
 
+/// OAuth token-endpoint credential transport selected by a provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OAuthTokenEndpointAuth {
+    ClientSecretBasic,
+    ClientSecretPost,
+    None,
+}
+
 /// Immutable authorization configuration used by the built-in social providers.
-/// Scope entries retain their original order, duplicates and whitespace.
+/// Scope entries retain their original order and whitespace; providers may
+/// opt into removing exact duplicates.
 #[derive(Debug, Clone)]
 pub struct OAuthAuthorizationPolicy {
     pub configured_scopes: Vec<String>,
+    /// Retain the first occurrence of each scope, as Cloudflare requires.
+    pub deduplicate_scopes: bool,
+    pub require_client_id: bool,
+    /// `None` preserves the existing generic provider credential transport.
+    pub token_endpoint_auth: Option<OAuthTokenEndpointAuth>,
     pub response_type: String,
     /// Application callback URI overrides the generated provider callback.
     pub redirect_uri: Option<String>,
@@ -294,6 +311,9 @@ impl Default for OAuthAuthorizationPolicy {
     fn default() -> Self {
         Self {
             configured_scopes: Vec::new(),
+            deduplicate_scopes: false,
+            require_client_id: false,
+            token_endpoint_auth: None,
             response_type: "code".into(),
             redirect_uri: None,
             response_mode: None,
