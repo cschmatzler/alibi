@@ -7,7 +7,7 @@ use better_auth_core::types::{CreateAccount, UpdateAccount};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
+    IntoActiveModel, QueryFilter, QuerySelect,
 };
 
 impl<S> SeaOrmStore<S>
@@ -82,7 +82,9 @@ where
             .map_err(map_db_err)?;
         if accounts.len() > 1 {
             return Err(better_auth_core::AuthError::Database(
-                better_auth_core::DatabaseError::AmbiguousAccount { provider: provider.to_owned() },
+                better_auth_core::DatabaseError::AmbiguousAccount {
+                    provider: provider.to_owned(),
+                },
             ));
         }
         Ok(accounts.pop())
@@ -92,7 +94,6 @@ where
         let user_id = <S::Account as SeaOrmAccountModel>::parse_user_id(user_id)?;
         <S::Account as SeaOrmAccountModel>::Entity::find()
             .filter(<S::Account as SeaOrmAccountModel>::user_id_column().eq(user_id))
-            .order_by_desc(<S::Account as SeaOrmAccountModel>::created_at_column())
             .all(self.connection())
             .await
             .map_err(map_db_err)

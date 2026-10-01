@@ -1140,11 +1140,16 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
 #[async_trait]
 pub trait AccountStore<S: AuthSchema>: Send + Sync {
     async fn create_account(&self, create_account: CreateAccount) -> AuthResult<S::Account>;
+    /// Resolve a global provider identity only when exactly one physical row matches.
+    /// Duplicate rows (including duplicates owned by one user) must return
+    /// `DatabaseError::AmbiguousAccount`; choosing a row would make ownership arbitrary.
     async fn get_account(
         &self,
         provider: &str,
         provider_account_id: &str,
     ) -> AuthResult<Option<S::Account>>;
+    /// Return all scoped physical rows in the adapter's native order. Do not
+    /// select or collapse duplicate provider identities, or sort by mutable dates.
     async fn get_user_accounts(&self, user_id: &str) -> AuthResult<Vec<S::Account>>;
     async fn update_account(&self, id: &str, update: UpdateAccount) -> AuthResult<S::Account>;
     async fn delete_account(&self, id: &str) -> AuthResult<()>;

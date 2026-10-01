@@ -51,7 +51,7 @@ export function socialProviderFixture(base: BetterAuthOptions) {
     } } };
     profiles.set(path, betterAuth(authOptions));
   }
-  async function state() {
+  async function state(includePassword = false) {
     const { adapter } = await profiles.get("/__test/profiles/social-discord-default/api/auth")!.$context;
     const [users, accounts, sessions] = await Promise.all([
       adapter.findMany<Record<string, unknown>>({ model: "user", sortBy: { field: "createdAt", direction: "asc" } }),
@@ -60,7 +60,7 @@ export function socialProviderFixture(base: BetterAuthOptions) {
     ]);
     return Response.json({
       users: users.map(row => ({ id: row.id, name: row.name, email: row.email, emailVerified: row.emailVerified, image: row.image ?? null, createdAt: row.createdAt, updatedAt: row.updatedAt })),
-      accounts: accounts.map(row => ({ id: row.id, userId: row.userId, accountId: row.accountId, providerId: row.providerId, accessToken: row.accessToken ?? null, refreshToken: row.refreshToken ?? null, idToken: row.idToken ?? null, scope: row.scope ?? null, accessTokenExpiresAt: row.accessTokenExpiresAt ?? null, refreshTokenExpiresAt: row.refreshTokenExpiresAt ?? null, createdAt: row.createdAt, updatedAt: row.updatedAt })),
+      accounts: accounts.map(row => ({ ...(includePassword ? {password: row.password ?? null} : {}), id: row.id, userId: row.userId, accountId: row.accountId, providerId: row.providerId, accessToken: row.accessToken ?? null, refreshToken: row.refreshToken ?? null, idToken: row.idToken ?? null, scope: row.scope ?? null, accessTokenExpiresAt: row.accessTokenExpiresAt ?? null, refreshTokenExpiresAt: row.refreshTokenExpiresAt ?? null, createdAt: row.createdAt, updatedAt: row.updatedAt })),
       sessions: sessions.map(row => ({ id: row.id, userId: row.userId, token: row.token, expiresAt: row.expiresAt, createdAt: row.createdAt, updatedAt: row.updatedAt, ipAddress: row.ipAddress ?? null, userAgent: row.userAgent ?? null })),
       receipts,
     });
@@ -75,13 +75,20 @@ export function socialProviderFixture(base: BetterAuthOptions) {
         : { ...(profile.fixtureTokens === true ? { id_token: "fixture-encrypted-id" } : {}), access_token: "fixture-gitlab-access", refresh_token: "fixture-gitlab-refresh", token_type: "Bearer", scope: "read_user issued-scope", expires_in: 3600 });
       return Response.json(profile);
     }
+    if (url.pathname === "/__test/social-provider/clear-credential-password" && request.method === "POST") {
+      const body=await request.json() as {accountId:string};
+      const {internalAdapter}=await profiles.get("/__test/profiles/social-gitlab-issuer/api/auth")!.$context;
+      await internalAdapter.updateAccount(body.accountId,{password:null});
+      return Response.json({status:true});
+    }
     if (url.pathname === "/__test/social-provider/duplicate-account" && request.method === "POST") {
-      const body=await request.json() as {accountId:string,userId:string};
+      const body=await request.json() as {accountId:string,userId:string,createdAt?:string};
       const {adapter,internalAdapter}=await profiles.get("/__test/profiles/social-gitlab-issuer/api/auth")!.$context;
       const row=await adapter.findOne<Record<string,unknown>>({model:"account",where:[{field:"id",value:body.accountId}]});
       if(!row)return Response.json({message:"Account not found"},{status:404});
       const {id,createdAt,updatedAt,...fields}=row;
       const created=await internalAdapter.createAccount({...fields,userId:body.userId} as Parameters<typeof internalAdapter.createAccount>[0]);
+      if(body.createdAt)await adapter.update({model:"account",where:[{field:"id",value:created.id}],update:{createdAt:new Date(body.createdAt),updatedAt:new Date(body.createdAt)}});
       return Response.json({status:true,accountId:created.id});
     }
     if (url.pathname === "/__test/social-provider/import-tokens" && request.method === "POST") {
@@ -96,6 +103,7 @@ export function socialProviderFixture(base: BetterAuthOptions) {
     if (url.pathname === "/__test/social-provider/profile" && request.method === "POST") {
       profile = await request.json(); return Response.json({ status: true, profile });
     }
+    if (url.pathname === "/__test/social-provider/duplicate-state") return state(true);
     if (url.pathname === "/__test/social-provider/state") return state();
     return null;
   }};

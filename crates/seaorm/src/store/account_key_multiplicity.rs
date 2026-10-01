@@ -33,6 +33,62 @@ impl MigrationTrait for AccountKeyMultiplicity {
                 )
                 .await?;
         }
+        if !manager
+            .has_index("accounts", "idx_accounts_provider_account_lookup")
+            .await?
+        {
+            manager
+                .create_index(
+                    Index::create()
+                        .name("idx_accounts_provider_account_lookup")
+                        .table(Alias::new("accounts"))
+                        .col(Alias::new("provider_id"))
+                        .col(Alias::new("account_id"))
+                        .to_owned(),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+
+    #[expect(
+        elided_lifetimes_in_paths,
+        reason = "MigrationTrait requires late-bound manager lifetime"
+    )]
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        let duplicate = manager.get_connection().query_one_raw(Statement::from_string(manager.get_database_backend(), "SELECT provider_id,account_id FROM accounts GROUP BY provider_id,account_id HAVING COUNT(*) > 1 LIMIT 1")).await?;
+        if duplicate.is_some() {
+            return Err(DbErr::Migration("Cannot restore account provider-key uniqueness while duplicate rows exist; resolve their row identities before rollback".into()));
+        }
+        if !manager
+            .has_index("accounts", "idx_accounts_provider_account")
+            .await?
+        {
+            manager
+                .create_index(
+                    Index::create()
+                        .name("idx_accounts_provider_account")
+                        .table(Alias::new("accounts"))
+                        .col(Alias::new("provider_id"))
+                        .col(Alias::new("account_id"))
+                        .unique()
+                        .to_owned(),
+                )
+                .await?;
+        }
+        if manager
+            .has_index("accounts", "idx_accounts_provider_account_lookup")
+            .await?
+        {
+            manager
+                .drop_index(
+                    Index::drop()
+                        .name("idx_accounts_provider_account_lookup")
+                        .table(Alias::new("accounts"))
+                        .to_owned(),
+                )
+                .await?;
+        }
         Ok(())
     }
 }

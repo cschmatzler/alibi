@@ -38,18 +38,41 @@ pub(in crate::plugins) struct ProcessOAuthUserResult {
 
 pub(in crate::plugins) enum OAuthSignInError {
     Generic(String),
+    AccountLookup(AuthError),
     SessionAuth(AuthError),
     Banned(String),
     EmailNotVerified,
 }
 
 impl OAuthSignInError {
+    fn from_account_lookup(error: AuthError) -> Self {
+        if matches!(
+            error,
+            AuthError::Database(better_auth_core::DatabaseError::AmbiguousAccount { .. })
+        ) {
+            Self::AccountLookup(error)
+        } else {
+            Self::Generic(error.to_string())
+        }
+    }
+
+    pub(in crate::plugins) fn is_ambiguous_account(&self) -> bool {
+        matches!(
+            self,
+            Self::AccountLookup(AuthError::Database(
+                better_auth_core::DatabaseError::AmbiguousAccount { .. }
+            ))
+        )
+    }
+
     pub(in crate::plugins) fn redirect_parts(&self) -> (String, Option<&str>) {
         match self {
             // Upstream turns a plain internal error string into the `error`
             // param verbatim, with no description.
             Self::Generic(message) => (message.replace(' ', "_"), None),
-            Self::SessionAuth(error) => (error.to_string().replace(' ', "_"), None),
+            Self::AccountLookup(error) | Self::SessionAuth(error) => {
+                (error.to_string().replace(' ', "_"), None)
+            }
             // An APIError instead redirects with its `code` and message, so the
             // param is the constant, not a lowercased word.
             Self::Banned(message) => ("BANNED_USER".to_owned(), Some(message.as_str())),
@@ -685,6 +708,15 @@ fn auth_base_url(ctx: &AuthContext<impl better_auth_core::AuthSchema>) -> String
     )
 }
 
+pub(in crate::plugins) fn ambiguous_account_sign_in_response(
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResponse {
+    redirect_response(&format!(
+        "{}/error?error=internal_server_error",
+        auth_base_url(ctx)
+    ))
+}
+
 async fn finish_oauth_session<S: better_auth_core::AuthSchema>(
     user: &S::User,
     is_register: bool,
@@ -776,7 +808,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         .database
         .get_account(provider_name, &user_info.id)
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(OAuthSignInError::from_account_lookup)?;
 
     let token_bundle = encrypt_token_set(
         ctx,
@@ -1088,7 +1120,7 @@ pub(in crate::plugins) async fn complete_link_social(
     tokens: &OAuthTokenSet,
     link: &OAuthStateLink,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> Result<(), String> {
+) -> Result<(), OAuthSignInError> {
     let linking = &ctx.config.account.account_linking;
     let trusted_provider = linking
         .trusted_providers
@@ -1096,21 +1128,21 @@ pub(in crate::plugins) async fn complete_link_social(
         .any(|trusted| trusted == provider_name);
 
     if !linking.enabled || (!trusted_provider && !user_info.email_verified) {
-        return Err("unable_to_link_account".to_owned());
+        return Err("unable_to_link_account".to_owned().into());
     }
 
     if !linking.allow_different_emails && !user_info.email.eq_ignore_ascii_case(&link.email) {
-        return Err("email_does_not_match".to_owned());
+        return Err("email_does_not_match".to_owned().into());
     }
 
     if let Some(existing_account) = ctx
         .database
         .get_account(provider_name, &user_info.id)
         .await
-        .map_err(|error| error.to_string())?
+        .map_err(OAuthSignInError::from_account_lookup)?
     {
         if existing_account.user_id() != link.user_id {
-            return Err("account_already_linked_to_different_user".to_owned());
+            return Err("account_already_linked_to_different_user".to_owned().into());
         }
 
         let token_bundle = encrypt_token_set(
@@ -1244,6 +1276,7 @@ async fn sign_in_with_id_token_core(
     )
     .await
     .map_err(|error| match error {
+        OAuthSignInError::AccountLookup(error) => error,
         OAuthSignInError::EmailNotVerified => AuthError::Upstream {
             status: 403,
             code: "EMAIL_NOT_VERIFIED",
@@ -1329,6 +1362,20 @@ async fn link_with_id_token_core(
         });
     }
 
+    let linked_account = ctx
+        .database
+        .get_account(&body.provider, &response.user.id)
+        .await?;
+    if linked_account
+        .as_ref()
+        .is_some_and(|account| account.user_id() != session.user_id())
+    {
+        return Err(AuthError::Upstream {
+            status: 409,
+            code: "SOCIAL_ACCOUNT_ALREADY_LINKED",
+            message: "Social account already linked",
+        });
+    }
     let existing_accounts = ctx.database.get_user_accounts(&session.user_id()).await?;
     if existing_accounts.iter().any(|account| {
         account.provider_id() == body.provider && account.account_id() == response.user.id
@@ -1624,7 +1671,13 @@ pub(super) async fn handle_social_sign_in(
             .providers
             .get(&body.provider)
             .ok_or_else(|| AuthError::not_found("Provider not found"))?;
-        let response = sign_in_with_id_token_core(&body, id_token, provider, &meta, ctx).await?;
+        let response = match sign_in_with_id_token_core(&body, id_token, provider, &meta, ctx).await
+        {
+            Err(AuthError::Database(better_auth_core::DatabaseError::AmbiguousAccount {
+                ..
+            })) => return Ok(ambiguous_account_sign_in_response(ctx)),
+            result => result?,
+        };
         let mut auth_response = AuthResponse::json(200, &response).map_err(AuthError::from)?;
         if let Some(token) = response.token.as_deref() {
             auth_response = auth_response.with_appended_header(
@@ -1893,7 +1946,14 @@ pub(super) async fn handle_callback(
         if let Err(error_3) =
             complete_link_social(provider_name, &user_info.user, &tokens, link, ctx).await
         {
-            return Ok(redirect_on_error(&error_3, None));
+            if error_3.is_ambiguous_account() {
+                return Ok(AuthResponse::new(500));
+            }
+            let (code, description) = match &error_3 {
+                OAuthSignInError::Generic(message) => (message.clone(), None),
+                _ => error_3.redirect_parts(),
+            };
+            return Ok(redirect_on_error(&code, description));
         }
 
         return Ok(redirect_response(&payload.callback_url)
@@ -1916,6 +1976,12 @@ pub(super) async fn handle_callback(
     {
         Ok(outcome) => outcome,
         Err(error_4) => {
+            if error_4.is_ambiguous_account() {
+                return Ok(redirect_response(&format!(
+                    "{default_error_url}?error=internal_server_error"
+                ))
+                .with_appended_header("Set-Cookie", clear_state_cookie.clone()));
+            }
             let (code_2, description) = error_4.redirect_parts();
             return Ok(redirect_on_error(&code_2, description));
         }
@@ -2017,7 +2083,13 @@ pub(super) async fn handle_link_social(
             .providers
             .get(&body.provider)
             .ok_or_else(|| AuthError::not_found("Provider not found"))?;
-        let response = link_with_id_token_core(&body, id_token, provider, &session, ctx).await?;
+        let response = match link_with_id_token_core(&body, id_token, provider, &session, ctx).await
+        {
+            Err(AuthError::Database(better_auth_core::DatabaseError::AmbiguousAccount {
+                ..
+            })) => return Ok(AuthResponse::new(500)),
+            result => result?,
+        };
         return AuthResponse::json(200, &response).map_err(AuthError::from);
     }
 
