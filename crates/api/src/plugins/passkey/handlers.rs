@@ -541,10 +541,11 @@ pub(super) async fn verify_authentication_core(
         }
         Err(_) => return passkey_authentication_failure(),
     };
-    let authentication: PublicKeyCredential = match serde_json::from_value(body.response.clone()) {
-        Ok(authentication) => authentication,
-        Err(_) => return passkey_authentication_failure(),
-    };
+    let authentication: PublicKeyCredential =
+        match serde_json::from_value(body.response.to_json_value()?) {
+            Ok(authentication) => authentication,
+            Err(_) => return passkey_authentication_failure(),
+        };
     let credential_id = match credential_id_from_authentication(&authentication) {
         Ok(credential_id) => credential_id,
         Err(_) => return passkey_authentication_failure(),
@@ -584,6 +585,43 @@ pub(super) async fn verify_authentication_core(
         Err(_) => return passkey_authentication_failure(),
     };
 
+    // Verification selected this owner before application code runs. A callback
+    // may reassign the stored credential, but cannot change this authentication.
+    let verified_owner = passkey.user_id().into_owned();
+    let mut public_backed_up = passkey.backed_up();
+    let mut public_device_type = passkey.device_type().to_owned();
+    if let Some(callback) = &config.authentication.after_verification {
+        let context = super::PasskeyAuthenticationContext {
+            request: req,
+            auth_config: &ctx.config,
+            extensions: &ctx.extensions,
+        };
+        let verified = super::VerifiedPasskeyAuthentication {
+            result: authentication_result.clone(),
+            origin: origin.clone(),
+            rp_id: super::webauthn::resolve_rp_id(config, &ctx.config)?,
+        };
+        match callback
+            .after_verification(&context, &verified, &body.response)
+            .await
+        {
+            Ok(()) => {}
+            Err(error) if super::registration::is_application_error(&error) => return Err(error),
+            Err(_) => return passkey_authentication_failure(),
+        }
+        // Source's counter-only update preserves application writes made by the
+        // callback. Refresh the public metadata the store update must carry.
+        // An absent row still follows the existing update failure path below.
+        match ctx.database.get_passkey_by_id(passkey.id().as_ref()).await {
+            Ok(Some(current)) => {
+                public_backed_up = current.backed_up();
+                public_device_type = current.device_type().to_owned();
+            }
+            Ok(None) => {}
+            Err(_) => return passkey_authentication_failure(),
+        }
+    }
+
     if stored_passkey
         .update_credential(&authentication_result)
         .is_none()
@@ -595,7 +633,7 @@ pub(super) async fn verify_authentication_core(
         Ok(snapshot) => snapshot,
         Err(_) => return passkey_authentication_failure(),
     };
-    let updated_passkey = match ctx
+    match ctx
         .database
         .update_passkey_authentication(
             passkey.id().as_ref(),
@@ -603,23 +641,19 @@ pub(super) async fn verify_authentication_core(
                 credential: snapshot.serialized,
                 counter: snapshot.counter,
                 // Pinned authentication persists only the new counter. Keep
-                // registration-time public snapshots while updating the opaque
-                // verifier credential with its actual verified backup state.
-                backed_up: passkey.backed_up(),
-                device_type: passkey.device_type().to_owned(),
+                // current public snapshots, including callback writes, while
+                // updating the opaque verifier credential's real backup state.
+                backed_up: public_backed_up,
+                device_type: public_device_type,
             },
         )
         .await
     {
-        Ok(passkey) => passkey,
+        Ok(_) => {}
         Err(_) => return passkey_authentication_failure(),
-    };
+    }
 
-    let Some(user) = ctx
-        .database
-        .get_user_by_id(updated_passkey.user_id().as_ref())
-        .await?
-    else {
+    let Some(user) = ctx.database.get_user_by_id(&verified_owner).await? else {
         return response_message(500, "User not found");
     };
 

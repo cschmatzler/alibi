@@ -66,6 +66,7 @@ mod open_api_fixture;
 mod organization_timestamp_fixture;
 mod otp_profiles;
 mod parity_controls;
+mod passkey_authentication_fixture;
 mod passkey_fixture;
 mod passkey_registration_fixture;
 mod phone_profiles;
@@ -691,6 +692,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let session_fields_router = session_fields_fixture::router(&config, database.clone()).await?;
     let api_key_generation_router =
         api_key_generation_fixture::router(&config, database.clone()).await?;
+    let passkey_auth_events: passkey_authentication_fixture::Events = Arc::default();
+    let passkey_auth_router = passkey_authentication_fixture::router(
+        &config,
+        database.clone(),
+        passkey_auth_events.clone(),
+    )
+    .await?;
     let passkey_router = passkey_fixture::router(&config, database.clone()).await?;
     let registration_router =
         passkey_registration_fixture::router(&config, database.clone()).await?;
@@ -1070,6 +1078,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/__test/reset-state",
             post(move || {
+                let passkey_auth_events = passkey_auth_events.clone();
                 let backup_receipts = backup_receipts.clone();
                 let phone_controls = phone_controls.clone();
                 let otp_outbox = otp_outbox_for_reset.clone();
@@ -1089,6 +1098,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 async move {
                     siwe_fixture::reset(&siwe_state).await;
                     multiple_session_counter.store(0, std::sync::atomic::Ordering::SeqCst);
+                    passkey_auth_events.lock().unwrap().clear();
                     backup_receipts.reset();
                     if let Err(error) = reset_database_state(&database).await {
                         return (
@@ -1669,6 +1679,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(api_key_hook_router)
         .merge(session_fields_router)
         .merge(open_api_router)
+        .merge(passkey_auth_router)
         .merge(passkey_router)
         .merge(registration_router)
         .merge(one_tap_router)

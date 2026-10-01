@@ -37,9 +37,10 @@ pub use better_auth_api::plugins::api_key::{
 };
 pub use better_auth_api::plugins::open_api::{self, OpenApiConfig, OpenApiPlugin};
 pub use better_auth_api::plugins::passkey::{
-    PasskeyRegistrationAfterVerification, PasskeyRegistrationConfig, PasskeyRegistrationContext,
-    PasskeyRegistrationOverride, PasskeyRegistrationUser, PasskeyUserResolver,
-    VerifiedPasskeyRegistration,
+    AuthenticationResult, PasskeyAuthenticationAfterVerification, PasskeyAuthenticationConfig,
+    PasskeyAuthenticationContext, PasskeyRegistrationAfterVerification, PasskeyRegistrationConfig,
+    PasskeyRegistrationContext, PasskeyRegistrationOverride, PasskeyRegistrationUser,
+    PasskeyUserResolver, VerifiedPasskeyAuthentication, VerifiedPasskeyRegistration,
 };
 
 pub use better_auth_api::plugins::one_tap::{

@@ -8,6 +8,7 @@ import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { createApiKeyGenerationFixture } from "./api-key-generation-fixture";
 import { createApiKeyHookFixture } from "./api-key-hook-fixture";
 import { passkeyFixture } from "./passkey-fixture";
+import { passkeyAuthenticationFixture } from "./passkey-authentication-fixture";
 import { passkeyRegistrationFixture } from "./passkey-registration-fixture";
 import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
 import { createTwoFactorPolicyFixture } from "./two-factor-policy-fixture";
@@ -415,6 +416,7 @@ const organizationMemberRoleFixture = organizationMemberRoleHooksFixture(databas
 const organizationUpdateFixture = organizationUpdateHooksFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationDeletionFixture = organizationDeletionHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
 const passkeyRegistration = passkeyRegistrationFixture(authOptions);
+const passkeyAuthentication = passkeyAuthenticationFixture(database, authOptions, `http://localhost:${PORT}`);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
@@ -427,6 +429,7 @@ for (const [path, instance] of adminBannedMessageFixture.profiles) verificationP
 for (const [path, instance] of adminPermissionFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of multipleSessionFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of passkeyRegistration.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of passkeyAuthentication.profiles) verificationProfiles.set(path, instance);
 for (const name of ["email-verification-required", "email-verification-no-signup-mail", "email-verification-failing-notifications"]) {
   const path = `/__test/profiles/${name}/api/auth`;
   const instance = betterAuth({
@@ -988,6 +991,7 @@ const server = Bun.serve({
         return jsonResponse({message:"unknown server operation"},{status:400});
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
+        passkeyAuthentication.reset();
         siweFixture.reset();
         multipleSessionFixture.reset();
         twoFactorPolicyFixture.reset();
@@ -1022,6 +1026,8 @@ const server = Bun.serve({
         return jsonResponse({ organizationId: persistedOrg!.id, memberId: persistedMember!.id, userId: persistedMember!.userId, organizationCreatedAtMillis: new Date(persistedOrg!.createdAt as Date).getTime(), memberCreatedAtMillis: new Date(persistedMember!.createdAt as Date).getTime() });
       }
 
+      const authenticationControl = await passkeyAuthentication.handle(request);
+      if (authenticationControl) return authenticationControl;
       const enrollmentControl = await passkeyRegistration.handle(request);
       if (enrollmentControl) return enrollmentControl;
       const passkeyControl = await passkeyControls(request);

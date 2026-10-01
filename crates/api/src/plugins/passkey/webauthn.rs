@@ -104,19 +104,26 @@ pub(super) fn challenge_cookie_name(auth_config: &AuthConfig) -> String {
         .unwrap_or_else(|| PASSKEY_CHALLENGE_COOKIE_NAME.to_string())
 }
 
+pub(super) fn resolve_rp_id(
+    config: &PasskeyConfig,
+    auth_config: &AuthConfig,
+) -> AuthResult<String> {
+    if config.rp_id.is_empty() {
+        Url::parse(&auth_config.base_url)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_owned))
+            .ok_or_else(|| AuthError::config("Missing passkey RP ID".to_string()))
+    } else {
+        Ok(config.rp_id.clone())
+    }
+}
+
 pub(super) fn build_webauthn(
     config: &PasskeyConfig,
     auth_config: &AuthConfig,
     origin: &str,
 ) -> AuthResult<Webauthn> {
-    let rp_id = if config.rp_id.is_empty() {
-        Url::parse(&auth_config.base_url)
-            .ok()
-            .and_then(|url| url.host_str().map(str::to_owned))
-            .ok_or_else(|| AuthError::config("Missing passkey RP ID".to_string()))?
-    } else {
-        config.rp_id.clone()
-    };
+    let rp_id = resolve_rp_id(config, auth_config)?;
     let parsed_origin = Url::parse(origin)
         .map_err(|error| AuthError::bad_request(format!("Invalid passkey origin: {error}")))?;
 
