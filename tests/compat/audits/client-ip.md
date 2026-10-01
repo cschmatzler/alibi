@@ -89,11 +89,61 @@ applied to nullable virtual metadata. Its canonical attempt was deliberately
 stopped while the SDK sweep was active to repair that identified regression;
 no completed full-suite result is claimed for that attempt.
 
-The correction passed strict workspace/fixture checks. The working-tree
-Source/native owner then passed all 48 scenarios / 1,908 assertions, including
-three configured virtual-principal owners. Final program
- dda003c5288f778a574be8996ee2a212a66b9157 is rebased onto merged JWT main de61dfb7;
-all 3,052 main evidence cells are retained, plus 385 actually emitted public
-cells. Its canonical, strict documentation/browser and clean native-plus-SDK
-coverage measurements are pending. Earlier partial failures remain recorded;
-no Source patch, comparator change or reduced evidence requirement is used.
+The correction passed strict workspace/fixture checks. Its actual Source/native
+owner passed 48 scenarios / 1,908 assertions, including three configured
+virtual-principal owners. The subsequent bucket-isolation owner retains every
+rate-limit denial, full response and mutation guard, and also proves ordinary
+`GET /ok` stays healthy: 48 scenarios / 1,944 assertions. Source shares its memory
+buckets across applications, so the low-limit private application route is
+`/client-ip-rate-check`; it no longer conflicts with the existing `/ok` inventory.
+All 3,052 merged-main public evidence cells remain, plus 381 emitted IP cells.
+Private application routes are not declared as upstream capabilities.
+
+Predecessor 2804a022's canonical native/harness checks passed, but the SDK result
+was 903 passing / 9 failing / 912 scenarios and 63,897 assertions. Besides the
+known reset/API-key/lifecycle differences, that run exposed the real private
+profile `/ok` collision repaired above. Its four remote null-expiration paths
+also reproduce against one unchanged actual Source server: attempt 30 failed
+after 29 passes in `/tmp/issue179-source-null-clock.log`. The null-token owner
+passes in the final gate. Those failures are retained, not relabeled as passes.
+
+Final immutable program/support head
+`0809803e721dd03fd28cbf02a6b2e1f29033f92b` is based on merged signup/password main
+`ea2d2da0a73f13d5fd91be996895b81ad9dc8157`. Its complete canonical command ended
+with exit 100 at the SDK stage: **926 passing / 5 failing / 931 scenarios,
+66,044 assertions**. All 48 IP owners, all 19 new signup/password owners and the
+profile inventory pass. Strict default/optional checks, 794 default and 845
+optional native tests, fixture 2, harness 70, Axum 36, endpoint 3 and inventory 2
+checks pass before that SDK failure. This is not a green canonical claim.
+
+Four failing SDK scenarios retain the independently measured main differences:
+the API-key server validator's ten response-content-type paths, and six
+update-user/change-password code/message paths in each of three generated
+profiles. The fifth, organization trusted role patches, completes its full callback
+and physical-state guards and differs only on twelve creation/expiry timestamp
+aliases in its sixth setup. The Source/native offsets are 3.195–3.348 seconds,
+just outside the unchanged three-second comparator bound. Independent pre-IP
+canonical main failed four exact subset paths (member receipt/result creation
+and target sibling session expiry before/after). The eight extra aliases are
+not claimed to have independently failed on main. Three fresh unchanged
+focused runs on the exact main-equivalent eaa7cda9 tree pass 396 assertions each;
+a fresh run on this final program also passes 396. A first follow-up attached to
+occupied ports and failed fixture reset; it is infrastructure evidence only.
+No organization owner, timestamp production, comparison tolerance or Source
+implementation is changed to conceal the full-suite result.
+
+Independent final gates on the same immutable head pass:
+
+- Clean native plus all five actual SDK coverage wrappers: **29,794 / 38,672
+  source lines = 77.042822%**, unchanged required floor 75%; all 845 optional
+  native tests and all five SDK wrappers pass.
+- Strict workspace Rustdoc, actual Chromium **2 scenarios / 22 assertions**, and
+  locked fixture all-target Clippy with warnings denied.
+
+Exact logs are `/tmp/issue179-0809803e-canonical.log`,
+`/tmp/issue179-0809803e-clean-coverage.log`,
+`/tmp/issue179-0809803e-docs-browser-fixture.log`,
+`/tmp/issue179-main-org-all.log` and
+`/tmp/issue179-current-org-isolated-all.log`. Only documentation changes follow
+these measured inputs. No Source patch, comparator change, lint suppression,
+reduced coverage floor or removed main capability requirement is used.
