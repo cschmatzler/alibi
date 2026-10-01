@@ -146,8 +146,10 @@ async function expiredBanSnapshot(
 compatScenario(
   "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
   (ctx) => expiredBanSnapshot(ctx, false),
+  ["POST /sign-in/email", "POST /admin/ban-user"],
 );
 compatScenario(
   "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
   (ctx) => expiredBanSnapshot(ctx, true),
+  ["POST /admin/impersonate-user", "POST /admin/ban-user"],
 );
