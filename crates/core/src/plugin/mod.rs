@@ -76,6 +76,10 @@ pub enum BeforeRequestAction {
     Respond(AuthResponse),
     /// Inject a virtual session so downstream handlers see it as authenticated.
     InjectSession { session: crate::wire::SessionView },
+    /// Replace headers for subsequent hooks, endpoint dispatch and response hooks.
+    /// Authentication adapters can establish a verified signed cookie while
+    /// retaining normal session lookup, expiry and revocation checks.
+    ReplaceHeaders { headers: HashMap<String, String> },
 }
 
 /// Plugin trait that all authentication plugins must implement.
@@ -104,12 +108,13 @@ pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
         Ok(())
     }
 
-    /// Called before route matching for every incoming request.
+    /// Called after route matching and before endpoint dispatch.
     ///
     /// Return `Some(BeforeRequestAction::Respond(..))` to short-circuit with a
     /// response, `Some(BeforeRequestAction::InjectSession { .. })` to attach a
-    /// virtual session (e.g. API-key → session emulation), or `None` to let the
-    /// request continue to normal route matching.
+    /// virtual session (e.g. API-key → session emulation),
+    /// `Some(BeforeRequestAction::ReplaceHeaders { .. })` to transform request
+    /// headers, or `None` to continue endpoint dispatch.
     async fn before_request(
         &self,
         _req: &AuthRequest,

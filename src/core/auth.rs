@@ -417,6 +417,10 @@ impl<S: AuthSchema> BetterAuth<S> {
                         req.set_virtual_session(session.clone());
                         internal_req.set_virtual_session(session);
                     }
+                    BeforeRequestAction::ReplaceHeaders { headers } => {
+                        req.headers.clone_from(&headers);
+                        internal_req.headers = headers;
+                    }
                 }
             }
         }
