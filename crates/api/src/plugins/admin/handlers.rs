@@ -353,7 +353,20 @@ pub(crate) async fn list_users_core(
         filter_operator: query.filter_operator.clone(),
     };
 
-    let (users, total) = ctx.database.list_users(params).await?;
+    // Pinned list-users catches adapter query/count failures after authorization,
+    // returning no pagination fields. Authentication and permission errors never
+    // reach this boundary.
+    let (users, total) = match ctx.database.list_users(params).await {
+        Ok(result) => result,
+        Err(_) => {
+            return Ok(ListUsersResponse {
+                users: Vec::new(),
+                total: 0,
+                limit: None,
+                offset: None,
+            });
+        }
+    };
     Ok(ListUsersResponse {
         users: users.iter().map(AdminUserView::from).collect(),
         total,

@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use std::cmp::Ordering;
 
 use crate::entity::AuthUser;
-use crate::types::ListUsersParams;
+use crate::types::{ListUsersParams, UserFilterValue};
 
 fn string_field(user: &impl AuthUser, field: &str) -> Option<String> {
     match field {
@@ -76,6 +76,9 @@ fn compare_string(lhs: &str, rhs: &str, operator: &str) -> bool {
         "gt" => lhs > rhs,
         "gte" => lhs >= rhs,
         "contains" => lhs.contains(rhs),
+        "starts_with" => lhs.starts_with(rhs),
+        "ends_with" => lhs.ends_with(rhs),
+        "not_in" => lhs != rhs,
         _ => false,
     }
 }
@@ -101,12 +104,29 @@ fn compare_date(lhs: DateTime<Utc>, rhs: DateTime<Utc>, operator: &str) -> bool 
 }
 
 fn matches_filter(user: &impl AuthUser, params: &ListUsersParams) -> bool {
-    let Some(filter_value) = params.filter_value.as_deref() else {
+    let Some(filter_value) = params.filter_value.as_ref() else {
         return true;
     };
 
     let field = params.filter_field.as_deref().unwrap_or("email");
     let operator = params.filter_operator.as_deref().unwrap_or("eq");
+
+    let filter_value = match filter_value {
+        UserFilterValue::Scalar(value) => value.as_str(),
+        UserFilterValue::Multiple(values) => {
+            let Some(value) = string_field(user, field) else {
+                return false;
+            };
+            return match operator {
+                "in" => values.contains(&value),
+                "not_in" => !values.contains(&value),
+                "contains" | "starts_with" | "ends_with" => {
+                    compare_string(&value, &values.join(","), operator)
+                }
+                _ => false,
+            };
+        }
+    };
 
     if let Some(value) = string_field(user, field) {
         return compare_string(&value, filter_value, operator);

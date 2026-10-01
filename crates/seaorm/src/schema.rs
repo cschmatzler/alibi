@@ -32,6 +32,19 @@ pub trait SeaOrmUserModel:
     }
     fn name_column() -> Self::Column;
     fn created_at_column() -> Self::Column;
+    /// Bind an admin user-list field to its actual model column. Derived models
+    /// provide all declared fields, including renamed physical columns. Manual
+    /// models may add their plugin/application field bindings explicitly.
+    fn list_users_column(field: &str) -> Option<Self::Column> {
+        match field {
+            "id" => Some(Self::id_column()),
+            "email" => Some(Self::email_column()),
+            "name" => Some(Self::name_column()),
+            "username" => Self::username_column(),
+            "createdAt" => Some(Self::created_at_column()),
+            _ => None,
+        }
+    }
     fn parse_id(id: &str) -> AuthResult<Self::Id>;
 
     fn new_active(

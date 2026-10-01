@@ -84,7 +84,7 @@ pub use types::{
     RequestMeta, StatusMessageResponse, StatusResponse, SuccessMessageResponse, SuccessResponse,
     Team, TeamMember, TwoFactor, UpdateAccount, UpdateApiKey, UpdateDeviceCode, UpdateOrganization,
     UpdatePasskey, UpdateTeam, UpdateTwoFactor, UpdateUser, UpdateUserRequest, UpdateUserResponse,
-    UpdateVerification, ValidationErrorResponse, WalletAddress,
+    UpdateVerification, UserFilterValue, ValidationErrorResponse, WalletAddress,
 };
 pub use utils::password::{PasswordHasher, ScryptHasher, hash_password, verify_password};
 #[doc(hidden)]

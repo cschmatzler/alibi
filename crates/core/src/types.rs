@@ -694,7 +694,35 @@ pub struct ValidationErrorResponse<'a> {
     pub errors: std::collections::HashMap<std::borrow::Cow<'a, str>, Vec<String>>,
 }
 
-/// Parameters for listing users (admin endpoint).
+/// String operands for admin user-list filtering.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum UserFilterValue {
+    /// One complete scalar string operand.
+    Scalar(String),
+    /// Ordered operands, including duplicates, for membership or adapter queries.
+    Multiple(Vec<String>),
+}
+
+impl From<String> for UserFilterValue {
+    fn from(value: String) -> Self {
+        Self::Scalar(value)
+    }
+}
+
+impl From<&str> for UserFilterValue {
+    fn from(value: &str) -> Self {
+        Self::Scalar(value.to_owned())
+    }
+}
+
+impl From<Vec<String>> for UserFilterValue {
+    fn from(value: Vec<String>) -> Self {
+        Self::Multiple(value)
+    }
+}
+
+/// Parameters for listing users through the configured adapter.
 #[derive(Debug, Clone, Default)]
 pub struct ListUsersParams {
     pub limit: Option<usize>,
@@ -705,7 +733,7 @@ pub struct ListUsersParams {
     pub sort_by: Option<String>,
     pub sort_direction: Option<String>,
     pub filter_field: Option<String>,
-    pub filter_value: Option<String>,
+    pub filter_value: Option<UserFilterValue>,
     pub filter_operator: Option<String>,
 }
 

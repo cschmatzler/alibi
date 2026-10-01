@@ -75,12 +75,14 @@
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
           "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner",
-          "admin repeated query fields retain arrays and reject before authentication without selecting a different owner"
+          "admin repeated query fields retain arrays and reject before authentication without selecting a different owner",
+          "admin official client array filters preserve all operands SQL semantics pagination and authorization without changing owners"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
-          "admin revoked session rejects every valid guest operation without changing owned state"
+          "admin revoked session rejects every valid guest operation without changing owned state",
+          "admin official client array filters preserve all operands SQL semantics pagination and authorization without changing owners"
         ],
         "state": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -88,10 +90,12 @@
           "admin revoked session rejects every valid guest operation without changing owned state",
           "admin stored timestamp precision survives official read, update and list without shifting dates",
           "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner",
-          "admin repeated query fields retain arrays and reject before authentication without selecting a different owner"
+          "admin repeated query fields retain arrays and reject before authentication without selecting a different owner",
+          "admin official client array filters preserve all operands SQL semantics pagination and authorization without changing owners"
         ],
         "success": [
-          "admin stored timestamp precision survives official read, update and list without shifting dates"
+          "admin stored timestamp precision survives official read, update and list without shifting dates",
+          "admin official client array filters preserve all operands SQL semantics pagination and authorization without changing owners"
         ]
       }
     },

@@ -237,7 +237,7 @@ pub(crate) struct ListUsersQueryParams {
     #[serde(rename = "filterField")]
     pub filter_field: Option<String>,
     #[serde(rename = "filterValue")]
-    pub filter_value: Option<String>,
+    pub filter_value: Option<better_auth_core::UserFilterValue>,
     #[serde(rename = "filterOperator")]
     pub filter_operator: Option<String>,
 }

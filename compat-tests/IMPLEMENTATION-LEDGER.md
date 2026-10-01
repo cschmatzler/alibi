@@ -103,10 +103,10 @@ they do not establish all configuration or integration behavior.
 | Passkey public authentication snapshots | JWT owner; coordinator and independent phone-owner review | Real ES256 assertions and actual credential update | Merged PR #87 preserves registration device/backup snapshots while verified counters and opaque credentials advance. Focused family 11 / 900 passes; connected canonical gate and required evidence pass. Eligibility upgrades are a measured separate verifier-policy gap. |
 | Member-role normalization | SIWE owner; coordinator independent review | Existing invitation and membership storage | Merged PR #88 stores normalized string/array roles without dropping duplicates. Genuine before-failure and public readback pass. |
 | Member-role lifecycle hooks | SIWE owner; coordinator review; independent JWT-owner review | Optional-row member store and normalization | Merged PR #89 implements awaited callbacks, target-user snapshots and trusted patches. Six SDK owners / 434 and organization/OpenAPI 89 / 5,466 pass; native zero-row/SQL-error proofs pass. Connected canonical gate and required evidence pass; empty input and body/auth ordering follow in the next reviewed slice. |
-| Passkey authentication callbacks | JWT owner | Verified immutable authentication facts | Reviewed frozen 108cd739; coordinator and independent phone-owner review clear. Six genuine signed owners prove callback errors, consumption, full input identity and original verified session ownership despite trusted credential reassignment. Focused passkey 17 / 1,336 passes; next gate pending. |
-| Member-role input/auth ordering | SIWE owner | Member lifecycle hooks and existing nested-session policy | Reviewed frozen 2f62e75b; coordinator review clear, independent JWT-owner review pending. Five owners prove schema/media, empty-role/selector precedence, exact Unauthorized, actual row cleanup and sibling/foreign state. Organization/OpenAPI 94 / 6,044 passes. Merged PR #90; complete 460-scenario gate passed. Remaining: nested middleware erases session-fetch errors upstream while later storage/hook errors remain visible. |
-| Repeated admin query validation | Coordinator; independent phone-owner review | Ordered query values across actual Axum/dispatch and route-local schemas | Reviewed frozen a4549d07. Source/self 1 / 90 and full admin 35 / 3,114 pass, along with native core/admin/Axum, strict Clippy and TypeScript. Before-repair flattening returned 401 instead of array validation 400. Merged PR #91; complete 460-scenario gate passed. Remaining: accepted filter arrays and other query consumers remain separate. |
-| API-key automatic background cleanup | Phone owner; independent JWT-owner and coordinator review | Hot owned task completion and module-global real-clock throttle | Frozen c8bee0bf; API-key SDK 46 / 2,182, source controls 6 / 596, native 52 and strict build checks pass. Genuine old awaited response and generator-order failures preserved. Central integration gate pending; individual-row deferral is separate. |
+| Passkey authentication callbacks | JWT owner | Verified immutable authentication facts | Reviewed frozen 108cd739; coordinator and independent phone-owner review clear. Six genuine signed owners prove callback errors, consumption, full input identity and original verified session ownership despite trusted credential reassignment. Focused passkey 17 / 1,336 passes; merged PR #90 after the full 460-scenario gate. |
+| Member-role input/auth ordering | SIWE owner | Member lifecycle hooks and existing nested-session policy | Reviewed frozen 2f62e75b; coordinator review clear, independent JWT-owner review clear. Five owners prove schema/media, empty-role/selector precedence, exact Unauthorized, actual row cleanup and sibling/foreign state. Organization/OpenAPI 94 / 6,044 passes. Merged PR #91; complete 460-scenario gate passed. Remaining: nested middleware erases session-fetch errors upstream while later storage/hook errors remain visible. |
+| Repeated admin query validation | Coordinator; independent phone-owner review | Ordered query values across actual Axum/dispatch and route-local schemas | Reviewed frozen a4549d07. Source/self 1 / 90 and full admin 35 / 3,114 pass, along with native core/admin/Axum, strict Clippy and TypeScript. Before-repair flattening returned 401 instead of array validation 400. Merged PR #92; complete 460-scenario gate passed. Remaining: accepted filter arrays and other query consumers remain separate. |
+| API-key automatic background cleanup | Phone owner; independent JWT-owner and coordinator review | Hot owned task completion and module-global real-clock throttle | Frozen c8bee0bf; API-key SDK 46 / 2,182, source controls 6 / 596, native 52 and strict build checks pass. Genuine old awaited response and generator-order failures preserved. Merged PR #94 after the full 475-scenario gate; individual-row deferral is separate. |
 
 Full local compatibility/coverage gates and inventory mutations are serialized.
 Workers use separate worktrees, ports, databases and logs. Old unpublished dirty
@@ -197,3 +197,37 @@ Deferred individual API-key deletion and UV-absent passkey registration follow
 the current frozen slices. The coordinator is investigating accepted admin
 filter arrays using the actual pinned SQLite runtime. These remain unresolved
 until implemented, independently reviewed and integrated through the full gate.
+
+
+## Delivered source policies and next removal/registration integration
+
+PRs #93–95 are merged. Master f3d3e83b is full-tree equal to tested 1655994b:
+475 SDK scenarios / 25,648 assertions, 41 harness tests / 317 assertions,
+two Chromium tests / 22 assertions, and 78.8992% source lines
+(28,986 / 36,738). The full canonical gate passed every default/optional native,
+Rustls/Redis, locked fixture, TypeScript, strict Clippy and documentation check.
+Unicode role normalization, hot observed API-key bulk cleanup and the typed
+Source authentication verifier are delivered; existing dependency versions and
+all coverage/comparison requirements are unchanged.
+
+| Slice | Owner/review | Dependencies | Prepared evidence and remaining gate |
+| --- | --- | --- | --- |
+| Observed admin ID filter comparison | Coordinator; independent JWT review clear | Actual official SDK and global identity bijection | Genuine Source-to-Source comparator failure; narrow configured URL/observed-ID repair. 42 harness owners / 338 assertions, including removed selectors, changed relationships, duplicate/order/arity, foreign and external/literal controls. Next canonical gate pending. |
+| Member removal defaults/storage | Organization owner; coordinator and phone review clear | Raw member page and captured contextual deletion contracts | Frozen 4cedcae7; real before 0/3, all organization/OpenAPI 99 / 6,504, distinct SQL trigger/rollback/page owners. No default self-removal authority bypass. Next gate pending. |
+| Atomic API-key exhaustion | Phone owner; independent JWT review clear | Existing guarded atomic quota operation | Frozen ab00b5c2; real two-connection last-quota race and full retained row/foreign owner, before missing-row failure. Plugin snapshot rejection owns deletion separately. Next gate pending. |
+| Individual API-key deletion policy | Phone owner; independent JWT review clear | Atomic exhaustion and hot completion launcher | Frozen 312b3aec; SDK 53 / 2,672, Source controls 7 / 490, native 52. Real paused adapter writes, ignored/throwing observer, SQL ABORT, exact errors, permission ordering and full ownership. Next gate pending. |
+| Completed registration receipt reset | JWT owner; independent phone review clear | Existing private reset boundary | Frozen cbe4a961; actual stale-receipt before failure and repeated Source/Rust controls. No oracle-handler change. Next gate pending. |
+| Source registration verifier policy | JWT owner; independent phone review clear | Existing Core 0.5.4 dependency and receipt reset | Frozen 3bd147e0; full passkey 29 / 2,782, real old-runtime 0/4, Source repeated 8 / 1,208, native 11 including genuine historical serialized challenge. UV-absent none/packed registration then signed authentication; distinct false/malformed signature errors, owner/replay/full-state controls. Next gate pending. |
+| Member removal lifecycle/header API | Organization owner; coordinator independent review clear | Member removal defaults/storage | Frozen c787b768; organization/OpenAPI 109 / 7,804, primary 10 / 1,300, genuine callback-removal negative 0/10. Before/after partial writes, immutable original snapshots, teams/pages, current versus sibling selection and expired signed-header resolution. Next gate pending. |
+| Accepted admin filter arrays | Coordinator; organization owner reviewing | Ordered actual query operands, typed native filter values and narrow ID URL repair | SDK 36 / 3,238, actual Source boolean coercion control and failing native pre-fix, actual SQL tuple errors, membership/LIKE/paging/authority/full state. Custom derived model binding proof passes: enum names, physical renames and raw fields; independent review clear. Next gate pending. |
+
+Independent review found a real derived-model compatibility issue in the proposed
+array bindings: SeaORM custom enum names and raw identifiers must be respected.
+The targeted repair and actual consumer proof pass; the slice is frozen f1e1651d after independent review.
+Source staged API-key update failures and concurrent returned-row rereads are
+confirmed separate boundaries. Database deferUpdates does not defer successful
+quota writes; the next owner is proving real due/non-due refill and await behavior
+before considering a phased storage contract. Source advertised EdDSA passkeys,
+callback-deleted credentials, custom/JSON filter coercion, secondary storage,
+provider defaults and the other audited boundaries remain open. Excluded
+integration packages remain excluded; no full-parity claim is made.
