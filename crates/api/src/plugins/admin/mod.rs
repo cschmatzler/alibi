@@ -179,9 +179,16 @@ impl AdminPlugin {
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-    ) -> AuthResult<(UserView, SessionView)> {
-        let (user, session) = ctx.require_session(req).await?;
-        Ok((UserView::from(&user), SessionView::from(&session)))
+    ) -> AuthResult<Option<(UserView, SessionView)>> {
+        match ctx.require_session(req).await {
+            Ok((user, session)) => Ok(Some((UserView::from(&user), SessionView::from(&session)))),
+            Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn missing_session_response() -> AuthResponse {
+        AuthResponse::new(401).with_header("Content-Type", "application/json")
     }
 
     fn authorize(
@@ -209,7 +216,9 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = self.require_session(req, ctx).await?;
+        let Some((user, _session)) = self.require_session(req, ctx).await? else {
+            return Ok(Self::missing_session_response());
+        };
         self.authorize(&user, "user", "set-role", MESSAGE_CHANGE_ROLE)?;
         let body: SetRoleRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
@@ -224,7 +233,9 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = self.require_session(req, ctx).await?;
+        let Some((user, _session)) = self.require_session(req, ctx).await? else {
+            return Ok(Self::missing_session_response());
+        };
         self.authorize(&user, "user", "get", MESSAGE_GET_USER)?;
         let query = GetUserQuery {
             id: req.query.get("id").cloned().unwrap_or_default(),
@@ -241,7 +252,9 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = self.require_session(req, ctx).await?;
+        let Some((user, _session)) = self.require_session(req, ctx).await? else {
+            return Ok(Self::missing_session_response());
+        };
         self.authorize(&user, "user", "create", MESSAGE_CREATE_USERS)?;
         let body: CreateUserRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
@@ -266,7 +279,9 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = self.require_session(req, ctx).await?;
+        let Some((user, _session)) = self.require_session(req, ctx).await? else {
+            return Ok(Self::missing_session_response());
+        };
         self.authorize(&user, "user", "update", MESSAGE_UPDATE_USERS)?;
         let mut body: AdminUpdateUserRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
@@ -340,7 +355,9 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = self.require_session(req, ctx).await?;
+        let Some((user, _session)) = self.require_session(req, ctx).await? else {
+            return Ok(Self::missing_session_response());
+        };
         self.authorize(&user, "user", "list", MESSAGE_LIST_USERS)?;
         let query = ListUsersQueryParams {
             limit: req.query.get("limit").and_then(|value| value.parse().ok()),
@@ -363,7 +380,9 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = self.require_session(req, ctx).await?;
+        let Some((user, _session)) = self.require_session(req, ctx).await? else {
+            return Ok(Self::missing_session_response());
+        };
         self.authorize(&user, "session", "list", MESSAGE_LIST_USER_SESSIONS)?;
         let body: UserIdRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
@@ -378,7 +397,9 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = self.require_session(req, ctx).await?;
+        let Some((user, _session)) = self.require_session(req, ctx).await? else {
+            return Ok(Self::missing_session_response());
+        };
         self.authorize(&user, "user", "ban", MESSAGE_BAN_USERS)?;
         let body: BanUserRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
@@ -397,7 +418,9 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = self.require_session(req, ctx).await?;
+        let Some((user, _session)) = self.require_session(req, ctx).await? else {
+            return Ok(Self::missing_session_response());
+        };
         self.authorize(&user, "user", "ban", MESSAGE_BAN_USERS)?;
         let body: UserIdRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
@@ -412,7 +435,9 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, session) = self.require_session(req, ctx).await?;
+        let Some((user, session)) = self.require_session(req, ctx).await? else {
+            return Ok(Self::missing_session_response());
+        };
         self.authorize(&user, "user", "impersonate", MESSAGE_IMPERSONATE_USERS)?;
         let body: UserIdRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
@@ -489,7 +514,9 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (_, session) = ctx.require_session(req).await?;
+        let Some((_, session)) = self.require_session(req, ctx).await? else {
+            return Ok(Self::missing_session_response());
+        };
         if session.impersonated_by.is_none() {
             return Err(AuthError::bad_request("You are not impersonating anyone"));
         }
@@ -542,7 +569,9 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = self.require_session(req, ctx).await?;
+        let Some((user, _session)) = self.require_session(req, ctx).await? else {
+            return Ok(Self::missing_session_response());
+        };
         self.authorize(&user, "session", "revoke", MESSAGE_REVOKE_USER_SESSIONS)?;
         let body: RevokeSessionRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
@@ -557,7 +586,9 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = self.require_session(req, ctx).await?;
+        let Some((user, _session)) = self.require_session(req, ctx).await? else {
+            return Ok(Self::missing_session_response());
+        };
         self.authorize(&user, "session", "revoke", MESSAGE_REVOKE_USER_SESSIONS)?;
         let body: UserIdRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
@@ -572,12 +603,8 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = match self.require_session(req, ctx).await {
-            Ok(session) => session,
-            Err(AuthError::Unauthenticated) | Err(AuthError::SessionNotFound) => {
-                return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
-            }
-            Err(error) => return Err(error),
+        let Some((user, _session)) = self.require_session(req, ctx).await? else {
+            return Ok(Self::missing_session_response());
         };
         self.authorize(&user, "user", "delete", MESSAGE_DELETE_USERS)?;
         let body: UserIdRequest = match better_auth_core::validate_request_body(req) {
@@ -593,7 +620,9 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = self.require_session(req, ctx).await?;
+        let Some((user, _session)) = self.require_session(req, ctx).await? else {
+            return Ok(Self::missing_session_response());
+        };
         self.authorize(&user, "user", "set-password", MESSAGE_SET_USER_PASSWORD)?;
         let body: SetUserPasswordRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
@@ -608,7 +637,9 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = self.require_session(req, ctx).await?;
+        let Some((user, _session)) = self.require_session(req, ctx).await? else {
+            return Ok(Self::missing_session_response());
+        };
         let body: HasPermissionRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
