@@ -36,7 +36,7 @@ it is not automatically a confirmed defect or wholly missing implementation.
 
 | Capability | What it provides | Preparation |
 | --- | --- | --- |
-| Anonymous authentication | Guest accounts, deletion and safe conversion/linking to real accounts. | Earlier prototype exists; extraction, review and integrated evidence remain. |
+| Anonymous authentication | Guest accounts, deletion and safe conversion/linking to real accounts. | Complete five-owner implementation is extracted with reviewed request/context prerequisites; central core 35 / 1,264 and native route inventory pass. Combined gate and feature review are pending. Other login-method original snapshot evidence and cache/general validation remain separate. |
 
 | OAuth proxy | Production OAuth credentials serving preview/development hosts with encrypted, origin-bound profile transfer. | Actual pinned multi-server flow investigated; implementation remains. |
 | OAuth popup | Popup login and secure browser completion messaging. | Missing from the original route profiles; audit only. |
