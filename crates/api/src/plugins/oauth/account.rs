@@ -228,7 +228,13 @@ pub(super) async fn handle_get_access_token(
         Ok(selection) => selection,
         Err(message) => return invalid_selection("body", message),
     };
-    let (_, session) = ctx.require_session(req).await?;
+    let (_, session) = match ctx.require_session(req).await {
+        Ok(session) => session,
+        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
+            return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
+        }
+        Err(error) => return Err(error),
+    };
     let mut account = selection.resolve(req, &session.user_id, ctx).await?;
     let (response, refreshed) = valid_access_token(&mut account, config, ctx).await?;
     token_response(&response, &account, refreshed, ctx)
@@ -243,7 +249,13 @@ pub(super) async fn handle_refresh_token(
         Ok(selection) => selection,
         Err(message) => return invalid_selection("body", message),
     };
-    let (_, session) = ctx.require_session(req).await?;
+    let (_, session) = match ctx.require_session(req).await {
+        Ok(session) => session,
+        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
+            return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
+        }
+        Err(error) => return Err(error),
+    };
     let mut account = selection.resolve(req, &session.user_id, ctx).await?;
     let provider = config.providers.get(&account.provider_id).ok_or_else(|| {
         AuthError::bad_request(format!(
