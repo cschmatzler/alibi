@@ -17,8 +17,8 @@ use better_auth::{
     plugins::{
         AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
         EmailOtpConfig, EmailOtpPlugin, EmailPasswordPlugin, EmailVerificationPlugin,
-        MagicLinkPlugin, OAuthPlugin, OrganizationPlugin, PasskeyPlugin, PasswordManagementPlugin,
-        SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
+        MagicLinkPlugin, OAuthPlugin, OpenApiPlugin, OrganizationPlugin, PasskeyPlugin,
+        PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
         jwt::JwtPlugin,
         oauth::{
             OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
@@ -374,6 +374,7 @@ pub async fn create_test_auth_with_options(options: TestAuthOptions) -> TestAuth
         )
         .plugin(AdminPlugin::new())
         .plugin(JwtPlugin::new())
+        .plugin(OpenApiPlugin::new())
         .plugin(SiwePlugin::new(SiweConfig::new(
             "localhost",
             Arc::new(RandomSiweNonce),
