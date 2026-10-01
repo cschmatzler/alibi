@@ -1984,6 +1984,24 @@
         "rejection": null,
         "authorization": null,
         "state": null
+      },
+      "requiredEvidence": {
+        "success": [
+          "organization ID removal omits the email join and preserves the target and foreign selected sessions",
+          "organization removal permission and last-owner guards reject without mutation and preserve foreign authority"
+        ],
+        "state": [
+          "organization ID removal omits the email join and preserves the target and foreign selected sessions",
+          "organization removal permission and last-owner guards reject without mutation and preserve foreign authority"
+        ],
+        "rejection": [
+          "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
+          "organization removal validates ordered string fields and media before guest authentication"
+        ],
+        "authorization": [
+          "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
+          "organization removal validates ordered string fields and media before guest authentication"
+        ]
       }
     },
     {
