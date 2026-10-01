@@ -1520,7 +1520,7 @@ pub(crate) async fn handle_callback(
                 Some(verification) => verification,
                 None => {
                     return Ok(redirect_response(&format!(
-                        "{default_error_url}?error=please_restart_the_process"
+                        "{default_error_url}?error=state_mismatch"
                     )));
                 }
             };
@@ -1714,7 +1714,30 @@ pub(crate) async fn handle_link_social(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
-    let session = require_session(req, ctx).await?;
+    let session = require_session(req, ctx)
+        .await
+        .map_err(|error| match error {
+            AuthError::Unauthenticated => {
+                // The nested source session read clears cookies for a valid signed
+                // token whose stored session is absent; unsigned/tampered input
+                // does not enter that cleanup branch.
+                if ctx.session_manager().extract_session_token(req).is_some() {
+                    for cookie in
+                        better_auth_core::utils::cookie_utils::delete_session_cookie_headers(
+                            &ctx.config,
+                        )
+                    {
+                        req.queue_response_header("Set-Cookie", cookie);
+                    }
+                }
+                AuthError::Api {
+                    status: 401,
+                    code: Some("UNAUTHORIZED".to_owned()),
+                    message: "Unauthorized".to_owned(),
+                }
+            }
+            error => error,
+        })?;
     let body: LinkSocialRequest = match better_auth_core::validate_request_body(req) {
         Ok(v) => v,
         Err(resp) => return Ok(resp),
