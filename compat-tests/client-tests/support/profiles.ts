@@ -3,6 +3,7 @@ export type FixtureProfile =
   | "admin-impersonation-privileged" | "admin-impersonation-ordinary" | "admin-impersonation-legacy" | "admin-impersonation-no-base"
   | "org-member-multiplicity" | "org-member-multiplicity-page-zero" | "org-member-multiplicity-page-one" | "org-member-multiplicity-page-two"
   | "passkey-first-trusted-origin" | "passkey-first-configured-origin"
+  | `social-gitlab-${"default" | "configured" | "disabled" | "disabled-configured" | "issuer" | "issuer-slashes"}`
   | `social-${"google" | "github" | "discord"}-${"default" | "configured" | "disabled" | "disabled-configured"}`
   | `social-discord-${"permissions" | "bot" | "zero" | "fractional" | "infinite" | "prompt" | "empty-prompt"}`
   | "org-membership-default" | "org-membership-none" | "org-membership-zero" | "org-membership-nan" | "org-membership-one" | "org-membership-fractional" | "org-membership-negative" | "org-membership-infinity" | "org-membership-resolver-zero" | "org-membership-resolver-nan" | "org-membership-resolver-fractional" | "org-membership-resolver-error" | "org-membership-page-one" | "org-membership-page-zero" | "org-membership-resolver-zero-team-limit" | "org-membership-team-limit" | "org-membership-pending-one"

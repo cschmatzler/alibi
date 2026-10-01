@@ -108,6 +108,49 @@ pub(super) async fn router(
             router = router.nest(&path, auth.clone().axum_router().with_state(auth));
         }
     }
+    for mode in [
+        "default",
+        "configured",
+        "disabled",
+        "disabled-configured",
+        "issuer",
+        "issuer-slashes",
+    ] {
+        let path = format!("/__test/profiles/social-gitlab-{mode}/api/auth");
+        let settings = config.clone().base_path(&path);
+        let mut provider = if mode.starts_with("issuer") {
+            OAuthProvider::gitlab_with_issuer(
+                "fixture-social-client",
+                "fixture-social-secret",
+                &format!(
+                    "{}/__test/social-provider/gitlab{}",
+                    config.base_url,
+                    if mode == "issuer-slashes" { "///" } else { "" }
+                ),
+            )
+        } else {
+            OAuthProvider::gitlab("fixture-social-client", "fixture-social-secret")
+        };
+        let policy = provider
+            .authorization
+            .as_mut()
+            .ok_or_else(|| better_auth::AuthError::internal("Missing GitLab policy"))?;
+        policy.disable_default_scopes = mode.starts_with("disabled");
+        if mode == "configured" || mode == "disabled-configured" {
+            policy.configured_scopes.push("configured-scope".into());
+        }
+        let auth = Arc::new(
+            AuthBuilder::<TestSchema>::new(settings.clone())
+                .store(SeaOrmStore::<TestSchema>::new(settings, database.clone()))
+                .rate_limit(RateLimitConfig::new().enabled(false))
+                .plugin(EmailPasswordPlugin::new().enable_username(false))
+                .plugin(SessionManagementPlugin::new())
+                .plugin(OAuthPlugin::new().add_provider("gitlab", provider))
+                .build()
+                .await?,
+        );
+        router = router.nest(&path, auth.clone().axum_router().with_state(auth));
+    }
     let store = database.clone();
     let observer = fixture.clone();
     let control = fixture.clone();
@@ -128,6 +171,16 @@ pub(super) async fn router(
         }
     }}));
     let provider = Router::new()
+        .route("/__test/social-provider/gitlab/oauth/token", post(|State(state): State<Fixture>, headers: HeaderMap, body: String| async move {
+            let form = url::form_urlencoded::parse(body.as_bytes()).into_owned().collect::<std::collections::BTreeMap<_,_>>();
+            let refresh = form.get("grant_type").is_some_and(|value| value == "refresh_token");
+            state.receipts.lock().await.push(json!({"path": "/__test/social-provider/gitlab/oauth/token", "method": "POST", "authorization": headers.get("authorization").and_then(|v| v.to_str().ok()), "contentType": headers.get("content-type").and_then(|v| v.to_str().ok()), "body": form}));
+            Json(if refresh { json!({"access_token": "fixture-gitlab-refreshed-access", "refresh_token": "fixture-gitlab-refreshed-refresh", "token_type": "Bearer", "scope": "read_user refreshed-scope", "expires_in": 1800}) } else { json!({"access_token": "fixture-gitlab-access", "refresh_token": "fixture-gitlab-refresh", "token_type": "Bearer", "scope": "read_user issued-scope", "expires_in": 3600}) })
+        }))
+        .route("/__test/social-provider/gitlab/api/v4/user", get(|State(state): State<Fixture>, headers: HeaderMap| async move {
+            state.receipts.lock().await.push(json!({"path": "/__test/social-provider/gitlab/api/v4/user", "method": "GET", "authorization": headers.get("authorization").and_then(|v| v.to_str().ok()), "contentType": headers.get("content-type").and_then(|v| v.to_str().ok()), "body": null}));
+            Json(state.profile.lock().await.clone())
+        }))
         .route("/__test/social-provider/token", post(|State(state): State<Fixture>, headers: HeaderMap, body: String| async move {
             state.receipts.lock().await.push(json!({"path": "/token", "method": "POST", "authorization": headers.get("authorization").and_then(|v| v.to_str().ok()), "contentType": headers.get("content-type").and_then(|v| v.to_str().ok()), "body": url::form_urlencoded::parse(body.as_bytes()).into_owned().collect::<std::collections::BTreeMap<_,_>>() }));
             Json(json!({"access_token": "fixture-discord-access", "token_type": "Bearer", "scope": "identify email", "expires_in": 3600}))
