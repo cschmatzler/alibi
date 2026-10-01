@@ -49,6 +49,7 @@ export const FIXTURE_PROFILES = [
   "openapi-default", "openapi-configured", "openapi-disabled", "openapi-jwt", "openapi-username", "openapi-custom-schema", "openapi-plugins", "openapi-plugins-teams", "openapi-plugins-configured",
   "one-tap-update-link", "one-tap-encrypted", "one-tap-retain-account",
   "google-id-default", "google-id-array", "google-id-empty-array", "google-id-domain", "google-id-domain-any", "google-id-disabled", "google-id-override",
+  "set-password-default", "set-password-policy", "set-password-cache",
   "one-tap-default", "one-tap-fallback", "one-tap-plugin-only", "one-tap-missing", "one-tap-empty-array", "one-tap-empty-audience-member",
   "one-tap-domain", "one-tap-domain-any", "one-tap-disabled", "one-tap-provider-disabled",
   "one-tap-required", "one-tap-required-no-mail", "one-tap-no-override", "one-tap-account-cookie",

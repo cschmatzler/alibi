@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { createRemoteJwtFixture } from "./jwt-remote-fixture";
 import { createLastLoginMethodFixture } from "./last-login-method-fixture";
+import { createSetPasswordFixture } from "./set-password-fixture";
 import { createTwoFactorPendingLookupFixture } from "./two-factor-pending-lookup-fixture";
 import { createBearerFixture } from "./bearer-fixture";
 import { sessionCookieCacheFixture } from "./session-cookie-cache-fixture";
@@ -555,6 +556,7 @@ const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
 const oneTapProfiles = createOneTapProfiles(authOptions);
 const googleIdProfiles = googleIdTokenProfiles(authOptions);
+const setPasswordFixture = createSetPasswordFixture(database, authOptions);
 
 const OTT_PROFILE_NAMES=["ott-default","ott-hashed","ott-no-cookie","ott-server-header","ott-refresh-disabled","ott-refresh-deferred"] as const;
 const ottExposedHeaderFixture: BetterAuthPlugin = {
@@ -1439,6 +1441,11 @@ const server = Bun.serve({
       }
 
       for (const [name, instance] of phoneFixture.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
+      }
+      const setPasswordResponse = await setPasswordFixture.handle(request);
+      if (setPasswordResponse) return setPasswordResponse;
+      for (const [name, instance] of setPasswordFixture.profiles) {
         if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
       }
       if (url.pathname === "/__test/one-tap/jwks") return googleOneTapJwks();

@@ -1,3 +1,6 @@
+mod set_password;
+pub use set_password::set_password;
+
 pub(super) mod handlers;
 
 pub(super) mod types;

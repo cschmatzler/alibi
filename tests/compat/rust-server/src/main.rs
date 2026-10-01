@@ -20,7 +20,9 @@ async fn private_json_content_type(
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     let path = request.uri().path();
-    let private_control = path.starts_with("/__test/") && !path.starts_with("/__test/profiles/");
+    let private_control = path.starts_with("/__test/")
+        && !path.starts_with("/__test/profiles/")
+        && !path.starts_with("/__test/server-api/");
     let mut response = next.run(request).await;
     if private_control
         && axum::body::HttpBody::size_hint(response.body())
@@ -113,6 +115,7 @@ mod phone_profiles;
 mod session_field_model;
 mod session_fields_fixture;
 mod session_profiles;
+mod set_password_fixture;
 mod siwe_fixture;
 mod social_provider_fixture;
 mod sqlite_fixture;
@@ -689,6 +692,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (database, invitation_status_observer) = sqlite_fixture::connect().await?;
     better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
+    let set_password_router = set_password_fixture::router(&config, database.clone()).await?;
     let reset_database = database.clone();
     let verification_outbox = Arc::new(Mutex::new(HashMap::new()));
     let team_profiles = team_fixture::profiles(
@@ -1842,6 +1846,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(passkey_auth_router)
         .merge(passkey_router)
         .merge(registration_router)
+        .merge(set_password_router)
         .merge(one_tap_router)
         .merge(google_id_router)
         .merge(otp_router)
