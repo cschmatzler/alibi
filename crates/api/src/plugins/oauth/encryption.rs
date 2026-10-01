@@ -3,6 +3,11 @@
 //! When `AccountConfig::encrypt_oauth_tokens` is `true`, access tokens,
 //! and refresh tokens are encrypted before being persisted and
 //! decrypted transparently on read. ID tokens remain provider plaintext.
+//!
+//! This replaces the earlier native AES/HKDF/base64 persistence encoding. Those
+//! installed rows require explicit conversion or provider reauthorization before
+//! upgrading; this reader follows Source's nonhexadecimal plaintext policy and
+//! does not automatically identify or decrypt the older native encoding.
 
 use better_auth_core::AuthError;
 
