@@ -259,3 +259,37 @@ not on this pending integration. Source staged API-key writes are a separately
 owned storage implementation under independent review. Anonymous authentication
 is under investigation after the selected priorities. The pinned oracle, empty
 exception list, browser checks and 75% coverage floor remain unchanged.
+
+## Latest integration correction and staged API-key writes
+
+The frozen 512-scenario gate on 87b84649 failed: 510 SDK scenarios passed /
+30,260 assertions, with two successful-usage owners exposing the private
+persisted-state date projection mismatch. All default/optional native, Rustls,
+Redis, fixture, TypeScript, strict Clippy and 42 harness / 344 checks preceding
+the SDK gate passed. Browser, docs and source coverage were not reached. The
+failure remains in `/tmp/next-priority-fixed-canonical.log`.
+
+The next integration retains every prior requirement and adds reviewed staged
+API-key database writes (d7c23c27, phone owner; independent JWT review clear).
+Its validated snapshot contract implements separate guarded quota, rate and
+final current-row updates, preserving earlier commits after real later SQL
+errors. Focused family 60 SDK / 3,248, new five owners / 392, Source controls,
+53 SeaORM, 53 filtered API and strict/downstream checks pass. Two independent
+connections and actual SQL veto/current-row triggers provide distinct evidence.
+Server-only verification remains behind the controlled fixture interface.
+
+The coordinator's reviewed private state-reader repair now matches Source's
+existing UTC millisecond default projection and preserves rawDates=true with
+exact physical SQL fractions. The real deterministic before regression fails;
+eight connected wire/usage/write-failure owners pass 8 / 674. No comparator or
+production storage precision is changed. All four new middleware failure/recovery
+owners are required in the actual enforced inventory; trusted final-row evidence
+is separately recorded in its audit. The complete 517-scenario canonical gate is
+pending. Coverage is still last measured at 78.8992% on delivered master.
+
+Next priority owners are implementing server-only organization addMember with
+actual addition hooks/team cleanup, configured two-factor OTP background delivery,
+and measured unsupported raw COSE none enrollment. Functional/fractional membership
+limits require a separate single-field native policy migration; broad raw COSE
+algorithm-mismatch callback APIs remain open. Anonymous authentication investigation
+continues after these priorities. Package exclusions remain unchanged.

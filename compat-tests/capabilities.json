@@ -212,7 +212,11 @@
           "api-key trusted deferred verification catches actual cleanup errors and forced retry bypasses the shared throttle",
           "api-key api-key-automatic successful database usage awaits actual refill and preserves non-due quota and foreign state",
           "api-key api-key-automatic-deferred successful database usage awaits actual refill and preserves non-due quota and foreign state",
-          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions"
+          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions",
+          "api-key api-key-usage-rate rate SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate final SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate-deferred rate SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate-deferred final SQL failure retains genuine prior quota phases and owner-safe retry"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -256,7 +260,11 @@
           "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority",
           "api-key api-key-automatic successful database usage awaits actual refill and preserves non-due quota and foreign state",
           "api-key api-key-automatic-deferred successful database usage awaits actual refill and preserves non-due quota and foreign state",
-          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions"
+          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions",
+          "api-key api-key-usage-rate rate SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate final SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate-deferred rate SQL failure retains genuine prior quota phases and owner-safe retry",
+          "api-key api-key-usage-rate-deferred final SQL failure retains genuine prior quota phases and owner-safe retry"
         ]
       }
     },

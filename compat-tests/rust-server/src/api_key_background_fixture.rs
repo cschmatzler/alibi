@@ -304,6 +304,15 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     value.as_object_mut().unwrap().extend(json!({"lastRefillAt":row.try_get::<Option<String>>("","last_refill_at").unwrap(),"refillAmount":row.try_get::<Option<f64>>("","refill_amount").unwrap(),"refillInterval":row.try_get::<Option<f64>>("","refill_interval").unwrap(),"rateLimitEnabled":row.try_get::<bool>("","rate_limit_enabled").unwrap(),"rateLimitTimeWindow":row.try_get::<Option<f64>>("","rate_limit_time_window").unwrap(),"rateLimitMax":row.try_get::<Option<f64>>("","rate_limit_max").unwrap()}).as_object().unwrap().clone());
                 }
             }
+            if query.get("rawDates").map(String::as_str)!=Some("true") {
+                for value in &mut values {
+                    for field in ["createdAt","updatedAt","expiresAt","lastRequest","lastRefillAt"] {
+                        if let Some(serde_json::Value::String(date))=value.get_mut(field) {
+                            *date=chrono::DateTime::parse_from_rfc3339(date).unwrap().with_timezone(&chrono::Utc).to_rfc3339_opts(chrono::SecondsFormat::Millis,true);
+                        }
+                    }
+                }
+            }
             Json(values)
         }
     }));
