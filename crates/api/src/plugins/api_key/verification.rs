@@ -469,7 +469,12 @@ impl ApiKeyPlugin {
                 now + chrono::Duration::milliseconds(ctx.config.session.expires_in.num_seconds())
             }
         };
-        let meta = better_auth_core::RequestMeta::from_request(req);
+        // Virtual principals retain the resolver's nullable result. Physical
+        // session creation supplies empty defaults through RequestMeta.
+        let ip_policy = req
+            .extensions()
+            .get::<better_auth_core::config::IpAddressConfig>()
+            .unwrap_or_default();
         let session = SessionView {
             omitted_fields: std::collections::BTreeSet::default(),
             active_team_id: None,
@@ -480,8 +485,12 @@ impl ApiKeyPlugin {
             created_at: now,
             updated_at: now,
             expires_at,
-            ip_address: meta.ip_address,
-            user_agent: meta.user_agent,
+            ip_address: ip_policy.resolve_ip(&req.headers),
+            user_agent: req
+                .headers
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
+                .map(|(_, value)| value.clone()),
             impersonated_by: None,
             active_organization_id: None,
             active: true,

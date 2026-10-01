@@ -363,10 +363,19 @@ async fn convert_axum_request(
     };
 
     // Convert headers
-    let mut headers = HashMap::new();
+    let mut headers: HashMap<String, String> = HashMap::new();
     for (name, value) in &parts.headers {
         if let Ok(value_str) = value.to_str() {
-            drop(headers.insert(name.to_string(), value_str.to_owned()));
+            // Headers.get joins repeated fields in wire order. Cookie uses
+            // its semicolon separator; forwarding fields use commas so the
+            // resolver validates the entire chain.
+            let _ = headers
+                .entry(name.to_string())
+                .and_modify(|value| {
+                    value.push_str(if name == "cookie" { "; " } else { ", " });
+                    value.push_str(value_str);
+                })
+                .or_insert_with(|| value_str.to_owned());
         }
     }
 

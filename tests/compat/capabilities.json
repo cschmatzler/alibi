@@ -392,13 +392,17 @@
         "success": [
           "device verify accepts a hyphenated user code",
           "device approve flow returns a bearer token",
-          "device custom asynchronous generators preserve exact codes and reject normalized aliases"
+          "device custom asynchronous generators preserve exact codes and reject normalized aliases",
+          "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
         ],
         "rejection": "device approve flow returns a bearer token",
         "authorization": null,
         "state": [
           "device approve flow returns a bearer token",
-          "device custom asynchronous generators preserve exact codes and reject normalized aliases"
+          "device custom asynchronous generators preserve exact codes and reject normalized aliases",
+          "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
         ]
       }
     },
@@ -475,7 +479,50 @@
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
           "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
-          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session"
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session",
+          "client IP embedded IPv4 retains full published IPv6 representation persists authoritative session context",
+          "client IP configured header priority persists authoritative session context",
+          "client IP client-ip-trusted verified email auto-signin applies initialized policy",
+          "client IP full IPv6 prefix separates interface addresses selects real HTTP rate buckets",
+          "client IP fractional IPv6 prefix floors persists authoritative session context",
+          "client IP normalized IPv6 subnet selects real HTTP rate buckets",
+          "client IP client-ip-disabled API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP strict IPv4 octets persists authoritative session context",
+          "client IP trusted admin impersonation retains operator and foreign authority with resolved metadata",
+          "client IP client-ip-disabled passkey login applies initialized policy after a genuine signature",
+          "client IP trusted chain ignores forged leftmost values selects real HTTP rate buckets",
+          "client IP uppercase hexadecimal mapped marker retains IPv6 grouping persists authoritative session context",
+          "client IP default excludes x-real-ip persists authoritative session context",
+          "client IP malformed single address persists authoritative session context",
+          "client IP IPv6 proxy compares full address before grouping persists authoritative session context",
+          "client IP untrusted forged leftmost hop persists authoritative session context",
+          "client IP client-ip-trusted passkey login applies initialized policy after a genuine signature",
+          "client IP IPv4 mapped representations selects real HTTP rate buckets",
+          "client IP full IPv6 address persists authoritative session context",
+          "client IP client-ip-ordered API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP invalid rightmost hop fails closed persists authoritative session context",
+          "client IP empty headers use shared bucket selects real HTTP rate buckets",
+          "client IP uppercase dotted mapped marker resolves IPv4 persists authoritative session context",
+          "client IP invalid first header falls through persists authoritative session context",
+          "client IP IPv4-mapped proxy matches IPv4 network persists authoritative session context",
+          "client IP invalid networks never trust a chain persists authoritative session context",
+          "client IP configured header controls admission selects real HTTP rate buckets",
+          "client IP negative IPv6 prefix persists authoritative session context",
+          "client IP all hops trusted persists authoritative session context",
+          "client IP default IPv6 subnet persists authoritative session context",
+          "client IP excess prefix retains full address persists authoritative session context",
+          "client IP NaN IPv6 prefix retains full address persists authoritative session context",
+          "client IP empty tokens do not create hops persists authoritative session context",
+          "client IP single IPv4 persists authoritative session context",
+          "client IP unresolved shared bucket resists forged chains selects real HTTP rate buckets",
+          "client IP tracking disabled persists authoritative session context",
+          "client IP client-ip-trusted API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP IPv4-mapped client normalizes to IPv4 persists authoritative session context",
+          "client IP rightmost untrusted hop persists authoritative session context",
+          "client IP client-ip-disabled verified email auto-signin applies initialized policy",
+          "client IP empty configured headers persists authoritative session context",
+          "client IP zero IPv6 prefix persists authoritative session context",
+          "client IP disabled tracking disables IP rate limiting selects real HTTP rate buckets"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -490,7 +537,10 @@
           "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
           "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
           "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
-          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage"
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
+          "client IP client-ip-disabled API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP client-ip-ordered API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP client-ip-trusted API-key virtual principals keep nullable metadata and override foreign cookies"
         ],
         "authorization": [
           "api-key shared headers select the first configured session",
@@ -503,7 +553,10 @@
           "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
           "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
           "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
-          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage"
+          "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
+          "client IP client-ip-disabled API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP client-ip-ordered API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP client-ip-trusted API-key virtual principals keep nullable metadata and override foreign cookies"
         ],
         "state": [
           "Discord callback exchanges without PKCE and preserves current foreign and replay state",
@@ -564,7 +617,39 @@
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
           "application JWT keyring compact cached principal owns get-session headers and token signing through stored session revocation",
           "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
-          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session"
+          "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session",
+          "client IP embedded IPv4 retains full published IPv6 representation persists authoritative session context",
+          "client IP configured header priority persists authoritative session context",
+          "client IP client-ip-trusted verified email auto-signin applies initialized policy",
+          "client IP fractional IPv6 prefix floors persists authoritative session context",
+          "client IP client-ip-disabled API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP strict IPv4 octets persists authoritative session context",
+          "client IP uppercase hexadecimal mapped marker retains IPv6 grouping persists authoritative session context",
+          "client IP default excludes x-real-ip persists authoritative session context",
+          "client IP malformed single address persists authoritative session context",
+          "client IP IPv6 proxy compares full address before grouping persists authoritative session context",
+          "client IP untrusted forged leftmost hop persists authoritative session context",
+          "client IP full IPv6 address persists authoritative session context",
+          "client IP client-ip-ordered API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP invalid rightmost hop fails closed persists authoritative session context",
+          "client IP uppercase dotted mapped marker resolves IPv4 persists authoritative session context",
+          "client IP invalid first header falls through persists authoritative session context",
+          "client IP IPv4-mapped proxy matches IPv4 network persists authoritative session context",
+          "client IP invalid networks never trust a chain persists authoritative session context",
+          "client IP negative IPv6 prefix persists authoritative session context",
+          "client IP all hops trusted persists authoritative session context",
+          "client IP default IPv6 subnet persists authoritative session context",
+          "client IP excess prefix retains full address persists authoritative session context",
+          "client IP NaN IPv6 prefix retains full address persists authoritative session context",
+          "client IP empty tokens do not create hops persists authoritative session context",
+          "client IP single IPv4 persists authoritative session context",
+          "client IP tracking disabled persists authoritative session context",
+          "client IP client-ip-trusted API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP IPv4-mapped client normalizes to IPv4 persists authoritative session context",
+          "client IP rightmost untrusted hop persists authoritative session context",
+          "client IP client-ip-disabled verified email auto-signin applies initialized policy",
+          "client IP empty configured headers persists authoritative session context",
+          "client IP zero IPv6 prefix persists authoritative session context"
         ]
       }
     },
@@ -692,10 +777,31 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "core before responses stop endpoint writes and unknown routes cannot run hooks",
+        "success": [
+          "core before responses stop endpoint writes and unknown routes cannot run hooks",
+          "client IP full IPv6 prefix separates interface addresses selects real HTTP rate buckets",
+          "client IP normalized IPv6 subnet selects real HTTP rate buckets",
+          "client IP trusted chain ignores forged leftmost values selects real HTTP rate buckets",
+          "client IP IPv4 mapped representations selects real HTTP rate buckets",
+          "client IP empty headers use shared bucket selects real HTTP rate buckets",
+          "client IP configured header controls admission selects real HTTP rate buckets",
+          "client IP unresolved shared bucket resists forged chains selects real HTTP rate buckets",
+          "client IP concurrent equivalent addresses atomically share a bucket",
+          "client IP disabled tracking disables IP rate limiting selects real HTTP rate buckets"
+        ],
         "rejection": null,
         "authorization": null,
-        "state": null
+        "state": [
+          "client IP full IPv6 prefix separates interface addresses selects real HTTP rate buckets",
+          "client IP normalized IPv6 subnet selects real HTTP rate buckets",
+          "client IP trusted chain ignores forged leftmost values selects real HTTP rate buckets",
+          "client IP IPv4 mapped representations selects real HTTP rate buckets",
+          "client IP empty headers use shared bucket selects real HTTP rate buckets",
+          "client IP configured header controls admission selects real HTTP rate buckets",
+          "client IP unresolved shared bucket resists forged chains selects real HTTP rate buckets",
+          "client IP concurrent equivalent addresses atomically share a bucket",
+          "client IP disabled tracking disables IP rate limiting selects real HTTP rate buckets"
+        ]
       }
     },
     {
@@ -972,11 +1078,17 @@
           "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
           "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history",
           "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
-          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots"
+          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
+          "client IP client-ip-disabled passkey login applies initialized policy after a genuine signature",
+          "client IP client-ip-trusted passkey login applies initialized policy after a genuine signature"
         ],
         "rejection": null,
         "authorization": null,
-        "state": "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots"
+        "state": [
+          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
+          "client IP client-ip-disabled passkey login applies initialized policy after a genuine signature",
+          "client IP client-ip-trusted passkey login applies initialized policy after a genuine signature"
+        ]
       }
     },
     {
@@ -995,7 +1107,9 @@
           "passkey Ed25519Curve8 packed self attestation rejects genuine false and malformed signatures before callback enrollment or session",
           "passkey raw curve8 none admission validates the actual ceremony before callback persistence and owner issuance",
           "passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks",
-          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots"
+          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
+          "client IP client-ip-disabled passkey login applies initialized policy after a genuine signature",
+          "client IP client-ip-trusted passkey login applies initialized policy after a genuine signature"
         ],
         "rejection": [
           "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
@@ -1008,7 +1122,9 @@
         "state": [
           "passkey registration freshness rejects before consumption and freshAge zero permits old sessions",
           "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior",
-          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots"
+          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
+          "client IP client-ip-disabled passkey login applies initialized policy after a genuine signature",
+          "client IP client-ip-trusted passkey login applies initialized policy after a genuine signature"
         ]
       }
     },
@@ -1133,19 +1249,27 @@
       "evidence": {
         "success": [
           "change email for a verified user requires old-email confirmation first",
-          "anonymous email-verification verified login transfers only the actual anonymous owner and preserves rejected proof state"
+          "anonymous email-verification verified login transfers only the actual anonymous owner and preserves rejected proof state",
+          "client IP client-ip-trusted verified email auto-signin applies initialized policy",
+          "client IP client-ip-disabled verified email auto-signin applies initialized policy"
         ],
         "rejection": [
           "verify email rejects untrusted callbackURL",
-          "anonymous email-verification verified login transfers only the actual anonymous owner and preserves rejected proof state"
+          "anonymous email-verification verified login transfers only the actual anonymous owner and preserves rejected proof state",
+          "client IP client-ip-trusted verified email auto-signin applies initialized policy",
+          "client IP client-ip-disabled verified email auto-signin applies initialized policy"
         ],
         "authorization": [
           "verify email rejects untrusted callbackURL",
-          "anonymous email-verification verified login transfers only the actual anonymous owner and preserves rejected proof state"
+          "anonymous email-verification verified login transfers only the actual anonymous owner and preserves rejected proof state",
+          "client IP client-ip-trusted verified email auto-signin applies initialized policy",
+          "client IP client-ip-disabled verified email auto-signin applies initialized policy"
         ],
         "state": [
           "required email verification issues proof without a session and gates sign-in until verification",
-          "anonymous email-verification verified login transfers only the actual anonymous owner and preserves rejected proof state"
+          "anonymous email-verification verified login transfers only the actual anonymous owner and preserves rejected proof state",
+          "client IP client-ip-trusted verified email auto-signin applies initialized policy",
+          "client IP client-ip-disabled verified email auto-signin applies initialized policy"
         ]
       }
     },
@@ -1308,7 +1432,8 @@
           "admin awaited admin-banned-message-error uses hidden stored owner data and skips unauthorized expired and unbanned requests",
           "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
           "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
-          "admin impersonation legacy uses original actor permissions for admin targets and self sessions"
+          "admin impersonation legacy uses original actor permissions for admin targets and self sessions",
+          "client IP trusted admin impersonation retains operator and foreign authority with resolved metadata"
         ],
         "rejection": [
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
@@ -1324,7 +1449,8 @@
           "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
           "admin impersonation legacy uses original actor permissions for admin targets and self sessions",
           "admin impersonation no-base uses original actor permissions for admin targets and self sessions",
-          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
+          "client IP trusted admin impersonation retains operator and foreign authority with resolved metadata"
         ],
         "authorization": [
           "admin awaited admin-banned-message uses hidden stored owner data and skips unauthorized expired and unbanned requests",
@@ -1335,7 +1461,8 @@
           "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
           "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
           "admin impersonation legacy uses original actor permissions for admin targets and self sessions",
-          "admin impersonation no-base uses original actor permissions for admin targets and self sessions"
+          "admin impersonation no-base uses original actor permissions for admin targets and self sessions",
+          "client IP trusted admin impersonation retains operator and foreign authority with resolved metadata"
         ],
         "state": [
           "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
@@ -1357,7 +1484,8 @@
           "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
           "admin impersonation legacy uses original actor permissions for admin targets and self sessions",
           "admin impersonation no-base uses original actor permissions for admin targets and self sessions",
-          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
+          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
+          "client IP trusted admin impersonation retains operator and foreign authority with resolved metadata"
         ]
       }
     },
@@ -1584,7 +1712,8 @@
           "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
           "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
           "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
-          "admin impersonation legacy uses original actor permissions for admin targets and self sessions"
+          "admin impersonation legacy uses original actor permissions for admin targets and self sessions",
+          "client IP trusted admin impersonation retains operator and foreign authority with resolved metadata"
         ],
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -1605,7 +1734,8 @@
           "admin JSON and media rejection precedes authenticated permissions and retains session state",
           "admin impersonation privileged uses original actor permissions for admin targets and self sessions",
           "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
-          "admin impersonation legacy uses original actor permissions for admin targets and self sessions"
+          "admin impersonation legacy uses original actor permissions for admin targets and self sessions",
+          "client IP trusted admin impersonation retains operator and foreign authority with resolved metadata"
         ]
       }
     },
@@ -1688,7 +1818,10 @@
           "api-key CRUD isolates configurations and preserves all-config listing",
           "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
           "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization",
-          "api-key creation rejects client authority before callbacks and preserves deliberate callback errors without secret writes"
+          "api-key creation rejects client authority before callbacks and preserves deliberate callback errors without secret writes",
+          "client IP client-ip-disabled API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP client-ip-ordered API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP client-ip-trusted API-key virtual principals keep nullable metadata and override foreign cookies"
         ],
         "rejection": [
           "api-key HTTP requests cannot select a different owner",
@@ -1704,7 +1837,10 @@
           "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
           "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization",
           "api-key creation rejects client authority before callbacks and preserves deliberate callback errors without secret writes",
-          "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer"
+          "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer",
+          "client IP client-ip-disabled API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP client-ip-ordered API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP client-ip-trusted API-key virtual principals keep nullable metadata and override foreign cookies"
         ]
       }
     },
@@ -1804,17 +1940,27 @@
       "evidence": {
         "success": [
           "device approve flow returns a bearer token",
-          "device custom asynchronous generators preserve exact codes and reject normalized aliases"
+          "device custom asynchronous generators preserve exact codes and reject normalized aliases",
+          "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
         ],
         "rejection": [
           "device approve blocks already-processed codes",
           "device endpoint schemas preserve OAuth validation and media type errors",
-          "device decisions require the claiming user and redact other actors"
+          "device decisions require the claiming user and redact other actors",
+          "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
         ],
-        "authorization": "device decisions require the claiming user and redact other actors",
+        "authorization": [
+          "device decisions require the claiming user and redact other actors",
+          "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+        ],
         "state": [
           "device approve flow returns a bearer token",
-          "device custom asynchronous generators preserve exact codes and reject normalized aliases"
+          "device custom asynchronous generators preserve exact codes and reject normalized aliases",
+          "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
         ]
       }
     },
@@ -1826,14 +1972,20 @@
         "success": [
           "device approve blocks already-processed codes",
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
-          "device configuration controls client validation lifetime polling and verification URL parameters"
+          "device configuration controls client validation lifetime polling and verification URL parameters",
+          "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
         ],
         "rejection": [
           "device endpoint schemas preserve OAuth validation and media type errors",
           "device configuration controls client validation lifetime polling and verification URL parameters"
         ],
         "authorization": null,
-        "state": "device configuration controls client validation lifetime polling and verification URL parameters"
+        "state": [
+          "device configuration controls client validation lifetime polling and verification URL parameters",
+          "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+        ]
       }
     },
     {
@@ -1858,17 +2010,23 @@
       "evidence": {
         "success": [
           "device approve flow returns a bearer token",
-          "device custom asynchronous generators preserve exact codes and reject normalized aliases"
+          "device custom asynchronous generators preserve exact codes and reject normalized aliases",
+          "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
         ],
         "rejection": [
           "device approve flow returns a bearer token",
-          "device configuration controls client validation lifetime polling and verification URL parameters"
+          "device configuration controls client validation lifetime polling and verification URL parameters",
+          "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
         ],
         "authorization": null,
         "state": [
           "device approve flow returns a bearer token",
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
-          "device configuration controls client validation lifetime polling and verification URL parameters"
+          "device configuration controls client validation lifetime polling and verification URL parameters",
+          "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
         ]
       }
     },
@@ -2852,7 +3010,9 @@
           "passkey raw authority ES256 packed preserves signed tags and full lifecycle",
           "passkey raw authority Ed25519Alg7 packed statement8 preserves signed tags and full lifecycle",
           "passkey callback deletion completes the original owner session after a no-row counter write and rejects replay and retry",
-          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots"
+          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
+          "client IP client-ip-disabled passkey login applies initialized policy after a genuine signature",
+          "client IP client-ip-trusted passkey login applies initialized policy after a genuine signature"
         ],
         "rejection": [
           "passkey registration authentication ownership and deletion round trip",
@@ -2885,7 +3045,9 @@
           "passkey raw authority Ed25519Alg7 packed statement8 preserves signed tags and full lifecycle",
           "passkey callback deletion completes the original owner session after a no-row counter write and rejects replay and retry",
           "passkey failed application deletion aborts authentication while the retained credential remains retryable with a fresh challenge",
-          "passkey deletion callback cannot run for a wrong credential challenge or signature"
+          "passkey deletion callback cannot run for a wrong credential challenge or signature",
+          "client IP client-ip-disabled passkey login applies initialized policy after a genuine signature",
+          "client IP client-ip-trusted passkey login applies initialized policy after a genuine signature"
         ],
         "authorization": [
           "passkey rejected cryptographic attempts consume challenges without credential or session writes",
@@ -2941,7 +3103,9 @@
           "passkey callback deletion completes the original owner session after a no-row counter write and rejects replay and retry",
           "passkey failed application deletion aborts authentication while the retained credential remains retryable with a fresh challenge",
           "passkey deletion callback cannot run for a wrong credential challenge or signature",
-          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots"
+          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
+          "client IP client-ip-disabled passkey login applies initialized policy after a genuine signature",
+          "client IP client-ip-trusted passkey login applies initialized policy after a genuine signature"
         ]
       }
     },
@@ -2977,7 +3141,9 @@
           "passkey raw authority Ed25519 packed preserves signed tags and full lifecycle",
           "passkey raw authority ES256 packed preserves signed tags and full lifecycle",
           "passkey raw authority Ed25519Alg7 packed statement8 preserves signed tags and full lifecycle",
-          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots"
+          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
+          "client IP client-ip-disabled passkey login applies initialized policy after a genuine signature",
+          "client IP client-ip-trusted passkey login applies initialized policy after a genuine signature"
         ],
         "rejection": [
           "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
@@ -3058,7 +3224,9 @@
           "passkey raw authority Ed25519 packed preserves signed tags and full lifecycle",
           "passkey raw authority ES256 packed preserves signed tags and full lifecycle",
           "passkey raw authority Ed25519Alg7 packed statement8 preserves signed tags and full lifecycle",
-          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots"
+          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
+          "client IP client-ip-disabled passkey login applies initialized policy after a genuine signature",
+          "client IP client-ip-trusted passkey login applies initialized policy after a genuine signature"
         ]
       }
     },
@@ -3227,10 +3395,18 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "list sessions and revoke a session through the SDK",
+        "success": [
+          "list sessions and revoke a session through the SDK",
+          "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+        ],
         "rejection": "session nested middleware clears expired cookies and rejects invalid revocation bodies",
         "authorization": null,
-        "state": "session refresh suppression preserves expiry and foreign revocation cannot extend a session"
+        "state": [
+          "session refresh suppression preserves expiry and foreign revocation cannot extend a session",
+          "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+        ]
       }
     },
     {
@@ -3249,10 +3425,18 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "change email for a verified user requires old-email confirmation first",
+        "success": [
+          "change email for a verified user requires old-email confirmation first",
+          "client IP client-ip-trusted verified email auto-signin applies initialized policy",
+          "client IP client-ip-disabled verified email auto-signin applies initialized policy"
+        ],
         "rejection": "send verification email rejects already verified user",
         "authorization": null,
-        "state": "email OTP override inherits automatic verification sign-in and requires current mailbox proof"
+        "state": [
+          "email OTP override inherits automatic verification sign-in and requires current mailbox proof",
+          "client IP client-ip-trusted verified email auto-signin applies initialized policy",
+          "client IP client-ip-disabled verified email auto-signin applies initialized policy"
+        ]
       }
     },
     {
@@ -3369,7 +3553,34 @@
           "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
-          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
+          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals",
+          "client IP embedded IPv4 retains full published IPv6 representation persists authoritative session context",
+          "client IP configured header priority persists authoritative session context",
+          "client IP fractional IPv6 prefix floors persists authoritative session context",
+          "client IP strict IPv4 octets persists authoritative session context",
+          "client IP uppercase hexadecimal mapped marker retains IPv6 grouping persists authoritative session context",
+          "client IP default excludes x-real-ip persists authoritative session context",
+          "client IP malformed single address persists authoritative session context",
+          "client IP IPv6 proxy compares full address before grouping persists authoritative session context",
+          "client IP untrusted forged leftmost hop persists authoritative session context",
+          "client IP full IPv6 address persists authoritative session context",
+          "client IP invalid rightmost hop fails closed persists authoritative session context",
+          "client IP uppercase dotted mapped marker resolves IPv4 persists authoritative session context",
+          "client IP invalid first header falls through persists authoritative session context",
+          "client IP IPv4-mapped proxy matches IPv4 network persists authoritative session context",
+          "client IP invalid networks never trust a chain persists authoritative session context",
+          "client IP negative IPv6 prefix persists authoritative session context",
+          "client IP all hops trusted persists authoritative session context",
+          "client IP default IPv6 subnet persists authoritative session context",
+          "client IP excess prefix retains full address persists authoritative session context",
+          "client IP NaN IPv6 prefix retains full address persists authoritative session context",
+          "client IP empty tokens do not create hops persists authoritative session context",
+          "client IP single IPv4 persists authoritative session context",
+          "client IP tracking disabled persists authoritative session context",
+          "client IP IPv4-mapped client normalizes to IPv4 persists authoritative session context",
+          "client IP rightmost untrusted hop persists authoritative session context",
+          "client IP empty configured headers persists authoritative session context",
+          "client IP zero IPv6 prefix persists authoritative session context"
         ],
         "authorization": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -3398,7 +3609,34 @@
           "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
-          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
+          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals",
+          "client IP embedded IPv4 retains full published IPv6 representation persists authoritative session context",
+          "client IP configured header priority persists authoritative session context",
+          "client IP fractional IPv6 prefix floors persists authoritative session context",
+          "client IP strict IPv4 octets persists authoritative session context",
+          "client IP uppercase hexadecimal mapped marker retains IPv6 grouping persists authoritative session context",
+          "client IP default excludes x-real-ip persists authoritative session context",
+          "client IP malformed single address persists authoritative session context",
+          "client IP IPv6 proxy compares full address before grouping persists authoritative session context",
+          "client IP untrusted forged leftmost hop persists authoritative session context",
+          "client IP full IPv6 address persists authoritative session context",
+          "client IP invalid rightmost hop fails closed persists authoritative session context",
+          "client IP uppercase dotted mapped marker resolves IPv4 persists authoritative session context",
+          "client IP invalid first header falls through persists authoritative session context",
+          "client IP IPv4-mapped proxy matches IPv4 network persists authoritative session context",
+          "client IP invalid networks never trust a chain persists authoritative session context",
+          "client IP negative IPv6 prefix persists authoritative session context",
+          "client IP all hops trusted persists authoritative session context",
+          "client IP default IPv6 subnet persists authoritative session context",
+          "client IP excess prefix retains full address persists authoritative session context",
+          "client IP NaN IPv6 prefix retains full address persists authoritative session context",
+          "client IP empty tokens do not create hops persists authoritative session context",
+          "client IP single IPv4 persists authoritative session context",
+          "client IP tracking disabled persists authoritative session context",
+          "client IP IPv4-mapped client normalizes to IPv4 persists authoritative session context",
+          "client IP rightmost untrusted hop persists authoritative session context",
+          "client IP empty configured headers persists authoritative session context",
+          "client IP zero IPv6 prefix persists authoritative session context"
         ],
         "state": [
           "official client signs in with imported TypeScript scrypt credentials",
@@ -3447,7 +3685,34 @@
           "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
-          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
+          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals",
+          "client IP embedded IPv4 retains full published IPv6 representation persists authoritative session context",
+          "client IP configured header priority persists authoritative session context",
+          "client IP fractional IPv6 prefix floors persists authoritative session context",
+          "client IP strict IPv4 octets persists authoritative session context",
+          "client IP uppercase hexadecimal mapped marker retains IPv6 grouping persists authoritative session context",
+          "client IP default excludes x-real-ip persists authoritative session context",
+          "client IP malformed single address persists authoritative session context",
+          "client IP IPv6 proxy compares full address before grouping persists authoritative session context",
+          "client IP untrusted forged leftmost hop persists authoritative session context",
+          "client IP full IPv6 address persists authoritative session context",
+          "client IP invalid rightmost hop fails closed persists authoritative session context",
+          "client IP uppercase dotted mapped marker resolves IPv4 persists authoritative session context",
+          "client IP invalid first header falls through persists authoritative session context",
+          "client IP IPv4-mapped proxy matches IPv4 network persists authoritative session context",
+          "client IP invalid networks never trust a chain persists authoritative session context",
+          "client IP negative IPv6 prefix persists authoritative session context",
+          "client IP all hops trusted persists authoritative session context",
+          "client IP default IPv6 subnet persists authoritative session context",
+          "client IP excess prefix retains full address persists authoritative session context",
+          "client IP NaN IPv6 prefix retains full address persists authoritative session context",
+          "client IP empty tokens do not create hops persists authoritative session context",
+          "client IP single IPv4 persists authoritative session context",
+          "client IP tracking disabled persists authoritative session context",
+          "client IP IPv4-mapped client normalizes to IPv4 persists authoritative session context",
+          "client IP rightmost untrusted hop persists authoritative session context",
+          "client IP empty configured headers persists authoritative session context",
+          "client IP zero IPv6 prefix persists authoritative session context"
         ]
       }
     },
@@ -3815,7 +4080,39 @@
           "cloudflare post credentials reach real token exchange refresh and owned persistence",
           "cloudflare public credentials reach real token exchange refresh and owned persistence",
           "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
-          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys"
+          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys",
+          "client IP embedded IPv4 retains full published IPv6 representation persists authoritative session context",
+          "client IP configured header priority persists authoritative session context",
+          "client IP client-ip-trusted verified email auto-signin applies initialized policy",
+          "client IP fractional IPv6 prefix floors persists authoritative session context",
+          "client IP strict IPv4 octets persists authoritative session context",
+          "client IP client-ip-disabled passkey login applies initialized policy after a genuine signature",
+          "client IP uppercase hexadecimal mapped marker retains IPv6 grouping persists authoritative session context",
+          "client IP default excludes x-real-ip persists authoritative session context",
+          "client IP malformed single address persists authoritative session context",
+          "client IP forwarding fold retains genuine authority across repeated Cookie fields",
+          "client IP IPv6 proxy compares full address before grouping persists authoritative session context",
+          "client IP untrusted forged leftmost hop persists authoritative session context",
+          "client IP client-ip-trusted passkey login applies initialized policy after a genuine signature",
+          "client IP full IPv6 address persists authoritative session context",
+          "client IP invalid rightmost hop fails closed persists authoritative session context",
+          "client IP uppercase dotted mapped marker resolves IPv4 persists authoritative session context",
+          "client IP invalid first header falls through persists authoritative session context",
+          "client IP IPv4-mapped proxy matches IPv4 network persists authoritative session context",
+          "client IP invalid networks never trust a chain persists authoritative session context",
+          "client IP negative IPv6 prefix persists authoritative session context",
+          "client IP all hops trusted persists authoritative session context",
+          "client IP default IPv6 subnet persists authoritative session context",
+          "client IP excess prefix retains full address persists authoritative session context",
+          "client IP NaN IPv6 prefix retains full address persists authoritative session context",
+          "client IP empty tokens do not create hops persists authoritative session context",
+          "client IP single IPv4 persists authoritative session context",
+          "client IP tracking disabled persists authoritative session context",
+          "client IP IPv4-mapped client normalizes to IPv4 persists authoritative session context",
+          "client IP rightmost untrusted hop persists authoritative session context",
+          "client IP client-ip-disabled verified email auto-signin applies initialized policy",
+          "client IP empty configured headers persists authoritative session context",
+          "client IP zero IPv6 prefix persists authoritative session context"
         ],
         "rejection": null,
         "authorization": "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
@@ -3833,7 +4130,35 @@
           "cloudflare post credentials reach real token exchange refresh and owned persistence",
           "cloudflare public credentials reach real token exchange refresh and owned persistence",
           "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
-          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys"
+          "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys",
+          "client IP embedded IPv4 retains full published IPv6 representation persists authoritative session context",
+          "client IP configured header priority persists authoritative session context",
+          "client IP fractional IPv6 prefix floors persists authoritative session context",
+          "client IP strict IPv4 octets persists authoritative session context",
+          "client IP uppercase hexadecimal mapped marker retains IPv6 grouping persists authoritative session context",
+          "client IP default excludes x-real-ip persists authoritative session context",
+          "client IP malformed single address persists authoritative session context",
+          "client IP forwarding fold retains genuine authority across repeated Cookie fields",
+          "client IP IPv6 proxy compares full address before grouping persists authoritative session context",
+          "client IP untrusted forged leftmost hop persists authoritative session context",
+          "client IP full IPv6 address persists authoritative session context",
+          "client IP invalid rightmost hop fails closed persists authoritative session context",
+          "client IP uppercase dotted mapped marker resolves IPv4 persists authoritative session context",
+          "client IP invalid first header falls through persists authoritative session context",
+          "client IP IPv4-mapped proxy matches IPv4 network persists authoritative session context",
+          "client IP invalid networks never trust a chain persists authoritative session context",
+          "client IP negative IPv6 prefix persists authoritative session context",
+          "client IP all hops trusted persists authoritative session context",
+          "client IP default IPv6 subnet persists authoritative session context",
+          "client IP excess prefix retains full address persists authoritative session context",
+          "client IP NaN IPv6 prefix retains full address persists authoritative session context",
+          "client IP empty tokens do not create hops persists authoritative session context",
+          "client IP single IPv4 persists authoritative session context",
+          "client IP tracking disabled persists authoritative session context",
+          "client IP IPv4-mapped client normalizes to IPv4 persists authoritative session context",
+          "client IP rightmost untrusted hop persists authoritative session context",
+          "client IP empty configured headers persists authoritative session context",
+          "client IP zero IPv6 prefix persists authoritative session context"
         ]
       }
     },
@@ -3890,7 +4215,53 @@
           "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
           "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys",
           "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session",
-          "application JWT keyring server-only signing and verification preserve an absent HTTP request and the real virtual endpoint context"
+          "application JWT keyring server-only signing and verification preserve an absent HTTP request and the real virtual endpoint context",
+          "client IP embedded IPv4 retains full published IPv6 representation persists authoritative session context",
+          "client IP configured header priority persists authoritative session context",
+          "client IP client-ip-trusted verified email auto-signin applies initialized policy",
+          "client IP full IPv6 prefix separates interface addresses selects real HTTP rate buckets",
+          "client IP fractional IPv6 prefix floors persists authoritative session context",
+          "client IP normalized IPv6 subnet selects real HTTP rate buckets",
+          "client IP client-ip-disabled API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
+          "client IP strict IPv4 octets persists authoritative session context",
+          "client IP trusted admin impersonation retains operator and foreign authority with resolved metadata",
+          "client IP client-ip-disabled passkey login applies initialized policy after a genuine signature",
+          "client IP trusted chain ignores forged leftmost values selects real HTTP rate buckets",
+          "client IP uppercase hexadecimal mapped marker retains IPv6 grouping persists authoritative session context",
+          "client IP default excludes x-real-ip persists authoritative session context",
+          "client IP malformed single address persists authoritative session context",
+          "client IP forwarding fold retains genuine authority across repeated Cookie fields",
+          "client IP IPv6 proxy compares full address before grouping persists authoritative session context",
+          "client IP untrusted forged leftmost hop persists authoritative session context",
+          "client IP client-ip-trusted passkey login applies initialized policy after a genuine signature",
+          "client IP IPv4 mapped representations selects real HTTP rate buckets",
+          "client IP full IPv6 address persists authoritative session context",
+          "client IP client-ip-ordered API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP invalid rightmost hop fails closed persists authoritative session context",
+          "client IP empty headers use shared bucket selects real HTTP rate buckets",
+          "client IP uppercase dotted mapped marker resolves IPv4 persists authoritative session context",
+          "client IP invalid first header falls through persists authoritative session context",
+          "client IP IPv4-mapped proxy matches IPv4 network persists authoritative session context",
+          "client IP invalid networks never trust a chain persists authoritative session context",
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
+          "client IP configured header controls admission selects real HTTP rate buckets",
+          "client IP negative IPv6 prefix persists authoritative session context",
+          "client IP all hops trusted persists authoritative session context",
+          "client IP default IPv6 subnet persists authoritative session context",
+          "client IP excess prefix retains full address persists authoritative session context",
+          "client IP NaN IPv6 prefix retains full address persists authoritative session context",
+          "client IP empty tokens do not create hops persists authoritative session context",
+          "client IP single IPv4 persists authoritative session context",
+          "client IP unresolved shared bucket resists forged chains selects real HTTP rate buckets",
+          "client IP tracking disabled persists authoritative session context",
+          "client IP client-ip-trusted API-key virtual principals keep nullable metadata and override foreign cookies",
+          "client IP IPv4-mapped client normalizes to IPv4 persists authoritative session context",
+          "client IP rightmost untrusted hop persists authoritative session context",
+          "client IP client-ip-disabled verified email auto-signin applies initialized policy",
+          "client IP empty configured headers persists authoritative session context",
+          "client IP zero IPv6 prefix persists authoritative session context",
+          "client IP disabled tracking disables IP rate limiting selects real HTTP rate buckets"
         ],
         "rejection": [
           "sign up with duplicate email returns error",
@@ -3965,7 +4336,34 @@
           "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
           "application JWT keyring session payload subject defaults and public signatures use the actual external persisted keys",
           "application JWT keyring custom cached callbacks retain the complete hook snapshot while nested middleware receives the completed session",
-          "application JWT keyring server-only signing and verification preserve an absent HTTP request and the real virtual endpoint context"
+          "application JWT keyring server-only signing and verification preserve an absent HTTP request and the real virtual endpoint context",
+          "client IP embedded IPv4 retains full published IPv6 representation persists authoritative session context",
+          "client IP configured header priority persists authoritative session context",
+          "client IP fractional IPv6 prefix floors persists authoritative session context",
+          "client IP strict IPv4 octets persists authoritative session context",
+          "client IP uppercase hexadecimal mapped marker retains IPv6 grouping persists authoritative session context",
+          "client IP default excludes x-real-ip persists authoritative session context",
+          "client IP malformed single address persists authoritative session context",
+          "client IP IPv6 proxy compares full address before grouping persists authoritative session context",
+          "client IP untrusted forged leftmost hop persists authoritative session context",
+          "client IP full IPv6 address persists authoritative session context",
+          "client IP invalid rightmost hop fails closed persists authoritative session context",
+          "client IP uppercase dotted mapped marker resolves IPv4 persists authoritative session context",
+          "client IP invalid first header falls through persists authoritative session context",
+          "client IP IPv4-mapped proxy matches IPv4 network persists authoritative session context",
+          "client IP invalid networks never trust a chain persists authoritative session context",
+          "client IP negative IPv6 prefix persists authoritative session context",
+          "client IP all hops trusted persists authoritative session context",
+          "client IP default IPv6 subnet persists authoritative session context",
+          "client IP excess prefix retains full address persists authoritative session context",
+          "client IP NaN IPv6 prefix retains full address persists authoritative session context",
+          "client IP empty tokens do not create hops persists authoritative session context",
+          "client IP single IPv4 persists authoritative session context",
+          "client IP tracking disabled persists authoritative session context",
+          "client IP IPv4-mapped client normalizes to IPv4 persists authoritative session context",
+          "client IP rightmost untrusted hop persists authoritative session context",
+          "client IP empty configured headers persists authoritative session context",
+          "client IP zero IPv6 prefix persists authoritative session context"
         ]
       }
     },

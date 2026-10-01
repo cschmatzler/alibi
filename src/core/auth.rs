@@ -275,6 +275,8 @@ impl<S: AuthSchema> BetterAuth<S> {
             req = req.with_url(url);
         }
         req.set_query_pairs(query_pairs);
+        req.extensions()
+            .insert(self.config.advanced.ip_address.clone());
 
         let request_context = RequestHookContext::from_request(&req);
         with_request_hook_context_value(request_context, async {

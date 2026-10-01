@@ -5,6 +5,7 @@ import { createLastLoginMethodFixture } from "./last-login-method-fixture";
 import { createSetPasswordFixture } from "./set-password-fixture";
 import { createDispatchFixture } from "./dispatch-fixture";
 import { createSignupPolicyFixture } from "./signup-policy-fixture";
+import { createClientIpFixture } from "./client-ip-fixture";
 import { createTwoFactorPendingLookupFixture } from "./two-factor-pending-lookup-fixture";
 import { createBearerFixture } from "./bearer-fixture";
 import { sessionCookieCacheFixture } from "./session-cookie-cache-fixture";
@@ -431,6 +432,7 @@ const authOptions = {
 const { runMigrations } = await getMigrations(authOptions);
 await runMigrations();
 const sessionFieldsFixture=await createSessionFieldsFixture(database,authOptions,`http://localhost:${PORT}`);
+const clientIpFixture = await createClientIpFixture(authOptions, database);
 const siweFixture = await createSiweFixture(database, authOptions, `http://localhost:${PORT}`);
 const adminBannedMessageFixture = createAdminBannedMessageFixture(authOptions, database);
 const adminPermissionFixture = createAdminPermissionFixture(authOptions, database);
@@ -825,6 +827,8 @@ const server = Bun.serve({
     try {
       const url = new URL(request.url);
       organizationTransport.observe(request);
+      const clientIpResponse = await clientIpFixture.handle(request);
+      if (clientIpResponse) return clientIpResponse;
       const anonymousControl = await anonymousProfiles.handle(request);
       if (anonymousControl) return anonymousControl;
       const proxyControl = await oauthProxyProfiles.handle(request);

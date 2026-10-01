@@ -465,12 +465,13 @@ impl AdminPlugin {
             return Ok(Self::missing_session_response());
         };
         self.authorize(&user, "user", "impersonate", MESSAGE_IMPERSONATE_USERS)?;
+        let metadata = better_auth_core::RequestMeta::from_request(req);
         let (response, token) = match impersonate_user_core(
             &body,
             user.id.as_str(),
             user.role.as_deref(),
-            req.headers.get("x-forwarded-for").map(String::as_str),
-            req.headers.get("user-agent").map(String::as_str),
+            metadata.ip_address.as_deref(),
+            metadata.user_agent.as_deref(),
             &self.config,
             ctx,
         )

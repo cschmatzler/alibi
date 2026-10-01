@@ -241,10 +241,16 @@ impl PasskeyPlugin {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
-        let ip_address = req.headers.get("x-forwarded-for").cloned();
-        let user_agent = req.headers.get("user-agent").cloned();
-        match verify_authentication_core(&body, req, &self.config, ip_address, user_agent, ctx)
-            .await?
+        let metadata = better_auth_core::RequestMeta::from_request(req);
+        match verify_authentication_core(
+            &body,
+            req,
+            &self.config,
+            metadata.ip_address,
+            metadata.user_agent,
+            ctx,
+        )
+        .await?
         {
             PasskeyHandlerOutcome::Success((response, token)) => {
                 let cookie_header = create_session_cookie(&token, &ctx.config);

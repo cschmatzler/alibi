@@ -384,6 +384,6 @@ fn advanced_database_defaults() {
 #[test]
 fn ip_address_config_defaults() {
     let ip = IpAddressConfig::default();
-    assert_eq!(ip.headers, vec!["x-forwarded-for", "x-real-ip"]);
+    assert_eq!(ip.headers, vec!["x-forwarded-for"]);
     assert!(!ip.disable_ip_tracking);
 }

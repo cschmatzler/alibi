@@ -105,14 +105,17 @@ impl RateLimitMiddleware {
         }
     }
 
-    /// Derive a client key from the request. Uses X-Forwarded-For, then
-    /// falls back to a fixed key (single-bucket) when no IP is available.
+    /// Use the same trusted, normalized IP policy as persisted session metadata.
+    /// Requests without a resolved IP share one per-path bucket.
     fn client_key(req: &AuthRequest) -> String {
-        req.headers
-            .get("x-forwarded-for")
-            .or_else(|| req.headers.get("x-real-ip"))
-            .cloned()
-            .unwrap_or_else(|| "unknown".to_owned())
+        let policy = req.extensions().get::<crate::config::IpAddressConfig>();
+        policy
+            .as_ref()
+            .map_or_else(
+                || crate::config::IpAddressConfig::default().resolve_ip(&req.headers),
+                |policy| policy.resolve_ip(&req.headers),
+            )
+            .unwrap_or_else(|| "no-trusted-ip".to_owned())
     }
 
     fn limit_for_path(&self, path: &str) -> &EndpointRateLimit {
@@ -130,12 +133,17 @@ impl Middleware for RateLimitMiddleware {
     }
 
     async fn before_request(&self, req: &AuthRequest) -> AuthResult<Option<AuthResponse>> {
-        if !self.config.enabled {
+        if !self.config.enabled
+            || req
+                .extensions()
+                .get::<crate::config::IpAddressConfig>()
+                .is_some_and(|policy| policy.disable_ip_tracking)
+        {
             return Ok(None);
         }
 
         let limit = self.limit_for_path(&req.path);
-        let key = format!("{}:{}", Self::client_key(req), req.path);
+        let key = format!("{}|{}", Self::client_key(req), req.path);
         let now = Instant::now();
         let window = limit.window;
 
@@ -157,15 +165,12 @@ impl Middleware for RateLimitMiddleware {
 
             drop(buckets);
             return Ok(Some(
-                AuthResponse::json(
+                AuthResponse::text(
                     429,
-                    &crate::types::RateLimitErrorResponse {
-                        code: "RATE_LIMIT_EXCEEDED",
-                        message: "Too many requests",
-                        retry_after,
-                    },
-                )?
-                .with_header("Retry-After", retry_after.to_string()),
+                    r#"{"message":"Too many requests. Please try again later."}"#,
+                )
+                .with_header("content-type", "text/plain;charset=utf-8")
+                .with_header("X-Retry-After", retry_after.to_string()),
             ));
         }
 

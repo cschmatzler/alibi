@@ -212,11 +212,11 @@ fn request_meta_extracts_from_headers() {
 
 // Rust-specific surface: Rust request/response/type helpers are public library behavior with no direct TS analogue.
 #[test]
-fn request_meta_falls_back_to_real_ip() {
+fn request_meta_ignores_unconfigured_real_ip() {
     let mut req = AuthRequest::new(HttpMethod::Get, "/test");
     drop(req.headers.insert("x-real-ip".into(), "5.6.7.8".into()));
     let meta = RequestMeta::from_request(&req);
-    assert_eq!(meta.ip_address.as_deref(), Some("5.6.7.8"));
+    assert!(meta.ip_address.is_none());
 }
 
 // Rust-specific surface: Rust request/response/type helpers are public library behavior with no direct TS analogue.
