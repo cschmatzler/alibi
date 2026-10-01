@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use base64::Engine;
 use chrono::{Duration, Utc};
-use rand::distributions::Alphanumeric;
 use rand::{Rng, thread_rng};
 use sha2::{Digest, Sha256};
 
@@ -50,10 +49,15 @@ async fn require_session<S: better_auth_core::AuthSchema>(
 }
 
 fn generate_pkce() -> (String, String) {
-    let verifier: String = thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(43)
-        .map(char::from)
+    const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
+    let mut random = thread_rng();
+    let verifier: String = (0..128)
+        .filter_map(|_| {
+            ALPHABET
+                .get(random.gen_range(0..ALPHABET.len()))
+                .copied()
+                .map(char::from)
+        })
         .collect();
     let mut hasher = Sha256::new();
     hasher.update(verifier.as_bytes());
@@ -1012,7 +1016,7 @@ async fn complete_link_social(
     }
 
     if !linking.allow_different_emails && !user_info.email.eq_ignore_ascii_case(&link.email) {
-        return Err("email_doesn't_match".to_string());
+        return Err("email_does_not_match".to_string());
     }
 
     if let Some(existing_account) = ctx
