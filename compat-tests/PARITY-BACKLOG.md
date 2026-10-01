@@ -8,7 +8,7 @@ Wider pinned parity work follows these priorities. Excluded external integration
 packages will receive no implementation work. Prepared unmerged work remains
 separate from delivered capabilities.
 
-This snapshot describes merged `origin/master` through PR #61 (organization selection, callbacks and deletion),
+This snapshot describes merged `origin/master` through PR #73 (admin guest responses, organization deletion hooks, API-key callbacks/generation and passkey lifecycle/registration),
 not the older, dirty coordinator worktree. The reference remains Better Auth
 1.7.6. The [upstream audit](audits/upstream-target.md) records source locations
 and wider boundaries. An audit gap means equivalence has not been established;
@@ -23,13 +23,13 @@ it is not automatically a confirmed defect or wholly missing implementation.
 | OAuth correctness fixes | Local fixes preserve previously granted scopes and atomically create a new user with its OAuth account. Actual failing-before and passing-after evidence exists. | Finish independent/integrated review, canonical validation and publication. |
 | Organization invitation listing | Verified HTTP ownership, expired/processed invitations, trusted server-only scope and configured page-limit behavior are proved. | Independent review clear; canonical gate passed with 268 SDK scenarios and 79.25% source coverage. Merged PR #36. |
 | Admin user deletion | Real enrolled-factor flow proves credential/session revocation and rejects unauthorized principals; installed-schema repair preserves two-factor rows. | Independent review clear; canonical gate passed with 265 SDK scenarios and 79.34% source coverage. Merged PR #35. |
-| Organization creation policies | Callback and numeric-limit decisions, trusted server creation and effective creator roles passed independent review and the full gate: 298 SDK scenarios, 79.23% source coverage. | Merged PR #42; validation merged PR #44 after the full gate (306 SDK scenarios, 79.18% source coverage). Nullable logo/metadata, set-active defaults/raw metadata/preferences, creation callbacks and deletion defaults are merged in PRs #55–61. Their connected canonical gate passes 362 SDK scenarios and 79.79% coverage. Deletion/update/member lifecycle hooks, custom entities/fields, concurrent admission and HTTP disconnect continuation remain separate work. |
+| Organization creation policies | Callback and numeric-limit decisions, trusted server creation and effective creator roles passed independent review and the full gate: 298 SDK scenarios, 79.23% source coverage. | Merged PR #42; validation merged PR #44 after the full gate (306 SDK scenarios, 79.18% source coverage). Nullable logo/metadata, set-active defaults/raw metadata/preferences, creation callbacks and deletion defaults are merged in PRs #55–61. Their connected canonical gate passes 362 SDK scenarios and 79.79% coverage. Deletion hooks are merged PR #69. Update/member hooks, custom entities/fields and concurrent admission remain work; real HTTP disconnect continuation is frozen and independently reviewed, awaiting its integrated gate. |
 | Organization metadata lookup | Reviewed metadata and session lifecycle implementation passed the canonical gate: 270 SDK scenarios and 79.20% source coverage. | Merged PR #37; input validation, custom fields and callback branches remain separate work. |
 | Configured session updates | Real application columns, configured validation/defaults/transforms, current-token updates and hooks passed independent review and the full gate: 277 SDK scenarios, 78.97% source coverage. | Merged PR #40; secondary/stateless/cache modes, output transforms, asynchronous validators and wider adapter types remain gaps. |
 | Two-factor policy storage | Nullable verification/failure/lock fields and atomic exact-row operations passed the integrated gate: 274 SDK scenarios, 78.96% source coverage. | Merged PR #39; dependent enforcement merged PR #41 after the full gate and independent review (292 SDK scenarios, 79.29% source coverage). Passwordless policies merged PR #43 after the full gate: 302 SDK scenarios and 79.33% source coverage. OTP method/storage policy passed independent review and the full gate in PR #46: 316 SDK scenarios and 79.38% source coverage. Guest disable validation ordering passed the full gate in PR #47; factor/backup interoperability, configured generation/storage, pending session policy, trust lifetimes/cleanup and authenticated OTP cancellation passed the connected gate for PRs #62–66: 380 SDK scenarios and 80.43% source coverage. Extreme dates/allocations, invalid-cookie variants and additional interactions remain explicit. |
-| TOTP configuration | Exact URI/issuer/default/disabled behavior and trusted UTF-8-secret generation passed independent review and the canonical gate: 274 SDK scenarios, 78.97% source coverage. | Merged PR #38; OTP storage is merged PR #46; trust policy is reviewed and gate-validated in PR #65. Broader configuration remains separately accounted for. |
+| TOTP configuration | Exact URI/issuer/default/disabled behavior and trusted UTF-8-secret generation passed independent review and the canonical gate: 274 SDK scenarios, 78.97% source coverage. | Merged PR #38; OTP storage is merged PR #46; trust policy is merged and gate-validated in PR #65. Broader configuration remains separately accounted for. |
 | OpenAPI and reference page | Complete default/configured documents, actual session-field models, source metadata and reference HTML passed independent review and the full gate: 327 SDK scenarios, 79.95% source coverage. | Merged PR #49; minimal-builder automatic core registration, broader custom entities and additional plugin configuration remain explicit gaps. |
-| One Tap | Frozen implementation with local RSA Google JWKS, configuration and lifecycle evidence. The combined One Tap, OAuth and OpenAPI focused run passes 40 scenarios / 1,188 assertions. | Comparator prerequisite passed the full gate in PR #45; shared OAuth prerequisites are integrated locally; independent review found nonempty empty-string audiences and retained-account cookie combinations, now being repaired before the canonical gate and publication. |
+| One Tap | Frozen implementation with local RSA Google JWKS, configuration and lifecycle evidence. The combined One Tap, OAuth and OpenAPI focused run passes 40 scenarios / 1,188 assertions. | Comparator prerequisite passed the full gate in PR #45; shared OAuth prerequisites are integrated locally; independent review found empty-string array audiences, retained-account cookie combinations and a shared cookie format mismatch. Frozen repairs pass 15 One Tap scenarios / 746 assertions with complete published-decoded encrypted claims; independent integration, canonical validation and publication remain. |
 | SIWE | Merged PR #25; full canonical gate passed with 238 SDK scenarios and 78.65% source coverage. | Nonstandard media/legacy-date/custom-storage boundaries are documented, not new selected tasks. |
 
 ## Missing capability families on merged master
@@ -72,10 +72,14 @@ and configuration branches that have not been fully implemented or proved.
 - **Two factor:** reviewed configurable backup and trust work has passed the full gate in PRs #62–66. Remaining invalid-cookie, extreme-input, malformed installed storage, generic callback/error and authentication-method interactions require separate evidence.
 - **Admin:** nullable ban-expiry trusted storage merged PR #48. Permission maps, explicit-role initialization, literal role input/create authority, original expired-ban response snapshots and fractional/truthy durations are covered by PRs #50–54; their connected canonical gate passed with 342 SDK scenarios and 79.96% source coverage. Custom permissions/multiple roles/admin IDs, duration defaults/fractions, extra fields, ban
   enforcement across new login methods and impersonation variants.
-- **Passkeys:** sessionless registration, callback-controlled ownership/name,
-  extensions, origin/RP configurations and custom challenge cookies.
-- **API keys:** server-only expired-key cleanup, custom callbacks, secondary
-  storage/fallback/deferred updates and further quota/organization interactions.
+- **Passkeys:** freshness, single-use/overlapping ceremonies and callback-controlled
+  registration ownership/name/session behavior are merged PRs #72–73. Remaining
+  work includes authentication callbacks, extensions, origin/RP configurations
+  and custom challenge cookies.
+- **API keys:** custom getter/validator/generator/default-permission callbacks and
+  trusted forced expired-key cleanup are merged PRs #70–71. Automatic background
+  cleanup timing/global throttle, secondary storage/fallback/deferred updates and
+  further quota/organization interactions remain work.
 - **Email OTP, magic links, JWT and one-time tokens:** remaining custom schema,
   callback, rate-limit, remote signing, cache/storage and secret/configuration
   branches; implemented default flows do not prove every option.
@@ -114,3 +118,5 @@ production tests, review, integrated gate and pull request.
 Anonymous authentication, OAuth proxy/popup, new provider families and the wider
 core/storage/middleware audit follow the selected priorities unless required earlier.
 The excluded integration packages are outside scope.
+
+The connected selected stack for PRs #67–74 passes the full canonical gate: 405 SDK scenarios / 18,164 assertions, 39 harness tests / 243 assertions, two Chromium tests / 22 assertions, and 79.68% source line coverage (28,062 / 35,219). The deterministic admin timestamp repair in #74 resolves the earlier unexplained six-digit fraction parsing failures. Admin schema-before-auth, organization update/member hooks and invalid two-factor trust branches are the next active priorities. The remaining route inventory still has five absent method/path identities; wider parity is not claimed.

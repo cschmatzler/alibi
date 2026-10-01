@@ -2,7 +2,7 @@
 use crate::TestSchema;
 use axum::{
     extract::{Query, State},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use better_auth::__private_core::store::{AccountStore, SessionStore, UserStore};
@@ -13,7 +13,10 @@ use better_auth::plugins::{
     TwoFactorPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
+use better_auth_seaorm::{
+    sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
+    DatabaseConnection, SeaOrmStore,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Arc};
@@ -152,8 +155,66 @@ pub(super) async fn router(
     Ok(router.merge(
         Router::new()
             .route("/__test/admin-role-state", get(state))
+            .route("/__test/admin-user-timestamps", post(set_timestamps))
             .with_state(state_store),
     ))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredTimestamps {
+    user_id: String,
+    created_at: String,
+    updated_at: String,
+}
+
+async fn set_timestamps(
+    State(store): State<Arc<SeaOrmStore<TestSchema>>>,
+    Json(body): Json<StoredTimestamps>,
+) -> Result<Json<Value>, better_auth::AuthError> {
+    for value in [&body.created_at, &body.updated_at] {
+        chrono::DateTime::parse_from_rfc3339(value)
+            .map_err(|_| better_auth::AuthError::bad_request("valid stored timestamps required"))?;
+    }
+    let result = store
+        .connection()
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "UPDATE users SET created_at=?,updated_at=? WHERE id=?",
+            [
+                body.created_at.into(),
+                body.updated_at.into(),
+                body.user_id.clone().into(),
+            ],
+        ))
+        .await
+        .map_err(|error| {
+            better_auth::AuthError::Database(better_auth_core::DatabaseError::Query(
+                error.to_string(),
+            ))
+        })?;
+    if result.rows_affected() != 1 {
+        return Err(better_auth::AuthError::NotFound("user required".into()));
+    }
+    let row = store
+        .connection()
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "SELECT id,created_at,updated_at FROM users WHERE id=?",
+            [body.user_id.into()],
+        ))
+        .await
+        .map_err(|error| {
+            better_auth::AuthError::Database(better_auth_core::DatabaseError::Query(
+                error.to_string(),
+            ))
+        })?
+        .ok_or(better_auth::AuthError::UserNotFound)?;
+    Ok(Json(json!({
+        "userId": row.try_get::<String>("", "id").map_err(|error| better_auth::AuthError::Database(better_auth_core::DatabaseError::Query(error.to_string())))?,
+        "createdAt": row.try_get::<String>("", "created_at").map_err(|error| better_auth::AuthError::Database(better_auth_core::DatabaseError::Query(error.to_string())))?,
+        "updatedAt": row.try_get::<String>("", "updated_at").map_err(|error| better_auth::AuthError::Database(better_auth_core::DatabaseError::Query(error.to_string())))?,
+    })))
 }
 
 #[derive(Deserialize)]
