@@ -336,7 +336,26 @@ pub fn decode_compact(value: &str, secret: &str) -> Option<CompactCache> {
     if !map.contains_key("emailVerified") {
         drop(map.insert("emailVerified".into(), Value::Bool(false)));
     }
-    let user = serde_json::from_value(user).ok()?;
+    let null_user_extensions: Vec<_> = [
+        "username",
+        "displayUsername",
+        "twoFactorEnabled",
+        "role",
+        "banned",
+        "banReason",
+        "banExpires",
+        "isAnonymous",
+        "phoneNumber",
+        "phoneNumberVerified",
+        "lastLoginMethod",
+    ]
+    .into_iter()
+    .filter(|name| user.get(*name).is_some_and(Value::is_null))
+    .collect();
+    let mut user: UserView = serde_json::from_value(user).ok()?;
+    for name in null_user_extensions {
+        drop(user.extension_fields.insert(name.into(), Value::Null));
+    }
     let null_extensions: Vec<_> = ["activeOrganizationId", "activeTeamId", "impersonatedBy"]
         .into_iter()
         .filter(|name| session.get(*name).is_some_and(Value::is_null))
