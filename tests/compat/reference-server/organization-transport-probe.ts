@@ -1,5 +1,5 @@
-import { createAuthMiddleware } from "better-auth/api";
 import type { BetterAuthPlugin } from "better-auth";
+import { createAuthMiddleware } from "better-auth/api";
 /** Observe real Bun request aborts independently of the authentication callbacks. */
 export function organizationTransportProbe() {
   const aborted = new Set<string>();
@@ -28,18 +28,14 @@ export function organizationTransportProbe() {
         });
     },
     async handle(request: Request, url: URL) {
-      if (
-        url.pathname === "/__test/organization-transport-reset" &&
-        request.method === "POST"
-      ) {
+      if (url.pathname === "/__test/organization-transport-reset" && request.method === "POST") {
         aborted.clear();
         completed.clear();
         return Response.json({ reset: true });
       }
       if (url.pathname === "/__test/organization-transport-completion") {
         const marker = url.searchParams.get("marker") ?? "";
-        for (let i = 0; i < 200 && !completed.has(marker); i++)
-          await Bun.sleep(10);
+        for (let i = 0; i < 200 && !completed.has(marker); i++) await Bun.sleep(10);
         return Response.json({ marker, completed: completed.has(marker) });
       }
       if (url.pathname !== "/__test/organization-transport-state") return;

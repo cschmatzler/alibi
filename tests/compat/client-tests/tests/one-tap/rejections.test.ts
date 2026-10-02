@@ -1,13 +1,7 @@
 import { expect } from "bun:test";
 import { compatScenario } from "../../support/scenario";
-import {
-  credential,
-  signedRawToken,
-  issuedAt,
-  state,
-  oneTap,
-  responseSchema,
-} from "./helpers";
+import { credential, issuedAt, oneTap, responseSchema, signedRawToken, state } from "./helpers";
+
 compatScenario(
   "One Tap cryptographic and Google claim rejections leave identities unchanged",
   async (ctx) => {
@@ -43,9 +37,9 @@ compatScenario(
     const parts = good.split(".");
     tokens.push(
       [
-        Buffer.from(
-          JSON.stringify({ alg: "HS256", kid: "one-tap-local-rs256" }),
-        ).toString("base64url"),
+        Buffer.from(JSON.stringify({ alg: "HS256", kid: "one-tap-local-rs256" })).toString(
+          "base64url",
+        ),
         parts[1],
         parts[2],
       ].join("."),
@@ -78,12 +72,8 @@ compatScenario(
       sub: 1,
       email: undefined,
     }).replace('"sub":1', '"sub":1e400');
-    const priority = responseSchema.parse(
-      await oneTap(ctx, await credential({}, {}, false, raw)),
-    );
-    expect(priority.response.error?.message).toBe(
-      "Email not available in token",
-    );
+    const priority = responseSchema.parse(await oneTap(ctx, await credential({}, {}, false, raw)));
+    expect(priority.response.error?.message).toBe("Email not available in token");
     const nonfiniteRaw = JSON.stringify({
       ...claims,
       iss: "https://accounts.google.com",
@@ -121,24 +111,14 @@ compatScenario(
       email: ctx.uniqueEmail("origin"),
     });
     const forbidden = responseSchema.parse(
-      await oneTap(
-        ctx,
-        token,
-        "one-tap-default",
-        "origin",
-        "https://foreign.fixture.test/welcome",
-      ),
+      await oneTap(ctx, token, "one-tap-default", "origin", "https://foreign.fixture.test/welcome"),
     );
     expect(forbidden.response.error).toMatchObject({
       status: 403,
       code: "INVALID_CALLBACK_URL",
     });
     const rejected = [];
-    for (const json of [
-      {},
-      { idToken: 123 },
-      { idToken: token, callbackURL: 123 },
-    ]) {
+    for (const json of [{}, { idToken: 123 }, { idToken: token, callbackURL: 123 }]) {
       const result = await ctx.rawRequest({
         path: "/__test/profiles/one-tap-default/api/auth/one-tap/callback",
         method: "POST",
@@ -147,10 +127,7 @@ compatScenario(
       expect(result.status).toBe(400);
       rejected.push(result);
     }
-    for (const headers of [
-      new Headers(),
-      new Headers({ "content-type": "text/plain" }),
-    ]) {
+    for (const headers of [new Headers(), new Headers({ "content-type": "text/plain" })]) {
       const result = await ctx.rawRequest({
         path: "/__test/profiles/one-tap-default/api/auth/one-tap/callback",
         method: "POST",

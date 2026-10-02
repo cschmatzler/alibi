@@ -1,14 +1,7 @@
-import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import {
-  mkdir,
-  readFile,
-  readdir,
-  realpath,
-  rename,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -38,9 +31,7 @@ export const upstreamPin = pinSchema.parse(
 );
 const capabilityPin = z
   .object({ upstreamVersion: z.string() })
-  .parse(
-    JSON.parse(await readFile(join(COMPAT_ROOT, "capabilities.json"), "utf8")),
-  );
+  .parse(JSON.parse(await readFile(join(COMPAT_ROOT, "capabilities.json"), "utf8")));
 if (upstreamPin.version !== capabilityPin.upstreamVersion)
   throw new Error("Assurance source pin differs from capability runtime pin");
 
@@ -63,22 +54,16 @@ export async function writeJSON(path: string, value: unknown) {
   });
   await rename(temporary, path);
 }
-export async function filesUnder(
-  directory: string,
-  ignore = new Set<string>(),
-): Promise<string[]> {
+export async function filesUnder(directory: string, ignore = new Set<string>()): Promise<string[]> {
   const files: string[] = [];
-  for (const entry of (await readdir(directory, { withFileTypes: true })).sort(
-    (a, b) => a.name.localeCompare(b.name),
+  for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) =>
+    a.name.localeCompare(b.name),
   )) {
     const path = join(directory, entry.name);
     if (ignore.has(entry.name)) continue;
     if (entry.isDirectory()) files.push(...(await filesUnder(path, ignore)));
     else if (entry.isFile()) files.push(path);
-    else
-      throw new Error(
-        `Unexpected symlink or special file in upstream inventory: ${path}`,
-      );
+    else throw new Error(`Unexpected symlink or special file in upstream inventory: ${path}`);
   }
   return files;
 }
@@ -122,9 +107,7 @@ export function spawnOwned(
   });
   const owned = {
     get exitCode() {
-      return spawnError
-        ? 127
-        : (child.exitCode ?? (child.signalCode ? 1 : null));
+      return spawnError ? 127 : (child.exitCode ?? (child.signalCode ? 1 : null));
     },
     get spawnError() {
       return spawnError;
@@ -134,18 +117,10 @@ export function spawnOwned(
     stderr: child.stderr,
     kill(signal: NodeJS.Signals) {
       try {
-        if (child.pid && process.platform !== "win32")
-          process.kill(-child.pid, signal);
+        if (child.pid && process.platform !== "win32") process.kill(-child.pid, signal);
         else child.kill(signal);
       } catch (error) {
-        if (
-          !(
-            error &&
-            typeof error === "object" &&
-            "code" in error &&
-            error.code === "ESRCH"
-          )
-        )
+        if (!(error && typeof error === "object" && "code" in error && error.code === "ESRCH"))
           throw error;
       }
     },
@@ -202,10 +177,7 @@ export async function harnessDigest() {
     ...(await filesUnder(join(CLIENT_ROOT, "tests"))),
     ...(await filesUnder(join(CLIENT_ROOT, "harness"))),
     ...(await filesUnder(join(COMPAT_ROOT, "rust-server/src"))),
-    ...(await filesUnder(
-      REFERENCE_ROOT,
-      new Set(["node_modules", ".cache"]),
-    ).then((paths) =>
+    ...(await filesUnder(REFERENCE_ROOT, new Set(["node_modules", ".cache"])).then((paths) =>
       paths.filter((path) => /\.(?:ts|json|lock)$/.test(path)),
     )),
   ];
@@ -214,10 +186,7 @@ export async function harnessDigest() {
       await Promise.all(
         paths
           .sort()
-          .map(async (path) => [
-            path.slice(COMPAT_ROOT.length),
-            digest(await readFile(path)),
-          ]),
+          .map(async (path) => [path.slice(COMPAT_ROOT.length), digest(await readFile(path))]),
       ),
     ),
   );
@@ -229,17 +198,14 @@ export async function candidateSourceDigest() {
     ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
     { cwd: REPO_ROOT },
   );
-  if (listing.code !== 0)
-    throw new Error("Cannot fingerprint Rust build inputs");
+  if (listing.code !== 0) throw new Error("Cannot fingerprint Rust build inputs");
   const paths = listing.stdout
     .split("\0")
     .filter(
       (path) =>
         path &&
         (path.endsWith(".rs") ||
-          /(?:^|\/)(?:Cargo\.(?:toml|lock)|rust-toolchain(?:\.toml)?)$/.test(
-            path,
-          )),
+          /(?:^|\/)(?:Cargo\.(?:toml|lock)|rust-toolchain(?:\.toml)?)$/.test(path)),
     )
     .sort();
   const identities = [];
@@ -247,12 +213,7 @@ export async function candidateSourceDigest() {
     try {
       identities.push([path, await fileDigest(join(REPO_ROOT, path))]);
     } catch (error) {
-      if (
-        error &&
-        typeof error === "object" &&
-        "code" in error &&
-        error.code === "ENOENT"
-      )
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT")
         identities.push([path, "deleted"]);
       else throw error;
     }
@@ -268,8 +229,6 @@ export function localURL(value: string): URL {
     url.username ||
     url.password
   )
-    throw new Error(
-      "Assurance fixture URLs must be credential-free loopback HTTP origins",
-    );
+    throw new Error("Assurance fixture URLs must be credential-free loopback HTTP origins");
   return url;
 }

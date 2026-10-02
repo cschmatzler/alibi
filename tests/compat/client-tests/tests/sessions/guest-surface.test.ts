@@ -23,30 +23,37 @@ compatScenario("guest session surface returns identical empty reads and sign-out
   };
 });
 
-compatScenario("sign-out with a foreign or malformed session cookie is rejected identically", async (ctx) => {
-  const owner = ctx.actor("owner");
-  const email = ctx.uniqueEmail("guest-surface");
-  const signup = await owner.client.signUp.email({ email, password: "password123", name: "Guest Surface" });
-  expect(signup.error).toBeNull();
-  const forged = await ctx.rawRequest({
-    actor: "forger",
-    path: "/api/auth/sign-out",
-    method: "POST",
-    headers: { cookie: "better-auth.session_token=not-a-real-token.not-a-real-signature" },
-    json: {},
-  });
-  const unsigned = await ctx.rawRequest({
-    actor: "forger",
-    path: "/api/auth/list-sessions",
-    method: "GET",
-    headers: { cookie: `better-auth.session_token=${signup.data?.token ?? ""}` },
-  });
-  const ownerStill = await owner.client.getSession();
-  expect(ownerStill.data?.user.email).toBe(email);
-  return {
-    signup: ctx.snapshot(signup),
-    forged: ctx.snapshot(forged),
-    unsigned: ctx.snapshot(unsigned),
-    ownerStill: ctx.snapshot(ownerStill),
-  };
-});
+compatScenario(
+  "sign-out with a foreign or malformed session cookie is rejected identically",
+  async (ctx) => {
+    const owner = ctx.actor("owner");
+    const email = ctx.uniqueEmail("guest-surface");
+    const signup = await owner.client.signUp.email({
+      email,
+      password: "password123",
+      name: "Guest Surface",
+    });
+    expect(signup.error).toBeNull();
+    const forged = await ctx.rawRequest({
+      actor: "forger",
+      path: "/api/auth/sign-out",
+      method: "POST",
+      headers: { cookie: "better-auth.session_token=not-a-real-token.not-a-real-signature" },
+      json: {},
+    });
+    const unsigned = await ctx.rawRequest({
+      actor: "forger",
+      path: "/api/auth/list-sessions",
+      method: "GET",
+      headers: { cookie: `better-auth.session_token=${signup.data?.token ?? ""}` },
+    });
+    const ownerStill = await owner.client.getSession();
+    expect(ownerStill.data?.user.email).toBe(email);
+    return {
+      signup: ctx.snapshot(signup),
+      forged: ctx.snapshot(forged),
+      unsigned: ctx.snapshot(unsigned),
+      ownerStill: ctx.snapshot(ownerStill),
+    };
+  },
+);

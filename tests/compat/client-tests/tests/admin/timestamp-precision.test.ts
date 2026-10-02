@@ -1,21 +1,15 @@
 import { expect } from "bun:test";
-import { compatScenario } from "../../support/scenario";
-import { adminActor, signUpAndPromoteAdmin } from "./helpers";
 import { createAuthClient } from "better-auth/client";
 import { adminClient } from "better-auth/client/plugins";
+import { compatScenario } from "../../support/scenario";
+import { adminActor, signUpAndPromoteAdmin } from "./helpers";
 
 compatScenario(
   "admin stored timestamp precision survives official read, update and list without shifting dates",
   async (ctx) => {
-    const owner = await signUpAndPromoteAdmin(
-      ctx,
-      "owner",
-      "timestamp-owner",
-      "Timestamp Owner",
-    );
+    const owner = await signUpAndPromoteAdmin(ctx, "owner", "timestamp-owner", "Timestamp Owner");
     expect(owner.signup.error).toBeNull();
-    if (!owner.signup.data?.token)
-      throw new Error("actual owner session required");
+    if (!owner.signup.data?.token) throw new Error("actual owner session required");
     const target = adminActor(ctx, "target"),
       email = ctx.uniqueEmail("timestamp-target");
     const signup = await target.client.signUp.email({
@@ -35,11 +29,8 @@ compatScenario(
         customFetchImpl: async (input, init) => {
           const response = await owner.fetch(input, init);
           const body = await response.clone().json();
-          const users = Array.isArray(body.users)
-            ? body.users
-            : [body.user ?? body];
-          for (const user of users)
-            if (user?.id === userId) wireUsers.push(user);
+          const users = Array.isArray(body.users) ? body.users : [body.user ?? body];
+          for (const user of users) if (user?.id === userId) wireUsers.push(user);
           return response;
         },
       },
@@ -63,12 +54,8 @@ compatScenario(
       expect(read.error).toBeNull();
       expect(read.data?.createdAt).toBeInstanceOf(Date);
       expect(read.data?.updatedAt).toBeInstanceOf(Date);
-      expect(read.data?.createdAt.getTime()).toBe(
-        Date.parse("2026-09-30T22:11:23.145Z"),
-      );
-      expect(read.data?.updatedAt.getTime()).toBe(
-        Date.parse("2026-09-30T22:12:34.321Z"),
-      );
+      expect(read.data?.createdAt.getTime()).toBe(Date.parse("2026-09-30T22:11:23.145Z"));
+      expect(read.data?.updatedAt.getTime()).toBe(Date.parse("2026-09-30T22:12:34.321Z"));
       const readWire = wireUsers.at(-1)!;
       expect(readWire.createdAt).toBe("2026-09-30T22:11:23.145Z");
       expect(readWire.updatedAt).toBe("2026-09-30T22:12:34.321Z");
@@ -82,14 +69,10 @@ compatScenario(
       expect(update.data?.user.id).toBe(userId);
       expect(update.data?.user.createdAt).toBeInstanceOf(Date);
       expect(update.data?.user.updatedAt).toBeInstanceOf(Date);
-      expect(update.data?.user.createdAt.getTime()).toBe(
-        Date.parse("2026-09-30T22:11:23.145Z"),
-      );
+      expect(update.data?.user.createdAt.getTime()).toBe(Date.parse("2026-09-30T22:11:23.145Z"));
       const updateWire = wireUsers.at(-1)!;
       expect(updateWire.createdAt).toBe("2026-09-30T22:11:23.145Z");
-      expect(updateWire.updatedAt).toMatch(
-        /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/,
-      );
+      expect(updateWire.updatedAt).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
       expect(update.data?.user.updatedAt.getTime()).toBe(
         Date.parse(updateWire.updatedAt as string),
       );

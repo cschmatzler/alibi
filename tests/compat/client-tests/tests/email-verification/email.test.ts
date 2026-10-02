@@ -12,7 +12,7 @@ compatScenario("send verification email then verify marks the user verified", as
   const send = await primary.client.sendVerificationEmail({
     email,
   });
-  const record = await ctx.readVerificationEmail({ email }) as { token: string };
+  const record = (await ctx.readVerificationEmail({ email })) as { token: string };
   const verify = await primary.client.verifyEmail({
     query: {
       token: record.token,
@@ -28,24 +28,27 @@ compatScenario("send verification email then verify marks the user verified", as
   };
 });
 
-compatScenario("send verification email rejects email mismatch for authenticated user", async (ctx) => {
-  const primary = ctx.actor();
-  const email = ctx.uniqueEmail("user-management-verify-mismatch");
+compatScenario(
+  "send verification email rejects email mismatch for authenticated user",
+  async (ctx) => {
+    const primary = ctx.actor();
+    const email = ctx.uniqueEmail("user-management-verify-mismatch");
 
-  const signup = await primary.client.signUp.email({
-    email,
-    password: "password123",
-    name: "Mismatch Verify User",
-  });
-  const send = await primary.client.sendVerificationEmail({
-    email: ctx.uniqueEmail("user-management-verify-mismatch-other"),
-  });
+    const signup = await primary.client.signUp.email({
+      email,
+      password: "password123",
+      name: "Mismatch Verify User",
+    });
+    const send = await primary.client.sendVerificationEmail({
+      email: ctx.uniqueEmail("user-management-verify-mismatch-other"),
+    });
 
-  return {
-    signup: ctx.snapshot(signup),
-    send: ctx.snapshot(send),
-  };
-});
+    return {
+      signup: ctx.snapshot(signup),
+      send: ctx.snapshot(send),
+    };
+  },
+);
 
 compatScenario("send verification email rejects already verified user", async (ctx) => {
   const primary = ctx.actor();
@@ -59,7 +62,7 @@ compatScenario("send verification email rejects already verified user", async (c
   await primary.client.sendVerificationEmail({
     email,
   });
-  const record = await ctx.readVerificationEmail({ email }) as { token: string };
+  const record = (await ctx.readVerificationEmail({ email })) as { token: string };
   const verify = await primary.client.verifyEmail({
     query: {
       token: record.token,
@@ -89,7 +92,7 @@ compatScenario("verify email callback redirects to callbackURL", async (ctx) => 
   await primary.client.sendVerificationEmail({
     email,
   });
-  const record = await ctx.readVerificationEmail({ email }) as { token: string };
+  const record = (await ctx.readVerificationEmail({ email })) as { token: string };
   const verify = await ctx.rawRequest({
     path: `/api/auth/verify-email?token=${encodeURIComponent(record.token)}&callbackURL=${encodeURIComponent(callbackURL)}`,
     redirect: "manual",
@@ -111,7 +114,7 @@ compatScenario("verify email rejects untrusted callbackURL", async (ctx) => {
     name: "Redirect Guard User",
   });
   await primary.client.sendVerificationEmail({ email });
-  const record = await ctx.readVerificationEmail({ email }) as { token: string };
+  const record = (await ctx.readVerificationEmail({ email })) as { token: string };
 
   const verify = await ctx.rawRequest({
     path: `/api/auth/verify-email?token=${encodeURIComponent(record.token)}&callbackURL=${encodeURIComponent("https://evil.com/phish")}`,

@@ -1,0 +1,40 @@
+{
+  "$schema": "./client-tests/node_modules/@biomejs/biome/configuration_schema.json",
+  "root": true,
+  "files": {
+    "includes": [
+      "client-tests/**/*.ts",
+      "client-tests/**/*.mjs",
+      "reference-server/**/*.ts",
+      "reference-server/**/*.mjs",
+      "!**/node_modules",
+      "!**/artifacts",
+      "!**/bun.lock",
+      "!**/target"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "linter": {
+    "enabled": false
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
+}

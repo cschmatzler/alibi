@@ -3,7 +3,9 @@ export function normalizeClientValue(value: unknown): unknown {
   if (value instanceof Date) return value.toISOString();
   if (Array.isArray(value)) return value.map(normalizeClientValue);
   if (value !== null && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, normalizeClientValue(child)]));
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, normalizeClientValue(child)]),
+    );
   }
   return value;
 }

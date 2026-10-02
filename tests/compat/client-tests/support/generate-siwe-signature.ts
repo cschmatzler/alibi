@@ -35,4 +35,7 @@ const fixture = {
   signature: `0x${Buffer.from(signature).toString("hex")}`,
   digest: Buffer.from(hash).toString("hex"),
 };
-await Bun.write(new URL("../../../fixtures/siwe/eip191-noble-2.0.1.json", import.meta.url), `${JSON.stringify(fixture, null, 2)}\n`);
+await Bun.write(
+  new URL("../../../fixtures/siwe/eip191-noble-2.0.1.json", import.meta.url),
+  `${JSON.stringify(fixture, null, 2)}\n`,
+);

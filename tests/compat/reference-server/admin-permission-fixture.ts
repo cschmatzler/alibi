@@ -1,14 +1,11 @@
-import { APIError } from "better-auth/api";
 import type { Database } from "bun:sqlite";
-import { betterAuth, type BetterAuthOptions } from "better-auth";
-import { admin, username, twoFactor } from "better-auth/plugins";
+import { type BetterAuthOptions, betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
+import { admin, twoFactor, username } from "better-auth/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
 
 /** Immutable application roles run through the actual pinned admin plugin. */
-export function createAdminPermissionFixture(
-  base: BetterAuthOptions,
-  database: Database,
-) {
+export function createAdminPermissionFixture(base: BetterAuthOptions, database: Database) {
   const access = createAccessControl({
     user: ["get", "create", "set-role", "update", "impersonate", "impersonate-admins"],
   });
@@ -103,10 +100,9 @@ export function createAdminPermissionFixture(
             ...(name === "admin-duration-nan"
               ? { defaultBanExpiresIn: NaN, impersonationSessionDuration: NaN }
               : {}),
-            defaultRole:
-              name.startsWith("admin-impersonation-")
-                ? "operator"
-                : name === "admin-role-manager"
+            defaultRole: name.startsWith("admin-impersonation-")
+              ? "operator"
+              : name === "admin-role-manager"
                 ? "manager"
                 : name === "admin-role-creator"
                   ? "creator"
@@ -127,13 +123,24 @@ export function createAdminPermissionFixture(
                   },
                 }
               : {}),
-            ...(name.startsWith("admin-impersonation-") ? {
-              roles: {
-                operator: access.newRole({user: name === "admin-impersonation-privileged" ? ["set-role", "impersonate", "impersonate-admins"] : name === "admin-impersonation-no-base" ? ["set-role", "impersonate-admins"] : ["set-role", "impersonate"]}),
-                admin: access.newRole({user: []}),
-              },
-              ...(name === "admin-impersonation-legacy" ? {allowImpersonatingAdmins: true} : {}),
-            } : {}),
+            ...(name.startsWith("admin-impersonation-")
+              ? {
+                  roles: {
+                    operator: access.newRole({
+                      user:
+                        name === "admin-impersonation-privileged"
+                          ? ["set-role", "impersonate", "impersonate-admins"]
+                          : name === "admin-impersonation-no-base"
+                            ? ["set-role", "impersonate-admins"]
+                            : ["set-role", "impersonate"],
+                    }),
+                    admin: access.newRole({ user: [] }),
+                  },
+                  ...(name === "admin-impersonation-legacy"
+                    ? { allowImpersonatingAdmins: true }
+                    : {}),
+                }
+              : {}),
             ...(name === "admin-deny-all" ? { roles: {} } : {}),
             ...(name === "admin-empty-role"
               ? { roles: { user: access.newRole({ user: ["get"] }) } }
@@ -147,57 +154,36 @@ export function createAdminPermissionFixture(
     profiles,
     handle(request: Request) {
       const url = new URL(request.url);
-      if (
-        url.pathname === "/__test/admin-user-timestamps" &&
-        request.method === "POST"
-      ) {
+      if (url.pathname === "/__test/admin-user-timestamps" && request.method === "POST") {
         return request
           .json()
-          .then(
-            (body: {
-              userId: string;
-              createdAt: string;
-              updatedAt: string;
-            }) => {
-              if (
-                ![body.createdAt, body.updatedAt].every(
-                  (value) =>
-                    typeof value === "string" &&
-                    Number.isFinite(new Date(value).getTime()),
-                ) ||
-                typeof body.userId !== "string"
-              ) {
-                return Response.json(
-                  { message: "valid stored timestamps required" },
-                  { status: 400 },
-                );
-              }
-              const result = database
-                .query("UPDATE user SET createdAt=?,updatedAt=? WHERE id=?")
-                .run(body.createdAt, body.updatedAt, body.userId);
-              if (result.changes !== 1)
-                return Response.json(
-                  { message: "user required" },
-                  { status: 404 },
-                );
+          .then((body: { userId: string; createdAt: string; updatedAt: string }) => {
+            if (
+              ![body.createdAt, body.updatedAt].every(
+                (value) => typeof value === "string" && Number.isFinite(new Date(value).getTime()),
+              ) ||
+              typeof body.userId !== "string"
+            ) {
               return Response.json(
-                database
-                  .query(
-                    "SELECT id AS userId,createdAt,updatedAt FROM user WHERE id=?",
-                  )
-                  .get(body.userId),
+                { message: "valid stored timestamps required" },
+                { status: 400 },
               );
-            },
-          );
+            }
+            const result = database
+              .query("UPDATE user SET createdAt=?,updatedAt=? WHERE id=?")
+              .run(body.createdAt, body.updatedAt, body.userId);
+            if (result.changes !== 1)
+              return Response.json({ message: "user required" }, { status: 404 });
+            return Response.json(
+              database
+                .query("SELECT id AS userId,createdAt,updatedAt FROM user WHERE id=?")
+                .get(body.userId),
+            );
+          });
       }
-      if (
-        url.pathname !== "/__test/admin-role-state" ||
-        request.method !== "GET"
-      )
-        return;
+      if (url.pathname !== "/__test/admin-role-state" || request.method !== "GET") return;
       const email = url.searchParams.get("email");
-      if (!email)
-        return Response.json({ message: "email required" }, { status: 400 });
+      if (!email) return Response.json({ message: "email required" }, { status: 400 });
       const user = database
         .query(
           "SELECT id,email,name,role,banned,banReason,banExpires,createdAt,updatedAt FROM user WHERE email=?",
@@ -213,12 +199,9 @@ export function createAdminPermissionFixture(
           ? {
               ...user,
               banned:
-                (user as typeof user & { banned: number | null }).banned ===
-                null
+                (user as typeof user & { banned: number | null }).banned === null
                   ? null
-                  : Boolean(
-                      (user as typeof user & { banned: number | null }).banned,
-                    ),
+                  : Boolean((user as typeof user & { banned: number | null }).banned),
             }
           : null,
         accounts: user

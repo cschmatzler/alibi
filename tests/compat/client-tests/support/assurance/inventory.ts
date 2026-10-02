@@ -1,7 +1,7 @@
+import { readdir, readFile, rm } from "node:fs/promises";
+import { join, relative } from "node:path";
 import { parse } from "@babel/parser";
 import { createInstrumenter } from "istanbul-lib-instrument";
-import { readFile, readdir, rm } from "node:fs/promises";
-import { join, relative } from "node:path";
 import { digest, filesUnder, upstreamPin, writeJSON } from "./common";
 import { upstreamSource, verifiedPublishedRoots } from "./source";
 
@@ -61,12 +61,7 @@ export type Inventory = {
 };
 
 function node(value: unknown): value is Node {
-  return (
-    !!value &&
-    typeof value === "object" &&
-    "type" in value &&
-    typeof value.type === "string"
-  );
+  return !!value && typeof value === "object" && "type" in value && typeof value.type === "string";
 }
 function children(value: Node): Node[] {
   return Object.entries(value)
@@ -146,8 +141,7 @@ export function sourceSurfaces(source: Source, text: string): Surface[] {
     )
       return testRoot(value.object, scope);
     if (value.type === "CallExpression") return testRoot(value.callee, scope);
-    if (value.type === "TaggedTemplateExpression")
-      return testRoot(value.tag, scope);
+    if (value.type === "TaggedTemplateExpression") return testRoot(value.tag, scope);
   }
   const program = root.program as Node;
   for (const value of program.body as Node[]) {
@@ -159,15 +153,8 @@ export function sourceSurfaces(source: Source, text: string): Surface[] {
       for (const specifier of value.specifiers as Node[]) {
         const imported = named(specifier.imported),
           local = named(specifier.local);
-        if (
-          local &&
-          imported &&
-          ["test", "it", "describe", "suite"].includes(imported)
-        )
-          bindings.set(
-            local,
-            ["describe", "suite"].includes(imported) ? "suite" : "case",
-          );
+        if (local && imported && ["test", "it", "describe", "suite"].includes(imported))
+          bindings.set(local, ["describe", "suite"].includes(imported) ? "suite" : "case");
       }
     }
   }
@@ -184,25 +171,16 @@ export function sourceSurfaces(source: Source, text: string): Surface[] {
       return;
     if (value.type === "TSPropertySignature") {
       const name =
-        named(value.key) ??
-        text.slice((value.key as Node).start, (value.key as Node).end);
+        named(value.key) ?? text.slice((value.key as Node).start, (value.key as Node).end);
       parent = `${parent}.${name}`;
       result.push(surface(source, text, value, "option", parent));
     }
     for (const child of children(value)) options(child, parent);
   }
-  function visit(
-    value: Node,
-    scope: Map<string, "suite" | "case">,
-    suites: string[],
-  ) {
+  function visit(value: Node, scope: Map<string, "suite" | "case">, suites: string[]) {
     let nested = suites;
     if (
-      [
-        "FunctionDeclaration",
-        "FunctionExpression",
-        "ArrowFunctionExpression",
-      ].includes(value.type)
+      ["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"].includes(value.type)
     ) {
       scope = new Map(scope);
       for (const param of (value.params as Node[]) ?? []) {
@@ -239,36 +217,20 @@ export function sourceSurfaces(source: Source, text: string): Surface[] {
         kind &&
         title &&
         (callback || deferred) &&
-        ![
-          "ObjectExpression",
-          "ArrayExpression",
-          "ArrowFunctionExpression",
-        ].includes(title.type)
+        !["ObjectExpression", "ArrayExpression", "ArrowFunctionExpression"].includes(title.type)
       ) {
         const name =
-          title.type === "StringLiteral"
-            ? String(title.value)
-            : text.slice(title.start, title.end);
+          title.type === "StringLiteral" ? String(title.value) : text.slice(title.start, title.end);
         if (kind === "case")
           result.push({
-            ...surface(
-              source,
-              text,
-              value,
-              "upstream-test",
-              [...suites, name].join(" > "),
-            ),
-            dynamic:
-              title.type !== "StringLiteral" ||
-              (value.callee as Node).type !== "Identifier",
+            ...surface(source, text, value, "upstream-test", [...suites, name].join(" > ")),
+            dynamic: title.type !== "StringLiteral" || (value.callee as Node).type !== "Identifier",
           });
         else nested = [...suites, name];
       }
     }
     if (
-      ["TSTypeAliasDeclaration", "TSInterfaceDeclaration"].includes(
-        value.type,
-      ) &&
+      ["TSTypeAliasDeclaration", "TSInterfaceDeclaration"].includes(value.type) &&
       /(?:Options|Config)$/.test(named(value.id) ?? "")
     ) {
       options(value, named(value.id)!);
@@ -291,9 +253,7 @@ export function sourceSurfaces(source: Source, text: string): Surface[] {
       }
     }
     if (value.type === "ExportAllDeclaration")
-      result.push(
-        surface(source, text, value, "export", `* from ${named(value.source)}`),
-      );
+      result.push(surface(source, text, value, "export", `* from ${named(value.source)}`));
     if (value.type === "ExportDefaultDeclaration")
       result.push(surface(source, text, value, "export", "default"));
     for (const child of children(value)) visit(child, scope, nested);
@@ -331,11 +291,7 @@ export function runtimeEvidence(source: Source, text: string) {
       line: fn.loc.start.line,
     });
   const mutations: SourceMutation[] = [];
-  function add(
-    value: Node,
-    operator: SourceMutation["operator"],
-    replacement: string,
-  ) {
+  function add(value: Node, operator: SourceMutation["operator"], replacement: string) {
     const original = text.slice(value.start, value.end);
     mutations.push({
       id: `${source.id}#${operator}:${value.start}:${value.end}`,
@@ -362,27 +318,16 @@ export function runtimeEvidence(source: Source, text: string) {
         "CatchClause",
       ].includes(value.type)
     )
-      surfaces.push(
-        surface(source, text, value, "unmeasured-control-flow", value.type),
-      );
-    if (
-      ["IfStatement", "ConditionalExpression"].includes(value.type) &&
-      node(value.test)
-    )
-      add(
-        value.test,
-        "negate-condition",
-        `!(${text.slice(value.test.start, value.test.end)})`,
-      );
+      surfaces.push(surface(source, text, value, "unmeasured-control-flow", value.type));
+    if (["IfStatement", "ConditionalExpression"].includes(value.type) && node(value.test))
+      add(value.test, "negate-condition", `!(${text.slice(value.test.start, value.test.end)})`);
     if (
       value.type === "BinaryExpression" &&
       ["<", "<=", ">", ">="].includes(String(value.operator)) &&
       node(value.left) &&
       node(value.right)
     ) {
-      const changed = { "<": "<=", "<=": "<", ">": ">=", ">=": ">" }[
-        String(value.operator)
-      ]!;
+      const changed = { "<": "<=", "<=": "<", ">": ">=", ">=": ">" }[String(value.operator)]!;
       add(
         value,
         "boundary",
@@ -461,9 +406,9 @@ async function buildInventory(): Promise<Inventory> {
   }
   const repository = await upstreamSource();
   try {
-    for (const entry of (
-      await readdir(join(repository, "packages"), { withFileTypes: true })
-    ).sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of (await readdir(join(repository, "packages"), { withFileTypes: true })).sort(
+      (a, b) => a.name.localeCompare(b.name),
+    )) {
       if (!entry.isDirectory()) continue;
       const root = join(repository, "packages", entry.name);
       const metadataPath = join(root, "package.json"),
@@ -485,9 +430,7 @@ async function buildInventory(): Promise<Inventory> {
         line: 1,
       });
       // All repository packages enter the denominator, including uninstalled plugins/adapters.
-      for (const path of (await filesUnder(root)).filter((path) =>
-        /\.[cm]?[jt]sx?$/.test(path),
-      )) {
+      for (const path of (await filesUnder(root)).filter((path) => /\.[cm]?[jt]sx?$/.test(path))) {
         const text = await readFile(path, "utf8"),
           relativePath = relative(repository, path).replaceAll("\\", "/");
         const source: Source = {
@@ -525,9 +468,7 @@ async function buildInventory(): Promise<Inventory> {
     .filter((value) => seen.has(value.id) || !seen.add(value.id))
     .map((value) => value.id);
   if (duplicates.length)
-    throw new Error(
-      `Duplicate upstream surface identity: ${duplicates.slice(0, 5).join(", ")}`,
-    );
+    throw new Error(`Duplicate upstream surface identity: ${duplicates.slice(0, 5).join(", ")}`);
   const identity = {
     version: upstreamPin.version,
     commit: upstreamPin.commit,

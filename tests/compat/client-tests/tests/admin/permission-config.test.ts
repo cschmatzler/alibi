@@ -2,14 +2,10 @@ import { expect } from "bun:test";
 import { createAuthClient } from "better-auth/client";
 import { adminClient } from "better-auth/client/plugins";
 import { z } from "zod";
-import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
+import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
-async function signup(
-  ctx: ScenarioContext,
-  profile: FixtureProfile,
-  name: string,
-) {
+async function signup(ctx: ScenarioContext, profile: FixtureProfile, name: string) {
   const actor = ctx.actor(name, profile);
   const client = createAuthClient({
     baseURL: `${ctx.baseURL}${authProfilePath(profile)}`,
@@ -25,14 +21,12 @@ async function signup(
   if (!result.data) throw new Error("persisted user required");
   return { client, result, userId: result.data.user.id };
 }
-function permission(
-  result: { data: unknown; error: unknown },
-  allowed: boolean,
-) {
+function permission(result: { data: unknown; error: unknown }, allowed: boolean) {
   expect(result.error).toBeNull();
-  expect(
-    z.object({ success: z.boolean(), error: z.null() }).parse(result.data),
-  ).toEqual({ success: allowed, error: null });
+  expect(z.object({ success: z.boolean(), error: z.null() }).parse(result.data)).toEqual({
+    success: allowed,
+    error: null,
+  });
 }
 
 compatScenario(
@@ -121,8 +115,7 @@ compatScenario(
     expect(
       persisted.sessions.some(
         (session) =>
-          session.token === current.data?.session.token &&
-          session.userId === owner.userId,
+          session.token === current.data?.session.token && session.userId === owner.userId,
       ),
     ).toBe(true);
     const stop = await admin.client.admin.stopImpersonating();

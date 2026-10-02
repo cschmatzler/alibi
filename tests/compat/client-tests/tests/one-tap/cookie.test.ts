@@ -1,11 +1,8 @@
 import { expect } from "bun:test";
-import {
-  makeSignature,
-  symmetricDecodeJWT,
-  symmetricEncodeJWT,
-} from "better-auth/crypto";
+import { makeSignature, symmetricDecodeJWT, symmetricEncodeJWT } from "better-auth/crypto";
 import { compatScenario } from "../../support/scenario";
-import { credential, successful, state } from "./helpers";
+import { credential, state, successful } from "./helpers";
+
 const secret = "compat-test-only-key-not-real-minimum-32chars";
 compatScenario(
   "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials",
@@ -67,13 +64,11 @@ compatScenario(
     });
     expect(accessed.error).toBeNull();
     expect(accessed.data?.accessToken).toBe("private-provider-access");
-    const foreign = await ctx
-      .actor("foreign-cookie", profile)
-      .client.signUp.email({
-        email: ctx.uniqueEmail("foreign-cookie-owner"),
-        password: "password123",
-        name: "Foreign Cookie Owner",
-      });
+    const foreign = await ctx.actor("foreign-cookie", profile).client.signUp.email({
+      email: ctx.uniqueEmail("foreign-cookie-owner"),
+      password: "password123",
+      name: "Foreign Cookie Owner",
+    });
     expect(foreign.error).toBeNull();
     expect(foreign.data?.token).toBeString();
     const initial = await state(ctx);
@@ -82,23 +77,15 @@ compatScenario(
       session + "." + (await makeSignature(session, secret)),
     );
     const request = async (account: string, sessionCookie = signedSession) =>
-      actor.fetch(
-        `${ctx.baseURL}/__test/profiles/${profile}/api/auth/get-access-token`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            cookie: `better-auth.session_token=${sessionCookie}; better-auth.account_data=${encodeURIComponent(account)}`,
-          },
-          body: JSON.stringify({ useAccountCookie: true }),
+      actor.fetch(`${ctx.baseURL}/__test/profiles/${profile}/api/auth/get-access-token`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: `better-auth.session_token=${sessionCookie}; better-auth.account_data=${encodeURIComponent(account)}`,
         },
-      );
-    const leeway = await symmetricEncodeJWT(
-      cookie.payload,
-      secret,
-      "better-auth-account",
-      -10,
-    );
+        body: JSON.stringify({ useAccountCookie: true }),
+      });
+    const leeway = await symmetricEncodeJWT(cookie.payload, secret, "better-auth-account", -10);
     const accepted = await request(leeway);
     expect(accepted.status).toBe(200);
     const leewayBody = await accepted.json();
@@ -113,18 +100,8 @@ compatScenario(
       "better-auth-account",
       300,
     );
-    const wrongSalt = await symmetricEncodeJWT(
-      cookie.payload,
-      secret,
-      "wrong-account-salt",
-      300,
-    );
-    const expired = await symmetricEncodeJWT(
-      cookie.payload,
-      secret,
-      "better-auth-account",
-      -60,
-    );
+    const wrongSalt = await symmetricEncodeJWT(cookie.payload, secret, "wrong-account-salt", 300);
+    const expired = await symmetricEncodeJWT(cookie.payload, secret, "better-auth-account", -60);
     const rejected = [];
     for (const value of [parts.join("."), wrongSecret, wrongSalt, expired]) {
       const response = await request(value);
@@ -134,14 +111,11 @@ compatScenario(
       rejected.push({ status: response.status, body });
     }
     const foreignCookie = encodeURIComponent(
-      foreign.data!.token! +
-        "." +
-        (await makeSignature(foreign.data!.token!, secret)),
+      foreign.data!.token! + "." + (await makeSignature(foreign.data!.token!, secret)),
     );
     // Keep the original whole-cookie observation; feed each equivalent wire
     // spelling to the real authenticated endpoint and the published decoder.
-    const alphabet =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     const alias = (index: number, transform: (value: string) => string) => {
       const segments = cookie.token.split(".");
       segments[index] = transform(segments[index]!);
@@ -187,8 +161,7 @@ compatScenario(
       // participates in authentication and must not be canonicalized as AAD.
       alias(0, (value) => " " + value),
     ]) {
-      expect(await symmetricDecodeJWT(value, secret, "better-auth-account"))
-        .toBeNull();
+      expect(await symmetricDecodeJWT(value, secret, "better-auth-account")).toBeNull();
       const response = await request(value);
       expect(response.status).toBe(400);
       const body = await response.json();

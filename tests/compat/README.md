@@ -292,6 +292,7 @@ Run these in `devenv shell` after installing both projects with
 `bun install --frozen-lockfile`:
 
 ```bash
+bun run --cwd tests/compat/client-tests format:check
 bun run --cwd tests/compat/client-tests typecheck
 bun test --cwd tests/compat/client-tests harness
 cargo nextest run --test client_compat_tests passkey_client_compat --run-ignored only --no-capture

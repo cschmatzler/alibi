@@ -56,8 +56,7 @@ export function assuranceEvent(event: Record<string, unknown>) {
     throw new Error("Assurance events require a run identity");
   appendFileSync(
     path,
-    JSON.stringify({ ...event, runId: process.env.COMPAT_ASSURANCE_RUN_ID }) +
-      "\n",
+    JSON.stringify({ ...event, runId: process.env.COMPAT_ASSURANCE_RUN_ID }) + "\n",
     { mode: 0o600 },
   );
 }
@@ -67,11 +66,7 @@ export async function scenarioCoverage(
   scenario: string,
 ): Promise<ScenarioCoverage | undefined> {
   const path =
-    process.env[
-      label === "TS"
-        ? "COMPAT_ASSURANCE_LEFT_BRIDGE"
-        : "COMPAT_ASSURANCE_RIGHT_BRIDGE"
-    ];
+    process.env[label === "TS" ? "COMPAT_ASSURANCE_LEFT_BRIDGE" : "COMPAT_ASSURANCE_RIGHT_BRIDGE"];
   if (!path) return;
   const bridge = bridgeSchema.parse(JSON.parse(readFileSync(path, "utf8")));
   if (bridge.runId !== process.env.COMPAT_ASSURANCE_RUN_ID)
@@ -86,10 +81,7 @@ export async function scenarioCoverage(
     body: JSON.stringify({ scenario }),
     signal: AbortSignal.timeout(15_000),
   });
-  if (!response.ok)
-    throw new Error(
-      `Reference coverage ${operation} failed: ${response.status}`,
-    );
+  if (!response.ok) throw new Error(`Reference coverage ${operation} failed: ${response.status}`);
   const value: unknown = await response.json();
   if (operation === "begin") return;
   const coverage = coverageSchema.parse(value);

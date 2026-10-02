@@ -16,7 +16,9 @@ export function passwordlessClient(ctx: ScenarioContext, actor = "primary") {
 }
 
 export async function readOtp(ctx: ScenarioContext, email: string, type: OtpType) {
-  const parsed = otpDelivery.safeParse(await fixtureValue(ctx, "/__test/email-otp", { email, type }));
+  const parsed = otpDelivery.safeParse(
+    await fixtureValue(ctx, "/__test/email-otp", { email, type }),
+  );
   if (!parsed.success) throw new Error("Successful OTP issuance must deliver a parseable code");
   return parsed.data.otp;
 }

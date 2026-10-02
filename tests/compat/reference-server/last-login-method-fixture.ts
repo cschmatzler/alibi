@@ -1,4 +1,6 @@
-import { betterAuth, type BetterAuthOptions } from "better-auth";
+import type { Database } from "bun:sqlite";
+import { type BetterAuthOptions, betterAuth } from "better-auth";
+import { getMigrations } from "better-auth/db/migration";
 import {
   anonymous,
   emailOTP,
@@ -7,15 +9,11 @@ import {
   multiSession,
   username,
 } from "better-auth/plugins";
-import { getMigrations } from "better-auth/db/migration";
-import type { Database } from "bun:sqlite";
 import { siwe } from "better-auth/plugins/siwe";
 import { verifyFixtureEip191 } from "./siwe-fixture";
+
 function callbackValue(value: any): any {
-  if (
-    typeof value === "number" &&
-    (!Number.isFinite(value) || Object.is(value, -0))
-  )
+  if (typeof value === "number" && (!Number.isFinite(value) || Object.is(value, -0)))
     return { $number: Object.is(value, -0) ? "-0" : String(value) };
   if (Array.isArray(value)) return value.map(callbackValue);
   if (value && typeof value === "object")
@@ -25,10 +23,7 @@ function callbackValue(value: any): any {
   return value;
 }
 /** Configured application callbacks observing the actual pinned plugin boundaries. */
-export async function createLastLoginMethodFixture(
-  base: BetterAuthOptions,
-  database: Database,
-) {
+export async function createLastLoginMethodFixture(base: BetterAuthOptions, database: Database) {
   const events: unknown[] = [];
   const deliveries = new Map<string, unknown>();
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
@@ -55,9 +50,7 @@ export async function createLastLoginMethodFixture(
         path: ctx.path ?? "",
         params: ctx.params ?? {},
         requestPath: ctx.request
-          ? new URL(ctx.request.url).pathname.slice(
-              `/__test/profiles/${name}/api/auth`.length,
-            )
+          ? new URL(ctx.request.url).pathname.slice(`/__test/profiles/${name}/api/auth`.length)
           : null,
         method: ctx.method ?? null,
         body: callbackValue(ctx.body ?? null),
@@ -115,21 +108,17 @@ export async function createLastLoginMethodFixture(
         : {}),
       basePath: `/__test/profiles/${name}/api/auth`,
       plugins: [
-        ...base.plugins!.filter((plugin) =>
-          ["passkey", "generic-oauth"].includes(plugin.id),
-        ),
+        ...base.plugins!.filter((plugin) => ["passkey", "generic-oauth"].includes(plugin.id)),
         siwe({
           domain: "last-login.fixture",
-          getNonce: async () =>
-            `LastLoginMethodNonce${String(++sequence).padStart(16, "0")}`,
+          getNonce: async () => `LastLoginMethodNonce${String(++sequence).padStart(16, "0")}`,
           verifyMessage: async (input) =>
             verifyFixtureEip191(input.message, input.signature, input.address),
         }),
         ...(mode === "composition" ? [multiSession()] : []),
         username(),
         anonymous({
-          generateRandomEmail: () =>
-            `last-login-anonymous-${++sequence}@fixture.test`,
+          generateRandomEmail: () => `last-login-anonymous-${++sequence}@fixture.test`,
           generateName: () => "Anonymous Owner",
         }),
         magicLink({
@@ -167,10 +156,7 @@ export async function createLastLoginMethodFixture(
               ctx.headers?.get("x-last-login-resolver-error") === "true"
             )
               throw new Error("application resolver failed");
-            if (
-              mode === "custom" &&
-              ctx.headers?.get("x-last-login-body") === "true"
-            )
+            if (mode === "custom" && ctx.headers?.get("x-last-login-body") === "true")
               return `body:${String(ctx.body.extra.overflow)}:${Object.is(ctx.body.extra.zero, -0) ? "-0" : "other"}`;
             if (mode === "custom" || mode === "update-error")
               return ctx.headers?.get("x-last-login-method") ?? null;
@@ -183,15 +169,13 @@ export async function createLastLoginMethodFixture(
               Object.assign(event, {
                 requestBody: await ctx.request.clone().text(),
               });
-            if (mode === "cookie-error")
-              throw new Error("application consent failed");
+            if (mode === "cookie-error") throw new Error("application consent failed");
             return mode !== "denied";
           },
         }),
       ],
     };
-    if (mode === "database")
-      await (await getMigrations(options)).runMigrations();
+    if (mode === "database") await (await getMigrations(options)).runMigrations();
     profiles.set(name, betterAuth(options));
   }
   return {
@@ -203,9 +187,7 @@ export async function createLastLoginMethodFixture(
         return Response.json({
           events: [...events],
           users: database
-            .query(
-              "SELECT id,email,name,lastLoginMethod FROM user ORDER BY email,id",
-            )
+            .query("SELECT id,email,name,lastLoginMethod FROM user ORDER BY email,id")
             .all(),
         });
       const body = (await request.json()) as Record<string, unknown>;

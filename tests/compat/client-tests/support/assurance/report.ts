@@ -3,13 +3,13 @@ import { digest, upstreamPin } from "./common";
 import { coverageSchema } from "./evidence";
 import type { Inventory, Surface } from "./inventory";
 import {
+  type Campaign,
   classifyMutation,
   cleanSuite,
-  matchingSuites,
-  type Campaign,
   type Mutation,
+  matchingSuites,
 } from "./mutations";
-import { suiteSchema, type SuiteResult } from "./processes";
+import { type SuiteResult, suiteSchema } from "./processes";
 import { wireMutationSchema } from "./wire";
 
 const reason = z.string().min(12);
@@ -18,9 +18,7 @@ export const policySchema = z
     schemaVersion: z.literal(1),
     upstreamVersion: z.literal(upstreamPin.version),
     commit: z.literal(upstreamPin.commit),
-    excludedPackages: z.array(
-      z.object({ package: z.string(), reason }).strict(),
-    ),
+    excludedPackages: z.array(z.object({ package: z.string(), reason }).strict()),
     excludedSurfaces: z.array(z.object({ id: z.string(), reason }).strict()),
     equivalentMutations: z.array(z.object({ id: z.string(), reason }).strict()),
     contracts: z.array(
@@ -71,13 +69,7 @@ export const campaignSchema = z
         .object({
           id: z.string(),
           kind: z.enum(["wire", "source"]),
-          status: z.enum([
-            "killed",
-            "survived",
-            "not-reached",
-            "no-change",
-            "inconclusive",
-          ]),
+          status: z.enum(["killed", "survived", "not-reached", "no-change", "inconclusive"]),
           killingScenarios: z.array(z.string()),
           reason: z.string().optional(),
           execution: suiteSchema.optional(),
@@ -134,30 +126,19 @@ export function assuranceReport(
     controls.timedOut
   )
     errors.push("Missing, stale or failing harness negative controls");
-  const sources = new Map(
-    inventory.sources.map((source) => [source.id, source]),
-  );
-  const surfaces = new Map(
-    inventory.surfaces.map((surface) => [surface.id, surface]),
-  );
+  const sources = new Map(inventory.sources.map((source) => [source.id, source]));
+  const surfaces = new Map(inventory.surfaces.map((surface) => [surface.id, surface]));
   const excluded = new Set(policy.excludedPackages.map((item) => item.package));
-  const explicitlyExcluded = new Set(
-    policy.excludedSurfaces.map((item) => item.id),
-  );
+  const explicitlyExcluded = new Set(policy.excludedSurfaces.map((item) => item.id));
   for (const id of explicitlyExcluded)
     if (!surfaces.has(id)) errors.push(`Unknown excluded surface: ${id}`);
   const excludedSurfaces = inventory.surfaces.filter(
     (surface) =>
-      excluded.has(sources.get(surface.source)!.package) ||
-      explicitlyExcluded.has(surface.id),
+      excluded.has(sources.get(surface.source)!.package) || explicitlyExcluded.has(surface.id),
   );
   const excludedIds = new Set(excludedSurfaces.map((surface) => surface.id));
-  const included = inventory.surfaces.filter(
-    (surface) => !excludedIds.has(surface.id),
-  );
-  const mutationIds = new Set(
-    inventory.mutations.map((mutation) => mutation.id),
-  );
+  const included = inventory.surfaces.filter((surface) => !excludedIds.has(surface.id));
+  const mutationIds = new Set(inventory.mutations.map((mutation) => mutation.id));
   const equivalent = new Set(policy.equivalentMutations.map((item) => item.id));
   for (const id of equivalent)
     if (!mutationIds.has(id) && !campaign?.universe.includes(id))
@@ -168,12 +149,9 @@ export function assuranceReport(
     suite.inventoryDigest !== inventory.digest
   )
     errors.push("Source inventory or execution evidence is stale");
-  if (!cleanSuite(suite))
-    errors.push("Compatibility execution was incomplete or had failures");
+  if (!cleanSuite(suite)) errors.push("Compatibility execution was incomplete or had failures");
   if (mode === "reference-only")
-    errors.push(
-      "Two upstream fixtures validate the harness; they do not establish Rust parity",
-    );
+    errors.push("Two upstream fixtures validate the harness; they do not establish Rust parity");
   const hits = new Set<string>();
   for (const outcome of suite.outcomes) {
     if (outcome.status !== "passed") continue;
@@ -201,10 +179,7 @@ export function assuranceReport(
     }
   }
   const candidates = new Map<string, Mutation>(
-    inventory.mutations.map((mutation) => [
-      mutation.id,
-      { ...mutation, kind: "source" },
-    ]),
+    inventory.mutations.map((mutation) => [mutation.id, { ...mutation, kind: "source" }]),
   );
   // The candidate artifact cannot shrink the independently established denominator.
   if (campaign)
@@ -241,19 +216,12 @@ export function assuranceReport(
       campaignValid = false;
     for (const result of campaign.results) {
       const candidate = candidates.get(result.id);
-      if (
-        !candidate ||
-        (!result.execution && result.status !== "inconclusive")
-      ) {
+      if (!candidate || (!result.execution && result.status !== "inconclusive")) {
         campaignValid = false;
         continue;
       }
       if (result.execution) {
-        const actual = classifyMutation(
-          candidate,
-          campaign.baseline,
-          result.execution,
-        );
+        const actual = classifyMutation(candidate, campaign.baseline, result.execution);
         if (
           actual.status !== result.status ||
           !equalSet(actual.killingScenarios, result.killingScenarios)
@@ -278,8 +246,7 @@ export function assuranceReport(
   const contracts = policy.contracts.map((contract) => {
     const gaps: string[] = [],
       anchors: string[] = [];
-    if (owners.has(contract.id))
-      errors.push(`Duplicate contract identity: ${contract.id}`);
+    if (owners.has(contract.id)) errors.push(`Duplicate contract identity: ${contract.id}`);
     owners.set(contract.id, contract.claim);
     for (const selector of contract.upstream) {
       const matches = inventory.surfaces.filter(
@@ -295,27 +262,18 @@ export function assuranceReport(
         continue;
       }
       const id = matches[0]!.id;
-      if (excludedIds.has(id))
-        gaps.push(`Contract refers to excluded surface: ${id}`);
+      if (excludedIds.has(id)) gaps.push(`Contract refers to excluded surface: ${id}`);
       mapped.add(id);
       anchors.push(id);
     }
     for (const name of contract.scenarios)
-      if (
-        !suite.outcomes.some(
-          (outcome) => outcome.name === name && outcome.status === "passed",
-        )
-      )
+      if (!suite.outcomes.some((outcome) => outcome.name === name && outcome.status === "passed"))
         gaps.push(`Missing successful scenario: ${name}`);
     for (const id of contract.mutations) {
       if (!mutationIds.has(id) && !campaign?.universe.includes(id))
         gaps.push(`Unknown required mutation: ${id}`);
-      else if (
-        !detections.get(id)?.some((name) => contract.scenarios.includes(name))
-      )
-        gaps.push(
-          `Required mutation has no detection by its contract owner: ${id}`,
-        );
+      else if (!detections.get(id)?.some((name) => contract.scenarios.includes(name)))
+        gaps.push(`Required mutation has no detection by its contract owner: ${id}`);
     }
     return {
       ...contract,
@@ -329,14 +287,10 @@ export function assuranceReport(
     return {
       total: all.length,
       reached: all.filter((surface) => hits.has(surface.id)).length,
-      missing: all
-        .filter((surface) => !hits.has(surface.id))
-        .map((surface) => surface.id),
+      missing: all.filter((surface) => !hits.has(surface.id)).map((surface) => surface.id),
     };
   };
-  const semantic = included.filter(
-    (surface) => !["branch", "function"].includes(surface.kind),
-  );
+  const semantic = included.filter((surface) => !["branch", "function"].includes(surface.kind));
   const unmapped = semantic
     .filter((surface) => !mapped.has(surface.id))
     .map((surface) => surface.id);
@@ -348,8 +302,7 @@ export function assuranceReport(
         !equivalent.has(id) &&
         !detections.has(id) &&
         !(
-          candidate.kind === "source" &&
-          excluded.has(sources.get(candidate.source)?.package ?? "")
+          candidate.kind === "source" && excluded.has(sources.get(candidate.source)?.package ?? "")
         ),
     )
     .map(([id]) => id);
@@ -375,8 +328,7 @@ export function assuranceReport(
     errors,
     summary: {
       scenarios: suite.outcomes.length,
-      passed: suite.outcomes.filter((outcome) => outcome.status === "passed")
-        .length,
+      passed: suite.outcomes.filter((outcome) => outcome.status === "passed").length,
       upstreamSurfaces: inventory.surfaces.length,
       excludedSurfaces: excludedSurfaces.length,
       unmapped: unmapped.length,
@@ -385,9 +337,7 @@ export function assuranceReport(
       functions: functions.total,
       reachedFunctions: functions.reached,
       contracts: contracts.length,
-      provenContracts: contracts.filter(
-        (contract) => contract.status === "proven",
-      ).length,
+      provenContracts: contracts.filter((contract) => contract.status === "proven").length,
       mutationDetections: detections.size,
       unresolvedMutations: unresolvedMutations.length,
     },

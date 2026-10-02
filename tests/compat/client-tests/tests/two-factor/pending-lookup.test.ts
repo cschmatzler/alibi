@@ -3,8 +3,8 @@ import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { Cookie } from "tough-cookie";
 import { z } from "zod";
-import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
+import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { generateCurrentTotp } from "./totp-helper";
 
 const verification = z.object({
@@ -120,9 +120,7 @@ for (const cleanup of [true, false] as const)
           });
           expect(signup.error).toBeNull();
           if (!signup.data) throw new Error("actual owner required");
-          expect(
-            (await sibling.signIn.email({ email, password })).error,
-          ).toBeNull();
+          expect((await sibling.signIn.email({ email, password })).error).toBeNull();
           const other = await foreign.signUp.email({
             email: ctx.uniqueEmail("foreign"),
             password,
@@ -139,9 +137,7 @@ for (const cleanup of [true, false] as const)
               backupCodes: z.array(z.string()),
             })
             .parse(enrollment.data);
-          expect(
-            (await foreign.twoFactor.enable({ password })).error,
-          ).toBeNull();
+          expect((await foreign.twoFactor.enable({ password })).error).toBeNull();
           const userId = signup.data.user.id,
             foreignId = other.data.user.id;
           expect((await owner.signOut()).error).toBeNull();
@@ -154,14 +150,12 @@ for (const cleanup of [true, false] as const)
             key = decoded.slice(0, decoded.lastIndexOf("."));
           const rawCookie = cookie.cookieString();
           const setup = await state(ctx, profile);
+          expect(setup.snapshot.verifications.find((row) => row.identifier === key)?.value).toBe(
+            userId,
+          );
           expect(
-            setup.snapshot.verifications.find((row) => row.identifier === key)
+            setup.snapshot.verifications.find((row) => row.identifier === `2fa-attempts-${key}`)
               ?.value,
-          ).toBe(userId);
-          expect(
-            setup.snapshot.verifications.find(
-              (row) => row.identifier === `2fa-attempts-${key}`,
-            )?.value,
           ).toBe("0");
           const unrelated = ctx.uniqueToken("unrelated-expired");
           await control(ctx, profile, {
@@ -187,10 +181,7 @@ for (const cleanup of [true, false] as const)
               : kind === "totp"
                 ? await generateCurrentTotp(enabled.totpURI)
                 : "";
-          const verify = async (
-            client: typeof owner,
-            headers?: Record<string, string>,
-          ) =>
+          const verify = async (client: typeof owner, headers?: Record<string, string>) =>
             kind === "totp"
               ? client.twoFactor.verifyTotp(
                   { code: await generateCurrentTotp(enabled.totpURI) },
@@ -217,12 +208,15 @@ for (const cleanup of [true, false] as const)
             if (kind === "otp") {
               await control(ctx, profile, { action: "arm" });
               sendGuard = await raw.twoFactor.sendOtp({}, { headers: { cookie: header } });
-              expect(sendGuard.error).toMatchObject({status:401,code:"INVALID_TWO_FACTOR_COOKIE"});
+              expect(sendGuard.error).toMatchObject({
+                status: 401,
+                code: "INVALID_TWO_FACTOR_COOKIE",
+              });
               const afterSend = await state(ctx, profile);
               expect(afterSend.receipts).toEqual([]);
               expect(afterSend.snapshot).toEqual(guardState.snapshot);
             }
-            guards.push({verify:guard,send:sendGuard});
+            guards.push({ verify: guard, send: sendGuard });
           }
           let negative: unknown = null,
             delivery: unknown = null,
@@ -239,16 +233,11 @@ for (const cleanup of [true, false] as const)
                 })
                 .parse(negative),
             ).toBeDefined();
-            expect((await state(ctx, profile)).snapshot).toEqual(
-              beforeJar.snapshot,
-            );
+            expect((await state(ctx, profile)).snapshot).toEqual(beforeJar.snapshot);
           }
           if (kind === "otp") {
             await control(ctx, profile, { action: "arm" });
-            const sent = await raw.twoFactor.sendOtp(
-              {},
-              { headers: { cookie: rawCookie } },
-            );
+            const sent = await raw.twoFactor.sendOtp({}, { headers: { cookie: rawCookie } });
             expect(sent.error).toBeNull();
             delivery = await control(ctx, profile, {
               action: "delivery",
@@ -257,9 +246,7 @@ for (const cleanup of [true, false] as const)
             code = z.object({ otp: z.string() }).parse(delivery).otp;
             deliveredCode = code;
             expect((await state(ctx, profile)).receipts).toEqual(
-              cleanup
-                ? ["lookup", "cleanup-read", "cleanup-delete", "user"]
-                : ["lookup", "user"],
+              cleanup ? ["lookup", "cleanup-read", "cleanup-delete", "user"] : ["lookup", "user"],
             );
           }
           const ghost = ctx.uniqueToken("missing-user");
@@ -293,62 +280,40 @@ for (const cleanup of [true, false] as const)
               ]
             : ["lookup", "user"];
           expect(after.receipts).toEqual(expectedReceipts);
-          expect(
-            after.snapshot.verifications.some(
-              (row) => row.identifier === unrelated,
-            ),
-          ).toBe(!cleanup);
-          const ownerFactorBefore = before.snapshot.factors.find(
-            (row) => row.userId === userId,
-          )!;
-          const ownerFactorAfter = after.snapshot.factors.find(
-            (row) => row.userId === userId,
-          )!;
+          expect(after.snapshot.verifications.some((row) => row.identifier === unrelated)).toBe(
+            !cleanup,
+          );
+          const ownerFactorBefore = before.snapshot.factors.find((row) => row.userId === userId)!;
+          const ownerFactorAfter = after.snapshot.factors.find((row) => row.userId === userId)!;
           expect(ownerFactorAfter).toEqual({
             ...ownerFactorBefore,
-            failedVerificationCount:
-              mode === "expired" && kind === "otp" && !cleanup ? 0 : 3,
+            failedVerificationCount: mode === "expired" && kind === "otp" && !cleanup ? 0 : 3,
           });
-          expect(
-            after.snapshot.factors.find((row) => row.userId === foreignId),
-          ).toEqual(
+          expect(after.snapshot.factors.find((row) => row.userId === foreignId)).toEqual(
             before.snapshot.factors.find((row) => row.userId === foreignId),
           );
           expect(await ctx.readUserState({ userId })).toEqual(ownerBefore);
-          expect(await ctx.readUserState({ userId: foreignId })).toEqual(
-            foreignBefore,
-          );
+          expect(await ctx.readUserState({ userId: foreignId })).toEqual(foreignBefore);
           if (mode === "expired") {
+            expect(after.snapshot.verifications.some((row) => row.identifier === key)).toBe(
+              !cleanup && kind !== "otp",
+            );
             expect(
-              after.snapshot.verifications.some(
-                (row) => row.identifier === key,
-              ),
-            ).toBe(!cleanup && kind !== "otp");
-            expect(
-              after.snapshot.verifications.some(
-                (row) => row.identifier === `2fa-attempts-${key}`,
-              ),
+              after.snapshot.verifications.some((row) => row.identifier === `2fa-attempts-${key}`),
             ).toBe(!cleanup && kind === "otp");
             expect(
-              after.snapshot.verifications.some(
-                (row) => row.identifier === `2fa-otp-${key}`,
-              ),
+              after.snapshot.verifications.some((row) => row.identifier === `2fa-otp-${key}`),
             ).toBe(cleanup && kind === "otp");
           } else {
             expect(
-              after.snapshot.verifications.find(
-                (row) => row.identifier === `2fa-attempts-${key}`,
-              )?.value,
+              after.snapshot.verifications.find((row) => row.identifier === `2fa-attempts-${key}`)
+                ?.value,
             ).toBe("0");
             if (kind === "otp")
               expect(
-                after.snapshot.verifications.find(
-                  (row) => row.identifier === `2fa-otp-${key}`,
-                ),
+                after.snapshot.verifications.find((row) => row.identifier === `2fa-otp-${key}`),
               ).toEqual(
-                before.snapshot.verifications.find(
-                  (row) => row.identifier === `2fa-otp-${key}`,
-                ),
+                before.snapshot.verifications.find((row) => row.identifier === `2fa-otp-${key}`),
               );
           }
           const replay = await verify(raw, { cookie: rawCookie });
@@ -363,8 +328,7 @@ for (const cleanup of [true, false] as const)
             const freshSignIn = await fresh.signIn.email({ email, password });
             expect(freshSignIn.data).toMatchObject({ twoFactorRedirect: true });
             const issued = cookies.get("fresh");
-            if (!issued)
-              throw new Error("real positive-lifetime retry cookie required");
+            if (!issued) throw new Error("real positive-lifetime retry cookie required");
             retryCookie = issued.cookieString();
           } else {
             // Restore installed state through the real adapter; no factor credential is removed.
@@ -377,18 +341,11 @@ for (const cleanup of [true, false] as const)
           }
           if (kind === "otp") {
             expect(
-              (
-                await fresh.twoFactor.sendOtp(
-                  {},
-                  { headers: { cookie: retryCookie } },
-                )
-              ).error,
+              (await fresh.twoFactor.sendOtp({}, { headers: { cookie: retryCookie } })).error,
             ).toBeNull();
             code = z
               .object({ otp: z.string() })
-              .parse(
-                await control(ctx, positive, { action: "delivery", email }),
-              ).otp;
+              .parse(await control(ctx, positive, { action: "delivery", email })).otp;
           }
           const retry = await verify(fresh, { cookie: retryCookie });
           expect(retry.error).toBeNull();
@@ -396,12 +353,9 @@ for (const cleanup of [true, false] as const)
           expect(retry.data?.user.name).toBe("Changed Pending Owner");
           const finished = await state(ctx, positive);
           expect(
-            finished.snapshot.factors.find((row) => row.userId === userId)
-              ?.failedVerificationCount,
+            finished.snapshot.factors.find((row) => row.userId === userId)?.failedVerificationCount,
           ).toBe(0);
-          expect(await ctx.readUserState({ userId: foreignId })).toEqual(
-            foreignBefore,
-          );
+          expect(await ctx.readUserState({ userId: foreignId })).toEqual(foreignBefore);
           const finalReplay = await verify(raw, { cookie: retryCookie });
           if (mode !== "newest-expired" || cleanup)
             expect(finalReplay.error?.code).toBe("INVALID_TWO_FACTOR_COOKIE");

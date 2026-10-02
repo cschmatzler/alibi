@@ -2,13 +2,14 @@ import { expect } from "bun:test";
 import { compatScenario } from "../../support/scenario";
 import {
   credential,
-  signedRawToken,
   issuedAt,
-  state,
-  successful,
   oneTap,
   responseSchema,
+  signedRawToken,
+  state,
+  successful,
 } from "./helpers";
+
 compatScenario(
   "One Tap official client binds verified Google accounts and persisted sessions",
   async (ctx) => {
@@ -24,13 +25,7 @@ compatScenario(
       nonce: "ignored-google-nonce",
       userId: "untrusted-claim-owner",
     });
-    const result = await successful(
-      ctx,
-      token,
-      "one-tap-plugin-only",
-      "owner",
-      "/welcome",
-    );
+    const result = await successful(ctx, token, "one-tap-plugin-only", "owner", "/welcome");
     expect(result.location).toBe("/welcome");
     const user = result.response.data!.user;
     expect(user).toMatchObject({
@@ -53,9 +48,7 @@ compatScenario(
     expect(initial.sessions).toMatchObject([
       { userId: user.id, token: result.response.data!.token },
     ]);
-    const session = await ctx
-      .actor("owner", "one-tap-plugin-only")
-      .client.getSession();
+    const session = await ctx.actor("owner", "one-tap-plugin-only").client.getSession();
     expect(session.data?.user.id).toBe(user.id);
     expect(session.data?.session.token).toBe(result.response.data!.token);
     const foreign = ctx.actor("foreign", "one-tap-no-override");
@@ -89,15 +82,13 @@ compatScenario(
     expect(bound.data?.user.id).toBe(user.id);
     const after = await state(ctx);
     expect(after.users).toHaveLength(2);
-    expect(
-      after.accounts.filter((row) => row.providerId === "google"),
-    ).toHaveLength(1);
-    expect(
-      after.sessions.filter((row) => row.token === repeat.response.data?.token),
-    ).toMatchObject([{ userId: user.id }]);
-    expect(
-      after.users.find((row) => row.id === other.data?.user.id),
-    ).toMatchObject({ name: "Cookie Owner" });
+    expect(after.accounts.filter((row) => row.providerId === "google")).toHaveLength(1);
+    expect(after.sessions.filter((row) => row.token === repeat.response.data?.token)).toMatchObject(
+      [{ userId: user.id }],
+    );
+    expect(after.users.find((row) => row.id === other.data?.user.id)).toMatchObject({
+      name: "Cookie Owner",
+    });
     return {
       result,
       session,
@@ -125,10 +116,7 @@ compatScenario(
     });
     const initial = await state(ctx);
     const denied = [];
-    for (const profile of [
-      "one-tap-disabled",
-      "one-tap-provider-disabled",
-    ] as const) {
+    for (const profile of ["one-tap-disabled", "one-tap-provider-disabled"] as const) {
       const result = responseSchema.parse(await oneTap(ctx, token, profile));
       expect(result.response.error).toMatchObject({
         status: 401,
@@ -142,9 +130,7 @@ compatScenario(
     expect(unchanged.sessions).toEqual(initial.sessions);
     const created = await successful(ctx, token);
     const existing = await successful(ctx, token, "one-tap-disabled");
-    expect(existing.response.data?.user.id).toBe(
-      created.response.data?.user.id,
-    );
+    expect(existing.response.data?.user.id).toBe(created.response.data?.user.id);
     const persisted = await state(ctx);
     expect(persisted.users).toHaveLength(1);
     expect(persisted.accounts).toHaveLength(1);
@@ -233,10 +219,7 @@ compatScenario(
     ]) {
       const sub = ctx.uniqueToken(`header-${outcomes.length}`);
       const email = ctx.uniqueEmail(`header-${outcomes.length}`);
-      const token = signedRawToken(
-        { sub, email, email_verified: true },
-        header,
-      );
+      const token = signedRawToken({ sub, email, email_verified: true }, header);
       outcomes.push(await successful(ctx, token));
       expectedTokens.push(token);
     }
@@ -245,9 +228,7 @@ compatScenario(
     expect(persisted.accounts).toHaveLength(4);
     expect(persisted.sessions).toHaveLength(4);
     expect(persisted.jwksFetches - baseline.jwksFetches).toBe(4);
-    expect(persisted.accounts.map((row) => row.idToken)).toEqual(
-      expectedTokens,
-    );
+    expect(persisted.accounts.map((row) => row.idToken)).toEqual(expectedTokens);
     return {
       outcomes,
       persisted: {

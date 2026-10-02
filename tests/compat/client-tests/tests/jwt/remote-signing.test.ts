@@ -3,11 +3,10 @@ import { createAuthClient } from "better-auth/client";
 import { jwtClient } from "better-auth/client/plugins";
 import { compactVerify, jwtVerify } from "jose";
 import { z } from "zod";
-import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
-const key = new TextEncoder().encode(
-  "remote-jwt-application-secret-minimum-32-characters",
-);
+import { compatScenario, type ScenarioContext } from "../../support/scenario";
+
+const key = new TextEncoder().encode("remote-jwt-application-secret-minimum-32-characters");
 async function control(ctx: ScenarioContext, value: Record<string, unknown>) {
   return ctx.rawRequest({
     path: "/__test/jwt-remote",
@@ -57,8 +56,7 @@ async function signed(result: Awaited<ReturnType<typeof control>>) {
 const cases = [
   {
     name: "undefined",
-    literal:
-      '{"10":"ten","2":"two","custom":{"nested":[null,false,"literal"]}}',
+    literal: '{"10":"ten","2":"two","custom":{"nested":[null,false,"literal"]}}',
   },
   {
     name: "infinity-exp",
@@ -84,8 +82,7 @@ const cases = [
   { name: "nan-default", literal: '{"iat":123}', nanFields: ["iat"] },
   {
     name: "null",
-    literal:
-      '{"exp":null,"iat":null,"nbf":null,"iss":null,"aud":null,"sub":null,"jti":null}',
+    literal: '{"exp":null,"iat":null,"nbf":null,"iss":null,"aud":null,"sub":null,"jti":null}',
   },
   {
     name: "false",
@@ -139,16 +136,7 @@ for (const item of cases)
         expect(verified.payload).toMatchObject({ "2": "two", "10": "ten" });
         expect(event.payload.iat).toEqual({ $undefined: true });
         expect(event.payload.nbf).toEqual({ $undefined: true });
-        expect(event.ownKeys).toEqual([
-          "2",
-          "10",
-          "custom",
-          "iat",
-          "exp",
-          "nbf",
-          "iss",
-          "aud",
-        ]);
+        expect(event.ownKeys).toEqual(["2", "10", "custom", "iat", "exp", "nbf", "iss", "aud"]);
         expect(verified.payload).not.toHaveProperty("iat");
         expect(verified.payload).not.toHaveProperty("nbf");
       }
@@ -169,10 +157,8 @@ for (const item of cases)
           expect(event.payload[field]).toEqual({ $number: "NaN" });
           expect(verified.payload[field]).toBeNull();
         }
-      if (item.name === "infinity-iat")
-        expect(event.payload.exp).toEqual({ $number: "Infinity" });
-      if (item.name === "nan-default")
-        expect(event.payload.exp).toEqual({ $number: "NaN" });
+      if (item.name === "infinity-iat") expect(event.payload.exp).toEqual({ $number: "Infinity" });
+      if (item.name === "nan-default") expect(event.payload.exp).toEqual({ $number: "NaN" });
       if (item.name === "false")
         expect(event.payload).toMatchObject({
           exp: false,
@@ -183,12 +169,9 @@ for (const item of cases)
           sub: false,
           jti: false,
         });
-      if (item.name === "string-default")
-        expect(event.payload.exp).toBe("100900");
-      if (item.name === "array-default")
-        expect(event.payload.exp).toBe("7,,false900");
-      if (item.name === "object-default")
-        expect(event.payload.exp).toBe("[object Object]900");
+      if (item.name === "string-default") expect(event.payload.exp).toBe("100900");
+      if (item.name === "array-default") expect(event.payload.exp).toBe("7,,false900");
+      if (item.name === "object-default") expect(event.payload.exp).toBe("[object Object]900");
       const after = await ctx.rawRequest({ path: "/__test/jwks-state" });
       expect(after.body).toEqual(keysBefore.body);
       return ctx.snapshot({
@@ -325,12 +308,8 @@ compatScenario(
       await control(ctx, { operation: "failure", failure });
       const rejected = await owner.client.token();
       expect(rejected.error?.status).toBe(failure === "ordinary" ? 500 : 403);
-      expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(
-        ownerBefore,
-      );
-      expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(
-        foreignBefore,
-      );
+      expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(ownerBefore);
+      expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
       failures.push({ failure, rejected, receipts: await receipts(ctx) });
     }
     await control(ctx, { operation: "failure", failure: null });
@@ -340,18 +319,14 @@ compatScenario(
     const replay = await owner.client.token();
     expect(replay.error?.status).toBe(401);
     expect(await receipts(ctx)).toEqual(beforeReplay);
-    expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(
-      foreignBefore,
-    );
+    expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
     expect(
       z
         .object({ sessions: z.array(z.unknown()).length(0) })
         .passthrough()
         .parse(await ctx.readUserState({ userId: signup.data!.user.id })),
     ).toBeDefined();
-    expect((await ctx.rawRequest({ path: "/__test/jwks-state" })).body).toEqual(
-      [],
-    );
+    expect((await ctx.rawRequest({ path: "/__test/jwks-state" })).body).toEqual([]);
     return ctx.snapshot({
       signup,
       other,

@@ -1,14 +1,10 @@
 import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 import { decodeJwt, decodeProtectedHeader } from "jose";
-import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import type { FixtureProfile } from "../../support/profiles";
-import {
-  credential,
-  issuedAt,
-  signedRawToken,
-  state,
-} from "../one-tap/helpers";
+import { compatScenario, type ScenarioContext } from "../../support/scenario";
+import { credential, issuedAt, signedRawToken, state } from "../one-tap/helpers";
+
 type Row = Record<string, unknown>;
 type Store = {
   users: Row[];
@@ -48,12 +44,7 @@ async function setup(ctx: ScenarioContext, profile: FixtureProfile) {
     fetches: (await state(ctx)).jwksFetches,
   };
 }
-async function signed(
-  ctx: ScenarioContext,
-  claims: Row = {},
-  header: Row = {},
-  wrong = false,
-) {
+async function signed(ctx: ScenarioContext, claims: Row = {}, header: Row = {}, wrong = false) {
   return credential(
     {
       aud: "google-default-client",
@@ -121,12 +112,8 @@ compatScenario(
     expect(replaySession.data?.user.id).toBe(current.data!.user.id);
     const replayed = await read(ctx);
     expect(replayed.sessions).toHaveLength(stored.sessions.length + 1);
-    expect(replayed.accounts.find((r) => r.id === account.id)?.userId).toBe(
-      current.data!.user.id,
-    );
-    expect(await ctx.readUserState({ userId: s.signup.data!.user.id })).toEqual(
-      s.foreignBefore,
-    );
+    expect(replayed.accounts.find((r) => r.id === account.id)?.userId).toBe(current.data!.user.id);
+    expect(await ctx.readUserState({ userId: s.signup.data!.user.id })).toEqual(s.foreignBefore);
     const signout = await s.foreign.client.signOut();
     expect(signout.error).toBeNull();
     const retired = await s.foreign.client.getSession(),
@@ -249,9 +236,7 @@ for (const p of policies)
       if (p.success) {
         expect(result.error).toBeNull();
         expect(current.data?.user.email).toBe(ctx.uniqueEmail("owner"));
-        expect(
-          after.accounts.find((r) => r.providerId === "google"),
-        ).toMatchObject({
+        expect(after.accounts.find((r) => r.providerId === "google")).toMatchObject({
           userId: current.data!.user.id,
           accountId: ctx.uniqueToken("subject"),
           idToken: token,
@@ -264,9 +249,7 @@ for (const p of policies)
         expect(current.data).toBeNull();
         expect(after).toEqual(s.before);
       }
-      expect(
-        await ctx.readUserState({ userId: s.signup.data!.user.id }),
-      ).toEqual(s.foreignBefore);
+      expect(await ctx.readUserState({ userId: s.signup.data!.user.id })).toEqual(s.foreignBefore);
       return {
         signup: ctx.snapshot(s.signup),
         before: s.before,
@@ -356,9 +339,7 @@ compatScenario(
         after,
       });
     }
-    expect(await ctx.readUserState({ userId: s.signup.data!.user.id })).toEqual(
-      s.foreignBefore,
-    );
+    expect(await ctx.readUserState({ userId: s.signup.data!.user.id })).toEqual(s.foreignBefore);
     return {
       signup: ctx.snapshot(s.signup),
       before: s.before,

@@ -2,26 +2,20 @@ import { expect } from "bun:test";
 import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { z } from "zod";
-import { compatScenario } from "../../support/scenario";
 import { authProfilePath } from "../../support/profiles";
+import { compatScenario } from "../../support/scenario";
 
 const stateSchema = z
   .object({
-    user: z
-      .object({ id: z.string(), twoFactorEnabled: z.boolean() })
-      .passthrough(),
+    user: z.object({ id: z.string(), twoFactorEnabled: z.boolean() }).passthrough(),
     sessions: z.array(
-      z
-        .object({ id: z.string(), token: z.string(), userId: z.string() })
-        .passthrough(),
+      z.object({ id: z.string(), token: z.string(), userId: z.string() }).passthrough(),
     ),
     twoFactorExists: z.boolean(),
   })
   .passthrough();
 const rowsSchema = z.array(
-  z
-    .object({ id: z.string(), identifier: z.string(), value: z.string() })
-    .passthrough(),
+  z.object({ id: z.string(), identifier: z.string(), value: z.string() }).passthrough(),
 );
 
 for (const profile of [
@@ -69,8 +63,7 @@ for (const profile of [
       if (!signup.data.token) throw new Error("actual signup token required");
       expect(original.token).toBe(signup.data.token);
       const identifier = `2fa-otp-${userId}!${original.id}`;
-      const readOtp = async () =>
-        rowsSchema.parse(await ctx.readVerificationState({ identifier }));
+      const readOtp = async () => rowsSchema.parse(await ctx.readVerificationState({ identifier }));
       const sent = await owner.twoFactor.sendOtp({});
       expect(sent.error).toBeNull();
       const delivery = await ctx.rawRequest({
@@ -134,19 +127,13 @@ for (const profile of [
           pendingKey: `${userId}!${original.id}`,
         },
       });
-      expect(
-        z.object({ trustCount: z.number() }).parse(trust.body).trustCount,
-      ).toBe(0);
+      expect(z.object({ trustCount: z.number() }).parse(trust.body).trustCount).toBe(0);
       const retry = await owner.twoFactor.verifyOtp({ code });
       expect(retry.error?.code).toBe("OTP_HAS_EXPIRED");
       expect(await readOtp()).toEqual([]);
       expect(await ctx.readUserState({ userId })).toEqual(after);
-      expect(await ctx.readUserState({ userId: other.data.user.id })).toEqual(
-        foreignBefore,
-      );
-      expect((await foreign.getSession()).data?.user.id).toBe(
-        other.data.user.id,
-      );
+      expect(await ctx.readUserState({ userId: other.data.user.id })).toEqual(foreignBefore);
+      expect((await foreign.getSession()).data?.user.id).toBe(other.data.user.id);
       return ctx.snapshot({
         signup,
         other,
@@ -162,8 +149,7 @@ for (const profile of [
         retry,
         consumed: await readOtp(),
         trust: {
-          count: z.object({ trustCount: z.number() }).parse(trust.body)
-            .trustCount,
+          count: z.object({ trustCount: z.number() }).parse(trust.body).trustCount,
         },
       });
     },

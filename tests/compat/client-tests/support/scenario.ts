@@ -1,66 +1,59 @@
 import { test } from "bun:test";
-import { ZodError } from "zod";
-import { authProfilePath, type FixtureProfile } from "./profiles";
-import { recordCoverage } from "./coverage";
 import { createHash } from "node:crypto";
-import { compareValues, type PhysicalObservation, type Difference } from "./compare";
 import { createAuthClient } from "better-auth/client";
 import {
-  usernameClient,
   adminClient,
   emailOTPClient,
   magicLinkClient,
+  usernameClient,
 } from "better-auth/client/plugins";
+import { ZodError } from "zod";
+import { compareValues, type Difference, type PhysicalObservation } from "./compare";
+import { recordCoverage } from "./coverage";
+import { authProfilePath, type FixtureProfile } from "./profiles";
 
 function configuredClient(
   baseURL: string,
-  fetchImpl: (
-    input: string | URL | Request,
-    init?: RequestInit,
-  ) => Promise<Response>,
+  fetchImpl: (input: string | URL | Request, init?: RequestInit) => Promise<Response>,
 ) {
   return createAuthClient({
     baseURL,
-    plugins: [
-      usernameClient(),
-      adminClient(),
-      emailOTPClient(),
-      magicLinkClient(),
-    ],
+    plugins: [usernameClient(), adminClient(), emailOTPClient(), magicLinkClient()],
     fetchOptions: { customFetchImpl: fetchImpl },
   });
 }
-import { RUST_BASE_URL, TS_BASE_URL, requireHealthy } from "./config";
+
 import {
+  assuranceEvent,
+  type ScenarioCoverage,
+  type ScenarioOutcome,
+  scenarioCoverage,
+  setAssurancePhase,
+} from "./assurance/evidence";
+import { RUST_BASE_URL, requireHealthy, TS_BASE_URL } from "./config";
+import {
+  expireDevice,
+  expireInvitation,
   type GitHubEmailRecord,
-  readChangeEmailConfirmation,
   promoteAdmin,
+  readChangeEmailConfirmation,
+  readDeviceState,
   readTwoFactorOtp,
+  readUserState,
   readVerificationEmail,
+  readVerificationState,
   removeCredentialAccount,
   resetServerState,
-  readDeviceState,
-  expireDevice,
-  readUserState,
-  expireInvitation,
-  readVerificationState,
   seedDeleteUserToken,
   seedOAuthAccount,
-  setGitHubProfile,
   seedResetPasswordToken,
+  setGitHubProfile,
   setOAuthRefreshMode,
   setResetPasswordMode,
   setSocialProfile,
 } from "./controls";
 import { normalizeClientValue } from "./normalize";
 import { createTracingFetch, requestWindow, type TraceEntry } from "./trace";
-import {
-  assuranceEvent,
-  scenarioCoverage,
-  setAssurancePhase,
-  type ScenarioCoverage,
-  type ScenarioOutcome,
-} from "./assurance/evidence";
 
 type ScenarioServerContext = {
   baseURL: string;
@@ -89,16 +82,10 @@ type ScenarioServerContext = {
     location: string | null;
     body: unknown;
   }>;
-  expireInvitation(args: {
-    invitationId: string;
-    expiresAt: string;
-  }): Promise<unknown>;
+  expireInvitation(args: { invitationId: string; expiresAt: string }): Promise<unknown>;
   readUserState(args: { userId: string }): Promise<unknown>;
   readDeviceState(args: { deviceCode: string }): Promise<unknown>;
-  expireDevice(args: {
-    deviceCode: string;
-    expiresAt: string;
-  }): Promise<unknown>;
+  expireDevice(args: { deviceCode: string; expiresAt: string }): Promise<unknown>;
   readVerificationState(args: { identifier: string }): Promise<unknown>;
   resetServerState(): Promise<unknown>;
   setResetPasswordMode(mode: "capture" | "throw"): Promise<unknown>;
@@ -139,11 +126,7 @@ type ScenarioServerContext = {
   readVerificationEmail(args: { email: string }): Promise<unknown>;
   readTwoFactorOtp(args: { email: string }): Promise<unknown>;
   readChangeEmailConfirmation(args: { email: string }): Promise<unknown>;
-  seedDeleteUserToken(args: {
-    email: string;
-    token: string;
-    expiresAt: string;
-  }): Promise<unknown>;
+  seedDeleteUserToken(args: { email: string; token: string; expiresAt: string }): Promise<unknown>;
   removeCredentialAccount(args: { email: string }): Promise<unknown>;
   promoteAdmin(args: { email: string }): Promise<unknown>;
 };
@@ -174,19 +157,26 @@ async function runScenario(
   const startedAt = Date.now();
   const traces: TraceEntry[] = [];
   const physicalObservations: PhysicalObservation[] = [];
-  async function physical(kind: PhysicalObservation["kind"], owner: string, read: Promise<unknown>) {
-    const value = await read, body = structuredClone(value);
-    physicalObservations.push({kind, owner, body, digest: createHash("sha256").update(JSON.stringify(body)).digest("hex")});
+  async function physical(
+    kind: PhysicalObservation["kind"],
+    owner: string,
+    read: Promise<unknown>,
+  ) {
+    const value = await read,
+      body = structuredClone(value);
+    physicalObservations.push({
+      kind,
+      owner,
+      body,
+      digest: createHash("sha256").update(JSON.stringify(body)).digest("hex"),
+    });
     return value;
   }
   const actors = new Map<
     string,
     {
       client: ReturnType<typeof configuredClient>;
-      fetch(
-        input: string | URL | Request,
-        init?: RequestInit,
-      ): Promise<Response>;
+      fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
     }
   >();
   const shortSeed = seed.replace(/-/g, "").slice(0, 12);
@@ -220,15 +210,7 @@ async function runScenario(
     snapshot(value) {
       return normalizeClientValue(value);
     },
-    async rawRequest({
-      actor = "primary",
-      path,
-      method = "GET",
-      body,
-      headers,
-      json,
-      redirect,
-    }) {
+    async rawRequest({ actor = "primary", path, method = "GET", body, headers, json, redirect }) {
       const requestHeaders = new Headers(headers);
       let requestBody = body;
       if (json !== undefined) {
@@ -319,8 +301,7 @@ async function runScenario(
   await scenarioCoverage("begin", label, scenarioName);
   try {
     return {
-      oauthURL:
-        health.oauthBaseURL ?? baseURL.replace("localhost", "127.0.0.1"),
+      oauthURL: health.oauthBaseURL ?? baseURL.replace("localhost", "127.0.0.1"),
       startedAt,
       observation: normalizeClientValue(await scenario(context)),
       finishedAt: Date.now(),
@@ -334,19 +315,13 @@ async function runScenario(
 }
 
 function formatDiffs(title: string, differences: Difference[]) {
-  return [
-    title,
-    ...differences.map((entry) => `- ${entry.path}: ${entry.reason}`),
-  ].join("\n");
+  return [title, ...differences.map((entry) => `- ${entry.path}: ${entry.reason}`)].join("\n");
 }
 
 /** Split comparator output into client-visible and raw-transport drift. Every difference must land in exactly one bucket. */
-export function classifyDifferences(
-  differences: readonly Difference[],
-) {
+export function classifyDifferences(differences: readonly Difference[]) {
   const clientDiffs = differences.filter(
-    (entry) =>
-      entry.path === "observation" || entry.path.startsWith("observation."),
+    (entry) => entry.path === "observation" || entry.path.startsWith("observation."),
   );
   const rawDiffs = differences.filter(
     (entry) => entry.path === "traces" || entry.path.startsWith("traces."),
@@ -401,10 +376,8 @@ export function compatScenario(
           },
         );
         const comparison = {
-          sessionCookieSecret:
-            "compat-test-only-key-not-real-minimum-32chars",
-          compactSessionCacheSecret:
-            "compat-test-only-key-not-real-minimum-32chars",
+          sessionCookieSecret: "compat-test-only-key-not-real-minimum-32chars",
+          compactSessionCacheSecret: "compat-test-only-key-not-real-minimum-32chars",
           ...comparisonOptions,
           leftBaseURL: TS_BASE_URL,
           rightBaseURL: RUST_BASE_URL,
@@ -437,20 +410,11 @@ export function compatScenario(
             ),
           );
         if (clientDiffs.length)
-          throw new Error(
-            formatDiffs(`Client-visible drift: ${scenarioName}`, clientDiffs),
-          );
+          throw new Error(formatDiffs(`Client-visible drift: ${scenarioName}`, clientDiffs));
         if (rawDiffs.length)
-          throw new Error(
-            formatDiffs(`Raw trace drift: ${scenarioName}`, rawDiffs),
-          );
+          throw new Error(formatDiffs(`Raw trace drift: ${scenarioName}`, rawDiffs));
         failure = "infrastructure";
-        await recordCoverage(
-          scenarioName,
-          ts.traces,
-          stateTransitions,
-          TS_BASE_URL,
-        );
+        await recordCoverage(scenarioName, ts.traces, stateTransitions, TS_BASE_URL);
         outcome.status = "passed";
       } catch (error) {
         outcome.failure =
@@ -461,8 +425,7 @@ export function compatScenario(
               : error instanceof Error && error.name === "ModelViolation"
                 ? "model"
                 : error instanceof Error &&
-                    (/^expect\(/.test(error.message) ||
-                      error.name === "ZodError")
+                    (/^expect\(/.test(error.message) || error.name === "ZodError")
                   ? "assertion"
                   : "scenario";
         outcome.phase = phase;

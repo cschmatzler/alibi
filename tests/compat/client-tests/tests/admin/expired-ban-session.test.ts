@@ -8,16 +8,8 @@ const persisted = z.object({
   sessions: z.array(z.object({ userId: z.string(), token: z.string() })),
 });
 
-async function expiredBanSnapshot(
-  ctx: ScenarioContext,
-  impersonation: boolean,
-) {
-  const owner = await signUpAndPromoteAdmin(
-      ctx,
-      "owner",
-      "expired-ban-owner",
-      "Ban owner",
-    ),
+async function expiredBanSnapshot(ctx: ScenarioContext, impersonation: boolean) {
+  const owner = await signUpAndPromoteAdmin(ctx, "owner", "expired-ban-owner", "Ban owner"),
     target = adminActor(ctx, "target"),
     foreign = adminActor(ctx, "foreign");
   expect(owner.signup.error).toBeNull();
@@ -73,8 +65,7 @@ async function expiredBanSnapshot(
     banReason: "expired application ban",
     banExpires: bannedUser.data?.banExpires,
   });
-  if (!result.data || !bannedUser.data)
-    throw new Error("both original user observations required");
+  if (!result.data || !bannedUser.data) throw new Error("both original user observations required");
   expect(new Date(result.data.user.updatedAt).getTime()).toBe(
     new Date(bannedUser.data.updatedAt).getTime(),
   );
@@ -88,9 +79,7 @@ async function expiredBanSnapshot(
     banReason: null,
     banExpires: null,
   });
-  const current = await (
-    impersonation ? owner.client : target.client
-  ).getSession();
+  const current = await (impersonation ? owner.client : target.client).getSession();
   expect(current.error).toBeNull();
   expect(current.data?.user).toMatchObject({
     id: userId,
@@ -103,9 +92,7 @@ async function expiredBanSnapshot(
   expect(rows.sessions).toHaveLength(1);
   expect(rows.sessions[0]?.userId).toBe(userId);
   expect(rows.sessions[0]?.token).toBe(current.data?.session.token);
-  expect(rows.accounts.every((account) => account.userId === userId)).toBe(
-    true,
-  );
+  expect(rows.accounts.every((account) => account.userId === userId)).toBe(true);
   const token =
     impersonation && result.data && "session" in result.data
       ? result.data.session.token
@@ -120,9 +107,7 @@ async function expiredBanSnapshot(
   expect(ownerAfter).toEqual(ownerBefore);
   const readerCurrent = await reader.client.getSession();
   expect(readerCurrent.data?.user.id).toBe(ownerId);
-  expect(readerCurrent.data?.session.token).toBe(
-    readerLogin.data?.token ?? undefined,
-  );
+  expect(readerCurrent.data?.session.token).toBe(readerLogin.data?.token ?? undefined);
   return {
     owner: owner.signup,
     signup,

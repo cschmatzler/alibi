@@ -34,19 +34,14 @@ const configured = configuredPath
   : undefined;
 const discovered = new Set<string>();
 const routes = (
-  JSON.parse(
-    readFileSync(
-      new URL("../../../capabilities.json", import.meta.url),
-      "utf8",
-    ),
-  ) as { capabilities: { route: string }[] }
+  JSON.parse(readFileSync(new URL("../../../capabilities.json", import.meta.url), "utf8")) as {
+    capabilities: { route: string }[];
+  }
 ).capabilities.map((entry) => entry.route);
 
 function routeFor(request: Request): string | undefined {
   const path = new URL(request.url).pathname;
-  const prefix = path.match(
-    /^(?:\/__test\/profiles\/[a-z0-9-]+)?\/api\/auth(?=\/)/,
-  )?.[0];
+  const prefix = path.match(/^(?:\/__test\/profiles\/[a-z0-9-]+)?\/api\/auth(?=\/)/)?.[0];
   if (!prefix) return;
   const endpoint = path.slice(prefix.length);
   const pattern =
@@ -58,10 +53,7 @@ function routeFor(request: Request): string | undefined {
           pathname?.split("/").length === endpoint.split("/").length &&
           pathname
             .split("/")
-            .every(
-              (part, index) =>
-                part === "{}" || part === endpoint.split("/")[index],
-            )
+            .every((part, index) => part === "{}" || part === endpoint.split("/")[index])
         );
       })
       ?.split(" ")[1] ?? endpoint;
@@ -81,20 +73,12 @@ const transportHeaders = new Set([
 ]);
 
 /** Discover mutation targets from actual oracle responses, never from assertions. */
-export async function mutateTransport(
-  request: Request,
-  response: Response,
-): Promise<Response> {
+export async function mutateTransport(request: Request, response: Response): Promise<Response> {
   const phase = assurancePhase(),
     route = routeFor(request);
-  if (
-    !phase ||
-    !route ||
-    (!configured && process.env.COMPAT_ASSURANCE_DISCOVER_WIRE !== "1")
-  )
+  if (!phase || !route || (!configured && process.env.COMPAT_ASSURANCE_DISCOVER_WIRE !== "1"))
     return response;
-  const isDiscovery =
-    process.env.COMPAT_ASSURANCE_DISCOVER_WIRE === "1" && phase.label === "TS";
+  const isDiscovery = process.env.COMPAT_ASSURANCE_DISCOVER_WIRE === "1" && phase.label === "TS";
   const active =
     configured &&
     phase.label === "Rust" &&
@@ -156,10 +140,7 @@ export async function mutateTransport(
   } else if (configured.operator === "drop-header") {
     changed = headers.has(configured.pointer[0]!);
     headers.delete(configured.pointer[0]!);
-  } else if (
-    configured.operator === "drop-cookie" ||
-    configured.operator === "drop-http-only"
-  ) {
+  } else if (configured.operator === "drop-cookie" || configured.operator === "drop-http-only") {
     const cookies = headers.getSetCookie();
     headers.delete("set-cookie");
     for (const cookie of cookies) {
@@ -173,37 +154,24 @@ export async function mutateTransport(
         headers.append("set-cookie", next);
       } else headers.append("set-cookie", cookie);
     }
-  } else if (
-    !json &&
-    configured.operator === "change-value" &&
-    configured.pointer.length === 0
-  ) {
+  } else if (!json && configured.operator === "change-value" && configured.pointer.length === 0) {
     output = `${text}__assurance_mutation`;
     changed = true;
   } else if (json) {
     const pointer = configured.pointer;
     let parent = body;
     for (const key of pointer.slice(0, -1))
-      parent =
-        record(parent) && Object.hasOwn(parent, key) ? parent[key] : undefined;
+      parent = record(parent) && Object.hasOwn(parent, key) ? parent[key] : undefined;
     const last = pointer.at(-1);
     const exists =
-      pointer.length === 0 ||
-      (last !== undefined && record(parent) && Object.hasOwn(parent, last));
+      pointer.length === 0 || (last !== undefined && record(parent) && Object.hasOwn(parent, last));
     if (exists) {
-      if (
-        configured.operator === "drop-field" &&
-        last !== undefined &&
-        record(parent)
-      ) {
+      if (configured.operator === "drop-field" && last !== undefined && record(parent)) {
         if (Array.isArray(parent)) parent.splice(Number(last), 1);
         else delete parent[last];
         changed = true;
       } else if (configured.operator === "change-value") {
-        const old =
-          pointer.length === 0
-            ? body
-            : (parent as Record<string, unknown>)[last!];
+        const old = pointer.length === 0 ? body : (parent as Record<string, unknown>)[last!];
         if (!record(old)) {
           const value =
             typeof old === "boolean"
@@ -233,16 +201,11 @@ export async function mutateTransport(
   if (!changed) return response;
   headers.delete("content-length");
   headers.delete("transfer-encoding");
-  const replacement = new Response(
-    [204, 205, 304].includes(status) ? null : output,
-    {
-      status,
-      headers,
-      ...(status === response.status
-        ? { statusText: response.statusText }
-        : {}),
-    },
-  );
+  const replacement = new Response([204, 205, 304].includes(status) ? null : output, {
+    status,
+    headers,
+    ...(status === response.status ? { statusText: response.statusText } : {}),
+  });
   for (const name of ["url", "redirected", "type"] as const)
     Object.defineProperty(replacement, name, {
       value: response[name],

@@ -1,8 +1,9 @@
 /** Application-owned SQL observations; the pinned factor and adapter execute unchanged. */
+
+import type { Database } from "bun:sqlite";
+import { createKyselyAdapter } from "@better-auth/kysely-adapter";
 import { betterAuth } from "better-auth";
 import { twoFactor } from "better-auth/plugins";
-import { createKyselyAdapter } from "@better-auth/kysely-adapter";
-import type { Database } from "bun:sqlite";
 
 function phase(sql: string) {
   const query = sql.toLowerCase();
@@ -18,8 +19,7 @@ function phase(sql: string) {
     query.includes('"expiresat" <')
   )
     return "cleanup-delete";
-  if (query.startsWith("select") && query.includes('from "user"'))
-    return "user";
+  if (query.startsWith("select") && query.includes('from "user"')) return "user";
 }
 export async function createTwoFactorPendingLookupFixture(
   base: Parameters<typeof betterAuth>[0],
@@ -34,10 +34,7 @@ export async function createTwoFactorPendingLookupFixture(
   const observed = actual.kysely.withPlugin({
     transformQuery(args) {
       if (armed) {
-        const name = phase(
-          actual.kysely!.getExecutor().compileQuery(args.node, args.queryId)
-            .sql,
-        );
+        const name = phase(actual.kysely!.getExecutor().compileQuery(args.node, args.queryId).sql);
         if (name) pending.set(args.queryId, name);
       }
       return args.node;
@@ -120,8 +117,7 @@ export async function createTwoFactorPendingLookupFixture(
     async control(body: Record<string, unknown>) {
       armed = false;
       const profile = profiles.get(String(body.profile));
-      if (!profile)
-        return Response.json({ message: "unknown profile" }, { status: 400 });
+      if (!profile) return Response.json({ message: "unknown profile" }, { status: 400 });
       const context = await profile.$context;
       if (body.action === "clear") {
         receipts.length = 0;

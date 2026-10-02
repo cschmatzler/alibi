@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
-import { createAuthClient } from "better-auth/client";
 import { apiKeyClient } from "@better-auth/api-key/client";
+import { createAuthClient } from "better-auth/client";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 type RecordValue = Record<string, any>;
@@ -33,12 +33,7 @@ async function setup(ctx: ScenarioContext) {
   }
   return { owner, outsider, ownerId: users[0]!.id, outsiderId: users[1]!.id };
 }
-async function control(
-  ctx: ScenarioContext,
-  path: string,
-  json?: unknown,
-  headers?: HeadersInit,
-) {
+async function control(ctx: ScenarioContext, path: string, json?: unknown, headers?: HeadersInit) {
   const response = await ctx.rawRequest({
     path: `/__test/api-key-hook/${path}`,
     method: json === undefined ? "GET" : "POST",
@@ -136,11 +131,7 @@ compatScenario(
       expect(response.error!.status).toBe(403);
       expect(response.error!.code).toBe("INVALID_API_KEY");
       const observed = await events(ctx);
-      expect(observed).toEqual([
-        getter(true),
-        getter(true),
-        validator(key, policy),
-      ]);
+      expect(observed).toEqual([getter(true), getter(true), validator(key, policy)]);
       results.push({ response, events: observed });
     }
     const short = await outsider.getSession({
@@ -157,11 +148,7 @@ compatScenario(
     expect(wrongConfig.error!.status).toBe(401);
     expect(wrongConfig.error!.code).toBe("INVALID_API_KEY");
     const wrongEvents = await events(ctx);
-    expect(wrongEvents).toEqual([
-      getter(true),
-      getter(true),
-      validator(other, "allow"),
-    ]);
+    expect(wrongEvents).toEqual([getter(true), getter(true), validator(other, "allow")]);
     results.push({ response: wrongConfig, events: wrongEvents });
     const rejectedState = await state(ctx, ownerId);
     expect(rejectedState).toEqual(before);
@@ -179,11 +166,7 @@ compatScenario(
     expect(accepted.data!.session.id).toBe(red.id);
     expect(accepted.data!.session.token).toBe(red.key);
     const acceptedEvents = await events(ctx);
-    expect(acceptedEvents).toEqual([
-      getter(true),
-      getter(true),
-      validator(red, "red-only"),
-    ]);
+    expect(acceptedEvents).toEqual([getter(true), getter(true), validator(red, "red-only")]);
     const protectedOwner = await outsider.apiKey.get({
       query: { id: red.id, configId: "hooks" },
       fetchOptions: { headers: { "x-custom-api-key": `ApiKey ${red.key}` } },
@@ -192,11 +175,7 @@ compatScenario(
     expect(protectedOwner.data!.referenceId).toBe(ownerId);
     expect(protectedOwner.data!.id).toBe(red.id);
     const protectedEvents = await events(ctx);
-    expect(protectedEvents).toEqual([
-      getter(true),
-      getter(true),
-      validator(red, "allow"),
-    ]);
+    expect(protectedEvents).toEqual([getter(true), getter(true), validator(red, "allow")]);
     const forbidden = await outsider.apiKey.get({
       query: { id: red.id, configId: "hooks" },
     });
@@ -248,11 +227,7 @@ compatScenario(
     const before = await state(ctx, ownerId);
     await events(ctx);
     const attempts: unknown[] = [];
-    async function verify(
-      keyValue: RecordValue,
-      policy: string,
-      explicit?: string,
-    ) {
+    async function verify(keyValue: RecordValue, policy: string, explicit?: string) {
       const body = object(
         await control(
           ctx,

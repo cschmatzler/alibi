@@ -1,13 +1,8 @@
 import { expect } from "bun:test";
 import { z } from "zod";
 import { compatScenario } from "../../support/scenario";
-import {
-  credential,
-  state,
-  successful,
-  oneTap,
-  responseSchema,
-} from "./helpers";
+import { credential, oneTap, responseSchema, state, successful } from "./helpers";
+
 const deliverySchema = z.object({ url: z.string(), token: z.string() });
 compatScenario(
   "One Tap immutable audience configuration and hosted domains",
@@ -20,41 +15,17 @@ compatScenario(
       ["one-tap-default", "one-tap-provider-client", undefined, false],
       ["one-tap-fallback", "one-tap-provider-client", undefined, true],
       ["one-tap-fallback", "one-tap-provider-secondary", undefined, true],
-      [
-        "one-tap-fallback",
-        ["foreign-audience", "one-tap-provider-secondary"],
-        undefined,
-        true,
-      ],
-      [
-        "one-tap-domain",
-        "one-tap-plugin-client",
-        "workspace.fixture.test",
-        true,
-      ],
-      [
-        "one-tap-domain",
-        "one-tap-plugin-client",
-        "WORKSPACE.fixture.test",
-        false,
-      ],
+      ["one-tap-fallback", ["foreign-audience", "one-tap-provider-secondary"], undefined, true],
+      ["one-tap-domain", "one-tap-plugin-client", "workspace.fixture.test", true],
+      ["one-tap-domain", "one-tap-plugin-client", "WORKSPACE.fixture.test", false],
       ["one-tap-domain", "one-tap-plugin-client", undefined, false],
-      [
-        "one-tap-domain-any",
-        "one-tap-plugin-client",
-        "another.fixture.test",
-        true,
-      ],
+      ["one-tap-domain-any", "one-tap-plugin-client", "another.fixture.test", true],
       ["one-tap-domain-any", "one-tap-plugin-client", "", false],
     ] as const) {
       const sub = ctx.uniqueToken(`config-${outcomes.length}`);
       const email = ctx.uniqueEmail(`config-${outcomes.length}`);
       const result = responseSchema.parse(
-        await oneTap(
-          ctx,
-          await credential({ sub, email, aud, hd, email_verified: true }),
-          profile,
-        ),
+        await oneTap(ctx, await credential({ sub, email, aud, hd, email_verified: true }), profile),
       );
       if (allowed) expect(result.response.error).toBeNull();
       else
@@ -74,9 +45,7 @@ compatScenario(
         ),
       );
       expect(result.response.error?.status).toBe(400);
-      expect(result.response.error?.message).toContain(
-        "Google client ID is required for One Tap",
-      );
+      expect(result.response.error?.message).toContain("Google client ID is required for One Tap");
       outcomes.push(result);
     }
     const persisted = await state(ctx);
@@ -121,16 +90,12 @@ compatScenario(
       { accountId: sub, userId: committed.users[0]!.id, idToken: token },
     ]);
     expect(committed.sessions).toHaveLength(0);
-    const delivery = deliverySchema.parse(
-      await ctx.readVerificationEmail({ email }),
-    );
+    const delivery = deliverySchema.parse(await ctx.readVerificationEmail({ email }));
     expect(new URL(delivery.url).pathname).toBe(
       "/__test/profiles/one-tap-required/api/auth/verify-email",
     );
     expect(new URL(delivery.url).searchParams.get("callbackURL")).toBe("/");
-    const again = responseSchema.parse(
-      await oneTap(ctx, token, "one-tap-required", "verify"),
-    );
+    const again = responseSchema.parse(await oneTap(ctx, token, "one-tap-required", "verify"));
     expect(again.response.error?.code).toBe("EMAIL_NOT_VERIFIED");
     const verified = await ctx
       .actor("verify", "one-tap-required")
@@ -142,9 +107,7 @@ compatScenario(
       email,
       emailVerified: true,
     });
-    const session = await ctx
-      .actor("verify", "one-tap-required")
-      .client.getSession();
+    const session = await ctx.actor("verify", "one-tap-required").client.getSession();
     expect(session.data?.session.userId).toBe(committed.users[0]!.id);
     expect(session.data?.session.token).toBe(accepted.response.data?.token);
     const final = await state(ctx);
@@ -177,9 +140,7 @@ compatScenario(
       email,
       email_verified: false,
     });
-    const denied = responseSchema.parse(
-      await oneTap(ctx, token, "one-tap-required-no-mail"),
-    );
+    const denied = responseSchema.parse(await oneTap(ctx, token, "one-tap-required-no-mail"));
     expect(denied.response.error?.code).toBe("EMAIL_NOT_VERIFIED");
     const delivery = await ctx.readVerificationEmail({ email });
     expect(delivery).toBeNull();
@@ -220,25 +181,19 @@ compatScenario(
       picture: "https://fixture.test/linked.png",
       userId: "forged-owner",
     });
-    const denied = responseSchema.parse(
-      await oneTap(ctx, token, "one-tap-update-link", "local"),
-    );
+    const denied = responseSchema.parse(await oneTap(ctx, token, "one-tap-update-link", "local"));
     expect(denied.response.error).toMatchObject({
       status: 401,
       message: "account not linked",
     });
     const blocked = await state(ctx);
-    expect(blocked.accounts).toMatchObject([
-      { userId, providerId: "credential" },
-    ]);
+    expect(blocked.accounts).toMatchObject([{ userId, providerId: "credential" }]);
     expect(blocked.users).toMatchObject([
       { id: userId, email, name: "Local Profile", emailVerified: false },
     ]);
     const sent = await actor.client.sendVerificationEmail({ email });
     expect(sent.error).toBeNull();
-    const delivery = deliverySchema.parse(
-      await ctx.readVerificationEmail({ email }),
-    );
+    const delivery = deliverySchema.parse(await ctx.readVerificationEmail({ email }));
     const verified = await actor.client.verifyEmail({
       query: { token: delivery.token },
     });
@@ -261,18 +216,14 @@ compatScenario(
       },
     ]);
     expect(persisted.accounts).toHaveLength(2);
-    expect(
-      persisted.accounts.find((row) => row.providerId === "google"),
-    ).toMatchObject({
+    expect(persisted.accounts.find((row) => row.providerId === "google")).toMatchObject({
       userId,
       accountId: sub,
       scope: "openid,profile,email",
       idToken: token,
     });
     expect(
-      persisted.sessions.find(
-        (row) => row.token === linked.response.data?.token,
-      ),
+      persisted.sessions.find((row) => row.token === linked.response.data?.token),
     ).toMatchObject({ userId });
     return {
       signup,
@@ -300,12 +251,7 @@ compatScenario(
       email_verified: true,
       name: "Stored Google",
     });
-    const created = await successful(
-      ctx,
-      token,
-      "one-tap-encrypted",
-      "storage",
-    );
+    const created = await successful(ctx, token, "one-tap-encrypted", "storage");
     const initial = await state(ctx);
     expect(initial.accounts).toMatchObject([
       { userId: created.response.data?.user.id, idToken: token },
@@ -317,12 +263,7 @@ compatScenario(
       name: "Changed Profile",
       nonce: "fresh-token",
     });
-    const retained = await successful(
-      ctx,
-      fresh,
-      "one-tap-retain-account",
-      "storage",
-    );
+    const retained = await successful(ctx, fresh, "one-tap-retain-account", "storage");
     expect(retained.accountCookie?.payload).toMatchObject({
       id: initial.accounts[0]!.id,
       userId: created.response.data!.user.id,
@@ -334,15 +275,8 @@ compatScenario(
     expect(retained.accountCookie?.payload.idToken).not.toBe(fresh);
     const unchanged = await state(ctx);
     expect(unchanged.accounts).toEqual(initial.accounts);
-    expect(retained.response.data?.user.id).toBe(
-      created.response.data?.user.id,
-    );
-    const cookie = await successful(
-      ctx,
-      fresh,
-      "one-tap-account-cookie",
-      "storage",
-    );
+    expect(retained.response.data?.user.id).toBe(created.response.data?.user.id);
+    const cookie = await successful(ctx, fresh, "one-tap-account-cookie", "storage");
     expect(cookie.accountCookie?.payload).toMatchObject({
       id: initial.accounts[0]!.id,
       userId: created.response.data!.user.id,
@@ -359,9 +293,7 @@ compatScenario(
         scope: "openid,profile,email",
       },
     ]);
-    const session = await ctx
-      .actor("storage", "one-tap-account-cookie")
-      .client.getSession();
+    const session = await ctx.actor("storage", "one-tap-account-cookie").client.getSession();
     expect(session.data?.user.id).toBe(created.response.data?.user.id);
     expect(session.data?.session.token).toBe(cookie.response.data?.token);
     return {
@@ -399,9 +331,7 @@ compatScenario(
     expect(shortSession.error).toBeNull();
     const sent = await actor.client.sendVerificationEmail({ email });
     expect(sent.error).toBeNull();
-    const delivery = deliverySchema.parse(
-      await ctx.readVerificationEmail({ email }),
-    );
+    const delivery = deliverySchema.parse(await ctx.readVerificationEmail({ email }));
     const verified = await actor.client.verifyEmail({
       query: { token: delivery.token },
     });
@@ -411,20 +341,16 @@ compatScenario(
       email,
       email_verified: true,
     });
-    const signedIn = await successful(
-      ctx,
-      token,
-      "one-tap-default",
-      "browser-session",
-    );
+    const signedIn = await successful(ctx, token, "one-tap-default", "browser-session");
     expect(signedIn.sessionMaxAge).toBeNull();
     const session = await actor.client.getSession();
     expect(session.data?.session.userId).toBe(signup.data?.user.id);
     expect(session.data?.session.token).toBe(signedIn.response.data?.token);
     const persisted = await state(ctx);
-    expect(
-      persisted.accounts.find((row) => row.providerId === "google"),
-    ).toMatchObject({ userId: signup.data?.user.id, idToken: token });
+    expect(persisted.accounts.find((row) => row.providerId === "google")).toMatchObject({
+      userId: signup.data?.user.id,
+      idToken: token,
+    });
     return {
       signup,
       signedIn,
@@ -457,20 +383,14 @@ compatScenario(
         email_verified: true,
         name: "Snapshot Google",
       });
-      const first = responseSchema.parse(
-        await oneTap(ctx, initial, profile, "upgrade"),
-      );
+      const first = responseSchema.parse(await oneTap(ctx, initial, profile, "upgrade"));
       if (profile === "one-tap-required")
         expect(first.response.error?.code).toBe("EMAIL_NOT_VERIFIED");
       else expect(first.response.data?.user.emailVerified).toBe(false);
       const committed = await state(ctx);
       const userId = committed.users.find((row) => row.email === email)!.id;
-      const beforeSessions = committed.sessions.filter(
-        (row) => row.userId === userId,
-      ).length;
-      const upgrade = responseSchema.parse(
-        await oneTap(ctx, verifiedToken, profile, "upgrade"),
-      );
+      const beforeSessions = committed.sessions.filter((row) => row.userId === userId).length;
+      const upgrade = responseSchema.parse(await oneTap(ctx, verifiedToken, profile, "upgrade"));
       if (profile === "one-tap-required")
         expect(upgrade.response.error?.code).toBe("EMAIL_NOT_VERIFIED");
       else
@@ -479,12 +399,10 @@ compatScenario(
           emailVerified: false,
         });
       const upgraded = await state(ctx);
-      expect(
-        upgraded.users.find((row) => row.id === userId)?.emailVerified,
-      ).toBe(true);
-      expect(
-        upgraded.sessions.filter((row) => row.userId === userId),
-      ).toHaveLength(beforeSessions + (profile === "one-tap-default" ? 1 : 0));
+      expect(upgraded.users.find((row) => row.id === userId)?.emailVerified).toBe(true);
+      expect(upgraded.sessions.filter((row) => row.userId === userId)).toHaveLength(
+        beforeSessions + (profile === "one-tap-default" ? 1 : 0),
+      );
       const repeat = await successful(ctx, verifiedToken, profile, "upgrade");
       expect(repeat.response.data?.user).toMatchObject({
         id: userId,

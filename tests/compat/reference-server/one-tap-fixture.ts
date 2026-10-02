@@ -1,6 +1,7 @@
 /** Actual pinned One Tap configuration profiles with a local Google JWKS transport. */
-import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { oneTap } from "better-auth/plugins";
+
 const jwks: unknown = await Bun.file(
   new URL("../../fixtures/one-tap/jwks.json", import.meta.url),
 ).json();
@@ -49,30 +50,23 @@ export function createOneTapProfiles(options: BetterAuthOptions) {
         ...options,
         basePath: `/__test/profiles/${name}/api/auth`,
         socialProviders:
-          name === "one-tap-plugin-only" || name === "one-tap-missing"
-            ? {}
-            : { google },
+          name === "one-tap-plugin-only" || name === "one-tap-missing" ? {} : { google },
         account: {
           ...options.account,
           storeAccountCookie:
-            name === "one-tap-account-cookie" ||
-            name === "one-tap-retain-account",
+            name === "one-tap-account-cookie" || name === "one-tap-retain-account",
           encryptOAuthTokens: name === "one-tap-encrypted",
           updateAccountOnSignIn: name !== "one-tap-retain-account",
           accountLinking: {
             ...options.account?.accountLinking,
             updateUserInfoOnLink: name === "one-tap-update-link",
-            ...(name === "one-tap-update-link"
-              ? { trustedProviders: ["google"] }
-              : {}),
+            ...(name === "one-tap-update-link" ? { trustedProviders: ["google"] } : {}),
           },
         },
         emailVerification: {
           ...options.emailVerification,
           sendOnSignIn: name === "one-tap-required",
-          ...(name === "one-tap-required-no-mail"
-            ? { sendOnSignUp: false }
-            : {}),
+          ...(name === "one-tap-required-no-mail" ? { sendOnSignUp: false } : {}),
         },
         plugins: [
           ...(options.plugins ?? []),
@@ -95,9 +89,7 @@ export function createOneTapProfiles(options: BetterAuthOptions) {
   }
   return profiles;
 }
-export async function oneTapState(
-  profiles: ReturnType<typeof createOneTapProfiles>,
-) {
+export async function oneTapState(profiles: ReturnType<typeof createOneTapProfiles>) {
   const { adapter } = await profiles.get("one-tap-default")!.$context;
   const [users, accounts, sessions] = await Promise.all([
     adapter.findMany<Record<string, unknown>>({ model: "user" }),

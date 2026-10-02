@@ -1,15 +1,13 @@
 import { z } from "zod";
-import type { ScenarioContext } from "../scenario";
 import type { FixtureProfile } from "../profiles";
+import type { ScenarioContext } from "../scenario";
 import { upstreamPin } from "./common";
 
 const actor = z.number().int().min(0).max(3);
 const user = z.number().int().min(0).max(1);
 const handle = z.string().regex(/^[a-z][a-z0-9-]{0,40}$/);
 export const actionSchema = z.discriminatedUnion("kind", [
-  z
-    .object({ kind: z.literal("signup"), actor, user, session: handle })
-    .strict(),
+  z.object({ kind: z.literal("signup"), actor, user, session: handle }).strict(),
   z
     .object({
       kind: z.literal("signin"),
@@ -65,17 +63,13 @@ export class ModelViolation extends Error {
     readonly invariant: string,
     action = "unknown",
   ) {
-    super(
-      `Generated compatibility invariant failed: ${invariant}; action=${action}`,
-    );
+    super(`Generated compatibility invariant failed: ${invariant}; action=${action}`);
     this.name = "ModelViolation";
   }
 }
 export class InvalidSequence extends Error {
   constructor() {
-    super(
-      "Generated sequence refers to a prerequisite removed during reduction",
-    );
+    super("Generated sequence refers to a prerequisite removed during reduction");
     this.name = "InvalidSequence";
   }
 }
@@ -153,10 +147,7 @@ export function generateCase(
         actor,
         user,
         session: `random-${index}`,
-        credential: ["current", "previous", "wrong"][next(3)] as
-          | "current"
-          | "previous"
-          | "wrong",
+        credential: ["current", "previous", "wrong"][next(3)] as "current" | "previous" | "wrong",
       });
     else if (kind === "change-password")
       actions.push({
@@ -166,8 +157,7 @@ export function generateCase(
         session: `rotated-${index}`,
       });
     else if (kind === "revoke") actions.push({ kind, actor, session });
-    else if (kind === "expire" || kind === "replay")
-      actions.push({ kind, session });
+    else if (kind === "expire" || kind === "replay") actions.push({ kind, session });
     else if (kind === "reset") actions.push({ kind, user });
     else actions.push({ kind, actor });
   }
@@ -222,20 +212,13 @@ const issuedSchema = z
 const persistedSchema = z
   .object({
     user: z.object({ id: z.string() }).passthrough().nullable(),
-    accounts: z.array(
-      z.object({ userId: z.string(), providerId: z.string() }).passthrough(),
-    ),
-    sessions: z.array(
-      z.object({ token: z.string(), userId: z.string() }).passthrough(),
-    ),
+    accounts: z.array(z.object({ userId: z.string(), providerId: z.string() }).passthrough()),
+    sessions: z.array(z.object({ token: z.string(), userId: z.string() }).passthrough()),
   })
   .passthrough();
 
 /** An independent state model guards effects even when both fixtures return the same response. */
-export async function executeGenerated(
-  ctx: ScenarioContext,
-  generated: GeneratedCase,
-) {
+export async function executeGenerated(ctx: ScenarioContext, generated: GeneratedCase) {
   const users = new Map<number, User>(),
     sessions = new Map<string, Session>(),
     bindings = new Map<number, string>();
@@ -247,8 +230,7 @@ export async function executeGenerated(
   function requireInvariant(value: unknown, name: string): asserts value {
     if (!value) throw new ModelViolation(name, JSON.stringify(currentAction));
   }
-  const nextPassword = () =>
-    `Assurance-password-${generated.seed}-${++passwordVersion}!`;
+  const nextPassword = () => `Assurance-password-${generated.seed}-${++passwordVersion}!`;
   const knownUser = (id: number) => {
     const user = users.get(id);
     if (!user) throw new InvalidSequence();
@@ -260,41 +242,30 @@ export async function executeGenerated(
     return session;
   };
   const live = (session: Session | undefined) =>
-    !!session &&
-    session.present &&
-    !session.expired &&
-    knownUser(session.user).exists;
+    !!session && session.present && !session.expired && knownUser(session.user).exists;
   const principal = (actor: number) => {
     const binding = bindings.get(actor);
     const session = binding ? sessions.get(binding) : undefined;
     return live(session) ? session : undefined;
   };
-  async function request(
-    actor: number,
-    path: string,
-    body?: unknown,
-    cookie?: string,
-  ) {
+  async function request(actor: number, path: string, body?: unknown, cookie?: string) {
     const headers = new Headers();
     if (body !== undefined) headers.set("content-type", "application/json");
     if (cookie) headers.set("cookie", cookie);
-    const response = await ctx
-      .actor(`generated-${actor}`, profile)
-      .fetch(`/api/auth${path}`, {
-        method: body === undefined ? "GET" : "POST",
-        headers,
-        ...(cookie ? { credentials: "omit" as const } : {}),
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        redirect: "manual",
-      });
+    const response = await ctx.actor(`generated-${actor}`, profile).fetch(`/api/auth${path}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers,
+      ...(cookie ? { credentials: "omit" as const } : {}),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      redirect: "manual",
+    });
     if (
       !cookie &&
       response.headers
         .getSetCookie()
         .some(
           (value) =>
-            value.startsWith("better-auth.session_token=") &&
-            /;\s*max-age=0(?:;|$)/i.test(value),
+            value.startsWith("better-auth.session_token=") && /;\s*max-age=0(?:;|$)/i.test(value),
         )
     )
       bindings.delete(actor);
@@ -336,21 +307,15 @@ export async function executeGenerated(
   async function inspect() {
     const result: unknown[] = [];
     for (const [id, user] of users) {
-      const state = persistedSchema.parse(
-        await ctx.readUserState({ userId: user.id }),
-      );
-      requireInvariant(
-        (state.user !== null) === user.exists,
-        "persisted-user-existence",
-      );
+      const state = persistedSchema.parse(await ctx.readUserState({ userId: user.id }));
+      requireInvariant((state.user !== null) === user.exists, "persisted-user-existence");
       requireInvariant(
         state.accounts.length === (user.exists ? 1 : 0),
         "persisted-credential-existence",
       );
       requireInvariant(
         state.accounts.every(
-          (account) =>
-            account.userId === user.id && account.providerId === "credential",
+          (account) => account.userId === user.id && account.providerId === "credential",
         ),
         "persisted-credential-owner",
       );
@@ -359,9 +324,8 @@ export async function executeGenerated(
         .map((session) => session.token)
         .sort();
       requireInvariant(
-        JSON.stringify(
-          state.sessions.map((session) => session.token).sort(),
-        ) === JSON.stringify(expected),
+        JSON.stringify(state.sessions.map((session) => session.token).sort()) ===
+          JSON.stringify(expected),
         "persisted-session-membership",
       );
       requireInvariant(
@@ -390,18 +354,12 @@ export async function executeGenerated(
         })
         .parse(response.body);
       requireInvariant(
-        value.user.id === knownUser(session.user).id &&
-          value.session.token === session.token,
+        value.user.id === knownUser(session.user).id && value.session.token === session.token,
         "saved-cookie-owner",
       );
-    } else
-      requireInvariant(
-        response.body === null,
-        "revoked-or-expired-cookie-rejected",
-      );
+    } else requireInvariant(response.body === null, "revoked-or-expired-cookie-rejected");
     // Deferred GET reads reject expiry but reserve physical cleanup for POST.
-    if (session.expired && generated.profile !== "session-deferred")
-      session.present = false;
+    if (session.expired && generated.profile !== "session-deferred") session.present = false;
     return { status: response.status, body: response.body };
   }
   for (const [index, action] of generated.actions.entries()) {
@@ -409,9 +367,7 @@ export async function executeGenerated(
     let observation: unknown;
     if (action.kind === "signup") {
       if (users.has(action.user)) throw new InvalidSequence();
-      const email = ctx.uniqueEmail(
-          `generated-${generated.seed}-${action.user}`,
-        ),
+      const email = ctx.uniqueEmail(`generated-${generated.seed}-${action.user}`),
         password = nextPassword();
       const response = await request(action.actor, "/sign-up/email", {
         email,
@@ -442,12 +398,8 @@ export async function executeGenerated(
         password,
       });
       const successful = user.exists && action.credential === "current";
-      requireInvariant(
-        response.status === (successful ? 200 : 401),
-        "credential-persistence",
-      );
-      if (successful)
-        saveSession(action.session, action.actor, action.user, response);
+      requireInvariant(response.status === (successful ? 200 : 401), "credential-persistence");
+      if (successful) saveSession(action.session, action.actor, action.user, response);
       observation = response.body;
     } else if (action.kind === "expire") {
       const session = knownSession(action.session);
@@ -462,8 +414,7 @@ export async function executeGenerated(
       requireInvariant(expired.status === 200, "expiry-control");
       if (session.present) session.expired = true;
       observation = expired;
-    } else if (action.kind === "replay")
-      observation = await replay(action.session);
+    } else if (action.kind === "replay") observation = await replay(action.session);
     else if (action.kind === "reset" || action.kind === "reset-replay") {
       const user = knownUser(action.user);
       if (action.kind === "reset") {
@@ -477,9 +428,7 @@ export async function executeGenerated(
           path: `/__test/reset-password-token?email=${encodeURIComponent(user.email)}`,
         });
         requireInvariant(delivery.status === 200, "reset-delivery");
-        user.resetToken = z
-          .object({ token: z.string().min(1) })
-          .parse(delivery.body).token;
+        user.resetToken = z.object({ token: z.string().min(1) }).parse(delivery.body).token;
       }
       if (!user.resetToken) throw new InvalidSequence();
       const password = nextPassword(),
@@ -502,20 +451,15 @@ export async function executeGenerated(
       const session = principal(action.actor),
         owner = session ? knownUser(session.user) : undefined;
       if (action.kind === "session") {
-        const response = await request(
-          action.actor,
-          "/get-session?disableRefresh=true",
-        );
+        const response = await request(action.actor, "/get-session?disableRefresh=true");
         requireInvariant(response.status === 200, "session-read-status");
         if (owner)
           requireInvariant(
-            z
-              .object({ user: z.object({ id: z.string() }) })
-              .parse(response.body).user.id === owner.id,
+            z.object({ user: z.object({ id: z.string() }) }).parse(response.body).user.id ===
+              owner.id,
             "actor-session-owner",
           );
-        else
-          requireInvariant(response.body === null, "actor-session-revocation");
+        else requireInvariant(response.body === null, "actor-session-revocation");
         observation = response.body;
       } else if (action.kind === "signout") {
         const binding = bindings.get(action.actor);
@@ -525,10 +469,8 @@ export async function executeGenerated(
         bindings.delete(action.actor);
         observation = response.body;
       } else {
-        const target =
-          action.kind === "revoke" ? knownSession(action.session) : undefined;
-        const password =
-          action.kind === "change-password" ? nextPassword() : undefined;
+        const target = action.kind === "revoke" ? knownSession(action.session) : undefined;
+        const password = action.kind === "change-password" ? nextPassword() : undefined;
         const endpoint = {
           list: "/list-sessions",
           update: "/update-user",
@@ -553,13 +495,9 @@ export async function executeGenerated(
                     }
                   : {};
         const response = await request(action.actor, endpoint, body);
-        requireInvariant(
-          response.status === (owner ? 200 : 401),
-          `authenticated-${action.kind}`,
-        );
+        requireInvariant(response.status === (owner ? 200 : 401), `authenticated-${action.kind}`);
         if (owner && session) {
-          if (action.kind === "revoke" && target?.user === session.user)
-            target.present = false;
+          if (action.kind === "revoke" && target?.user === session.user) target.present = false;
           if (
             action.kind === "revoke-all" ||
             action.kind === "delete" ||
@@ -569,23 +507,16 @@ export async function executeGenerated(
               if (value.user === session.user) value.present = false;
           if (action.kind === "revoke-others")
             for (const value of sessions.values())
-              if (
-                value.user === session.user &&
-                value !== session &&
-                !value.expired
-              )
+              if (value.user === session.user && value !== session && !value.expired)
                 value.present = false;
           if (action.kind === "delete") owner.exists = false;
           if (action.kind === "change-password") {
             owner.previous = owner.password;
             owner.password = password!;
-            if (action.revoke)
-              saveSession(action.session, action.actor, session.user, response);
+            if (action.revoke) saveSession(action.session, action.actor, session.user, response);
           }
           if (action.kind === "list") {
-            const listed = z
-              .array(z.object({ token: z.string() }))
-              .parse(response.body);
+            const listed = z.array(z.object({ token: z.string() })).parse(response.body);
             const expected = [...sessions.values()]
               .filter((value) => value.user === session.user && live(value))
               .map((value) => value.token)
@@ -626,15 +557,8 @@ export async function reduceActions(
   while (current.length > 1 && attempts < budget) {
     const width = Math.ceil(current.length / partitions);
     let reduced = false;
-    for (
-      let start = 0;
-      start < current.length && attempts < budget;
-      start += width
-    ) {
-      const candidate = [
-        ...current.slice(0, start),
-        ...current.slice(start + width),
-      ];
+    for (let start = 0; start < current.length && attempts < budget; start += width) {
+      const candidate = [...current.slice(0, start), ...current.slice(start + width)];
       if (!candidate.length) continue;
       attempts++;
       if (await reproduces(candidate)) {

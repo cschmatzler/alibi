@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
-import { compatScenario } from "../../support/scenario";
 import { authProfilePath } from "../../support/profiles";
+import { compatScenario } from "../../support/scenario";
 
 compatScenario("error page sanitizes script injection in error code", async (ctx) => {
   const redirect = await ctx.rawRequest({
@@ -35,7 +35,9 @@ compatScenario("error page renders valid error code", async (ctx) => {
     if (description !== undefined) query.set("error_description", description);
     const redirect = await ctx.rawRequest({ path: `/api/auth/error?${query}`, redirect: "manual" });
     expect(redirect).toEqual({ status: 302, location: expectedLocation, body: null });
-    const response = await ctx.rawRequest({ path: `${authProfilePath("error-page")}/error?${query}` });
+    const response = await ctx.rawRequest({
+      path: `${authProfilePath("error-page")}/error?${query}`,
+    });
     expect(response.status).toBe(200);
     expect(response.body).toContain("SOME_ERROR");
     if (description) {

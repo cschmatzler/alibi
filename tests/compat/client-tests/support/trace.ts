@@ -1,7 +1,7 @@
-import { Cookie, CookieJar } from "tough-cookie";
 import { createHash } from "node:crypto";
-import { jsonShape } from "./normalize";
+import { Cookie, CookieJar } from "tough-cookie";
 import { mutateTransport } from "./assurance/wire";
+import { jsonShape } from "./normalize";
 export const requestWindow = Symbol("compat-request-window");
 export type RequestWindow = {
   startedAt: number;
@@ -24,7 +24,11 @@ export type RequestWindow = {
   /** Integrity of the original complete parsed observer response, separate from compared output. */
   verificationObserverDigest?: string;
   /** Original narrow physical controls; their values are not transport output. */
-  controlObservation?: { kind: "member-addition" | "social-provider" | "user-validation"; body: unknown; digest: string };
+  controlObservation?: {
+    kind: "member-addition" | "social-provider" | "user-validation";
+    body: unknown;
+    digest: string;
+  };
   memberAdditionOwner?: { organizationId: string; userId: string };
 };
 
@@ -99,20 +103,24 @@ function sessionReceipt(request: Headers, response: Headers) {
           cookie.value &&
           cookie.maxAge !== 0,
       );
-    return cookies.length === 1
-      ? `${cookies[0]!.key}=${cookies[0]!.value}`
-      : undefined;
+    return cookies.length === 1 ? `${cookies[0]!.key}=${cookies[0]!.value}` : undefined;
   };
   const sessionCookie = select((request.get("cookie") ?? "").split(";")),
     issuedSessionCookie = select(response.getSetCookie());
-  const trust = response.getSetCookie().map(raw => Cookie.parse(raw))
-    .filter(cookie => cookie && /^(?:__Secure-)?better-auth\.trust_device$/.test(cookie.key) && cookie.value);
+  const trust = response
+    .getSetCookie()
+    .map((raw) => Cookie.parse(raw))
+    .filter(
+      (cookie) =>
+        cookie && /^(?:__Secure-)?better-auth\.trust_device$/.test(cookie.key) && cookie.value,
+    );
   return {
     ...(sessionCookie ? { sessionCookie } : {}),
     ...(issuedSessionCookie ? { issuedSessionCookie } : {}),
-    ...(trust.length === 1 ? {issuedTrustCookie: `${trust[0]!.key}=${trust[0]!.value}`} : {}),
-    issuedMultiSessionCookies: response.getSetCookie().filter(raw =>
-      /^(?:__Secure-)?better-auth\.session_token_multi-/.test(raw)),
+    ...(trust.length === 1 ? { issuedTrustCookie: `${trust[0]!.key}=${trust[0]!.value}` } : {}),
+    issuedMultiSessionCookies: response
+      .getSetCookie()
+      .filter((raw) => /^(?:__Secure-)?better-auth\.session_token_multi-/.test(raw)),
   };
 }
 
@@ -125,14 +133,8 @@ export function createTracingFetch(
 ) {
   const jar = new CookieJar();
   const origin = new URL(baseURL);
-  return async (
-    input: string | URL | Request,
-    init?: RequestInit,
-  ): Promise<Response> => {
-    const target = new URL(
-      input instanceof Request ? input.url : input,
-      baseURL,
-    );
+  return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const target = new URL(input instanceof Request ? input.url : input, baseURL);
     if (
       authPath !== "/api/auth" &&
       target.origin === origin.origin &&
@@ -140,11 +142,8 @@ export function createTracingFetch(
     ) {
       target.pathname = `${authPath}${target.pathname.slice("/api/auth".length)}`;
     }
-    const supplied =
-      input instanceof Request ? new Request(input, init) : undefined;
-    let request = supplied
-      ? new Request(target, supplied)
-      : new Request(target, init);
+    const supplied = input instanceof Request ? new Request(input, init) : undefined;
+    let request = supplied ? new Request(target, supplied) : new Request(target, init);
     const redirectMode = init?.redirect ?? request.redirect;
     const requestCredentials =
       init?.credentials ??
@@ -197,15 +196,7 @@ export function createTracingFetch(
       function dates(value: unknown, path = "") {
         if (!value || typeof value !== "object") return;
         for (const [key, child] of Object.entries(value)) {
-          if (
-            [
-              "metadata",
-              "custom",
-              "additionalFields",
-              "applicationData",
-            ].includes(key)
-          )
-            continue;
+          if (["metadata", "custom", "additionalFields", "applicationData"].includes(key)) continue;
           const next = `${path}.${key}`;
           if (
             key.endsWith("At") &&
@@ -222,52 +213,108 @@ export function createTracingFetch(
         verificationInput = input;
         dates(input);
         // Only this fixture operation explicitly supplies a session deadline.
-        if (
-          url.pathname === "/__test/expire-session" &&
-          typeof input?.token === "string"
-        )
+        if (url.pathname === "/__test/expire-session" && typeof input?.token === "string")
           inputOwner = { field: "token", value: input.token };
       } catch {
         /* A non-JSON body has no declared clock inputs. */
       }
       let verificationObserverDigest: string | undefined;
       if (request.method === "GET" && url.pathname === "/__test/verification-publications") {
-        try { verificationObserverDigest = createHash("sha256").update(JSON.stringify(JSON.parse(responseText))).digest("hex"); }
-        catch { /* A non-JSON response remains literal and has no publication admission. */ }
+        try {
+          verificationObserverDigest = createHash("sha256")
+            .update(JSON.stringify(JSON.parse(responseText)))
+            .digest("hex");
+        } catch {
+          /* A non-JSON response remains literal and has no publication admission. */
+        }
       }
       let controlObservation: RequestWindow["controlObservation"];
-      if (request.method === "GET" && ["/__test/organization-member-addition/state", "/__test/social-provider/state", "/__test/user-validation/state"].includes(url.pathname)) {
+      if (
+        request.method === "GET" &&
+        [
+          "/__test/organization-member-addition/state",
+          "/__test/social-provider/state",
+          "/__test/user-validation/state",
+        ].includes(url.pathname)
+      ) {
         try {
           const body: unknown = JSON.parse(responseText);
-          controlObservation = { kind: url.pathname.includes("organization-member-addition") ? "member-addition" : url.pathname.includes("user-validation") ? "user-validation" : "social-provider", body,
-            digest: createHash("sha256").update(JSON.stringify(body)).digest("hex") };
-        } catch { /* Non-JSON control responses cannot authorize dates. */ }
+          controlObservation = {
+            kind: url.pathname.includes("organization-member-addition")
+              ? "member-addition"
+              : url.pathname.includes("user-validation")
+                ? "user-validation"
+                : "social-provider",
+            body,
+            digest: createHash("sha256").update(JSON.stringify(body)).digest("hex"),
+          };
+        } catch {
+          /* Non-JSON control responses cannot authorize dates. */
+        }
       }
-      const memberInput = verificationInput as {body?: {organizationId?: unknown; userId?: unknown}} | undefined;
+      const memberInput = verificationInput as
+        | { body?: { organizationId?: unknown; userId?: unknown } }
+        | undefined;
       const entry: TraceEntry = {
         [requestWindow]: {
           startedAt,
           finishedAt: Date.now(),
           inputDates,
-          ...(controlObservation ? {controlObservation} : {}),
-          ...(request.method === "POST" && url.pathname === "/__test/organization-member-addition/server"
-            && typeof memberInput?.body?.organizationId === "string" && typeof memberInput.body.userId === "string"
-            ? {memberAdditionOwner: {organizationId: memberInput.body.organizationId, userId: memberInput.body.userId}} : {}),
-          ...((url.pathname === "/__test/verification-state" || /\/(?:email-otp\/send-verification-otp|sign-in\/(?:magic-link|social)|one-time-token\/generate)$/.test(url.pathname))
-            ? { verificationInput: requestText ? verificationInput : null } : {}),
-          ...(/\/sign-in\/social$/.test(url.pathname) ? (() => {
-            const cookies = response.headers.getSetCookie().map(value => Cookie.parse(value)).filter(value => value && /^(?:__Secure-)?better-auth\.state$/.test(value.key) && value.maxAge === 300);
-            return cookies.length === 1 ? {issuedVerificationStateCookie: `${cookies[0]!.key}=${cookies[0]!.value}`} : {};
-          })() : {}),
+          ...(controlObservation ? { controlObservation } : {}),
+          ...(request.method === "POST" &&
+          url.pathname === "/__test/organization-member-addition/server" &&
+          typeof memberInput?.body?.organizationId === "string" &&
+          typeof memberInput.body.userId === "string"
+            ? {
+                memberAdditionOwner: {
+                  organizationId: memberInput.body.organizationId,
+                  userId: memberInput.body.userId,
+                },
+              }
+            : {}),
+          ...(url.pathname === "/__test/verification-state" ||
+          /\/(?:email-otp\/send-verification-otp|sign-in\/(?:magic-link|social)|one-time-token\/generate)$/.test(
+            url.pathname,
+          )
+            ? { verificationInput: requestText ? verificationInput : null }
+            : {}),
+          ...(/\/sign-in\/social$/.test(url.pathname)
+            ? (() => {
+                const cookies = response.headers
+                  .getSetCookie()
+                  .map((value) => Cookie.parse(value))
+                  .filter(
+                    (value) =>
+                      value &&
+                      /^(?:__Secure-)?better-auth\.state$/.test(value.key) &&
+                      value.maxAge === 300,
+                  );
+                return cookies.length === 1
+                  ? { issuedVerificationStateCookie: `${cookies[0]!.key}=${cookies[0]!.value}` }
+                  : {};
+              })()
+            : {}),
           ...(verificationObserverDigest ? { verificationObserverDigest } : {}),
           ...(inputOwner ? { inputOwner } : {}),
-          ...(/\/sign-in\/email$/.test(url.pathname) ? (() => {
-            const cookies = response.headers.getSetCookie().map(value => Cookie.parse(value)).filter(cookie => cookie && /^(?:__Secure-)?better-auth\.two_factor$/.test(cookie.key));
-            return {
-              ...(typeof (verificationInput as {email?: unknown})?.email === "string" ? { signInEmail: (verificationInput as {email: string}).email } : {}),
-              ...(cookies.length === 1 ? {issuedTwoFactorCookie: `${cookies[0]!.key}=${cookies[0]!.value}`} : {}),
-            };
-          })() : {}),
+          ...(/\/sign-in\/email$/.test(url.pathname)
+            ? (() => {
+                const cookies = response.headers
+                  .getSetCookie()
+                  .map((value) => Cookie.parse(value))
+                  .filter(
+                    (cookie) =>
+                      cookie && /^(?:__Secure-)?better-auth\.two_factor$/.test(cookie.key),
+                  );
+                return {
+                  ...(typeof (verificationInput as { email?: unknown })?.email === "string"
+                    ? { signInEmail: (verificationInput as { email: string }).email }
+                    : {}),
+                  ...(cookies.length === 1
+                    ? { issuedTwoFactorCookie: `${cookies[0]!.key}=${cookies[0]!.value}` }
+                    : {}),
+                };
+              })()
+            : {}),
           ...sessionReceipt(headers, response.headers),
         },
         actor,
@@ -281,7 +328,10 @@ export function createTracingFetch(
         ...(url.pathname === "/__test/api-key/create" ||
         (request.method === "GET" && url.pathname === "/__test/verification-publications") ||
         (request.method === "POST" &&
-          ["/__test/organization-membership-policy/server", "/__test/organization-member-addition/server"].includes(url.pathname)) ||
+          [
+            "/__test/organization-membership-policy/server",
+            "/__test/organization-member-addition/server",
+          ].includes(url.pathname)) ||
         /^\/(?:__test\/profiles\/[^/]+\/)?api\/auth(?:\/|$)/.test(url.pathname)
           ? {
               responseBody: (() => {

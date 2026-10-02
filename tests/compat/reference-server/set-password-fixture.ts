@@ -1,13 +1,11 @@
 /** Trusted controlled interface to the actual pinned server-only operation. */
-import { betterAuth, type BetterAuthOptions } from "better-auth";
+
+import type { Database } from "bun:sqlite";
+import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { hashPassword, verifyPassword } from "better-auth/crypto";
 import { twoFactor } from "better-auth/plugins";
-import type { Database } from "bun:sqlite";
-export function createSetPasswordFixture(
-  database: Database,
-  options: BetterAuthOptions,
-) {
+export function createSetPasswordFixture(database: Database, options: BetterAuthOptions) {
   const events: Record<string, unknown>[] = [];
   let mode = "normal",
     waiters: (() => void)[] = [],
@@ -15,11 +13,7 @@ export function createSetPasswordFixture(
     firstHash: string | undefined,
     watchUserId = "";
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
-  for (const name of [
-    "set-password-default",
-    "set-password-policy",
-    "set-password-cache",
-  ]) {
+  for (const name of ["set-password-default", "set-password-policy", "set-password-cache"]) {
     profiles.set(
       name,
       betterAuth({
@@ -29,8 +23,7 @@ export function createSetPasswordFixture(
           before: createAuthMiddleware(async (ctx) => {
             const token = ctx.headers?.get("x-test-virtual-token");
             if (token) {
-              const physical =
-                await ctx.context.internalAdapter.findSession(token);
+              const physical = await ctx.context.internalAdapter.findSession(token);
               if (physical) {
                 ctx.context.session = physical;
                 events.push({
@@ -45,9 +38,7 @@ export function createSetPasswordFixture(
         basePath: `/__test/profiles/${name}/api/auth`,
         session: {
           ...options.session,
-          ...(name === "set-password-cache"
-            ? { cookieCache: { enabled: true, maxAge: 300 } }
-            : {}),
+          ...(name === "set-password-cache" ? { cookieCache: { enabled: true, maxAge: 300 } } : {}),
         },
         emailAndPassword: {
           ...options.emailAndPassword,
@@ -77,15 +68,11 @@ export function createSetPasswordFixture(
                   const deadline = Date.now() + 3000;
                   while (
                     !database
-                      .query(
-                        "SELECT id FROM account WHERE userId=? AND password=?",
-                      )
+                      .query("SELECT id FROM account WHERE userId=? AND password=?")
                       .get(watchUserId, firstHash!)
                   ) {
                     if (Date.now() > deadline)
-                      throw new Error(
-                        "Actual credential write did not complete",
-                      );
+                      throw new Error("Actual credential write did not complete");
                     await new Promise((resolve) => setTimeout(resolve, 5));
                   }
                 }
@@ -96,8 +83,7 @@ export function createSetPasswordFixture(
                 hash,
                 ...(order !== undefined ? { order } : {}),
               });
-              if (mode === "hash-error")
-                throw new Error("Actual configured hash callback failed");
+              if (mode === "hash-error") throw new Error("Actual configured hash callback failed");
               return hash;
             },
             verify: verifyPassword,
@@ -126,9 +112,7 @@ export function createSetPasswordFixture(
         });
       }
       if (
-        !["/__test/set-password", "/__test/server-api/set-password"].includes(
-          url.pathname,
-        ) ||
+        !["/__test/set-password", "/__test/server-api/set-password"].includes(url.pathname) ||
         request.method !== "POST"
       )
         return;
@@ -143,11 +127,7 @@ export function createSetPasswordFixture(
         expiresAt?: string;
       };
       const instance = profiles.get(body.profile ?? "set-password-default");
-      if (!instance)
-        return Response.json(
-          { message: "unknown fixture profile" },
-          { status: 400 },
-        );
+      if (!instance) return Response.json({ message: "unknown fixture profile" }, { status: 400 });
       const ctx = await instance.$context;
       if (body.operation === "mode") {
         mode = body.mode ?? "normal";

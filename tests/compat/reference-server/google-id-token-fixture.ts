@@ -1,5 +1,5 @@
 /** Default published Google verifier; only its real HTTP JWKS transport is redirected. */
-import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { type BetterAuthOptions, betterAuth } from "better-auth";
 export function googleIdTokenProfiles(options: BetterAuthOptions) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   for (const name of [
@@ -25,17 +25,11 @@ export function googleIdTokenProfiles(options: BetterAuthOptions) {
                   ? []
                   : "google-default-client",
             clientSecret: "local-google-default-secret",
-            ...(name === "google-id-domain"
-              ? { hd: "workspace.fixture.test" }
-              : {}),
+            ...(name === "google-id-domain" ? { hd: "workspace.fixture.test" } : {}),
             ...(name === "google-id-domain-any" ? { hd: "*" } : {}),
             disableIdTokenSignIn: name === "google-id-disabled",
-            ...(name === "google-id-disabled"
-              ? { verifyIdToken: async () => true }
-              : {}),
-            ...(name === "google-id-override"
-              ? { verifyIdToken: async () => false }
-              : {}),
+            ...(name === "google-id-disabled" ? { verifyIdToken: async () => true } : {}),
+            ...(name === "google-id-override" ? { verifyIdToken: async () => false } : {}),
           },
         },
       }),

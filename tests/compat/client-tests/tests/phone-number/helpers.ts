@@ -44,11 +44,17 @@ export function phoneEnrollmentCode(uri: string) {
 }
 
 export function uniquePhone(ctx: ScenarioContext, prefix: string) {
-  const digits = String(Bun.hash(ctx.uniqueToken(prefix))).padStart(10, "0").slice(-10);
+  const digits = String(Bun.hash(ctx.uniqueToken(prefix)))
+    .padStart(10, "0")
+    .slice(-10);
   return `+1${digits}`;
 }
 
-export async function readPhoneOtp(ctx: ScenarioContext, phoneNumber: string, type: "verification" | "password-reset" = "verification") {
+export async function readPhoneOtp(
+  ctx: ScenarioContext,
+  phoneNumber: string,
+  type: "verification" | "password-reset" = "verification",
+) {
   const url = new URL("/__test/phone-otp", ctx.baseURL);
   url.searchParams.set("phoneNumber", phoneNumber);
   url.searchParams.set("type", type);
@@ -56,14 +62,28 @@ export async function readPhoneOtp(ctx: ScenarioContext, phoneNumber: string, ty
   expect(response.status).toBe(200);
   const value: unknown = await response.json();
   const parsed = z.object({ code: z.string().min(1) }).safeParse(value);
-  if (!parsed.success) throw new Error("Phone challenge issuance must deliver a code for the intended number");
+  if (!parsed.success)
+    throw new Error("Phone challenge issuance must deliver a code for the intended number");
   return parsed.data.code;
 }
 
 const stateSchema = z.object({
-  user: z.object({ id: z.string(), email: z.string(), emailVerified: z.boolean(), phoneNumber: z.string().nullable(), phoneNumberVerified: z.boolean().nullable() }).passthrough().nullable(),
-  accounts: z.array(z.object({ id: z.string(), userId: z.string(), accountId: z.string(), providerId: z.string() })),
-  sessions: z.array(z.object({ id: z.string(), token: z.string(), userId: z.string(), expiresAt: z.string() })),
+  user: z
+    .object({
+      id: z.string(),
+      email: z.string(),
+      emailVerified: z.boolean(),
+      phoneNumber: z.string().nullable(),
+      phoneNumberVerified: z.boolean().nullable(),
+    })
+    .passthrough()
+    .nullable(),
+  accounts: z.array(
+    z.object({ id: z.string(), userId: z.string(), accountId: z.string(), providerId: z.string() }),
+  ),
+  sessions: z.array(
+    z.object({ id: z.string(), token: z.string(), userId: z.string(), expiresAt: z.string() }),
+  ),
   twoFactorExists: z.boolean(),
 });
 
@@ -75,19 +95,33 @@ export async function readPhoneState(ctx: ScenarioContext, profile: PhoneProfile
   expect(response.status).toBe(200);
   const value: unknown = await response.json();
   const parsed = stateSchema.safeParse(value);
-  if (!parsed.success) throw new Error("Phone fixture must expose persisted phone ownership and verification fields");
+  if (!parsed.success)
+    throw new Error("Phone fixture must expose persisted phone ownership and verification fields");
   return parsed.data;
 }
 
-export async function phoneRequest(ctx: ScenarioContext, profile: PhoneProfile, path: string, body: unknown, actor = "primary") {
-  const response = await ctx.actor(actor, profile).fetch(new URL(`${authProfilePath(profile)}${path}`, ctx.baseURL), {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-  });
+export async function phoneRequest(
+  ctx: ScenarioContext,
+  profile: PhoneProfile,
+  path: string,
+  body: unknown,
+  actor = "primary",
+) {
+  const response = await ctx
+    .actor(actor, profile)
+    .fetch(new URL(`${authProfilePath(profile)}${path}`, ctx.baseURL), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
   const text = await response.text();
   let value: unknown = null;
   if (text) {
-    try { value = JSON.parse(text); }
-    catch { value = text; }
+    try {
+      value = JSON.parse(text);
+    } catch {
+      value = text;
+    }
   }
   return { status: response.status, body: value };
 }

@@ -1,17 +1,12 @@
 import { expect } from "bun:test";
+import { createHmac } from "node:crypto";
 import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { z } from "zod";
-import { createHmac } from "node:crypto";
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario } from "../../support/scenario";
-import {
-  credential,
-  state,
-  successful,
-  oneTap,
-  responseSchema,
-} from "./helpers";
+import { credential, oneTap, responseSchema, state, successful } from "./helpers";
+
 function totp(uri: string) {
   const parsed = new URL(uri);
   const secret = parsed.searchParams.get("secret");
@@ -32,15 +27,9 @@ function totp(uri: string) {
   }
   const counter = Buffer.alloc(8);
   counter.writeBigUInt64BE(
-    BigInt(
-      Math.floor(
-        Date.now() / 1000 / Number(parsed.searchParams.get("period") ?? 30),
-      ),
-    ),
+    BigInt(Math.floor(Date.now() / 1000 / Number(parsed.searchParams.get("period") ?? 30))),
   );
-  const digest = createHmac("sha1", Buffer.from(bytes))
-    .update(counter)
-    .digest();
+  const digest = createHmac("sha1", Buffer.from(bytes)).update(counter).digest();
   const offset = digest[digest.length - 1]! & 15;
   return (
     (digest.readUInt32BE(offset) & 0x7fffffff) %
@@ -123,12 +112,8 @@ compatScenario(
     });
     expect(banned.error).toBeNull();
     const before = await state(ctx);
-    expect(before.sessions.filter((row) => row.userId === userId)).toHaveLength(
-      0,
-    );
-    const denied = responseSchema.parse(
-      await oneTap(ctx, token, "one-tap-default", "blocked"),
-    );
+    expect(before.sessions.filter((row) => row.userId === userId)).toHaveLength(0);
+    const denied = responseSchema.parse(await oneTap(ctx, token, "one-tap-default", "blocked"));
     expect(denied.response.error).toMatchObject({
       status: 403,
       code: "BANNED_USER",
@@ -137,9 +122,7 @@ compatScenario(
     expect(after.users).toEqual(before.users);
     expect(after.accounts).toEqual(before.accounts);
     expect(after.sessions).toEqual(before.sessions);
-    const unauthenticated = await ctx
-      .actor("blocked", "one-tap-default")
-      .client.getSession();
+    const unauthenticated = await ctx.actor("blocked", "one-tap-default").client.getSession();
     expect(unauthenticated.data).toBeNull();
     return {
       created,

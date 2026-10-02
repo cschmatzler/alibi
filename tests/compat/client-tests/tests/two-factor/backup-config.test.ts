@@ -3,8 +3,8 @@ import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { symmetricDecrypt } from "better-auth/crypto";
 import { z } from "zod";
-import { compatScenario } from "../../support/scenario";
 import { authProfilePath } from "../../support/profiles";
+import { compatScenario } from "../../support/scenario";
 
 const codesSchema = z.object({ backupCodes: z.array(z.string()) });
 const factorSchema = z
@@ -20,23 +20,13 @@ const viewSchema = z.object({
   backupCodes: z.array(z.string()),
   receipts: z.array(z.object({ phase: z.string(), input: z.string() })),
 });
-const secret = [
-  "compat",
-  "test",
-  "only",
-  "key",
-  "not",
-  "real",
-  "minimum",
-  "32chars",
-].join("-");
+const secret = ["compat", "test", "only", "key", "not", "real", "minimum", "32chars"].join("-");
 function redactCodes(result: unknown) {
   const copy = structuredClone(result) as {
     data?: Record<string, unknown> | null;
   };
   if (copy.data) {
-    if (typeof copy.data.totpURI === "string")
-      copy.data.totpURI = "<authenticator-URI>";
+    if (typeof copy.data.totpURI === "string") copy.data.totpURI = "<authenticator-URI>";
     if (Array.isArray(copy.data.backupCodes))
       copy.data.backupCodes = copy.data.backupCodes.map(() => "<backup-code>");
   }
@@ -83,8 +73,7 @@ for (const profile of [
           : 3;
       expect(codes).toHaveLength(count);
       for (const code of codes) {
-        if (profile.endsWith("plain"))
-          expect(code).toMatch(/^[a-zA-Z0-9]{4}-$/);
+        if (profile.endsWith("plain")) expect(code).toMatch(/^[a-zA-Z0-9]{4}-$/);
         else if (profile.endsWith("encrypted"))
           expect(code).toMatch(/^[a-zA-Z0-9]{5}-[a-zA-Z0-9]$/);
       }
@@ -140,9 +129,7 @@ for (const profile of [
       });
       expect(wrongOwner.error?.code).toBe("INVALID_BACKUP_CODE");
       expect(await control()).toEqual(initial);
-      expect(await ctx.readUserState({ userId: other.data.user.id })).toEqual(
-        otherBefore,
-      );
+      expect(await ctx.readUserState({ userId: other.data.user.id })).toEqual(otherBefore);
       const current = await owner.getSession(),
         ownerBefore = await ctx.readUserState({ userId });
       const wrong = await owner.twoFactor.verifyBackupCode({
@@ -164,9 +151,7 @@ for (const profile of [
         expect(result.data?.token).toBe(current.data?.session.token);
         verified = result;
         const remaining = viewSchema.parse(await control(true));
-        expect(remaining.backupCodes).toEqual(
-          codes.filter((code) => code !== codes[0]),
-        );
+        expect(remaining.backupCodes).toEqual(codes.filter((code) => code !== codes[0]));
         const consumed = factorSchema.parse(await control());
         expect(consumed.id).toBe(initial.id);
         expect(consumed.secret).toBe(initial.secret);
@@ -191,9 +176,7 @@ for (const profile of [
       const after = factorSchema.parse(await control());
       expect(after.id).toBe(initial.id);
       expect(after.secret).toBe(initial.secret);
-      expect(viewSchema.parse(await control(true)).backupCodes).toEqual(
-        updated,
-      );
+      expect(viewSchema.parse(await control(true)).backupCodes).toEqual(updated);
       if (codes.length) {
         const old = await owner.twoFactor.verifyBackupCode({
           code: codes[codes.length - 1]!,
@@ -201,9 +184,7 @@ for (const profile of [
         expect(old.error?.code).toBe("INVALID_BACKUP_CODE");
         expect(await control()).toEqual(after);
       }
-      expect((await owner.getSession()).data?.session.token).toBe(
-        current.data?.session.token,
-      );
+      expect((await owner.getSession()).data?.session.token).toBe(current.data?.session.token);
       let repeated = null;
       if (profile === "two-factor-backup-custom") {
         // The same callback remains alive while the existing reset boundary
@@ -235,9 +216,7 @@ for (const profile of [
         expect(secondStorage.status).toBe(200);
         const secondFactor = factorSchema.parse(secondStorage.body);
         expect(secondFactor.userId).toBe(secondSignup.data.user.id);
-        expect(secondFactor.backupCodes).toBe(
-          "backup-" + JSON.stringify(secondCodes),
-        );
+        expect(secondFactor.backupCodes).toBe("backup-" + JSON.stringify(secondCodes));
         const secondView = await ctx.rawRequest({
           path: "/__test/two-factor-policy",
           method: "POST",
@@ -322,9 +301,7 @@ compatScenario(
     const failed = await owner.twoFactor.enable({ password });
     expect(failed.error?.status).toBe(500);
     expect(await ctx.readUserState({ userId })).toEqual(before);
-    expect((await owner.getSession()).data?.session.token).toBe(
-      original.data?.session.token,
-    );
+    expect((await owner.getSession()).data?.session.token).toBe(original.data?.session.token);
     const noFactor = await ctx.rawRequest({
       path: "/__test/two-factor-policy",
       method: "POST",
@@ -423,9 +400,7 @@ compatScenario(
       trustCount: 0,
     });
     const ownerBefore = await ctx.readUserState({ userId });
-    expect(
-      z.object({ sessions: z.array(z.unknown()) }).parse(ownerBefore).sessions,
-    ).toEqual([]);
+    expect(z.object({ sessions: z.array(z.unknown()) }).parse(ownerBefore).sessions).toEqual([]);
     const verified = await owner.twoFactor.verifyBackupCode({
       code: codes[0]!,
       disableSession: true,

@@ -1,13 +1,14 @@
 import { expect } from "bun:test";
-import { createAuthClient } from "better-auth/client";
-import { symmetricDecodeJWT } from "better-auth/crypto";
-import { oneTapClient } from "better-auth/client/plugins";
-import { CompactSign, importPKCS8, decodeProtectedHeader } from "jose";
 import { sign } from "node:crypto";
+import { createAuthClient } from "better-auth/client";
+import { oneTapClient } from "better-auth/client/plugins";
+import { symmetricDecodeJWT } from "better-auth/crypto";
+import { CompactSign, decodeProtectedHeader, importPKCS8 } from "jose";
 import { Cookie } from "tough-cookie";
 import { z } from "zod";
-import { type ScenarioContext } from "../../support/scenario";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
+import { type ScenarioContext } from "../../support/scenario";
+
 const issuedAt = Math.floor(Date.now() / 1000);
 const privatePem = await Bun.file(
   new URL("../../../../fixtures/one-tap/private-key.pem", import.meta.url),
@@ -32,9 +33,7 @@ export async function credential(
     exp: issuedAt + 3600,
     ...claims,
   };
-  return new CompactSign(
-    new TextEncoder().encode(raw ?? JSON.stringify(payload)),
-  )
+  return new CompactSign(new TextEncoder().encode(raw ?? JSON.stringify(payload)))
     .setProtectedHeader({ alg: "RS256", kid: "one-tap-local-rs256", ...header })
     .sign(wrong ? wrongKey : privateKey, { crit: { unknown: true } });
 }
@@ -55,11 +54,7 @@ export function signedRawToken(
   ]
     .map((value) => Buffer.from(JSON.stringify(value)).toString("base64url"))
     .join(".");
-  return (
-    encoded +
-    "." +
-    sign(algorithm, Buffer.from(encoded), privatePem).toString("base64url")
-  );
+  return encoded + "." + sign(algorithm, Buffer.from(encoded), privatePem).toString("base64url");
 }
 export const stateSchema = z.object({
   jwksFetches: z.number(),
@@ -82,9 +77,7 @@ export const stateSchema = z.object({
       idToken: z.string().nullable(),
     }),
   ),
-  sessions: z.array(
-    z.object({ id: z.string(), userId: z.string(), token: z.string() }),
-  ),
+  sessions: z.array(z.object({ id: z.string(), userId: z.string(), token: z.string() })),
 });
 export async function state(ctx: ScenarioContext) {
   const result = await ctx.rawRequest({ path: "/__test/one-tap/state" });
@@ -128,9 +121,7 @@ export async function oneTap(
   callbackURL?: string,
 ) {
   const actor = ctx.actor(actorName, profile);
-  let callback:
-    | ((response: { credential: string }) => Promise<void>)
-    | undefined;
+  let callback: ((response: { credential: string }) => Promise<void>) | undefined;
   let received: unknown;
   let sessionMaxAge: number | null = null;
   let accountCookie: z.infer<typeof accountCookieSchema> | null = null;
@@ -141,9 +132,7 @@ export async function oneTap(
     google: {
       accounts: {
         id: {
-          initialize(options: {
-            callback: (response: { credential: string }) => Promise<void>;
-          }) {
+          initialize(options: { callback: (response: { credential: string }) => Promise<void> }) {
             callback = options.callback;
           },
           prompt() {
@@ -193,8 +182,7 @@ export async function oneTap(
             .getSetCookie()
             .map((value) => Cookie.parse(value))
             .find((cookie) => cookie?.key.endsWith("session_token"));
-          sessionMaxAge =
-            typeof cookie?.maxAge === "number" ? cookie.maxAge : null;
+          sessionMaxAge = typeof cookie?.maxAge === "number" ? cookie.maxAge : null;
           received = { data: successSchema.parse(context.data), error: null };
         },
         onError(context) {
@@ -237,9 +225,7 @@ export async function successful(
   actorName = "google",
   callbackURL?: string,
 ) {
-  const result = responseSchema.parse(
-    await oneTap(ctx, token, profile, actorName, callbackURL),
-  );
+  const result = responseSchema.parse(await oneTap(ctx, token, profile, actorName, callbackURL));
   expect(result.response.error).toBeNull();
   expect(result.response.data).not.toBeNull();
   return result;

@@ -2,8 +2,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import {
-  activeChildren,
   ARTIFACT_ROOT,
+  activeChildren,
   CLIENT_ROOT,
   COMPAT_ROOT,
   candidateSourceDigest,
@@ -16,18 +16,18 @@ import {
 import { generateCase, generatedCaseSchema, reduceActions } from "./generated";
 import { writeInventory } from "./inventory";
 import {
+  type Campaign,
   cleanSuite,
   matchingSuites,
   mutationCampaign,
   validSuite,
-  type Campaign,
 } from "./mutations";
 import {
+  type ManagedFixture,
   runSuite,
   rustExecutable,
-  startFixture,
-  type ManagedFixture,
   type SuiteResult,
+  startFixture,
 } from "./processes";
 import { assuranceReport, executionSchema, policySchema } from "./report";
 
@@ -76,36 +76,21 @@ The default strict exit is nonzero until all in-scope obligations have evidence.
 }
 if (
   positionals.length > 1 ||
-  ![
-    "run",
-    "inventory",
-    "mutate",
-    "generate",
-    "replay",
-    "shrink",
-    "report",
-  ].includes(verb)
+  !["run", "inventory", "mutate", "generate", "replay", "shrink", "report"].includes(verb)
 )
   throw new Error("Unknown assurance command; use --help");
 const budget = Number(values.budget);
 if (!Number.isInteger(budget) || budget < 1 || budget > 100_000)
   throw new Error("Budget must be an integer from 1 to 100000");
 if (values.directory && verb !== "report")
-  throw new Error(
-    "Only report accepts --directory; execution always owns a fresh run",
-  );
+  throw new Error("Only report accepts --directory; execution always owns a fresh run");
 const runId = crypto.randomUUID(),
   directory = values.directory
     ? resolve(values.directory)
-    : join(
-        ARTIFACT_ROOT,
-        `${new Date().toISOString().replaceAll(":", "-")}-${runId}`,
-      );
+    : join(ARTIFACT_ROOT, `${new Date().toISOString().replaceAll(":", "-")}-${runId}`);
 await mkdir(directory, { recursive: true });
 console.log(`Assurance artifacts: ${directory}`);
-const policy = policySchema.parse(
-  await readJSON(join(COMPAT_ROOT, "assurance-contracts.json")),
-);
+const policy = policySchema.parse(await readJSON(join(COMPAT_ROOT, "assurance-contracts.json")));
 const inventoryPath = join(
   directory,
   verb === "report" ? "current-inventory.json" : "inventory.json",
@@ -118,13 +103,9 @@ if (verb === "generate") {
     generatedCaseSchema.shape.profile.parse(values.profile ?? "default"),
   );
   await writeJSON(join(directory, "replay.json"), generated);
-  console.log(
-    `Generated ${generated.actions.length} actions: ${join(directory, "replay.json")}`,
-  );
+  console.log(`Generated ${generated.actions.length} actions: ${join(directory, "replay.json")}`);
 } else {
-  console.log(
-    "Inventorying the pinned upstream source and published runtime...",
-  );
+  console.log("Inventorying the pinned upstream source and published runtime...");
   const inventory = await writeInventory(inventoryPath);
   if (verb === "inventory")
     console.log(
@@ -140,18 +121,14 @@ if (verb === "generate") {
       ),
     );
   else if (verb === "report") {
-    if (!values.directory)
-      throw new Error("report requires --directory from an existing run");
-    const execution = executionSchema.parse(
-      await readJSON(join(directory, "execution.json")),
-    );
+    if (!values.directory) throw new Error("report requires --directory from an existing run");
+    const execution = executionSchema.parse(await readJSON(join(directory, "execution.json")));
     if (execution.suite.harnessDigest !== (await harnessDigest()))
       throw new Error("Harness changed since execution; collect new evidence");
     if (
       execution.mode === "parity" &&
       (!execution.candidate ||
-        (await fileDigest(execution.candidate.executable)) !==
-          execution.candidate.sha256 ||
+        (await fileDigest(execution.candidate.executable)) !== execution.candidate.sha256 ||
         (await candidateSourceDigest()) !== execution.candidate.sourceDigest)
     )
       throw new Error(
@@ -167,46 +144,30 @@ if (verb === "generate") {
     );
     await writeJSON(join(directory, "report.json"), report);
     console.log(JSON.stringify(report.summary, null, 2));
-    process.exitCode =
-      report.status === "complete-within-declared-scope" ? 0 : 1;
+    process.exitCode = report.status === "complete-within-declared-scope" ? 0 : 1;
   } else {
     const paths =
       values.tests ??
-      (verb === "replay" || verb === "shrink"
-        ? ["tests/generated/lifecycle.test.ts"]
-        : ["tests"]);
+      (verb === "replay" || verb === "shrink" ? ["tests/generated/lifecycle.test.ts"] : ["tests"]);
     for (const path of paths)
       if (
-        relative(
-          join(CLIENT_ROOT, "tests"),
-          resolve(CLIENT_ROOT, path),
-        ).startsWith("..") ||
+        relative(join(CLIENT_ROOT, "tests"), resolve(CLIENT_ROOT, path)).startsWith("..") ||
         path.startsWith("-")
       )
         throw new Error("Scenario paths must be inside client-tests/tests");
     const owned: ManagedFixture[] = [];
-    const mode =
-      values["reference-only"] || verb === "mutate"
-        ? "reference-only"
-        : "parity";
+    const mode = values["reference-only"] || verb === "mutate" ? "reference-only" : "parity";
     const env: Record<string, string | undefined> = {};
     if (values.seed) env.COMPAT_ASSURANCE_SEEDS = values.seed;
     if (values.steps) env.COMPAT_ASSURANCE_STEPS = values.steps;
     if (values.profile)
-      env.COMPAT_ASSURANCE_PROFILES = generatedCaseSchema.shape.profile.parse(
-        values.profile,
-      );
+      env.COMPAT_ASSURANCE_PROFILES = generatedCaseSchema.shape.profile.parse(values.profile);
     if (values.replay) {
-      const replay = generatedCaseSchema.parse(
-        await readJSON(resolve(values.replay)),
-      );
+      const replay = generatedCaseSchema.parse(await readJSON(resolve(values.replay)));
       await writeJSON(join(directory, "replay.json"), replay);
       env.COMPAT_ASSURANCE_REPLAY = join(directory, "replay.json");
     }
-    if (
-      (verb === "replay" || verb === "shrink") &&
-      !env.COMPAT_ASSURANCE_REPLAY
-    )
+    if ((verb === "replay" || verb === "shrink") && !env.COMPAT_ASSURANCE_REPLAY)
       throw new Error(`${verb} requires --replay FILE`);
     try {
       const controlDigest = await harnessDigest();
@@ -215,11 +176,9 @@ if (verb === "generate") {
         cwd: CLIENT_ROOT,
         timeoutMs: 120_000,
       });
-      await writeFile(
-        join(directory, "harness-controls.log"),
-        checked.stdout + checked.stderr,
-        { mode: 0o600 },
-      );
+      await writeFile(join(directory, "harness-controls.log"), checked.stdout + checked.stderr, {
+        mode: 0o600,
+      });
       const controls = {
         runId,
         harnessDigest: controlDigest,
@@ -227,14 +186,8 @@ if (verb === "generate") {
         timedOut: checked.timedOut,
       };
       await writeJSON(join(directory, "harness-controls.json"), controls);
-      if (
-        checked.code !== 0 ||
-        checked.timedOut ||
-        controlDigest !== (await harnessDigest())
-      )
-        throw new Error(
-          "Harness negative controls failed or changed; see harness-controls.log",
-        );
+      if (checked.code !== 0 || checked.timedOut || controlDigest !== (await harnessDigest()))
+        throw new Error("Harness negative controls failed or changed; see harness-controls.log");
       const left = await startFixture({
         directory,
         runId,
@@ -273,9 +226,7 @@ if (verb === "generate") {
         const failed = suite.outcomes.find(
           (outcome) =>
             outcome.status === "failed" &&
-            ["comparison", "model", "assertion"].includes(
-              outcome.failure ?? "",
-            ),
+            ["comparison", "model", "assertion"].includes(outcome.failure ?? ""),
         );
         if (
           !failed?.signature ||
@@ -286,9 +237,7 @@ if (verb === "generate") {
           throw new Error(
             "Reduction needs one reproducible behavioral failure; see parity/suite.log",
           );
-        const original = generatedCaseSchema.parse(
-          await readJSON(env.COMPAT_ASSURANCE_REPLAY!),
-        );
+        const original = generatedCaseSchema.parse(await readJSON(env.COMPAT_ASSURANCE_REPLAY!));
         let iteration = 0;
         const reduced = await reduceActions(
           original.actions,
@@ -339,28 +288,17 @@ if (verb === "generate") {
             inventoryPath,
             paths,
             budget,
-            priority: policy.contracts.flatMap(
-              (contract) => contract.mutations,
-            ),
+            priority: policy.contracts.flatMap((contract) => contract.mutations),
             only: values.mutation,
             env,
           });
-        const report = assuranceReport(
-          inventory,
-          policy,
-          suite,
-          campaign,
-          mode,
-          controls,
-        );
+        const report = assuranceReport(inventory, policy, suite, campaign, mode, controls);
         if (
           candidate &&
           ((await fileDigest(candidate.executable)) !== candidate.sha256 ||
             (await candidateSourceDigest()) !== candidate.sourceDigest)
         )
-          throw new Error(
-            "Rust build inputs or executable changed during execution",
-          );
+          throw new Error("Rust build inputs or executable changed during execution");
         await writeJSON(join(directory, "execution.json"), {
           suite,
           campaign,
@@ -381,9 +319,7 @@ if (verb === "generate") {
           cleanSuite(suite) &&
           (!campaign ||
             (!campaign.errors.length &&
-              campaign.results.every(
-                (result) => result.status !== "inconclusive",
-              )));
+              campaign.results.every((result) => result.status !== "inconclusive")));
         process.exitCode = values["report-only"]
           ? executionOK
             ? 0

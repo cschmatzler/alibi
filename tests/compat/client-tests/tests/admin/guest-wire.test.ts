@@ -21,10 +21,8 @@ for (const mode of ["missing", "tampered", "revoked"] as const) {
           fetchOptions: {
             customFetchImpl: async (input, init) => {
               const response = await ctx.actor(name).fetch(input, init);
-              const path = new URL(
-                input instanceof Request ? input.url : input,
-                ctx.baseURL,
-              ).pathname;
+              const path = new URL(input instanceof Request ? input.url : input, ctx.baseURL)
+                .pathname;
               if (path.startsWith("/api/auth/admin/")) {
                 wires.push({
                   status: response.status,
@@ -34,11 +32,7 @@ for (const mode of ["missing", "tampered", "revoked"] as const) {
               }
               for (const header of response.headers.getSetCookie()) {
                 const cookie = Cookie.parse(header);
-                if (
-                  cookie?.key.endsWith(".session_token") &&
-                  cookie.value &&
-                  cookie.maxAge !== 0
-                )
+                if (cookie?.key.endsWith(".session_token") && cookie.value && cookie.maxAge !== 0)
                   cookies.set(name, cookie.cookieString());
               }
               return response;
@@ -112,8 +106,7 @@ for (const mode of ["missing", "tampered", "revoked"] as const) {
       const separator = decoded.lastIndexOf(".");
       if (separator < 0) throw new Error("issued signature required");
       const signature = decoded.slice(separator + 1);
-      const alteredSignature =
-        (signature.startsWith("A") ? "B" : "A") + signature.slice(1);
+      const alteredSignature = (signature.startsWith("A") ? "B" : "A") + signature.slice(1);
       const tampered = `${signedCookie.key}=${encodeURIComponent(decoded.slice(0, separator + 1) + alteredSignature)}`;
       const headers =
         mode === "missing"
@@ -145,24 +138,11 @@ for (const mode of ["missing", "tampered", "revoked"] as const) {
       expect(before.persisted[3]).toMatchObject({ sessions: [] });
       const targetToken = targetSignin.data!.token,
         ownerToken = ownerSignup.data!.token;
-      if (!targetToken || !ownerToken)
-        throw new Error("actual issued tokens required");
-      const createdEmail = ctx.uniqueEmail(
-        `guest-wire-${mode}-forbidden-create`,
-      );
+      if (!targetToken || !ownerToken) throw new Error("actual issued tokens required");
+      const createdEmail = ctx.uniqueEmail(`guest-wire-${mode}-forbidden-create`);
       const calls = [
-        [
-          "set-role",
-          () =>
-            guest.admin.setRole(
-              { userId: targetId, role: "admin" },
-              { headers },
-            ),
-        ],
-        [
-          "get-user",
-          () => guest.admin.getUser({ query: { id: targetId } }, { headers }),
-        ],
+        ["set-role", () => guest.admin.setRole({ userId: targetId, role: "admin" }, { headers })],
+        ["get-user", () => guest.admin.getUser({ query: { id: targetId } }, { headers })],
         [
           "create-user",
           () =>
@@ -179,51 +159,27 @@ for (const mode of ["missing", "tampered", "revoked"] as const) {
               { headers },
             ),
         ],
-        [
-          "list-users",
-          () => guest.admin.listUsers({ query: { limit: 10 } }, { headers }),
-        ],
+        ["list-users", () => guest.admin.listUsers({ query: { limit: 10 } }, { headers })],
         [
           "list-user-sessions",
           () => guest.admin.listUserSessions({ userId: targetId }, { headers }),
         ],
         [
           "ban-user",
-          () =>
-            guest.admin.banUser(
-              { userId: targetId, banReason: "Guest Ban" },
-              { headers },
-            ),
+          () => guest.admin.banUser({ userId: targetId, banReason: "Guest Ban" }, { headers }),
         ],
-        [
-          "unban-user",
-          () => guest.admin.unbanUser({ userId: targetId }, { headers }),
-        ],
-        [
-          "impersonate-user",
-          () => guest.admin.impersonateUser({ userId: targetId }, { headers }),
-        ],
-        [
-          "stop-impersonating",
-          () => guest.admin.stopImpersonating({}, { headers }),
-        ],
+        ["unban-user", () => guest.admin.unbanUser({ userId: targetId }, { headers })],
+        ["impersonate-user", () => guest.admin.impersonateUser({ userId: targetId }, { headers })],
+        ["stop-impersonating", () => guest.admin.stopImpersonating({}, { headers })],
         [
           "revoke-user-session",
-          () =>
-            guest.admin.revokeUserSession(
-              { sessionToken: targetToken },
-              { headers },
-            ),
+          () => guest.admin.revokeUserSession({ sessionToken: targetToken }, { headers }),
         ],
         [
           "revoke-user-sessions",
-          () =>
-            guest.admin.revokeUserSessions({ userId: targetId }, { headers }),
+          () => guest.admin.revokeUserSessions({ userId: targetId }, { headers }),
         ],
-        [
-          "remove-user",
-          () => guest.admin.removeUser({ userId: targetId }, { headers }),
-        ],
+        ["remove-user", () => guest.admin.removeUser({ userId: targetId }, { headers })],
         [
           "set-user-password",
           () =>
@@ -303,6 +259,22 @@ for (const mode of ["missing", "tampered", "revoked"] as const) {
         after: await readAll(),
       };
     },
-    ["GET /admin/get-user", "GET /admin/list-users", "POST /admin/ban-user", "POST /admin/create-user", "POST /admin/has-permission", "POST /admin/impersonate-user", "POST /admin/list-user-sessions", "POST /admin/remove-user", "POST /admin/revoke-user-session", "POST /admin/revoke-user-sessions", "POST /admin/set-role", "POST /admin/set-user-password", "POST /admin/stop-impersonating", "POST /admin/unban-user", "POST /admin/update-user"],
+    [
+      "GET /admin/get-user",
+      "GET /admin/list-users",
+      "POST /admin/ban-user",
+      "POST /admin/create-user",
+      "POST /admin/has-permission",
+      "POST /admin/impersonate-user",
+      "POST /admin/list-user-sessions",
+      "POST /admin/remove-user",
+      "POST /admin/revoke-user-session",
+      "POST /admin/revoke-user-sessions",
+      "POST /admin/set-role",
+      "POST /admin/set-user-password",
+      "POST /admin/stop-impersonating",
+      "POST /admin/unban-user",
+      "POST /admin/update-user",
+    ],
   );
 }

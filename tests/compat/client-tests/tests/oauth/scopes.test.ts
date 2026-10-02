@@ -71,14 +71,10 @@ compatScenario(
     expect(original.createdAt.getTime()).toBe(Date.parse(createdAt));
     expect(original.updatedAt).toBeInstanceOf(Date);
     expect(original.updatedAt.getTime()).toBe(Date.parse(updatedAt));
-    const originalWire = wires
-      .at(-1)!
-      .find((account) => account.id === accountId)!;
+    const originalWire = wires.at(-1)!.find((account) => account.id === accountId)!;
     expect(originalWire.createdAt).toBe("2026-10-02T06:19:31.630Z");
     expect(originalWire.updatedAt).toBe("2026-10-02T06:20:00.145Z");
-    const credential = before.data!.find(
-      (account) => account.providerId === "credential",
-    )!;
+    const credential = before.data!.find((account) => account.providerId === "credential")!;
     const guest = await ctx.actor("guest").client.listAccounts();
     expect(guest.error?.status).toBe(401);
     expect(guest.error?.code).toBe("UNAUTHORIZED");
@@ -109,9 +105,7 @@ compatScenario(
     const callbackFinished = Date.now();
     const listed = await reader.listAccounts();
     expect(listed.error).toBeNull();
-    const google = listed.data?.find(
-      (account) => account.providerId === "google",
-    );
+    const google = listed.data?.find((account) => account.providerId === "google");
     expect(google?.id).toBe(accountId);
     expect(google?.accountId).toBe(sub);
     expect(google?.scopes).toEqual(["calendar", "drive"]);
@@ -120,19 +114,11 @@ compatScenario(
     expect(google?.updatedAt).toBeInstanceOf(Date);
     expect(google!.updatedAt.getTime()).toBeGreaterThanOrEqual(callbackStarted);
     expect(google!.updatedAt.getTime()).toBeLessThanOrEqual(callbackFinished);
-    const googleWire = wires
-      .at(-1)!
-      .find((account) => account.id === accountId)!;
+    const googleWire = wires.at(-1)!.find((account) => account.id === accountId)!;
     expect(googleWire.createdAt).toBe(originalWire.createdAt);
-    expect(googleWire.updatedAt).toMatch(
-      /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/,
-    );
-    expect(google!.updatedAt.getTime()).toBe(
-      Date.parse(googleWire.updatedAt as string),
-    );
-    expect(
-      listed.data!.find((account) => account.providerId === "credential"),
-    ).toEqual(credential);
+    expect(googleWire.updatedAt).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+    expect(google!.updatedAt.getTime()).toBe(Date.parse(googleWire.updatedAt as string));
+    expect(listed.data!.find((account) => account.providerId === "credential")).toEqual(credential);
     const foreignAfter = await ctx.readUserState({
       userId: foreignSignup.data!.user.id,
     });

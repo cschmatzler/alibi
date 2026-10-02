@@ -99,24 +99,15 @@ export async function seedResetPasswordToken(
   });
 }
 
-export async function readVerificationEmail(
-  baseURL: string,
-  { email }: { email: string },
-) {
+export async function readVerificationEmail(baseURL: string, { email }: { email: string }) {
   return getControl(baseURL, "/__test/verification-email", { email });
 }
 
-export async function readTwoFactorOtp(
-  baseURL: string,
-  { email }: { email: string },
-) {
+export async function readTwoFactorOtp(baseURL: string, { email }: { email: string }) {
   return getControl(baseURL, "/__test/two-factor-otp", { email });
 }
 
-export async function readChangeEmailConfirmation(
-  baseURL: string,
-  { email }: { email: string },
-) {
+export async function readChangeEmailConfirmation(baseURL: string, { email }: { email: string }) {
   return getControl(baseURL, "/__test/change-email-confirmation", { email });
 }
 
@@ -139,19 +130,13 @@ export async function seedDeleteUserToken(
   });
 }
 
-export async function removeCredentialAccount(
-  baseURL: string,
-  { email }: { email: string },
-) {
+export async function removeCredentialAccount(baseURL: string, { email }: { email: string }) {
   return postControl(baseURL, "/__test/remove-credential-account", {
     email,
   });
 }
 
-export async function promoteAdmin(
-  baseURL: string,
-  { email }: { email: string },
-) {
+export async function promoteAdmin(baseURL: string, { email }: { email: string }) {
   return postControl(baseURL, "/__test/promote-admin", {
     email,
   });
@@ -209,18 +194,30 @@ export async function seedOAuthAccount(
 }
 
 /** Inspect raw verification generations, including expired records. */
-export async function readVerificationState(baseURL: string, args: { identifier: string }): Promise<unknown> {
+export async function readVerificationState(
+  baseURL: string,
+  args: { identifier: string },
+): Promise<unknown> {
   return getControl(baseURL, "/__test/verification-state", args);
 }
 
 /** Read persisted device-code state, including expired records. */
-export async function readDeviceState(baseURL: string, args: {deviceCode: string}): Promise<unknown> {
+export async function readDeviceState(
+  baseURL: string,
+  args: { deviceCode: string },
+): Promise<unknown> {
   return getControl(baseURL, "/__test/device-state", args);
 }
 /** Set an actual persisted device-code expiry. */
-export async function expireDevice(baseURL: string, args: {deviceCode: string; expiresAt: string}): Promise<unknown> {
+export async function expireDevice(
+  baseURL: string,
+  args: { deviceCode: string; expiresAt: string },
+): Promise<unknown> {
   return postControl(baseURL, "/__test/expire-device", args);
 }
-export async function expireInvitation(baseURL: string, args: { invitationId: string; expiresAt: string }): Promise<unknown> {
+export async function expireInvitation(
+  baseURL: string,
+  args: { invitationId: string; expiresAt: string },
+): Promise<unknown> {
   return postControl(baseURL, "/__test/expire-invitation", args);
 }

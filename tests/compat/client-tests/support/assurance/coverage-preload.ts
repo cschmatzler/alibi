@@ -1,24 +1,16 @@
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { createInstrumenter } from "istanbul-lib-instrument";
 import type { FileCoverageData } from "istanbul-lib-coverage";
-import {
-  digest,
-  packageRoots,
-  readJSON,
-  upstreamPin,
-  writeJSON,
-} from "./common";
-import type { Inventory } from "./inventory";
+import { createInstrumenter } from "istanbul-lib-instrument";
+import { digest, packageRoots, readJSON, upstreamPin, writeJSON } from "./common";
 import { CoverageScope } from "./coverage-scope";
+import type { Inventory } from "./inventory";
 
 const runId = process.env.COMPAT_ASSURANCE_RUN_ID;
 const readyPath = process.env.COMPAT_ASSURANCE_BRIDGE_FILE;
 const inventoryPath = process.env.COMPAT_ASSURANCE_INVENTORY;
 if (!runId || !readyPath || !inventoryPath)
-  throw new Error(
-    "Coverage preload requires an owned run, inventory, and bridge path",
-  );
+  throw new Error("Coverage preload requires an owned run, inventory, and bridge path");
 const inventory = (await readJSON(inventoryPath)) as Inventory;
 if (
   inventory.version !== upstreamPin.version ||
@@ -27,18 +19,14 @@ if (
 )
   throw new Error("Coverage preload received an unpinned inventory");
 const roots = await packageRoots();
-const expected = new Map(
-  inventory.sources.map((source) => [source.id, source]),
-);
+const expected = new Map(inventory.sources.map((source) => [source.id, source]));
 const loaded = new Set<string>();
 const mutationId = process.env.COMPAT_ASSURANCE_SOURCE_MUTATION;
 const mutation = mutationId
   ? inventory.mutations.find((candidate) => candidate.id === mutationId)
   : undefined;
 if (mutationId && !mutation)
-  throw new Error(
-    "Unknown source mutation; regenerate the independent inventory",
-  );
+  throw new Error("Unknown source mutation; regenerate the independent inventory");
 const runtime = globalThis as typeof globalThis & {
   __compatCoverage?: Record<string, FileCoverageData>;
   __compatMutationHits?: number;
@@ -57,8 +45,7 @@ runtime.__compatCoverage = new Proxy<Record<string, FileCoverageData>>(
     set(target, key, value: FileCoverageData) {
       value.s = scope.counters(value.s);
       value.f = scope.counters(value.f);
-      for (const [id, arms] of Object.entries(value.b))
-        value.b[id] = scope.counters(arms);
+      for (const [id, arms] of Object.entries(value.b)) value.b[id] = scope.counters(arms);
       return Reflect.set(target, key, value);
     },
   },
@@ -132,10 +119,7 @@ const bridge = Bun.serve({
     const operation = new URL(request.url).pathname;
     if (operation === "/begin") {
       if (active !== null)
-        return Response.json(
-          { error: "overlapping scenario coverage" },
-          { status: 409 },
-        );
+        return Response.json({ error: "overlapping scenario coverage" }, { status: 409 });
       active = body.scenario;
       scope.active = crypto.randomUUID();
       clearCounters();
@@ -144,9 +128,7 @@ const bridge = Bun.serve({
     if (operation !== "/end" || active !== body.scenario)
       return new Response(null, { status: 409 });
     const hits: Record<string, number> = {};
-    for (const [source, coverage] of Object.entries(
-      runtime.__compatCoverage ?? {},
-    )) {
+    for (const [source, coverage] of Object.entries(runtime.__compatCoverage ?? {})) {
       for (const [id, arms] of Object.entries(coverage.b))
         arms.forEach((count, arm) => {
           if (count > 0) hits[`${source}#branch:${id}:${arm}`] = count;

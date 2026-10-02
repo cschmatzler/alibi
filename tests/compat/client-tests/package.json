@@ -10,6 +10,8 @@
     "assurance:report": "bun support/assurance/cli.ts report",
     "test": "bun test tests",
     "typecheck": "tsc --noEmit",
+    "format": "biome check --write ..",
+    "format:check": "biome check ..",
     "test:harness": "bun test harness",
     "test:browser": "bun test browser",
     "test:environment": "./run-against-both.sh environment",
@@ -44,6 +46,7 @@
   },
   "devDependencies": {
     "@babel/parser": "7.29.9",
+    "@biomejs/biome": "2.5.15",
     "@types/bun": "1.4.2",
     "@types/istanbul-lib-instrument": "1.7.8",
     "istanbul-lib-instrument": "6.0.3",

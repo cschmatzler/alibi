@@ -1,11 +1,11 @@
 import { expect } from "bun:test";
-import { z } from "zod";
-import { createAuthClient } from "better-auth/client";
 import { passkeyClient } from "@better-auth/passkey/client";
+import { createAuthClient } from "better-auth/client";
+import { z } from "zod";
 import { Authenticator } from "../../support/authenticator";
+import type { FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { createTracingFetch, type TraceEntry } from "../../support/trace";
-import type { FixtureProfile } from "../../support/profiles";
 
 compatScenario(
   "passkey overlapping real signed ceremonies commit exactly one credential and one owner session",
@@ -76,12 +76,8 @@ compatScenario(
       ),
     );
     expect(registrations).toHaveLength(2);
-    const registered = registrations.filter(
-      ({ result }) => result.error === null,
-    );
-    const rejectedRegistration = registrations.filter(
-      ({ result }) => result.error !== null,
-    );
+    const registered = registrations.filter(({ result }) => result.error === null);
+    const rejectedRegistration = registrations.filter(({ result }) => result.error !== null);
     expect(registered).toHaveLength(1);
     expect(rejectedRegistration).toHaveLength(1);
     const credential = z
@@ -97,11 +93,9 @@ compatScenario(
       counter: 0,
     });
     expect(rejectedRegistration[0]?.result.error?.status).toBe(400);
-    expect(
-      z
-        .object({ code: z.string() })
-        .parse(rejectedRegistration[0]?.result.error).code,
-    ).toBe("CHALLENGE_NOT_FOUND");
+    expect(z.object({ code: z.string() }).parse(rejectedRegistration[0]?.result.error).code).toBe(
+      "CHALLENGE_NOT_FOUND",
+    );
     ctx.recordTransport(registered[0]?.traces ?? []);
     ctx.recordTransport(rejectedRegistration[0]?.traces ?? []);
     const afterRegistration = await state(ctx, user.id);
@@ -112,15 +106,12 @@ compatScenario(
     });
     await owner.client.signOut();
     expect((await owner.client.getSession()).data).toBeNull();
-    const authOptions = await passkey.$fetch(
-      "/passkey/generate-authenticate-options",
-      {
-        method: "GET",
-        onSuccess({ response }) {
-          challengeCookies = response.headers.getSetCookie();
-        },
+    const authOptions = await passkey.$fetch("/passkey/generate-authenticate-options", {
+      method: "GET",
+      onSuccess({ response }) {
+        challengeCookies = response.headers.getSetCookie();
       },
-    );
+    });
     expect(authOptions.error).toBeNull();
     expect(challengeCookies.length).toBe(1);
     const assertion = authenticator.authenticate(authOptions.data, ctx.baseURL);
@@ -134,12 +125,8 @@ compatScenario(
       ),
     );
     expect(authentications).toHaveLength(2);
-    const authenticated = authentications.filter(
-      ({ result }) => result.error === null,
-    );
-    const rejectedAuthentication = authentications.filter(
-      ({ result }) => result.error !== null,
-    );
+    const authenticated = authentications.filter(({ result }) => result.error === null);
+    const rejectedAuthentication = authentications.filter(({ result }) => result.error !== null);
     expect(authenticated).toHaveLength(1);
     expect(rejectedAuthentication).toHaveLength(1);
     const session = z
@@ -155,11 +142,9 @@ compatScenario(
     expect(session.user.id).toBe(user.id);
     expect(session.session.userId).toBe(user.id);
     expect(rejectedAuthentication[0]?.result.error?.status).toBe(400);
-    expect(
-      z
-        .object({ code: z.string() })
-        .parse(rejectedAuthentication[0]?.result.error).code,
-    ).toBe("CHALLENGE_NOT_FOUND");
+    expect(z.object({ code: z.string() }).parse(rejectedAuthentication[0]?.result.error).code).toBe(
+      "CHALLENGE_NOT_FOUND",
+    );
     ctx.recordTransport(authenticated[0]?.traces ?? []);
     ctx.recordTransport(rejectedAuthentication[0]?.traces ?? []);
     expect(authenticated[0]?.cookies).toHaveLength(1);
@@ -181,9 +166,7 @@ compatScenario(
       method: "POST",
       body: { response: assertion },
     });
-    expect(z.object({ code: z.string() }).parse(replay.error).code).toBe(
-      "CHALLENGE_NOT_FOUND",
-    );
+    expect(z.object({ code: z.string() }).parse(replay.error).code).toBe("CHALLENGE_NOT_FOUND");
     expect(await state(ctx, user.id)).toEqual(committed);
     return {
       registration: {
@@ -250,15 +233,9 @@ async function control(ctx: ScenarioContext, path: string, body: unknown) {
   });
   expect(response.status).toBe(200);
 }
-function wrongChallenge<T extends { response: { clientDataJSON: string } }>(
-  response: T,
-): T {
-  const parsed = JSON.parse(
-    Buffer.from(response.response.clientDataJSON, "base64url").toString(),
-  );
-  parsed.challenge = Buffer.from(
-    "a-different-authenticator-challenge",
-  ).toString("base64url");
+function wrongChallenge<T extends { response: { clientDataJSON: string } }>(response: T): T {
+  const parsed = JSON.parse(Buffer.from(response.response.clientDataJSON, "base64url").toString());
+  parsed.challenge = Buffer.from("a-different-authenticator-challenge").toString("base64url");
   return {
     ...response,
     response: {
@@ -300,9 +277,7 @@ compatScenario(
       method: "POST",
       body: { response, name: "Replayed" },
     });
-    expect(z.object({ code: z.string() }).parse(retry.error).code).toBe(
-      "CHALLENGE_NOT_FOUND",
-    );
+    expect(z.object({ code: z.string() }).parse(retry.error).code).toBe("CHALLENGE_NOT_FOUND");
     const fresh = await passkey.$fetch("/passkey/generate-register-options", {
       method: "GET",
     });
@@ -316,14 +291,10 @@ compatScenario(
     expect(registered.error).toBeNull();
     await owner.client.signOut();
     // Invalid endpoint-schema input must leave the signed generation reusable.
-    const schemaOptions = await passkey.$fetch(
-      "/passkey/generate-authenticate-options",
-      { method: "GET" },
-    );
-    const schemaAssertion = authenticator.authenticate(
-      schemaOptions.data,
-      ctx.baseURL,
-    );
+    const schemaOptions = await passkey.$fetch("/passkey/generate-authenticate-options", {
+      method: "GET",
+    });
+    const schemaAssertion = authenticator.authenticate(schemaOptions.data, ctx.baseURL);
     const invalidBodies = [];
     for (const response of [[], null, 0, "credential", false]) {
       const invalid = await passkey.$fetch("/passkey/verify-authentication", {
@@ -336,35 +307,24 @@ compatScenario(
         challenges: { count: 1 },
       });
       expect(invalid.error?.status).toBe(400);
-      expect(z.object({ code: z.string() }).parse(invalid.error).code).toBe(
-        "VALIDATION_ERROR",
-      );
+      expect(z.object({ code: z.string() }).parse(invalid.error).code).toBe("VALIDATION_ERROR");
       invalidBodies.push(ctx.snapshot(invalid));
     }
-    const schemaAccepted = await passkey.$fetch(
-      "/passkey/verify-authentication",
-      { method: "POST", body: { response: schemaAssertion } },
-    );
+    const schemaAccepted = await passkey.$fetch("/passkey/verify-authentication", {
+      method: "POST",
+      body: { response: schemaAssertion },
+    });
     expect(schemaAccepted.error).toBeNull();
     expect((await owner.client.getSession()).data?.user.id).toBe(user.id);
     await owner.client.signOut();
     const failures = [];
-    for (const kind of [
-      "signature",
-      "challenge",
-      "unknown-credential",
-    ] as const) {
-      const authOptions = await passkey.$fetch(
-        "/passkey/generate-authenticate-options",
-        { method: "GET" },
-      );
-      const assertion = authenticator.authenticate(
-        authOptions.data,
-        ctx.baseURL,
-      );
+    for (const kind of ["signature", "challenge", "unknown-credential"] as const) {
+      const authOptions = await passkey.$fetch("/passkey/generate-authenticate-options", {
+        method: "GET",
+      });
+      const assertion = authenticator.authenticate(authOptions.data, ctx.baseURL);
       const signature = Buffer.from(assertion.response.signature, "base64url");
-      signature[signature.length - 1] =
-        (signature[signature.length - 1] ?? 0) ^ 1;
+      signature[signature.length - 1] = (signature[signature.length - 1] ?? 0) ^ 1;
       const rejectedAssertion =
         kind === "signature"
           ? {
@@ -378,19 +338,15 @@ compatScenario(
             ? wrongChallenge(assertion)
             : {
                 ...assertion,
-                id: Buffer.from("a-different-credential-id").toString(
-                  "base64url",
-                ),
+                id: Buffer.from("a-different-credential-id").toString("base64url"),
               };
-      const failedAuth = await passkey.$fetch(
-        "/passkey/verify-authentication",
-        { method: "POST", body: { response: rejectedAssertion } },
-      );
+      const failedAuth = await passkey.$fetch("/passkey/verify-authentication", {
+        method: "POST",
+        body: { response: rejectedAssertion },
+      });
       expect(failedAuth.error?.status).toBe(kind === "challenge" ? 400 : 401);
       expect(z.object({ code: z.string() }).parse(failedAuth.error).code).toBe(
-        kind === "unknown-credential"
-          ? "PASSKEY_NOT_FOUND"
-          : "AUTHENTICATION_FAILED",
+        kind === "unknown-credential" ? "PASSKEY_NOT_FOUND" : "AUTHENTICATION_FAILED",
       );
       expect((await owner.client.getSession()).data).toBeNull();
       const afterFailedAuth = await state(ctx, user.id);
@@ -413,19 +369,15 @@ compatScenario(
         authRetry: ctx.snapshot(authRetry),
       });
     }
-    const finalOptions = await passkey.$fetch(
-      "/passkey/generate-authenticate-options",
-      { method: "GET" },
-    );
-    const authenticated = await passkey.$fetch(
-      "/passkey/verify-authentication",
-      {
-        method: "POST",
-        body: {
-          response: authenticator.authenticate(finalOptions.data, ctx.baseURL),
-        },
+    const finalOptions = await passkey.$fetch("/passkey/generate-authenticate-options", {
+      method: "GET",
+    });
+    const authenticated = await passkey.$fetch("/passkey/verify-authentication", {
+      method: "POST",
+      body: {
+        response: authenticator.authenticate(finalOptions.data, ctx.baseURL),
       },
-    );
+    });
     expect(authenticated.error).toBeNull();
     expect((await owner.client.getSession()).data?.user.id).toBe(user.id);
     const finalState = await state(ctx, user.id);
@@ -476,9 +428,7 @@ compatScenario(
       .getSetCookie()
       .map((cookie) => cookie.split(";")[0])
       .join("; ");
-    const options = await owner.fetch(
-      "/api/auth/passkey/generate-register-options",
-    );
+    const options = await owner.fetch("/api/auth/passkey/generate-register-options");
     expect(options.status).toBe(200);
     const challengeCookie = options.headers
       .getSetCookie()
@@ -486,39 +436,30 @@ compatScenario(
       .join("; ");
     const authenticator = new Authenticator();
     const response = authenticator.register(await options.json(), ctx.baseURL);
-    const foreignResponse = await attacker.fetch(
-      "/api/auth/passkey/verify-registration",
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          cookie: `${attackerCookies}; ${challengeCookie}`,
-        },
-        body: JSON.stringify({ response, name: "Stolen" }),
+    const foreignResponse = await attacker.fetch("/api/auth/passkey/verify-registration", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: `${attackerCookies}; ${challengeCookie}`,
       },
-    );
+      body: JSON.stringify({ response, name: "Stolen" }),
+    });
     const foreign = {
       status: foreignResponse.status,
       body: await foreignResponse.json(),
     };
     expect(foreign.status).toBe(401);
-    const ownerRetry = await ownerClient.$fetch(
-      "/passkey/verify-registration",
-      { method: "POST", body: { response } },
-    );
-    expect(z.object({ code: z.string() }).parse(ownerRetry.error).code).toBe(
-      "CHALLENGE_NOT_FOUND",
-    );
+    const ownerRetry = await ownerClient.$fetch("/passkey/verify-registration", {
+      method: "POST",
+      body: { response },
+    });
+    expect(z.object({ code: z.string() }).parse(ownerRetry.error).code).toBe("CHALLENGE_NOT_FOUND");
     expect((await state(ctx, user.id)).passkeys).toEqual([]);
     expect((await state(ctx, attackerUser.id)).sessions.count).toBe(1);
-    const expiryOptions = await ownerClient.$fetch(
-      "/passkey/generate-register-options",
-      { method: "GET" },
-    );
-    const expiryResponse = authenticator.register(
-      expiryOptions.data,
-      ctx.baseURL,
-    );
+    const expiryOptions = await ownerClient.$fetch("/passkey/generate-register-options", {
+      method: "GET",
+    });
+    const expiryResponse = authenticator.register(expiryOptions.data, ctx.baseURL);
     await control(ctx, "passkey-challenge-clock", {
       expiresAt: "2000-01-01T00:00:00.000Z",
     });
@@ -526,29 +467,23 @@ compatScenario(
       method: "POST",
       body: { response: expiryResponse },
     });
-    expect(z.object({ code: z.string() }).parse(expired.error).code).toBe(
-      "CHALLENGE_NOT_FOUND",
-    );
+    expect(z.object({ code: z.string() }).parse(expired.error).code).toBe("CHALLENGE_NOT_FOUND");
     expect((await state(ctx, user.id)).challenges.count).toBe(0);
-    const ceremonyOptions = await ownerClient.$fetch(
-      "/passkey/generate-register-options",
-      { method: "GET" },
-    );
-    const ceremonyResponse = authenticator.register(
-      ceremonyOptions.data,
-      ctx.baseURL,
-    );
-    const wrongCeremony = await ownerClient.$fetch(
-      "/passkey/verify-authentication",
-      { method: "POST", body: { response: ceremonyResponse } },
-    );
+    const ceremonyOptions = await ownerClient.$fetch("/passkey/generate-register-options", {
+      method: "GET",
+    });
+    const ceremonyResponse = authenticator.register(ceremonyOptions.data, ctx.baseURL);
+    const wrongCeremony = await ownerClient.$fetch("/passkey/verify-authentication", {
+      method: "POST",
+      body: { response: ceremonyResponse },
+    });
     expect(z.object({ code: z.string() }).parse(wrongCeremony.error).code).toBe(
       "CHALLENGE_NOT_FOUND",
     );
-    const ceremonyRetry = await ownerClient.$fetch(
-      "/passkey/verify-registration",
-      { method: "POST", body: { response: ceremonyResponse } },
-    );
+    const ceremonyRetry = await ownerClient.$fetch("/passkey/verify-registration", {
+      method: "POST",
+      body: { response: ceremonyResponse },
+    });
     expect(z.object({ code: z.string() }).parse(ceremonyRetry.error).code).toBe(
       "CHALLENGE_NOT_FOUND",
     );
@@ -585,10 +520,7 @@ compatScenario(
       });
       expect(signup.error).toBeNull();
       const { user, token } = identity.parse(signup.data);
-      const options = await passkey.$fetch(
-        "/passkey/generate-register-options",
-        { method: "GET" },
-      );
+      const options = await passkey.$fetch("/passkey/generate-register-options", { method: "GET" });
       expect(options.error).toBeNull();
       const authenticator = new Authenticator();
       const response = authenticator.register(options.data, ctx.baseURL);
@@ -599,21 +531,20 @@ compatScenario(
       });
       let staleGeneration, staleVerification;
       if (profile === "passkey-fresh") {
-        staleGeneration = await passkey.$fetch(
-          "/passkey/generate-register-options",
-          { method: "GET" },
-        );
+        staleGeneration = await passkey.$fetch("/passkey/generate-register-options", {
+          method: "GET",
+        });
         expect(staleGeneration.error?.status).toBe(403);
-        expect(
-          z.object({ code: z.string() }).parse(staleGeneration.error).code,
-        ).toBe("SESSION_NOT_FRESH");
-        staleVerification = await passkey.$fetch(
-          "/passkey/verify-registration",
-          { method: "POST", body: { response } },
+        expect(z.object({ code: z.string() }).parse(staleGeneration.error).code).toBe(
+          "SESSION_NOT_FRESH",
         );
-        expect(
-          z.object({ code: z.string() }).parse(staleVerification.error).code,
-        ).toBe("SESSION_NOT_FRESH");
+        staleVerification = await passkey.$fetch("/passkey/verify-registration", {
+          method: "POST",
+          body: { response },
+        });
+        expect(z.object({ code: z.string() }).parse(staleVerification.error).code).toBe(
+          "SESSION_NOT_FRESH",
+        );
         const untouched = await state(ctx, user.id);
         expect(untouched).toEqual({
           passkeys: [],
@@ -621,8 +552,7 @@ compatScenario(
           challenges: { count: 1 },
         });
         expect(
-          (await actor.client.signIn.email({ email, password: "password123" }))
-            .error,
+          (await actor.client.signIn.email({ email, password: "password123" })).error,
         ).toBeNull();
       }
       const verified = await passkey.$fetch("/passkey/verify-registration", {

@@ -1,42 +1,35 @@
-import { compatScenario } from "../../support/scenario";
 import { expect } from "bun:test";
 import { z } from "zod";
+import { compatScenario } from "../../support/scenario";
 
 function proofLifetime(token: string): number {
   const claims = z
     .object({ iat: z.number().int(), exp: z.number().int() })
-    .parse(
-      JSON.parse(
-        Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"),
-      ),
-    );
+    .parse(JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8")));
   return claims.exp - claims.iat;
 }
 
-compatScenario(
-  "update user changes session-visible profile fields",
-  async (ctx) => {
-    const primary = ctx.actor();
-    const email = ctx.uniqueEmail("user-management-update");
+compatScenario("update user changes session-visible profile fields", async (ctx) => {
+  const primary = ctx.actor();
+  const email = ctx.uniqueEmail("user-management-update");
 
-    const signup = await primary.client.signUp.email({
-      email,
-      password: "password123",
-      name: "Original Name",
-    });
-    const update = await primary.client.updateUser({
-      name: "Updated Name",
-      image: null,
-    });
-    const session = await primary.client.getSession();
+  const signup = await primary.client.signUp.email({
+    email,
+    password: "password123",
+    name: "Original Name",
+  });
+  const update = await primary.client.updateUser({
+    name: "Updated Name",
+    image: null,
+  });
+  const session = await primary.client.getSession();
 
-    return {
-      signup: ctx.snapshot(signup),
-      update: ctx.snapshot(update),
-      session: ctx.snapshot(session),
-    };
-  },
-);
+  return {
+    signup: ctx.snapshot(signup),
+    update: ctx.snapshot(update),
+    session: ctx.snapshot(session),
+  };
+});
 
 compatScenario("update user rejects direct email mutation", async (ctx) => {
   const primary = ctx.actor();
@@ -103,40 +96,37 @@ compatScenario("update user rejects non-object body", async (ctx) => {
   };
 });
 
-compatScenario(
-  "change email for an unverified user completes after verify email",
-  async (ctx) => {
-    const primary = ctx.actor();
-    const email = ctx.uniqueEmail("user-management-change-unverified");
-    const newEmail = ctx.uniqueEmail("user-management-change-unverified-new");
+compatScenario("change email for an unverified user completes after verify email", async (ctx) => {
+  const primary = ctx.actor();
+  const email = ctx.uniqueEmail("user-management-change-unverified");
+  const newEmail = ctx.uniqueEmail("user-management-change-unverified-new");
 
-    const signup = await primary.client.signUp.email({
-      email,
-      password: "password123",
-      name: "Unverified Change User",
-    });
-    const change = await primary.client.changeEmail({
-      newEmail,
-    });
-    const record = (await ctx.readVerificationEmail({ email: newEmail })) as {
-      token: string;
-    };
-    expect(proofLifetime(record.token)).toBe(3600);
-    const verify = await primary.client.verifyEmail({
-      query: {
-        token: record.token,
-      },
-    });
-    const session = await primary.client.getSession();
+  const signup = await primary.client.signUp.email({
+    email,
+    password: "password123",
+    name: "Unverified Change User",
+  });
+  const change = await primary.client.changeEmail({
+    newEmail,
+  });
+  const record = (await ctx.readVerificationEmail({ email: newEmail })) as {
+    token: string;
+  };
+  expect(proofLifetime(record.token)).toBe(3600);
+  const verify = await primary.client.verifyEmail({
+    query: {
+      token: record.token,
+    },
+  });
+  const session = await primary.client.getSession();
 
-    return {
-      signup: ctx.snapshot(signup),
-      change: ctx.snapshot(change),
-      verify: ctx.snapshot(verify),
-      session: ctx.snapshot(session),
-    };
-  },
-);
+  return {
+    signup: ctx.snapshot(signup),
+    change: ctx.snapshot(change),
+    verify: ctx.snapshot(verify),
+    session: ctx.snapshot(session),
+  };
+});
 
 compatScenario(
   "change email for a verified user requires old-email confirmation first",
@@ -237,9 +227,7 @@ compatScenario(
     });
     expect(signup.error).toBeNull();
     if (!originalCookie || !signup.data)
-      throw new Error(
-        "Deletion proof requires the original signed session and user",
-      );
+      throw new Error("Deletion proof requires the original signed session and user");
     const remove = await primary.client.deleteUser();
     expect(remove.error).toBeNull();
     const session = await primary.client.getSession();

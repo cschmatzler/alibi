@@ -1,10 +1,11 @@
-import { disconnectedRequest } from "./disconnect";
 import { expect } from "bun:test";
 import { z } from "zod";
-import { createTracingFetch, type TraceEntry } from "../../support/trace";
-import { compatScenario, type ScenarioContext } from "../../support/scenario";
-import { data, orgActor, signUp, serverOperation } from "./helpers";
 import type { FixtureProfile } from "../../support/profiles";
+import { compatScenario, type ScenarioContext } from "../../support/scenario";
+import { createTracingFetch, type TraceEntry } from "../../support/trace";
+import { disconnectedRequest } from "./disconnect";
+import { data, orgActor, serverOperation, signUp } from "./helpers";
+
 const profile = "org-deletion-hooks" as const;
 const row = z.object({ id: z.string() }).passthrough();
 const snapshot = z.object({
@@ -45,18 +46,12 @@ async function configure(ctx: ScenarioContext, mode: string) {
 }
 async function state(ctx: ScenarioContext, waitFor?: string) {
   const response = await ctx.rawRequest({
-    path:
-      "/__test/organization-delete-hooks-state" +
-      (waitFor ? `?waitFor=${waitFor}` : ""),
+    path: "/__test/organization-delete-hooks-state" + (waitFor ? `?waitFor=${waitFor}` : ""),
   });
   expect(response.status).toBe(200);
   return stateSchema.parse(response.body);
 }
-async function setup(
-  ctx: ScenarioContext,
-  label: string,
-  selected: FixtureProfile = profile,
-) {
+async function setup(ctx: ScenarioContext, label: string, selected: FixtureProfile = profile) {
   const owner = await signUp(ctx, `${label}-owner`, selected),
     foreign = await signUp(ctx, `${label}-foreign`, selected);
   const created = await owner.client.organization.create({
@@ -72,9 +67,7 @@ async function setup(
   });
   const foreignOrg = data(unrelated);
   const sibling = orgActor(ctx, `${label}-sibling`, selected);
-  data(
-    await sibling.signIn.email({ email: owner.email, password: "password123" }),
-  );
+  data(await sibling.signIn.email({ email: owner.email, password: "password123" }));
   data(await sibling.organization.setActive({ organizationId: org.id }));
   const invited = await owner.client.organization.inviteMember({
     organizationId: org.id,
@@ -102,15 +95,11 @@ function isolation(
   for (const key of ["organizations", "members", "invitations"] as const)
     expect(
       after[key].filter(
-        (r) =>
-          r.id === target.foreignOrg.id ||
-          r.organizationId === target.foreignOrg.id,
+        (r) => r.id === target.foreignOrg.id || r.organizationId === target.foreignOrg.id,
       ),
     ).toEqual(
       before[key].filter(
-        (r) =>
-          r.id === target.foreignOrg.id ||
-          r.organizationId === target.foreignOrg.id,
+        (r) => r.id === target.foreignOrg.id || r.organizationId === target.foreignOrg.id,
       ),
     );
   for (const key of ["teams", "teamMembers", "users"] as const)
@@ -185,9 +174,9 @@ compatScenario(
       ).toBe(false);
     }
     isolation(before.snapshot, after.snapshot, target);
-    expect(
-      data(await target.sibling.getSession()).session.activeOrganizationId,
-    ).toBe(target.org.id);
+    expect(data(await target.sibling.getSession()).session.activeOrganizationId).toBe(
+      target.org.id,
+    );
     return {
       created: target.created,
       unrelated: target.unrelated,
@@ -220,13 +209,11 @@ compatScenario(
       );
       isolation(before.snapshot, after.snapshot, target);
       for (const key of ["organizations", "members", "invitations"] as const) {
-        if (phase === "before")
-          expect(after.snapshot[key]).toEqual(before.snapshot[key]);
+        if (phase === "before") expect(after.snapshot[key]).toEqual(before.snapshot[key]);
         else
           expect(
             after.snapshot[key].some(
-              (r) =>
-                r.id === target.org.id || r.organizationId === target.org.id,
+              (r) => r.id === target.org.id || r.organizationId === target.org.id,
             ),
           ).toBe(false);
       }
@@ -277,11 +264,7 @@ compatScenario(
     for (const key of ["organizations", "members", "invitations"] as const)
       expect(after.snapshot[key]).toEqual(rows.snapshot[key]);
     isolation(rows.snapshot, after.snapshot, target);
-    const disabled = await signUp(
-      ctx,
-      "hook-disabled",
-      "org-deletion-hooks-disabled",
-    );
+    const disabled = await signUp(ctx, "hook-disabled", "org-deletion-hooks-disabled");
     const disabledOrg = data(
       await disabled.client.organization.create({
         name: "Disabled",
@@ -388,11 +371,7 @@ compatScenario(
     for (const key of ["organizations", "members", "invitations"] as const)
       expect(afterReject.snapshot[key]).toEqual(beforeReject.snapshot[key]);
     isolation(beforeReject.snapshot, afterReject.snapshot, rejecting);
-    const disabledGuest = await call(
-      "trusted-guest",
-      next.id,
-      "org-deletion-hooks-disabled",
-    );
+    const disabledGuest = await call("trusted-guest", next.id, "org-deletion-hooks-disabled");
     expect(disabledGuest.status).toBe(404);
     expect(disabledGuest.body).toMatchObject({
       code: "ORGANIZATION_DELETION_DISABLED",
@@ -423,14 +402,10 @@ compatScenario(
     const after = await state(ctx);
     expect(after.receipts[0]!.organization.name).toBe(target.org.name);
     expect(
-      after.receipts[0]!.snapshot.organizations.find(
-        (r) => r.id === target.org.id,
-      ),
+      after.receipts[0]!.snapshot.organizations.find((r) => r.id === target.org.id),
     ).toMatchObject({ name: "Written By Hook" });
     expect(after.receipts[1]!.organization.name).toBe(target.org.name);
-    expect(
-      after.snapshot.organizations.some((r) => r.id === target.org.id),
-    ).toBe(false);
+    expect(after.snapshot.organizations.some((r) => r.id === target.org.id)).toBe(false);
     isolation(before.snapshot, after.snapshot, target);
     return { before, deleted: ctx.snapshot(deleted), after };
   },
@@ -471,9 +446,7 @@ compatScenario(
     expect(deleted.error).toBeNull();
     const after = await state(ctx);
     expect(after.receipts.map((r) => r.phase)).toEqual(["before", "after"]);
-    expect(
-      after.snapshot.organizations.some((r) => r.id === target.org.id),
-    ).toBe(false);
+    expect(after.snapshot.organizations.some((r) => r.id === target.org.id)).toBe(false);
     isolation(before.snapshot, after.snapshot, target);
     await configure(ctx, "record");
     const abortTarget = await setup(ctx, "disconnected-delete");
@@ -497,9 +470,7 @@ compatScenario(
             organizationId: abortTarget.org.id,
           }),
         );
-        abortTarget.session = data(
-          await abortTarget.owner.client.getSession(),
-        ).session;
+        abortTarget.session = data(await abortTarget.owner.client.getSession()).session;
         abortBefore = await state(ctx);
       },
     );
@@ -509,9 +480,7 @@ compatScenario(
     try {
       abortPaused = await state(ctx, "before");
       expect(abortPaused.receipts.map((r) => r.phase)).toEqual(["before"]);
-      expect(abortPaused.snapshot.organizations).toEqual(
-        abortBefore.snapshot.organizations,
-      );
+      expect(abortPaused.snapshot.organizations).toEqual(abortBefore.snapshot.organizations);
       dropped = await wire.close();
     } finally {
       wire.dispose();
@@ -534,9 +503,7 @@ compatScenario(
     for (const key of ["organizations", "members", "invitations"] as const)
       expect(
         continued.snapshot[key].some(
-          (r) =>
-            r.id === abortTarget.org.id ||
-            r.organizationId === abortTarget.org.id,
+          (r) => r.id === abortTarget.org.id || r.organizationId === abortTarget.org.id,
         ),
       ).toBe(false);
     isolation(abortBefore.snapshot, continued.snapshot, abortTarget);

@@ -96,10 +96,7 @@ const profiles = {
     );
     pushIf(
       selected,
-      optionalPlugin(
-        "customSession",
-        async ({ user, session }) => ({ user, session }),
-      ),
+      optionalPlugin("customSession", async ({ user, session }) => ({ user, session })),
     );
     pushIf(selected, optionalPlugin("deviceAuthorization"));
     pushIf(
@@ -155,7 +152,13 @@ const profiles = {
       }),
     );
     pushIf(selected, optionalPlugin("oneTimeToken"));
-    pushIf(selected, optionalPlugin("organization", { teams: { enabled: true }, dynamicAccessControl: { enabled: true } }));
+    pushIf(
+      selected,
+      optionalPlugin("organization", {
+        teams: { enabled: true },
+        dynamicAccessControl: { enabled: true },
+      }),
+    );
     pushIf(selected, optionalPlugin("phoneNumber"));
     pushIf(
       selected,
@@ -175,21 +178,20 @@ const profiles = {
 
 const buildPlugins = profiles[profile];
 if (typeof buildPlugins !== "function") {
-  throw new Error(
-    `Unsupported profile '${profile}'. Allowed: ${Object.keys(profiles).join(", ")}`,
-  );
+  throw new Error(`Unsupported profile '${profile}'. Allowed: ${Object.keys(profiles).join(", ")}`);
 }
 
-const makeAuth = (selectPlugins) => betterAuth({
-  secret: "better-auth-rs-openapi-alignment-script-secret-32-bytes",
-  baseURL: "http://localhost:3000",
-  trustedOrigins: ["http://localhost:3000"],
-  emailAndPassword: {
-    enabled: true,
-  },
-  socialProviders: {},
-  plugins: selectPlugins(),
-});
+const makeAuth = (selectPlugins) =>
+  betterAuth({
+    secret: "better-auth-rs-openapi-alignment-script-secret-32-bytes",
+    baseURL: "http://localhost:3000",
+    trustedOrigins: ["http://localhost:3000"],
+    emailAndPassword: {
+      enabled: true,
+    },
+    socialProviders: {},
+    plugins: selectPlugins(),
+  });
 
 const auth = makeAuth(buildPlugins);
 
@@ -197,14 +199,28 @@ if (!auth.api || typeof auth.api.generateOpenAPISchema !== "function") {
   throw new Error("generateOpenAPISchema is not available. Ensure openAPI() is enabled.");
 }
 
-const schema = args.format === "routes"
-  ? // Plugins can replace endpoint metadata (for example customSession narrows
-  // get-session to GET). Union profiles so overrides cannot hide core methods.
-  [...new Set([auth, ...(profile === "all-in" ? [makeAuth(profiles.core), makeAuth(profiles["aligned-rs"])] : [])].flatMap(instance => Object.values(instance.api).flatMap(endpoint => {
-      if (!endpoint.path || endpoint.options?.metadata?.SERVER_ONLY) return [];
-      const methods = endpoint.options?.method ?? "GET";
-      return (Array.isArray(methods) ? methods : [methods]).map(method => `${method} ${endpoint.path.replace(/:[^/]+|\{[^}]+\}/g, "{}")}`);
-    })))].sort()
-  : await auth.api.generateOpenAPISchema();
+const schema =
+  args.format === "routes"
+    ? // Plugins can replace endpoint metadata (for example customSession narrows
+      // get-session to GET). Union profiles so overrides cannot hide core methods.
+      [
+        ...new Set(
+          [
+            auth,
+            ...(profile === "all-in"
+              ? [makeAuth(profiles.core), makeAuth(profiles["aligned-rs"])]
+              : []),
+          ].flatMap((instance) =>
+            Object.values(instance.api).flatMap((endpoint) => {
+              if (!endpoint.path || endpoint.options?.metadata?.SERVER_ONLY) return [];
+              const methods = endpoint.options?.method ?? "GET";
+              return (Array.isArray(methods) ? methods : [methods]).map(
+                (method) => `${method} ${endpoint.path.replace(/:[^/]+|\{[^}]+\}/g, "{}")}`,
+              );
+            }),
+          ),
+        ),
+      ].sort()
+    : await auth.api.generateOpenAPISchema();
 await writeFile(outputPath, JSON.stringify(schema, null, 2), "utf8");
 console.log(`[ok] ${profile} -> ${outputPath}`);

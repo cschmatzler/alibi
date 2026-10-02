@@ -1,13 +1,10 @@
 import { Database } from "bun:sqlite";
-import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
-import { admin, username, twoFactor, anonymous } from "better-auth/plugins";
+import { admin, anonymous, twoFactor, username } from "better-auth/plugins";
 
 /** Stored, non-input, hidden application data reaches the real admin callback. */
-export function createAdminBannedMessageFixture(
-  base: BetterAuthOptions,
-  database: Database,
-) {
+export function createAdminBannedMessageFixture(base: BetterAuthOptions, database: Database) {
   if (
     !database
       .query("PRAGMA table_info(user)")
@@ -18,7 +15,11 @@ export function createAdminBannedMessageFixture(
   }
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   const events: Record<string, unknown>[] = [];
-  for (const name of ["admin-banned-message", "admin-banned-message-error", "admin-banned-message-error-cache"]) {
+  for (const name of [
+    "admin-banned-message",
+    "admin-banned-message-error",
+    "admin-banned-message-error-cache",
+  ]) {
     const path = `/__test/profiles/${name}/api/auth`;
     profiles.set(
       path,
@@ -41,7 +42,9 @@ export function createAdminBannedMessageFixture(
           ? { ...base.session, cookieCache: { enabled: true, strategy: "compact" } }
           : base.session,
         plugins: [
-          ...(name.endsWith("-cache") ? [anonymous({ generateRandomEmail: () => "callback-anonymous@fixture.test" })] : []),
+          ...(name.endsWith("-cache")
+            ? [anonymous({ generateRandomEmail: () => "callback-anonymous@fixture.test" })]
+            : []),
           username(),
           twoFactor(),
           admin({
@@ -89,25 +92,19 @@ export function createAdminBannedMessageFixture(
     profiles,
     handle(request: Request) {
       const url = new URL(request.url);
-      if (
-        url.pathname !== "/__test/admin-banned-message-events" ||
-        request.method !== "GET"
-      )
+      if (url.pathname !== "/__test/admin-banned-message-events" || request.method !== "GET")
         return;
       const email = url.searchParams.get("email"),
         profile = url.searchParams.get("profile");
-      const user = database
-        .query("SELECT id,metadata FROM user WHERE email=?")
-        .get(email) as { id: string; metadata: string } | null;
+      const user = database.query("SELECT id,metadata FROM user WHERE email=?").get(email) as {
+        id: string;
+        metadata: string;
+      } | null;
       return Response.json({
-        user: user
-          ? { userId: user.id, metadata: JSON.parse(user.metadata) }
-          : null,
+        user: user ? { userId: user.id, metadata: JSON.parse(user.metadata) } : null,
         events: events.filter(
           (event) =>
-            event.email === email &&
-            event.profile === profile &&
-            event.userId === user?.id,
+            event.email === email && event.profile === profile && event.userId === user?.id,
         ),
       });
     },

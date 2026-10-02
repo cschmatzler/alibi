@@ -1,7 +1,8 @@
 import { expect } from "bun:test";
 import { z } from "zod";
-import { createTracingFetch, type TraceEntry } from "../../support/trace";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
+import { createTracingFetch, type TraceEntry } from "../../support/trace";
+
 const row = z.object({ id: z.string() }).passthrough();
 const snapshot = z.object({
   organizations: z.array(row),
@@ -44,9 +45,7 @@ async function configure(ctx: ScenarioContext, mode: string) {
 }
 async function state(ctx: ScenarioContext, waitFor?: string) {
   const result = await ctx.rawRequest({
-    path:
-      "/__test/organization-update-hooks-state" +
-      (waitFor ? `?waitFor=${waitFor}` : ""),
+    path: "/__test/organization-update-hooks-state" + (waitFor ? `?waitFor=${waitFor}` : ""),
   });
   expect(result.status).toBe(200);
   return stateSchema.parse(result.body);
@@ -63,8 +62,7 @@ async function signup(ctx: ScenarioContext, name: string) {
   return {
     ...actor,
     email,
-    userId: z.object({ user: z.object({ id: z.string() }) }).parse(result.data)
-      .user.id,
+    userId: z.object({ user: z.object({ id: z.string() }) }).parse(result.data).user.id,
   };
 }
 type Actor = Awaited<ReturnType<typeof signup>>;
@@ -81,11 +79,7 @@ async function create(ctx: ScenarioContext, actor: Actor, name: string) {
   expect(result.error).toBeNull();
   return organization.parse(result.data);
 }
-function update(
-  actor: Actor,
-  organizationId: string,
-  data: Record<string, unknown>,
-) {
+function update(actor: Actor, organizationId: string, data: Record<string, unknown>) {
   return actor.client.$fetch("/organization/update", {
     method: "POST",
     body: { organizationId, data },
@@ -133,10 +127,7 @@ compatScenario(
       expect(result.error).toBeNull();
       const parsed = organization.parse(result.data),
         after = await state(ctx);
-      expect(after.receipts.map((r) => r.phase)).toEqual([
-        "before-update",
-        "after-update",
-      ]);
+      expect(after.receipts.map((r) => r.phase)).toEqual(["before-update", "after-update"]);
       expect(after.receipts[0]!.organization).toEqual(input);
       expect(after.receipts[0]!.organization).not.toHaveProperty("id");
       expect(after.receipts[0]!.member).toMatchObject({
@@ -152,9 +143,7 @@ compatScenario(
       expect(after.receipts[0]!.snapshot).toEqual(before.snapshot);
       expect(after.receipts[1]!.organization).toEqual(organization.parse(ctx.snapshot(parsed)));
       expect(after.receipts[1]!.snapshot).toEqual(after.snapshot);
-      const stored = after.snapshot.organizations.find(
-        (r) => r.id === target.id,
-      )!;
+      const stored = after.snapshot.organizations.find((r) => r.id === target.id)!;
       if (mode === "patch") {
         expect(parsed).toMatchObject({
           name: "Hooked Update",
@@ -213,16 +202,11 @@ compatScenario(
       });
       const after = await state(ctx);
       expect(after.receipts.map((r) => r.phase)).toEqual(
-        mode === "reject-before-update"
-          ? ["before-update"]
-          : ["before-update", "after-update"],
+        mode === "reject-before-update" ? ["before-update"] : ["before-update", "after-update"],
       );
-      if (mode === "reject-before-update")
-        expect(after.snapshot).toEqual(before.snapshot);
+      if (mode === "reject-before-update") expect(after.snapshot).toEqual(before.snapshot);
       else {
-        expect(
-          after.snapshot.organizations.find((r) => r.id === target.id),
-        ).toMatchObject({
+        expect(after.snapshot.organizations.find((r) => r.id === target.id)).toMatchObject({
           name: mode,
           metadata: JSON.stringify(data.metadata),
         });
@@ -292,24 +276,21 @@ compatScenario(
       });
     expect(result.error).toBeNull();
     const after = await state(ctx);
-    expect(after.receipts.map((r) => r.phase)).toEqual([
-      "before-update",
-      "after-update",
-    ]);
+    expect(after.receipts.map((r) => r.phase)).toEqual(["before-update", "after-update"]);
     expect(after.receipts[1]!.user).toEqual(after.receipts[0]!.user);
     expect(after.receipts[1]!.member).toEqual(after.receipts[0]!.member);
     expect(after.receipts[1]!.user.name).toBe("update-authority-owner");
     expect(after.receipts[1]!.member.role).toBe("owner");
-    expect(
-      after.snapshot.users.find((r) => r.id === owner.userId),
-    ).toMatchObject({ name: "Stored New Name" });
-    expect(
-      after.snapshot.members.find((r) => r.id === after.receipts[0]!.member.id),
-    ).toMatchObject({ role: "member" });
+    expect(after.snapshot.users.find((r) => r.id === owner.userId)).toMatchObject({
+      name: "Stored New Name",
+    });
+    expect(after.snapshot.members.find((r) => r.id === after.receipts[0]!.member.id)).toMatchObject(
+      { role: "member" },
+    );
     expect(after.snapshot.sessions).toEqual(before.snapshot.sessions);
-    expect(
-      after.snapshot.organizations.filter((r) => r.id !== target.id),
-    ).toEqual(before.snapshot.organizations.filter((r) => r.id !== target.id));
+    expect(after.snapshot.organizations.filter((r) => r.id !== target.id)).toEqual(
+      before.snapshot.organizations.filter((r) => r.id !== target.id),
+    );
     await configure(ctx, "reject-before-update");
     const denied = await update(owner, target.id, {
       name: "Must Recheck Current Membership",
@@ -349,10 +330,7 @@ compatScenario(
     expect(result.error).toBeNull();
     expect(result.data).toBeNull();
     const after = await state(ctx);
-    expect(after.receipts.map((r) => r.phase)).toEqual([
-      "before-update",
-      "after-update",
-    ]);
+    expect(after.receipts.map((r) => r.phase)).toEqual(["before-update", "after-update"]);
     expect(after.receipts[1]!.organization).toBeNull();
     expect(after.receipts[1]!.member).toEqual(after.receipts[0]!.member);
     expect(after.snapshot.organizations).toEqual(
@@ -402,13 +380,10 @@ compatScenario(
     ctx.recordTransport(releaseTrace);
     expect(result.error).toBeNull();
     const after = await state(ctx);
-    expect(after.receipts.map((r) => r.phase)).toEqual([
-      "before-update",
-      "after-update",
-    ]);
-    expect(
-      after.snapshot.organizations.find((r) => r.id === target.id),
-    ).toMatchObject({ name: "Awaited Adapter Write" });
+    expect(after.receipts.map((r) => r.phase)).toEqual(["before-update", "after-update"]);
+    expect(after.snapshot.organizations.find((r) => r.id === target.id)).toMatchObject({
+      name: "Awaited Adapter Write",
+    });
     expect(after.snapshot.sessions).toEqual(before.snapshot.sessions);
     return { before, paused, result: ctx.snapshot(result), after };
   },
@@ -441,14 +416,9 @@ compatScenario(
         negativeZero,
       });
       const after = await state(ctx);
-      expect(after.receipts.map((r) => r.phase)).toEqual([
-        "before-update",
-        "after-update",
-      ]);
+      expect(after.receipts.map((r) => r.phase)).toEqual(["before-update", "after-update"]);
       expect(after.receipts[1]!.organization).toEqual(organization.parse(ctx.snapshot(parsed)));
-      expect(
-        after.snapshot.organizations.find((r) => r.id === target.id),
-      ).toMatchObject({
+      expect(after.snapshot.organizations.find((r) => r.id === target.id)).toMatchObject({
         name: numberClass,
         metadata: `{"original":${serialized},"patched":${serialized},"negativeZero":${negativeZero}}`,
       });

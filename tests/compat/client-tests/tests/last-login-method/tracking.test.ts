@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+import { passkeyClient } from "@better-auth/passkey/client";
 import { createAuthClient } from "better-auth/client";
 import {
   anonymousClient,
@@ -9,16 +10,13 @@ import {
   siweClient,
   usernameClient,
 } from "better-auth/client/plugins";
-import { passkeyClient } from "@better-auth/passkey/client";
 import { Cookie } from "tough-cookie";
 import { z } from "zod";
-import { compatScenario, type ScenarioContext } from "../../support/scenario";
-import { authProfilePath, type FixtureProfile } from "../../support/profiles";
-import {
-  message as walletMessage,
-  signature as walletSignature,
-} from "../siwe/helpers";
 import { Authenticator } from "../../support/authenticator";
+import { authProfilePath, type FixtureProfile } from "../../support/profiles";
+import { compatScenario, type ScenarioContext } from "../../support/scenario";
+import { message as walletMessage, signature as walletSignature } from "../siwe/helpers";
+
 function actor(ctx: ScenarioContext, name: string, profile: FixtureProfile) {
   const cookies: string[][] = [];
   const transport = ctx.actor(name, profile);
@@ -43,13 +41,8 @@ function actor(ctx: ScenarioContext, name: string, profile: FixtureProfile) {
   });
   return { client, cookies, fetch: transport.fetch };
 }
-function tracking(
-  headers: string[],
-  name = "better-auth.last_used_login_method",
-) {
-  return headers
-    .map((header) => Cookie.parse(header))
-    .find((cookie) => cookie?.key === name);
+function tracking(headers: string[], name = "better-auth.last_used_login_method") {
+  return headers.map((header) => Cookie.parse(header)).find((cookie) => cookie?.key === name);
 }
 async function control(ctx: ScenarioContext, body: Record<string, unknown>) {
   const result = await ctx.rawRequest({
@@ -86,10 +79,7 @@ function observed(headers: string[], name: string) {
         path: cookie.path ?? null,
         domain: cookie.domain ?? null,
         maxAge: cookie.maxAge ?? null,
-        expires:
-          cookie.expires instanceof Date
-            ? cookie.expires.toISOString()
-            : cookie.expires,
+        expires: cookie.expires instanceof Date ? cookie.expires.toISOString() : cookie.expires,
         httpOnly: cookie.httpOnly,
         secure: cookie.secure,
         sameSite: cookie.sameSite ?? null,
@@ -187,12 +177,9 @@ for (const mode of [
               ? "policy.last_login_method"
               : "better-auth.last_used_login_method",
         method =
-          mode === "custom" || mode === "update-error"
-            ? headers["x-last-login-method"]
-            : "email";
+          mode === "custom" || mode === "update-error" ? headers["x-last-login-method"] : "email";
       const cookie = tracking(owner.cookies.at(-1)!, name);
-      if (mode === "denied" || mode === "cookie-error")
-        expect(cookie).toBeUndefined();
+      if (mode === "denied" || mode === "cookie-error") expect(cookie).toBeUndefined();
       else {
         expect(decodeURIComponent(cookie!.value)).toBe(method);
         expect(cookie!.httpOnly).toBe(false);
@@ -211,21 +198,10 @@ for (const mode of [
       }
       const afterSignup = await state(ctx);
       expect(
-        afterSignup.users.find((row) => row.id === signup.data!.user.id)
-          ?.lastLoginMethod,
-      ).toBe(
-        mode === "default"
-          ? null
-          : mode === "transform"
-            ? `stored:${method}`
-            : method,
-      );
-      expect(signup.data.user).toMatchObject(
-        mode === "default" ? {} : { lastLoginMethod: method },
-      );
-      expect(
-        afterSignup.events.filter((event) => event.kind === "cookie"),
-      ).toHaveLength(1);
+        afterSignup.users.find((row) => row.id === signup.data!.user.id)?.lastLoginMethod,
+      ).toBe(mode === "default" ? null : mode === "transform" ? `stored:${method}` : method);
+      expect(signup.data.user).toMatchObject(mode === "default" ? {} : { lastLoginMethod: method });
+      expect(afterSignup.events.filter((event) => event.kind === "cookie")).toHaveLength(1);
       const other = await foreign.client.signUp.email({
         email: ctx.uniqueEmail("last-login-foreign"),
         password,
@@ -251,9 +227,7 @@ for (const mode of [
             })
             .parse(injectedUpdate),
         ).toBeDefined();
-        expect(
-          await ctx.readUserState({ userId: signup.data.user.id }),
-        ).toEqual(ownerBefore);
+        expect(await ctx.readUserState({ userId: signup.data.user.id })).toEqual(ownerBefore);
       }
 
       await control(ctx, { action: "clear" });
@@ -263,15 +237,10 @@ for (const mode of [
       );
       expect(failed.error?.code).toBe("INVALID_EMAIL_OR_PASSWORD");
       expect(tracking(guest.cookies.at(-1)!, name)).toBeUndefined();
-      expect(await ctx.readUserState({ userId: signup.data.user.id })).toEqual(
-        ownerBefore,
-      );
+      expect(await ctx.readUserState({ userId: signup.data.user.id })).toEqual(ownerBefore);
       const afterFailed = await state(ctx);
-      expect(
-        afterFailed.events.filter((event) => event.kind === "cookie"),
-      ).toHaveLength(0);
-      if (mode === "update-error")
-        await control(ctx, { action: "update-error" });
+      expect(afterFailed.events.filter((event) => event.kind === "cookie")).toHaveLength(0);
+      if (mode === "update-error") await control(ctx, { action: "update-error" });
       const secondHeaders = {
         "x-last-login-probe": "sibling sign-in",
         "x-last-login-method": "custom/signin",
@@ -282,12 +251,10 @@ for (const mode of [
       );
       expect(second.error).toBeNull();
       expect(second.data?.user.id).toBe(signup.data.user.id);
-      if (mode === "update-error")
-        await control(ctx, { action: "restore-updates" });
+      if (mode === "update-error") await control(ctx, { action: "restore-updates" });
       const afterSecond = await state(ctx);
       expect(
-        afterSecond.users.find((row) => row.id === signup.data!.user.id)
-          ?.lastLoginMethod,
+        afterSecond.users.find((row) => row.id === signup.data!.user.id)?.lastLoginMethod,
       ).toBe(
         mode === "default"
           ? null
@@ -326,9 +293,7 @@ for (const mode of [
       const siblingSession = await sibling.client.getSession();
       expect(siblingSession.error).toBeNull();
       expect(siblingSession.data?.user.id).toBe(signup.data.user.id);
-      expect(siblingSession.data?.session.token).not.toBe(
-        sessions.data?.session.token,
-      );
+      expect(siblingSession.data?.session.token).not.toBe(sessions.data?.session.token);
       const ownerState = await ctx.readUserState({
         userId: signup.data.user.id,
       });
@@ -338,9 +303,7 @@ for (const mode of [
           .passthrough()
           .parse(ownerState).sessions,
       ).toHaveLength(2);
-      expect(await ctx.readUserState({ userId: other.data.user.id })).toEqual(
-        foreignBefore,
-      );
+      expect(await ctx.readUserState({ userId: other.data.user.id })).toEqual(foreignBefore);
       let resolverRejected: unknown = null;
       if (mode === "resolver-error") {
         const before = await state(ctx);
@@ -349,9 +312,7 @@ for (const mode of [
           { headers: { "x-last-login-resolver-error": "true" } },
         );
         expect(
-          z
-            .object({ error: z.object({ status: z.literal(500) }) })
-            .parse(resolverRejected),
+          z.object({ error: z.object({ status: z.literal(500) }) }).parse(resolverRejected),
         ).toBeDefined();
         expect(tracking(guest.cookies.at(-1)!, name)).toBeUndefined();
         const after = await state(ctx);
@@ -369,9 +330,7 @@ for (const mode of [
           { email, password },
           { headers: { "x-last-login-method": "" } },
         );
-        expect(
-          z.object({ error: z.null() }).passthrough().parse(suppressed),
-        ).toBeDefined();
+        expect(z.object({ error: z.null() }).passthrough().parse(suppressed)).toBeDefined();
         expect(tracking(guest.cookies.at(-1)!, name)).toBeUndefined();
         expect((await state(ctx)).users).toEqual(before.users);
       }
@@ -405,10 +364,7 @@ for (const mode of [
       "GET /get-session",
       ...(mode !== "default" ? ["POST /update-user"] : []),
       ...(mode === "composition"
-        ? [
-            "GET /multi-session/list-device-sessions",
-            "POST /multi-session/set-active",
-          ]
+        ? ["GET /multi-session/list-device-sessions", "POST /multi-session/set-active"]
         : []),
     ],
   );
@@ -444,16 +400,13 @@ compatScenario(
     const outputs = [];
     const check = async (method: string | null) => {
       const current = await state(ctx);
-      expect(
-        current.users.find((row) => row.id === signup.data!.user.id)
-          ?.lastLoginMethod,
-      ).toBe(method ?? "email");
+      expect(current.users.find((row) => row.id === signup.data!.user.id)?.lastLoginMethod).toBe(
+        method ?? "email",
+      );
       const cookie = tracking(owner.cookies.at(-1)!);
       if (method) expect(decodeURIComponent(cookie!.value)).toBe(method);
       else expect(cookie).toBeUndefined();
-      expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(
-        foreignBefore,
-      );
+      expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
       return projectEvents(current);
     };
     await owner.client.signOut();
@@ -468,9 +421,7 @@ compatScenario(
     expect(sent.error).toBeNull();
     const delivered = z
       .object({ otp: z.string() })
-      .parse(
-        await control(ctx, { action: "delivery", key: `sign-in:${email}` }),
-      );
+      .parse(await control(ctx, { action: "delivery", key: `sign-in:${email}` }));
     const otp = await owner.client.signIn.emailOtp({
       email,
       otp: delivered.otp,
@@ -483,35 +434,22 @@ compatScenario(
       state: await check("email-otp"),
     });
     const authenticator = new Authenticator();
-    const registration = await owner.client.$fetch(
-      "/passkey/generate-register-options",
-    );
+    const registration = await owner.client.$fetch("/passkey/generate-register-options");
     expect(registration.error).toBeNull();
-    const registrationResponse = authenticator.register(
-      registration.data,
-      ctx.baseURL,
-    );
-    const registered = await owner.client.$fetch(
-      "/passkey/verify-registration",
-      {
-        method: "POST",
-        body: { response: registrationResponse, name: "Owned key" },
-      },
-    );
+    const registrationResponse = authenticator.register(registration.data, ctx.baseURL);
+    const registered = await owner.client.$fetch("/passkey/verify-registration", {
+      method: "POST",
+      body: { response: registrationResponse, name: "Owned key" },
+    });
     expect(registered.error).toBeNull();
     await owner.client.signOut();
-    const authOptions = await owner.client.$fetch(
-      "/passkey/generate-authenticate-options",
-    );
+    const authOptions = await owner.client.$fetch("/passkey/generate-authenticate-options");
     expect(authOptions.error).toBeNull();
-    const authenticationResponse = authenticator.authenticate(
-      authOptions.data,
-      ctx.baseURL,
-    );
-    const passkey = await owner.client.$fetch(
-      "/passkey/verify-authentication",
-      { method: "POST", body: { response: authenticationResponse } },
-    );
+    const authenticationResponse = authenticator.authenticate(authOptions.data, ctx.baseURL);
+    const passkey = await owner.client.$fetch("/passkey/verify-authentication", {
+      method: "POST",
+      body: { response: authenticationResponse },
+    });
     expect(passkey.error).toBeNull();
     const callbackReceipts = await state(ctx);
     expect(
@@ -531,8 +469,7 @@ compatScenario(
         .filter((event) => event.path === "/passkey/verify-authentication")
         .every(
           (event) =>
-            JSON.stringify(event.body) ===
-            JSON.stringify({ response: authenticationResponse }),
+            JSON.stringify(event.body) === JSON.stringify({ response: authenticationResponse }),
         ),
     ).toBe(true);
     expect(
@@ -580,26 +517,21 @@ compatScenario(
       callbackURL: "/dashboard",
     });
     expect(initiated.error).toBeNull();
-    const socialState = new URL(initiated.data!.url!).searchParams.get(
-      "state",
-    )!;
+    const socialState = new URL(initiated.data!.url!).searchParams.get("state")!;
     const callback = await social.fetch(
       `${authProfilePath(profile)}/callback/google?code=compat-code&state=${encodeURIComponent(socialState)}`,
       { redirect: "manual" },
     );
     expect(callback.status).toBe(302);
     social.cookies.push(callback.headers.getSetCookie());
-    expect(decodeURIComponent(tracking(social.cookies.at(-1)!)!.value)).toBe(
-      "google",
-    );
+    expect(decodeURIComponent(tracking(social.cookies.at(-1)!)!.value)).toBe("google");
     const socialSession = await social.client.getSession();
     expect(socialSession.error).toBeNull();
     expect(socialSession.data?.user.email).toBe(socialEmail);
     const afterSocial = await state(ctx);
-    expect(
-      afterSocial.users.find((row) => row.email === socialEmail)
-        ?.lastLoginMethod,
-    ).toBe("google");
+    expect(afterSocial.users.find((row) => row.email === socialEmail)?.lastLoginMethod).toBe(
+      "google",
+    );
     expect(
       afterSocial.events.some(
         (event) =>
@@ -611,24 +543,20 @@ compatScenario(
     const wallet = actor(ctx, "wallet", profile);
     const nonce = await wallet.client.siwe.nonce();
     expect(nonce.error).toBeNull();
-    const signedMessage = walletMessage(
-      z.object({ nonce: z.string() }).parse(nonce.data).nonce,
-      { domain: "last-login.fixture" },
-    );
+    const signedMessage = walletMessage(z.object({ nonce: z.string() }).parse(nonce.data).nonce, {
+      domain: "last-login.fixture",
+    });
     const verified = await wallet.client.siwe.verify({
       message: signedMessage,
       signature: walletSignature(signedMessage),
     });
     expect(verified.error).toBeNull();
-    expect(decodeURIComponent(tracking(wallet.cookies.at(-1)!)!.value)).toBe(
-      "siwe",
-    );
+    expect(decodeURIComponent(tracking(wallet.cookies.at(-1)!)!.value)).toBe("siwe");
     const walletSession = await wallet.client.getSession();
     expect(walletSession.error).toBeNull();
     const afterWallet = await state(ctx);
     expect(
-      afterWallet.users.find((row) => row.id === walletSession.data!.user.id)
-        ?.lastLoginMethod,
+      afterWallet.users.find((row) => row.id === walletSession.data!.user.id)?.lastLoginMethod,
     ).toBe("siwe");
     const anonymous = await upgrade.client.signIn.anonymous();
     expect(anonymous.error).toBeNull();
@@ -651,17 +579,13 @@ compatScenario(
         .passthrough()
         .parse(upgraded.data?.user),
     ).toBeDefined();
-    expect(
-      await ctx.readUserState({ userId: anonymous.data!.user.id }),
-    ).toEqual({
+    expect(await ctx.readUserState({ userId: anonymous.data!.user.id })).toEqual({
       user: null,
       accounts: [],
       sessions: [],
       twoFactorExists: false,
     });
-    expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(
-      foreignBefore,
-    );
+    expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
     return ctx.snapshot({
       signup,
       other,
@@ -738,10 +662,7 @@ compatScenario(
       result,
       persisted,
       physical,
-      cookie: observed(
-        owner.cookies.at(-1)!,
-        "better-auth.last_used_login_method",
-      ),
+      cookie: observed(owner.cookies.at(-1)!, "better-auth.last_used_login_method"),
     });
   },
   ["POST /sign-up/email"],
@@ -754,34 +675,28 @@ compatScenario(
     const owner = actor(ctx, "owner", "last-login-custom");
     const email = ctx.uniqueEmail("numeric-context");
     const body = `{"email":${JSON.stringify(email)},"password":"password123","name":"Numeric Owner","username":"numericowner","extra":{"overflow":1e400,"zero":-0,"nested":[null,false,"literal"]}}`;
-    const result = await owner.fetch(
-      `${authProfilePath("last-login-custom")}/sign-up/email`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-last-login-body": "true",
-        },
-        body,
+    const result = await owner.fetch(`${authProfilePath("last-login-custom")}/sign-up/email`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-last-login-body": "true",
       },
-    );
+      body,
+    });
     expect(result.status).toBe(200);
     const returned = await result.json();
     expect(
       decodeURIComponent(
-        tracking(result.headers.getSetCookie(), "fixture.last_login_method")!
-          .value,
+        tracking(result.headers.getSetCookie(), "fixture.last_login_method")!.value,
       ),
     ).toBe("body:Infinity:-0");
     const persisted = await state(ctx);
-    expect(
-      persisted.users.find((row) => row.email === email)?.lastLoginMethod,
-    ).toBe("body:Infinity:-0");
+    expect(persisted.users.find((row) => row.email === email)?.lastLoginMethod).toBe(
+      "body:Infinity:-0",
+    );
     expect(persisted.events.length).toBeGreaterThan(0);
     expect(
-      persisted.events
-        .filter((event) => event.kind === "cookie")
-        .map((event) => event.requestBody),
+      persisted.events.filter((event) => event.kind === "cookie").map((event) => event.requestBody),
     ).toEqual([body]);
     for (const event of persisted.events) {
       expect(event.body).toEqual({

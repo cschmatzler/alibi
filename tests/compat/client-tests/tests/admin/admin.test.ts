@@ -34,69 +34,72 @@ compatScenario("admin get-user and update-user match TS", async (ctx) => {
   };
 });
 
-compatScenario("admin create-user, set-role, set-user-password, and remove-user match TS", async (ctx) => {
-  const admin = await signUpAndPromoteAdmin(ctx, "admin", "admin-admin-crud", "Admin Admin");
-  const createdEmail = ctx.uniqueEmail("admin-created");
-  const passwordlessEmail = ctx.uniqueEmail("admin-passwordless");
+compatScenario(
+  "admin create-user, set-role, set-user-password, and remove-user match TS",
+  async (ctx) => {
+    const admin = await signUpAndPromoteAdmin(ctx, "admin", "admin-admin-crud", "Admin Admin");
+    const createdEmail = ctx.uniqueEmail("admin-created");
+    const passwordlessEmail = ctx.uniqueEmail("admin-passwordless");
 
-  const createUser = await admin.adminClient.admin.createUser({
-    email: createdEmail,
-    password: "password123",
-    name: "Created User",
-    role: ["user", "admin"],
-  });
+    const createUser = await admin.adminClient.admin.createUser({
+      email: createdEmail,
+      password: "password123",
+      name: "Created User",
+      role: ["user", "admin"],
+    });
 
-  const createPasswordlessUser = await admin.adminClient.admin.createUser({
-    email: passwordlessEmail,
-    name: "Passwordless User",
-    role: "user",
-  });
+    const createPasswordlessUser = await admin.adminClient.admin.createUser({
+      email: passwordlessEmail,
+      name: "Passwordless User",
+      role: "user",
+    });
 
-  const duplicateEmail = await admin.adminClient.admin.createUser({
-    email: createdEmail,
-    password: "password123",
-    name: "Duplicate User",
-  });
+    const duplicateEmail = await admin.adminClient.admin.createUser({
+      email: createdEmail,
+      password: "password123",
+      name: "Duplicate User",
+    });
 
-  const createdUserId = createUser.data?.user.id ?? "";
-  const setRole = await admin.adminClient.admin.setRole({
-    userId: createdUserId,
-    role: ["admin", "user"],
-  });
+    const createdUserId = createUser.data?.user.id ?? "";
+    const setRole = await admin.adminClient.admin.setRole({
+      userId: createdUserId,
+      role: ["admin", "user"],
+    });
 
-  const setUserPassword = await admin.adminClient.admin.setUserPassword({
-    userId: createdUserId,
-    newPassword: "newpassword123",
-  });
+    const setUserPassword = await admin.adminClient.admin.setUserPassword({
+      userId: createdUserId,
+      newPassword: "newpassword123",
+    });
 
-  const signInWithNewPassword = await admin.client.signIn.email({
-    email: createdEmail,
-    password: "newpassword123",
-  });
+    const signInWithNewPassword = await admin.client.signIn.email({
+      email: createdEmail,
+      password: "newpassword123",
+    });
 
-  const removeUser = await admin.adminClient.admin.removeUser({
-    userId: createdUserId,
-  });
+    const removeUser = await admin.adminClient.admin.removeUser({
+      userId: createdUserId,
+    });
 
-  const passwordlessSignIn = await admin.client.signIn.email({
-    email: passwordlessEmail,
-    password: "anypassword123",
-  });
+    const passwordlessSignIn = await admin.client.signIn.email({
+      email: passwordlessEmail,
+      password: "anypassword123",
+    });
 
-  return {
-    createUser: ctx.snapshot(createUser),
-    createPasswordlessUser: ctx.snapshot(createPasswordlessUser),
-    duplicateEmail: ctx.snapshot(duplicateEmail),
-    setRole: ctx.snapshot(setRole),
-    setUserPassword: ctx.snapshot(setUserPassword),
-    signInWithNewPassword: {
-      dataPresent: signInWithNewPassword.data !== null,
-      error: ctx.snapshot(signInWithNewPassword.error),
-    },
-    removeUser: ctx.snapshot(removeUser),
-    passwordlessSignIn: ctx.snapshot(passwordlessSignIn),
-  };
-});
+    return {
+      createUser: ctx.snapshot(createUser),
+      createPasswordlessUser: ctx.snapshot(createPasswordlessUser),
+      duplicateEmail: ctx.snapshot(duplicateEmail),
+      setRole: ctx.snapshot(setRole),
+      setUserPassword: ctx.snapshot(setUserPassword),
+      signInWithNewPassword: {
+        dataPresent: signInWithNewPassword.data !== null,
+        error: ctx.snapshot(signInWithNewPassword.error),
+      },
+      removeUser: ctx.snapshot(removeUser),
+      passwordlessSignIn: ctx.snapshot(passwordlessSignIn),
+    };
+  },
+);
 
 compatScenario("admin list-users and has-permission match TS", async (ctx) => {
   const admin = await signUpAndPromoteAdmin(ctx, "admin", "admin-admin-list", "Admin Admin");

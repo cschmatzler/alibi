@@ -15,6 +15,7 @@ export function magicLinkClient(ctx: ScenarioContext, actor = "primary") {
 
 export async function readMagicLink(ctx: ScenarioContext, email: string) {
   const parsed = delivery.safeParse(await fixtureValue(ctx, "/__test/magic-link", { email }));
-  if (!parsed.success) throw new Error("Successful link issuance must deliver the actual URL and token");
+  if (!parsed.success)
+    throw new Error("Successful link issuance must deliver the actual URL and token");
   return parsed.data;
 }

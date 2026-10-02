@@ -1,13 +1,8 @@
 import { join } from "node:path";
 import { writeJSON } from "./common";
 import type { Inventory, SourceMutation } from "./inventory";
-import {
-  runSuite,
-  startFixture,
-  type SuiteResult,
-  type ManagedFixture,
-} from "./processes";
-import { wireMutationSchema, type WireMutation } from "./wire";
+import { type ManagedFixture, runSuite, type SuiteResult, startFixture } from "./processes";
+import { type WireMutation, wireMutationSchema } from "./wire";
 
 export type Mutation = (SourceMutation & { kind: "source" }) | WireMutation;
 export type Verdict = {
@@ -44,8 +39,7 @@ export function validSuite(suite: SuiteResult): boolean {
     !suite.errors.length &&
     suite.registered.length > 0 &&
     new Set(suite.registered).size === suite.registered.length &&
-    new Set(suite.outcomes.map((outcome) => outcome.name)).size ===
-      suite.outcomes.length &&
+    new Set(suite.outcomes.map((outcome) => outcome.name)).size === suite.outcomes.length &&
     JSON.stringify([...suite.registered].sort()) ===
       JSON.stringify(suite.outcomes.map((outcome) => outcome.name).sort())
   );
@@ -55,8 +49,7 @@ export function matchingSuites(left: SuiteResult, right: SuiteResult): boolean {
     left.runId === right.runId &&
     left.inventoryDigest === right.inventoryDigest &&
     left.harnessDigest === right.harnessDigest &&
-    JSON.stringify([...left.registered].sort()) ===
-      JSON.stringify([...right.registered].sort())
+    JSON.stringify([...left.registered].sort()) === JSON.stringify([...right.registered].sort())
   );
 }
 
@@ -72,11 +65,7 @@ export function classifyMutation(
     status: "inconclusive",
     killingScenarios: [],
   };
-  if (
-    !cleanSuite(baseline) ||
-    !validSuite(candidate) ||
-    !matchingSuites(baseline, candidate)
-  )
+  if (!cleanSuite(baseline) || !validSuite(candidate) || !matchingSuites(baseline, candidate))
     return {
       ...verdict,
       reason: "Baseline, execution, or scenario-set integrity failed",
@@ -109,9 +98,7 @@ export function classifyMutation(
         if (receipt.changed === true) changed.add(receipt.scenario);
       }
     }
-  const failures = candidate.outcomes.filter(
-    (outcome) => outcome.status === "failed",
-  );
+  const failures = candidate.outcomes.filter((outcome) => outcome.status === "failed");
   if (
     failures.some(
       (outcome) =>
@@ -122,8 +109,7 @@ export function classifyMutation(
   )
     return {
       ...verdict,
-      reason:
-        "Failure was not a behavioral assertion in a scenario that reached the mutation",
+      reason: "Failure was not a behavioral assertion in a scenario that reached the mutation",
     };
   if (failures.length)
     return {
@@ -138,11 +124,7 @@ export function classifyMutation(
     };
   return {
     ...verdict,
-    status: changed.size
-      ? "survived"
-      : reached.size
-        ? "no-change"
-        : "not-reached",
+    status: changed.size ? "survived" : reached.size ? "no-change" : "not-reached",
   };
 }
 
@@ -183,13 +165,9 @@ export async function mutationCampaign(options: {
         ...mutation,
         kind: "source" as const,
       })),
-      ...baseline.wireCandidates.map((value) =>
-        wireMutationSchema.parse(value),
-      ),
+      ...baseline.wireCandidates.map((value) => wireMutationSchema.parse(value)),
     ];
-    const byId = new Map(
-      candidates.map((candidate) => [candidate.id, candidate]),
-    );
+    const byId = new Map(candidates.map((candidate) => [candidate.id, candidate]));
     const wanted = options.only ?? [
       ...options.priority,
       ...candidates
@@ -201,9 +179,7 @@ export async function mutationCampaign(options: {
     ];
     const unknown = wanted.filter((id) => !byId.has(id));
     if (unknown.length)
-      throw new Error(
-        `Mutation identifiers do not exist in this inventory: ${unknown.join(", ")}`,
-      );
+      throw new Error(`Mutation identifiers do not exist in this inventory: ${unknown.join(", ")}`);
     const selected = [...new Set(wanted)].slice(0, options.budget);
     const campaign: Campaign = {
       schemaVersion: 1,
@@ -247,8 +223,7 @@ export async function mutationCampaign(options: {
             right,
             env: {
               ...options.env,
-              COMPAT_ASSURANCE_WIRE_MUTATION:
-                mutation.kind === "wire" ? wirePath : undefined,
+              COMPAT_ASSURANCE_WIRE_MUTATION: mutation.kind === "wire" ? wirePath : undefined,
             },
           });
           // Preserve the classification inputs. Branch hit maps remain in each suite.json;
@@ -291,13 +266,8 @@ export async function mutationCampaign(options: {
         right: pristine,
         env: options.env,
       });
-      if (
-        !cleanSuite(campaign.confirmation) ||
-        !matchingSuites(baseline, campaign.confirmation)
-      ) {
-        campaign.errors.push(
-          "Pristine confirmation failed; apparent detections are inconclusive",
-        );
+      if (!cleanSuite(campaign.confirmation) || !matchingSuites(baseline, campaign.confirmation)) {
+        campaign.errors.push("Pristine confirmation failed; apparent detections are inconclusive");
         campaign.results = campaign.results.map((result) =>
           result.status === "killed"
             ? {

@@ -3,8 +3,9 @@ import { createAuthClient } from "better-auth/client";
 import { adminClient } from "better-auth/client/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
 import { z } from "zod";
-import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
+import { compatScenario, type ScenarioContext } from "../../support/scenario";
+
 const access = createAccessControl({
   user: ["get", "create", "set-role", "update"],
 });
@@ -20,11 +21,7 @@ function client(ctx: ScenarioContext, profile: FixtureProfile, name: string) {
     fetchOptions: { customFetchImpl: ctx.actor(name, profile).fetch },
   });
 }
-async function signup(
-  ctx: ScenarioContext,
-  profile: FixtureProfile,
-  name: string,
-) {
+async function signup(ctx: ScenarioContext, profile: FixtureProfile, name: string) {
   const current = client(ctx, profile, name),
     email = ctx.uniqueEmail(`${profile}-${name}`);
   const result = await current.signUp.email({
@@ -60,28 +57,19 @@ compatScenario(
       target = await signup(ctx, "admin-standard", "target");
     const before = await state(ctx, target.email),
       observations = [];
-    for (const role of [
-      "manager,user",
-      ["manager,user"],
-      " manager",
-      [" user"],
-    ]) {
+    for (const role of ["manager,user", ["manager,user"], " manager", [" user"]]) {
       const set = await owner.client.admin.setRole({
         userId: target.userId,
         role,
       });
       expect(set.error?.status).toBe(400);
-      expect(set.error?.code).toBe(
-        "YOU_ARE_NOT_ALLOWED_TO_SET_NON_EXISTENT_VALUE",
-      );
+      expect(set.error?.code).toBe("YOU_ARE_NOT_ALLOWED_TO_SET_NON_EXISTENT_VALUE");
       const update = await owner.client.admin.updateUser({
         userId: target.userId,
         data: { role },
       });
       expect(update.error?.status).toBe(400);
-      expect(update.error?.code).toBe(
-        "YOU_ARE_NOT_ALLOWED_TO_SET_NON_EXISTENT_VALUE",
-      );
+      expect(update.error?.code).toBe("YOU_ARE_NOT_ALLOWED_TO_SET_NON_EXISTENT_VALUE");
       const after = await state(ctx, target.email);
       expect(after).toEqual(before);
       observations.push({ role, set, update, after });
@@ -147,9 +135,7 @@ compatScenario(
           ...input,
         });
       expect(result.error?.status).toBe(400);
-      expect(result.error?.code).toBe(
-        "YOU_ARE_NOT_ALLOWED_TO_SET_NON_EXISTENT_VALUE",
-      );
+      expect(result.error?.code).toBe("YOU_ARE_NOT_ALLOWED_TO_SET_NON_EXISTENT_VALUE");
       const persisted = await state(ctx, email);
       absent(persisted);
       denied.push({ input, result, persisted });
@@ -230,9 +216,7 @@ compatScenario(
       name: "Wrong duplicate",
       role: "manager,user",
     });
-    expect(duplicate.error?.code).toBe(
-      "YOU_ARE_NOT_ALLOWED_TO_SET_NON_EXISTENT_VALUE",
-    );
+    expect(duplicate.error?.code).toBe("YOU_ARE_NOT_ALLOWED_TO_SET_NON_EXISTENT_VALUE");
     expect(await state(ctx, email)).toEqual(persisted);
     return ctx.snapshot({
       signup: owner.result,
@@ -285,9 +269,7 @@ compatScenario(
           ...input,
         });
       expect(result.error?.status).toBe(403);
-      expect(result.error?.code).toBe(
-        "YOU_ARE_NOT_ALLOWED_TO_CHANGE_USERS_ROLE",
-      );
+      expect(result.error?.code).toBe("YOU_ARE_NOT_ALLOWED_TO_CHANGE_USERS_ROLE");
       const persisted = await state(ctx, email);
       absent(persisted);
       denied.push({ input, result, persisted });
@@ -298,17 +280,13 @@ compatScenario(
       data: { role: "user" },
     });
     expect(duplicate.error?.status).toBe(403);
-    expect(duplicate.error?.code).toBe(
-      "YOU_ARE_NOT_ALLOWED_TO_CHANGE_USERS_ROLE",
-    );
+    expect(duplicate.error?.code).toBe("YOU_ARE_NOT_ALLOWED_TO_CHANGE_USERS_ROLE");
     expect(await state(ctx, defaultEmail)).toEqual(defaultState);
     const after = await state(ctx, owner.email);
     expect(after).toEqual(before);
     const current = await owner.client.getSession();
     expect(current.data?.user.id).toBe(owner.userId);
-    expect(current.data?.session.token).toBe(
-      stored.parse(before).sessions[0]?.token,
-    );
+    expect(current.data?.session.token).toBe(stored.parse(before).sessions[0]?.token);
     return ctx.snapshot({
       signup: owner.result,
       before,
@@ -335,13 +313,9 @@ compatScenario(
         role,
       });
       expect(result.error).toBeNull();
-      expect(result.data?.user.role).toBe(
-        Array.isArray(role) ? role.join(",") : role,
-      );
+      expect(result.data?.user.role).toBe(Array.isArray(role) ? role.join(",") : role);
       const persisted = await state(ctx, target.email);
-      expect(stored.parse(persisted).user.role).toBe(
-        Array.isArray(role) ? role.join(",") : role,
-      );
+      expect(stored.parse(persisted).user.role).toBe(Array.isArray(role) ? role.join(",") : role);
       expect(stored.parse(persisted).sessions[0]?.token).toBe(
         target.result.data?.token ?? undefined,
       );

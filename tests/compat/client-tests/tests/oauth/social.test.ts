@@ -138,50 +138,53 @@ compatScenario("social sign-in with idToken returns token and session", async (c
   };
 });
 
-compatScenario("social callback POST redirects to GET and preserves TS param precedence", async (ctx) => {
-  const primary = ctx.actor();
-  const email = ctx.uniqueEmail("oauth-social-post-callback");
-  const sub = ctx.uniqueToken("oauth-google-post-callback-sub");
-  await ctx.setSocialProfile({
-    email,
-    sub,
-    name: "Oauth Google POST Callback User",
-    emailVerified: true,
-    idTokenValid: true,
-  });
+compatScenario(
+  "social callback POST redirects to GET and preserves TS param precedence",
+  async (ctx) => {
+    const primary = ctx.actor();
+    const email = ctx.uniqueEmail("oauth-social-post-callback");
+    const sub = ctx.uniqueToken("oauth-google-post-callback-sub");
+    await ctx.setSocialProfile({
+      email,
+      sub,
+      name: "Oauth Google POST Callback User",
+      emailVerified: true,
+      idTokenValid: true,
+    });
 
-  const signIn = await primary.client.signIn.social({
-    provider: "google",
-    callbackURL: "/dashboard",
-  });
-  const state = extractState(signIn.data?.url);
-  const callbackPost = await ctx.rawRequest({
-    path: `/api/auth/callback/google?state=${encodeURIComponent(state)}`,
-    method: "POST",
-    json: {
-      code: "compat-code",
-      state: "body-state-should-lose",
-    },
-    redirect: "manual",
-  });
-  const redirect = summarizeLocation(callbackPost.location);
-  const callbackGet = await ctx.rawRequest({
-    path: callbackPost.location ?? "",
-    redirect: "manual",
-  });
-  const session = await primary.client.getSession();
+    const signIn = await primary.client.signIn.social({
+      provider: "google",
+      callbackURL: "/dashboard",
+    });
+    const state = extractState(signIn.data?.url);
+    const callbackPost = await ctx.rawRequest({
+      path: `/api/auth/callback/google?state=${encodeURIComponent(state)}`,
+      method: "POST",
+      json: {
+        code: "compat-code",
+        state: "body-state-should-lose",
+      },
+      redirect: "manual",
+    });
+    const redirect = summarizeLocation(callbackPost.location);
+    const callbackGet = await ctx.rawRequest({
+      path: callbackPost.location ?? "",
+      redirect: "manual",
+    });
+    const session = await primary.client.getSession();
 
-  return {
-    callbackPost: {
-      status: callbackPost.status,
-      locationPath: redirect.pathname,
-      usesQueryState: redirect.params.state === state,
-      keepsBodyCode: redirect.params.code === "compat-code",
-    },
-    callbackGet: ctx.snapshot(callbackGet),
-    session: ctx.snapshot(session),
-  };
-});
+    return {
+      callbackPost: {
+        status: callbackPost.status,
+        locationPath: redirect.pathname,
+        usesQueryState: redirect.params.state === state,
+        keepsBodyCode: redirect.params.code === "compat-code",
+      },
+      callbackGet: ctx.snapshot(callbackGet),
+      session: ctx.snapshot(session),
+    };
+  },
+);
 
 compatScenario("github social sign-in redirects new users to newUserCallbackURL", async (ctx) => {
   const primary = ctx.actor();
@@ -268,83 +271,89 @@ compatScenario("github social sign-in redirects existing users to callbackURL", 
   };
 });
 
-compatScenario("github social sign-in with unverified fallback email does not link existing user", async (ctx) => {
-  const primary = ctx.actor();
-  const email = ctx.uniqueEmail("oauth-github-unverified");
+compatScenario(
+  "github social sign-in with unverified fallback email does not link existing user",
+  async (ctx) => {
+    const primary = ctx.actor();
+    const email = ctx.uniqueEmail("oauth-github-unverified");
 
-  await primary.client.signUp.email({
-    email,
-    password: "password123",
-    name: "Credential User",
-  });
-  await primary.client.signOut();
+    await primary.client.signUp.email({
+      email,
+      password: "password123",
+      name: "Credential User",
+    });
+    await primary.client.signOut();
 
-  await ctx.setGitHubProfile({
-    id: ctx.uniqueToken("oauth-github-unverified-id"),
-    login: ctx.uniqueToken("oauth-github-unverified-login"),
-    emails: [
-      {
-        email,
-        primary: true,
-        verified: false,
-        visibility: "private",
+    await ctx.setGitHubProfile({
+      id: ctx.uniqueToken("oauth-github-unverified-id"),
+      login: ctx.uniqueToken("oauth-github-unverified-login"),
+      emails: [
+        {
+          email,
+          primary: true,
+          verified: false,
+          visibility: "private",
+        },
+      ],
+    });
+
+    const signIn = await primary.client.signIn.social({
+      provider: "github",
+      callbackURL: "/dashboard",
+    });
+    const state = extractState(signIn.data?.url);
+    const callback = await ctx.rawRequest({
+      path: `/api/auth/callback/github?code=compat-code&state=${encodeURIComponent(state)}`,
+      redirect: "manual",
+    });
+    const session = await primary.client.getSession();
+
+    return {
+      signIn: {
+        redirect: signIn.data?.redirect,
+        hasState: Boolean(state),
       },
-    ],
-  });
+      callback: ctx.snapshot(callback),
+      session: ctx.snapshot(session),
+    };
+  },
+);
 
-  const signIn = await primary.client.signIn.social({
-    provider: "github",
-    callbackURL: "/dashboard",
-  });
-  const state = extractState(signIn.data?.url);
-  const callback = await ctx.rawRequest({
-    path: `/api/auth/callback/github?code=compat-code&state=${encodeURIComponent(state)}`,
-    redirect: "manual",
-  });
-  const session = await primary.client.getSession();
+compatScenario(
+  "github social sign-in without callbackURL redirects back to app root",
+  async (ctx) => {
+    const primary = ctx.actor();
+    const email = ctx.uniqueEmail("oauth-github-default-callback");
+    await ctx.setGitHubProfile({
+      id: ctx.uniqueToken("oauth-github-default-id"),
+      login: ctx.uniqueToken("oauth-github-default-login"),
+      emails: [
+        {
+          email,
+          primary: true,
+          verified: true,
+          visibility: "private",
+        },
+      ],
+    });
 
-  return {
-    signIn: {
-      redirect: signIn.data?.redirect,
-      hasState: Boolean(state),
-    },
-    callback: ctx.snapshot(callback),
-    session: ctx.snapshot(session),
-  };
-});
+    const signIn = await primary.client.signIn.social({
+      provider: "github",
+    });
+    const state = extractState(signIn.data?.url);
+    const callback = await ctx.rawRequest({
+      path: `/api/auth/callback/github?code=compat-code&state=${encodeURIComponent(state)}`,
+      redirect: "manual",
+    });
+    const session = await primary.client.getSession();
 
-compatScenario("github social sign-in without callbackURL redirects back to app root", async (ctx) => {
-  const primary = ctx.actor();
-  const email = ctx.uniqueEmail("oauth-github-default-callback");
-  await ctx.setGitHubProfile({
-    id: ctx.uniqueToken("oauth-github-default-id"),
-    login: ctx.uniqueToken("oauth-github-default-login"),
-    emails: [
-      {
-        email,
-        primary: true,
-        verified: true,
-        visibility: "private",
+    return {
+      signIn: {
+        redirect: signIn.data?.redirect,
+        hasState: Boolean(state),
       },
-    ],
-  });
-
-  const signIn = await primary.client.signIn.social({
-    provider: "github",
-  });
-  const state = extractState(signIn.data?.url);
-  const callback = await ctx.rawRequest({
-    path: `/api/auth/callback/github?code=compat-code&state=${encodeURIComponent(state)}`,
-    redirect: "manual",
-  });
-  const session = await primary.client.getSession();
-
-  return {
-    signIn: {
-      redirect: signIn.data?.redirect,
-      hasState: Boolean(state),
-    },
-    callback: ctx.snapshot(callback),
-    session: ctx.snapshot(session),
-  };
-});
+      callback: ctx.snapshot(callback),
+      session: ctx.snapshot(session),
+    };
+  },
+);

@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
+import { authProfilePath, FIXTURE_PROFILES } from "../../support/profiles";
 import { compatScenario } from "../../support/scenario";
-import { FIXTURE_PROFILES, authProfilePath } from "../../support/profiles";
 
 // Every configuration profile the scenarios can address must be served by both
 // fixture servers. A profile that exists on one side only would otherwise go

@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
-import { z } from "zod";
 import { createAuthClient } from "better-auth/client";
+import { z } from "zod";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { createTracingFetch, type TraceEntry } from "../../support/trace";
 
@@ -50,11 +50,7 @@ const stateSchema = z.object({
     teamMembers: z.array(teamMember),
   }),
 });
-async function configure(
-  ctx: ScenarioContext,
-  mode: string,
-  fields: Record<string, unknown> = {},
-) {
+async function configure(ctx: ScenarioContext, mode: string, fields: Record<string, unknown> = {}) {
   expect(
     (
       await ctx.rawRequest({
@@ -109,9 +105,7 @@ async function signup(ctx: ScenarioContext, name: string) {
   return {
     ...actor,
     email,
-    user: row.parse(
-      z.object({ user: row }).parse(ctx.snapshot(result.data)).user,
-    ),
+    user: row.parse(z.object({ user: row }).parse(ctx.snapshot(result.data)).user),
   };
 }
 type Actor = Awaited<ReturnType<typeof signup>>;
@@ -141,9 +135,7 @@ async function list(actor: { client: Pick<Actor["client"], "$fetch"> }) {
   return z.array(row).parse(result.data);
 }
 async function ownStates(ctx: ScenarioContext, actors: Actor[]) {
-  return Promise.all(
-    actors.map((actor) => ctx.readUserState({ userId: actor.user.id })),
-  );
+  return Promise.all(actors.map((actor) => ctx.readUserState({ userId: actor.user.id })));
 }
 function peers(
   value: Awaited<ReturnType<typeof fullState>>,
@@ -151,25 +143,16 @@ function peers(
   userIds: string[],
 ) {
   return {
-    members: value.full.members.filter(
-      (item) => item.organizationId === organizationId,
-    ),
-    teams: value.full.teams.filter(
-      (item) => item.organizationId === organizationId,
-    ),
+    members: value.full.members.filter((item) => item.organizationId === organizationId),
+    teams: value.full.teams.filter((item) => item.organizationId === organizationId),
     teamMembers: value.full.teamMembers.filter((item) =>
       value.full.teams.some(
-        (room) =>
-          room.id === item.teamId && room.organizationId === organizationId,
+        (room) => room.id === item.teamId && room.organizationId === organizationId,
       ),
     ),
     users: value.snapshot.users.filter((item) => userIds.includes(item.id)),
-    sessions: value.snapshot.sessions.filter((item) =>
-      userIds.includes(String(item.userId)),
-    ),
-    organizations: value.snapshot.organizations.filter(
-      (item) => item.id === organizationId,
-    ),
+    sessions: value.snapshot.sessions.filter((item) => userIds.includes(String(item.userId))),
+    organizations: value.snapshot.organizations.filter((item) => item.id === organizationId),
   };
 }
 
@@ -256,10 +239,7 @@ compatScenario(
     });
     expect(duplicate.id).not.toBe(originalMember.id);
     const admitted = await fullState(ctx);
-    expect(admitted.receipts.map((value) => value.phase)).toEqual([
-      "before-add",
-      "after-add",
-    ]);
+    expect(admitted.receipts.map((value) => value.phase)).toEqual(["before-add", "after-add"]);
     expect(admitted.receipts[0]!.member).toEqual({
       organizationId: own.id,
       userId: candidate.user.id,
@@ -272,82 +252,61 @@ compatScenario(
     }
     expect(
       admitted.full.members.filter(
-        (item) =>
-          item.organizationId === own.id && item.userId === target.user.id,
+        (item) => item.organizationId === own.id && item.userId === target.user.id,
       ),
     ).toEqual([originalMember, duplicate]);
     expect(admitted.full.members).toHaveLength(before.full.members.length + 1);
     expect(admitted.full.teams).toEqual(before.full.teams);
     expect(admitted.full.teamMembers).toEqual(before.full.teamMembers);
-    expect(await ownStates(ctx, [owner, target, candidate, foreign])).toEqual(
-      usersBefore,
-    );
+    expect(await ownStates(ctx, [owner, target, candidate, foreign])).toEqual(usersBefore);
     const duplicateList = await list(target);
-    expect(duplicateList.map((item) => item.id)).toEqual([
-      own.id,
-      other.id,
-      own.id,
-    ]);
-    const role = await target.client.$fetch(
-      "/organization/get-active-member-role",
-      { query: { organizationId: own.id } },
-    );
+    expect(duplicateList.map((item) => item.id)).toEqual([own.id, other.id, own.id]);
+    const role = await target.client.$fetch("/organization/get-active-member-role", {
+      query: { organizationId: own.id },
+    });
     expect(role.error).toBeNull();
     expect(role.data).toEqual({ role: "member" });
-    const denied = await target.client.$fetch(
-      "/organization/update-member-role",
-      {
-        method: "POST",
-        body: {
-          organizationId: own.id,
-          memberId: duplicate.id,
-          role: "member",
-        },
+    const denied = await target.client.$fetch("/organization/update-member-role", {
+      method: "POST",
+      body: {
+        organizationId: own.id,
+        memberId: duplicate.id,
+        role: "member",
       },
-    );
+    });
     expect(denied.error?.status).toBe(403);
-    const foreignUpdate = await foreign.client.$fetch(
-      "/organization/update-member-role",
-      {
-        method: "POST",
-        body: {
-          organizationId: own.id,
-          memberId: duplicate.id,
-          role: "member",
-        },
+    const foreignUpdate = await foreign.client.$fetch("/organization/update-member-role", {
+      method: "POST",
+      body: {
+        organizationId: own.id,
+        memberId: duplicate.id,
+        role: "member",
       },
-    );
+    });
     expect(foreignUpdate.error?.status).toBe(400);
-    const foreignRemoval = await foreign.client.$fetch(
-      "/organization/remove-member",
-      {
-        method: "POST",
-        body: { organizationId: own.id, memberIdOrEmail: duplicate.id },
-      },
-    );
+    const foreignRemoval = await foreign.client.$fetch("/organization/remove-member", {
+      method: "POST",
+      body: { organizationId: own.id, memberIdOrEmail: duplicate.id },
+    });
     expect(foreignRemoval.error?.status).toBe(400);
     expect(await fullState(ctx)).toEqual(admitted);
-    expect(await ownStates(ctx, [owner, target, candidate, foreign])).toEqual(
-      usersBefore,
-    );
-    const updated = await owner.client.$fetch(
-      "/organization/update-member-role",
-      {
-        method: "POST",
-        body: { organizationId: own.id, memberId: duplicate.id, role: "owner" },
-      },
-    );
+    expect(await ownStates(ctx, [owner, target, candidate, foreign])).toEqual(usersBefore);
+    const updated = await owner.client.$fetch("/organization/update-member-role", {
+      method: "POST",
+      body: { organizationId: own.id, memberId: duplicate.id, role: "owner" },
+    });
     expect(updated.error).toBeNull();
     const changed = await fullState(ctx);
-    expect(
-      changed.full.members.find((item) => item.id === duplicate.id),
-    ).toEqual({ ...duplicate, role: "owner" });
-    expect(
-      changed.full.members.find((item) => item.id === originalMember.id),
-    ).toEqual(originalMember);
-    expect(
-      changed.full.members.filter((item) => item.id !== duplicate.id),
-    ).toEqual(admitted.full.members.filter((item) => item.id !== duplicate.id));
+    expect(changed.full.members.find((item) => item.id === duplicate.id)).toEqual({
+      ...duplicate,
+      role: "owner",
+    });
+    expect(changed.full.members.find((item) => item.id === originalMember.id)).toEqual(
+      originalMember,
+    );
+    expect(changed.full.members.filter((item) => item.id !== duplicate.id)).toEqual(
+      admitted.full.members.filter((item) => item.id !== duplicate.id),
+    );
     const removed = await owner.client.$fetch("/organization/remove-member", {
       method: "POST",
       body: { organizationId: own.id, memberIdOrEmail: duplicate.id },
@@ -364,21 +323,16 @@ compatScenario(
     );
     expect(after.full.teams).toEqual(
       admitted.full.teams.map((item) =>
-        item.id === ownTeam.id
-          ? { ...item, memberCount: item.memberCount - 1 }
-          : item,
+        item.id === ownTeam.id ? { ...item, memberCount: item.memberCount - 1 } : item,
       ),
     );
-    expect(
-      peers(after, other.id, [foreign.user.id, candidate.user.id]),
-    ).toEqual(peers(before, other.id, [foreign.user.id, candidate.user.id]));
-    expect(await ownStates(ctx, [owner, target, candidate, foreign])).toEqual(
-      usersBefore,
+    expect(peers(after, other.id, [foreign.user.id, candidate.user.id])).toEqual(
+      peers(before, other.id, [foreign.user.id, candidate.user.id]),
     );
-    const retained = await target.client.$fetch(
-      "/organization/get-active-member-role",
-      { query: { organizationId: own.id } },
-    );
+    expect(await ownStates(ctx, [owner, target, candidate, foreign])).toEqual(usersBefore);
+    const retained = await target.client.$fetch("/organization/get-active-member-role", {
+      query: { organizationId: own.id },
+    });
     expect(retained.error).toBeNull();
     expect(retained.data).toEqual({ role: "member" });
     await configure(ctx, "record");
@@ -388,10 +342,7 @@ compatScenario(
       role: "owner",
     });
     expect(retry.status).toBe(400);
-    expect(retry.body).toHaveProperty(
-      "code",
-      "USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION",
-    );
+    expect(retry.body).toHaveProperty("code", "USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION");
     const retryState = await fullState(ctx);
     expect(retryState.receipts).toEqual([]);
     expect(retryState.full).toEqual(after.full);
@@ -513,12 +464,10 @@ compatScenario(
     }
     const after = await fullState(ctx);
     expect(after.full).toEqual(before.full);
-    expect(
-      peers(after, other.id, [foreign.user.id, candidate.user.id]),
-    ).toEqual(peers(before, other.id, [foreign.user.id, candidate.user.id]));
-    expect(await ctx.readUserState({ userId: foreign.user.id })).toEqual(
-      foreignBefore,
+    expect(peers(after, other.id, [foreign.user.id, candidate.user.id])).toEqual(
+      peers(before, other.id, [foreign.user.id, candidate.user.id]),
     );
+    expect(await ctx.readUserState({ userId: foreign.user.id })).toEqual(foreignBefore);
     const foreignList = await list(foreign);
     expect(foreignList.map((item) => item.id)).toEqual([other.id]);
     return {
@@ -534,11 +483,7 @@ compatScenario(
       foreignList,
     };
   },
-  [
-    "GET /organization/list",
-    "POST /organization/create",
-    "POST /organization/delete",
-  ],
+  ["GET /organization/list", "POST /organization/create", "POST /organization/delete"],
 );
 
 compatScenario(
@@ -574,8 +519,7 @@ compatScenario(
       const text = await response.text();
       return { status: response.status, body: text ? JSON.parse(text) : null };
     }
-    let first: ReturnType<typeof call> | undefined,
-      second: ReturnType<typeof call> | undefined;
+    let first: ReturnType<typeof call> | undefined, second: ReturnType<typeof call> | undefined;
     let one, held, firstResult, secondResult;
     async function release(name: string) {
       const response = await createTracingFetch(
@@ -590,9 +534,7 @@ compatScenario(
       first = call("member-race-first");
       one = await ctx.rawRequest({ path: `${root}/state?waitFor=before-add` });
       expect(one.status).toBe(200);
-      expect(
-        z.object({ receipts: z.array(z.unknown()) }).parse(one.body).receipts,
-      ).toHaveLength(1);
+      expect(z.object({ receipts: z.array(z.unknown()) }).parse(one.body).receipts).toHaveLength(1);
       second = call("member-race-second");
       held = await ctx.rawRequest({
         path: `${root}/state?waitFor=before-pair`,
@@ -604,10 +546,7 @@ compatScenario(
           snapshot: z.unknown(),
         })
         .parse(held.body);
-      expect(heldBody.receipts.map((item) => item.phase)).toEqual([
-        "before-add",
-        "before-add",
-      ]);
+      expect(heldBody.receipts.map((item) => item.phase)).toEqual(["before-add", "before-add"]);
       expect(heldBody.snapshot).toEqual(before.snapshot);
       await release("member-race-release-first");
       firstResult = await first;
@@ -639,8 +578,7 @@ compatScenario(
     const after = await fullState(ctx);
     expect(
       after.full.members.filter(
-        (item) =>
-          item.organizationId === own.id && item.userId === target.user.id,
+        (item) => item.organizationId === own.id && item.userId === target.user.id,
       ),
     ).toEqual([a, b]);
     expect(after.full.members).toHaveLength(before.full.members.length + 2);
@@ -662,9 +600,7 @@ compatScenario(
       query: { organizationId: own.id, limit: 1 },
     });
     expect(listed.error).toBeNull();
-    const page = z
-      .object({ members: z.array(row), total: z.number() })
-      .parse(listed.data);
+    const page = z.object({ members: z.array(row), total: z.number() }).parse(listed.data);
     expect(page.total).toBe(3);
     expect(page.members).toHaveLength(1);
     const organizations = await list(target);

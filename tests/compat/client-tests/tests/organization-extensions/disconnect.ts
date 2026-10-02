@@ -1,8 +1,9 @@
 /** Real socket transport. The server abort/drop observer acknowledges closure. */
-import { connect } from "node:net";
+
 import { expect } from "bun:test";
-import type { ScenarioContext } from "../../support/scenario";
+import { connect } from "node:net";
 import type { FixtureProfile } from "../../support/profiles";
+import type { ScenarioContext } from "../../support/scenario";
 export async function disconnectedRequest(
   ctx: ScenarioContext,
   actor: string,
@@ -45,9 +46,7 @@ export async function disconnectedRequest(
   socket.on("data", (bytes) => {
     responseBytes += bytes.length;
   });
-  const closed = new Promise<void>((resolve) =>
-    socket.once("close", () => resolve()),
-  );
+  const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
   socket.write(
     `POST ${wirePath} HTTP/1.1\r\nHost: ${origin.host}\r\nOrigin: ${origin.origin}\r\nCookie: ${cookie}\r\nX-Continuation-Marker: ${marker}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`,
   );

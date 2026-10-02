@@ -1,21 +1,17 @@
 import { expect } from "bun:test";
-import { createAuthClient } from "better-auth/client";
 import { passkeyClient } from "@better-auth/passkey/client";
+import { createAuthClient } from "better-auth/client";
 import { z } from "zod";
 import { Authenticator } from "../../support/authenticator";
-import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
+import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 const identity = z.object({ user: z.object({ id: z.string() }) });
 const code = (result: { error: unknown }) =>
   z.object({ code: z.string() }).parse(result.error).code;
 const cookieHeader = (cookies: string[]) =>
   cookies.map((cookie) => cookie.split(";")[0]).join("; ");
-function client(
-  ctx: ScenarioContext,
-  name = "owner",
-  profile: FixtureProfile = "passkey-first",
-) {
+function client(ctx: ScenarioContext, name = "owner", profile: FixtureProfile = "passkey-first") {
   return createAuthClient({
     baseURL: `${ctx.baseURL}${authProfilePath(profile)}`,
     plugins: [passkeyClient()],
@@ -65,29 +61,20 @@ async function enroll(
       body: JSON.stringify({ context, mode, ...extra }),
     });
   expect(response.status).toBe(200);
-  const result = z
-    .object({ token: z.string(), userId: z.string() })
-    .parse(await response.json());
+  const result = z.object({ token: z.string(), userId: z.string() }).parse(await response.json());
   expect(response.headers.getSetCookie()).toHaveLength(1);
   return { result, cookies: response.headers.getSetCookie() };
 }
-async function options(
-  ctx: ScenarioContext,
-  context: string,
-  headers?: HeadersInit,
-) {
+async function options(ctx: ScenarioContext, context: string, headers?: HeadersInit) {
   let cookies: string[] = [];
-  const result = await client(ctx).$fetch(
-    "/passkey/generate-register-options",
-    {
-      method: "GET",
-      query: { context },
-      ...(headers ? { headers } : {}),
-      onSuccess({ response }) {
-        cookies = response.headers.getSetCookie();
-      },
+  const result = await client(ctx).$fetch("/passkey/generate-register-options", {
+    method: "GET",
+    query: { context },
+    ...(headers ? { headers } : {}),
+    onSuccess({ response }) {
+      cookies = response.headers.getSetCookie();
     },
-  );
+  });
   expect(result.error).toBeNull();
   expect(cookies).toHaveLength(1);
   return { result, cookies };
@@ -109,9 +96,7 @@ async function state(ctx: ScenarioContext, userId: string) {
       await (
         await ctx
           .actor("owner", "passkey-first")
-          .fetch(
-            `${ctx.baseURL}/__test/passkey-state?userId=${encodeURIComponent(userId)}`,
-          )
+          .fetch(`${ctx.baseURL}/__test/passkey-state?userId=${encodeURIComponent(userId)}`)
       ).json(),
     );
 }
@@ -133,14 +118,8 @@ async function events(ctx: ScenarioContext) {
     expect(
       z
         .object({ origin: z.string() })
-        .parse(
-          JSON.parse(
-            Buffer.from(
-              original.response.clientDataJSON,
-              "base64url",
-            ).toString(),
-          ),
-        ).origin,
+        .parse(JSON.parse(Buffer.from(original.response.clientDataJSON, "base64url").toString()))
+        .origin,
     ).toBe(ctx.baseURL);
   }
   return observed;
@@ -153,14 +132,12 @@ function observation(value: unknown): unknown {
   if (value && typeof value === "object")
     return Object.fromEntries(
       Object.entries(value).map(([key, child]) => {
-        if (key !== "clientDataJSON" || typeof child !== "string")
-          return [key, observation(child)];
-        const decoded = JSON.parse(
-          Buffer.from(child, "base64url").toString(),
-        ) as Record<string, unknown>;
-        expect(Buffer.from(JSON.stringify(decoded)).toString("base64url")).toBe(
-          child,
-        );
+        if (key !== "clientDataJSON" || typeof child !== "string") return [key, observation(child)];
+        const decoded = JSON.parse(Buffer.from(child, "base64url").toString()) as Record<
+          string,
+          unknown
+        >;
+        expect(Buffer.from(JSON.stringify(decoded)).toString("base64url")).toBe(child);
         return [key, { ...decoded, origin: { url: decoded.origin } }];
       }),
     );
@@ -186,19 +163,16 @@ compatScenario(
       applicationMarker: "original-client-response",
       userId: other.id,
     };
-    const registered = await client(ctx).$fetch(
-      "/passkey/verify-registration",
-      {
-        method: "POST",
-        body: {
-          response,
-          createSession: true,
-          name: " \uFEFF \uFEFF",
-          context: "forged-context",
-          userId: other.id,
-        },
+    const registered = await client(ctx).$fetch("/passkey/verify-registration", {
+      method: "POST",
+      body: {
+        response,
+        createSession: true,
+        name: " \uFEFF \uFEFF",
+        context: "forged-context",
+        userId: other.id,
       },
-    );
+    });
     expect(registered.error).toBeNull();
     const credential = z
       .object({
@@ -287,10 +261,7 @@ compatScenario(
     const foreignProof = await enroll(ctx, context, "normal", "foreign");
     await owner.actor.client.signOut();
     const challenge = await options(ctx, context);
-    const response = new Authenticator().register(
-      challenge.result.data,
-      ctx.baseURL,
-    );
+    const response = new Authenticator().register(challenge.result.data, ctx.baseURL);
     const swapped = await client(ctx).$fetch("/passkey/verify-registration", {
       method: "POST",
       headers: {
@@ -309,15 +280,9 @@ compatScenario(
     });
     expect(code(replay)).toBe("CHALLENGE_NOT_FOUND");
     const cryptoChallenge = await options(ctx, context);
-    const cryptoResponse = new Authenticator().register(
-      cryptoChallenge.result.data,
-      ctx.baseURL,
-    );
+    const cryptoResponse = new Authenticator().register(cryptoChallenge.result.data, ctx.baseURL);
     const cryptoClientData = JSON.parse(
-      Buffer.from(
-        cryptoResponse.response.clientDataJSON,
-        "base64url",
-      ).toString(),
+      Buffer.from(cryptoResponse.response.clientDataJSON, "base64url").toString(),
     ) as Record<string, unknown>;
     const invalidCryptoResponse = {
       ...cryptoResponse,
@@ -331,38 +296,30 @@ compatScenario(
         ).toString("base64url"),
       },
     };
-    const invalidCrypto = await client(ctx).$fetch(
-      "/passkey/verify-registration",
-      {
-        method: "POST",
-        body: { response: invalidCryptoResponse, createSession: true },
-      },
-    );
+    const invalidCrypto = await client(ctx).$fetch("/passkey/verify-registration", {
+      method: "POST",
+      body: { response: invalidCryptoResponse, createSession: true },
+    });
     expect(invalidCrypto.error?.status).toBe(500);
     expect(code(invalidCrypto)).toBe("FAILED_TO_VERIFY_REGISTRATION");
-    const cryptoReplay = await client(ctx).$fetch(
-      "/passkey/verify-registration",
-      {
-        method: "POST",
-        body: { response: cryptoResponse, createSession: true },
-      },
-    );
+    const cryptoReplay = await client(ctx).$fetch("/passkey/verify-registration", {
+      method: "POST",
+      body: { response: cryptoResponse, createSession: true },
+    });
     expect(code(cryptoReplay)).toBe("CHALLENGE_NOT_FOUND");
     const segments = ownProof.result.token.split(".");
-    const payload = JSON.parse(
-      Buffer.from(segments[1]!, "base64url").toString(),
-    ) as Record<string, unknown>;
-    segments[1] = Buffer.from(
-      JSON.stringify({ ...payload, userId: foreign.id }),
-    ).toString("base64url");
-    const forged = await client(ctx).$fetch(
-      "/passkey/generate-register-options",
-      {
-        method: "GET",
-        query: { context, userId: foreign.id },
-        headers: { cookie: `passkey_enrollment=${segments.join(".")}` },
-      },
+    const payload = JSON.parse(Buffer.from(segments[1]!, "base64url").toString()) as Record<
+      string,
+      unknown
+    >;
+    segments[1] = Buffer.from(JSON.stringify({ ...payload, userId: foreign.id })).toString(
+      "base64url",
     );
+    const forged = await client(ctx).$fetch("/passkey/generate-register-options", {
+      method: "GET",
+      query: { context, userId: foreign.id },
+      headers: { cookie: `passkey_enrollment=${segments.join(".")}` },
+    });
     expect(forged.error?.status).toBe(403);
     expect(code(forged)).toBe("ENROLLMENT_DENIED");
     let authenticatedCookies: string[] = [];
@@ -382,30 +339,25 @@ compatScenario(
       authenticated.result.data,
       ctx.baseURL,
     );
-    const reassigned = await client(ctx).$fetch(
-      "/passkey/verify-registration",
-      {
-        method: "POST",
-        headers: {
-          cookie: cookieHeader([
-            ...authenticatedCookies,
-            ...authenticated.cookies,
-            ...foreignProof.cookies,
-          ]),
-        },
-        body: { response: authenticatedResponse, createSession: true },
+    const reassigned = await client(ctx).$fetch("/passkey/verify-registration", {
+      method: "POST",
+      headers: {
+        cookie: cookieHeader([
+          ...authenticatedCookies,
+          ...authenticated.cookies,
+          ...foreignProof.cookies,
+        ]),
       },
-    );
+      body: { response: authenticatedResponse, createSession: true },
+    });
     expect(reassigned.error?.status).toBe(401);
-    expect(code(reassigned)).toBe(
-      "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY",
-    );
+    expect(code(reassigned)).toBe("YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY");
     const expiredProof = await enroll(ctx, context, "expired");
     await owner.actor.client.signOut();
-    const expired = await client(ctx).$fetch(
-      "/passkey/generate-register-options",
-      { method: "GET", query: { context } },
-    );
+    const expired = await client(ctx).$fetch("/passkey/generate-register-options", {
+      method: "GET",
+      query: { context },
+    });
     expect(expired.error?.status).toBe(403);
     expect(code(expired)).toBe("ENROLLMENT_DENIED");
     const guestMint = await ctx
@@ -422,15 +374,11 @@ compatScenario(
     expect(persisted.challenges.count).toBe(0);
     expect((await state(ctx, foreign.id)).sessions.count).toBe(1);
     const observed = await events(ctx);
-    expect(observed.filter((event) => event.stage === "resolved")).toHaveLength(
-      2,
+    expect(observed.filter((event) => event.stage === "resolved")).toHaveLength(2);
+    expect(observed.filter((event) => event.stage === "verified")).toHaveLength(1);
+    expect(observed.find((event) => event.stage === "verified")?.clientData).toEqual(
+      authenticatedResponse,
     );
-    expect(observed.filter((event) => event.stage === "verified")).toHaveLength(
-      1,
-    );
-    expect(
-      observed.find((event) => event.stage === "verified")?.clientData,
-    ).toEqual(authenticatedResponse);
     const foreignBeforeSuccess = await ctx.readUserState({ userId: foreign.id });
     const authorized = await owner.actor.client.signIn.email({
       email: owner.email,
@@ -445,10 +393,7 @@ compatScenario(
     const signedOut = await owner.actor.client.signOut();
     expect(signedOut.error).toBeNull();
     const freshChallenge = await options(ctx, freshContext);
-    const freshResponse = new Authenticator().register(
-      freshChallenge.result.data,
-      ctx.baseURL,
-    );
+    const freshResponse = new Authenticator().register(freshChallenge.result.data, ctx.baseURL);
     const success = await client(ctx).$fetch("/passkey/verify-registration", {
       method: "POST",
       body: {
@@ -459,12 +404,18 @@ compatScenario(
       },
     });
     expect(success.error).toBeNull();
-    const credential = z.object({
-      id: z.string(), userId: z.string(), credentialID: z.string(),
-      publicKey: z.string(), counter: z.number(), aaguid: z.string(),
-      session: z.object({ id: z.string(), token: z.string(), userId: z.string() }),
-      user: z.object({ id: z.string() }),
-    }).parse(success.data);
+    const credential = z
+      .object({
+        id: z.string(),
+        userId: z.string(),
+        credentialID: z.string(),
+        publicKey: z.string(),
+        counter: z.number(),
+        aaguid: z.string(),
+        session: z.object({ id: z.string(), token: z.string(), userId: z.string() }),
+        user: z.object({ id: z.string() }),
+      })
+      .parse(success.data);
     expect(credential.userId).toBe(owner.id);
     expect(credential.user.id).toBe(owner.id);
     expect(credential.session.userId).toBe(owner.id);
@@ -477,29 +428,42 @@ compatScenario(
     const successEvents = await events(ctx);
     expect(successEvents).toHaveLength(2);
     expect(successEvents[0]).toMatchObject({
-      stage: "resolved", context: freshContext, userId: owner.id,
+      stage: "resolved",
+      context: freshContext,
+      userId: owner.id,
     });
     expect(successEvents[1]).toMatchObject({
-      stage: "verified", context: freshContext, userId: owner.id,
-      credentialID: freshResponse.id, publicKey: credential.publicKey,
-      counter: 0, aaguid: credential.aaguid,
-      deviceType: "singleDevice", backedUp: false,
+      stage: "verified",
+      context: freshContext,
+      userId: owner.id,
+      credentialID: freshResponse.id,
+      publicKey: credential.publicKey,
+      counter: 0,
+      aaguid: credential.aaguid,
+      deviceType: "singleDevice",
+      backedUp: false,
       clientData: freshResponse,
     });
     expect(successEvents[1]?.clientData).toEqual(freshResponse);
     const final = await state(ctx, owner.id);
     expect(final).toEqual({
       passkeys: [{ userId: owner.id, counter: 0, name: "Callback Label" }],
-      sessions: { count: 1 }, challenges: { count: 0 },
+      sessions: { count: 1 },
+      challenges: { count: 0 },
     });
     const foreignAfterSuccess = await ctx.readUserState({ userId: foreign.id });
     expect(foreignAfterSuccess).toEqual(foreignBeforeSuccess);
     return {
-      authorized: ctx.snapshot(authorized), signedOut: ctx.snapshot(signedOut),
-      freshEnrollment: freshEnrollment.result, freshChallenge: freshChallenge.result,
-      success: ctx.snapshot(success), current: ctx.snapshot(current),
-      successEvents: observation(successEvents), final,
-      foreignBeforeSuccess, foreignAfterSuccess,
+      authorized: ctx.snapshot(authorized),
+      signedOut: ctx.snapshot(signedOut),
+      freshEnrollment: freshEnrollment.result,
+      freshChallenge: freshChallenge.result,
+      success: ctx.snapshot(success),
+      current: ctx.snapshot(current),
+      successEvents: observation(successEvents),
+      final,
+      foreignBeforeSuccess,
+      foreignAfterSuccess,
       ownProof: ownProof.result,
       foreignProof: foreignProof.result,
       swapped: ctx.snapshot(swapped),
@@ -538,33 +502,27 @@ compatScenario(
       const enrollment = await enroll(ctx, attemptContext, mode);
       await owner.actor.client.signOut();
       const challenge = await options(ctx, attemptContext);
-      const response = new Authenticator().register(
-        challenge.result.data,
-        ctx.baseURL,
-      );
+      const response = new Authenticator().register(challenge.result.data, ctx.baseURL);
       const failed = await client(ctx).$fetch("/passkey/verify-registration", {
         method: "POST",
         body: { response, createSession: true },
         ...(mode === "normal" || mode === "session-error"
           ? {
               headers: {
-                "x-passkey-policy":
-                  mode === "normal" ? "session-deny" : "session-error",
+                "x-passkey-policy": mode === "normal" ? "session-deny" : "session-error",
               },
             }
           : {}),
       });
       expect(failed.error?.status).toBe(expectedStatus);
       if (mode === "after-dynamic-api")
-        expect(
-          z.object({ message: z.string() }).parse(failed.error).message,
-        ).toBe(`Application enrollment denied: ${attemptContext}`);
+        expect(z.object({ message: z.string() }).parse(failed.error).message).toBe(
+          `Application enrollment denied: ${attemptContext}`,
+        );
       if (expectedCode) expect(code(failed)).toBe(expectedCode);
       if (!expectedCode) {
         expect(failed.error).not.toHaveProperty("code");
-        expect(
-          z.object({ message: z.string() }).parse(failed.error).message,
-        ).toBe(
+        expect(z.object({ message: z.string() }).parse(failed.error).message).toBe(
           mode === "after-validation"
             ? "Validation error: Callback validation rejected"
             : "session creation cancelled by database hook",
@@ -606,18 +564,13 @@ compatScenario(
     const enrollment = await enroll(ctx, successContext);
     await owner.actor.client.signOut();
     const challenge = await options(ctx, successContext);
-    const response = new Authenticator().register(
-      challenge.result.data,
-      ctx.baseURL,
-    );
+    const response = new Authenticator().register(challenge.result.data, ctx.baseURL);
     const success = await client(ctx).$fetch("/passkey/verify-registration", {
       method: "POST",
       body: { response, createSession: true, name: "  Client Label  " },
     });
     expect(success.error).toBeNull();
-    expect(z.object({ name: z.string() }).parse(success.data).name).toBe(
-      "Client Label",
-    );
+    expect(z.object({ name: z.string() }).parse(success.data).name).toBe("Client Label");
     const persisted = await state(ctx, owner.id);
     expect(persisted).toEqual({
       passkeys: [{ userId: owner.id, counter: 0, name: "Client Label" }],
@@ -642,17 +595,15 @@ compatScenario(
   "passkey optional registration needs a resolver only for guests and preserves resolver exception behavior",
   async (ctx) => {
     const missing = client(ctx, "missing", "passkey-first-missing");
-    const missingResult = await missing.$fetch(
-      "/passkey/generate-register-options",
-      { method: "GET" },
-    );
+    const missingResult = await missing.$fetch("/passkey/generate-register-options", {
+      method: "GET",
+    });
     expect(missingResult.error?.status).toBe(400);
     expect(code(missingResult)).toBe("RESOLVE_USER_REQUIRED");
     const authenticated = await signup(ctx, "missing", "passkey-first-missing");
-    const authenticatedResult = await missing.$fetch(
-      "/passkey/generate-register-options",
-      { method: "GET" },
-    );
+    const authenticatedResult = await missing.$fetch("/passkey/generate-register-options", {
+      method: "GET",
+    });
     expect(authenticatedResult.error).toBeNull();
     const owner = await signup(ctx);
     const context = ctx.uniqueToken("resolver-policy");
@@ -665,10 +616,10 @@ compatScenario(
     ] as const) {
       const enrollment = await enroll(ctx, context, mode);
       await owner.actor.client.signOut();
-      const result = await client(ctx).$fetch(
-        "/passkey/generate-register-options",
-        { method: "GET", query: { context } },
-      );
+      const result = await client(ctx).$fetch("/passkey/generate-register-options", {
+        method: "GET",
+        query: { context },
+      });
       expect(result.error?.status).toBe(status);
       if (expectedCode) expect(code(result)).toBe(expectedCode);
       expect((await state(ctx, owner.id)).passkeys).toEqual([]);
@@ -693,10 +644,7 @@ compatScenario(
     const enrollment = await enroll(ctx, successContext);
     await owner.actor.client.signOut();
     const challenge = await options(ctx, successContext);
-    const response = new Authenticator().register(
-      challenge.result.data,
-      ctx.baseURL,
-    );
+    const response = new Authenticator().register(challenge.result.data, ctx.baseURL);
     const invalidInputs: unknown[] = [];
     for (const [createSession, received] of [
       [null, "null"],
@@ -711,9 +659,7 @@ compatScenario(
       });
       expect(invalid.error?.status).toBe(400);
       expect(code(invalid)).toBe("VALIDATION_ERROR");
-      expect(
-        z.object({ message: z.string() }).parse(invalid.error).message,
-      ).toBe(
+      expect(z.object({ message: z.string() }).parse(invalid.error).message).toBe(
         `[body.createSession] Invalid input: expected boolean, received ${received}`,
       );
       const unchanged = await state(ctx, owner.id);
@@ -732,9 +678,7 @@ compatScenario(
       },
     });
     expect(noSession.error).toBeNull();
-    const registered = z
-      .object({ userId: z.string(), name: z.string() })
-      .parse(noSession.data);
+    const registered = z.object({ userId: z.string(), name: z.string() }).parse(noSession.data);
     expect(registered.userId).toBe(owner.id);
     expect(registered.name).toBe("Callback Label");
     expect(noSession.data).not.toHaveProperty("session");
@@ -742,9 +686,7 @@ compatScenario(
     expect(cookies).toEqual([]);
     expect((await owner.actor.client.getSession()).data).toBeNull();
     const persisted = await state(ctx, owner.id);
-    expect(persisted.passkeys).toEqual([
-      { userId: owner.id, counter: 0, name: "Callback Label" },
-    ]);
+    expect(persisted.passkeys).toEqual([{ userId: owner.id, counter: 0, name: "Callback Label" }]);
     expect(persisted.sessions.count).toBe(0);
     const verified = await events(ctx);
     expect(verified).toHaveLength(2);

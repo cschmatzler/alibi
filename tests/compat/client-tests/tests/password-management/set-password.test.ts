@@ -1,7 +1,8 @@
 import { expect } from "bun:test";
 import { verifyPassword } from "better-auth/crypto";
-import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import type { FixtureProfile } from "../../support/profiles";
+import { compatScenario, type ScenarioContext } from "../../support/scenario";
+
 type Row = Record<string, unknown>;
 type Store = { users: Row[]; accounts: Row[]; sessions: Row[]; events: Row[] };
 async function read(ctx: ScenarioContext) {
@@ -44,9 +45,7 @@ async function call(
     .actor(actor, profile)
     .fetch(
       ctx.baseURL +
-        (json.operation === "set"
-          ? "/__test/server-api/set-password"
-          : "/__test/set-password"),
+        (json.operation === "set" ? "/__test/server-api/set-password" : "/__test/set-password"),
       {
         method: "POST",
         headers: { "content-type": "application/json", ...headers },
@@ -116,9 +115,7 @@ compatScenario(
     const p = "set-password-default",
       s = await setup(ctx, p),
       password = "Ａuth-é-🔒123";
-    expect(
-      s.before.accounts.filter((a) => a.userId === s.signup.data!.user.id),
-    ).toHaveLength(0);
+    expect(s.before.accounts.filter((a) => a.userId === s.signup.data!.user.id)).toHaveLength(0);
     const set = await call(ctx, "owner", p, {
       operation: "set",
       newPassword: password,
@@ -127,17 +124,14 @@ compatScenario(
     expect(set).toMatchObject({ status: 200, body: { status: true } });
     const after = await read(ctx),
       credential = after.accounts.find(
-        (a) =>
-          a.userId === s.signup.data!.user.id && a.providerId === "credential",
+        (a) => a.userId === s.signup.data!.user.id && a.providerId === "credential",
       )!;
     expect(credential).toMatchObject({
       accountId: s.signup.data!.user.id,
       providerId: "credential",
       userId: s.signup.data!.user.id,
     });
-    expect(
-      await verifyPassword({ hash: String(credential.password), password }),
-    ).toBe(true);
+    expect(await verifyPassword({ hash: String(credential.password), password })).toBe(true);
     expect(after.accounts).toHaveLength(s.before.accounts.length + 1);
     expect(after.users).toEqual(s.before.users);
     expect(after.sessions).toEqual(s.before.sessions);
@@ -154,9 +148,7 @@ compatScenario(
     });
     const replayed = await read(ctx);
     expect(replayed.accounts).toEqual(after.accounts);
-    expect(
-      replayed.events.filter((e) => e.stage === "hash-enter"),
-    ).toHaveLength(2);
+    expect(replayed.events.filter((e) => e.stage === "hash-enter")).toHaveLength(2);
     const original = await s.owner.client.getSession();
     expect(original.data?.user.id).toBe(s.signup.data!.user.id);
     const signin = await ctx.actor("credential-login", p).client.signIn.email({
@@ -174,9 +166,7 @@ compatScenario(
       .actor("wrong-owner", p)
       .client.signIn.email({ email: ctx.uniqueEmail("foreign"), password });
     expect(wrong.error?.status).toBe(401);
-    expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(
-      s.foreignBefore,
-    );
+    expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(s.foreignBefore);
     const response = await s.owner.fetch("/api/auth/set-password", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -210,18 +200,14 @@ compatScenario(
   async (ctx) => {
     const p = "set-password-default",
       s = await setup(ctx, p, true),
-      account = s.before.accounts.find(
-        (a) => a.userId === s.signup.data!.user.id,
-      )!;
+      account = s.before.accounts.find((a) => a.userId === s.signup.data!.user.id)!;
     const cleared = await call(ctx, "owner", p, {
       operation: "clear-password",
       accountId: account.id,
     });
     expect(cleared.status).toBe(200);
     const before = await read(ctx);
-    expect(
-      before.accounts.find((a) => a.id === account.id)?.password,
-    ).toBeNull();
+    expect(before.accounts.find((a) => a.id === account.id)?.password).toBeNull();
     const result = await call(ctx, "owner", p, {
       operation: "set",
       newPassword: "actual-new-password123",
@@ -270,10 +256,8 @@ compatScenario(
       expect(result).toMatchObject({
         status: 400,
         body: {
-          code:
-            password.length < 10 ? "PASSWORD_TOO_SHORT" : "PASSWORD_TOO_LONG",
-          message:
-            password.length < 10 ? "Password too short" : "Password too long",
+          code: password.length < 10 ? "PASSWORD_TOO_SHORT" : "PASSWORD_TOO_LONG",
+          message: password.length < 10 ? "Password too short" : "Password too long",
         },
       });
       const after = await read(ctx);
@@ -287,12 +271,8 @@ compatScenario(
       });
     expect(accepted.status).toBe(200);
     const after = await read(ctx),
-      credential = after.accounts.find(
-        (a) => a.userId === s.signup.data!.user.id,
-      )!;
-    expect(
-      await verifyPassword({ hash: String(credential.password), password }),
-    ).toBe(true);
+      credential = after.accounts.find((a) => a.userId === s.signup.data!.user.id)!;
+    expect(await verifyPassword({ hash: String(credential.password), password })).toBe(true);
     return {
       signup: ctx.snapshot(s.signup),
       other: ctx.snapshot(s.other),
@@ -363,9 +343,7 @@ for (const mode of ["hash-error", "create-error", "update-error"] as const)
       const p = "set-password-default",
         s = await setup(ctx, p, mode === "update-error");
       if (mode === "update-error") {
-        const account = s.before.accounts.find(
-          (a) => a.userId === s.signup.data!.user.id,
-        )!;
+        const account = s.before.accounts.find((a) => a.userId === s.signup.data!.user.id)!;
         const cleared = await call(ctx, "owner", p, {
           operation: "clear-password",
           accountId: account.id,
@@ -388,9 +366,7 @@ for (const mode of ["hash-error", "create-error", "update-error"] as const)
       expect(after.users).toEqual(before.users);
       expect(after.accounts).toEqual(before.accounts);
       expect(after.sessions).toEqual(before.sessions);
-      expect(after.events.filter((e) => e.stage === "hash-enter")).toHaveLength(
-        1,
-      );
+      expect(after.events.filter((e) => e.stage === "hash-enter")).toHaveLength(1);
       const restored = await call(ctx, "owner", p, {
         operation: "mode",
         mode: "normal",
@@ -405,8 +381,7 @@ for (const mode of ["hash-error", "create-error", "update-error"] as const)
       expect(
         await verifyPassword({
           hash: String(
-            persisted.accounts.find((a) => a.userId === s.signup.data!.user.id)!
-              .password,
+            persisted.accounts.find((a) => a.userId === s.signup.data!.user.id)!.password,
           ),
           password,
         }),
@@ -428,18 +403,13 @@ for (const mode of ["hash-error", "create-error", "update-error"] as const)
       };
     },
   );
-for (const admission of [
-  "null-credential updates",
-  "missing-credential creates",
-] as const)
+for (const admission of ["null-credential updates", "missing-credential creates"] as const)
   compatScenario(
     `server-only setPassword simultaneous ${admission} retain Source outcomes and original authority`,
     async (ctx) => {
       const p = "set-password-default",
         s = await setup(ctx, p, admission === "null-credential updates"),
-        account = s.before.accounts.find(
-          (a) => a.userId === s.signup.data!.user.id,
-        )!;
+        account = s.before.accounts.find((a) => a.userId === s.signup.data!.user.id)!;
       if (admission === "null-credential updates")
         expect(
           (
@@ -468,41 +438,27 @@ for (const admission of [
       expect(right.status).toBe(200);
       const after = await read(ctx);
       expect(after.accounts).toHaveLength(
-        before.accounts.length +
-          (admission === "missing-credential creates" ? 2 : 0),
+        before.accounts.length + (admission === "missing-credential creates" ? 2 : 0),
       );
-      const owned = after.accounts.filter(
-        (a) => a.userId === s.signup.data!.user.id,
-      );
-      expect(owned).toHaveLength(
-        admission === "missing-credential creates" ? 2 : 1,
-      );
+      const owned = after.accounts.filter((a) => a.userId === s.signup.data!.user.id);
+      expect(owned).toHaveLength(admission === "missing-credential creates" ? 2 : 1);
       for (const row of owned) {
         expect(row).toMatchObject({
           userId: s.signup.data!.user.id,
           accountId: s.signup.data!.user.id,
           providerId: "credential",
         });
-        expect(
-          await verifyPassword({ hash: String(row.password), password }),
-        ).toBe(true);
+        expect(await verifyPassword({ hash: String(row.password), password })).toBe(true);
       }
       expect(new Set(owned.map((row) => row.id)).size).toBe(owned.length);
-      if (admission === "null-credential updates")
-        expect(owned[0]!.id).toBe(account.id);
+      if (admission === "null-credential updates") expect(owned[0]!.id).toBe(account.id);
       else {
-        const hashes = after.events.filter(
-          (event) => event.stage === "hash-result",
-        );
-        expect(owned.map((row) => row.password)).toEqual(
-          hashes.map((event) => event.hash),
-        );
+        const hashes = after.events.filter((event) => event.stage === "hash-result");
+        expect(owned.map((row) => row.password)).toEqual(hashes.map((event) => event.hash));
       }
       expect(after.users).toEqual(before.users);
       expect(after.sessions).toEqual(before.sessions);
-      expect(after.events.filter((e) => e.stage === "hash-enter")).toHaveLength(
-        2,
-      );
+      expect(after.events.filter((e) => e.stage === "hash-enter")).toHaveLength(2);
 
       const restored = await call(ctx, "owner", p, {
         operation: "mode",
@@ -513,9 +469,7 @@ for (const admission of [
         .actor("after-race", p)
         .client.signIn.email({ email: ctx.uniqueEmail("owner"), password });
       expect(signin.data?.user.id).toBe(s.signup.data!.user.id);
-      expect(
-        await ctx.readUserState({ userId: s.other.data!.user.id }),
-      ).toEqual(s.foreignBefore);
+      expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(s.foreignBefore);
       return {
         admission,
         removed: s.removed,
@@ -540,9 +494,7 @@ compatScenario(
   async (ctx) => {
     const p = "set-password-default",
       s = await setup(ctx, p, true),
-      account = s.before.accounts.find(
-        (a) => a.userId === s.signup.data!.user.id,
-      )!;
+      account = s.before.accounts.find((a) => a.userId === s.signup.data!.user.id)!;
     const removedForeign = await ctx.removeCredentialAccount({
         email: ctx.uniqueEmail("foreign"),
       }),
@@ -570,9 +522,7 @@ compatScenario(
     expect(result.status).toBe(200);
     const after = await read(ctx),
       canonical = after.accounts.find(
-        (a) =>
-          a.userId === s.signup.data!.user.id &&
-          a.accountId === s.signup.data!.user.id,
+        (a) => a.userId === s.signup.data!.user.id && a.accountId === s.signup.data!.user.id,
       )!;
     expect(after.accounts).toHaveLength(before.accounts.length + 1);
     expect(after.accounts.find((a) => a.id === account.id)).toEqual(foreignRow);
@@ -581,14 +531,10 @@ compatScenario(
       userId: s.signup.data!.user.id,
       accountId: s.signup.data!.user.id,
     });
-    expect(
-      await verifyPassword({ hash: String(canonical.password), password }),
-    ).toBe(true);
+    expect(await verifyPassword({ hash: String(canonical.password), password })).toBe(true);
     expect(after.users).toEqual(before.users);
     expect(after.sessions).toEqual(before.sessions);
-    expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(
-      foreignBefore,
-    );
+    expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(foreignBefore);
     return {
       signup: ctx.snapshot(s.signup),
       other: ctx.snapshot(s.other),
@@ -628,12 +574,8 @@ compatScenario(
     expect(denied.users).toEqual(s.before.users);
     expect(denied.accounts).toEqual(s.before.accounts);
     expect(denied.sessions).toEqual(s.before.sessions);
-    expect(
-      denied.events.filter((e) => e.stage === "virtual-session"),
-    ).toHaveLength(1);
-    expect(denied.events.filter((e) => e.stage === "hash-enter")).toHaveLength(
-      0,
-    );
+    expect(denied.events.filter((e) => e.stage === "virtual-session")).toHaveLength(1);
+    expect(denied.events.filter((e) => e.stage === "hash-enter")).toHaveLength(0);
     const accepted = await call(
       ctx,
       "owner",
@@ -643,9 +585,7 @@ compatScenario(
     );
     expect(accepted.status).toBe(200);
     const after = await read(ctx),
-      credential = after.accounts.find(
-        (a) => a.userId === s.signup.data!.user.id,
-      )!;
+      credential = after.accounts.find((a) => a.userId === s.signup.data!.user.id)!;
     expect(credential.accountId).toBe(s.signup.data!.user.id);
     expect(
       await verifyPassword({
@@ -656,9 +596,7 @@ compatScenario(
     expect(after.accounts).toHaveLength(s.before.accounts.length + 1);
     expect(after.users).toEqual(s.before.users);
     expect(after.sessions).toEqual(s.before.sessions);
-    expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(
-      s.foreignBefore,
-    );
+    expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(s.foreignBefore);
     return {
       signup: ctx.snapshot(s.signup),
       other: ctx.snapshot(s.other),
@@ -704,9 +642,7 @@ compatScenario(
     expect(after.sessions).toEqual(
       before.sessions.filter((row) => row.token !== cached.data!.session.token),
     );
-    expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(
-      s.foreignBefore,
-    );
+    expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(s.foreignBefore);
     return {
       signup: ctx.snapshot(s.signup),
       other: ctx.snapshot(s.other),
@@ -741,9 +677,7 @@ compatScenario(
     expect(after.accounts).toEqual(before.accounts);
     expect(after.users).toEqual(before.users);
     expect(after.sessions).toEqual(before.sessions);
-    expect(after.events.filter((e) => e.stage === "hash-result")).toHaveLength(
-      1,
-    );
+    expect(after.events.filter((e) => e.stage === "hash-result")).toHaveLength(1);
     return {
       signup: ctx.snapshot(s.signup),
       other: ctx.snapshot(s.other),

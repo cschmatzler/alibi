@@ -1,6 +1,6 @@
-import { compatScenario } from "../../support/scenario";
 import { expect } from "bun:test";
 import { z } from "zod";
+import { compatScenario } from "../../support/scenario";
 
 const deliveredReset = z.object({
   token: z.string().min(1),
@@ -33,9 +33,7 @@ compatScenario(
     const { token, url } = deliveredReset.parse(delivery.body);
     const callback = await ctx.rawRequest({ path: url, redirect: "manual" });
     expect(callback.status).toBe(302);
-    expect(
-      new URL(callback.location!, ctx.baseURL).searchParams.get("token"),
-    ).toBe(token);
+    expect(new URL(callback.location!, ctx.baseURL).searchParams.get("token")).toBe(token);
     const reset = await primary.client.resetPassword({
       newPassword: "newPassword123!",
       token,
@@ -66,20 +64,17 @@ compatScenario(
   ["POST /request-password-reset", "POST /reset-password"],
 );
 
-compatScenario(
-  "request password reset masks nonexistent email",
-  async (ctx) => {
-    const primary = ctx.actor();
-    const result = await primary.client.requestPasswordReset({
-      email: ctx.uniqueEmail("core-missing"),
-      redirectTo: "/reset",
-    });
+compatScenario("request password reset masks nonexistent email", async (ctx) => {
+  const primary = ctx.actor();
+  const result = await primary.client.requestPasswordReset({
+    email: ctx.uniqueEmail("core-missing"),
+    redirectTo: "/reset",
+  });
 
-    return {
-      requestReset: ctx.snapshot(result),
-    };
-  },
-);
+  return {
+    requestReset: ctx.snapshot(result),
+  };
+});
 
 compatScenario("request password reset masks sender failure", async (ctx) => {
   const primary = ctx.actor();
@@ -191,22 +186,19 @@ compatScenario(
   },
 );
 
-compatScenario(
-  "reset password callback redirects invalid token to error callback",
-  async (ctx) => {
-    const callbackURL = "/callback?foo=bar&baz=qux";
+compatScenario("reset password callback redirects invalid token to error callback", async (ctx) => {
+  const callbackURL = "/callback?foo=bar&baz=qux";
 
-    const callback = await ctx.rawRequest({
-      path: `/api/auth/reset-password/invalid-reset-token?callbackURL=${encodeURIComponent(callbackURL)}`,
-      redirect: "manual",
-    });
-    const deniedURL = new URL(callbackURL, ctx.baseURL);
-    deniedURL.searchParams.set("error", "INVALID_TOKEN");
-    expect(callback.status).toBe(302);
-    expect(callback.location).toBe(deniedURL.href);
+  const callback = await ctx.rawRequest({
+    path: `/api/auth/reset-password/invalid-reset-token?callbackURL=${encodeURIComponent(callbackURL)}`,
+    redirect: "manual",
+  });
+  const deniedURL = new URL(callbackURL, ctx.baseURL);
+  deniedURL.searchParams.set("error", "INVALID_TOKEN");
+  expect(callback.status).toBe(302);
+  expect(callback.location).toBe(deniedURL.href);
 
-    return {
-      callback: ctx.snapshot(callback),
-    };
-  },
-);
+  return {
+    callback: ctx.snapshot(callback),
+  };
+});

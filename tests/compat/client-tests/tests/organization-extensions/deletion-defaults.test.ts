@@ -1,16 +1,11 @@
 import { expect } from "bun:test";
-import { z } from "zod";
-import { createAuthClient } from "better-auth/client";
 import { apiKeyClient } from "@better-auth/api-key/client";
-import { compatScenario, type ScenarioContext } from "../../support/scenario";
-import {
-  data,
-  orgActor,
-  signUp,
-  state as organizationState,
-  serverOperation,
-} from "./helpers";
+import { createAuthClient } from "better-auth/client";
+import { z } from "zod";
 import type { FixtureProfile } from "../../support/profiles";
+import { compatScenario, type ScenarioContext } from "../../support/scenario";
+import { data, orgActor, state as organizationState, serverOperation, signUp } from "./helpers";
+
 const userState = z
   .object({
     sessions: z.array(
@@ -101,9 +96,7 @@ compatScenario(
     });
     const response = data(deleted);
     expect(response.id).toBe(org.id);
-    expect(response.metadata).toBe(
-      '{"guard":"delete","large":100000000000000000000}',
-    );
+    expect(response.metadata).toBe('{"guard":"delete","large":100000000000000000000}');
     const after = await organizationState(ctx, org.id, profile);
     expect(after.parsed.members).toEqual([]);
     expect(after.parsed.invitations).toEqual([]);
@@ -112,29 +105,19 @@ compatScenario(
     expect(after.parsed.roles).toEqual(before.parsed.roles);
     const ownerAfter = await persisted(ctx, owner.user.id);
     expect(ownerAfter.sessions).toHaveLength(2);
-    expect(
-      ownerAfter.sessions.filter((r) => r.activeOrganizationId === null),
-    ).toHaveLength(1);
-    expect(
-      ownerAfter.sessions.find((r) => r.id !== selectedBefore.session.id),
-    ).toEqual(
+    expect(ownerAfter.sessions.filter((r) => r.activeOrganizationId === null)).toHaveLength(1);
+    expect(ownerAfter.sessions.find((r) => r.id !== selectedBefore.session.id)).toEqual(
       ownerBefore.sessions.find((r) => r.id !== selectedBefore.session.id),
     );
-    expect(
-      ownerAfter.sessions.find((r) => r.id === selectedBefore.session.id),
-    ).toMatchObject({ activeOrganizationId: null });
+    expect(ownerAfter.sessions.find((r) => r.id === selectedBefore.session.id)).toMatchObject({
+      activeOrganizationId: null,
+    });
     const selectedAfter = data(await owner.client.getSession());
     expect(selectedAfter.session.activeOrganizationId).toBeNull();
-    expect(selectedAfter.session.activeTeamId).toBe(
-      selectedBefore.session.activeTeamId,
-    );
-    expect(data(await sibling.getSession()).session.activeOrganizationId).toBe(
-      org.id,
-    );
+    expect(selectedAfter.session.activeTeamId).toBe(selectedBefore.session.activeTeamId);
+    expect(data(await sibling.getSession()).session.activeOrganizationId).toBe(org.id);
     expect(await persisted(ctx, foreign.user.id)).toEqual(foreignUserBefore);
-    expect(await organizationState(ctx, otherId, profile)).toEqual(
-      foreignBefore,
-    );
+    expect(await organizationState(ctx, otherId, profile)).toEqual(foreignBefore);
     const verifiedAfter = await verify();
     expect(verifiedAfter.status).toBe(200);
     expect(verifiedAfter.body).toMatchObject({
@@ -225,9 +208,7 @@ compatScenario(
       code: "ORGANIZATION_NOT_FOUND",
     });
     expect(await organizationState(ctx, id, profile)).toEqual(before);
-    expect(await organizationState(ctx, foreignId, profile)).toEqual(
-      foreignBefore,
-    );
+    expect(await organizationState(ctx, foreignId, profile)).toEqual(foreignBefore);
     expect(await persisted(ctx, owner.user.id)).toEqual(ownerBefore);
     expect(await persisted(ctx, member.user.id)).toEqual(memberBefore);
     expect(await persisted(ctx, foreign.user.id)).toEqual(foreignUserBefore);
@@ -271,8 +252,7 @@ compatScenario(
       expect(invalid.status).toBe(400);
       expect(invalid.body).toMatchObject({
         code: "VALIDATION_ERROR",
-        message:
-          "[body.organizationId] Invalid input: expected string, received number",
+        message: "[body.organizationId] Invalid input: expected string, received number",
       });
       const missing = await raw({});
       expect(missing.status).toBe(400);
@@ -353,17 +333,15 @@ compatScenario(
     });
     expect(rejected.error?.status).toBe(400);
     const after = await persisted(ctx, owner.user.id);
-    expect(
-      after.sessions.find((r) => r.id === active.session.id),
-    ).toMatchObject({ activeOrganizationId: null });
+    expect(after.sessions.find((r) => r.id === active.session.id)).toMatchObject({
+      activeOrganizationId: null,
+    });
     expect(after.sessions.find((r) => r.id !== active.session.id)).toEqual(
       sessionsBefore.sessions.find((r) => r.id !== active.session.id),
     );
     expect(await organizationState(ctx, id, profile)).toEqual(before);
     const selectedAfter = data(await owner.client.getSession());
-    expect(selectedAfter.session.activeTeamId).toBe(
-      active.session.activeTeamId,
-    );
+    expect(selectedAfter.session.activeTeamId).toBe(active.session.activeTeamId);
     return {
       created,
       active,
@@ -401,15 +379,9 @@ compatScenario(
     });
     expect(data(deleted).id).toBe(id);
     expect(await persisted(ctx, owner.user.id)).toEqual(before);
-    expect(data(await owner.client.getSession()).session).toEqual(
-      active.session,
-    );
-    expect(await organizationState(ctx, otherId, selected)).toEqual(
-      otherBefore,
-    );
-    expect((await organizationState(ctx, id, selected)).parsed.members).toEqual(
-      [],
-    );
+    expect(data(await owner.client.getSession()).session).toEqual(active.session);
+    expect(await organizationState(ctx, otherId, selected)).toEqual(otherBefore);
+    expect((await organizationState(ctx, id, selected)).parsed.members).toEqual([]);
     return { first, second, before, active, otherBefore, deleted };
   },
   ["POST /organization/delete"],

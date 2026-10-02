@@ -1,9 +1,9 @@
-import type { organizationTransportProbe } from "./organization-transport-probe";
+import type { Database } from "bun:sqlite";
 /** Application callbacks observe the pinned handler and actual persisted rows. */
 import { betterAuth } from "better-auth";
-import { organization } from "better-auth/plugins";
 import { APIError } from "better-auth/api";
-import type { Database } from "bun:sqlite";
+import { organization } from "better-auth/plugins";
+import type { organizationTransportProbe } from "./organization-transport-probe";
 export function organizationDeletionHooksFixture(
   database: Database,
   shared: Parameters<typeof betterAuth>[0],
@@ -17,9 +17,7 @@ export function organizationDeletionHooksFixture(
   function snapshot() {
     return {
       organizations: database
-        .query(
-          "SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id",
-        )
+        .query("SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id")
         .all(),
       members: database
         .query(
@@ -27,13 +25,9 @@ export function organizationDeletionHooksFixture(
         )
         .all(),
       invitations: database
-        .query(
-          "SELECT id,organizationId,status,email FROM invitation ORDER BY email,id",
-        )
+        .query("SELECT id,organizationId,status,email FROM invitation ORDER BY email,id")
         .all(),
-      teams: database
-        .query("SELECT id,organizationId,name FROM team ORDER BY name,id")
-        .all(),
+      teams: database.query("SELECT id,organizationId,name FROM team ORDER BY name,id").all(),
       teamMembers: database
         .query(
           "SELECT m.id,m.teamId,m.userId FROM teamMember m JOIN team t ON t.id=m.teamId JOIN user u ON u.id=m.userId ORDER BY t.name,u.email,m.id",
@@ -44,22 +38,17 @@ export function organizationDeletionHooksFixture(
           "SELECT s.id,s.userId,s.activeOrganizationId,s.activeTeamId FROM session s JOIN user u ON u.id=s.userId ORDER BY u.email,s.createdAt,s.id",
         )
         .all(),
-      users: database
-        .query("SELECT id,email,name FROM user ORDER BY email,id")
-        .all(),
+      users: database.query("SELECT id,email,name FROM user ORDER BY email,id").all(),
     };
   }
   type Data = {
     organization: Record<string, unknown>;
     user: { id: string; email: string; name: string };
   };
-  type Hooks = NonNullable<
-    NonNullable<Parameters<typeof organization>[0]>["organizationHooks"]
-  >;
+  type Hooks = NonNullable<NonNullable<Parameters<typeof organization>[0]>["organizationHooks"]>;
   type Context = Parameters<NonNullable<Hooks["beforeDeleteOrganization"]>>[1];
   async function note(phase: string, data: Data, ctx: Context) {
-    if (!ctx)
-      throw new Error("Deletion hook did not receive its endpoint context");
+    if (!ctx) throw new Error("Deletion hook did not receive its endpoint context");
     await Promise.resolve();
     receipts.push({
       phase,
@@ -69,8 +58,7 @@ export function organizationDeletionHooksFixture(
         ? {
             id: ctx.context.session.session.id,
             userId: ctx.context.session.session.userId,
-            activeOrganizationId:
-              ctx.context.session.session.activeOrganizationId ?? null,
+            activeOrganizationId: ctx.context.session.session.activeOrganizationId ?? null,
             activeTeamId: ctx.context.session.session.activeTeamId ?? null,
           }
         : null,
@@ -144,9 +132,7 @@ export function organizationDeletionHooksFixture(
     async state(waitFor: string | null) {
       for (
         let i = 0;
-        waitFor &&
-        i < 100 &&
-        !receipts.some((r) => (r as { phase: string }).phase === waitFor);
+        waitFor && i < 100 && !receipts.some((r) => (r as { phase: string }).phase === waitFor);
         i++
       )
         await Bun.sleep(10);
@@ -154,11 +140,7 @@ export function organizationDeletionHooksFixture(
     },
     async server(body: Record<string, unknown>, supplied: Headers) {
       const profile = profiles.get(String(body.profile));
-      if (!profile)
-        return Response.json(
-          { message: "Unknown fixture profile" },
-          { status: 400 },
-        );
+      if (!profile) return Response.json({ message: "Unknown fixture profile" }, { status: 400 });
       try {
         return Response.json(
           await profile.api.deleteOrganization({
@@ -166,11 +148,7 @@ export function organizationDeletionHooksFixture(
               body.headerCase === "mixed"
                 ? Object.fromEntries(
                     [...supplied].map(([key, value]) => [
-                      key === "cookie"
-                        ? "Cookie"
-                        : key === "x-delete-hook"
-                          ? "X-Delete-Hook"
-                          : key,
+                      key === "cookie" ? "Cookie" : key === "x-delete-hook" ? "X-Delete-Hook" : key,
                       value,
                     ]),
                   )

@@ -117,28 +117,43 @@ compatScenario("refresh token surfaces provider refresh failure", async (ctx) =>
   };
 });
 
-compatScenario("account token routes reject conflicting and foreign account selectors", async (ctx) => {
-  const primary = ctx.actor();
-  const email = ctx.uniqueEmail("core-conflicting-selectors");
-  await primary.client.signUp.email({ email, password: "password123", name: "Account Selector User" });
-  const accountId = await ctx.seedOAuthAccount({ email });
-  await ctx.actor("other").client.signUp.email({
-    email: ctx.uniqueEmail("core-other-account-owner"), password: "password123", name: "Other Account Owner",
-  });
-  const responses = [];
-  for (const route of ["get-access-token", "refresh-token"]) {
-    for (const json of [{ accountId, useAccountCookie: true }, { accountId, providerId: "mock" }]) {
-      const response = await ctx.rawRequest({ path: `/api/auth/${route}`, method: "POST", json });
-      expect(response.status).toBe(400);
-      expect((response.body as { code: string }).code).toBe("VALIDATION_ERROR");
-      responses.push(response);
-    }
-    const foreign = await ctx.rawRequest({
-      actor: "other", path: `/api/auth/${route}`, method: "POST", json: { accountId },
+compatScenario(
+  "account token routes reject conflicting and foreign account selectors",
+  async (ctx) => {
+    const primary = ctx.actor();
+    const email = ctx.uniqueEmail("core-conflicting-selectors");
+    await primary.client.signUp.email({
+      email,
+      password: "password123",
+      name: "Account Selector User",
     });
-    expect(foreign.status).toBe(400);
-    expect((foreign.body as { code: string }).code).toBe("ACCOUNT_NOT_FOUND");
-    responses.push(foreign);
-  }
-  return responses;
-});
+    const accountId = await ctx.seedOAuthAccount({ email });
+    await ctx.actor("other").client.signUp.email({
+      email: ctx.uniqueEmail("core-other-account-owner"),
+      password: "password123",
+      name: "Other Account Owner",
+    });
+    const responses = [];
+    for (const route of ["get-access-token", "refresh-token"]) {
+      for (const json of [
+        { accountId, useAccountCookie: true },
+        { accountId, providerId: "mock" },
+      ]) {
+        const response = await ctx.rawRequest({ path: `/api/auth/${route}`, method: "POST", json });
+        expect(response.status).toBe(400);
+        expect((response.body as { code: string }).code).toBe("VALIDATION_ERROR");
+        responses.push(response);
+      }
+      const foreign = await ctx.rawRequest({
+        actor: "other",
+        path: `/api/auth/${route}`,
+        method: "POST",
+        json: { accountId },
+      });
+      expect(foreign.status).toBe(400);
+      expect((foreign.body as { code: string }).code).toBe("ACCOUNT_NOT_FOUND");
+      responses.push(foreign);
+    }
+    return responses;
+  },
+);

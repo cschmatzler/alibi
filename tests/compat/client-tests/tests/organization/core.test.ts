@@ -37,18 +37,16 @@ compatScenario("organization core lifecycle matches TS", async (ctx) => {
   const activeSecondBySlug = await owner.orgClient.organization.setActive({
     organizationSlug: secondSlug,
   });
-  const fullOrganizationBySlugPrecedence =
-    await owner.orgClient.organization.getFullOrganization({
-      query: {
-        organizationId: firstOrganization.data?.id,
-        organizationSlug: secondSlug,
-      },
-    });
+  const fullOrganizationBySlugPrecedence = await owner.orgClient.organization.getFullOrganization({
+    query: {
+      organizationId: firstOrganization.data?.id,
+      organizationSlug: secondSlug,
+    },
+  });
   const clearActiveOrganization = await owner.orgClient.organization.setActive({
     organizationId: null,
   });
-  const fullOrganizationWithoutActive =
-    await owner.orgClient.organization.getFullOrganization();
+  const fullOrganizationWithoutActive = await owner.orgClient.organization.getFullOrganization();
 
   return {
     checkAvailable: ctx.snapshot(checkAvailable),
@@ -64,66 +62,72 @@ compatScenario("organization core lifecycle matches TS", async (ctx) => {
   };
 });
 
-compatScenario("organization delete returns the deleted org and clears active state", async (ctx) => {
-  const owner = await signUpUser(ctx, "owner", "organization-delete-owner", "Delete Owner");
-  const slug = ctx.uniqueToken("organization-delete-org");
+compatScenario(
+  "organization delete returns the deleted org and clears active state",
+  async (ctx) => {
+    const owner = await signUpUser(ctx, "owner", "organization-delete-owner", "Delete Owner");
+    const slug = ctx.uniqueToken("organization-delete-org");
 
-  const created = await owner.orgClient.organization.create({
-    name: "Delete Me",
-    slug,
-  });
-  const deleted = await owner.orgClient.organization.delete({
-    organizationId: created.data?.id ?? "",
-  });
-  const fullOrganizationAfterDelete = await owner.orgClient.organization.getFullOrganization();
+    const created = await owner.orgClient.organization.create({
+      name: "Delete Me",
+      slug,
+    });
+    const deleted = await owner.orgClient.organization.delete({
+      organizationId: created.data?.id ?? "",
+    });
+    const fullOrganizationAfterDelete = await owner.orgClient.organization.getFullOrganization();
 
-  return {
-    created: ctx.snapshot(created),
-    deleted: ctx.snapshot(deleted),
-    fullOrganizationAfterDelete: ctx.snapshot(fullOrganizationAfterDelete),
-  };
-});
+    return {
+      created: ctx.snapshot(created),
+      deleted: ctx.snapshot(deleted),
+      fullOrganizationAfterDelete: ctx.snapshot(fullOrganizationAfterDelete),
+    };
+  },
+);
 
-compatScenario("organization create can keep the current active org and full organization honors membersLimit", async (ctx) => {
-  const owner = await signUpUser(ctx, "owner", "organization-keep-active-owner", "Owner");
-  const member = await signUpUser(ctx, "member", "organization-keep-active-member", "Member");
-  const firstSlug = ctx.uniqueToken("organization-keep-active-first");
-  const secondSlug = ctx.uniqueToken("organization-keep-active-second");
+compatScenario(
+  "organization create can keep the current active org and full organization honors membersLimit",
+  async (ctx) => {
+    const owner = await signUpUser(ctx, "owner", "organization-keep-active-owner", "Owner");
+    const member = await signUpUser(ctx, "member", "organization-keep-active-member", "Member");
+    const firstSlug = ctx.uniqueToken("organization-keep-active-first");
+    const secondSlug = ctx.uniqueToken("organization-keep-active-second");
 
-  const firstOrganization = await owner.orgClient.organization.create({
-    name: "Keep Active First",
-    slug: firstSlug,
-  });
-  const initialSession = await owner.client.getSession();
-  const secondOrganization = await owner.orgClient.organization.create({
-    name: "Keep Active Second",
-    slug: secondSlug,
-    keepCurrentActiveOrganization: true,
-  });
-  const sessionAfterSecondCreate = await owner.client.getSession();
+    const firstOrganization = await owner.orgClient.organization.create({
+      name: "Keep Active First",
+      slug: firstSlug,
+    });
+    const initialSession = await owner.client.getSession();
+    const secondOrganization = await owner.orgClient.organization.create({
+      name: "Keep Active Second",
+      slug: secondSlug,
+      keepCurrentActiveOrganization: true,
+    });
+    const sessionAfterSecondCreate = await owner.client.getSession();
 
-  const invitation = await owner.orgClient.organization.inviteMember({
-    organizationId: firstOrganization.data?.id ?? "",
-    email: member.email,
-    role: "member",
-  });
-  const acceptedInvitation = await member.orgClient.organization.acceptInvitation({
-    invitationId: invitation.data?.id ?? "",
-  });
-  const limitedOrganization = await owner.orgClient.organization.getFullOrganization({
-    query: {
-      organizationId: firstOrganization.data?.id,
-      membersLimit: 1,
-    },
-  });
+    const invitation = await owner.orgClient.organization.inviteMember({
+      organizationId: firstOrganization.data?.id ?? "",
+      email: member.email,
+      role: "member",
+    });
+    const acceptedInvitation = await member.orgClient.organization.acceptInvitation({
+      invitationId: invitation.data?.id ?? "",
+    });
+    const limitedOrganization = await owner.orgClient.organization.getFullOrganization({
+      query: {
+        organizationId: firstOrganization.data?.id,
+        membersLimit: 1,
+      },
+    });
 
-  return {
-    firstOrganization: ctx.snapshot(firstOrganization),
-    initialSession: ctx.snapshot(initialSession),
-    secondOrganization: ctx.snapshot(secondOrganization),
-    sessionAfterSecondCreate: ctx.snapshot(sessionAfterSecondCreate),
-    invitation: ctx.snapshot(invitation),
-    acceptedInvitation: ctx.snapshot(acceptedInvitation),
-    limitedOrganization: ctx.snapshot(limitedOrganization),
-  };
-});
+    return {
+      firstOrganization: ctx.snapshot(firstOrganization),
+      initialSession: ctx.snapshot(initialSession),
+      secondOrganization: ctx.snapshot(secondOrganization),
+      sessionAfterSecondCreate: ctx.snapshot(sessionAfterSecondCreate),
+      invitation: ctx.snapshot(invitation),
+      acceptedInvitation: ctx.snapshot(acceptedInvitation),
+      limitedOrganization: ctx.snapshot(limitedOrganization),
+    };
+  },
+);

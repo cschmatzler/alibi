@@ -1,86 +1,98 @@
 #!/usr/bin/env bun
-import { numericModes, numericOptions } from "./passwordless-numeric";
-import { createCustomSessionFixture } from "./custom-session-fixture";
-import { callbackSnapshot, capturePasswordlessRequest } from "./passwordless-context";
-import { createCaptchaFixture } from "./captcha-fixture";
-import {physicalCookieProfiles} from "./physical-cookie-fixture";
-import { createServerEndpointFixture } from "./server-endpoint-fixture";
-import { createJwtKeyringFixture } from "./jwt-keyring-fixture";
-import { createRemoteJwtFixture } from "./jwt-remote-fixture";
-import { createLastLoginMethodFixture } from "./last-login-method-fixture";
-import { createSetPasswordFixture } from "./set-password-fixture";
-import { createUserLifecycleFixture } from "./user-lifecycle-fixture";
-import { createDispatchFixture } from "./dispatch-fixture";
-import { createCompromisedPasswordFixture } from "./compromised-password-fixture";
-import { createVerificationStorageFixture } from "./verification-storage-fixture";
-import { createSignupPolicyFixture } from "./signup-policy-fixture";
-import { createRateLimitFixture } from "./rate-limit-fixture";
-import { createClientIpFixture } from "./client-ip-fixture";
-import { createTwoFactorPendingLookupFixture } from "./two-factor-pending-lookup-fixture";
-import { createBearerFixture } from "./bearer-fixture";
-import { sessionCookieCacheFixture } from "./session-cookie-cache-fixture";
-import { organizationMembershipPolicyFixture } from "./organization-membership-policy-fixture";
-import { organizationInvitationAcceptanceFixture } from "./organization-invitation-acceptance-fixture";
-import { organizationMemberAdditionFixture } from "./organization-member-addition-fixture";
-import { organizationTransportProbe } from "./organization-transport-probe";
 
 import { Database } from "bun:sqlite";
-import { openApiProfiles } from "./open-api-fixture";
+import { apiKey } from "@better-auth/api-key";
 import { passkey } from "@better-auth/passkey";
-import { betterAuth, type BetterAuthPlugin } from "better-auth";
-import { apiKeyBackgroundFixture } from "./api-key-background-fixture";
-import { createApiKeyGenerationFixture } from "./api-key-generation-fixture";
-import { createApiKeyOptionsFixture } from "./api-key-options-fixture";
-import { createApiKeyHookFixture } from "./api-key-hook-fixture";
-import { passkeyFixture } from "./passkey-fixture";
-import { passkeyAuthenticationFixture } from "./passkey-authentication-fixture";
-import { passkeyRegistrationFixture } from "./passkey-registration-fixture";
-import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
-import { createTwoFactorPolicyFixture } from "./two-factor-policy-fixture";
-import { createTwoFactorOtpFixture } from "./two-factor-otp-fixture";
-import { createTwoFactorDeliveryFixture } from "./two-factor-delivery-fixture";
-import { createTwoFactorTotpFixture } from "./two-factor-totp-fixture";
-import { createOrganizationCreationFixture } from "./organization-creation-fixture";
-import { organizationCreationHooksFixture } from "./organization-creation-hooks-fixture";
-import { organizationMemberRemovalHooksFixture } from "./organization-member-removal-hooks-fixture";
-import { organizationMemberRoleHooksFixture } from "./organization-member-role-hooks-fixture";
-import { organizationUpdateHooksFixture } from "./organization-update-hooks-fixture";
-import {organizationDeletionHooksFixture} from "./organization-deletion-hooks-fixture";
-import { createSiweFixture } from "./siwe-fixture";
-import { createPhoneFixture } from "./phone-fixture";
+import { type BetterAuthPlugin, betterAuth } from "better-auth";
+import { APIError, createAuthMiddleware } from "better-auth/api";
+import { getMigrations } from "better-auth/db/migration";
+import {
+  admin,
+  deviceAuthorization,
+  emailOTP,
+  jwt,
+  magicLink,
+  multiSession,
+  oneTimeToken,
+  twoFactor,
+  username,
+} from "better-auth/plugins";
+import { createAccessControl } from "better-auth/plugins/access";
+import { genericOAuth } from "better-auth/plugins/generic-oauth";
+import { organization } from "better-auth/plugins/organization";
+import { defaultStatements } from "better-auth/plugins/organization/access";
+import { additionalFieldsFixture } from "./additional-fields-fixture";
 import { createAdminBannedMessageFixture } from "./admin-banned-message-fixture";
 import { createAdminPermissionFixture } from "./admin-permission-fixture";
-import { createMultipleSessionFixture } from "./multiple-session-fixture";
-import { createSessionFieldsFixture } from "./session-fields-fixture";
-import { additionalFieldsFixture } from "./additional-fields-fixture";
-import { googleIdTokenProfiles } from "./google-id-token-fixture";
-import { createOneTapProfiles, googleOneTapJwks, oneTapState } from "./one-tap-fixture";
-import { getMigrations } from "better-auth/db/migration";
-import { APIError, createAuthMiddleware } from "better-auth/api";
-import { apiKey } from "@better-auth/api-key";
-import { admin, deviceAuthorization, emailOTP, magicLink, twoFactor, username, jwt, oneTimeToken, multiSession } from "better-auth/plugins";
-import { organization } from "better-auth/plugins/organization";
-import { createAccessControl } from "better-auth/plugins/access";
-import { defaultStatements } from "better-auth/plugins/organization/access";
-import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { anonymousFixture } from "./anonymous-fixture";
-import { createUserValidationFixture } from "./user-validation-fixture";
-import {cloudflareProviderFixture} from "./cloudflare-provider-fixture";
-import {dropboxProviderFixture} from "./dropbox-provider-fixture";
-import {facebookProviderFixture} from "./facebook-provider-fixture";
-import {figmaProviderFixture} from "./figma-provider-fixture";
-import {huggingfaceProviderFixture} from "./huggingface-provider-fixture";
-import {kakaoProviderFixture} from "./kakao-provider-fixture";
-import {kickProviderFixture} from "./kick-provider-fixture";
-import {cognitoProviderFixture} from "./cognito-provider-fixture";
-import {atlassianProviderFixture} from "./atlassian-provider-fixture";
+import { apiKeyBackgroundFixture } from "./api-key-background-fixture";
+import { createApiKeyGenerationFixture } from "./api-key-generation-fixture";
+import { createApiKeyHookFixture } from "./api-key-hook-fixture";
+import { createApiKeyOptionsFixture } from "./api-key-options-fixture";
 import { appleProviderFixture } from "./apple-provider-fixture";
-import { socialProviderFixture } from "./social-provider-fixture";
+import { atlassianProviderFixture } from "./atlassian-provider-fixture";
+import { createBearerFixture } from "./bearer-fixture";
+import { createCaptchaFixture } from "./captcha-fixture";
+import { createClientIpFixture } from "./client-ip-fixture";
+import { cloudflareProviderFixture } from "./cloudflare-provider-fixture";
+import { cognitoProviderFixture } from "./cognito-provider-fixture";
+import { createCompromisedPasswordFixture } from "./compromised-password-fixture";
+import { createCustomSessionFixture } from "./custom-session-fixture";
+import { createDispatchFixture } from "./dispatch-fixture";
+import { dropboxProviderFixture } from "./dropbox-provider-fixture";
+import { facebookProviderFixture } from "./facebook-provider-fixture";
+import { figmaProviderFixture } from "./figma-provider-fixture";
+import { googleIdTokenProfiles } from "./google-id-token-fixture";
+import { huggingfaceProviderFixture } from "./huggingface-provider-fixture";
+import { createJwtKeyringFixture } from "./jwt-keyring-fixture";
+import { createRemoteJwtFixture } from "./jwt-remote-fixture";
+import { kakaoProviderFixture } from "./kakao-provider-fixture";
+import { kickProviderFixture } from "./kick-provider-fixture";
+import { createLastLoginMethodFixture } from "./last-login-method-fixture";
+import { lifecycleEvents, lifecycleFixture } from "./lifecycle-fixture";
+import { createMultipleSessionFixture } from "./multiple-session-fixture";
 import { oauthProxyFixture } from "./oauth-proxy-fixture";
+import { createOneTapProfiles, googleOneTapJwks, oneTapState } from "./one-tap-fixture";
+import { openApiProfiles } from "./open-api-fixture";
+import { createOrganizationCreationFixture } from "./organization-creation-fixture";
+import { organizationCreationHooksFixture } from "./organization-creation-hooks-fixture";
+import { organizationDeletionHooksFixture } from "./organization-deletion-hooks-fixture";
+import { organizationInvitationAcceptanceFixture } from "./organization-invitation-acceptance-fixture";
+import { organizationMemberAdditionFixture } from "./organization-member-addition-fixture";
+import { organizationMemberRemovalHooksFixture } from "./organization-member-removal-hooks-fixture";
+import { organizationMemberRoleHooksFixture } from "./organization-member-role-hooks-fixture";
+import { organizationMembershipPolicyFixture } from "./organization-membership-policy-fixture";
+import { organizationTransportProbe } from "./organization-transport-probe";
+import { organizationUpdateHooksFixture } from "./organization-update-hooks-fixture";
+import { passkeyAuthenticationFixture } from "./passkey-authentication-fixture";
+import { passkeyFixture } from "./passkey-fixture";
+import { passkeyRegistrationFixture } from "./passkey-registration-fixture";
+import { callbackSnapshot, capturePasswordlessRequest } from "./passwordless-context";
+import { numericModes, numericOptions } from "./passwordless-numeric";
+import { createPhoneFixture } from "./phone-fixture";
+import { physicalCookieProfiles } from "./physical-cookie-fixture";
+import { createRateLimitFixture } from "./rate-limit-fixture";
+import { createServerEndpointFixture } from "./server-endpoint-fixture";
+import { sessionCookieCacheFixture } from "./session-cookie-cache-fixture";
+import { createSessionFieldsFixture } from "./session-fields-fixture";
+import { createSetPasswordFixture } from "./set-password-fixture";
+import { createSignupPolicyFixture } from "./signup-policy-fixture";
+import { createSiweFixture } from "./siwe-fixture";
+import { socialProviderFixture } from "./social-provider-fixture";
+import { createTwoFactorDeliveryFixture } from "./two-factor-delivery-fixture";
+import { createTwoFactorOtpFixture } from "./two-factor-otp-fixture";
+import { createTwoFactorPendingLookupFixture } from "./two-factor-pending-lookup-fixture";
+import { createTwoFactorPolicyFixture } from "./two-factor-policy-fixture";
+import { createTwoFactorTotpFixture } from "./two-factor-totp-fixture";
+import { createUserLifecycleFixture } from "./user-lifecycle-fixture";
+import { createUserValidationFixture } from "./user-validation-fixture";
+import { createVerificationStorageFixture } from "./verification-storage-fixture";
 
 // The installed oracle release. The harness compares it with the committed pin
 // on every health check, so a dependency bump cannot run under a stale label.
-const INSTALLED_BETTER_AUTH_VERSION: string = (await Bun.file(new URL("./node_modules/better-auth/package.json", import.meta.url)).json()).version;
+const INSTALLED_BETTER_AUTH_VERSION: string = (
+  await Bun.file(new URL("./node_modules/better-auth/package.json", import.meta.url)).json()
+).version;
 
 function getPort() {
   const idx = process.argv.indexOf("--port");
@@ -285,26 +297,65 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   return originalFetch(request);
 };
 
-const magicLinkOutbox=new Map<string,{url:string;token:string;metadata:unknown;context?:unknown}>();
-const magicPlugin=()=>magicLink({async sendMagicLink({email,url,token,metadata},ctx) {const identifier=ctx.context.options.basePath?.includes("magic-link-hashed") ? new Bun.CryptoHasher("sha256").update(token).digest("base64url") : token;const context=await callbackSnapshot(ctx,identifier);magicLinkOutbox.set(email,{url,token,metadata:metadata ?? null,...(context ? {context} : {})});}});
-const emailOtpOutbox=new Map<string,{otp?:string;context?:unknown;generator?:unknown}>();
-const captureOtpGenerator: NonNullable<Parameters<typeof emailOTP>[0]["generateOTP"]> = ({email,type},ctx) => {
+const magicLinkOutbox = new Map<
+  string,
+  { url: string; token: string; metadata: unknown; context?: unknown }
+>();
+const magicPlugin = () =>
+  magicLink({
+    async sendMagicLink({ email, url, token, metadata }, ctx) {
+      const identifier = ctx.context.options.basePath?.includes("magic-link-hashed")
+        ? new Bun.CryptoHasher("sha256").update(token).digest("base64url")
+        : token;
+      const context = await callbackSnapshot(ctx, identifier);
+      magicLinkOutbox.set(email, {
+        url,
+        token,
+        metadata: metadata ?? null,
+        ...(context ? { context } : {}),
+      });
+    },
+  });
+const emailOtpOutbox = new Map<string, { otp?: string; context?: unknown; generator?: unknown }>();
+const captureOtpGenerator: NonNullable<Parameters<typeof emailOTP>[0]["generateOTP"]> = (
+  { email, type },
+  ctx,
+) => {
   if (ctx?.request?.headers.get("x-callback-probe") === "issue207") {
-    emailOtpOutbox.set(`${type}:${email}`, { generator: {
-      method: ctx.request.method, path: new URL(ctx.request.url).pathname,
-      marker: ctx.request.headers.get("x-callback-probe"), body: ctx.body,
-      basePath: ctx.context.options.basePath,
-    } });
+    emailOtpOutbox.set(`${type}:${email}`, {
+      generator: {
+        method: ctx.request.method,
+        path: new URL(ctx.request.url).pathname,
+        marker: ctx.request.headers.get("x-callback-probe"),
+        body: ctx.body,
+        basePath: ctx.context.options.basePath,
+      },
+    });
   }
   return undefined;
 };
-const captureOtpSender: Parameters<typeof emailOTP>[0]["sendVerificationOTP"] = async ({email,otp,type},ctx) => {
-  const identifier = type === "change-email" ? `${type}-otp-${ctx?.context.session?.user.email.toLowerCase()}-${email}` : `${type}-otp-${email}`;
-  const context = await callbackSnapshot(ctx,identifier);
-  emailOtpOutbox.set(`${type}:${email}`, { ...emailOtpOutbox.get(`${type}:${email}`), otp, ...(context ? {context} : {}) });
+const captureOtpSender: Parameters<typeof emailOTP>[0]["sendVerificationOTP"] = async (
+  { email, otp, type },
+  ctx,
+) => {
+  const identifier =
+    type === "change-email"
+      ? `${type}-otp-${ctx?.context.session?.user.email.toLowerCase()}-${email}`
+      : `${type}-otp-${email}`;
+  const context = await callbackSnapshot(ctx, identifier);
+  emailOtpOutbox.set(`${type}:${email}`, {
+    ...emailOtpOutbox.get(`${type}:${email}`),
+    otp,
+    ...(context ? { context } : {}),
+  });
 };
 
-const emailOtp=()=>emailOTP({changeEmail:{enabled:true},generateOTP: captureOtpGenerator, sendVerificationOTP: captureOtpSender});
+const emailOtp = () =>
+  emailOTP({
+    changeEmail: { enabled: true },
+    generateOTP: captureOtpGenerator,
+    sendVerificationOTP: captureOtpSender,
+  });
 
 const authOptions = {
   baseURL: `http://localhost:${PORT}`,
@@ -315,7 +366,15 @@ const authOptions = {
     enabled: true,
     requireEmailVerification: false,
     minPasswordLength: 8,
-    async sendResetPassword({ user, url, token }: { user: { email?: string } | null; url: string; token: string }) {
+    async sendResetPassword({
+      user,
+      url,
+      token,
+    }: {
+      user: { email?: string } | null;
+      url: string;
+      token: string;
+    }) {
       if (resetPasswordMode === "throw") {
         throw new Error("compat reset sender failure");
       }
@@ -419,7 +478,11 @@ const authOptions = {
     apiKey([
       { configId: "default", enableMetadata: true },
       { configId: "secondary", enableMetadata: true },
-      { configId: "session", enableSessionForAPIKeys: true, apiKeyHeaders: ["x-api-key", "x-machine-key"] },
+      {
+        configId: "session",
+        enableSessionForAPIKeys: true,
+        apiKeyHeaders: ["x-api-key", "x-machine-key"],
+      },
       { configId: "shared-first", enableSessionForAPIKeys: true, apiKeyHeaders: "x-shared-key" },
       { configId: "shared-second", enableSessionForAPIKeys: true, apiKeyHeaders: "x-shared-key" },
       { configId: "organization", references: "organization", enableMetadata: true },
@@ -467,7 +530,11 @@ const authOptions = {
 
 const { runMigrations } = await getMigrations(authOptions);
 await runMigrations();
-const sessionFieldsFixture=await createSessionFieldsFixture(database,authOptions,`http://localhost:${PORT}`);
+const sessionFieldsFixture = await createSessionFieldsFixture(
+  database,
+  authOptions,
+  `http://localhost:${PORT}`,
+);
 const rateLimitFixture = createRateLimitFixture(authOptions);
 const clientIpFixture = await createClientIpFixture(authOptions, database);
 const siweFixture = await createSiweFixture(database, authOptions, `http://localhost:${PORT}`);
@@ -478,31 +545,76 @@ const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 const bearerFixture = createBearerFixture(authOptions);
 const dispatchFixture = createDispatchFixture(authOptions);
 const captchaFixture = createCaptchaFixture(authOptions, PORT);
-const organizationCreationFixture = createOrganizationCreationFixture(database, authOptions, `http://localhost:${PORT}`);
+const organizationCreationFixture = createOrganizationCreationFixture(
+  database,
+  authOptions,
+  `http://localhost:${PORT}`,
+);
 const organizationTransport = organizationTransportProbe();
-const organizationHooksFixture = organizationCreationHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
-const organizationMembershipFixture=organizationMembershipPolicyFixture(database,authOptions,`http://localhost:${PORT}`);
-const organizationInvitationFixture = organizationInvitationAcceptanceFixture(database, authOptions, `http://localhost:${PORT}`);
-const organizationAdditionFixture = organizationMemberAdditionFixture(database, authOptions, `http://localhost:${PORT}`);
-const organizationMemberRemovalFixture = organizationMemberRemovalHooksFixture(database, authOptions, `http://localhost:${PORT}`);
-const organizationMemberRoleFixture = organizationMemberRoleHooksFixture(database, authOptions, `http://localhost:${PORT}`);
+const organizationHooksFixture = organizationCreationHooksFixture(
+  database,
+  authOptions,
+  `http://localhost:${PORT}`,
+  organizationTransport,
+);
+const organizationMembershipFixture = organizationMembershipPolicyFixture(
+  database,
+  authOptions,
+  `http://localhost:${PORT}`,
+);
+const organizationInvitationFixture = organizationInvitationAcceptanceFixture(
+  database,
+  authOptions,
+  `http://localhost:${PORT}`,
+);
+const organizationAdditionFixture = organizationMemberAdditionFixture(
+  database,
+  authOptions,
+  `http://localhost:${PORT}`,
+);
+const organizationMemberRemovalFixture = organizationMemberRemovalHooksFixture(
+  database,
+  authOptions,
+  `http://localhost:${PORT}`,
+);
+const organizationMemberRoleFixture = organizationMemberRoleHooksFixture(
+  database,
+  authOptions,
+  `http://localhost:${PORT}`,
+);
 const lastLoginMethodFixture = await createLastLoginMethodFixture(authOptions, database);
 const remoteJwtFixture = createRemoteJwtFixture(authOptions);
-const jwtKeyringFixture = createJwtKeyringFixture(authOptions,database);
-const twoFactorPendingLookupFixture = await createTwoFactorPendingLookupFixture(authOptions, database);
-const organizationUpdateFixture = organizationUpdateHooksFixture(database, authOptions, `http://localhost:${PORT}`);
-const organizationDeletionFixture = organizationDeletionHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
+const jwtKeyringFixture = createJwtKeyringFixture(authOptions, database);
+const twoFactorPendingLookupFixture = await createTwoFactorPendingLookupFixture(
+  authOptions,
+  database,
+);
+const organizationUpdateFixture = organizationUpdateHooksFixture(
+  database,
+  authOptions,
+  `http://localhost:${PORT}`,
+);
+const organizationDeletionFixture = organizationDeletionHooksFixture(
+  database,
+  authOptions,
+  `http://localhost:${PORT}`,
+  organizationTransport,
+);
 const passkeyRegistration = passkeyRegistrationFixture(authOptions);
-const passkeyAuthentication = passkeyAuthenticationFixture(database, authOptions, `http://localhost:${PORT}`);
-const cloudflareFixture=cloudflareProviderFixture(authOptions);
-const cognitoFixture=cognitoProviderFixture(authOptions);
-const dropboxFixture=dropboxProviderFixture(authOptions);
-const facebookFixture=facebookProviderFixture(authOptions);
-const figmaFixture=figmaProviderFixture(authOptions);
-const huggingfaceFixture=huggingfaceProviderFixture(authOptions);
-const kakaoFixture=kakaoProviderFixture(authOptions);
-const kickFixture=kickProviderFixture(authOptions);
-const atlassianFixture=atlassianProviderFixture(authOptions);
+const passkeyAuthentication = passkeyAuthenticationFixture(
+  database,
+  authOptions,
+  `http://localhost:${PORT}`,
+);
+const cloudflareFixture = cloudflareProviderFixture(authOptions);
+const cognitoFixture = cognitoProviderFixture(authOptions);
+const dropboxFixture = dropboxProviderFixture(authOptions);
+const facebookFixture = facebookProviderFixture(authOptions);
+const figmaFixture = figmaProviderFixture(authOptions);
+const huggingfaceFixture = huggingfaceProviderFixture(authOptions);
+const kakaoFixture = kakaoProviderFixture(authOptions);
+const kickFixture = kickProviderFixture(authOptions);
+const atlassianFixture = atlassianProviderFixture(authOptions);
 const appleFixture = appleProviderFixture(authOptions);
 const socialProvidersFixture = socialProviderFixture(authOptions);
 const oauthProxyProfiles = await oauthProxyFixture(authOptions);
@@ -514,20 +626,24 @@ const additionalFields = await additionalFieldsFixture(authOptions);
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
 for (const [path, instance] of additionalFields.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of userLifecycleFixture.profiles) verificationProfiles.set(path, instance);
-for(const [path,instance] of cloudflareFixture.profiles) verificationProfiles.set(path,instance);
-for(const [path,instance] of cognitoFixture.profiles) verificationProfiles.set(path,instance);
-for(const [path,instance] of dropboxFixture.profiles) verificationProfiles.set(path,instance);
-for(const [path,instance] of facebookFixture.profiles) verificationProfiles.set(path,instance);
-for(const [path,instance] of figmaFixture.profiles) verificationProfiles.set(path,instance);
-for(const [path,instance] of huggingfaceFixture.profiles) verificationProfiles.set(path,instance);
-for(const [path,instance] of kakaoFixture.profiles) verificationProfiles.set(path,instance);
-for(const [path,instance] of kickFixture.profiles) verificationProfiles.set(path,instance);
-for(const [path,instance] of atlassianFixture.profiles) verificationProfiles.set(path,instance);
+for (const [path, instance] of userLifecycleFixture.profiles)
+  verificationProfiles.set(path, instance);
+for (const [path, instance] of cloudflareFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of cognitoFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of dropboxFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of facebookFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of figmaFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of huggingfaceFixture.profiles)
+  verificationProfiles.set(path, instance);
+for (const [path, instance] of kakaoFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of kickFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of atlassianFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of appleFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of socialProvidersFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of socialProvidersFixture.profiles)
+  verificationProfiles.set(path, instance);
 for (const [path, instance] of anonymousProfiles.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of sessionCookieCacheProfiles.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of sessionCookieCacheProfiles.profiles)
+  verificationProfiles.set(path, instance);
 const apiKeyBackground = await apiKeyBackgroundFixture(database, authOptions);
 for (const [path, instance] of apiKeyBackground.profiles) verificationProfiles.set(path, instance);
 const apiKeyGenerationFixture = createApiKeyGenerationFixture(database, authOptions);
@@ -537,15 +653,25 @@ verificationProfiles.set(apiKeyOptionsFixture.path, apiKeyOptionsFixture.auth);
 const apiKeyHookFixture = createApiKeyHookFixture(database, authOptions);
 verificationProfiles.set(apiKeyHookFixture.path, apiKeyHookFixture.auth);
 for (const [path, instance] of siweFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of adminBannedMessageFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of adminPermissionFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of customSessionFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of multipleSessionFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of adminBannedMessageFixture.profiles)
+  verificationProfiles.set(path, instance);
+for (const [path, instance] of adminPermissionFixture.profiles)
+  verificationProfiles.set(path, instance);
+for (const [path, instance] of customSessionFixture.profiles)
+  verificationProfiles.set(path, instance);
+for (const [path, instance] of multipleSessionFixture.profiles)
+  verificationProfiles.set(path, instance);
 for (const [path, instance] of bearerFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of dispatchFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of passkeyRegistration.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of passkeyAuthentication.profiles) verificationProfiles.set(path, instance);
-for (const name of ["email-verification-required", "email-verification-no-signup-mail", "email-verification-failing-notifications"]) {
+for (const [path, instance] of passkeyRegistration.profiles)
+  verificationProfiles.set(path, instance);
+for (const [path, instance] of passkeyAuthentication.profiles)
+  verificationProfiles.set(path, instance);
+for (const name of [
+  "email-verification-required",
+  "email-verification-no-signup-mail",
+  "email-verification-failing-notifications",
+]) {
   const path = `/__test/profiles/${name}/api/auth`;
   const instance = betterAuth({
     ...authOptions,
@@ -567,71 +693,185 @@ for (const name of ["email-verification-required", "email-verification-no-signup
   verificationProfiles.set(path, instance);
 }
 
-const secondarySessionCaches = new Map<string, Map<string,{value:string,expiresAt:number}>>();
-for (const name of ["session-secondary-only","session-secondary-preserve-only","session-secondary-combined","session-secondary-preserved"] as const) {
-  const cache=new Map<string,{value:string,expiresAt:number}>();secondarySessionCaches.set(name,cache);
-  const path=`/__test/profiles/${name}/api/auth`;
-  verificationProfiles.set(path,betterAuth({...authOptions,basePath:path,
-    plugins:[...authOptions.plugins.filter(plugin=>plugin.id!=="api-key"),apiKey({enableSessionForAPIKeys:true}),multiSession(),oneTimeToken()],
-    secondaryStorage:{async get(key){const entry=cache.get(key);if(!entry)return null;if(entry.expiresAt<=Date.now()){cache.delete(key);return null;}return entry.value;},async set(key,value,ttl){cache.set(key,{value,expiresAt:Date.now()+ttl*1000});},async delete(key){cache.delete(key);},async getAndDelete(key){const entry=cache.get(key);cache.delete(key);return entry&&entry.expiresAt>Date.now()?entry.value:null;}},
-    session:{...authOptions.session,storeSessionInDatabase:name.endsWith("combined")||name.endsWith("preserved"),preserveSessionInDatabase:name.includes("preserve")},
-  }));
+const secondarySessionCaches = new Map<string, Map<string, { value: string; expiresAt: number }>>();
+for (const name of [
+  "session-secondary-only",
+  "session-secondary-preserve-only",
+  "session-secondary-combined",
+  "session-secondary-preserved",
+] as const) {
+  const cache = new Map<string, { value: string; expiresAt: number }>();
+  secondarySessionCaches.set(name, cache);
+  const path = `/__test/profiles/${name}/api/auth`;
+  verificationProfiles.set(
+    path,
+    betterAuth({
+      ...authOptions,
+      basePath: path,
+      plugins: [
+        ...authOptions.plugins.filter((plugin) => plugin.id !== "api-key"),
+        apiKey({ enableSessionForAPIKeys: true }),
+        multiSession(),
+        oneTimeToken(),
+      ],
+      secondaryStorage: {
+        async get(key) {
+          const entry = cache.get(key);
+          if (!entry) return null;
+          if (entry.expiresAt <= Date.now()) {
+            cache.delete(key);
+            return null;
+          }
+          return entry.value;
+        },
+        async set(key, value, ttl) {
+          cache.set(key, { value, expiresAt: Date.now() + ttl * 1000 });
+        },
+        async delete(key) {
+          cache.delete(key);
+        },
+        async getAndDelete(key) {
+          const entry = cache.get(key);
+          cache.delete(key);
+          return entry && entry.expiresAt > Date.now() ? entry.value : null;
+        },
+      },
+      session: {
+        ...authOptions.session,
+        storeSessionInDatabase: name.endsWith("combined") || name.endsWith("preserved"),
+        preserveSessionInDatabase: name.includes("preserve"),
+      },
+    }),
+  );
 }
 
-for (const name of ["session-deferred", "session-no-refresh", "session-deferred-no-refresh", "session-no-freshness", "session-cookie-cleanup"]) {
+for (const name of [
+  "session-deferred",
+  "session-no-refresh",
+  "session-deferred-no-refresh",
+  "session-no-freshness",
+  "session-cookie-cleanup",
+]) {
   const path = `/__test/profiles/${name}/api/auth`;
-  verificationProfiles.set(path, betterAuth({
-    ...authOptions,
-    basePath: path,
-    session: { ...authOptions.session, deferSessionRefresh: name.startsWith("session-deferred"), disableSessionRefresh: name.endsWith("no-refresh"), ...(name === "session-no-freshness" ? { freshAge: 0 } : {}) },
-    ...(name === "session-cookie-cleanup" ? { account: { ...authOptions.account, storeAccountCookie: true, storeStateStrategy: "cookie" } } : {}),
-  }));
+  verificationProfiles.set(
+    path,
+    betterAuth({
+      ...authOptions,
+      basePath: path,
+      session: {
+        ...authOptions.session,
+        deferSessionRefresh: name.startsWith("session-deferred"),
+        disableSessionRefresh: name.endsWith("no-refresh"),
+        ...(name === "session-no-freshness" ? { freshAge: 0 } : {}),
+      },
+      ...(name === "session-cookie-cleanup"
+        ? {
+            account: {
+              ...authOptions.account,
+              storeAccountCookie: true,
+              storeStateStrategy: "cookie",
+            },
+          }
+        : {}),
+    }),
+  );
 }
 
 for (const name of ["passkey-fresh", "passkey-no-freshness"]) {
   const path = `/__test/profiles/${name}/api/auth`;
-  verificationProfiles.set(path, betterAuth({
-    ...authOptions, basePath: path,
-    session: { ...authOptions.session, freshAge: name === "passkey-fresh" ? 1 : 0 },
-    plugins: [passkey(), username()],
-  }));
+  verificationProfiles.set(
+    path,
+    betterAuth({
+      ...authOptions,
+      basePath: path,
+      session: { ...authOptions.session, freshAge: name === "passkey-fresh" ? 1 : 0 },
+      plugins: [passkey(), username()],
+    }),
+  );
 }
 
-function createOtpProfile(name:string) {
-  const proof=name.startsWith("passwordless-proof");
+function createOtpProfile(name: string) {
+  const proof = name.startsWith("passwordless-proof");
   return betterAuth({
     ...authOptions,
-    basePath:`/__test/profiles/${name}/api/auth`,
-    verification:{disableCleanup:name==="verification-no-cleanup"},
-    emailVerification: name==="passwordless-proof" ? {sendOnSignUp:false,autoSignInAfterVerification:true} : {...authOptions.emailVerification,sendOnSignUp:false,autoSignInAfterVerification:proof},
-    plugins:[emailOTP({
-      ...numericOptions(name),
-      storeOTP:name==="passwordless-hashed" ? "hashed" : name==="passwordless-encrypted-reuse" ? "encrypted" : "plain",
-      resendStrategy:name==="passwordless-encrypted-reuse" ? "reuse" : "rotate",
-      disableSignUp:name==="passwordless-disabled",overrideDefaultEmailVerification:proof,
-      changeEmail:{enabled:true,verifyCurrentEmail:proof},
-      generateOTP: captureOtpGenerator, sendVerificationOTP: captureOtpSender
-    })]
+    basePath: `/__test/profiles/${name}/api/auth`,
+    verification: { disableCleanup: name === "verification-no-cleanup" },
+    emailVerification:
+      name === "passwordless-proof"
+        ? { sendOnSignUp: false, autoSignInAfterVerification: true }
+        : {
+            ...authOptions.emailVerification,
+            sendOnSignUp: false,
+            autoSignInAfterVerification: proof,
+          },
+    plugins: [
+      emailOTP({
+        ...numericOptions(name),
+        storeOTP:
+          name === "passwordless-hashed"
+            ? "hashed"
+            : name === "passwordless-encrypted-reuse"
+              ? "encrypted"
+              : "plain",
+        resendStrategy: name === "passwordless-encrypted-reuse" ? "reuse" : "rotate",
+        disableSignUp: name === "passwordless-disabled",
+        overrideDefaultEmailVerification: proof,
+        changeEmail: { enabled: true, verifyCurrentEmail: proof },
+        generateOTP: captureOtpGenerator,
+        sendVerificationOTP: captureOtpSender,
+      }),
+    ],
   });
 }
-const otpProfiles=new Map<string,ReturnType<typeof createOtpProfile>>();
-for (const name of ["passwordless-hashed","passwordless-encrypted-reuse","passwordless-proof","passwordless-proof-explicit","passwordless-disabled","verification-cleanup","verification-no-cleanup", ...numericModes.map(mode=>`passwordless-numeric-${mode}`)]) {
-  otpProfiles.set(name,createOtpProfile(name));
+const otpProfiles = new Map<string, ReturnType<typeof createOtpProfile>>();
+for (const name of [
+  "passwordless-hashed",
+  "passwordless-encrypted-reuse",
+  "passwordless-proof",
+  "passwordless-proof-explicit",
+  "passwordless-disabled",
+  "verification-cleanup",
+  "verification-no-cleanup",
+  ...numericModes.map((mode) => `passwordless-numeric-${mode}`),
+]) {
+  otpProfiles.set(name, createOtpProfile(name));
 }
 
 const magicProfiles = new Map<string, ReturnType<typeof betterAuth>>();
-for (const name of ["magic-link-hashed", "magic-link-disabled", ...numericModes.filter(mode=>mode.startsWith("lifetime-")).map(mode=>`magic-link-numeric-${mode}`)]) {
-  magicProfiles.set(name, betterAuth({
-    ...authOptions,
-    basePath: `/__test/profiles/${name}/api/auth`,
-    emailVerification: {...authOptions.emailVerification, sendOnSignUp:false},
-    plugins: [magicLink({
-      ...numericOptions(name),
-      storeToken: name === "magic-link-hashed" ? "hashed" : "plain",
-      disableSignUp: name === "magic-link-disabled",
-      async sendMagicLink({email,url,token,metadata},ctx) {const identifier=ctx.context.options.basePath?.includes("magic-link-hashed") ? new Bun.CryptoHasher("sha256").update(token).digest("base64url") : token;const context=await callbackSnapshot(ctx,identifier);magicLinkOutbox.set(email,{url,token,metadata:metadata ?? null,...(context ? {context} : {})});}
-    })],
-  }));
+for (const name of [
+  "magic-link-hashed",
+  "magic-link-disabled",
+  ...numericModes
+    .filter((mode) => mode.startsWith("lifetime-"))
+    .map((mode) => `magic-link-numeric-${mode}`),
+]) {
+  magicProfiles.set(
+    name,
+    betterAuth({
+      ...authOptions,
+      basePath: `/__test/profiles/${name}/api/auth`,
+      emailVerification: { ...authOptions.emailVerification, sendOnSignUp: false },
+      plugins: [
+        magicLink({
+          ...numericOptions(name),
+          storeToken: name === "magic-link-hashed" ? "hashed" : "plain",
+          disableSignUp: name === "magic-link-disabled",
+          async sendMagicLink({ email, url, token, metadata }, ctx) {
+            const identifier = ctx.context.options.basePath?.includes("magic-link-hashed")
+              ? new Bun.CryptoHasher("sha256").update(token).digest("base64url")
+              : token;
+            const context = await callbackSnapshot(ctx, identifier);
+            magicLinkOutbox.set(email, {
+              url,
+              token,
+              metadata: metadata ?? null,
+              ...(context ? { context } : {}),
+            });
+          },
+        }),
+      ],
+    }),
+  );
 }
 
 const phoneFixture = await createPhoneFixture(authOptions, twoFactorOtpOutbox);
@@ -639,8 +879,8 @@ const twoFactorTotpFixture = createTwoFactorTotpFixture(authOptions);
 const twoFactorPolicyFixture = createTwoFactorPolicyFixture(authOptions, database);
 const twoFactorOtpFixture = createTwoFactorOtpFixture(authOptions, database);
 const twoFactorDeliveryFixture = createTwoFactorDeliveryFixture(authOptions, database);
-const physicalCookies=physicalCookieProfiles(authOptions,database);
-for(const [path,auth] of physicalCookies.profiles)verificationProfiles.set(path,auth);
+const physicalCookies = physicalCookieProfiles(authOptions, database);
+for (const [path, auth] of physicalCookies.profiles) verificationProfiles.set(path, auth);
 const auth = betterAuth(authOptions);
 const errorPageAuth = betterAuth({
   ...authOptions,
@@ -654,120 +894,315 @@ const setPasswordFixture = createSetPasswordFixture(database, authOptions);
 const verificationStorageFixture = await createVerificationStorageFixture(database, authOptions);
 const signupPolicyFixture = createSignupPolicyFixture(database, authOptions);
 const compromisedPasswordFixture = await createCompromisedPasswordFixture(database, authOptions);
-const serverEndpointFixture = createServerEndpointFixture(database,authOptions);
-verificationProfiles.set(serverEndpointFixture.path,serverEndpointFixture.auth);
-const serverEndpointCacheFixture=createServerEndpointFixture(database,{...authOptions,session:{...authOptions.session,cookieCache:{enabled:true,strategy:"compact",maxAge:300}}},"server-dispatch-cache");
-verificationProfiles.set(serverEndpointCacheFixture.path,serverEndpointCacheFixture.auth);
-const serverEndpointVersionFixture=createServerEndpointFixture(database,authOptions,"server-dispatch-cache-version");
-verificationProfiles.set(serverEndpointVersionFixture.path,serverEndpointVersionFixture.auth);
+const serverEndpointFixture = createServerEndpointFixture(database, authOptions);
+verificationProfiles.set(serverEndpointFixture.path, serverEndpointFixture.auth);
+const serverEndpointCacheFixture = createServerEndpointFixture(
+  database,
+  {
+    ...authOptions,
+    session: {
+      ...authOptions.session,
+      cookieCache: { enabled: true, strategy: "compact", maxAge: 300 },
+    },
+  },
+  "server-dispatch-cache",
+);
+verificationProfiles.set(serverEndpointCacheFixture.path, serverEndpointCacheFixture.auth);
+const serverEndpointVersionFixture = createServerEndpointFixture(
+  database,
+  authOptions,
+  "server-dispatch-cache-version",
+);
+verificationProfiles.set(serverEndpointVersionFixture.path, serverEndpointVersionFixture.auth);
 const userValidationFixture = await createUserValidationFixture(database, authOptions);
 
-const OTT_PROFILE_NAMES=["ott-default","ott-hashed","ott-no-cookie","ott-server-header","ott-refresh-disabled","ott-refresh-deferred"] as const;
+const OTT_PROFILE_NAMES = [
+  "ott-default",
+  "ott-hashed",
+  "ott-no-cookie",
+  "ott-server-header",
+  "ott-refresh-disabled",
+  "ott-refresh-deferred",
+] as const;
 const ottExposedHeaderFixture: BetterAuthPlugin = {
   id: "ott-exposed-header-fixture",
-  hooks: { after: [{ matcher: () => true, handler: createAuthMiddleware(async ctx => {
-    ctx.setHeader("access-control-expose-headers", " existing, ,existing, set-ott, set-ott, Existing ");
-  }) }] },
-};
-const ottProfiles=new Map(OTT_PROFILE_NAMES.map(name=>{
-  const options={...authOptions,basePath:`/__test/profiles/${name}/api/auth`,session:{disableSessionRefresh:name==="ott-refresh-disabled",deferSessionRefresh:name==="ott-refresh-deferred"},plugins:[...authOptions.plugins,...(name==="ott-server-header" ? [ottExposedHeaderFixture] : []),oneTimeToken({
-    storeToken:name==="ott-hashed" ? "hashed" : "plain",
-    disableSetSessionCookie:name==="ott-no-cookie",
-    disableClientRequest:name==="ott-server-header",
-    setOttHeaderOnNewSession:name==="ott-server-header",
-  })]};
-  return [name,{auth:betterAuth(options),options}] as const;
-}));
-const deviceProfiles = new Map(["device-custom","device-configured","device-unicode","device-too-long"].map(name => {
-  const options = { ...authOptions, basePath:`/__test/profiles/${name}/api/auth`, plugins:[deviceAuthorization({
-    ...(name === "device-custom" ? {generateDeviceCode:async()=>"custom-device-🔐",generateUserCode:async()=>" café-Code! "} : {}),
-    ...(name === "device-configured" ? {expiresIn:"120s",interval:"2s",verificationUri:"https://verification.fixture/device?keep=a&user_code=old&keep=b&user_code=other#fragment",validateClient:async(clientId:string)=>clientId==="allowed-client"} : {}),
-    ...(name === "device-unicode" ? {generateDeviceCode:async()=>"😀".repeat(191),generateUserCode:()=>"boundary-user"} : {}),
-    ...(name === "device-too-long" ? {generateDeviceCode:async()=>"😀".repeat(192)} : {}),
-  })] };
-  return [name,betterAuth(options)] as const;
-}));
-const JWT_PROFILE_NAMES = ["jwt-default", "jwt-es256", "jwt-es512", "jwt-rs256", "jwt-ps256", "jwt-claims", "jwt-path-header", "jwt-plain-rotation", "jwt-session-normal", "jwt-session-disabled", "jwt-session-deferred"] as const;
-const jwtProfiles = new Map(JWT_PROFILE_NAMES.map(name => {
-  const sessionProfile = name.startsWith("jwt-session-");
-  const options = {
-    ...authOptions,
-    basePath: `/__test/profiles/${name}/api/auth`,
-    session: {...authOptions.session, disableSessionRefresh:name === "jwt-session-disabled", deferSessionRefresh:name === "jwt-session-deferred"},
-    plugins: [...authOptions.plugins.filter(plugin => !sessionProfile || plugin.id !== "api-key"),
-      ...(sessionProfile ? [apiKey({enableSessionForAPIKeys:true,enableMetadata:true})] : []),
-      ...(sessionProfile ? [{id:"jwt-earlier-exposed-headers",hooks:{after:[{matcher:ctx=>ctx.path === "/get-session",handler:createAuthMiddleware(async ctx=>{
-        ctx.setHeader("access-control-expose-headers"," existing, ,existing, set-auth-jwt, set-auth-jwt, Existing ");
-      })}]}} satisfies BetterAuthPlugin] : []),
-      jwt({
-      jwks: {
-        keyPairConfig: name === "jwt-es256" ? {alg:"ES256",crv:"P-256"} : name === "jwt-es512" ? {alg:"ES512",crv:"P-521"} : name === "jwt-rs256" ? {alg:"RS256"} : name === "jwt-ps256" ? {alg:"PS256"} : {alg:"EdDSA",crv:"Ed25519"},
-        ...(name === "jwt-path-header" ? {jwksPath:"/.well-known/jwks.json"} : {}),
-        ...(name === "jwt-plain-rotation" ? {disablePrivateKeyEncryption:true,rotationInterval:3600,gracePeriod:3600} : {}),
+  hooks: {
+    after: [
+      {
+        matcher: () => true,
+        handler: createAuthMiddleware(async (ctx) => {
+          ctx.setHeader(
+            "access-control-expose-headers",
+            " existing, ,existing, set-ott, set-ott, Existing ",
+          );
+        }),
       },
-      ...(name === "jwt-claims" ? {jwt:{issuer:"fixture-issuer",audience:"fixture-audience",expirationTime:"60s"}} : {}),
-      ...(sessionProfile ? {jwt:{definePayload:session=>({snapshot:session})}} : {}),
-      disableSettingJwtHeader:name === "jwt-path-header",
-    })],
-  };
-  return [name,{auth:betterAuth(options),options}] as const;
-}));
+    ],
+  },
+};
+const ottProfiles = new Map(
+  OTT_PROFILE_NAMES.map((name) => {
+    const options = {
+      ...authOptions,
+      basePath: `/__test/profiles/${name}/api/auth`,
+      session: {
+        disableSessionRefresh: name === "ott-refresh-disabled",
+        deferSessionRefresh: name === "ott-refresh-deferred",
+      },
+      plugins: [
+        ...authOptions.plugins,
+        ...(name === "ott-server-header" ? [ottExposedHeaderFixture] : []),
+        oneTimeToken({
+          storeToken: name === "ott-hashed" ? "hashed" : "plain",
+          disableSetSessionCookie: name === "ott-no-cookie",
+          disableClientRequest: name === "ott-server-header",
+          setOttHeaderOnNewSession: name === "ott-server-header",
+        }),
+      ],
+    };
+    return [name, { auth: betterAuth(options), options }] as const;
+  }),
+);
+const deviceProfiles = new Map(
+  ["device-custom", "device-configured", "device-unicode", "device-too-long"].map((name) => {
+    const options = {
+      ...authOptions,
+      basePath: `/__test/profiles/${name}/api/auth`,
+      plugins: [
+        deviceAuthorization({
+          ...(name === "device-custom"
+            ? {
+                generateDeviceCode: async () => "custom-device-🔐",
+                generateUserCode: async () => " café-Code! ",
+              }
+            : {}),
+          ...(name === "device-configured"
+            ? {
+                expiresIn: "120s",
+                interval: "2s",
+                verificationUri:
+                  "https://verification.fixture/device?keep=a&user_code=old&keep=b&user_code=other#fragment",
+                validateClient: async (clientId: string) => clientId === "allowed-client",
+              }
+            : {}),
+          ...(name === "device-unicode"
+            ? {
+                generateDeviceCode: async () => "😀".repeat(191),
+                generateUserCode: () => "boundary-user",
+              }
+            : {}),
+          ...(name === "device-too-long"
+            ? { generateDeviceCode: async () => "😀".repeat(192) }
+            : {}),
+        }),
+      ],
+    };
+    return [name, betterAuth(options)] as const;
+  }),
+);
+const JWT_PROFILE_NAMES = [
+  "jwt-default",
+  "jwt-es256",
+  "jwt-es512",
+  "jwt-rs256",
+  "jwt-ps256",
+  "jwt-claims",
+  "jwt-path-header",
+  "jwt-plain-rotation",
+  "jwt-session-normal",
+  "jwt-session-disabled",
+  "jwt-session-deferred",
+] as const;
+const jwtProfiles = new Map(
+  JWT_PROFILE_NAMES.map((name) => {
+    const sessionProfile = name.startsWith("jwt-session-");
+    const options = {
+      ...authOptions,
+      basePath: `/__test/profiles/${name}/api/auth`,
+      session: {
+        ...authOptions.session,
+        disableSessionRefresh: name === "jwt-session-disabled",
+        deferSessionRefresh: name === "jwt-session-deferred",
+      },
+      plugins: [
+        ...authOptions.plugins.filter((plugin) => !sessionProfile || plugin.id !== "api-key"),
+        ...(sessionProfile
+          ? [apiKey({ enableSessionForAPIKeys: true, enableMetadata: true })]
+          : []),
+        ...(sessionProfile
+          ? [
+              {
+                id: "jwt-earlier-exposed-headers",
+                hooks: {
+                  after: [
+                    {
+                      matcher: (ctx) => ctx.path === "/get-session",
+                      handler: createAuthMiddleware(async (ctx) => {
+                        ctx.setHeader(
+                          "access-control-expose-headers",
+                          " existing, ,existing, set-auth-jwt, set-auth-jwt, Existing ",
+                        );
+                      }),
+                    },
+                  ],
+                },
+              } satisfies BetterAuthPlugin,
+            ]
+          : []),
+        jwt({
+          jwks: {
+            keyPairConfig:
+              name === "jwt-es256"
+                ? { alg: "ES256", crv: "P-256" }
+                : name === "jwt-es512"
+                  ? { alg: "ES512", crv: "P-521" }
+                  : name === "jwt-rs256"
+                    ? { alg: "RS256" }
+                    : name === "jwt-ps256"
+                      ? { alg: "PS256" }
+                      : { alg: "EdDSA", crv: "Ed25519" },
+            ...(name === "jwt-path-header" ? { jwksPath: "/.well-known/jwks.json" } : {}),
+            ...(name === "jwt-plain-rotation"
+              ? { disablePrivateKeyEncryption: true, rotationInterval: 3600, gracePeriod: 3600 }
+              : {}),
+          },
+          ...(name === "jwt-claims"
+            ? {
+                jwt: {
+                  issuer: "fixture-issuer",
+                  audience: "fixture-audience",
+                  expirationTime: "60s",
+                },
+              }
+            : {}),
+          ...(sessionProfile
+            ? { jwt: { definePayload: (session) => ({ snapshot: session }) } }
+            : {}),
+          disableSettingJwtHeader: name === "jwt-path-header",
+        }),
+      ],
+    };
+    return [name, { auth: betterAuth(options), options }] as const;
+  }),
+);
 await (await getMigrations(jwtProfiles.get("jwt-default")!.options)).runMigrations();
 
 function jwtRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-type RolePolicyBarrier = {entered:Promise<void>; enter:()=>void; released:Promise<void>; release:()=>void};
-const rolePolicyBarriers = new Map<string,RolePolicyBarrier>();
-async function waitForRolePolicy(promise:Promise<void>, message:string) {
-  let timer:ReturnType<typeof setTimeout>|undefined;
-  try { await Promise.race([promise,new Promise<void>((_,reject)=>{timer=setTimeout(()=>reject(new Error(message)),10000);})]); }
-  finally { if (timer !== undefined) clearTimeout(timer); }
+type RolePolicyBarrier = {
+  entered: Promise<void>;
+  enter: () => void;
+  released: Promise<void>;
+  release: () => void;
+};
+const rolePolicyBarriers = new Map<string, RolePolicyBarrier>();
+async function waitForRolePolicy(promise: Promise<void>, message: string) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      promise,
+      new Promise<void>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), 10000);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
-const TEAM_PROFILES = ["org-deletion-disabled", "org-teams", "org-teams-no-default", "org-teams-limited", "org-teams-removable", "org-teams-dynamic", "org-roles-limited", "org-roles-no-ac", "org-roles-delegated", "org-roles-callback"] as const;
-const teamProfiles = new Map(TEAM_PROFILES.map(name => {
-  const dynamic = name === "org-teams-dynamic" || name.startsWith("org-roles-");
-  const statements = name === "org-roles-delegated" ? {...defaultStatements,apiKey:["create","read","update","delete"]} as const : defaultStatements;
-  const ac = createAccessControl(statements);
-  const options = {
-    ...authOptions,
-    basePath: `/__test/profiles/${name}/api/auth`,
-    ...(name === "org-roles-callback" ? {advanced:{...authOptions.advanced,database:{defaultFindManyLimit:1}}} : {}),
-    plugins: [
-      ...authOptions.plugins.filter(plugin => plugin.id !== "organization"),
-      organization({
-        disableOrganizationDeletion:name === "org-deletion-disabled",
-        ...(dynamic ? {dynamicAccessControl:{enabled:true,
-          ...(name === "org-roles-limited" ? {maximumRolesPerOrganization:1} : {}),
-          ...(name === "org-roles-callback" ? {maximumRolesPerOrganization:async (organizationId:string) => {
-            const barrier = rolePolicyBarriers.get(organizationId);
-            if (barrier) { barrier.enter(); await waitForRolePolicy(barrier.released,"Role policy release timed out"); }
-            const row = database.query("SELECT name FROM organization WHERE id=?").get(organizationId) as {name:string}|null;
-            if (!row) throw new Error("Organization not found");
-            return row.name === "Two role budget" ? 2 : 1;
-          }} : {}),
-        }} : {}),
-        ...(dynamic && name !== "org-roles-no-ac" ? {ac} : {}),
-        ...(name === "org-roles-delegated" ? {roles:{
-          owner:ac.newRole(statements),
-          delegator:ac.newRole({team:["create"],ac:["create","read","update"]}),
-          auditor:ac.newRole({member:["update"]}),
-          member:ac.newRole({}),
-        }} : {}),
-        teams:{
-        enabled:true,defaultTeam:{enabled:name!=="org-teams-no-default"},allowRemovingAllTeams:name==="org-teams-removable",
-        ...(name === "org-teams-limited" ? {
-          maximumTeams: async ({session}, ctx) => session?.user.name === "limit-owner" && ctx?.headers?.get("x-team-policy") === "expanded" ? 3 : 1,
-          maximumMembersPerTeam: async ({session}) => session.user.name === "limit-owner" ? 1 : 0,
-        } : {}),
-      }}),
-    ],
-  };
-  return [name, {auth:betterAuth(options),options}] as const;
-}));
-for (const {options} of teamProfiles.values()) {
+const TEAM_PROFILES = [
+  "org-deletion-disabled",
+  "org-teams",
+  "org-teams-no-default",
+  "org-teams-limited",
+  "org-teams-removable",
+  "org-teams-dynamic",
+  "org-roles-limited",
+  "org-roles-no-ac",
+  "org-roles-delegated",
+  "org-roles-callback",
+] as const;
+const teamProfiles = new Map(
+  TEAM_PROFILES.map((name) => {
+    const dynamic = name === "org-teams-dynamic" || name.startsWith("org-roles-");
+    const statements =
+      name === "org-roles-delegated"
+        ? ({ ...defaultStatements, apiKey: ["create", "read", "update", "delete"] } as const)
+        : defaultStatements;
+    const ac = createAccessControl(statements);
+    const options = {
+      ...authOptions,
+      basePath: `/__test/profiles/${name}/api/auth`,
+      ...(name === "org-roles-callback"
+        ? { advanced: { ...authOptions.advanced, database: { defaultFindManyLimit: 1 } } }
+        : {}),
+      plugins: [
+        ...authOptions.plugins.filter((plugin) => plugin.id !== "organization"),
+        organization({
+          disableOrganizationDeletion: name === "org-deletion-disabled",
+          ...(dynamic
+            ? {
+                dynamicAccessControl: {
+                  enabled: true,
+                  ...(name === "org-roles-limited" ? { maximumRolesPerOrganization: 1 } : {}),
+                  ...(name === "org-roles-callback"
+                    ? {
+                        maximumRolesPerOrganization: async (organizationId: string) => {
+                          const barrier = rolePolicyBarriers.get(organizationId);
+                          if (barrier) {
+                            barrier.enter();
+                            await waitForRolePolicy(
+                              barrier.released,
+                              "Role policy release timed out",
+                            );
+                          }
+                          const row = database
+                            .query("SELECT name FROM organization WHERE id=?")
+                            .get(organizationId) as { name: string } | null;
+                          if (!row) throw new Error("Organization not found");
+                          return row.name === "Two role budget" ? 2 : 1;
+                        },
+                      }
+                    : {}),
+                },
+              }
+            : {}),
+          ...(dynamic && name !== "org-roles-no-ac" ? { ac } : {}),
+          ...(name === "org-roles-delegated"
+            ? {
+                roles: {
+                  owner: ac.newRole(statements),
+                  delegator: ac.newRole({ team: ["create"], ac: ["create", "read", "update"] }),
+                  auditor: ac.newRole({ member: ["update"] }),
+                  member: ac.newRole({}),
+                },
+              }
+            : {}),
+          teams: {
+            enabled: true,
+            defaultTeam: { enabled: name !== "org-teams-no-default" },
+            allowRemovingAllTeams: name === "org-teams-removable",
+            ...(name === "org-teams-limited"
+              ? {
+                  maximumTeams: async ({ session }, ctx) =>
+                    session?.user.name === "limit-owner" &&
+                    ctx?.headers?.get("x-team-policy") === "expanded"
+                      ? 3
+                      : 1,
+                  maximumMembersPerTeam: async ({ session }) =>
+                    session.user.name === "limit-owner" ? 1 : 0,
+                }
+              : {}),
+          },
+        }),
+      ],
+    };
+    return [name, { auth: betterAuth(options), options }] as const;
+  }),
+);
+for (const { options } of teamProfiles.values()) {
   await (await getMigrations(options)).runMigrations();
 }
 
@@ -779,88 +1214,210 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
   }
   if (url.pathname === "/__test/organization-state" && request.method === "GET") {
     const organizationId = url.searchParams.get("organizationId");
-    if (!organizationId) return jsonResponse({message:"organizationId is required"},{status:400});
+    if (!organizationId)
+      return jsonResponse({ message: "organizationId is required" }, { status: 400 });
     const profileName = url.searchParams.get("profile") ?? "org-teams";
     const selected = [...teamProfiles.entries()].find(([name]) => name === profileName)?.[1].auth;
-    if (!selected) return jsonResponse({message:"Unknown fixture profile"},{status:400});
-    const {adapter} = await selected.$context;
-    const where = [{field:"organizationId",value:organizationId}];
-    const sortBy = {field:"createdAt",direction:"asc"} as const;
-    const [teams,members,invitations] = await Promise.all(["team","member","invitation"].map(model=>adapter.findMany<Record<string,unknown>>({model,where,sortBy,limit:10000})));
+    if (!selected) return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
+    const { adapter } = await selected.$context;
+    const where = [{ field: "organizationId", value: organizationId }];
+    const sortBy = { field: "createdAt", direction: "asc" } as const;
+    const [teams, members, invitations] = await Promise.all(
+      ["team", "member", "invitation"].map((model) =>
+        adapter.findMany<Record<string, unknown>>({ model, where, sortBy, limit: 10000 }),
+      ),
+    );
     if (!teams || !members || !invitations) throw new Error("Organization state query failed");
-    const roles = profileName === "org-teams-dynamic" || profileName.startsWith("org-roles-") ? await adapter.findMany<Record<string,unknown>>({model:"organizationRole",where,sortBy,limit:10000}) : [];
-    const teamMembers = (await Promise.all(teams.map(team=>adapter.findMany<Record<string,unknown>>({model:"teamMember",where:[{field:"teamId",value:String(team.id)}],sortBy,limit:10000})))).flat();
+    const roles =
+      profileName === "org-teams-dynamic" || profileName.startsWith("org-roles-")
+        ? await adapter.findMany<Record<string, unknown>>({
+            model: "organizationRole",
+            where,
+            sortBy,
+            limit: 10000,
+          })
+        : [];
+    const teamMembers = (
+      await Promise.all(
+        teams.map((team) =>
+          adapter.findMany<Record<string, unknown>>({
+            model: "teamMember",
+            where: [{ field: "teamId", value: String(team.id) }],
+            sortBy,
+            limit: 10000,
+          }),
+        ),
+      )
+    ).flat();
     return jsonResponse({
-      teams:teams.map(team=>({id:team.id,name:team.name,organizationId:team.organizationId,createdAt:team.createdAt,updatedAt:team.updatedAt,memberCount:team.memberCount})),
-      teamMembers:teamMembers.map(member=>({id:member.id,teamId:member.teamId,userId:member.userId,createdAt:member.createdAt})),
-      roles,members,invitations,
+      teams: teams.map((team) => ({
+        id: team.id,
+        name: team.name,
+        organizationId: team.organizationId,
+        createdAt: team.createdAt,
+        updatedAt: team.updatedAt,
+        memberCount: team.memberCount,
+      })),
+      teamMembers: teamMembers.map((member) => ({
+        id: member.id,
+        teamId: member.teamId,
+        userId: member.userId,
+        createdAt: member.createdAt,
+      })),
+      roles,
+      members,
+      invitations,
     });
   }
   if (url.pathname === "/__test/organization-api" && request.method === "POST") {
     const body = await readJson(request);
     const profileName = typeof body?.profile === "string" ? body.profile : "org-teams";
     const selected = [...teamProfiles.entries()].find(([name]) => name === profileName)?.[1].auth;
-    if (!selected) return jsonResponse({message:"Unknown fixture profile"},{status:400});
+    if (!selected) return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
     try {
-
-      if(body?.operation === "orphan-organization" && typeof body.organizationId === "string") {
-        const row=database.query("SELECT id FROM organization WHERE id=?").get(body.organizationId);
-        if(!row)return jsonResponse({message:"Organization not found"},{status:400});
+      if (body?.operation === "orphan-organization" && typeof body.organizationId === "string") {
+        const row = database
+          .query("SELECT id FROM organization WHERE id=?")
+          .get(body.organizationId);
+        if (!row) return jsonResponse({ message: "Organization not found" }, { status: 400 });
         database.query("DELETE FROM organization WHERE id=?").run(body.organizationId);
-        return jsonResponse({removed:true});
+        return jsonResponse({ removed: true });
       }
       if (body?.operation === "role-policy" && typeof body.organizationId === "string") {
-        if (profileName !== "org-roles-callback" || !database.query("SELECT id FROM organization WHERE id=?").get(body.organizationId)) {
-          return jsonResponse({message:"Role policy organization not found"},{status:400});
+        if (
+          profileName !== "org-roles-callback" ||
+          !database.query("SELECT id FROM organization WHERE id=?").get(body.organizationId)
+        ) {
+          return jsonResponse({ message: "Role policy organization not found" }, { status: 400 });
         }
         if (body.stage === "arm") {
-          if (rolePolicyBarriers.has(body.organizationId)) return jsonResponse({message:"Role policy already armed"},{status:400});
-          const entered = Promise.withResolvers<void>(), released = Promise.withResolvers<void>();
-          rolePolicyBarriers.set(body.organizationId,{entered:entered.promise,enter:entered.resolve,released:released.promise,release:released.resolve});
+          if (rolePolicyBarriers.has(body.organizationId))
+            return jsonResponse({ message: "Role policy already armed" }, { status: 400 });
+          const entered = Promise.withResolvers<void>(),
+            released = Promise.withResolvers<void>();
+          rolePolicyBarriers.set(body.organizationId, {
+            entered: entered.promise,
+            enter: entered.resolve,
+            released: released.promise,
+            release: released.resolve,
+          });
         } else if (body.stage === "wait") {
           const barrier = rolePolicyBarriers.get(body.organizationId);
-          if (!barrier) return jsonResponse({message:"Role policy is not armed"},{status:400});
-          await waitForRolePolicy(barrier.entered,"Role policy entry timed out");
+          if (!barrier)
+            return jsonResponse({ message: "Role policy is not armed" }, { status: 400 });
+          await waitForRolePolicy(barrier.entered, "Role policy entry timed out");
         } else if (body.stage === "release") {
           const barrier = rolePolicyBarriers.get(body.organizationId);
-          if (!barrier) return jsonResponse({message:"Role policy is not armed"},{status:400});
+          if (!barrier)
+            return jsonResponse({ message: "Role policy is not armed" }, { status: 400 });
           rolePolicyBarriers.delete(body.organizationId);
           barrier.release();
-        } else return jsonResponse({message:"Invalid role policy stage"},{status:400});
-        return jsonResponse({organizationId:body.organizationId,stage:body.stage});
+        } else return jsonResponse({ message: "Invalid role policy stage" }, { status: 400 });
+        return jsonResponse({ organizationId: body.organizationId, stage: body.stage });
       }
-      if (body?.operation === "seed-role" && typeof body.organizationId === "string" && typeof body.role === "string" && body.permission && typeof body.permission === "object") {
-        const {adapter} = await selected.$context;
-        const role = await adapter.create<Record<string,unknown>>({model:"organizationRole",data:{organizationId:body.organizationId,role:body.role,permission:JSON.stringify(body.permission),createdAt:new Date()}});
-        return jsonResponse({roleId:role.id,organizationId:role.organizationId,role:role.role});
+      if (
+        body?.operation === "seed-role" &&
+        typeof body.organizationId === "string" &&
+        typeof body.role === "string" &&
+        body.permission &&
+        typeof body.permission === "object"
+      ) {
+        const { adapter } = await selected.$context;
+        const role = await adapter.create<Record<string, unknown>>({
+          model: "organizationRole",
+          data: {
+            organizationId: body.organizationId,
+            role: body.role,
+            permission: JSON.stringify(body.permission),
+            createdAt: new Date(),
+          },
+        });
+        return jsonResponse({
+          roleId: role.id,
+          organizationId: role.organizationId,
+          role: role.role,
+        });
       }
-      if (body?.operation === "set-member-role" && typeof body.organizationId === "string" && typeof body.memberId === "string" && typeof body.role === "string") {
-        const {adapter} = await selected.$context;
-        const where = [{field:"organizationId",value:body.organizationId},{field:"id",value:body.memberId}];
-        const member = await adapter.findOne<Record<string,unknown>>({model:"member",where});
-        if (!member) return jsonResponse({message:"Member not found"},{status:400});
-        const updated = await adapter.update<Record<string,unknown>>({model:"member",where,update:{role:body.role}});
+      if (
+        body?.operation === "set-member-role" &&
+        typeof body.organizationId === "string" &&
+        typeof body.memberId === "string" &&
+        typeof body.role === "string"
+      ) {
+        const { adapter } = await selected.$context;
+        const where = [
+          { field: "organizationId", value: body.organizationId },
+          { field: "id", value: body.memberId },
+        ];
+        const member = await adapter.findOne<Record<string, unknown>>({ model: "member", where });
+        if (!member) return jsonResponse({ message: "Member not found" }, { status: 400 });
+        const updated = await adapter.update<Record<string, unknown>>({
+          model: "member",
+          where,
+          update: { role: body.role },
+        });
         if (!updated) throw new Error("Member role update failed");
-        return jsonResponse({memberId:updated.id,organizationId:updated.organizationId,role:updated.role});
+        return jsonResponse({
+          memberId: updated.id,
+          organizationId: updated.organizationId,
+          role: updated.role,
+        });
       }
       if (body?.operation === "list-user-invitations" && typeof body.email === "string") {
-        return jsonResponse(await selected.api.listUserInvitations({query:{email:body.email}}));
+        return jsonResponse(
+          await selected.api.listUserInvitations({ query: { email: body.email } }),
+        );
       }
-      if (body?.operation === "create-team" && typeof body.organizationId === "string" && typeof body.name === "string") {
-        return jsonResponse(await selected.api.createTeam({body:{organizationId:body.organizationId,name:body.name}}));
+      if (
+        body?.operation === "create-team" &&
+        typeof body.organizationId === "string" &&
+        typeof body.name === "string"
+      ) {
+        return jsonResponse(
+          await selected.api.createTeam({
+            body: { organizationId: body.organizationId, name: body.name },
+          }),
+        );
       }
-      if (body?.operation === "seed-member" && typeof body.organizationId === "string" && typeof body.id === "string" && typeof body.email === "string" && typeof body.name === "string") {
-        const {adapter} = await selected.$context;
-        const user = await adapter.create<Record<string,unknown>>({model:"user",forceAllowId:true,data:{id:body.id,email:body.email,name:body.name,emailVerified:true,createdAt:new Date(),updatedAt:new Date()}});
-        const member = await selected.api.addMember({body:{organizationId:body.organizationId,userId:String(user.id),role:"member"}});
-        return jsonResponse({userId:user.id,memberId:member.id});
+      if (
+        body?.operation === "seed-member" &&
+        typeof body.organizationId === "string" &&
+        typeof body.id === "string" &&
+        typeof body.email === "string" &&
+        typeof body.name === "string"
+      ) {
+        const { adapter } = await selected.$context;
+        const user = await adapter.create<Record<string, unknown>>({
+          model: "user",
+          forceAllowId: true,
+          data: {
+            id: body.id,
+            email: body.email,
+            name: body.name,
+            emailVerified: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
+        const member = await selected.api.addMember({
+          body: { organizationId: body.organizationId, userId: String(user.id), role: "member" },
+        });
+        return jsonResponse({ userId: user.id, memberId: member.id });
       }
-      if (body?.operation === "remove-team" && typeof body.organizationId === "string" && typeof body.teamId === "string") {
-        return jsonResponse(await selected.api.removeTeam({body:{organizationId:body.organizationId,teamId:body.teamId}}));
+      if (
+        body?.operation === "remove-team" &&
+        typeof body.organizationId === "string" &&
+        typeof body.teamId === "string"
+      ) {
+        return jsonResponse(
+          await selected.api.removeTeam({
+            body: { organizationId: body.organizationId, teamId: body.teamId },
+          }),
+        );
       }
-      return jsonResponse({message:"Invalid organization operation"},{status:400});
+      return jsonResponse({ message: "Invalid organization operation" }, { status: 400 });
     } catch (error) {
-      if (error instanceof APIError) return jsonResponse(error.body,{status:error.statusCode});
+      if (error instanceof APIError) return jsonResponse(error.body, { status: error.statusCode });
       throw error;
     }
   }
@@ -880,10 +1437,10 @@ const RESET_MODELS = [
 ] as const;
 
 async function resetDatabaseState() {
-  const {adapter} = await teamProfiles.get("org-teams")!.auth.$context;
-  for (const model of ["teamMember","team"]) await adapter.deleteMany({model,where:[]});
+  const { adapter } = await teamProfiles.get("org-teams")!.auth.$context;
+  for (const model of ["teamMember", "team"]) await adapter.deleteMany({ model, where: [] });
   const roleAdapter = (await teamProfiles.get("org-teams-dynamic")!.auth.$context).adapter;
-  await roleAdapter.deleteMany({model:"organizationRole",where:[]});
+  await roleAdapter.deleteMany({ model: "organizationRole", where: [] });
   for (const model of RESET_MODELS) {
     await authContext.adapter.deleteMany({
       model,
@@ -891,23 +1448,28 @@ async function resetDatabaseState() {
     });
   }
   const context = await jwtProfiles.get("jwt-default")!.auth.$context;
-  await context.adapter.deleteMany({model:"jwks",where:[]});
+  await context.adapter.deleteMany({ model: "jwks", where: [] });
 }
 
-
-function controlRecord(value: unknown): value is Record<string,unknown> {
-  return value!==null && typeof value==="object" && !Array.isArray(value);
+function controlRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-async function oneTimeTokenControl(request:Request,url:URL):Promise<Response|undefined> {
-  if (url.pathname!=="/__test/one-time-token" || request.method!=="POST") return;
-  const body:unknown=await readJson(request);
-  if (!controlRecord(body)) return jsonResponse({message:"invalid server operation"},{status:400});
-  const selected=ottProfiles.get(typeof body.profile==="string" ? body.profile as typeof OTT_PROFILE_NAMES[number] : "ott-default")?.auth;
-  if (!selected || body.operation!=="generate") return jsonResponse({message:"invalid server operation"},{status:400});
-  return jsonResponse(await selected.api.generateOneTimeToken({headers:request.headers}));
+async function oneTimeTokenControl(request: Request, url: URL): Promise<Response | undefined> {
+  if (url.pathname !== "/__test/one-time-token" || request.method !== "POST") return;
+  const body: unknown = await readJson(request);
+  if (!controlRecord(body))
+    return jsonResponse({ message: "invalid server operation" }, { status: 400 });
+  const selected = ottProfiles.get(
+    typeof body.profile === "string"
+      ? (body.profile as (typeof OTT_PROFILE_NAMES)[number])
+      : "ott-default",
+  )?.auth;
+  if (!selected || body.operation !== "generate")
+    return jsonResponse({ message: "invalid server operation" }, { status: 400 });
+  return jsonResponse(await selected.api.generateOneTimeToken({ headers: request.headers }));
 }
 
-const openApiInstances=openApiProfiles(PORT,database);
+const openApiInstances = openApiProfiles(PORT, database);
 
 const passkeyControls = passkeyFixture(database);
 const server = Bun.serve({
@@ -928,126 +1490,295 @@ const server = Bun.serve({
       if (anonymousControl) return anonymousControl;
       const proxyControl = await oauthProxyProfiles.handle(request);
       if (proxyControl) return proxyControl;
-      const cloudflareControl=await cloudflareFixture.handle(request);
-      if(cloudflareControl)return cloudflareControl;
-      const facebookControl=await facebookFixture.handle(request);
-      if(facebookControl)return facebookControl;
-      const dropboxControl=await dropboxFixture.handle(request);
-      if(dropboxControl)return dropboxControl;
-      const figmaControl=await figmaFixture.handle(request);
-      if(figmaControl)return figmaControl;
-      const huggingfaceControl=await huggingfaceFixture.handle(request);
-      if(huggingfaceControl)return huggingfaceControl;
-      const kakaoControl=await kakaoFixture.handle(request);
-      if(kakaoControl)return kakaoControl;
-      const kickControl=await kickFixture.handle(request);
-      if(kickControl)return kickControl;
-      const cognitoControl=await cognitoFixture.handle(request);
-      if(cognitoControl)return cognitoControl;
+      const cloudflareControl = await cloudflareFixture.handle(request);
+      if (cloudflareControl) return cloudflareControl;
+      const facebookControl = await facebookFixture.handle(request);
+      if (facebookControl) return facebookControl;
+      const dropboxControl = await dropboxFixture.handle(request);
+      if (dropboxControl) return dropboxControl;
+      const figmaControl = await figmaFixture.handle(request);
+      if (figmaControl) return figmaControl;
+      const huggingfaceControl = await huggingfaceFixture.handle(request);
+      if (huggingfaceControl) return huggingfaceControl;
+      const kakaoControl = await kakaoFixture.handle(request);
+      if (kakaoControl) return kakaoControl;
+      const kickControl = await kickFixture.handle(request);
+      if (kickControl) return kickControl;
+      const cognitoControl = await cognitoFixture.handle(request);
+      if (cognitoControl) return cognitoControl;
       const additionalControl = await additionalFields.handle(request);
       if (additionalControl) return additionalControl;
-      const atlassianControl=await atlassianFixture.handle(request);
-      if(atlassianControl)return atlassianControl;
+      const atlassianControl = await atlassianFixture.handle(request);
+      if (atlassianControl) return atlassianControl;
       const appleControl = await appleFixture.handle(request);
       if (appleControl) return appleControl;
       const socialProviderControl = await socialProvidersFixture.handle(request);
       if (socialProviderControl) return socialProviderControl;
       const transportControl = await organizationTransport.handle(request, url);
       if (transportControl) return transportControl;
-      if(url.pathname==="/__test/session-field-state")return jsonResponse(sessionFieldsFixture.state(url.searchParams.get("email")??""));
+      if (url.pathname === "/__test/session-field-state")
+        return jsonResponse(sessionFieldsFixture.state(url.searchParams.get("email") ?? ""));
       const cacheControl = await sessionCookieCacheProfiles.handle(request);
       if (cacheControl) return cacheControl;
       const lifecycleControl = await userLifecycleFixture.handle(request);
       if (lifecycleControl) return lifecycleControl;
-      for(const [name,profile] of sessionFieldsFixture.profiles)if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return profile.handler(request);
+      for (const [name, profile] of sessionFieldsFixture.profiles)
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return profile.handler(request);
       for (const [name, profile] of organizationCreationFixture.profiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return profile.handler(request);
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return profile.handler(request);
       }
-      for(const [name,profile] of organizationHooksFixture.profiles) if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return profile.handler(request);
-      for(const [name,profile] of organizationDeletionFixture.profiles){const base=`/__test/profiles/${name}/api/auth`;if(url.pathname===base||url.pathname.startsWith(base+"/"))return profile.handler(request);}
-      if(url.pathname==="/__test/organization-delete-hooks-configure"&&request.method==="POST")return organizationDeletionFixture.configure(await request.json() as Record<string,unknown>);
-      if(url.pathname==="/__test/organization-delete-hooks-release"&&request.method==="POST")return organizationDeletionFixture.release();
-      if(url.pathname==="/__test/organization-delete-hooks-state"&&request.method==="GET")return organizationDeletionFixture.state(url.searchParams.get("waitFor"));
-      if(url.pathname==="/__test/organization-delete-hooks-server"&&request.method==="POST")return organizationDeletionFixture.server(await request.json() as Record<string,unknown>,request.headers);
-      if(url.pathname==="/__test/organization-hooks-configure" && request.method==="POST")return organizationHooksFixture.configure(await request.json() as Record<string,unknown>);
-      for(const [name,profile] of organizationMembershipFixture.profiles)if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return profile.handler(request);
-      if(url.pathname==="/__test/organization-membership-policy/state"&&request.method==="GET")return organizationMembershipFixture.state();
-      if(url.pathname==="/__test/organization-membership-policy/configure"&&request.method==="POST")return organizationMembershipFixture.configure();
-      if(url.pathname==="/__test/organization-membership-policy/server"&&request.method==="POST")return organizationMembershipFixture.server(request);
-      for(const [name,profile] of organizationInvitationFixture.profiles)if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return profile.handler(request);
-      if(url.pathname==="/__test/organization-invitation-stage/configure"&&request.method==="POST")return organizationInvitationFixture.configure(await request.json());
-      if(url.pathname==="/__test/organization-invitation-stage/release"&&request.method==="POST")return organizationInvitationFixture.release();
-      if(url.pathname==="/__test/organization-invitation-stage/state"&&request.method==="GET")return organizationInvitationFixture.state(url.searchParams.get("waitFor"));
-      for(const [name,profile] of organizationAdditionFixture.profiles)if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return profile.handler(request);
-      if(url.pathname==="/__test/organization-member-addition/configure"&&request.method==="POST")return organizationAdditionFixture.configure(await request.json() as Record<string,unknown>);
-      if(url.pathname==="/__test/organization-member-addition/release"&&request.method==="POST")return organizationAdditionFixture.release();
-      if(url.pathname==="/__test/organization-member-addition/state"&&request.method==="GET")return organizationAdditionFixture.state(url.searchParams.get("waitFor"));
-      if(url.pathname==="/__test/organization-member-addition/server"&&request.method==="POST")return organizationAdditionFixture.server(request);
-      if(url.pathname==="/__test/organization-member-addition/seed"&&request.method==="POST")return organizationAdditionFixture.seed(await request.json() as Record<string,unknown>);
-      for(const [name,profile] of organizationMemberRemovalFixture.profiles)if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return profile.handler(request);
-      if(url.pathname==="/__test/organization-member-removal-hooks-configure"&&request.method==="POST")return organizationMemberRemovalFixture.configure(await request.json() as Record<string,unknown>);
-      if(url.pathname==="/__test/organization-member-removal-hooks-release"&&request.method==="POST")return organizationMemberRemovalFixture.release();
-      if(url.pathname==="/__test/organization-member-removal-hooks-state"&&request.method==="GET")return organizationMemberRemovalFixture.state(url.searchParams.get("waitFor"));
-      if(url.pathname==="/__test/organization-member-removal-hooks-server"&&request.method==="POST")return organizationMemberRemovalFixture.server(request);
-      if(url.pathname.startsWith("/__test/profiles/org-member-role-hooks/api/auth/"))return organizationMemberRoleFixture.auth.handler(request);
-      if(url.pathname==="/__test/organization-member-role-hooks-configure"&&request.method==="POST")return organizationMemberRoleFixture.configure(await request.json() as Record<string,unknown>);
-      if(url.pathname==="/__test/organization-member-role-hooks-release"&&request.method==="POST")return organizationMemberRoleFixture.release();
-      if(url.pathname==="/__test/organization-member-role-hooks-state"&&request.method==="GET")return organizationMemberRoleFixture.state(url.searchParams.get("waitFor"));
-      for(const [name,auth] of twoFactorPendingLookupFixture.profiles)if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))return auth.handler(request);
-      if(url.pathname==="/__test/two-factor-pending-lookup" && request.method==="POST")return twoFactorPendingLookupFixture.control(await request.json() as Record<string,unknown>);
-      if(url.pathname.startsWith("/__test/profiles/org-update-hooks/api/auth/"))return organizationUpdateFixture.auth.handler(request);
-      if(url.pathname==="/__test/organization-update-hooks-configure" && request.method==="POST")return organizationUpdateFixture.configure(await request.json() as Record<string,unknown>);
-      if(url.pathname==="/__test/organization-update-storage" && request.method==="POST")return organizationUpdateFixture.storage(await request.json() as Record<string,unknown>);
-      if(url.pathname==="/__test/organization-update-hooks-release" && request.method==="POST")return organizationUpdateFixture.release();
-      if(url.pathname==="/__test/organization-update-hooks-state" && request.method==="GET")return organizationUpdateFixture.state(url.searchParams.get("waitFor"));
-      if(url.pathname==="/__test/organization-hooks-release" && request.method==="POST")return organizationHooksFixture.release();
-      if(url.pathname==="/__test/organization-hooks-state" && request.method==="GET")return organizationHooksFixture.state(url.searchParams.get("waitFor"));
-      if(url.pathname==="/__test/organization-hooks-create" && request.method==="POST")return organizationHooksFixture.server(await request.json() as Record<string,unknown>);
+      for (const [name, profile] of organizationHooksFixture.profiles)
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return profile.handler(request);
+      for (const [name, profile] of organizationDeletionFixture.profiles) {
+        const base = `/__test/profiles/${name}/api/auth`;
+        if (url.pathname === base || url.pathname.startsWith(base + "/"))
+          return profile.handler(request);
+      }
+      if (
+        url.pathname === "/__test/organization-delete-hooks-configure" &&
+        request.method === "POST"
+      )
+        return organizationDeletionFixture.configure(
+          (await request.json()) as Record<string, unknown>,
+        );
+      if (url.pathname === "/__test/organization-delete-hooks-release" && request.method === "POST")
+        return organizationDeletionFixture.release();
+      if (url.pathname === "/__test/organization-delete-hooks-state" && request.method === "GET")
+        return organizationDeletionFixture.state(url.searchParams.get("waitFor"));
+      if (url.pathname === "/__test/organization-delete-hooks-server" && request.method === "POST")
+        return organizationDeletionFixture.server(
+          (await request.json()) as Record<string, unknown>,
+          request.headers,
+        );
+      if (url.pathname === "/__test/organization-hooks-configure" && request.method === "POST")
+        return organizationHooksFixture.configure(
+          (await request.json()) as Record<string, unknown>,
+        );
+      for (const [name, profile] of organizationMembershipFixture.profiles)
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return profile.handler(request);
+      if (
+        url.pathname === "/__test/organization-membership-policy/state" &&
+        request.method === "GET"
+      )
+        return organizationMembershipFixture.state();
+      if (
+        url.pathname === "/__test/organization-membership-policy/configure" &&
+        request.method === "POST"
+      )
+        return organizationMembershipFixture.configure();
+      if (
+        url.pathname === "/__test/organization-membership-policy/server" &&
+        request.method === "POST"
+      )
+        return organizationMembershipFixture.server(request);
+      for (const [name, profile] of organizationInvitationFixture.profiles)
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return profile.handler(request);
+      if (
+        url.pathname === "/__test/organization-invitation-stage/configure" &&
+        request.method === "POST"
+      )
+        return organizationInvitationFixture.configure(await request.json());
+      if (
+        url.pathname === "/__test/organization-invitation-stage/release" &&
+        request.method === "POST"
+      )
+        return organizationInvitationFixture.release();
+      if (
+        url.pathname === "/__test/organization-invitation-stage/state" &&
+        request.method === "GET"
+      )
+        return organizationInvitationFixture.state(url.searchParams.get("waitFor"));
+      for (const [name, profile] of organizationAdditionFixture.profiles)
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return profile.handler(request);
+      if (
+        url.pathname === "/__test/organization-member-addition/configure" &&
+        request.method === "POST"
+      )
+        return organizationAdditionFixture.configure(
+          (await request.json()) as Record<string, unknown>,
+        );
+      if (
+        url.pathname === "/__test/organization-member-addition/release" &&
+        request.method === "POST"
+      )
+        return organizationAdditionFixture.release();
+      if (url.pathname === "/__test/organization-member-addition/state" && request.method === "GET")
+        return organizationAdditionFixture.state(url.searchParams.get("waitFor"));
+      if (
+        url.pathname === "/__test/organization-member-addition/server" &&
+        request.method === "POST"
+      )
+        return organizationAdditionFixture.server(request);
+      if (url.pathname === "/__test/organization-member-addition/seed" && request.method === "POST")
+        return organizationAdditionFixture.seed((await request.json()) as Record<string, unknown>);
+      for (const [name, profile] of organizationMemberRemovalFixture.profiles)
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return profile.handler(request);
+      if (
+        url.pathname === "/__test/organization-member-removal-hooks-configure" &&
+        request.method === "POST"
+      )
+        return organizationMemberRemovalFixture.configure(
+          (await request.json()) as Record<string, unknown>,
+        );
+      if (
+        url.pathname === "/__test/organization-member-removal-hooks-release" &&
+        request.method === "POST"
+      )
+        return organizationMemberRemovalFixture.release();
+      if (
+        url.pathname === "/__test/organization-member-removal-hooks-state" &&
+        request.method === "GET"
+      )
+        return organizationMemberRemovalFixture.state(url.searchParams.get("waitFor"));
+      if (
+        url.pathname === "/__test/organization-member-removal-hooks-server" &&
+        request.method === "POST"
+      )
+        return organizationMemberRemovalFixture.server(request);
+      if (url.pathname.startsWith("/__test/profiles/org-member-role-hooks/api/auth/"))
+        return organizationMemberRoleFixture.auth.handler(request);
+      if (
+        url.pathname === "/__test/organization-member-role-hooks-configure" &&
+        request.method === "POST"
+      )
+        return organizationMemberRoleFixture.configure(
+          (await request.json()) as Record<string, unknown>,
+        );
+      if (
+        url.pathname === "/__test/organization-member-role-hooks-release" &&
+        request.method === "POST"
+      )
+        return organizationMemberRoleFixture.release();
+      if (
+        url.pathname === "/__test/organization-member-role-hooks-state" &&
+        request.method === "GET"
+      )
+        return organizationMemberRoleFixture.state(url.searchParams.get("waitFor"));
+      for (const [name, auth] of twoFactorPendingLookupFixture.profiles)
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return auth.handler(request);
+      if (url.pathname === "/__test/two-factor-pending-lookup" && request.method === "POST")
+        return twoFactorPendingLookupFixture.control(
+          (await request.json()) as Record<string, unknown>,
+        );
+      if (url.pathname.startsWith("/__test/profiles/org-update-hooks/api/auth/"))
+        return organizationUpdateFixture.auth.handler(request);
+      if (
+        url.pathname === "/__test/organization-update-hooks-configure" &&
+        request.method === "POST"
+      )
+        return organizationUpdateFixture.configure(
+          (await request.json()) as Record<string, unknown>,
+        );
+      if (url.pathname === "/__test/organization-update-storage" && request.method === "POST")
+        return organizationUpdateFixture.storage((await request.json()) as Record<string, unknown>);
+      if (url.pathname === "/__test/organization-update-hooks-release" && request.method === "POST")
+        return organizationUpdateFixture.release();
+      if (url.pathname === "/__test/organization-update-hooks-state" && request.method === "GET")
+        return organizationUpdateFixture.state(url.searchParams.get("waitFor"));
+      if (url.pathname === "/__test/organization-hooks-release" && request.method === "POST")
+        return organizationHooksFixture.release();
+      if (url.pathname === "/__test/organization-hooks-state" && request.method === "GET")
+        return organizationHooksFixture.state(url.searchParams.get("waitFor"));
+      if (url.pathname === "/__test/organization-hooks-create" && request.method === "POST")
+        return organizationHooksFixture.server((await request.json()) as Record<string, unknown>);
       if (url.pathname === "/__test/organization-creation-state" && request.method === "GET") {
-        return jsonResponse(organizationCreationFixture.state(url.searchParams.get("email") ?? "", url.searchParams.get("includeMetadata") === "true", url.searchParams.get("includeLogo") === "true"));
+        return jsonResponse(
+          organizationCreationFixture.state(
+            url.searchParams.get("email") ?? "",
+            url.searchParams.get("includeMetadata") === "true",
+            url.searchParams.get("includeLogo") === "true",
+          ),
+        );
       }
       if (url.pathname === "/__test/organization-create" && request.method === "POST") {
-        return organizationCreationFixture.server(await request.json() as Record<string,unknown>);
+        return organizationCreationFixture.server(
+          (await request.json()) as Record<string, unknown>,
+        );
       }
       if (url.pathname === "/__test/organization-metadata-legacy" && request.method === "POST") {
-        return organizationCreationFixture.legacyMetadata(await request.json() as Record<string,unknown>);
+        return organizationCreationFixture.legacyMetadata(
+          (await request.json()) as Record<string, unknown>,
+        );
       }
-      for (const [name,profile] of deviceProfiles) if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return profile.handler(request);
+      for (const [name, profile] of deviceProfiles)
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return profile.handler(request);
 
       if (url.pathname === "/__test/device-state" && request.method === "GET") {
         const deviceCode = url.searchParams.get("deviceCode");
-        if (!deviceCode) return jsonResponse({message:"deviceCode is required"},{status:400});
-        return jsonResponse(await authContext.adapter.findOne({model:"deviceCode",where:[{field:"deviceCode",value:deviceCode}]}));
+        if (!deviceCode)
+          return jsonResponse({ message: "deviceCode is required" }, { status: 400 });
+        return jsonResponse(
+          await authContext.adapter.findOne({
+            model: "deviceCode",
+            where: [{ field: "deviceCode", value: deviceCode }],
+          }),
+        );
       }
       if (url.pathname === "/__test/expire-device" && request.method === "POST") {
-        const body:unknown = await readJson(request);
-        if (!controlRecord(body) || typeof body.deviceCode!=="string" || typeof body.expiresAt!=="string" || !Number.isFinite(Date.parse(body.expiresAt))) return jsonResponse({message:"deviceCode and valid expiresAt are required"},{status:400});
-        await authContext.adapter.updateMany({model:"deviceCode",where:[{field:"deviceCode",value:body.deviceCode}],update:{expiresAt:new Date(body.expiresAt)}});
-        return jsonResponse({status:true});
+        const body: unknown = await readJson(request);
+        if (
+          !controlRecord(body) ||
+          typeof body.deviceCode !== "string" ||
+          typeof body.expiresAt !== "string" ||
+          !Number.isFinite(Date.parse(body.expiresAt))
+        )
+          return jsonResponse(
+            { message: "deviceCode and valid expiresAt are required" },
+            { status: 400 },
+          );
+        await authContext.adapter.updateMany({
+          model: "deviceCode",
+          where: [{ field: "deviceCode", value: body.deviceCode }],
+          update: { expiresAt: new Date(body.expiresAt) },
+        });
+        return jsonResponse({ status: true });
       }
       if (url.pathname === "/__test/expire-invitation" && request.method === "POST") {
         const body = await readJson(request);
-        if (typeof body?.invitationId !== "string" || typeof body?.expiresAt !== "string") return jsonResponse({ message: "Invalid invitation clock" }, { status: 400 });
-        const result = database.query('UPDATE invitation SET expiresAt = ? WHERE id = ?').run(new Date(body.expiresAt).toISOString(), body.invitationId);
+        if (typeof body?.invitationId !== "string" || typeof body?.expiresAt !== "string")
+          return jsonResponse({ message: "Invalid invitation clock" }, { status: 400 });
+        const result = database
+          .query("UPDATE invitation SET expiresAt = ? WHERE id = ?")
+          .run(new Date(body.expiresAt).toISOString(), body.invitationId);
         return jsonResponse({ updated: result.changes });
       }
 
-
-      if(url.pathname==="/__test/secondary-session/control"&&request.method==="POST") {
-        const body=await request.json() as {profile:string;token:string;action:string};const cache=secondarySessionCaches.get(body.profile);
-        if(!cache)return Response.json({error:"Unknown profile"},{status:400});
-        if(body.action==="remove"){cache.delete(body.token);return Response.json(null);}
-        const entry=cache.get(body.token);if(entry&&entry.expiresAt<=Date.now())cache.delete(body.token);
-        return Response.json({present:cache.has(body.token)});
-      }
-      for (const [name,instance] of openApiInstances) {
-        if(name==="openapi-custom-schema" && url.pathname===`/__test/profiles/${name}/api/auth/__test/server-document`) {
-          return new Response(JSON.stringify(await instance.api.serverDocument()), {headers:{"content-type":"application/json"}});
+      if (url.pathname === "/__test/secondary-session/control" && request.method === "POST") {
+        const body = (await request.json()) as { profile: string; token: string; action: string };
+        const cache = secondarySessionCaches.get(body.profile);
+        if (!cache) return Response.json({ error: "Unknown profile" }, { status: 400 });
+        if (body.action === "remove") {
+          cache.delete(body.token);
+          return Response.json(null);
         }
-        if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
+        const entry = cache.get(body.token);
+        if (entry && entry.expiresAt <= Date.now()) cache.delete(body.token);
+        return Response.json({ present: cache.has(body.token) });
       }
-      for(const [name,profile] of ottProfiles) {
-        if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return profile.auth.handler(request);
+      for (const [name, instance] of openApiInstances) {
+        if (
+          name === "openapi-custom-schema" &&
+          url.pathname === `/__test/profiles/${name}/api/auth/__test/server-document`
+        ) {
+          return new Response(JSON.stringify(await instance.api.serverDocument()), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return instance.handler(request);
+      }
+      for (const [name, profile] of ottProfiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return profile.auth.handler(request);
       }
       const policyControl = await twoFactorPolicyFixture(request, url);
       if (policyControl) return policyControl;
@@ -1057,8 +1788,8 @@ const server = Bun.serve({
       if (otpControl) return otpControl;
       const totpControl = await twoFactorTotpFixture(request, url);
       if (totpControl) return totpControl;
-      const ottControl=await oneTimeTokenControl(request,url);
-      if(ottControl) return ottControl;
+      const ottControl = await oneTimeTokenControl(request, url);
+      if (ottControl) return ottControl;
 
       const teamResponse = await teamFixture(request, url);
       if (teamResponse) return teamResponse;
@@ -1070,89 +1801,169 @@ const server = Bun.serve({
       if (dispatchControl) return dispatchControl;
       if (url.pathname === "/__test/lifecycle" && request.method === "GET") {
         const email = url.searchParams.get("email");
-        const user = email ? await authContext.internalAdapter.findUserByEmail(email, {includeAccounts:true}) : null;
-        const sessions = user?.user ? await authContext.adapter.findMany({model:"session",where:[{field:"userId",value:user.user.id}]}) : [];
-        const state = !email ? null : !user?.user ? {userId:null,accounts:[],sessions:[]} : {
-          userId:user.user.id,
-          accounts:user.accounts.map(row => ({id:row.id,userId:row.userId,providerId:row.providerId})),
-          sessions:sessions.map(row => ({id:row.id,userId:row.userId,token:row.token})),
-        };
-        return jsonResponse({events:lifecycleEvents.splice(0),state});
+        const user = email
+          ? await authContext.internalAdapter.findUserByEmail(email, { includeAccounts: true })
+          : null;
+        const sessions = user?.user
+          ? await authContext.adapter.findMany({
+              model: "session",
+              where: [{ field: "userId", value: user.user.id }],
+            })
+          : [];
+        const state = !email
+          ? null
+          : !user?.user
+            ? { userId: null, accounts: [], sessions: [] }
+            : {
+                userId: user.user.id,
+                accounts: user.accounts.map((row) => ({
+                  id: row.id,
+                  userId: row.userId,
+                  providerId: row.providerId,
+                })),
+                sessions: sessions.map((row) => ({
+                  id: row.id,
+                  userId: row.userId,
+                  token: row.token,
+                })),
+              };
+        return jsonResponse({ events: lifecycleEvents.splice(0), state });
       }
 
       if (url.pathname === "/__health") {
-        return jsonResponse({ ok: true, oauthBaseURL, upstreamVersion: INSTALLED_BETTER_AUTH_VERSION });
+        return jsonResponse({
+          ok: true,
+          oauthBaseURL,
+          upstreamVersion: INSTALLED_BETTER_AUTH_VERSION,
+        });
       }
 
       const verificationStorageControl = await verificationStorageFixture.handle(request);
       if (verificationStorageControl) return verificationStorageControl;
       for (const [name, profile] of verificationStorageFixture.profiles) {
         const path = `/__test/profiles/${name}/api/auth`;
-        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return verificationStorageFixture.profileHandler(profile,request);
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+          return verificationStorageFixture.profileHandler(profile, request);
       }
       const userValidationControl = await userValidationFixture.handle(request);
       if (userValidationControl) return userValidationControl;
       for (const [name, profile] of userValidationFixture.profiles) {
         const path = `/__test/profiles/${name}/api/auth`;
-        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return profile.handler(request);
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+          return profile.handler(request);
       }
       const compromisedPasswordControl = await compromisedPasswordFixture.handle(request);
       if (compromisedPasswordControl) return compromisedPasswordControl;
       for (const [name, profile] of compromisedPasswordFixture.profiles) {
         const path = `/__test/profiles/${name}/api/auth`;
-        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return profile.handler(request);
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+          return profile.handler(request);
       }
       const signupPolicyControl = await signupPolicyFixture.handle(request);
       if (signupPolicyControl) return signupPolicyControl;
       for (const [name, profile] of signupPolicyFixture.profiles) {
         const path = `/__test/profiles/${name}/api/auth`;
-        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return profile.handler(request);
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+          return profile.handler(request);
       }
       const captchaControl = await captchaFixture.handle(request);
       if (captchaControl) return captchaControl;
       for (const [path, auth] of captchaFixture.profiles) {
-        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return auth.handler(request);
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+          return auth.handler(request);
       }
-      for(const [name,auth] of lastLoginMethodFixture.profiles){
-        const path=`/__test/profiles/${name}/api/auth`;
-        if(url.pathname===path||url.pathname.startsWith(`${path}/`))return auth.handler(request);
-      }
-      for(const [name,auth] of jwtKeyringFixture.profiles){const path=`/__test/profiles/${name}/api/auth`;if(url.pathname===path||url.pathname.startsWith(`${path}/`))return auth.handler(request);}
-      const jwtKeyringControl=await jwtKeyringFixture.handle(request);
-      if(jwtKeyringControl)return jwtKeyringControl;
-      for(const [name,auth] of remoteJwtFixture.profiles){const path=`/__test/profiles/${name}/api/auth`;if(url.pathname===path||url.pathname.startsWith(`${path}/`))return auth.handler(request);}
-      const remoteJwtControl=await remoteJwtFixture.handle(request);
-      if(remoteJwtControl)return remoteJwtControl;
-      const lastLoginControl=await lastLoginMethodFixture.handle(request);
-      if(lastLoginControl)return lastLoginControl;
-      for (const [name,profile] of jwtProfiles) {
+      for (const [name, auth] of lastLoginMethodFixture.profiles) {
         const path = `/__test/profiles/${name}/api/auth`;
-        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return profile.auth.handler(request);
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+          return auth.handler(request);
+      }
+      for (const [name, auth] of jwtKeyringFixture.profiles) {
+        const path = `/__test/profiles/${name}/api/auth`;
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+          return auth.handler(request);
+      }
+      const jwtKeyringControl = await jwtKeyringFixture.handle(request);
+      if (jwtKeyringControl) return jwtKeyringControl;
+      for (const [name, auth] of remoteJwtFixture.profiles) {
+        const path = `/__test/profiles/${name}/api/auth`;
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+          return auth.handler(request);
+      }
+      const remoteJwtControl = await remoteJwtFixture.handle(request);
+      if (remoteJwtControl) return remoteJwtControl;
+      const lastLoginControl = await lastLoginMethodFixture.handle(request);
+      if (lastLoginControl) return lastLoginControl;
+      for (const [name, profile] of jwtProfiles) {
+        const path = `/__test/profiles/${name}/api/auth`;
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+          return profile.auth.handler(request);
       }
       if (url.pathname === "/__test/jwks-state" && request.method === "GET") {
         const context = await jwtProfiles.get("jwt-default")!.auth.$context;
-        const keys = await context.adapter.findMany<{id:string;publicKey:string;privateKey:string;createdAt:Date;expiresAt:Date|null;alg:string|null;crv:string|null}>({model:"jwks",sortBy:{field:"createdAt",direction:"asc"}});
-        return jsonResponse(keys.map(key => ({id:key.id,publicKey:JSON.parse(key.publicKey),privateKeyEncrypted:typeof JSON.parse(key.privateKey) === "string",createdAt:key.createdAt,expiresAt:key.expiresAt,alg:key.alg,crv:key.crv})));
+        const keys = await context.adapter.findMany<{
+          id: string;
+          publicKey: string;
+          privateKey: string;
+          createdAt: Date;
+          expiresAt: Date | null;
+          alg: string | null;
+          crv: string | null;
+        }>({ model: "jwks", sortBy: { field: "createdAt", direction: "asc" } });
+        return jsonResponse(
+          keys.map((key) => ({
+            id: key.id,
+            publicKey: JSON.parse(key.publicKey),
+            privateKeyEncrypted: typeof JSON.parse(key.privateKey) === "string",
+            createdAt: key.createdAt,
+            expiresAt: key.expiresAt,
+            alg: key.alg,
+            crv: key.crv,
+          })),
+        );
       }
       if (url.pathname === "/__test/expire-jwk" && request.method === "POST") {
         const body: unknown = await readJson(request);
-        if (!jwtRecord(body) || typeof body.id !== "string" || typeof body.expiresAt !== "string" || !Number.isFinite(Date.parse(body.expiresAt))) return jsonResponse({message:"id and valid expiresAt are required"},{status:400});
+        if (
+          !jwtRecord(body) ||
+          typeof body.id !== "string" ||
+          typeof body.expiresAt !== "string" ||
+          !Number.isFinite(Date.parse(body.expiresAt))
+        )
+          return jsonResponse({ message: "id and valid expiresAt are required" }, { status: 400 });
         const context = await jwtProfiles.get("jwt-default")!.auth.$context;
-        await context.adapter.updateMany({model:"jwks",where:[{field:"id",value:body.id}],update:{expiresAt:new Date(body.expiresAt)}});
-        return jsonResponse({status:true});
+        await context.adapter.updateMany({
+          model: "jwks",
+          where: [{ field: "id", value: body.id }],
+          update: { expiresAt: new Date(body.expiresAt) },
+        });
+        return jsonResponse({ status: true });
       }
       if (url.pathname === "/__test/jwt" && request.method === "POST") {
         const body: unknown = await readJson(request);
-        if (!jwtRecord(body)) return jsonResponse({message:"invalid server operation"},{status:400});
-        const selected = jwtProfiles.get(typeof body.profile === "string" ? body.profile as typeof JWT_PROFILE_NAMES[number] : "jwt-default")?.auth;
-        if (!selected) return jsonResponse({message:"unknown fixture profile"},{status:400});
-        if (body.operation === "sign" && jwtRecord(body.payload)) return jsonResponse(await selected.api.signJWT({body:{payload:body.payload}}));
-        if (body.operation === "verify" && typeof body.token === "string") return jsonResponse(await selected.api.verifyJWT({body:{token:body.token,...(typeof body.issuer === "string" ? {issuer:body.issuer} : {})}}));
+        if (!jwtRecord(body))
+          return jsonResponse({ message: "invalid server operation" }, { status: 400 });
+        const selected = jwtProfiles.get(
+          typeof body.profile === "string"
+            ? (body.profile as (typeof JWT_PROFILE_NAMES)[number])
+            : "jwt-default",
+        )?.auth;
+        if (!selected) return jsonResponse({ message: "unknown fixture profile" }, { status: 400 });
+        if (body.operation === "sign" && jwtRecord(body.payload))
+          return jsonResponse(await selected.api.signJWT({ body: { payload: body.payload } }));
+        if (body.operation === "verify" && typeof body.token === "string")
+          return jsonResponse(
+            await selected.api.verifyJWT({
+              body: {
+                token: body.token,
+                ...(typeof body.issuer === "string" ? { issuer: body.issuer } : {}),
+              },
+            }),
+          );
         if (body.operation === "session-state" && typeof body.token === "string") {
           const context = await selected.$context;
           return jsonResponse(await context.internalAdapter.findSession(body.token));
         }
-        return jsonResponse({message:"invalid server operation"},{status:400});
+        return jsonResponse({ message: "invalid server operation" }, { status: 400 });
       }
 
       if (url.pathname === "/__test/password" && request.method === "POST") {
@@ -1165,12 +1976,19 @@ const server = Bun.serve({
         if (body?.operation === "hash" && typeof body.password === "string") {
           return jsonResponse({ hash: await authContext.password.hash(body.password) });
         }
-        if (body?.operation === "verify" && typeof body.password === "string" && typeof body.hash === "string") {
+        if (
+          body?.operation === "verify" &&
+          typeof body.password === "string" &&
+          typeof body.hash === "string"
+        ) {
           return jsonResponse({
             valid: await authContext.password.verify({ password: body.password, hash: body.hash }),
           });
         }
-        if ((body?.operation === "import" || body?.operation === "credential") && typeof body.email === "string") {
+        if (
+          (body?.operation === "import" || body?.operation === "credential") &&
+          typeof body.email === "string"
+        ) {
           const user = await authContext.internalAdapter.findUserByEmail(body.email, {
             includeAccounts: true,
           });
@@ -1188,7 +2006,11 @@ const server = Bun.serve({
             model: "account",
             where: [{ field: "id", value: account.id }],
           });
-          return jsonResponse({ userId: user.user.id, accountId: account.id, hash: persisted?.password ?? null });
+          return jsonResponse({
+            userId: user.user.id,
+            accountId: account.id,
+            hash: persisted?.password ?? null,
+          });
         }
         return jsonResponse({ message: "Invalid password operation" }, { status: 400 });
       }
@@ -1205,8 +2027,8 @@ const server = Bun.serve({
       if (apiKeyGenerationControl) return apiKeyGenerationControl;
       const apiKeyOptionsControl = await apiKeyOptionsFixture.control(request);
       if (apiKeyOptionsControl) return apiKeyOptionsControl;
-      const physicalCookieControl=physicalCookies.control(request);
-      if(physicalCookieControl)return physicalCookieControl;
+      const physicalCookieControl = physicalCookies.control(request);
+      if (physicalCookieControl) return physicalCookieControl;
       const serverEndpointControl = await serverEndpointFixture.control(request);
       if (serverEndpointControl) return serverEndpointControl;
       const serverEndpointCacheControl = await serverEndpointCacheFixture.control(request);
@@ -1219,53 +2041,120 @@ const server = Bun.serve({
         return jsonResponse(await auth.api.verifyApiKey({ body: await readJson(request) }));
       }
 
-      if (url.pathname==="/__test/magic-link" && request.method==="GET") {
+      if (url.pathname === "/__test/magic-link" && request.method === "GET") {
         return jsonResponse(magicLinkOutbox.get(url.searchParams.get("email") ?? "") ?? null);
       }
       if (url.pathname === "/__test/phone-otp" && request.method === "GET") {
-        return jsonResponse(phoneFixture.outbox.get(`${url.searchParams.get("type") ?? "verification"}:${url.searchParams.get("phoneNumber")}`) ?? null);
+        return jsonResponse(
+          phoneFixture.outbox.get(
+            `${url.searchParams.get("type") ?? "verification"}:${url.searchParams.get("phoneNumber")}`,
+          ) ?? null,
+        );
       }
-      if (url.pathname === "/__test/phone-callbacks" && request.method === "GET") return jsonResponse(phoneFixture.callbacks);
-      if (url.pathname === "/__test/phone-consume-otp" && request.method === "POST") return phoneFixture.consume(await readJson(request));
-      if (url.pathname==="/__test/email-otp" && request.method==="GET") {
-        return jsonResponse(emailOtpOutbox.get(`${url.searchParams.get("type")}:${url.searchParams.get("email")}`) ?? null);
+      if (url.pathname === "/__test/phone-callbacks" && request.method === "GET")
+        return jsonResponse(phoneFixture.callbacks);
+      if (url.pathname === "/__test/phone-consume-otp" && request.method === "POST")
+        return phoneFixture.consume(await readJson(request));
+      if (url.pathname === "/__test/email-otp" && request.method === "GET") {
+        return jsonResponse(
+          emailOtpOutbox.get(`${url.searchParams.get("type")}:${url.searchParams.get("email")}`) ??
+            null,
+        );
       }
-      if (url.pathname==="/__test/verification-state" && request.method==="GET") {
-        const identifier=url.searchParams.get("identifier");
-        return jsonResponse(await authContext.adapter.findMany({model:"verification",where:[{field:"identifier",value:identifier}],sortBy:{field:"createdAt",direction:"desc"}}));
+      if (url.pathname === "/__test/verification-state" && request.method === "GET") {
+        const identifier = url.searchParams.get("identifier");
+        return jsonResponse(
+          await authContext.adapter.findMany({
+            model: "verification",
+            where: [{ field: "identifier", value: identifier }],
+            sortBy: { field: "createdAt", direction: "desc" },
+          }),
+        );
       }
-      if (url.pathname==="/__test/verification-state" && request.method==="POST") {
-        const body:unknown=await readJson(request);
-        if (!body || typeof body!=="object" || Array.isArray(body)) return jsonResponse({message:"invalid verification action"},{status:400});
-        const record=body as Record<string,unknown>;
-        if (typeof record.identifier!=="string" || typeof record.expiresAt!=="string") return jsonResponse({message:"invalid verification action"},{status:400});
-        const expiresAt=new Date(record.expiresAt);
-        if (record.action==="seed" && typeof record.value==="string") await authContext.internalAdapter.createVerificationValue({identifier:record.identifier,value:record.value,expiresAt});
-        else if (record.action==="expire") await authContext.adapter.updateMany({model:"verification",where:[{field:"identifier",value:record.identifier}],update:{expiresAt}});
-        else return jsonResponse({message:"invalid verification action"},{status:400});
-        return jsonResponse({status:true});
+      if (url.pathname === "/__test/verification-state" && request.method === "POST") {
+        const body: unknown = await readJson(request);
+        if (!body || typeof body !== "object" || Array.isArray(body))
+          return jsonResponse({ message: "invalid verification action" }, { status: 400 });
+        const record = body as Record<string, unknown>;
+        if (typeof record.identifier !== "string" || typeof record.expiresAt !== "string")
+          return jsonResponse({ message: "invalid verification action" }, { status: 400 });
+        const expiresAt = new Date(record.expiresAt);
+        if (record.action === "seed" && typeof record.value === "string")
+          await authContext.internalAdapter.createVerificationValue({
+            identifier: record.identifier,
+            value: record.value,
+            expiresAt,
+          });
+        else if (record.action === "expire")
+          await authContext.adapter.updateMany({
+            model: "verification",
+            where: [{ field: "identifier", value: record.identifier }],
+            update: { expiresAt },
+          });
+        else return jsonResponse({ message: "invalid verification action" }, { status: 400 });
+        return jsonResponse({ status: true });
       }
-      if (url.pathname==="/__test/server-api" && request.method==="POST") {
-        const body:unknown=await readJson(request);
-        if (!body || typeof body!=="object" || Array.isArray(body)) return jsonResponse({message:"invalid server operation"},{status:400});
-        const record=body as Record<string,unknown>;
-        if (typeof record.email!=="string" || !["sign-in","email-verification","forget-password","change-email"].includes(String(record.type))) return jsonResponse({message:"invalid server operation"},{status:400});
-        const type=record.type==="email-verification" ? "email-verification" : record.type==="forget-password" ? "forget-password" : record.type==="change-email" ? "change-email" : "sign-in";
-        const selected=typeof record.profile==="string" ? otpProfiles.get(record.profile) : auth;
-        if (!selected) return jsonResponse({message:"unknown fixture profile"},{status:400});
+      if (url.pathname === "/__test/server-api" && request.method === "POST") {
+        const body: unknown = await readJson(request);
+        if (!body || typeof body !== "object" || Array.isArray(body))
+          return jsonResponse({ message: "invalid server operation" }, { status: 400 });
+        const record = body as Record<string, unknown>;
+        if (
+          typeof record.email !== "string" ||
+          !["sign-in", "email-verification", "forget-password", "change-email"].includes(
+            String(record.type),
+          )
+        )
+          return jsonResponse({ message: "invalid server operation" }, { status: 400 });
+        const type =
+          record.type === "email-verification"
+            ? "email-verification"
+            : record.type === "forget-password"
+              ? "forget-password"
+              : record.type === "change-email"
+                ? "change-email"
+                : "sign-in";
+        const selected =
+          typeof record.profile === "string" ? otpProfiles.get(record.profile) : auth;
+        if (!selected) return jsonResponse({ message: "unknown fixture profile" }, { status: 400 });
         try {
-          if (record.operation==="create-email-otp") return jsonResponse(await selected.api.createVerificationOTP({body:{email:record.email,type}}));
-          if (record.operation==="get-email-otp") return jsonResponse(await selected.api.getVerificationOTP({query:{email:record.email,type}}));
-          if (record.operation==="race-email-otp" && typeof record.otp==="string") {
-            const email=record.email,otp=record.otp;
-            const results=await Promise.all([0,1].map(async()=>{const response=await selected.api.signInEmailOTP({body:{email,otp},asResponse:true});return {status:response.status,body:await response.json()};}));
-            return jsonResponse({results:results.sort((left,right)=>left.status-right.status)});
+          if (record.operation === "create-email-otp")
+            return jsonResponse(
+              await selected.api.createVerificationOTP({ body: { email: record.email, type } }),
+            );
+          if (record.operation === "get-email-otp")
+            return jsonResponse(
+              await selected.api.getVerificationOTP({ query: { email: record.email, type } }),
+            );
+          if (record.operation === "race-email-otp" && typeof record.otp === "string") {
+            const email = record.email,
+              otp = record.otp;
+            const results = await Promise.all(
+              [0, 1].map(async () => {
+                const response = await selected.api.signInEmailOTP({
+                  body: { email, otp },
+                  asResponse: true,
+                });
+                return { status: response.status, body: await response.json() };
+              }),
+            );
+            return jsonResponse({
+              results: results.sort((left, right) => left.status - right.status),
+            });
           }
-        } catch(error) {
-          if (error instanceof APIError) return jsonResponse(error.body,{status:typeof error.status==="number" ? error.status : error.status==="BAD_REQUEST" ? 400 : 500});
+        } catch (error) {
+          if (error instanceof APIError)
+            return jsonResponse(error.body, {
+              status:
+                typeof error.status === "number"
+                  ? error.status
+                  : error.status === "BAD_REQUEST"
+                    ? 400
+                    : 500,
+            });
           throw error;
         }
-        return jsonResponse({message:"unknown server operation"},{status:400});
+        return jsonResponse({ message: "unknown server operation" }, { status: 400 });
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         cloudflareFixture.reset();
@@ -1310,18 +2199,49 @@ const server = Bun.serve({
       }
 
       if (url.pathname === "/__test/organization-timestamps" && request.method === "POST") {
-        const body = await readJson(request) as { organizationId: string; memberId: string; createdAt: string };
+        const body = (await readJson(request)) as {
+          organizationId: string;
+          memberId: string;
+          createdAt: string;
+        };
         const orgWhere = [{ field: "id", value: body.organizationId }];
         const memberWhere = [{ field: "id", value: body.memberId }];
-        const org = await authContext.adapter.findOne<Record<string, unknown>>({ model: "organization", where: orgWhere });
-        const member = await authContext.adapter.findOne<Record<string, unknown>>({ model: "member", where: memberWhere });
-        if (!org || !member || member.organizationId !== org.id) return jsonResponse({ message: "Not found" }, { status: 404 });
+        const org = await authContext.adapter.findOne<Record<string, unknown>>({
+          model: "organization",
+          where: orgWhere,
+        });
+        const member = await authContext.adapter.findOne<Record<string, unknown>>({
+          model: "member",
+          where: memberWhere,
+        });
+        if (!org || !member || member.organizationId !== org.id)
+          return jsonResponse({ message: "Not found" }, { status: 404 });
         const createdAt = new Date(body.createdAt);
-        await authContext.adapter.update({ model: "organization", where: orgWhere, update: { createdAt } });
-        await authContext.adapter.update({ model: "member", where: memberWhere, update: { createdAt } });
-        const persistedOrg = await authContext.adapter.findOne<Record<string, unknown>>({ model: "organization", where: orgWhere });
-        const persistedMember = await authContext.adapter.findOne<Record<string, unknown>>({ model: "member", where: memberWhere });
-        return jsonResponse({ organizationId: persistedOrg!.id, memberId: persistedMember!.id, userId: persistedMember!.userId, organizationCreatedAtMillis: new Date(persistedOrg!.createdAt as Date).getTime(), memberCreatedAtMillis: new Date(persistedMember!.createdAt as Date).getTime() });
+        await authContext.adapter.update({
+          model: "organization",
+          where: orgWhere,
+          update: { createdAt },
+        });
+        await authContext.adapter.update({
+          model: "member",
+          where: memberWhere,
+          update: { createdAt },
+        });
+        const persistedOrg = await authContext.adapter.findOne<Record<string, unknown>>({
+          model: "organization",
+          where: orgWhere,
+        });
+        const persistedMember = await authContext.adapter.findOne<Record<string, unknown>>({
+          model: "member",
+          where: memberWhere,
+        });
+        return jsonResponse({
+          organizationId: persistedOrg!.id,
+          memberId: persistedMember!.id,
+          userId: persistedMember!.userId,
+          organizationCreatedAtMillis: new Date(persistedOrg!.createdAt as Date).getTime(),
+          memberCreatedAtMillis: new Date(persistedMember!.createdAt as Date).getTime(),
+        });
       }
 
       const authenticationControl = await passkeyAuthentication.handle(request);
@@ -1333,9 +2253,15 @@ const server = Bun.serve({
 
       if (url.pathname === "/__test/expire-session" && request.method === "POST") {
         const body = await readJson(request);
-        if (typeof body?.token !== "string" || typeof body?.expiresAt !== "string") return jsonResponse({ message: "Invalid session clock" }, { status: 400 });
-        const result = database.query('UPDATE session SET expiresAt = ? WHERE token = ?').run(new Date(body.expiresAt).toISOString(), body.token);
-        if (typeof body.createdAt === "string") database.query('UPDATE session SET createdAt = ? WHERE token = ?').run(new Date(body.createdAt).toISOString(), body.token);
+        if (typeof body?.token !== "string" || typeof body?.expiresAt !== "string")
+          return jsonResponse({ message: "Invalid session clock" }, { status: 400 });
+        const result = database
+          .query("UPDATE session SET expiresAt = ? WHERE token = ?")
+          .run(new Date(body.expiresAt).toISOString(), body.token);
+        if (typeof body.createdAt === "string")
+          database
+            .query("UPDATE session SET createdAt = ? WHERE token = ?")
+            .run(new Date(body.createdAt).toISOString(), body.token);
         return jsonResponse({ updated: result.changes });
       }
 
@@ -1353,22 +2279,56 @@ const server = Bun.serve({
         const selectedContext = await selected.$context;
         const where = [{ field: "userId", value: userId }];
         const [user, accounts, sessions, twoFactor] = await Promise.all([
-          selectedContext.adapter.findOne<Record<string, unknown>>({ model: "user", where: [{ field: "id", value: userId }] }),
+          selectedContext.adapter.findOne<Record<string, unknown>>({
+            model: "user",
+            where: [{ field: "id", value: userId }],
+          }),
           selectedContext.adapter.findMany<Record<string, unknown>>({ model: "account", where }),
-          selectedContext.adapter.findMany<Record<string, unknown>>({ model: "session", where, sortBy: { field: "createdAt", direction: "asc" } }),
+          selectedContext.adapter.findMany<Record<string, unknown>>({
+            model: "session",
+            where,
+            sortBy: { field: "createdAt", direction: "asc" },
+          }),
           selectedContext.adapter.findOne({ model: "twoFactor", where }),
         ]);
         return jsonResponse({
-          user: user ? { id: user.id, email: user.email, emailVerified: user.emailVerified, twoFactorEnabled: user.twoFactorEnabled, ...(profileName ? { phoneNumber: user.phoneNumber, phoneNumberVerified: user.phoneNumberVerified } : {}) } : null,
-          accounts: accounts.sort((left, right) => String(left.providerId).localeCompare(String(right.providerId)) || String(left.accountId).localeCompare(String(right.accountId))).map(account => ({ id: account.id, userId: account.userId, accountId: account.accountId, providerId: account.providerId })),
-          sessions: sessions.map(session => ({ id: session.id, token: session.token, userId: session.userId, expiresAt: session.expiresAt, activeOrganizationId: session.activeOrganizationId ?? null })),
+          user: user
+            ? {
+                id: user.id,
+                email: user.email,
+                emailVerified: user.emailVerified,
+                twoFactorEnabled: user.twoFactorEnabled,
+                ...(profileName
+                  ? { phoneNumber: user.phoneNumber, phoneNumberVerified: user.phoneNumberVerified }
+                  : {}),
+              }
+            : null,
+          accounts: accounts
+            .sort(
+              (left, right) =>
+                String(left.providerId).localeCompare(String(right.providerId)) ||
+                String(left.accountId).localeCompare(String(right.accountId)),
+            )
+            .map((account) => ({
+              id: account.id,
+              userId: account.userId,
+              accountId: account.accountId,
+              providerId: account.providerId,
+            })),
+          sessions: sessions.map((session) => ({
+            id: session.id,
+            token: session.token,
+            userId: session.userId,
+            expiresAt: session.expiresAt,
+            activeOrganizationId: session.activeOrganizationId ?? null,
+          })),
           twoFactorExists: twoFactor !== null,
         });
       }
 
       if (url.pathname === "/__test/verification-email" && request.method === "GET") {
         const email = url.searchParams.get("email");
-        const record = email ? verificationEmailOutbox.get(email) ?? null : null;
+        const record = email ? (verificationEmailOutbox.get(email) ?? null) : null;
         return record
           ? jsonResponse(record)
           : jsonResponse({ message: "Not found" }, { status: 404 });
@@ -1376,7 +2336,7 @@ const server = Bun.serve({
 
       if (url.pathname === "/__test/change-email-confirmation" && request.method === "GET") {
         const email = url.searchParams.get("email");
-        const record = email ? changeEmailOutbox.get(email) ?? null : null;
+        const record = email ? (changeEmailOutbox.get(email) ?? null) : null;
         return record
           ? jsonResponse(record)
           : jsonResponse({ message: "Not found" }, { status: 404 });
@@ -1384,7 +2344,7 @@ const server = Bun.serve({
 
       if (url.pathname === "/__test/reset-password-token" && request.method === "GET") {
         const email = url.searchParams.get("email");
-        const record = email ? resetPasswordOutbox.get(email) ?? null : null;
+        const record = email ? (resetPasswordOutbox.get(email) ?? null) : null;
         return record
           ? jsonResponse(record)
           : jsonResponse({ message: "Not found" }, { status: 404 });
@@ -1392,7 +2352,7 @@ const server = Bun.serve({
 
       if (url.pathname === "/__test/two-factor-otp" && request.method === "GET") {
         const email = url.searchParams.get("email");
-        const record = email ? twoFactorOtpOutbox.get(email) ?? null : null;
+        const record = email ? (twoFactorOtpOutbox.get(email) ?? null) : null;
         return record
           ? jsonResponse(record)
           : jsonResponse({ message: "Not found" }, { status: 404 });
@@ -1534,9 +2494,11 @@ const server = Bun.serve({
       }
 
       if (url.pathname === "/__test/set-social-profile" && request.method === "POST") {
-        const body = (await readJson(request)) as Partial<SocialProfile> & {
-          idTokenValid?: boolean;
-        } | null;
+        const body = (await readJson(request)) as
+          | (Partial<SocialProfile> & {
+              idTokenValid?: boolean;
+            })
+          | null;
         socialProfile = {
           ...socialProfile,
           ...(body?.sub ? { sub: body.sub } : {}),
@@ -1550,7 +2512,11 @@ const server = Bun.serve({
         if (typeof body?.idTokenValid === "boolean") {
           socialIdTokenValid = body.idTokenValid;
         }
-        return jsonResponse({ status: true, profile: socialProfile, idTokenValid: socialIdTokenValid });
+        return jsonResponse({
+          status: true,
+          profile: socialProfile,
+          idTokenValid: socialIdTokenValid,
+        });
       }
 
       if (url.pathname === "/__test/set-github-profile" && request.method === "POST") {
@@ -1581,10 +2547,17 @@ const server = Bun.serve({
           createdAt?: string;
           updatedAt?: string;
         } | null;
-        if ((body?.createdAt !== undefined || body?.updatedAt !== undefined) &&
-          (typeof body.createdAt !== "string" || typeof body.updatedAt !== "string" ||
-           !Number.isFinite(Date.parse(body.createdAt)) || !Number.isFinite(Date.parse(body.updatedAt)))) {
-          return jsonResponse({ message: "Both valid account timestamps required" }, { status: 400 });
+        if (
+          (body?.createdAt !== undefined || body?.updatedAt !== undefined) &&
+          (typeof body.createdAt !== "string" ||
+            typeof body.updatedAt !== "string" ||
+            !Number.isFinite(Date.parse(body.createdAt)) ||
+            !Number.isFinite(Date.parse(body.updatedAt)))
+        ) {
+          return jsonResponse(
+            { message: "Both valid account timestamps required" },
+            { status: 400 },
+          );
         }
         const email = body?.email;
         const user = email
@@ -1604,9 +2577,13 @@ const server = Bun.serve({
         );
 
         const accountData = {
-          accessToken: hasOwn(body, "accessToken") ? body?.accessToken ?? null : "stale-access-token",
-          refreshToken: hasOwn(body, "refreshToken") ? body?.refreshToken ?? null : "seed-refresh-token",
-          idToken: hasOwn(body, "idToken") ? body?.idToken ?? null : "seed-id-token",
+          accessToken: hasOwn(body, "accessToken")
+            ? (body?.accessToken ?? null)
+            : "stale-access-token",
+          refreshToken: hasOwn(body, "refreshToken")
+            ? (body?.refreshToken ?? null)
+            : "seed-refresh-token",
+          idToken: hasOwn(body, "idToken") ? (body?.idToken ?? null) : "seed-id-token",
           accessTokenExpiresAt: hasOwn(body, "accessTokenExpiresAt")
             ? body?.accessTokenExpiresAt
               ? new Date(body.accessTokenExpiresAt)
@@ -1617,7 +2594,7 @@ const server = Bun.serve({
               ? new Date(body.refreshTokenExpiresAt)
               : null
             : null,
-          scope: hasOwn(body, "scope") ? body?.scope ?? null : "openid,email,profile",
+          scope: hasOwn(body, "scope") ? (body?.scope ?? null) : "openid,email,profile",
         };
 
         let localAccountId = existing?.id;
@@ -1634,34 +2611,44 @@ const server = Bun.serve({
         }
 
         if (body?.createdAt !== undefined && body.updatedAt !== undefined) {
-          database.query("UPDATE account SET createdAt=?, updatedAt=? WHERE id=?").run(body.createdAt, body.updatedAt, localAccountId!);
-          const timestamps = database.query("SELECT createdAt,updatedAt FROM account WHERE id=?").get(localAccountId!);
+          database
+            .query("UPDATE account SET createdAt=?, updatedAt=? WHERE id=?")
+            .run(body.createdAt, body.updatedAt, localAccountId!);
+          const timestamps = database
+            .query("SELECT createdAt,updatedAt FROM account WHERE id=?")
+            .get(localAccountId!);
           return jsonResponse({ status: true, accountId: localAccountId, timestamps });
         }
         return jsonResponse({ status: true, accountId: localAccountId });
       }
 
       for (const [name, instance] of phoneFixture.profiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return instance.handler(request);
       }
       const setPasswordResponse = await setPasswordFixture.handle(request);
       if (setPasswordResponse) return setPasswordResponse;
       for (const [name, instance] of setPasswordFixture.profiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return instance.handler(request);
       }
       if (url.pathname === "/__test/one-tap/jwks") return googleOneTapJwks();
       if (url.pathname === "/__test/one-tap/state") return oneTapState(oneTapProfiles);
-      for (const [name,instance] of googleIdProfiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
+      for (const [name, instance] of googleIdProfiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return instance.handler(request);
       }
-      for (const [name,instance] of oneTapProfiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
+      for (const [name, instance] of oneTapProfiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return instance.handler(request);
       }
-      for (const [name,instance] of magicProfiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
+      for (const [name, instance] of magicProfiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return instance.handler(request);
       }
-      for (const [name,instance] of otpProfiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
+      for (const [name, instance] of otpProfiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+          return instance.handler(request);
       }
       for (const [path, instance] of verificationProfiles) {
         if (url.pathname.startsWith(`${path}/`)) return instance.handler(request);

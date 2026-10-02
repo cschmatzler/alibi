@@ -1,8 +1,8 @@
 import { expect } from "bun:test";
 import { createAuthClient } from "better-auth/client";
 import { adminClient, anonymousClient, usernameClient } from "better-auth/client/plugins";
-import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
+import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 function client(ctx: ScenarioContext, name: string, profile?: FixtureProfile) {
   return createAuthClient({
@@ -11,11 +11,7 @@ function client(ctx: ScenarioContext, name: string, profile?: FixtureProfile) {
     fetchOptions: { customFetchImpl: ctx.actor(name, profile).fetch },
   });
 }
-async function signup(
-  ctx: ScenarioContext,
-  name: string,
-  profile?: FixtureProfile,
-) {
+async function signup(ctx: ScenarioContext, name: string, profile?: FixtureProfile) {
   const current = client(ctx, name, profile),
     email = ctx.uniqueEmail(name);
   const result = await current.signUp.email({
@@ -51,11 +47,7 @@ async function state(ctx: ScenarioContext, email: string) {
     }[];
   };
 }
-async function events(
-  ctx: ScenarioContext,
-  email: string,
-  profile: FixtureProfile,
-) {
+async function events(ctx: ScenarioContext, email: string, profile: FixtureProfile) {
   const result = await ctx.rawRequest({
     path: `/__test/admin-banned-message-events?email=${encodeURIComponent(email)}&profile=${profile}`,
     method: "GET",
@@ -76,10 +68,7 @@ async function events(
     }[];
   };
 }
-for (const profile of [
-  "admin-banned-message",
-  "admin-banned-message-error",
-] as const) {
+for (const profile of ["admin-banned-message", "admin-banned-message-error"] as const) {
   compatScenario(
     `admin awaited ${profile} uses hidden stored owner data and skips unauthorized expired and unbanned requests`,
     async (ctx) => {
@@ -158,13 +147,9 @@ for (const profile of [
         });
       for (const result of [deniedSignin, deniedImpersonation]) {
         expect(result.data).toBeNull();
-        expect(result.error?.status).toBe(
-          profile === "admin-banned-message" ? 403 : 400,
-        );
+        expect(result.error?.status).toBe(profile === "admin-banned-message" ? 403 : 400);
         expect(result.error?.code).toBe(
-          profile === "admin-banned-message"
-            ? "BANNED_USER"
-            : "APPLICATION_BAN_MESSAGE_REFUSED",
+          profile === "admin-banned-message" ? "BANNED_USER" : "APPLICATION_BAN_MESSAGE_REFUSED",
         );
         expect(result.error?.message).toBe(
           profile === "admin-banned-message"
@@ -233,7 +218,8 @@ for (const profile of [
           password: "password123",
         });
         const usernameSignin = await target.client.signIn.username({
-          username: `${profile}-target`.replace("admin-banned-message", "ban").replaceAll("-", "_"), password: "password123",
+          username: `${profile}-target`.replace("admin-banned-message", "ban").replaceAll("-", "_"),
+          password: "password123",
         });
         const impersonation = await owner.client.admin.impersonateUser({
           userId: target.userId,
@@ -262,9 +248,22 @@ for (const profile of [
         expectedFinalEvents = await events(ctx, target.email, profile);
         expect(expectedFinalEvents.events).toHaveLength(8);
         for (const event of expectedFinalEvents.events.slice(4))
-          expect(event).toMatchObject({ userId: target.userId, banReason: "ordinary callback failure" });
-        ordinaryError = { ordinaryBan, before, principalsBefore, signin, usernameSignin, impersonation, raw,
-          after, principalsAfter, events: expectedFinalEvents };
+          expect(event).toMatchObject({
+            userId: target.userId,
+            banReason: "ordinary callback failure",
+          });
+        ordinaryError = {
+          ordinaryBan,
+          before,
+          principalsBefore,
+          signin,
+          usernameSignin,
+          impersonation,
+          raw,
+          after,
+          principalsAfter,
+          events: expectedFinalEvents,
+        };
       }
       const expiredBan = await owner.client.admin.banUser({
         userId: target.userId,
@@ -368,10 +367,16 @@ for (const profile of [
         replacementEvents,
       };
     },
-    ["POST /admin/ban-user", "POST /admin/set-role", "POST /admin/impersonate-user", "POST /sign-in/email", "POST /sign-in/username", "POST /sign-in/anonymous"],
+    [
+      "POST /admin/ban-user",
+      "POST /admin/set-role",
+      "POST /admin/impersonate-user",
+      "POST /sign-in/email",
+      "POST /sign-in/username",
+      "POST /sign-in/anonymous",
+    ],
   );
 }
-
 
 compatScenario(
   "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
@@ -381,9 +386,14 @@ compatScenario(
     const owner = await signup(ctx, "composition-owner", ordinaryProfile);
     const target = await signup(ctx, "composition-target", ordinaryProfile);
     const foreign = await signup(ctx, "composition-foreign", ordinaryProfile);
-    const ban = await owner.client.admin.banUser({ userId: target.userId, banReason: "ordinary callback failure" });
+    const ban = await owner.client.admin.banUser({
+      userId: target.userId,
+      banReason: "ordinary callback failure",
+    });
     expect(ban.error).toBeNull();
-    const before = await Promise.all([owner, target, foreign].map(({ email }) => state(ctx, email)));
+    const before = await Promise.all(
+      [owner, target, foreign].map(({ email }) => state(ctx, email)),
+    );
     const anonymousActor = client(ctx, "callback-anonymous", profile);
     const anonymous = await anonymousActor.signIn.anonymous();
     expect(anonymous.error).toBeNull();
@@ -392,8 +402,14 @@ compatScenario(
     const anonymousBefore = await ctx.readUserState({ userId: anonymous.data.user.id });
     const cachedBefore = await anonymousActor.getSession({ query: { disableCookieCache: true } });
     expect(cachedBefore.data?.session.token).toBe(anonymous.data.token);
-    const upgrade = await anonymousActor.signIn.email({ email: target.email, password: "password123" });
-    const username = await client(ctx, "callback-username", profile).signIn.username({ username: "composition_target", password: "password123" });
+    const upgrade = await anonymousActor.signIn.email({
+      email: target.email,
+      password: "password123",
+    });
+    const username = await client(ctx, "callback-username", profile).signIn.username({
+      username: "composition_target",
+      password: "password123",
+    });
     const impersonator = createAuthClient({
       baseURL: `${ctx.baseURL}${authProfilePath(profile)}`,
       plugins: [adminClient()],
@@ -416,10 +432,34 @@ compatScenario(
     expect(after).toEqual(before);
     const receipts = await events(ctx, target.email, profile);
     expect(receipts.events).toHaveLength(3);
-    for (const event of receipts.events) expect(event).toMatchObject({ userId: target.userId, banReason: "ordinary callback failure" });
-    return { owner: owner.result, target: target.result, foreign: foreign.result, ban, before,
-      anonymous, anonymousBefore, cachedBefore, upgrade, username, impersonation,
-      anonymousAfter, cachedAfter, after, receipts };
+    for (const event of receipts.events)
+      expect(event).toMatchObject({
+        userId: target.userId,
+        banReason: "ordinary callback failure",
+      });
+    return {
+      owner: owner.result,
+      target: target.result,
+      foreign: foreign.result,
+      ban,
+      before,
+      anonymous,
+      anonymousBefore,
+      cachedBefore,
+      upgrade,
+      username,
+      impersonation,
+      anonymousAfter,
+      cachedAfter,
+      after,
+      receipts,
+    };
   },
-  ["POST /sign-in/email", "POST /sign-in/username", "POST /admin/impersonate-user", "POST /sign-in/anonymous", "GET /get-session"],
+  [
+    "POST /sign-in/email",
+    "POST /sign-in/username",
+    "POST /admin/impersonate-user",
+    "POST /sign-in/anonymous",
+    "GET /get-session",
+  ],
 );

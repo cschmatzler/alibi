@@ -233,33 +233,36 @@ compatScenario("api-key delete accepts keyId and returns success", async (ctx) =
 // Expiration
 // =========================================================================
 
-compatScenario("api-key create with expiresIn sets expiresAt approximately correct", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-expires");
+compatScenario(
+  "api-key create with expiresIn sets expiresAt approximately correct",
+  async (ctx) => {
+    const { primary } = await signUpAndGetHeaders(ctx, "api-key-expires");
 
-  // expiresIn is in seconds in TS — 86400 = 1 day
-  const res = await ctx.rawRequest({
-    actor: "primary",
-    path: "/api/auth/api-key/create",
-    method: "POST",
-    json: {
-      expiresIn: 86400,
-    },
-  });
+    // expiresIn is in seconds in TS — 86400 = 1 day
+    const res = await ctx.rawRequest({
+      actor: "primary",
+      path: "/api/auth/api-key/create",
+      method: "POST",
+      json: {
+        expiresIn: 86400,
+      },
+    });
 
-  const body = asRecord(res.body);
-  const expiresAt = body.expiresAt as string;
+    const body = asRecord(res.body);
+    const expiresAt = body.expiresAt as string;
 
-  // Verify expiresAt is roughly 1 day from now (within 10 second tolerance)
-  const expiresMs = new Date(expiresAt).getTime();
-  const expectedMs = Date.now() + 86400 * 1000;
-  const diffSeconds = Math.abs(expiresMs - expectedMs) / 1000;
+    // Verify expiresAt is roughly 1 day from now (within 10 second tolerance)
+    const expiresMs = new Date(expiresAt).getTime();
+    const expectedMs = Date.now() + 86400 * 1000;
+    const diffSeconds = Math.abs(expiresMs - expectedMs) / 1000;
 
-  return {
-    status: res.status,
-    hasExpiresAt: typeof expiresAt === "string",
-    expiresAtRoughlyOneDayFromNow: diffSeconds < 10,
-  };
-});
+    return {
+      status: res.status,
+      hasExpiresAt: typeof expiresAt === "string",
+      expiresAtRoughlyOneDayFromNow: diffSeconds < 10,
+    };
+  },
+);
 
 // =========================================================================
 // Edge cases — default values

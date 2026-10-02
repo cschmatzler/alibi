@@ -2,8 +2,8 @@ import { expect } from "bun:test";
 import { createAuthClient } from "better-auth/client";
 import { adminClient } from "better-auth/client/plugins";
 import { z } from "zod";
-import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
+import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 function client(ctx: ScenarioContext, name: string, profile?: FixtureProfile) {
   return createAuthClient({
@@ -12,11 +12,7 @@ function client(ctx: ScenarioContext, name: string, profile?: FixtureProfile) {
     fetchOptions: { customFetchImpl: ctx.actor(name, profile).fetch },
   });
 }
-async function signup(
-  ctx: ScenarioContext,
-  name: string,
-  profile?: FixtureProfile,
-) {
+async function signup(ctx: ScenarioContext, name: string, profile?: FixtureProfile) {
   const current = client(ctx, name, profile),
     email = ctx.uniqueEmail(name);
   const result = await current.signUp.email({
@@ -106,9 +102,7 @@ compatScenario(
     const targetAfter = await state(ctx, target.email),
       session = row
         .parse(targetAfter)
-        .sessions.find(
-          (item) => item.token === impersonate.data?.session.token,
-        );
+        .sessions.find((item) => item.token === impersonate.data?.session.token);
     if (!session) throw new Error("persisted impersonation required");
     expect(session).toMatchObject({
       userId: target.userId,
@@ -138,7 +132,12 @@ compatScenario(
       foreignAfter,
     };
   },
-  ["POST /admin/ban-user", "POST /admin/unban-user", "POST /admin/impersonate-user", "POST /sign-in/email"],
+  [
+    "POST /admin/ban-user",
+    "POST /admin/unban-user",
+    "POST /admin/impersonate-user",
+    "POST /sign-in/email",
+  ],
 );
 
 compatScenario(
@@ -262,14 +261,9 @@ compatScenario(
         token: impersonate.data.session.token,
       });
       if (!sessions[0]) throw new Error("stored issued session required");
-      expiry(
-        sessions[0].expiresAt,
-        sessions[0].createdAt,
-        sessionDuration * 1000,
-      );
+      expiry(sessions[0].expiresAt, sessions[0].createdAt, sessionDuration * 1000);
       const current = await owner.client.getSession();
-      if (sessionDuration > 0)
-        expect(current.data?.user.id).toBe(target.userId);
+      if (sessionDuration > 0) expect(current.data?.user.id).toBe(target.userId);
       else expect(current.data).toBeNull();
       const afterCurrent = await state(ctx, target.email),
         ownerAfter = await state(ctx, owner.email),
@@ -302,11 +296,7 @@ compatScenario(
 compatScenario(
   "admin invalid configured dates fail before writes without changing issued owner or target sessions",
   async (ctx) => {
-    const owner = await signup(
-        ctx,
-        "invalid-date-owner",
-        "admin-duration-invalid",
-      ),
+    const owner = await signup(ctx, "invalid-date-owner", "admin-duration-invalid"),
       target = await signup(ctx, "invalid-date-target"),
       foreign = await signup(ctx, "invalid-date-foreign");
     const before = await state(ctx, target.email),
@@ -336,17 +326,11 @@ compatScenario(
       targetCurrent = await target.client.getSession(),
       foreignCurrent = await foreign.client.getSession();
     expect(ownerCurrent.data?.user.id).toBe(owner.userId);
-    expect(ownerCurrent.data?.session.token).toBe(
-      owner.result.data?.token ?? undefined,
-    );
+    expect(ownerCurrent.data?.session.token).toBe(owner.result.data?.token ?? undefined);
     expect(targetCurrent.data?.user.id).toBe(target.userId);
-    expect(targetCurrent.data?.session.token).toBe(
-      target.result.data?.token ?? undefined,
-    );
+    expect(targetCurrent.data?.session.token).toBe(target.result.data?.token ?? undefined);
     expect(foreignCurrent.data?.user.id).toBe(foreign.userId);
-    expect(foreignCurrent.data?.session.token).toBe(
-      foreign.result.data?.token ?? undefined,
-    );
+    expect(foreignCurrent.data?.session.token).toBe(foreign.result.data?.token ?? undefined);
     const ownerAfter = await state(ctx, owner.email),
       foreignAfter = await state(ctx, foreign.email);
     expect(ownerAfter).toEqual(ownerBefore);
@@ -377,11 +361,7 @@ compatScenario(
 compatScenario(
   "admin date mapping preserves genuine application hook API errors and unchanged owned state",
   async (ctx) => {
-    const owner = await signup(
-        ctx,
-        "date-error-owner",
-        "admin-duration-hook-error",
-      ),
+    const owner = await signup(ctx, "date-error-owner", "admin-duration-hook-error"),
       target = await signup(ctx, "date-error-target"),
       foreign = await signup(ctx, "date-error-foreign");
     const before = await state(ctx, target.email),

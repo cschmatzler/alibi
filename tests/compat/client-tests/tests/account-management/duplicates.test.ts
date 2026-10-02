@@ -1,6 +1,7 @@
 import { expect } from "bun:test";
-import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { authProfilePath } from "../../support/profiles";
+import { compatScenario, type ScenarioContext } from "../../support/scenario";
+
 type Row = Record<string, unknown>;
 type State = {
   users: Row[];
@@ -55,10 +56,7 @@ function rows(value: State) {
   const { receipts, ...stored } = value;
   return stored;
 }
-async function complete(
-  actor: ReturnType<ScenarioContext["actor"]>,
-  url: string,
-) {
+async function complete(actor: ReturnType<ScenarioContext["actor"]>, url: string) {
   const issued = new URL(url).searchParams.get("state");
   expect(issued).toBeTruthy();
   const response = await actor.fetch(
@@ -109,8 +107,7 @@ async function setup(ctx: ScenarioContext) {
   expect(linked).toMatchObject({ status: 302, location: "/duplicate-done" });
   const before = await state(ctx),
     account = before.accounts.find(
-      (row) =>
-        row.userId === signup.data!.user.id && row.providerId === "gitlab",
+      (row) => row.userId === signup.data!.user.id && row.providerId === "gitlab",
     )!;
   expect(account).toBeTruthy();
   return {
@@ -146,23 +143,17 @@ for (const ownership of ["same", "foreign"] as const)
         method: "POST",
         json: {
           accountId: s.account.id,
-          userId:
-            ownership === "same"
-              ? s.signup.data!.user.id
-              : s.other.data!.user.id,
+          userId: ownership === "same" ? s.signup.data!.user.id : s.other.data!.user.id,
         },
       });
       expect(duplicate.status).toBe(200);
       const duplicateId = (duplicate.body as Row).accountId;
       const before = await state(ctx);
       expect(before.accounts).toHaveLength(s.before.accounts.length + 1);
-      expect(
-        before.accounts.find((row) => row.id === duplicateId),
-      ).toMatchObject({
+      expect(before.accounts.find((row) => row.id === duplicateId)).toMatchObject({
         providerId: "gitlab",
         accountId: s.account.accountId,
-        userId:
-          ownership === "same" ? s.signup.data!.user.id : s.other.data!.user.id,
+        userId: ownership === "same" ? s.signup.data!.user.id : s.other.data!.user.id,
       });
       const listed = await s.owner.client.listAccounts();
       expect(listed.error).toBeNull();
@@ -236,9 +227,7 @@ for (const ownership of ["same", "foreign"] as const)
       expect(refreshed.accounts.find((row) => row.id === duplicateId)).toEqual(
         before.accounts.find((row) => row.id === duplicateId),
       );
-      expect(
-        refreshed.accounts.find((row) => row.id === s.account.id),
-      ).toMatchObject({
+      expect(refreshed.accounts.find((row) => row.id === s.account.id)).toMatchObject({
         accessToken: "fixture-gitlab-refreshed-access",
         refreshToken: "fixture-gitlab-refreshed-refresh",
       });
@@ -249,15 +238,11 @@ for (const ownership of ["same", "foreign"] as const)
       });
       expect(unlink.data).toEqual({ status: true });
       const after = await state(ctx);
-      expect(after.accounts).toEqual(
-        refreshed.accounts.filter((row) => row.id !== s.account.id),
-      );
+      expect(after.accounts).toEqual(refreshed.accounts.filter((row) => row.id !== s.account.id));
       expect(after.users).toEqual(before.users);
       expect(after.sessions).toEqual(before.sessions);
       if (ownership === "same")
-        expect(
-          await ctx.readUserState({ userId: s.other.data!.user.id }),
-        ).toEqual(foreignBefore);
+        expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(foreignBefore);
       return {
         signup: ctx.snapshot(s.signup),
         other: ctx.snapshot(s.other),
@@ -318,9 +303,7 @@ compatScenario(
     expect(other.error).toBeNull();
     const before = await state(ctx),
       credential = before.accounts.find(
-        (row) =>
-          row.userId === signup.data!.user.id &&
-          row.providerId === "credential",
+        (row) => row.userId === signup.data!.user.id && row.providerId === "credential",
       )!,
       foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
     const duplicated = await ctx.rawRequest({
@@ -341,33 +324,24 @@ compatScenario(
       });
     expect(cleared.status).toBe(200);
     const prepared = await state(ctx);
-    expect(
-      prepared.accounts.find((row) => row.id === credential.id)?.password,
-    ).toBeNull();
-    expect(
-      prepared.accounts.find((row) => row.id === duplicateId)?.password,
-    ).toBe(credential.password);
+    expect(prepared.accounts.find((row) => row.id === credential.id)?.password).toBeNull();
+    expect(prepared.accounts.find((row) => row.id === duplicateId)?.password).toBe(
+      credential.password,
+    );
     const listed = await owner.client.listAccounts();
     expect(listed.error).toBeNull();
-    expect(listed.data!.map((row) => row.id)).toEqual([
-      String(credential.id),
-      String(duplicateId),
-    ]);
-    const denied = await ctx
-      .actor("credential-login", fixture)
-      .client.signIn.email({
-        email: ctx.uniqueEmail("owner"),
-        password: "password123",
-      });
+    expect(listed.data!.map((row) => row.id)).toEqual([String(credential.id), String(duplicateId)]);
+    const denied = await ctx.actor("credential-login", fixture).client.signIn.email({
+      email: ctx.uniqueEmail("owner"),
+      password: "password123",
+    });
     expect(denied.error).toMatchObject({
       status: 401,
       code: "INVALID_EMAIL_OR_PASSWORD",
     });
     const afterDenied = await state(ctx);
     expect(rows(afterDenied)).toEqual(rows(prepared));
-    expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(
-      foreignBefore,
-    );
+    expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
     const deleteDenied = await owner.client.deleteUser({
       password: "password123",
     });
@@ -376,27 +350,27 @@ compatScenario(
       code: "CREDENTIAL_ACCOUNT_NOT_FOUND",
     });
     expect(rows(await state(ctx))).toEqual(rows(prepared));
-    const foreignCredential = prepared.accounts.find(row => row.userId === other.data!.user.id && row.providerId === "credential")!;
-    const foreignUnlink = await owner.client.unlinkAccount({accountId:String(foreignCredential.id)});
-    expect(foreignUnlink.error).toMatchObject({status:400,code:"ACCOUNT_NOT_FOUND"});
+    const foreignCredential = prepared.accounts.find(
+      (row) => row.userId === other.data!.user.id && row.providerId === "credential",
+    )!;
+    const foreignUnlink = await owner.client.unlinkAccount({
+      accountId: String(foreignCredential.id),
+    });
+    expect(foreignUnlink.error).toMatchObject({ status: 400, code: "ACCOUNT_NOT_FOUND" });
     expect(rows(await state(ctx))).toEqual(rows(prepared));
-    expect(await ctx.readUserState({userId:other.data!.user.id})).toEqual(foreignBefore);
+    expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
     const removed = await owner.client.unlinkAccount({
       accountId: String(credential.id),
     });
     expect(removed.data).toEqual({ status: true });
-    const restored = await ctx
-      .actor("restored-login", fixture)
-      .client.signIn.email({
-        email: ctx.uniqueEmail("owner"),
-        password: "password123",
-      });
+    const restored = await ctx.actor("restored-login", fixture).client.signIn.email({
+      email: ctx.uniqueEmail("owner"),
+      password: "password123",
+    });
     expect(restored.error).toBeNull();
     expect(restored.data?.user.id).toBe(signup.data!.user.id);
     const after = await state(ctx);
-    expect(after.accounts).toEqual(
-      prepared.accounts.filter((row) => row.id !== credential.id),
-    );
+    expect(after.accounts).toEqual(prepared.accounts.filter((row) => row.id !== credential.id));
     expect(after.users).toEqual(before.users);
     expect(after.sessions).toHaveLength(before.sessions.length + 1);
     return {
@@ -424,8 +398,7 @@ compatScenario(
 compatScenario(
   "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner",
   async (ctx) => {
-    const { credential, state: googleState } =
-      await import("../one-tap/helpers");
+    const { credential, state: googleState } = await import("../one-tap/helpers");
     const { decodeJwt, decodeProtectedHeader } = await import("jose");
     const owner = ctx.actor("owner", "google-id-default"),
       foreign = ctx.actor("foreign", "google-id-default");

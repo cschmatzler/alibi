@@ -2,13 +2,13 @@ import { mkdir, open, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import {
-  CLIENT_ROOT,
-  REFERENCE_ROOT,
-  REPO_ROOT,
   activeChildren,
+  CLIENT_ROOT,
   command,
   harnessDigest,
   localURL,
+  REFERENCE_ROOT,
+  REPO_ROOT,
   readJSON,
   spawnOwned,
   writeJSON,
@@ -31,15 +31,10 @@ function freePort(): number {
   server.stop(true);
   return port;
 }
-async function waitUntil(
-  check: () => Promise<boolean>,
-  exited: () => boolean,
-  label: string,
-) {
+async function waitUntil(check: () => Promise<boolean>, exited: () => boolean, label: string) {
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
-    if (exited())
-      throw new Error(`${label} exited before readiness; see its fixture log`);
+    if (exited()) throw new Error(`${label} exited before readiness; see its fixture log`);
     if (await check()) return;
     await Bun.sleep(100);
   }
@@ -61,11 +56,7 @@ export async function startFixture(options: {
     ? join(options.directory, `${options.role}-bridge.json`)
     : undefined;
   if (bridge) await rm(bridge, { force: true });
-  const log = await open(
-    join(options.directory, `${options.role}-fixture.log`),
-    "w",
-    0o600,
-  );
+  const log = await open(join(options.directory, `${options.role}-fixture.log`), "w", 0o600);
   const child = spawnOwned(
     options.rustExecutable
       ? [options.rustExecutable]
@@ -73,9 +64,7 @@ export async function startFixture(options: {
           process.execPath,
           "run",
           ...(options.instrument
-            ? [
-                `--preload=${join(CLIENT_ROOT, "support/assurance/coverage-preload.ts")}`,
-              ]
+            ? [`--preload=${join(CLIENT_ROOT, "support/assurance/coverage-preload.ts")}`]
             : []),
           "server.ts",
         ],
@@ -146,8 +135,7 @@ export async function startFixture(options: {
 }
 
 export async function rustExecutable(): Promise<string> {
-  if (process.env.COMPAT_RUST_EXECUTABLE)
-    return process.env.COMPAT_RUST_EXECUTABLE;
+  if (process.env.COMPAT_RUST_EXECUTABLE) return process.env.COMPAT_RUST_EXECUTABLE;
   const build = await command(
     [
       "cargo",
@@ -159,15 +147,11 @@ export async function rustExecutable(): Promise<string> {
     ],
     { cwd: REPO_ROOT, timeoutMs: 1_800_000 },
   );
-  if (build.code !== 0)
-    throw new Error(`Rust fixture build failed:\n${build.stderr}`);
+  if (build.code !== 0) throw new Error(`Rust fixture build failed:\n${build.stderr}`);
   for (const line of build.stdout.split("\n")) {
     try {
       const message = JSON.parse(line);
-      if (
-        message.target?.name === "compat-rust-server" &&
-        typeof message.executable === "string"
-      )
+      if (message.target?.name === "compat-rust-server" && typeof message.executable === "string")
         return message.executable;
     } catch {
       /* Cargo diagnostic text is not an artifact. */
@@ -247,42 +231,34 @@ export async function runSuite(options: {
   const eventsPath = join(options.directory, "events.jsonl");
   const before = await harnessDigest();
   await Bun.write(eventsPath, "");
-  const output = await command(
-    [process.execPath, "test", ...options.paths, "--timeout", "60000"],
-    {
-      timeoutMs: options.timeoutMs ?? 1_800_000,
-      env: {
-        COMPAT_ASSURANCE_WIRE_MUTATION: undefined,
-        COMPAT_ASSURANCE_DISCOVER_WIRE: undefined,
-        COMPAT_ASSURANCE_REPLAY: undefined,
-        ...options.env,
-        AUTH_BASE_URL_TS: localURL(options.left.url).origin,
-        AUTH_BASE_URL_RUST: localURL(options.right.url).origin,
-        COMPAT_COVERAGE: "0",
-        BETTER_AUTH_UPDATE_CAPABILITIES: undefined,
-        COMPAT_ASSURANCE_RUN_ID: options.runId,
-        COMPAT_ASSURANCE_EVENTS: eventsPath,
-        COMPAT_ASSURANCE_LEFT_BRIDGE: options.left.bridge,
-        COMPAT_ASSURANCE_RIGHT_BRIDGE: options.right.bridge,
-      },
+  const output = await command([process.execPath, "test", ...options.paths, "--timeout", "60000"], {
+    timeoutMs: options.timeoutMs ?? 1_800_000,
+    env: {
+      COMPAT_ASSURANCE_WIRE_MUTATION: undefined,
+      COMPAT_ASSURANCE_DISCOVER_WIRE: undefined,
+      COMPAT_ASSURANCE_REPLAY: undefined,
+      ...options.env,
+      AUTH_BASE_URL_TS: localURL(options.left.url).origin,
+      AUTH_BASE_URL_RUST: localURL(options.right.url).origin,
+      COMPAT_COVERAGE: "0",
+      BETTER_AUTH_UPDATE_CAPABILITIES: undefined,
+      COMPAT_ASSURANCE_RUN_ID: options.runId,
+      COMPAT_ASSURANCE_EVENTS: eventsPath,
+      COMPAT_ASSURANCE_LEFT_BRIDGE: options.left.bridge,
+      COMPAT_ASSURANCE_RIGHT_BRIDGE: options.right.bridge,
     },
-  );
-  await Bun.write(
-    join(options.directory, "suite.log"),
-    output.stdout + "\n" + output.stderr,
-  );
+  });
+  await Bun.write(join(options.directory, "suite.log"), output.stdout + "\n" + output.stderr);
   const events = (await readFile(eventsPath, "utf8"))
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line) as Record<string, unknown>);
   const errors: string[] = [];
-  if ((await harnessDigest()) !== before)
-    errors.push("Harness changed during execution");
+  if ((await harnessDigest()) !== before) errors.push("Harness changed during execution");
   const registered = events
     .filter((event) => event.event === "registered")
     .map((event) => String(event.name));
-  if (!registered.length)
-    errors.push("No compatibility scenarios were registered");
+  if (!registered.length) errors.push("No compatibility scenarios were registered");
   if (new Set(registered).size !== registered.length)
     errors.push("Duplicate compatibility scenario names");
   if (events.some((event) => event.runId !== options.runId))
@@ -297,22 +273,15 @@ export async function runSuite(options: {
     outcomes.some((outcome) => !registered.includes(outcome.name))
   )
     errors.push("Scenario execution did not match the registered suite");
-  const surfaceIds = new Set(
-    options.inventory.surfaces.map((surface) => surface.id),
-  );
-  const sourceIds = new Set(
-    options.inventory.sources.map((source) => source.id),
-  );
+  const surfaceIds = new Set(options.inventory.surfaces.map((surface) => surface.id));
+  const sourceIds = new Set(options.inventory.sources.map((source) => source.id));
   for (const outcome of outcomes)
     for (const role of ["TS", "Rust"] as const) {
-      const enabled =
-        role === "TS" ? !!options.left.bridge : !!options.right.bridge;
+      const enabled = role === "TS" ? !!options.left.bridge : !!options.right.bridge;
       if (!enabled) continue;
       const raw = outcome.coverage[role];
       if (!raw) {
-        errors.push(
-          `${outcome.name}: missing ${role} coverage acknowledgement`,
-        );
+        errors.push(`${outcome.name}: missing ${role} coverage acknowledgement`);
         continue;
       }
       const parsed = coverageSchema.safeParse(raw);
@@ -330,20 +299,12 @@ export async function runSuite(options: {
         coverage.loaded.some((id) => !sourceIds.has(id))
       )
         errors.push(`${outcome.name}: wrong reference coverage provenance`);
-      if (
-        !coverage.mutation &&
-        Object.keys(coverage.hits).some((id) => !surfaceIds.has(id))
-      )
+      if (!coverage.mutation && Object.keys(coverage.hits).some((id) => !surfaceIds.has(id)))
         errors.push(`${outcome.name}: unrecognized coverage anchor`);
     }
   if (output.timedOut)
-    errors.push(
-      "Suite timed out; a timeout is never evidence of mutation detection",
-    );
-  if (
-    output.code !== 0 &&
-    outcomes.every((outcome) => outcome.status === "passed")
-  )
+    errors.push("Suite timed out; a timeout is never evidence of mutation detection");
+  if (output.code !== 0 && outcomes.every((outcome) => outcome.status === "passed"))
     errors.push("Runner failed outside recorded compatibility scenarios");
   const result: SuiteResult = {
     runId: options.runId,

@@ -1,9 +1,9 @@
 import { expect } from "bun:test";
 import { createHash } from "node:crypto";
-import { createAuthClient } from "better-auth/client";
 import { apiKeyClient } from "@better-auth/api-key/client";
-import { compatScenario, type ScenarioContext } from "../../support/scenario";
+import { createAuthClient } from "better-auth/client";
 import { authProfilePath } from "../../support/profiles";
+import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 type Data = Record<string, any>;
 function object(value: unknown): Data {
@@ -128,7 +128,7 @@ compatScenario(
     const deniedRead = await foreign.apiKey.get({
       query: { id: key.id, configId: "generated" },
     });
-    expect(deniedRead.error).toMatchObject({status:404,code:"KEY_NOT_FOUND"});
+    expect(deniedRead.error).toMatchObject({ status: 404, code: "KEY_NOT_FOUND" });
     expect(await events(ctx)).toEqual([]);
     const quota = object(
       await control(ctx, "create", {
@@ -143,12 +143,8 @@ compatScenario(
     const overrideEvents = await events(ctx);
     generatedEvents(overrideEvents, quota, false);
     const initial = await state(ctx);
-    expect(row(initial, key).key).toBe(
-      createHash("sha256").update(key.key).digest("base64url"),
-    );
-    expect(row(initial, key).permissions).toBe(
-      JSON.stringify(defaults("generated")),
-    );
+    expect(row(initial, key).key).toBe(createHash("sha256").update(key.key).digest("base64url"));
+    expect(row(initial, key).permissions).toBe(JSON.stringify(defaults("generated")));
     expect(row(initial, foreignKey).permissions).toBe(
       JSON.stringify(defaults("generated", "foreign")),
     );
@@ -232,9 +228,7 @@ compatScenario(
     expect(readback.error).toBeNull();
     expect(readback.data!.permissions).toEqual(literal.permissions);
     const final = await state(ctx);
-    expect(row(final, unicode).permissions).toBe(
-      '{"$serde_json::private::RawValue":["literal"]}',
-    );
+    expect(row(final, unicode).permissions).toBe('{"$serde_json::private::RawValue":["literal"]}');
     await control(ctx, "mode", { mode: "normal" });
     const staticKey = await owner.apiKey.create({
       configId: "static",
@@ -330,9 +324,7 @@ compatScenario(
         });
       if (mode.endsWith("api"))
         expect(result.error).toMatchObject({
-          code: mode.startsWith("generator")
-            ? "GENERATOR_DENIED"
-            : "PERMISSIONS_DENIED",
+          code: mode.startsWith("generator") ? "GENERATOR_DENIED" : "PERMISSIONS_DENIED",
           message: mode.startsWith("generator")
             ? "Application generator denied"
             : "Application permissions denied",
@@ -441,8 +433,7 @@ compatScenario(
     const callbackEvents = await events(ctx);
     const initial = await state(ctx);
     expect(initial).toHaveLength(4);
-    for (const key of keys.slice(0, 2))
-      await control(ctx, "expire", { keyId: key.id });
+    for (const key of keys.slice(0, 2)) await control(ctx, "expire", { keyId: key.id });
     const expired = await state(ctx);
     expect(row(expired, keys[0]!).expiresAt).toBe("1970-01-01T00:00:00.000Z");
     expect(row(expired, keys[1]!).expiresAt).toBe("1970-01-01T00:00:00.000Z");
@@ -452,9 +443,7 @@ compatScenario(
     expect(callbackEvents).toHaveLength(8);
     const cleaned = await state(ctx);
     expect(cleaned).toHaveLength(2);
-    expect(cleaned.map((row) => row.id)).toEqual(
-      keys.slice(2).map((key) => key.id),
-    );
+    expect(cleaned.map((row) => row.id)).toEqual(keys.slice(2).map((key) => key.id));
     expect(row(cleaned, keys[2]!)).toEqual(row(expired, keys[2]!));
     expect(row(cleaned, keys[3]!)).toEqual(row(expired, keys[3]!));
     const missing = await owner.apiKey.get({

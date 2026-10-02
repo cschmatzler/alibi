@@ -2,25 +2,16 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { command, digest, upstreamPin } from "../support/assurance/common";
-import { writeJSON } from "../support/assurance/common";
+import { command, digest, upstreamPin, writeJSON } from "../support/assurance/common";
 import { CoverageScope } from "../support/assurance/coverage-scope";
+import { generateCase, generatedCaseSchema, reduceActions } from "../support/assurance/generated";
 import {
-  generateCase,
-  generatedCaseSchema,
-  reduceActions,
-} from "../support/assurance/generated";
-import {
-  runtimeEvidence,
-  sourceSurfaces,
   type Inventory,
+  runtimeEvidence,
   type Source,
+  sourceSurfaces,
 } from "../support/assurance/inventory";
-import {
-  classifyMutation,
-  type Campaign,
-  type Mutation,
-} from "../support/assurance/mutations";
+import { type Campaign, classifyMutation, type Mutation } from "../support/assurance/mutations";
 import type { SuiteResult } from "../support/assurance/processes";
 import { assuranceReport } from "../support/assurance/report";
 
@@ -38,34 +29,21 @@ test("upstream inventory discovers undeclared options, test templates and unmeas
     sha256: digest(text),
   };
   const inventory = sourceSurfaces(source, text);
-  expect(
-    inventory.filter((item) => item.kind === "option").map((item) => item.name),
-  ).toEqual([
+  expect(inventory.filter((item) => item.kind === "option").map((item) => item.name)).toEqual([
     "UnseenOptions.enabled",
     "UnseenOptions.nested",
     "UnseenOptions.nested.quota",
     "UnseenOptions.callback",
   ]);
   expect(
-    inventory
-      .filter((item) => item.kind === "upstream-test")
-      .map((item) => item.name),
-  ).toEqual([
-    "fresh upstream behavior > boundary %s",
-    "fresh upstream behavior > not ported",
-  ]);
+    inventory.filter((item) => item.kind === "upstream-test").map((item) => item.name),
+  ).toEqual(["fresh upstream behavior > boundary %s", "fresh upstream behavior > not ported"]);
   const runtime = runtimeEvidence(
     { ...source, path: "unloaded.mjs" },
     "export function decision(x) { if (x) return x?.field; return null; }",
   );
-  expect(
-    runtime.surfaces.filter((surface) => surface.kind === "branch"),
-  ).toHaveLength(2);
-  expect(
-    runtime.surfaces.some(
-      (surface) => surface.kind === "unmeasured-control-flow",
-    ),
-  ).toBe(true);
+  expect(runtime.surfaces.filter((surface) => surface.kind === "branch")).toHaveLength(2);
+  expect(runtime.surfaces.some((surface) => surface.kind === "unmeasured-control-flow")).toBe(true);
 });
 
 function suite(): SuiteResult {
@@ -122,9 +100,7 @@ test("mutation detection requires a reached behavioral failure and clean matchin
     failure: "comparison",
     coverage: baseline.outcomes[0]!.coverage,
   };
-  candidate.wireReceipts = [
-    { id: mutation.id, scenario: "owner", changed: true },
-  ];
+  candidate.wireReceipts = [{ id: mutation.id, scenario: "owner", changed: true }];
   expect(classifyMutation(mutation, baseline, candidate).status).toBe("killed");
   for (const change of [
     (value: SuiteResult) => {
@@ -152,31 +128,19 @@ test("mutation detection requires a reached behavioral failure and clean matchin
       value.outcomes[0]!.phase = "TS";
     },
     (value: SuiteResult) => {
-      value.wireReceipts = [
-        { id: mutation.id, scenario: "unrelated", changed: true },
-      ];
+      value.wireReceipts = [{ id: mutation.id, scenario: "unrelated", changed: true }];
     },
   ]) {
     const invalid = structuredClone(candidate);
     change(invalid);
-    expect(classifyMutation(mutation, baseline, invalid).status).toBe(
-      "inconclusive",
-    );
+    expect(classifyMutation(mutation, baseline, invalid).status).toBe("inconclusive");
   }
   const survivor = suite();
   survivor.wireReceipts = candidate.wireReceipts;
-  expect(classifyMutation(mutation, baseline, survivor).status).toBe(
-    "survived",
-  );
-  survivor.wireReceipts = [
-    { id: mutation.id, scenario: "owner", changed: false },
-  ];
-  expect(classifyMutation(mutation, baseline, survivor).status).toBe(
-    "no-change",
-  );
-  expect(classifyMutation(mutation, baseline, suite()).status).toBe(
-    "not-reached",
-  );
+  expect(classifyMutation(mutation, baseline, survivor).status).toBe("survived");
+  survivor.wireReceipts = [{ id: mutation.id, scenario: "owner", changed: false }];
+  expect(classifyMutation(mutation, baseline, survivor).status).toBe("no-change");
+  expect(classifyMutation(mutation, baseline, suite()).status).toBe("not-reached");
 
   const sourceMutation: Mutation = {
     id: "loaded#omit-effect:1:2",
@@ -197,9 +161,7 @@ test("mutation detection requires a reached behavioral failure and clean matchin
     mutation: sourceMutation.id,
     mutationHits: 1,
   };
-  expect(
-    classifyMutation(sourceMutation, baseline, sourceCandidate).status,
-  ).toBe("killed");
+  expect(classifyMutation(sourceMutation, baseline, sourceCandidate).status).toBe("killed");
   for (const change of [
     (value: SuiteResult) => {
       delete value.outcomes[0]!.coverage.Rust;
@@ -222,9 +184,7 @@ test("mutation detection requires a reached behavioral failure and clean matchin
   ]) {
     const invalid = structuredClone(sourceCandidate);
     change(invalid);
-    expect(classifyMutation(sourceMutation, baseline, invalid).status).toBe(
-      "inconclusive",
-    );
+    expect(classifyMutation(sourceMutation, baseline, invalid).status).toBe("inconclusive");
   }
 });
 
@@ -284,9 +244,7 @@ test("coverage reports retain unloaded branches and new upstream obligations, an
       {
         id: "revocation",
         claim: "Revocation removes the persisted session.",
-        upstream: [
-          { source: "loaded", kind: "option", name: "ExistingOptions.revoke" },
-        ],
+        upstream: [{ source: "loaded", kind: "option", name: "ExistingOptions.revoke" }],
         scenarios: ["owner"],
         mutations: [sourceMutation.id],
       },
@@ -334,8 +292,7 @@ test("coverage reports retain unloaded branches and new upstream obligations, an
     notRun: [],
     errors: [],
   };
-  const fresh = () =>
-    structuredClone({ inventory, policy, passing, campaign, controls });
+  const fresh = () => structuredClone({ inventory, policy, passing, campaign, controls });
   const report = (fixture = fresh()) =>
     assuranceReport(
       fixture.inventory,
@@ -353,9 +310,9 @@ test("coverage reports retain unloaded branches and new upstream obligations, an
   expect(complete.branches).toEqual({ total: 1, reached: 1, missing: [] });
 
   const controlError = "Missing, stale or failing harness negative controls";
-  expect(
-    assuranceReport(inventory, policy, passing, campaign, "parity").errors,
-  ).toContain(controlError);
+  expect(assuranceReport(inventory, policy, passing, campaign, "parity").errors).toContain(
+    controlError,
+  );
   for (const invalid of [
     { ...controls, runId: "older-run" },
     { ...controls, harnessDigest: "edited-checker" },
@@ -363,8 +320,7 @@ test("coverage reports retain unloaded branches and new upstream obligations, an
     { ...controls, timedOut: true },
   ]) {
     expect(
-      assuranceReport(inventory, policy, passing, campaign, "parity", invalid)
-        .errors,
+      assuranceReport(inventory, policy, passing, campaign, "parity", invalid).errors,
     ).toContain(controlError);
   }
 
@@ -444,9 +400,9 @@ test("coverage reports retain unloaded branches and new upstream obligations, an
 
 test("generated logs replay exactly and reduction preserves the failure prerequisites", async () => {
   const generated = generateCase(42, 20);
-  expect(
-    generatedCaseSchema.parse(JSON.parse(JSON.stringify(generated))),
-  ).toEqual(generateCase(42, 20));
+  expect(generatedCaseSchema.parse(JSON.parse(JSON.stringify(generated)))).toEqual(
+    generateCase(42, 20),
+  );
   expect(generateCase(43, 20).actions).not.toEqual(generated.actions);
   const reduced = await reduceActions(generated.actions, async (actions) => {
     const created = actions.findIndex(
@@ -456,10 +412,7 @@ test("generated logs replay exactly and reduction preserves the failure prerequi
     return created >= 0 && deleted > created;
   });
   expect(reduced.exhausted).toBe(false);
-  expect(reduced.actions.map((action) => action.kind)).toEqual([
-    "signup",
-    "delete",
-  ]);
+  expect(reduced.actions.map((action) => action.kind)).toEqual(["signup", "delete"]);
 });
 
 test("a subprocess timeout terminates descendants that keep its output pipes open", async () => {
@@ -504,8 +457,7 @@ test("response mutation preserves fetch metadata independently of its changed he
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    fetch: () =>
-      Response.json({ ok: true }, { headers: { "x-probe": "present" } }),
+    fetch: () => Response.json({ ok: true }, { headers: { "x-probe": "present" } }),
   });
   try {
     const path = join(directory, "mutation.json"),

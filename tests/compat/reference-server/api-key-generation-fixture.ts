@@ -1,8 +1,8 @@
 import type { Database } from "bun:sqlite";
+import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { username } from "better-auth/plugins";
-import { apiKey } from "@better-auth/api-key";
 
 export function createApiKeyGenerationFixture(
   database: Database,
@@ -22,10 +22,7 @@ export function createApiKeyGenerationFixture(
       startingCharactersConfig: { charactersLength: 2 },
       rateLimit: { enabled: false },
       keyExpiration: { minExpiresIn: 0 },
-      async customKeyGenerator(input: {
-        length: number;
-        prefix: string | undefined;
-      }) {
+      async customKeyGenerator(input: { length: number; prefix: string | undefined }) {
         events.push({
           kind: "generator",
           ...input,
@@ -42,8 +39,7 @@ export function createApiKeyGenerationFixture(
             code: "APPLICATION_GENERATION_DENIED",
             message: "Application generation denied",
           });
-        if (mode === "generator-throw")
-          throw new Error("Private generator failure");
+        if (mode === "generator-throw") throw new Error("Private generator failure");
         return mode === "unicode"
           ? "😀abcdefghijklmnop"
           : `${input.prefix ?? ""}generated-owned-secret-${String(++serial).padStart(6, "0")}`;
@@ -63,11 +59,10 @@ export function createApiKeyGenerationFixture(
               code: "PERMISSIONS_DENIED",
               message: "Application permissions denied",
             });
-          if (mode === "permissions-throw")
-            throw new Error("Private permissions failure");
-          const owner = database
-            .query("SELECT name FROM user WHERE id = ?")
-            .get(referenceId) as { name: string };
+          if (mode === "permissions-throw") throw new Error("Private permissions failure");
+          const owner = database.query("SELECT name FROM user WHERE id = ?").get(referenceId) as {
+            name: string;
+          };
           return Object.fromEntries([
             ["zeta", [owner.name === "Owner" ? "read" : "foreign"]],
             ["10", ["ten"]],
@@ -112,10 +107,7 @@ export function createApiKeyGenerationFixture(
         const result = events.splice(0);
         return Response.json(result);
       }
-      if (
-        url.pathname === "/__test/api-key-generation/mode" &&
-        request.method === "POST"
-      ) {
+      if (url.pathname === "/__test/api-key-generation/mode" && request.method === "POST") {
         const input = await request.json();
         mode = input.mode;
         if (input.reset) serial = 0;
@@ -130,48 +122,24 @@ export function createApiKeyGenerationFixture(
             .all()
             .map((row: any) => ({
               ...row,
-              expiresAt:
-                row.expiresAt === null
-                  ? null
-                  : new Date(row.expiresAt).toISOString(),
+              expiresAt: row.expiresAt === null ? null : new Date(row.expiresAt).toISOString(),
             })),
         );
-      if (
-        url.pathname === "/__test/api-key-generation/expire" &&
-        request.method === "POST"
-      ) {
+      if (url.pathname === "/__test/api-key-generation/expire" && request.method === "POST") {
         const { keyId } = await request.json();
         database
           .query('UPDATE apikey SET "expiresAt" = ? WHERE id = ?')
           .run(new Date(0).toISOString(), keyId);
         return Response.json({ success: true });
       }
-      if (
-        url.pathname === "/__test/api-key-generation/cleanup" &&
-        request.method === "POST"
-      )
+      if (url.pathname === "/__test/api-key-generation/cleanup" && request.method === "POST")
         return Response.json(await auth.api.deleteAllExpiredApiKeys());
-      if (
-        url.pathname === "/__test/api-key-generation/create" &&
-        request.method === "POST"
-      )
-        return Response.json(
-          await auth.api.createApiKey({ body: await request.json() }),
-        );
-      if (
-        url.pathname === "/__test/api-key-generation/update" &&
-        request.method === "POST"
-      )
-        return Response.json(
-          await auth.api.updateApiKey({ body: await request.json() }),
-        );
-      if (
-        url.pathname === "/__test/api-key-generation/verify" &&
-        request.method === "POST"
-      )
-        return Response.json(
-          await auth.api.verifyApiKey({ body: await request.json() }),
-        );
+      if (url.pathname === "/__test/api-key-generation/create" && request.method === "POST")
+        return Response.json(await auth.api.createApiKey({ body: await request.json() }));
+      if (url.pathname === "/__test/api-key-generation/update" && request.method === "POST")
+        return Response.json(await auth.api.updateApiKey({ body: await request.json() }));
+      if (url.pathname === "/__test/api-key-generation/verify" && request.method === "POST")
+        return Response.json(await auth.api.verifyApiKey({ body: await request.json() }));
       return null;
     },
   };

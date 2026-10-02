@@ -1,8 +1,9 @@
 /** Genuine published invitation callbacks with application-owned SQL and barriers. */
-import { betterAuth } from "better-auth";
-import { organization } from "better-auth/plugins";
-import { APIError } from "better-auth/api";
+
 import type { Database } from "bun:sqlite";
+import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
+import { organization } from "better-auth/plugins";
 export function organizationInvitationAcceptanceFixture(
   database: Database,
   shared: Parameters<typeof betterAuth>[0],
@@ -19,9 +20,7 @@ export function organizationInvitationAcceptanceFixture(
         )
         .all(),
       members: database
-        .query(
-          "SELECT id,organizationId,userId,role,createdAt FROM member ORDER BY rowid",
-        )
+        .query("SELECT id,organizationId,userId,role,createdAt FROM member ORDER BY rowid")
         .all(),
       teams: database
         .query(
@@ -29,9 +28,7 @@ export function organizationInvitationAcceptanceFixture(
         )
         .all(),
       teamMembers: database
-        .query(
-          "SELECT id,teamId,userId,membershipKey,createdAt FROM teamMember ORDER BY rowid",
-        )
+        .query("SELECT id,teamId,userId,membershipKey,createdAt FROM teamMember ORDER BY rowid")
         .all(),
       sessions: database
         .query(
@@ -39,15 +36,11 @@ export function organizationInvitationAcceptanceFixture(
         )
         .all(),
       organizations: database
-        .query(
-          "SELECT id,name,slug,logo,metadata,createdAt FROM organization ORDER BY rowid",
-        )
+        .query("SELECT id,name,slug,logo,metadata,createdAt FROM organization ORDER BY rowid")
         .all(),
     };
   }
-  type Hooks = NonNullable<
-    NonNullable<Parameters<typeof organization>[0]>["organizationHooks"]
-  >;
+  type Hooks = NonNullable<NonNullable<Parameters<typeof organization>[0]>["organizationHooks"]>;
   type Before = Parameters<NonNullable<Hooks["beforeAcceptInvitation"]>>[0];
   type After = Parameters<NonNullable<Hooks["afterAcceptInvitation"]>>[0];
   async function note(phase: string, context: unknown) {
@@ -59,16 +52,12 @@ export function organizationInvitationAcceptanceFixture(
     applicationError(phase);
   }
   function applicationError(phase: string) {
-    if (
-      mode === `${phase}-error` ||
-      (mode === "sql-reset-api" && phase === "team-limit")
-    )
+    if (mode === `${phase}-error` || (mode === "sql-reset-api" && phase === "team-limit"))
       throw new APIError("FORBIDDEN", {
         code: "INVITATION_APPLICATION_REJECTED",
         message: `Rejected ${phase}`,
       });
-    if (mode === `${phase}-internal`)
-      throw new Error(`Actual ${phase} application failure`);
+    if (mode === `${phase}-internal`) throw new Error(`Actual ${phase} application failure`);
     if (mode === `${phase}-public500`)
       throw new APIError("INTERNAL_SERVER_ERROR", {
         code: "PUBLIC_INVITATION_500",
@@ -100,10 +89,7 @@ export function organizationInvitationAcceptanceFixture(
                     .query(
                       "SELECT id,status FROM invitation WHERE organizationId=? AND email=? ORDER BY rowid",
                     )
-                    .all(
-                      context.organizationId,
-                      context.session.user.email.toLowerCase(),
-                    );
+                    .all(context.organizationId, context.session.user.email.toLowerCase());
                   receipts.push({
                     phase: "team-limit",
                     context: structuredClone(context),
@@ -148,15 +134,13 @@ export function organizationInvitationAcceptanceFixture(
       for (const gate of gates.splice(0)) gate.release();
       mode = "off";
       receipts.length = 0;
-      for (const name of triggerNames)
-        database.exec(`DROP TRIGGER IF EXISTS ${name}`);
+      for (const name of triggerNames) database.exec(`DROP TRIGGER IF EXISTS ${name}`);
     },
     async configure(body: Record<string, unknown>) {
       for (const gate of gates.splice(0)) gate.release();
       mode = typeof body.mode === "string" ? body.mode : "record";
       receipts.length = 0;
-      for (const name of triggerNames)
-        database.exec(`DROP TRIGGER IF EXISTS ${name}`);
+      for (const name of triggerNames) database.exec(`DROP TRIGGER IF EXISTS ${name}`);
       database.exec(
         "CREATE TABLE IF NOT EXISTS __test_invitation_stage_guard(invitationId TEXT,userId TEXT);DELETE FROM __test_invitation_stage_guard",
       );
@@ -164,16 +148,12 @@ export function organizationInvitationAcceptanceFixture(
         const invitationId = String(body.invitationId),
           userId = String(body.userId);
         if (
-          !database
-            .query("SELECT id FROM invitation WHERE id=?")
-            .get(invitationId) ||
+          !database.query("SELECT id FROM invitation WHERE id=?").get(invitationId) ||
           !database.query("SELECT id FROM user WHERE id=?").get(userId)
         )
           throw new Error("Guard requires actual invitation and user");
         database
-          .query(
-            "INSERT INTO __test_invitation_stage_guard(invitationId,userId) VALUES(?,?)",
-          )
+          .query("INSERT INTO __test_invitation_stage_guard(invitationId,userId) VALUES(?,?)")
           .run(invitationId, userId);
         if (mode === "sql-member" || mode === "sql-reset")
           database.exec(
@@ -202,8 +182,7 @@ export function organizationInvitationAcceptanceFixture(
     },
     async state(waitFor: string | null) {
       if (waitFor)
-        for (let n = 0; n < 100 && gates.length < Number(waitFor); n++)
-          await Bun.sleep(10);
+        for (let n = 0; n < 100 && gates.length < Number(waitFor); n++) await Bun.sleep(10);
       return Response.json({
         receipts,
         snapshot: snapshot(),
