@@ -678,8 +678,21 @@ for (const profile of [
         profile.endsWith("cleanup-disabled") ? expiredBaseline : [],
       );
       const second = await complete(missing);
+      const expiryStartedAt = Date.now();
       await expireVerification(ctx, second.identifier);
+      const expiryFinishedAt = Date.now();
       const expiredTrust = await readRows(ctx, second.identifier);
+      // The Source adapter's updateMany applies updatedAt onUpdate. The expiry
+      // control must mirror that write while retaining every other stored field.
+      expect(expiredTrust).toHaveLength(second.rows.length);
+      for (const row of expiredTrust) {
+        const original = second.rows.find(original => original.id === row.id);
+        if (!original) throw new Error("Expiring a proof must preserve its physical row identity");
+        expect(Date.parse(String(row.updatedAt))).toBeGreaterThanOrEqual(expiryStartedAt);
+        expect(Date.parse(String(row.updatedAt))).toBeLessThanOrEqual(expiryFinishedAt);
+        expect(row).toEqual({...original,
+          expiresAt: "2020-01-01T00:00:00.000Z", updatedAt: row.updatedAt});
+      }
       await rejected("expired-real-issued-proof", second.cookie.value, true);
       const expiryRows = await readRows(ctx, second.identifier);
       expect(expiryRows).toEqual(

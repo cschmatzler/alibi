@@ -289,7 +289,7 @@ pub(super) async fn router(
                 let _=auth.store().create_verification(CreateVerification {identifier:body.identifier,value:body.value.ok_or_else(||AuthError::bad_request("value is required"))?,expires_at}).await?;
             } else if body.action=="expire" {
                 use better_auth_seaorm::sea_orm::sea_query::Expr;
-                let _=verification::Entity::update_many().col_expr(verification::Column::ExpiresAt,Expr::value(expires_at)).filter(verification::Column::Identifier.eq(body.identifier)).exec(&database).await.map_err(|error|DatabaseError::Query(error.to_string()))?;
+                let _=verification::Entity::update_many().col_expr(verification::Column::ExpiresAt,Expr::value(expires_at)).col_expr(verification::Column::UpdatedAt,Expr::value(Utc::now())).filter(verification::Column::Identifier.eq(body.identifier)).exec(&database).await.map_err(|error|DatabaseError::Query(error.to_string()))?;
             } else {return Err(AuthError::bad_request("unknown verification action"));}
             Ok(json!({"status":true}))
         }.await)}
