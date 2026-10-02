@@ -120,6 +120,15 @@ Better Auth RS ships with a rich set of plugins. Enable only what you need:
 | **API Key** | API key generation, rotation, and revocation |
 | **Admin** | User management and administrative operations |
 
+CAPTCHA admission runs before endpoint parsing and authentication writes. Enable
+`CaptchaPlugin` with a `CaptchaConfig` and the provider's typed configuration;
+`captcha::TurnstileConfig::new(secret)` selects Turnstile, and equivalent
+configurations support reCAPTCHA, hCaptcha, CaptchaFox, and application-owned
+BotID callbacks. Empty endpoint configuration protects email signup, sign-in,
+and password-reset requests; custom patterns accept `*` and `**`. Send the
+verification token in `x-captcha-response`. BotID uses its trusted callback
+instead. The verifier has a ten-second deadline and uses the configured IP policy.
+
 ## Feature Flags
 
 | Feature | Description |

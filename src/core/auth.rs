@@ -18,6 +18,7 @@ use std::sync::Arc;
 pub struct BetterAuth<S: AuthSchema> {
     config: Arc<AuthConfig>,
     plugins: Vec<Box<dyn AuthPlugin<S>>>,
+    transport_middlewares: Vec<Box<dyn Middleware>>,
     middlewares: Vec<Box<dyn Middleware>>,
     request_protection: CsrfMiddleware,
     body_limit: BodyLimitConfig,
@@ -209,19 +210,22 @@ impl<S: AuthSchema> AuthBuilder<S> {
         let request_protection =
             CsrfMiddleware::new(self.csrf_config.unwrap_or_default(), Arc::clone(&config));
         // Transport and application request middleware precede router resolution.
-        let mut middlewares: Vec<Box<dyn Middleware>> = vec![
+        let transport_middlewares: Vec<Box<dyn Middleware>> = vec![
             Box::new(BodyLimitMiddleware::new(body_limit.clone())),
             Box::new(RateLimitMiddleware::new(
                 self.rate_limit_config.unwrap_or_default(),
             )),
-            Box::new(CorsMiddleware::new(self.cors_config.unwrap_or_default())),
         ];
+        let mut middlewares: Vec<Box<dyn Middleware>> = vec![Box::new(CorsMiddleware::new(
+            self.cors_config.unwrap_or_default(),
+        ))];
 
         middlewares.extend(self.custom_middlewares);
 
         Ok(BetterAuth {
             config,
             plugins: self.plugins,
+            transport_middlewares,
             middlewares,
             request_protection,
             body_limit,
@@ -358,7 +362,8 @@ impl<S: AuthSchema> BetterAuth<S> {
                     }
                 }
             }
-            middleware::run_after(&self.middlewares, &req, response).await
+            let response = middleware::run_after(&self.middlewares, &req, response).await?;
+            middleware::run_after(&self.transport_middlewares, &req, response).await
         })
         .await
     }
@@ -384,6 +389,16 @@ impl<S: AuthSchema> BetterAuth<S> {
         }
 
         // Run before-request middleware chain
+        if let Some(response) = middleware::run_before(&self.transport_middlewares, req).await? {
+            return Ok(response);
+        }
+
+        for plugin in &self.plugins {
+            if let Some(response) = plugin.on_http_request(req, &self.context).await? {
+                return Ok(response);
+            }
+        }
+
         if let Some(response) = middleware::run_before(&self.middlewares, req).await? {
             return Ok(response);
         }

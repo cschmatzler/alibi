@@ -547,6 +547,7 @@ dependencies = [
  "p256",
  "p521",
  "rand 0.8.5",
+ "regex",
  "reqwest",
  "rsa",
  "ryu-js",

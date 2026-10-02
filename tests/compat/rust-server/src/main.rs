@@ -1,4 +1,5 @@
 mod bearer_fixture;
+mod captcha_fixture;
 mod dispatch_fixture;
 mod organization_creation_fixture;
 mod organization_creation_hooks_fixture;
@@ -715,6 +716,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (database, invitation_status_observer) = sqlite_fixture::connect().await?;
     better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
     let set_password_router = set_password_fixture::router(&config, database.clone()).await?;
+    let captcha_router = captcha_fixture::router(&config, database.clone(), port).await?;
     let reset_database = database.clone();
     let signup_policy_router = signup_policy_fixture::router(&config, database.clone()).await?;
     let compromised_password_router =
@@ -1921,6 +1923,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(verification_profile_router)
         .merge(session_profile_router)
         .merge(bearer_router)
+        .merge(captcha_router)
         .merge(dispatch_router)
         .merge(multiple_session_router)
         .merge(admin_permission_router)

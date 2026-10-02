@@ -114,6 +114,18 @@ pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
         Ok(())
     }
 
+    /// Inspect the original physical HTTP request before routing, body parsing,
+    /// origin validation and endpoint hooks. Disabled paths and transport/rate
+    /// limiting middleware run first. Returning a response stops dispatch and
+    /// later plugin hooks. Server-only endpoint calls do not invoke this hook.
+    async fn on_http_request(
+        &self,
+        _req: &AuthRequest,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<AuthResponse>> {
+        Ok(None)
+    }
+
     /// Called after route matching and before endpoint dispatch.
     ///
     /// Return `Some(BeforeRequestAction::Respond(..))` to short-circuit with a

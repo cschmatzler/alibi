@@ -62,6 +62,7 @@ tracing = { workspace = true }
 reqwest = { workspace = true }
 
 # URL
+regex = { workspace = true }
 url = { workspace = true }
 urlencoding = "2"
 bon = "3.3"

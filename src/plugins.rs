@@ -10,6 +10,7 @@ pub use better_auth_api::plugins::api_key::{
     DeleteExpiredApiKeysResponse,
 };
 pub use better_auth_api::plugins::bearer::{self, BearerConfig, BearerPlugin};
+pub use better_auth_api::plugins::captcha::{self, CaptchaConfig, CaptchaPlugin, CaptchaProvider};
 pub use better_auth_api::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
 pub use better_auth_api::plugins::email_verification::SendVerificationEmail;
 pub use better_auth_api::plugins::haveibeenpwned::{
