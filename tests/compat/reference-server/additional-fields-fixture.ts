@@ -1,4 +1,6 @@
 import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { APIError } from "better-auth/api";
+import { tryGetCurrentAuthEndpointContext } from "@better-auth/core/context";
 import { createAuthMiddleware } from "better-auth/api";
 import { magicLink, openAPI } from "better-auth/plugins";
 import { getMigrations } from "better-auth/db/migration";
@@ -17,11 +19,14 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
     const output = (entity: string, field: string) => async (value: unknown) => {
       events.push({ phase: "output", entity, field, value });
       await Promise.resolve();
-      if (entity === "user" && field === "label" && value === "throw") throw new Error("application output failed");
+      if(entity === "session" && field === "label" && value === "collection-slow"){await new Promise(resolve=>setTimeout(resolve,200));events.push({phase:"settled",entity,field,value,requestScoped:tryGetCurrentAuthEndpointContext()?.path==="/change-password"});}
+      if (field === "label" && (value === "throw" || value === "collection-reject")) throw new Error("application output failed");
       return field === "hidden" ? String(value).toUpperCase() : field === "omitted" ? undefined : { stored: value };
     };
     const after = (entity: "user" | "account" | "session", action: string) => async (record: Record<string, unknown>) => {
+      if(!record){events.push({phase:"after",entity,action,record:null});return;}
       const owner = entity === "user" ? record.id : record.userId;
+      if(mode === "cached" && entity === "session" && action === "update" && (record.label as {stored?:string})?.stored === "after-error") throw new Error("application after failed");
       events.push({ phase: "after", entity, action, record,
         omittedPresent: Object.hasOwn(record, "omitted"), omittedUndefined: record.omitted === undefined,
         persisted: { users: database.query('SELECT COUNT(*) AS count FROM app_user WHERE id = ?').get(owner)!.count,
@@ -44,6 +49,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
       hidden: { type: "string" as const, required: false, returned: false, defaultValue: `${entity}-secret`, ...(transformed ? { transform: { output: output(entity, "hidden") } } : {}) },
       omitted: { type: "string" as const, required: false, ...(transformed ? { defaultValue: "drop", transform: { output: output(entity, "omitted") } } : {}) },
       ...(mode === "provider" && entity === "user" ? {hidden:{type:"string" as const,required:false,returned:false,input:false,defaultValue:"user-secret",transform:{output:output(entity,"hidden")}}} : {}),
+      ...(mode === "async-validation" && entity === "session" ? {label:{type:"string" as const,required:false,defaultValue:"session-initial",validator:{input:{"~standard":{version:1 as const,vendor:"application",validate:(value:unknown)=>{events.push({phase:"validation",entity:"session",field:"label",value:typeof value === "number" && value===0 ? 0 : value,negativeZero:Object.is(value,-0),infinite:typeof value === "number" && !Number.isFinite(value)});return Promise.resolve({value});}}}}}} : {}),
       ...(entity === "user" ? { readonly: { type: "string" as const, required: false, ...(mode === "policy" ? { input: false } : {}), ...(transformed ? { input: false, defaultValue: "initial", onUpdate: () => "updated", transform: { input: (value: unknown) => { events.push({ phase: "input", entity, field: "readonly", value }); return `${value}:bound`; } } } : {}) } } : {}),
       ...((mode === "policy" || mode === "async-validation") && entity === "user" ? {
         label: { type: "string" as const, required: mode === "policy", fieldName: "user_label",
@@ -74,7 +80,19 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
       ...(mode !== "normal" ? { databaseHooks: {
         user: { create: { after: after("user", "create") }, update: { after: after("user", "update") } },
         account: { create: { after: after("account", "create") }, update: { after: after("account", "update") } },
-        session: { create: { after: after("session", "create") }, update: { after: after("session", "update") } },
+        session: { create: { after: after("session", "create") }, update: { ...(mode === "cached" ? {before:async (data:Record<string,unknown>,ctx:{context:{session?:{session:{token:string}}}}|null)=>{
+          events.push({phase:"before",entity:"session",fields:Object.fromEntries(Object.entries(data).filter(([key])=>!["updatedAt","expiresAt"].includes(key)))});
+          const token=ctx?.context.session?.session.token;
+          const stored=database.query("SELECT hidden FROM app_session WHERE token=?").get(token??"") as {hidden:string}|null;
+          const command=data.hidden??(!Object.hasOwn(data,"label")?stored?.hidden:undefined);
+          if(command==="cancel")return false;
+          if(command==="ordinary-error")throw new Error("application before failed");
+          if(command==="api-error")throw new APIError("FORBIDDEN",{code:"APP_DENIED",message:"Application denied"});
+          if(command==="delete")database.query("DELETE FROM app_session WHERE token=?").run(token??"");
+          if(command==="after-error"||command==="throw")return {data:{...data,label:command}};
+          if(command==="mutate")return {data:{...data,label:"hook-updated"}};
+          return {data};
+        }} : {}), after: after("session", "update") } },
       } } : {}),
     });
     await (await getMigrations(auth.options)).runMigrations();
@@ -96,9 +114,11 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
     if (!application) return Response.json({ message: "Unknown application" }, { status: 404 });
     const { database, events } = application;
     if(url.pathname === "/__test/additional-fields/rewind-session") {
-      const {token,expiresAt}=await request.json() as {token:string;expiresAt:string};
+      const {token,expiresAt,hidden,label}=await request.json() as {token:string;expiresAt:string;hidden?:string;label?:string};
       if(request.method!=="POST" || typeof token!=="string" || !Number.isFinite(new Date(expiresAt).getTime())) return Response.json({message:"Invalid operator input"},{status:400});
-      database.run("UPDATE app_session SET expiresAt=? WHERE token=?",[new Date(expiresAt).getTime(),token]);
+      database.run("UPDATE app_session SET expiresAt=? WHERE token=?",[new Date(expiresAt).toISOString(),token]);
+      if(label!==undefined)database.run("UPDATE app_session SET label=? WHERE token=?",[label,token]);
+      if(hidden!==undefined)database.run("UPDATE app_session SET hidden=? WHERE token=?",[hidden,token]);
     }
     const rows = (table: string) => database.query(`SELECT * FROM ${table}`).all().map(value => {
       const row = value as Record<string, unknown>;

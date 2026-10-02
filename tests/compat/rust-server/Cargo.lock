@@ -581,6 +581,7 @@ dependencies = [
  "better-auth-schema-registry",
  "chrono",
  "cookie",
+ "futures-util",
  "glob-match",
  "hmac 0.12.1",
  "indexmap 2.13.0",

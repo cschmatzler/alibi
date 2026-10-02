@@ -492,11 +492,54 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         &self,
         user_id: &str,
     ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
-        let mut records = Vec::new();
-        for model in self.get_user_sessions(user_id).await? {
-            records.push(self.session_record(model).await?);
+        let models = self.get_user_sessions(user_id).await?;
+        if models.is_empty() {
+            return Ok(Vec::new());
         }
-        Ok(records)
+        let mut records = vec![None; models.len()];
+        let store = self.clone();
+        let endpoint = crate::endpoint::current_endpoint_call_context();
+        let request = crate::hooks::current_request_hook_context();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        // Like Promise.all, reject the aggregate immediately but keep every
+        // launched row projection alive. Retain its actual request context.
+        drop(tokio::spawn(async move {
+            let project = async {
+                drop(
+                    futures_util::future::join_all(models.into_iter().enumerate().map(
+                        |(index, model)| {
+                            let sender = &sender;
+                            let store = &store;
+                            async move {
+                                let result = store.session_record(model).await;
+                                let _ignored_closed_receiver = sender.send((index, result));
+                            }
+                        },
+                    ))
+                    .await,
+                );
+            };
+            if let Some(endpoint) = endpoint {
+                crate::endpoint::with_endpoint_call_context(
+                    endpoint,
+                    crate::hooks::with_optional_request_hook_context(request, project),
+                )
+                .await;
+            } else {
+                crate::hooks::with_optional_request_hook_context(request, project).await;
+            }
+        }));
+        for _ in 0..records.len() {
+            let (index, record) = receiver
+                .recv()
+                .await
+                .ok_or_else(|| AuthError::internal("Session collection projection stopped"))?;
+            let slot = records
+                .get_mut(index)
+                .ok_or_else(|| AuthError::internal("Invalid session projection row"))?;
+            *slot = Some(record?);
+        }
+        Ok(records.into_iter().flatten().collect())
     }
 
     async fn refresh_session_record(

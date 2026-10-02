@@ -166,7 +166,7 @@ impl SessionManagementPlugin {
                 json_type(value.as_ref())
             )));
         };
-        let (_user, session) = match super::helpers::ordinary_session(req, ctx).await {
+        let (user, session) = match super::helpers::ordinary_session(req, ctx).await {
             Ok(session) => session,
             Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
                 return Ok(AuthResponse::json(
@@ -205,7 +205,9 @@ impl SessionManagementPlugin {
             .await
         {
             Ok(updated) => updated,
-            Err(AuthError::Internal(_)) => return Ok(AuthResponse::new(500)),
+            Err(error @ AuthError::Internal(_)) => {
+                return Err(AuthError::CallbackFailure(Box::new(error)));
+            }
             Err(error) => return Err(error),
         };
         let Some(updated) = updated else {
@@ -218,6 +220,8 @@ impl SessionManagementPlugin {
             }
             return Ok(response);
         };
+
+        better_auth_core::cache::runtime::emit_issuance(ctx, &user, &updated).await?;
 
         let preference = related_cookie_name(&ctx.config, "dont_remember");
         let dont_remember = req.header("cookie").is_some_and(|header| {
