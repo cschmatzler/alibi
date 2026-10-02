@@ -12,7 +12,7 @@ use better_auth_core::types::{CreateVerification, UpdateVerification};
 use better_auth_core::verification::{
     VerificationCreation, VerificationPublication, VerificationSnapshot,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SubsecRound, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, IdenStatic,
     Iterable, QueryFilter, QueryOrder, QuerySelect, QueryTrait, SqliteTransactionMode,
@@ -563,7 +563,9 @@ where
     }
 
     async fn delete_expired_verifications(&self) -> AuthResult<usize> {
-        let deadline = Utc::now();
+        // Source's strict `expiresAt < new Date()` cleanup keeps proofs whose
+        // deadline equals the current millisecond, including zero-TTL OTPs.
+        let deadline = Utc::now().trunc_subsecs(3);
         let snapshots = <S::Verification as SeaOrmVerificationModel>::Entity::find()
             .filter(S::Verification::expires_at_column().lt(deadline))
             .limit(self.config().advanced.database.default_find_many_limit as u64)

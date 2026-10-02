@@ -4,6 +4,7 @@ use better_auth_core::{
     AuthError, AuthPlugin, AuthSession, AuthUser, AuthVerification, CreateAccount, CreateUser,
     CreateVerification, HttpMethod,
 };
+use chrono::Duration;
 use serde_json::{Value, json};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1239,7 +1240,7 @@ async fn reset_creates_missing_credential_and_unknown_reset_is_indistinguishable
 async fn nonconsuming_checks_count_attempts_and_reject_unowned_and_expired_mailboxes() {
     let ctx = test_helpers::create_test_context().await;
     let (mut config, _) = configured();
-    config.allowed_attempts = 1;
+    config.allowed_attempts = 1.0;
     let plugin = EmailOtpPlugin::new(config);
     let otp = plugin
         .create_verification_otp(&ctx, "unknown@example.com", EmailOtpType::EmailVerification)

@@ -127,3 +127,9 @@ Plugin-specific default rate limits, versioned secret envelopes, schema
 renaming and additional-field validators/transforms, actual callback request
 and context exposure, and dynamic URL/origin configuration remain explicit
 broader audit boundaries. This capability's evidence does not establish them.
+
+## Raw numeric configuration
+
+The [passwordless numeric audit](passwordless-numeric.md) records native `f64`
+configuration, real delivery/persistence/consumption evidence, plugin-specific
+zero/NaN policies, checked millisecond expiry and excluded unsafe probes.

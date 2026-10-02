@@ -18,7 +18,6 @@ mod tests;
 
 use async_trait::async_trait;
 use better_auth_core::{AuthContext, AuthRequest, AuthResponse, AuthResult};
-use chrono::Duration;
 pub use endpoint::EmailOtpRead;
 use std::sync::Arc;
 pub use storage::{EmailOtpCodec, EmailOtpStorage};
@@ -57,9 +56,15 @@ pub trait EmailOtpGenerator: Send + Sync {
 pub struct EmailOtpConfig {
     pub send_verification_otp: Option<Arc<dyn SendEmailOtp>>,
     pub generate_otp: Option<Arc<dyn EmailOtpGenerator>>,
-    pub otp_length: usize,
-    pub expires_in: Duration,
-    pub allowed_attempts: usize,
+    /// Raw numeric length. Safe positive fractions round up; NaN generates an
+    /// empty code. Nonpositive and resource-unsafe lengths fail generation.
+    pub otp_length: f64,
+    /// Lifetime in seconds. Fractions retain JavaScript millisecond rounding;
+    /// invalid dates fail before persistence.
+    pub expires_in: f64,
+    /// Raw attempt budget compared with the persisted integer counter. Zero and
+    /// NaN use three; negative values reject even an unused proof.
+    pub allowed_attempts: f64,
     pub storage: EmailOtpStorage,
     pub resend_strategy: OtpResendStrategy,
     pub disable_sign_up: bool,
@@ -87,9 +92,9 @@ impl Default for EmailOtpConfig {
         Self {
             send_verification_otp: None,
             generate_otp: None,
-            otp_length: 6,
-            expires_in: Duration::seconds(300),
-            allowed_attempts: 3,
+            otp_length: 6.0,
+            expires_in: 300.0,
+            allowed_attempts: 3.0,
             storage: EmailOtpStorage::Plain,
             resend_strategy: OtpResendStrategy::Rotate,
             disable_sign_up: false,

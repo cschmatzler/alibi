@@ -147,6 +147,15 @@ running delivery as background work. Already-issued reset proofs or committed
 email-change state remain stored after a delivery failure; uncommitted signup
 writes roll back when the default propagation policy fails the request.
 
+Passwordless numeric configuration uses `f64`: `EmailOtpConfig` and
+`PhoneNumberConfig` expose `otp_length`, `allowed_attempts`, and `expires_in`
+(seconds); `MagicLinkConfig::expires_in` also accepts seconds. When migrating,
+replace `Duration::seconds(300)` with `300.0`, and integer lengths/budgets with
+floating-point literals such as `6.0` and `3.0`. This preserves fractional and
+nonfinite policies without converting them to unsigned integers. See the
+[passwordless numeric audit](tests/compat/audits/passwordless-numeric.md) for
+plugin-specific zero/NaN defaults and safe generation limits.
+
 Passwordless `SendEmailOtp::send`, `EmailOtpGenerator::generate`,
 `SendMagicLink::send`, `SendPhoneOtp::send`, `PhoneOtpVerifier::verify`, and
 `PhoneVerificationHook::verified` receive a final `&CallbackContext` argument.

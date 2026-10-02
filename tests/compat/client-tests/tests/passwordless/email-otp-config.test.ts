@@ -1,3 +1,4 @@
+import { passwordlessNumericScenarios } from "../../support/passwordless-numeric";
 import { expect } from "bun:test";
 import { z } from "zod";
 import { compatScenario } from "../../support/scenario";
@@ -209,3 +210,5 @@ compatScenario("explicit email verification sender takes precedence over the ema
   expect(state.sessions).toHaveLength(1);
   return { before, sent, delivery, verification: { status: response.status, location }, after, state };
 }, ["POST /send-verification-email", "GET /verify-email"]);
+
+passwordlessNumericScenarios("passwordless");

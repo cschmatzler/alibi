@@ -14,9 +14,25 @@ use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthUser,
     CreateAccount, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
 };
-use chrono::Utc;
-use rand::{Rng, rngs::OsRng};
 use serde_json::{Value, json};
+
+pub(super) enum PreparationError {
+    Auth(AuthError),
+    InvalidDate,
+}
+impl From<AuthError> for PreparationError {
+    fn from(error: AuthError) -> Self {
+        Self::Auth(error)
+    }
+}
+impl From<PreparationError> for AuthError {
+    fn from(error: PreparationError) -> Self {
+        match error {
+            PreparationError::Auth(error) => error,
+            PreparationError::InvalidDate => Self::internal("Invalid Date"),
+        }
+    }
+}
 
 impl EmailOtpPlugin {
     ///
@@ -29,7 +45,7 @@ impl EmailOtpPlugin {
         email: &str,
         otp_type: EmailOtpType,
         identifier_override: Option<String>,
-    ) -> AuthResult<(String, CreateVerification)> {
+    ) -> Result<(String, CreateVerification), PreparationError> {
         let generated = match &self.config.generate_otp {
             Some(generator) => {
                 generator
@@ -42,19 +58,19 @@ impl EmailOtpPlugin {
             }
             None => None,
         };
-        let otp = generated
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| {
-                let mut rng = OsRng;
-                (0..self.config.otp_length)
-                    .map(|_| char::from(b'0' + rng.gen_range(0..10)))
-                    .collect()
-            });
+        let otp = match generated.filter(|value| !value.is_empty()) {
+            Some(value) => value,
+            None => super::super::passwordless_numeric::generate_code(self.config.otp_length)?,
+        };
         let stored = self.config.storage.store(&otp, &ctx.config.secret).await?;
         let verification = CreateVerification {
             identifier: identifier_override.unwrap_or_else(|| identifier(otp_type, email)),
             value: format!("{stored}:0"),
-            expires_at: Utc::now() + self.config.expires_in,
+            expires_at: super::super::passwordless_numeric::expires_at(
+                self.config.expires_in,
+                false,
+            )
+            .ok_or(PreparationError::InvalidDate)?,
         };
         Ok((otp, verification))
     }
@@ -90,7 +106,8 @@ impl EmailOtpPlugin {
             && !value.is_expired()
         {
             let (stored, attempts) = split_value(value.value()?);
-            if attempts < self.allowed_attempts()
+            if super::super::passwordless_numeric::attempts_number(attempts)
+                < self.allowed_attempts()
                 && let Some(otp) = self
                     .config
                     .storage
@@ -103,7 +120,13 @@ impl EmailOtpPlugin {
                         .update(
                             &key,
                             better_auth_core::UpdateVerification {
-                                expires_at: Some(Utc::now() + self.config.expires_in),
+                                expires_at: Some(
+                                    super::super::passwordless_numeric::expires_at(
+                                        self.config.expires_in,
+                                        false,
+                                    )
+                                    .ok_or_else(|| AuthError::internal("Invalid Date"))?,
+                                ),
                                 ..Default::default()
                             },
                         )
@@ -112,16 +135,23 @@ impl EmailOtpPlugin {
                 return Ok(otp);
             }
         }
-        let (otp, mut data) = self
-            .prepare_code(ctx, request, email, otp_type, None)
-            .await?;
+        let (otp, mut data) = match self.prepare_code(ctx, request, email, otp_type, None).await {
+            Ok(prepared) => prepared,
+            Err(PreparationError::InvalidDate) => {
+                ctx.verifications().delete(&key).await?;
+                return Err(AuthError::internal("Invalid Date"));
+            }
+            Err(error) => return Err(error.into()),
+        };
         // The published delivery resolver retries a failed creation after
         // invalidating this logical identifier, retaining the same generated
         // OTP and selecting a fresh expiry for the retry. Server-only direct
         // creation and change-email issuance retain their separate contracts.
         if ctx.verifications().create(data.clone()).await.is_err() {
             ctx.verifications().delete(&key).await?;
-            data.expires_at = Utc::now() + self.config.expires_in;
+            data.expires_at =
+                super::super::passwordless_numeric::expires_at(self.config.expires_in, false)
+                    .ok_or_else(|| AuthError::internal("Invalid Date"))?;
             drop(ctx.verifications().create(data).await?);
         }
         Ok(otp)
@@ -157,9 +187,9 @@ impl EmailOtpPlugin {
         .await
     }
 
-    const fn allowed_attempts(&self) -> usize {
-        if self.config.allowed_attempts == 0 {
-            3
+    fn allowed_attempts(&self) -> f64 {
+        if self.config.allowed_attempts == 0.0 || self.config.allowed_attempts.is_nan() {
+            3.0
         } else {
             self.config.allowed_attempts
         }
@@ -185,7 +215,8 @@ impl EmailOtpPlugin {
             .await?
             .ok_or_else(invalid_otp)?;
         let (stored, attempts) = split_value(value.value()?);
-        if attempts >= self.allowed_attempts() {
+        if super::super::passwordless_numeric::attempts_number(attempts) >= self.allowed_attempts()
+        {
             return Err(too_many_attempts());
         }
         if !self
@@ -284,7 +315,8 @@ impl EmailOtpPlugin {
             return Err(expired_otp());
         }
         let (stored, attempts) = split_value(value.value()?);
-        if attempts >= self.allowed_attempts() {
+        if super::super::passwordless_numeric::attempts_number(attempts) >= self.allowed_attempts()
+        {
             ctx.verifications().delete(&key).await?;
             return Err(too_many_attempts());
         }
@@ -447,9 +479,14 @@ impl EmailOtpPlugin {
             Err(response) => return Ok(response),
         };
         let email = body.email.to_lowercase();
-        let otp = self
+        let otp = match self
             .resolve_code(ctx, Some(req), &email, EmailOtpType::ForgetPassword)
-            .await?;
+            .await
+        {
+            Ok(otp) => otp,
+            Err(AuthError::Internal(_)) => return Ok(AuthResponse::new(500)),
+            Err(error) => return Err(error),
+        };
         if ctx
             .database
             .get_user_by_email_record(&email)
@@ -589,7 +626,7 @@ impl EmailOtpPlugin {
             .await?;
         }
         let key = identifier(EmailOtpType::ChangeEmail, &format!("{email}-{new_email}"));
-        let otp = self
+        let otp = match self
             .issue_code(
                 ctx,
                 Some(req),
@@ -597,7 +634,12 @@ impl EmailOtpPlugin {
                 EmailOtpType::ChangeEmail,
                 Some(key.clone()),
             )
-            .await?;
+            .await
+        {
+            Ok(otp) => otp,
+            Err(AuthError::Internal(_)) => return Ok(AuthResponse::new(500)),
+            Err(error) => return Err(error),
+        };
         if ctx
             .database
             .get_user_by_email_record(&new_email)

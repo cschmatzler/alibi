@@ -1,3 +1,4 @@
+import { numericModes, numericOptions } from "./passwordless-numeric";
 import { callbackSnapshot } from "./passwordless-context";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
@@ -18,6 +19,7 @@ export async function createPhoneFixture(base: BetterAuthOptions, twoFactorOutbo
       plugins: [
         twoFactor({ otpOptions: { async sendOTP({ user, otp }) { twoFactorOutbox.set(user.email, { otp }); } } }),
         phoneNumber({
+          ...numericOptions(name),
           async sendOTP({ phoneNumber, code },ctx) {
             const context=await callbackSnapshot(ctx,phoneNumber);
             outbox.set(`verification:${phoneNumber}`, { code, ...(context ? {context} : {}) });
@@ -42,7 +44,7 @@ export async function createPhoneFixture(base: BetterAuthOptions, twoFactorOutbo
     };
   }
   const profiles = new Map<string, ReturnType<typeof betterAuth<ReturnType<typeof options>>>>();
-  for (const name of ["phone-default", "phone-signup", "phone-proof", "phone-custom"]) {
+  for (const name of ["phone-default", "phone-signup", "phone-proof", "phone-custom", ...numericModes.map(mode=>`phone-numeric-${mode}`)]) {
     const config = options(name);
     await (await getMigrations(config)).runMigrations();
     profiles.set(name, betterAuth(config));

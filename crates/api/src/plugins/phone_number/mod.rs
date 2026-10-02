@@ -12,7 +12,6 @@ mod types;
 
 use async_trait::async_trait;
 use better_auth_core::{AuthContext, AuthRequest, AuthResult, AuthSchema};
-use chrono::Duration;
 use std::sync::Arc;
 pub use types::{PhoneNumberVerification, PhoneOtpDelivery};
 pub(in crate::plugins) use types::{parse_signup_phone, reject_verified_input};
@@ -67,9 +66,15 @@ pub struct PhoneNumberConfig {
     pub sign_up_on_verification: Option<Arc<dyn PhoneSignupIdentity>>,
     pub callback_on_verification: Option<Arc<dyn PhoneVerificationHook>>,
     pub require_verification: bool,
-    pub otp_length: usize,
-    pub expires_in: Duration,
-    pub allowed_attempts: usize,
+    /// Raw numeric length. Safe positive fractions round up; NaN generates an
+    /// empty code. Nonpositive and resource-unsafe lengths fail generation.
+    pub otp_length: f64,
+    /// Lifetime in seconds. Fractions retain JavaScript millisecond rounding;
+    /// invalid dates fail before persistence.
+    pub expires_in: f64,
+    /// Raw attempt budget compared with the persisted integer counter. Zero and
+    /// negatives reject an unused proof; NaN and positive infinity never exhaust.
+    pub allowed_attempts: f64,
 }
 
 impl std::fmt::Debug for PhoneNumberConfig {
@@ -88,9 +93,9 @@ impl Default for PhoneNumberConfig {
             sign_up_on_verification: None,
             callback_on_verification: None,
             require_verification: false,
-            otp_length: 6,
-            expires_in: Duration::seconds(300),
-            allowed_attempts: 3,
+            otp_length: 6.0,
+            expires_in: 300.0,
+            allowed_attempts: 3.0,
         }
     }
 }
