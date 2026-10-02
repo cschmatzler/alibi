@@ -1,12 +1,14 @@
 /** Application-owned update callbacks; pinned HTTP guards and adapter remain active. */
 
 import type { Database } from "bun:sqlite";
+
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
 
 type Actor = { id: string; email: string; name?: string | null };
 type Member = { id: string; organizationId: string; userId: string; role: string; createdAt: Date };
+
 export function organizationUpdateHooksFixture(
   database: Database,
   shared: Parameters<typeof betterAuth>[0],
@@ -16,6 +18,7 @@ export function organizationUpdateHooksFixture(
   const receipts: unknown[] = [];
   let release: (() => void) | undefined;
   let gate = Promise.resolve();
+
   function snapshot() {
     return {
       organizations: database
@@ -34,6 +37,7 @@ export function organizationUpdateHooksFixture(
       users: database.query("SELECT id,email,name FROM user ORDER BY email,id").all(),
     };
   }
+
   function note(phase: string, context: { organization: unknown; user: Actor; member: Member }) {
     receipts.push({
       phase,
@@ -47,12 +51,14 @@ export function organizationUpdateHooksFixture(
       },
       snapshot: snapshot(),
     });
-    if (mode === `reject-${phase}`)
+    if (mode === `reject-${phase}`) {
       throw new APIError("BAD_REQUEST", {
         code: "UPDATE_HOOK_REJECTED",
         message: `Rejected ${phase}`,
       });
+    }
   }
+
   const hooks = {
     async beforeUpdateOrganization(context: {
       organization: Record<string, unknown>;
@@ -60,7 +66,11 @@ export function organizationUpdateHooksFixture(
       member: Member;
     }) {
       note("before-update", context);
-      if (mode === "pause-before") await gate;
+
+      if (mode === "pause-before") {
+        await gate;
+      }
+
       if (mode === "raw-metadata") {
         const n = (context.organization.metadata as Record<string, unknown>).n;
         const numberClass =
@@ -78,15 +88,31 @@ export function organizationUpdateHooksFixture(
           },
         };
       }
-      if (mode === "patch")
+
+      if (mode === "patch") {
         return {
           data: { name: "Hooked Update", logo: null, metadata: { guard: "hooked-update" } },
         };
-      if (mode === "null-metadata") return { data: { metadata: null, logo: null } };
-      if (mode === "empty-metadata") return { data: { metadata: {} } };
-      if (mode === "absent-metadata") return { data: { name: "Patched Without Metadata" } };
-      if (mode === "empty-name") return { data: { name: "" } };
+      }
+
+      if (mode === "null-metadata") {
+        return { data: { metadata: null, logo: null } };
+      }
+
+      if (mode === "empty-metadata") {
+        return { data: { metadata: {} } };
+      }
+
+      if (mode === "absent-metadata") {
+        return { data: { name: "Patched Without Metadata" } };
+      }
+
+      if (mode === "empty-name") {
+        return { data: { name: "" } };
+      }
+
       const ctx = await auth.$context;
+
       if (mode === "mutate-authority") {
         await ctx.adapter.update({
           model: "user",
@@ -99,6 +125,7 @@ export function organizationUpdateHooksFixture(
           update: { role: "member" },
         });
       }
+
       if (mode === "delete-row") {
         const where = [{ field: "organizationId", value: context.member.organizationId }];
         await ctx.adapter.deleteMany({ model: "member", where });
@@ -159,8 +186,9 @@ export function organizationUpdateHooksFixture(
         attempt < 100 &&
         !receipts.some((receipt) => (receipt as { phase: string }).phase === waitFor);
         attempt++
-      )
+      ) {
         await Bun.sleep(10);
+      }
       return Response.json({ receipts, snapshot: snapshot() });
     },
   };

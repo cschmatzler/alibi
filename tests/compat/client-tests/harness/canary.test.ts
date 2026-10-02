@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import { createHash, createHmac } from "node:crypto";
+
 import { createAuthClient } from "better-auth/client";
 import { SignJWT } from "jose";
+
 import { compareValues } from "../support/compare";
 import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
 
@@ -43,6 +45,7 @@ test("live response mutations cannot hide broken ownership or cookie security", 
   });
   try {
     const baseURL = server.url.origin;
+
     async function observe(mutation: string) {
       mode = mutation;
       const traces: TraceEntry[] = [];
@@ -53,8 +56,10 @@ test("live response mutations cannot hide broken ownership or cookie security", 
       });
       return { result: await client.getSession(), traces };
     }
+
     const baseline = await observe("valid");
     expect(baseline.result.error).toBeNull();
+
     const context = {
       leftBaseURL: baseURL,
       rightBaseURL: baseURL,
@@ -62,9 +67,11 @@ test("live response mutations cannot hide broken ownership or cookie security", 
       rightStartedAt: 0,
     };
     expect(compareValues(baseline, await observe("valid"), context)).toEqual([]);
+
     for (const mode of ["ownership", "insecure-cookie", "missing-cookie"]) {
       const mutated = await observe(mode);
       expect(mutated.result.error).toBeNull();
+
       const differences = compareValues(baseline, mutated, context);
       expect(differences.length).toBeGreaterThan(0);
       expect(
@@ -92,14 +99,15 @@ test("independently signed JWTs keep application id, token and state claims lite
     new SignJWT(payload)
       .setProtectedHeader({ alg: "HS256" })
       .sign(new TextEncoder().encode(key.repeat(32)));
-  const left = { token: await sign(claims, "a") },
-    context = {
-      leftBaseURL: "http://localhost:1",
-      rightBaseURL: "http://localhost:2",
-      leftStartedAt: 0,
-      rightStartedAt: 0,
-    };
+  const left = { token: await sign(claims, "a") };
+  const context = {
+    leftBaseURL: "http://localhost:1",
+    rightBaseURL: "http://localhost:2",
+    leftStartedAt: 0,
+    rightStartedAt: 0,
+  };
   expect(compareValues(left, { token: await sign(claims, "b") }, context)).toEqual([]);
+
   for (const field of ["id", "token", "state"] as const) {
     const changed = {
       ...claims,
@@ -111,6 +119,7 @@ test("independently signed JWTs keep application id, token and state claims lite
       ),
     ).toBe(true);
   }
+
   // Application claims need no reserved wrapper name. Include decoded copies
   // so a payload cannot supply its own supposedly independent identity proof.
   for (const field of [
@@ -155,6 +164,7 @@ test("independently signed JWTs keep application id, token and state claims lite
       });
     }
   }
+
   const observed = async (side: string) => {
     const user = {
       id: `${side}-user`,
@@ -210,8 +220,8 @@ test("independently signed JWTs keep application id, token and state claims lite
       ],
     };
   };
-  const first = await virtual("a", 10100),
-    second = await virtual("b", 30100);
+  const first = await virtual("a", 10100);
+  const second = await virtual("b", 30100);
   const clocks = {
     ...context,
     leftStartedAt: 10000,
@@ -228,6 +238,7 @@ test("independently signed JWTs keep application id, token and state claims lite
     })),
   };
   expect(compareValues(first, second, clocks)).toEqual([]);
+
   for (const mutation of [
     "missing-key",
     "foreign-key",
@@ -237,15 +248,27 @@ test("independently signed JWTs keep application id, token and state claims lite
     "outside-window",
   ]) {
     const altered = structuredClone(second);
-    if (mutation === "missing-key") altered.traces[0]!.path = "/api/auth/unrelated";
-    if (mutation === "foreign-key")
+
+    if (mutation === "missing-key") {
+      altered.traces[0]!.path = "/api/auth/unrelated";
+    }
+
+    if (mutation === "foreign-key") {
       (
         altered.traces[0]!.responseBody as (typeof second.traces)[0]["responseBody"] & {
           referenceId: string;
         }
       ).referenceId = "foreign";
-    if (mutation === "missing-session") altered.traces[2]!.path = "/api/auth/unrelated";
-    if (mutation === "failed-issuer") altered.traces[1]!.responseStatus = 500;
+    }
+
+    if (mutation === "missing-session") {
+      altered.traces[2]!.path = "/api/auth/unrelated";
+    }
+
+    if (mutation === "failed-issuer") {
+      altered.traces[1]!.responseStatus = 500;
+    }
+
     if (["wrong-lifetime", "outside-window"].includes(mutation)) {
       const payload = altered.observation.checked;
       const field = mutation === "wrong-lifetime" ? "expiresAt" : "createdAt";
@@ -254,6 +277,7 @@ test("independently signed JWTs keep application id, token and state claims lite
       ).toISOString();
       (altered.traces[1]!.responseBody as { token: string }).token = await sign(payload, "b");
     }
+
     expect(
       compareValues(first, altered, clocks).some(
         (diff) =>
@@ -292,21 +316,25 @@ test("complete enrollment responses retain credential formats, relationships and
     leftStartedAt: 0,
     rightStartedAt: 0,
   };
-  const left = observe("AAAAAAAA", "aaaaa-11111"),
-    right = observe("BBBBBBBB", "bbbbb-22222");
+  const left = observe("AAAAAAAA", "aaaaa-11111");
+  const right = observe("BBBBBBBB", "bbbbb-22222");
   expect(compareValues(left, right, context)).toEqual([]);
+
   const changed = structuredClone(right);
   changed.traces[1]!.responseBody.totpURI = changed.traces[1]!.responseBody.totpURI.replace(
     "BBBBBBBB",
     "CCCCCCCC",
   );
   expect(compareValues(left, changed, context).length).toBeGreaterThan(0);
+
   const malformed = structuredClone(right);
   malformed.traces[0]!.responseBody.backupCodes = ["wrong-format"];
   expect(compareValues(left, malformed, context).length).toBeGreaterThan(0);
+
   const literal = structuredClone(right);
   literal.traces[0]!.responseBody.metadata!.backupCodes = ["changed-code"];
   expect(compareValues(left, literal, context).length).toBeGreaterThan(0);
+
   const duplicate = structuredClone(right);
   duplicate.traces[0]!.responseBody.totpURI += "&secret=WRONG";
   expect(compareValues(left, duplicate, context).length).toBeGreaterThan(0);
@@ -321,8 +349,8 @@ test("request clocks tolerate slower execution while preserving session lifetime
     updatedAt: new Date(created).toISOString(),
     expiresAt: new Date(created + 60_000).toISOString(),
   });
-  const leftRow = row(100_100, "left"),
-    rightRow = row(200_100, "right");
+  const leftRow = row(100_100, "left");
+  const rightRow = row(200_100, "right");
   const observed = (session: typeof leftRow) => ({
     observation: { session },
     traces: [
@@ -361,18 +389,21 @@ test("request clocks tolerate slower execution while preserving session lifetime
   ).toBe(true);
 
   const secret = "producer-clock-secret";
+
   async function capture(side: string) {
-    let member: Record<string, unknown>, social: Record<string, unknown>;
-    const linkUser = `${side}-link-user`,
-      linkToken = `${side}-link-token`;
+    let member: Record<string, unknown>;
+    let social: Record<string, unknown>;
+    const linkUser = `${side}-link-user`;
+    const linkToken = `${side}-link-token`;
     const linkedAccounts: Record<string, unknown>[] = [];
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
       fetch(request) {
-        const path = new URL(request.url).pathname,
-          now = Date.now(),
-          iso = (offset = 0) => new Date(now + offset).toISOString();
+        const path = new URL(request.url).pathname;
+        const now = Date.now();
+        const iso = (offset = 0) => new Date(now + offset).toISOString();
+
         if (path.endsWith("/sign-up/email")) {
           const signed = encodeURIComponent(
             `${linkToken}.${createHmac("sha256", secret).update(linkToken).digest("base64")}`,
@@ -386,6 +417,7 @@ test("request clocks tolerate slower execution while preserving session lifetime
             },
           );
         }
+
         if (path === "/__test/profiles/validation/api/auth/callback/gitlab") {
           linkedAccounts.push({
             id: `${side}-linked-account`,
@@ -399,12 +431,15 @@ test("request clocks tolerate slower execution while preserving session lifetime
           });
           return new Response(null, { status: 302, headers: { location: "/done" } });
         }
-        if (path === "/__test/user-validation/state")
+
+        if (path === "/__test/user-validation/state") {
           return Response.json({
             users: [{ id: linkUser }],
             accounts: linkedAccounts,
             sessions: [],
           });
+        }
+
         if (path.endsWith("/server")) {
           member = {
             id: `${side}-member`,
@@ -415,9 +450,10 @@ test("request clocks tolerate slower execution while preserving session lifetime
           };
           return Response.json({ code: "AFTER_HOOK_REJECTED" }, { status: 500 });
         }
+
         if (path.endsWith("/callback/gitlab")) {
-          const token = `${side}-session`,
-            user = { id: `${side}-user`, createdAt: iso(), updatedAt: iso() };
+          const token = `${side}-session`;
+          const user = { id: `${side}-user`, createdAt: iso(), updatedAt: iso() };
           social = {
             users: [user],
             accounts: [
@@ -453,6 +489,7 @@ test("request clocks tolerate slower execution while preserving session lifetime
             },
           });
         }
+
         if (path.includes("organization-member-addition")) {
           const { createdAt: _, ...stored } = member!;
           return Response.json({
@@ -467,11 +504,13 @@ test("request clocks tolerate slower execution while preserving session lifetime
             snapshot: { members: [stored] },
           });
         }
+
         return Response.json(social!);
       },
     });
-    const traces: TraceEntry[] = [],
-      traced = createTracingFetch(server.url.origin, "producer", traces);
+    const traces: TraceEntry[] = [];
+    const traced = createTracingFetch(server.url.origin, "producer", traces);
+
     try {
       await traced("/__test/organization-member-addition/server", {
         method: "POST",
@@ -498,6 +537,7 @@ test("request clocks tolerate slower execution while preserving session lifetime
       server.stop(true);
     }
   }
+
   const first = await capture("left");
   await Bun.sleep(10);
   const second = await capture("right");
@@ -511,6 +551,7 @@ test("request clocks tolerate slower execution while preserving session lifetime
     rightRequestWindows: second.windows,
   };
   expect(compareValues(first.value, second.value, producerClocks)).toEqual([]);
+
   for (const mutation of [
     "member-owner",
     "missing-member",
@@ -531,53 +572,107 @@ test("request clocks tolerate slower execution while preserving session lifetime
     "link-token",
     "link-lifetime",
   ]) {
-    const value = structuredClone(second.value),
-      clocks = structuredClone(producerClocks);
-    const memberControl = clocks.rightRequestWindows[1]!.controlObservation!,
-      oauthControl = clocks.rightRequestWindows[3]!.controlObservation!;
-    if (mutation === "member-owner")
+    const value = structuredClone(second.value);
+    const clocks = structuredClone(producerClocks);
+    const memberControl = clocks.rightRequestWindows[1]!.controlObservation!;
+    const oauthControl = clocks.rightRequestWindows[3]!.controlObservation!;
+
+    if (mutation === "member-owner") {
       clocks.rightRequestWindows[0]!.memberAdditionOwner!.userId = "foreign";
-    if (mutation === "missing-member")
+    }
+
+    if (mutation === "missing-member") {
       (memberControl.body as { snapshot: { members: unknown[] } }).snapshot.members = [];
-    if (mutation === "member-digest") memberControl.digest = "invalid";
-    if (mutation === "callback-signature")
+    }
+
+    if (mutation === "member-digest") {
+      memberControl.digest = "invalid";
+    }
+
+    if (mutation === "callback-signature") {
       clocks.rightRequestWindows[2]!.issuedSessionCookie += "invalid";
-    if (mutation === "callback-status") value.traces[2]!.responseStatus = 400;
-    if (mutation === "session-owner")
+    }
+
+    if (mutation === "callback-status") {
+      value.traces[2]!.responseStatus = 400;
+    }
+
+    if (mutation === "session-owner") {
       (oauthControl.body as { sessions: { userId: string }[] }).sessions[0]!.userId = "foreign";
-    if (mutation === "oauth-digest") oauthControl.digest = "invalid";
-    if (mutation === "session-lifetime")
+    }
+
+    if (mutation === "oauth-digest") {
+      oauthControl.digest = "invalid";
+    }
+
+    if (mutation === "session-lifetime") {
       (value.observation.oauth as { sessions: { expiresAt: string }[] }).sessions[0]!.expiresAt =
         new Date(Date.now() + 123456789).toISOString();
+    }
+
     const linkedControl = clocks.rightRequestWindows[7]!.controlObservation!;
     const linked = value.observation.linked as { accounts: Record<string, unknown>[] };
-    if (mutation === "link-owner") linked.accounts[0]!.userId = "foreign";
-    if (mutation === "link-path")
+
+    if (mutation === "link-owner") {
+      linked.accounts[0]!.userId = "foreign";
+    }
+
+    if (mutation === "link-path") {
       value.traces[6]!.path = "/__test/profiles/foreign/api/auth/callback/gitlab";
-    if (mutation === "link-signature") clocks.rightRequestWindows[6]!.sessionCookie += "invalid";
-    if (mutation === "link-status") value.traces[6]!.responseStatus = 400;
-    if (mutation === "link-date")
+    }
+
+    if (mutation === "link-signature") {
+      clocks.rightRequestWindows[6]!.sessionCookie += "invalid";
+    }
+
+    if (mutation === "link-status") {
+      value.traces[6]!.responseStatus = 400;
+    }
+
+    if (mutation === "link-date") {
       linked.accounts[0]!.createdAt = new Date(
         clocks.rightRequestWindows[6]!.finishedAt + 60000,
       ).toISOString();
-    if (["link-owner", "link-date"].includes(mutation))
+    }
+
+    if (["link-owner", "link-date"].includes(mutation)) {
       (linkedControl.body as { accounts: unknown[] }).accounts = structuredClone(linked.accounts);
-    if (mutation === "link-future-issuer")
+    }
+
+    if (mutation === "link-future-issuer") {
       clocks.rightRequestWindows[4]!.finishedAt = clocks.rightRequestWindows[6]!.finishedAt + 1;
-    if (mutation === "link-token") linked.accounts[0]!.accessToken = "unobserved-provider-token";
-    if (mutation === "link-lifetime")
+    }
+
+    if (mutation === "link-token") {
+      linked.accounts[0]!.accessToken = "unobserved-provider-token";
+    }
+
+    if (mutation === "link-lifetime") {
       linked.accounts[0]!.accessTokenExpiresAt = new Date(
         Date.parse(String(linked.accounts[0]!.accessTokenExpiresAt)) + 1000,
       ).toISOString();
-    if (["link-token", "link-lifetime"].includes(mutation))
+    }
+
+    if (["link-token", "link-lifetime"].includes(mutation)) {
       (linkedControl.body as { accounts: unknown[] }).accounts = structuredClone(linked.accounts);
-    if (mutation === "link-digest") linkedControl.digest = "invalid";
+    }
+
+    if (mutation === "link-digest") {
+      linkedControl.digest = "invalid";
+    }
+
     const beforeLink = clocks.rightRequestWindows[5]!.controlObservation!;
-    if (mutation === "preexisting-link")
+
+    if (mutation === "preexisting-link") {
       (beforeLink.body as { accounts: unknown[] }).accounts = structuredClone(linked.accounts);
-    for (const control of [memberControl, oauthControl, linkedControl, beforeLink])
-      if (control.digest !== "invalid")
+    }
+
+    for (const control of [memberControl, oauthControl, linkedControl, beforeLink]) {
+      if (control.digest !== "invalid") {
         control.digest = createHash("sha256").update(JSON.stringify(control.body)).digest("hex");
+      }
+    }
+
     const prefix =
       mutation.startsWith("member") || mutation === "missing-member"
         ? "observation.addition.receipts.0.member.createdAt"
@@ -634,8 +729,8 @@ test("later session and user clocks require their actual issuance and update rec
     ],
   });
   // The physical observer can expose the same stored row without an auth read.
-  const left = observe("left", 100_100, 105_100),
-    right = observe("right", 200_100, 210_100);
+  const left = observe("left", 100_100, 105_100);
+  const right = observe("right", 200_100, 210_100);
   const windows = (side: string, issued: number, updated: number) => [
     {
       startedAt: issued,
@@ -660,6 +755,7 @@ test("later session and user clocks require their actual issuance and update rec
     rightRequestWindows: windows("right", 200_000, 210_000),
   };
   expect(compareValues(left, right, context)).toEqual([]);
+
   const secret = "lifecycle-secret";
   const cookie = (token: string) =>
     `better-auth.session_token=${encodeURIComponent(`${token}.${createHmac("sha256", secret).update(token).digest("base64")}`)}`;
@@ -693,6 +789,7 @@ test("later session and user clocks require their actual issuance and update rec
     ],
   };
   expect(compareValues(physical(left), physical(right), receiptContext)).toEqual([]);
+
   for (const change of [
     "foreign-owner",
     "unissued-token",
@@ -704,24 +801,52 @@ test("later session and user clocks require their actual issuance and update rec
     "tampered-control",
     "copied-application-date",
   ]) {
-    const altered = physical(structuredClone(right)),
-      clocks = structuredClone(receiptContext);
+    const altered = physical(structuredClone(right));
+    const clocks = structuredClone(receiptContext);
     const row = altered.observation.sessions[0]!;
-    if (change === "foreign-owner") row.userId = "another-user";
-    if (change === "unissued-token") row.token = "another-token";
-    if (change === "wrong-lifetime") row.expiresAt = iso(250_100);
-    if (change === "unrelated-date") row.createdAt = iso(215_100);
-    if (change === "date-shape") row.expiresAt = row.expiresAt.replace("Z", "+00:00");
-    if (change === "invalid-signature")
+
+    if (change === "foreign-owner") {
+      row.userId = "another-user";
+    }
+
+    if (change === "unissued-token") {
+      row.token = "another-token";
+    }
+
+    if (change === "wrong-lifetime") {
+      row.expiresAt = iso(250_100);
+    }
+
+    if (change === "unrelated-date") {
+      row.createdAt = iso(215_100);
+    }
+
+    if (change === "date-shape") {
+      row.expiresAt = row.expiresAt.replace("Z", "+00:00");
+    }
+
+    if (change === "invalid-signature") {
       clocks.rightRequestWindows[0]!.issuedSessionCookie = cookie("wrong");
-    if (change === "failed-issuer") altered.traces[0]!.responseStatus = 401;
-    if (change === "tampered-control") clocks.rightPhysicalObservations[0]!.digest = "invalid";
-    if (change === "copied-application-date") row.updatedAt = iso(215_100);
+    }
+
+    if (change === "failed-issuer") {
+      altered.traces[0]!.responseStatus = 401;
+    }
+
+    if (change === "tampered-control") {
+      clocks.rightPhysicalObservations[0]!.digest = "invalid";
+    }
+
+    if (change === "copied-application-date") {
+      row.updatedAt = iso(215_100);
+    }
+
     expect(
       compareValues(physical(left), altered, clocks).some((diff) =>
         diff.path.startsWith("observation.sessions"),
       ),
     ).toBe(true);
+
     // The independent control really returned the wrong row. Exact readback
     // alone must not substitute for its signed issuer, owner or lifetime.
     if (
@@ -743,6 +868,7 @@ test("later session and user clocks require their actual issuance and update rec
       ).toBe(true);
     }
   }
+
   const application = {
     ...physical(right),
     application: { ...physical(right).observation.sessions[0]!, expiresAt: iso(251_100) },
@@ -754,18 +880,30 @@ test("later session and user clocks require their actual issuance and update rec
       receiptContext,
     ).some((diff) => diff.path === "application.expiresAt"),
   ).toBe(true);
+
   for (const change of ["unknown-cookie", "read-endpoint", "foreign-owner", "wrong-lifetime"]) {
-    const altered = structuredClone(right),
-      clocks = structuredClone(context);
-    if (change === "unknown-cookie")
+    const altered = structuredClone(right);
+    const clocks = structuredClone(context);
+
+    if (change === "unknown-cookie") {
       clocks.rightRequestWindows[1]!.sessionCookie = "better-auth.session_token=unissued.signed";
-    if (change === "read-endpoint") altered.traces[0]!.path = "/api/auth/get-session";
-    if (change === "foreign-owner")
+    }
+
+    if (change === "read-endpoint") {
+      altered.traces[0]!.path = "/api/auth/get-session";
+    }
+
+    if (change === "foreign-owner") {
       altered.traces[2]!.responseBody.session!.userId = "another-user";
-    if (change === "wrong-lifetime")
+    }
+
+    if (change === "wrong-lifetime") {
       altered.traces[2]!.responseBody.session!.expiresAt = iso(250_100);
+    }
+
     expect(compareValues(left, altered, clocks).length).toBeGreaterThan(0);
   }
+
   const narrowPhysical = (value: typeof left) => {
     const issued = value.traces[2]!.responseBody.session!;
     return {
@@ -805,17 +943,28 @@ test("later session and user clocks require their actual issuance and update rec
     rightRequestWindows: receiptContext.rightRequestWindows.slice(0, 1),
   };
   expect(compareValues(narrowPhysical(left), narrowPhysical(right), narrowContext)).toEqual([]);
+
   for (const change of ["foreign-owner", "wrong-lifetime", "old-row"]) {
     const altered = narrowPhysical(right);
-    if (change === "foreign-owner") altered.observation.sessions[0]!.userId = "another-user";
-    if (change === "wrong-lifetime")
+
+    if (change === "foreign-owner") {
+      altered.observation.sessions[0]!.userId = "another-user";
+    }
+
+    if (change === "wrong-lifetime") {
       altered.observation.sessions[0]!.expiresAt = iso(200_100 + 604801000);
-    if (change === "old-row") altered.observation.sessions[0]!.expiresAt = iso(190_100 + 604800000);
+    }
+
+    if (change === "old-row") {
+      altered.observation.sessions[0]!.expiresAt = iso(190_100 + 604800000);
+    }
+
     expect(
       compareValues(narrowPhysical(left), altered, narrowContext).some((diff) =>
         diff.path.endsWith("expiresAt"),
       ),
     ).toBe(true);
+
     const row = altered.observation.sessions[0]!;
     const observedWrong = {
       ...narrowContext,
@@ -829,6 +978,7 @@ test("later session and user clocks require their actual issuance and update rec
       ),
     ).toBe(true);
   }
+
   const pending = (side: string, issued: number) => ({
     traces: [
       {
@@ -897,9 +1047,10 @@ test("later session and user clocks require their actual issuance and update rec
     leftRequestWindows: pendingWindows("left", 100_100),
     rightRequestWindows: pendingWindows("right", 210_100),
   };
-  const leftPending = pending("left", 100_100),
-    rightPending = pending("right", 210_100);
+  const leftPending = pending("left", 100_100);
+  const rightPending = pending("right", 210_100);
   expect(compareValues(leftPending, rightPending, pendingContext)).toEqual([]);
+
   for (const change of [
     "foreign-owner",
     "unissued-identifier",
@@ -912,28 +1063,59 @@ test("later session and user clocks require their actual issuance and update rec
     "failed-issuer",
     "tampered-control",
   ]) {
-    const altered = structuredClone(rightPending),
-      clocks = structuredClone(pendingContext);
-    if (change === "foreign-owner") altered.observation.challenge.value.userId = "another-user";
-    if (change === "unissued-identifier")
+    const altered = structuredClone(rightPending);
+    const clocks = structuredClone(pendingContext);
+
+    if (change === "foreign-owner") {
+      altered.observation.challenge.value.userId = "another-user";
+    }
+
+    if (change === "unissued-identifier") {
       altered.observation.challenge.identifier.token = "2fa-unissuedxxxxxxxxxxxx";
-    if (change === "wrong-lifetime")
-      for (const row of Object.values(altered.observation)) row.expiresAt = iso(809_100);
-    if (change === "unrelated-date") altered.observation.challenge.createdAt = iso(215_100);
-    if (change === "old-cookie")
+    }
+
+    if (change === "wrong-lifetime") {
+      for (const row of Object.values(altered.observation)) {
+        row.expiresAt = iso(809_100);
+      }
+    }
+
+    if (change === "unrelated-date") {
+      altered.observation.challenge.createdAt = iso(215_100);
+    }
+
+    if (change === "old-cookie") {
       clocks.rightRequestWindows[1]!.issuedTwoFactorCookie = challengeCookie(
         "2fa-oldxxxxxxxxxxxxxxxxx",
       );
-    if (change === "invalid-signature") clocks.rightRequestWindows[1]!.issuedTwoFactorCookie += "x";
-    if (change === "foreign-email") clocks.rightRequestWindows[1]!.signInEmail = "foreign@test.com";
-    if (change === "counter-expiry") altered.observation.attempts.expiresAt = iso(811_100);
-    if (change === "failed-issuer") altered.traces[1]!.responseStatus = 401;
-    if (change === "tampered-control") clocks.rightPhysicalObservations[0]!.digest = "invalid";
+    }
+
+    if (change === "invalid-signature") {
+      clocks.rightRequestWindows[1]!.issuedTwoFactorCookie += "x";
+    }
+
+    if (change === "foreign-email") {
+      clocks.rightRequestWindows[1]!.signInEmail = "foreign@test.com";
+    }
+
+    if (change === "counter-expiry") {
+      altered.observation.attempts.expiresAt = iso(811_100);
+    }
+
+    if (change === "failed-issuer") {
+      altered.traces[1]!.responseStatus = 401;
+    }
+
+    if (change === "tampered-control") {
+      clocks.rightPhysicalObservations[0]!.digest = "invalid";
+    }
+
     expect(
       compareValues(leftPending, altered, clocks).some((diff) =>
         diff.path.startsWith("observation"),
       ),
     ).toBe(true);
+
     if (
       [
         "foreign-owner",
@@ -981,8 +1163,8 @@ test("later session and user clocks require their actual issuance and update rec
     },
   });
   const trustCookie = (side: string, owner = `${side}-user`) => {
-    const identifier = `trust-device-${side}`,
-      inner = createHmac("sha256", secret).update(`${owner}!${identifier}`).digest("base64url");
+    const identifier = `trust-device-${side}`;
+    const inner = createHmac("sha256", secret).update(`${owner}!${identifier}`).digest("base64url");
     return cookie(`${inner}!${identifier}`).replace("session_token=", "trust_device=");
   };
   const trustWindows = (side: string, issued: number, updated: number) => [
@@ -1010,8 +1192,8 @@ test("later session and user clocks require their actual issuance and update rec
         { ...row, identifier: row.identifier.token, value: row.value.userId },
       ]),
     );
-  const leftTrust = trust("left", 100100, 100900),
-    rightTrust = trust("right", 210100, 210900);
+  const leftTrust = trust("left", 100100, 100900);
+  const rightTrust = trust("right", 210100, 210900);
   const trustContext = {
     ...context,
     sessionCookieSecret: secret,
@@ -1021,6 +1203,7 @@ test("later session and user clocks require their actual issuance and update rec
     rightPhysicalObservations: trustReceipts(rightTrust),
   };
   expect(compareValues(leftTrust, rightTrust, trustContext)).toEqual([]);
+
   for (const change of [
     "foreign-owner",
     "invalid-signature",
@@ -1032,22 +1215,48 @@ test("later session and user clocks require their actual issuance and update rec
     "updated-outside-mutation",
     "tampered-control",
   ]) {
-    const altered = structuredClone(rightTrust),
-      clocks = structuredClone(trustContext),
-      row = altered.observation.expiryRows[0]!;
-    if (change === "foreign-owner") row.value.userId = "foreign";
-    if (change === "invalid-signature") clocks.rightRequestWindows[0]!.issuedTrustCookie += "x";
-    if (change === "wrong-inner-owner")
+    const altered = structuredClone(rightTrust);
+    const clocks = structuredClone(trustContext);
+    const row = altered.observation.expiryRows[0]!;
+
+    if (change === "foreign-owner") {
+      row.value.userId = "foreign";
+    }
+
+    if (change === "invalid-signature") {
+      clocks.rightRequestWindows[0]!.issuedTrustCookie += "x";
+    }
+
+    if (change === "wrong-inner-owner") {
       clocks.rightRequestWindows[0]!.issuedTrustCookie = trustCookie("right", "foreign");
-    if (change === "failed-issuer") altered.traces[0]!.responseStatus = 400;
-    if (change === "wrong-expiry-owner")
+    }
+
+    if (change === "failed-issuer") {
+      altered.traces[0]!.responseStatus = 400;
+    }
+
+    if (change === "wrong-expiry-owner") {
       clocks.rightRequestWindows[1]!.verificationInput!.identifier = "unrelated";
-    if (change === "wrong-expiry")
+    }
+
+    if (change === "wrong-expiry") {
       clocks.rightRequestWindows[1]!.verificationInput!.expiresAt = "2019-01-01T00:00:00.000Z";
-    if (change === "created-outside-issuer") row.createdAt = iso(215100);
-    if (change === "updated-outside-mutation") row.updatedAt = iso(215900);
+    }
+
+    if (change === "created-outside-issuer") {
+      row.createdAt = iso(215100);
+    }
+
+    if (change === "updated-outside-mutation") {
+      row.updatedAt = iso(215900);
+    }
+
     clocks.rightPhysicalObservations = trustReceipts(altered);
-    if (change === "tampered-control") clocks.rightPhysicalObservations[0]!.digest = "invalid";
+
+    if (change === "tampered-control") {
+      clocks.rightPhysicalObservations[0]!.digest = "invalid";
+    }
+
     expect(
       compareValues(leftTrust, altered, clocks).some((diff) =>
         /^observation\.expiryRows\.0\.(?:createdAt|updatedAt)$/.test(diff.path),
@@ -1087,13 +1296,16 @@ test("clock evidence cannot approve another field, entity or a changed lifetime"
   };
   const left = { traces: [trace({ session: session(50) })] };
   const right = { traces: [trace({ session: session(5500) })] };
+
   for (const extra of [false, true]) {
-    const a = structuredClone(left),
-      b = structuredClone(right);
+    const a = structuredClone(left);
+    const b = structuredClone(right);
+
     if (extra) {
       a.traces.push(trace({ user: { id: "user", createdAt: iso(50) } }));
       b.traces.push(trace({ user: { id: "user", createdAt: iso(5500) } }));
     }
+
     expect(
       compareValues(a, b, context).some(
         (diff) => diff.path === "traces.0.responseBody.session.expiresAt",
@@ -1128,19 +1340,21 @@ test("discarded successful bodies and response policy headers remain observable"
       await createTracingFetch(server.url.origin, "actor", traces)("/api/auth/ok");
       return { traces };
     }
-    const baseline = await observe("baseline"),
-      context = {
-        leftBaseURL: server.url.origin,
-        rightBaseURL: server.url.origin,
-        leftStartedAt: 0,
-        rightStartedAt: 0,
-      };
+
+    const baseline = await observe("baseline");
+    const context = {
+      leftBaseURL: server.url.origin,
+      rightBaseURL: server.url.origin,
+      leftStartedAt: 0,
+      rightStartedAt: 0,
+    };
     expect(compareValues(baseline, await observe("baseline"), context)).toEqual([]);
     expect(
       compareValues(baseline, await observe("body"), context).some(
         (diff) => diff.path === "traces.0.responseBody.result.enabled",
       ),
     ).toBe(true);
+
     const missing = compareValues(baseline, await observe("headers"), context);
     expect(missing.some((diff) => diff.path.endsWith("access-control-allow-origin"))).toBe(true);
     expect(missing.some((diff) => diff.path.endsWith("cache-control"))).toBe(true);

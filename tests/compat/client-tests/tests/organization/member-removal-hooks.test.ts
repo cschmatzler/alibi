@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { createTracingFetch, type TraceEntry } from "../../support/trace";
 
@@ -62,6 +64,7 @@ async function signup(ctx: ScenarioContext, name: string) {
   const email = ctx.uniqueEmail(name);
   const result = await actor.client.signUp.email({ name, email, password: "password123" });
   expect(result.error).toBeNull();
+
   return {
     ...actor,
     email,
@@ -79,6 +82,7 @@ async function select(actor: Actor, organizationId: string, teamId: string) {
     body: { organizationId },
   });
   expect(activeOrganization.error).toBeNull();
+
   const activeTeam = await actor.client.$fetch("/organization/set-active-team", {
     method: "POST",
     body: { teamId },
@@ -115,11 +119,13 @@ async function setup(ctx: ScenarioContext, name: string) {
       body: { organizationId, email: target.email, role: "member" },
     });
     expect(invited.error).toBeNull();
+
     const accepted = await target.client.$fetch("/organization/accept-invitation", {
       method: "POST",
       body: { invitationId: row.parse(invited.data).id },
     });
     expect(accepted.error).toBeNull();
+
     return member.parse(z.object({ member }).parse(ctx.snapshot(accepted.data)).member);
   }
 
@@ -132,12 +138,14 @@ async function setup(ctx: ScenarioContext, name: string) {
       body: { organizationId, name: label },
     });
     expect(created.error).toBeNull();
+
     const team = row.parse(created.data);
     const added = await actor.client.$fetch("/organization/add-team-member", {
       method: "POST",
       body: { organizationId, teamId: team.id, userId: target.userId },
     });
     expect(added.error).toBeNull();
+
     return team;
   }
 
@@ -151,6 +159,7 @@ async function setup(ctx: ScenarioContext, name: string) {
     password: "password123",
   });
   expect(siblingSignIn.error).toBeNull();
+
   const sibling = { ...siblingBase, email: target.email, userId: target.userId, user: target.user };
   await select(target, org.id, ownTeam.id);
   await select(sibling, org.id, ownTeam.id);
@@ -227,17 +236,20 @@ function phases(
   byEmail = false,
 ) {
   expect(after.receipts.map((row) => row.phase)).toEqual(["before-remove", "after-remove"]);
+
   const expected = {
     ...original,
     ...(byEmail
       ? { user: { id: user.id, name: user.name, email: user.email, image: user.image } }
       : {}),
   };
+
   for (const row of after.receipts) {
     expect(row.member).toEqual(expected);
     expect(row.user).toEqual(user);
     expect(row.organization).toEqual(org);
   }
+
   return after.receipts;
 }
 
@@ -309,6 +321,7 @@ compatScenario(
           : removed(before.snapshot, original.id, target.userId, [ownTeam.id]),
       );
       expect(after.receipts[0]!.snapshot).toEqual(before.snapshot);
+
       const usersAfter = await users();
       expect(usersAfter).toEqual(usersBefore);
 
@@ -318,13 +331,16 @@ compatScenario(
       let retryMember = original;
       let missing: unknown = null;
       let missingState: Awaited<ReturnType<typeof state>> | null = null;
+
       if (mode === "reject-after-remove") {
         const absent = await remove(owner, org.id, original.id);
         expect(absent.error).toMatchObject({ status: 400, code: "MEMBER_NOT_FOUND" });
+
         missing = ctx.snapshot(absent);
         missingState = await state(ctx);
         expect(missingState).toEqual({ receipts: [], snapshot: after.snapshot });
         expect(await users()).toEqual(usersBefore);
+
         retryMember = await invite(owner, org.id);
         expect(retryMember.id).not.toBe(original.id);
         expect(retryMember.userId).toBe(target.userId);
@@ -332,6 +348,7 @@ compatScenario(
 
       const retryBefore = await state(ctx);
       expect(retryBefore.receipts).toEqual([]);
+
       const retry = await remove(owner, org.id, retryMember.id);
       expect(retry.error).toBeNull();
 
@@ -344,6 +361,7 @@ compatScenario(
       expect(notes[1]!.snapshot).toEqual(final.snapshot);
       expect(z.object({ member }).parse(ctx.snapshot(retry.data)).member).toEqual(retryMember);
       expect(await users()).toEqual(usersBefore);
+
       if (mode === "reject-after-remove") {
         expect(final.snapshot.teams).toEqual(after.snapshot.teams);
         expect(final.snapshot.teamMembers).toEqual(after.snapshot.teamMembers);
@@ -385,14 +403,18 @@ compatScenario(
       const after = await state(ctx);
       const notes = phases(after, original, target.user, rawOrg);
       expect(notes[0]!.snapshot).toEqual(before.snapshot);
+
       const expected = removed(before.snapshot, original.id, target.userId, [ownTeam.id]);
+
       if (mode === "mutate-target") {
         expected.users = expected.users.map((row) =>
           row.id === target.userId ? { ...row, name: "Stored Removal Target" } : row,
         );
       }
+
       expect(after.snapshot).toEqual(expected);
       expect(notes[1]!.snapshot).toEqual(after.snapshot);
+
       const usersAfter = await users();
       expect(usersAfter).toEqual(usersBefore);
 
@@ -432,6 +454,7 @@ compatScenario(
       expect(result.error).toMatchObject({ status, code });
       expect(await state(ctx)).toEqual(before);
       expect(await users()).toEqual(usersBefore);
+
       observations.push(ctx.snapshot(result));
     }
 
@@ -444,6 +467,7 @@ compatScenario(
       },
     );
     expect(invalid.status).toBe(400);
+
     const invalidBody = await invalid.json();
     expect(invalidBody).toEqual({
       code: "VALIDATION_ERROR",
@@ -485,6 +509,7 @@ compatScenario(
         body: { organizationId: org.id, memberId: original.id, role: "owner" },
       });
       expect(promoted.error).toBeNull();
+
       const current = member.parse(ctx.snapshot(promoted.data));
 
       await configure(ctx, rejection ? "reject-after-remove" : "record");
@@ -493,9 +518,11 @@ compatScenario(
       const siblingSession = await sibling.client.getSession();
       expect(currentSession.error).toBeNull();
       expect(siblingSession.error).toBeNull();
+
       const currentId = z.object({ session: row }).parse(currentSession.data).session.id;
       const siblingId = z.object({ session: row }).parse(siblingSession.data).session.id;
       const result = await remove(target, org.id, original.id);
+
       if (rejection) {
         expect(result.error).toMatchObject({ status: 400, code: "MEMBER_REMOVAL_HOOK_REJECTED" });
       } else {
@@ -590,12 +617,13 @@ compatScenario(
 compatScenario(
   "organization last owner checks its configured raw page before callbacks",
   async (ctx) => {
-    const { owner, target, org, original, users } = await setup(ctx, "remove-owner-page");
+    const { owner, org, original, users } = await setup(ctx, "remove-owner-page");
     const promoted = await owner.client.$fetch("/organization/update-member-role", {
       method: "POST",
       body: { organizationId: org.id, memberId: original.id, role: "owner" },
     });
     expect(promoted.error).toBeNull();
+
     const configured = ctx.actor(
       "remove-owner-page-configured",
       "org-member-removal-hooks-page-one",
@@ -651,6 +679,7 @@ compatScenario(
 
     let during: Awaited<ReturnType<typeof state>> | undefined;
     const trace: TraceEntry[] = [];
+
     try {
       during = await state(ctx, "before-remove");
       expect(during.receipts.map((row) => row.phase)).toEqual(["before-remove"]);
@@ -668,6 +697,7 @@ compatScenario(
     const result = await pending;
     ctx.recordTransport(trace);
     expect(result.error).toBeNull();
+
     const after = await state(ctx);
     expect(after.receipts.map((row) => row.phase)).toEqual(["before-remove", "after-remove"]);
     expect(after.snapshot).toEqual(
@@ -702,10 +732,12 @@ compatScenario(
         }),
       });
       expect(result.status).toBe(actor === guest ? 401 : 400);
+
       const body = await result.json();
       expect(body).toHaveProperty("code", actor === guest ? "UNAUTHORIZED" : "MEMBER_NOT_FOUND");
       expect(await state(ctx)).toEqual(before);
       expect(await users()).toEqual(usersBefore);
+
       failures.push({ status: result.status, body });
     }
 
@@ -715,6 +747,7 @@ compatScenario(
       body: JSON.stringify({ organizationId: org.id, memberIdOrEmail: target.email.toUpperCase() }),
     });
     expect(response.status).toBe(200);
+
     const result = await response.json();
     const after = await state(ctx);
     const notes = phases(after, original, target.user, rawOrg, true);
@@ -745,6 +778,7 @@ compatScenario(
 
     const session = await owner.client.getSession();
     expect(session.error).toBeNull();
+
     const current = z
       .object({ session: z.object({ id: z.string(), token: z.string() }) })
       .parse(session.data).session;
@@ -764,6 +798,7 @@ compatScenario(
       body: JSON.stringify({ organizationId: org.id, memberIdOrEmail: original.id }),
     });
     expect(response.status).toBe(401);
+
     const body = await response.json();
     expect(body).toEqual({ code: "UNAUTHORIZED", message: "Unauthorized" });
     expect(response.headers.getSetCookie()).toEqual([]);
@@ -775,9 +810,11 @@ compatScenario(
       ...before.snapshot,
       sessions: before.snapshot.sessions.filter((row) => row.id !== current.id),
     });
+
     const usersAfter = await users();
     expect(usersAfter[1]).toEqual(usersBefore[1]);
     expect(usersAfter[2]).toEqual(usersBefore[2]);
+
     const userState = z
       .object({ sessions: z.array(z.object({ id: z.string() }).passthrough()) })
       .passthrough();
@@ -789,6 +826,7 @@ compatScenario(
 
     const retry = await remove({ ...owner, ...sibling }, org.id, original.id);
     expect(retry.error).toBeNull();
+
     const final = await state(ctx);
     expect(final.receipts.map((row) => row.phase)).toEqual(["before-remove", "after-remove"]);
     expect(final.snapshot).toEqual(
@@ -850,6 +888,7 @@ compatScenario(
           password: "password123",
         });
         expect(ownerSignIn.error).toBeNull();
+
         const foreignSignIn = await foreignConfigured.client.signIn.email({
           email: foreign.email,
           password: "password123",
@@ -864,6 +903,7 @@ compatScenario(
         const before = await state(ctx);
         const usersBefore = await users();
         const denials = [];
+
         for (const [actor, status, code] of [
           [guest, 401, "UNAUTHORIZED"],
           [foreignConfigured, 400, "MEMBER_NOT_FOUND"],
@@ -872,6 +912,7 @@ compatScenario(
           expect(result.error).toMatchObject({ status, code });
           expect(await state(ctx)).toEqual(before);
           expect(await users()).toEqual(usersBefore);
+
           denials.push(ctx.snapshot(result));
         }
 
@@ -884,6 +925,7 @@ compatScenario(
         await configure(ctx, "record");
         const retry = await remove({ ...owner, ...configured }, org.id, original.id);
         expect(retry.error).toBeNull();
+
         const final = await state(ctx);
         expect(final.receipts).toEqual([]);
         expect(final.snapshot).toEqual(
@@ -917,6 +959,7 @@ compatScenario(
         const { owner, target, sibling, org, original, ownTeam, otherTeam, rawOrg, users, invite } =
           await setup(ctx, mode);
         let current = original;
+
         if (mode === "sql-after-error") {
           const promoted = await owner.client.$fetch("/organization/update-member-role", {
             method: "POST",
@@ -925,8 +968,10 @@ compatScenario(
           expect(promoted.error).toBeNull();
           current = member.parse(ctx.snapshot(promoted.data));
         }
+
         const session = await target.client.getSession();
         expect(session.error).toBeNull();
+
         const currentId = z.object({ session: row }).parse(session.data).session.id;
 
         await configure(ctx, mode, {
@@ -947,30 +992,37 @@ compatScenario(
         expect(after.receipts.map((row) => row.phase)).toEqual(
           mode === "sql-before-error" ? ["before-remove"] : ["before-remove", "after-remove"],
         );
+
         for (const row of after.receipts) {
           expect(row.member).toEqual(current);
           expect(row.user).toEqual(target.user);
           expect(row.organization).toEqual(rawOrg);
         }
+
         expect(after.receipts[0]!.snapshot).toEqual(before.snapshot);
+
         const expected =
           mode === "sql-before-error"
             ? before.snapshot
             : removed(before.snapshot, original.id, target.userId, [ownTeam.id]);
+
         if (mode === "sql-after-error") {
           expected.sessions = expected.sessions.map((row) =>
             row.id === currentId ? { ...row, activeOrganizationId: null } : row,
           );
         }
+
         expect(after.snapshot).toEqual(expected);
 
         const usersAfter = await users();
+
         if (mode === "sql-before-error") {
           expect(usersAfter).toEqual(usersBefore);
         } else {
           expect(after.receipts[1]!.snapshot).toEqual(after.snapshot);
           expect(usersAfter[0]).toEqual(usersBefore[0]);
           expect(usersAfter[2]).toEqual(usersBefore[2]);
+
           const shape = z.object({ sessions: z.array(row) }).passthrough();
           const previous = shape.parse(usersBefore[1]);
           expect(shape.parse(usersAfter[1])).toEqual({
@@ -979,6 +1031,7 @@ compatScenario(
               row.id === currentId ? { ...row, activeOrganizationId: null } : row,
             ),
           });
+
           const siblingSession = await sibling.client.getSession();
           expect(siblingSession.error).toBeNull();
           expect(
@@ -989,15 +1042,18 @@ compatScenario(
 
         await configure(ctx, "record");
         let restored = original;
+
         if (mode === "sql-after-error") {
           const missing = await remove(owner, org.id, original.id);
           expect(missing.error).toMatchObject({ status: 400, code: "MEMBER_NOT_FOUND" });
           expect((await state(ctx)).receipts).toEqual([]);
+
           restored = await invite(owner, org.id);
         }
 
         const retry = await remove(owner, org.id, restored.id);
         expect(retry.error).toBeNull();
+
         const final = await state(ctx);
         expect(final.receipts.map((row) => row.phase)).toEqual(["before-remove", "after-remove"]);
         expect(final.snapshot.members.some((row) => row.id === restored.id)).toBe(false);
@@ -1059,6 +1115,7 @@ compatScenario(
       await configure(ctx, "record");
       const retry = await remove(owner, org.id, original.id);
       expect(retry.error).toBeNull();
+
       const final = await state(ctx);
       expect(final.snapshot).toEqual({
         ...after.snapshot,

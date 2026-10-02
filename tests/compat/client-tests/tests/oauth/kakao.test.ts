@@ -1,13 +1,16 @@
 import { expect } from "bun:test";
+
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 type Row = Record<string, unknown>;
+
 type Stored = {
   users: Array<Row & { id: string }>;
   accounts: Array<Row & { id: string }>;
   sessions: Array<Row & { id: string }>;
 };
+
 type Receipt = {
   path: string;
   method: string;
@@ -21,6 +24,7 @@ async function state(ctx: ScenarioContext): Promise<Stored> {
   expect(response.status).toBe(200);
   return response.body as Stored;
 }
+
 async function control(ctx: ScenarioContext, value: Row) {
   const response = await ctx.rawRequest({
     path: "/__test/kakao/control",
@@ -29,6 +33,7 @@ async function control(ctx: ScenarioContext, value: Row) {
   });
   expect(response.status).toBe(200);
 }
+
 async function receipts(ctx: ScenarioContext) {
   const response = await ctx.rawRequest({ path: "/__test/kakao/receipts" });
   expect(response.status).toBe(200);
@@ -43,21 +48,27 @@ async function receipts(ctx: ScenarioContext) {
         : row.body,
   }));
 }
+
 async function foreign(ctx: ScenarioContext) {
-  const actor = ctx.actor("foreign"),
-    signup = await actor.client.signUp.email({
-      email: ctx.uniqueEmail("foreign"),
-      password: "Password123!",
-      name: "Foreign",
-    });
+  const actor = ctx.actor("foreign");
+  const signup = await actor.client.signUp.email({
+    email: ctx.uniqueEmail("foreign"),
+    password: "Password123!",
+    name: "Foreign",
+  });
   expect(signup.error).toBeNull();
+
   return { actor, before: await state(ctx) };
 }
+
 function unchangedForeign(before: Stored, after: Stored) {
-  for (const table of ["users", "accounts", "sessions"] as const)
-    for (const row of before[table])
+  for (const table of ["users", "accounts", "sessions"] as const) {
+    for (const row of before[table]) {
       expect(after[table].find((candidate) => candidate.id === row.id)).toEqual(row);
+    }
+  }
 }
+
 function profile(ctx: ScenarioContext): Row {
   return {
     id: 4242,
@@ -75,9 +86,11 @@ function profile(ctx: ScenarioContext): Row {
     originalApplicationField: { retained: true },
   };
 }
+
 function email(original: Row) {
   return (original.kakao_account as Row).email;
 }
+
 function image(original: Row) {
   return ((original.kakao_account as Row).profile as Row).profile_image_url;
 }
@@ -87,17 +100,18 @@ async function callback(
   mode: FixtureProfile = "social-kakao-default",
   requestSignUp = false,
 ) {
-  const actor = ctx.actor("kakao", mode),
-    start = await actor.client.signIn.social({
-      provider: "kakao",
-      callbackURL: "/dashboard",
-      requestSignUp,
-    });
+  const actor = ctx.actor("kakao", mode);
+  const start = await actor.client.signIn.social({
+    provider: "kakao",
+    callbackURL: "/dashboard",
+    requestSignUp,
+  });
   expect(start.error).toBeNull();
-  const url = new URL(start.data!.url!),
-    path =
-      authProfilePath(mode) +
-      `/callback/kakao?code=fixture-code&state=${encodeURIComponent(url.searchParams.get("state")!)}`;
+
+  const url = new URL(start.data!.url!);
+  const path =
+    authProfilePath(mode) +
+    `/callback/kakao?code=fixture-code&state=${encodeURIComponent(url.searchParams.get("state")!)}`;
   return {
     actor,
     start,
@@ -117,8 +131,8 @@ for (const mode of [
   compatScenario(
     `kakao published ${mode} authorization retains ordered scopes while omitting PKCE`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        fixture: FixtureProfile = `social-kakao-${mode}`;
+      const other = await foreign(ctx);
+      const fixture: FixtureProfile = `social-kakao-${mode}`;
       const result = await ctx.actor("kakao", fixture).client.signIn.social({
         provider: "kakao",
         callbackURL: "/dashboard",
@@ -127,14 +141,16 @@ for (const mode of [
         additionalParams: { custom: "value with space" },
       });
       expect(result.error).toBeNull();
-      const url = new URL(result.data!.url!),
-        configured = ["configured", "disabled-configured"].includes(mode);
+
+      const url = new URL(result.data!.url!);
+      const configured = ["configured", "disabled-configured"].includes(mode);
       expect(url.origin).toBe(
         mode === "configured-endpoint"
           ? "https://alternate-kakao.example.invalid"
           : "https://kauth.kakao.com",
       );
       expect(url.pathname).toBe(mode === "configured-endpoint" ? "/authorize" : "/oauth/authorize");
+
       const scopes = [
         ...(mode.startsWith("disabled-")
           ? []
@@ -160,9 +176,14 @@ for (const mode of [
           ? "https://client.example.invalid/kakao-return"
           : ctx.baseURL + authProfilePath(fixture) + "/callback/kakao",
       );
-      if (mode === "configured-endpoint") expect(url.searchParams.get("retained")).toBe("value");
+
+      if (mode === "configured-endpoint") {
+        expect(url.searchParams.get("retained")).toBe("value");
+      }
+
       expect(await state(ctx)).toEqual(other.before);
       expect(await receipts(ctx)).toEqual([]);
+
       return {
         result: ctx.snapshot(result),
         before: other.before,
@@ -178,21 +199,26 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
   compatScenario(
     `kakao ${mode} real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        original = profile(ctx);
+      const other = await foreign(ctx);
+      const original = profile(ctx);
       await control(ctx, { profile: original });
-      const fixture: FixtureProfile = `social-kakao-${mode}`,
-        flow = await callback(ctx, fixture);
+      const fixture: FixtureProfile = `social-kakao-${mode}`;
+      const flow = await callback(ctx, fixture);
       expect(flow.response.status).toBe(302);
       expect(flow.response.headers.get("location")).toBe("/dashboard");
-      const session = await flow.actor.client.getSession(),
-        after = await state(ctx);
+
+      const session = await flow.actor.client.getSession();
+      const after = await state(ctx);
       expect(session.error).toBeNull();
+
       unchangedForeign(other.before, after);
-      for (const table of ["users", "accounts", "sessions"] as const)
+
+      for (const table of ["users", "accounts", "sessions"] as const) {
         expect(after[table]).toHaveLength(other.before[table].length + 1);
-      const user = after.users.find((row) => !other.before.users.some((old) => old.id === row.id))!,
-        account = after.accounts.find((row) => row.userId === user.id)!;
+      }
+
+      const user = after.users.find((row) => !other.before.users.some((old) => old.id === row.id))!;
+      const account = after.accounts.find((row) => row.userId === user.id)!;
       expect(user).toMatchObject({
         name: mode === "mapped" ? "Mapped Kakao User" : "Kakao User",
         email: mode === "mapped" ? "mapped-kakao@example.invalid" : email(original),
@@ -210,8 +236,9 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
       });
       expect(account.accessTokenExpiresAt).toBeTruthy();
       expect(session.data?.user.id).toBe(user.id);
-      const raw = (await ctx.rawRequest({ path: "/__test/kakao/receipts" })).body as Receipt[],
-        exchange = raw[0]!.body as Record<string, string>;
+
+      const raw = (await ctx.rawRequest({ path: "/__test/kakao/receipts" })).body as Receipt[];
+      const exchange = raw[0]!.body as Record<string, string>;
       expect(exchange).toEqual({
         grant_type: "authorization_code",
         code: "fixture-code",
@@ -232,8 +259,10 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
         contentType: null,
         body: "",
       });
+
       const mapper = (await ctx.rawRequest({ path: "/__test/kakao/mapper-receipts" })).body;
       expect(mapper).toEqual(mode === "mapped" ? [original] : []);
+
       const replay = await flow.actor.fetch(ctx.baseURL + flow.path, { redirect: "manual" });
       expect(replay.status).toBe(302);
       expect(
@@ -241,6 +270,7 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
       ).toBeTruthy();
       expect(await state(ctx)).toEqual(after);
       expect(await receipts(ctx)).toHaveLength(2);
+
       await control(ctx, {
         tokenResponse: {
           access_token: "fixture-kakao-access-rotated",
@@ -253,11 +283,14 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
       expect(denied.error).not.toBeNull();
       expect(await state(ctx)).toEqual(after);
       expect(await receipts(ctx)).toHaveLength(2);
+
       const refreshed = await flow.actor.client.refreshToken({ accountId: account.id });
       expect(refreshed.error).toBeNull();
+
       const rotated = await state(ctx);
       expect(rotated.users).toEqual(after.users);
       expect(rotated.sessions).toEqual(after.sessions);
+
       unchangedForeign(other.before, rotated);
       expect(rotated.accounts.find((row) => row.id === account.id)).toMatchObject({
         accountId: String(original.id),
@@ -266,6 +299,7 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
         refreshToken: "fixture-kakao-refresh-rotated",
         scope: account.scope,
       });
+
       const requests = await receipts(ctx);
       expect(requests[2]!.body).toEqual({
         grant_type: "refresh_token",
@@ -274,15 +308,19 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
         ...(mode === "public" ? {} : { client_secret: "fixture-social-secret" }),
       });
       expect(requests[2]!.authorization).toBeNull();
+
       const signedOut = await flow.actor.client.signOut();
       expect(signedOut.error).toBeNull();
       expect((await flow.actor.client.getSession()).data).toBeNull();
+
       const final = await state(ctx);
       expect(final.users).toEqual(rotated.users);
       expect(final.accounts).toEqual(rotated.accounts);
+
       unchangedForeign(other.before, final);
       expect(final.sessions).toEqual(other.before.sessions);
       expect(await receipts(ctx)).toEqual(requests);
+
       return {
         before: other.before,
         start: ctx.snapshot(flow.start),
@@ -375,30 +413,54 @@ const mappings: Array<{
   { name: "empty verified email", verified: "", expectedVerified: false },
   { name: "truthy numeric email flags", valid: 1, verified: 1, expectedVerified: true },
 ];
-for (const mapping of mappings)
+
+for (const mapping of mappings) {
   compatScenario(
     `kakao ${mapping.name} nested profile retains original raw account and typed persistence`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        original = profile(ctx),
-        accountProfile = original.kakao_account as Row,
-        nested = accountProfile.profile as Row;
-      if ("nickname" in mapping) nested.nickname = mapping.nickname;
-      if ("accountName" in mapping) accountProfile.name = mapping.accountName;
-      if ("primaryImage" in mapping) nested.profile_image_url = mapping.primaryImage;
-      if ("thumbnail" in mapping) nested.thumbnail_image_url = mapping.thumbnail;
-      if ("valid" in mapping) accountProfile.is_email_valid = mapping.valid;
-      if ("verified" in mapping) accountProfile.is_email_verified = mapping.verified;
-      if ("id" in mapping) original.id = mapping.id;
+      const other = await foreign(ctx);
+      const original = profile(ctx);
+      const accountProfile = original.kakao_account as Row;
+      const nested = accountProfile.profile as Row;
+
+      if ("nickname" in mapping) {
+        nested.nickname = mapping.nickname;
+      }
+
+      if ("accountName" in mapping) {
+        accountProfile.name = mapping.accountName;
+      }
+
+      if ("primaryImage" in mapping) {
+        nested.profile_image_url = mapping.primaryImage;
+      }
+
+      if ("thumbnail" in mapping) {
+        nested.thumbnail_image_url = mapping.thumbnail;
+      }
+
+      if ("valid" in mapping) {
+        accountProfile.is_email_valid = mapping.valid;
+      }
+
+      if ("verified" in mapping) {
+        accountProfile.is_email_verified = mapping.verified;
+      }
+
+      if ("id" in mapping) {
+        original.id = mapping.id;
+      }
+
       await control(ctx, { profile: original });
       const flow = await callback(ctx);
       expect(flow.response.headers.get("location")).toBe("/dashboard");
+
       const stored = await state(ctx);
       unchangedForeign(other.before, stored);
       const user = stored.users.find(
-          (row) => !other.before.users.some((old) => old.id === row.id),
-        )!,
-        account = stored.accounts.find((row) => row.userId === user.id)!;
+        (row) => !other.before.users.some((old) => old.id === row.id),
+      )!;
+      const account = stored.accounts.find((row) => row.userId === user.id)!;
       expect(user).toMatchObject({
         name: mapping.expectedName ?? "Kakao User",
         email: email(original),
@@ -407,6 +469,7 @@ for (const mapping of mappings)
       });
       expect(account.accountId).toBe(mapping.expectedSubject ?? String(original.id));
       expect((await flow.actor.client.getSession()).data?.user.id).toBe(user.id);
+
       return {
         before: other.before,
         start: ctx.snapshot(flow.start),
@@ -417,8 +480,9 @@ for (const mapping of mappings)
     },
     ["POST /sign-in/social", "GET /callback/{}"],
   );
+}
 
-for (const expiry of ["absent", "zero", "fractional"] as const)
+for (const expiry of ["absent", "zero", "fractional"] as const) {
   compatScenario(
     `kakao ${expiry} access expiry follows actual token helper`,
     async (ctx) => {
@@ -436,11 +500,17 @@ for (const expiry of ["absent", "zero", "fractional"] as const)
       });
       const flow = await callback(ctx);
       expect(flow.response.headers.get("location")).toBe("/dashboard");
+
       const stored = await state(ctx);
       expect(stored.accounts).toHaveLength(1);
       expect(stored.accounts[0]!.scope).toBe("");
-      if (expiry === "fractional") expect(stored.accounts[0]!.accessTokenExpiresAt).toBeTruthy();
-      else expect(stored.accounts[0]!.accessTokenExpiresAt).toBeNull();
+
+      if (expiry === "fractional") {
+        expect(stored.accounts[0]!.accessTokenExpiresAt).toBeTruthy();
+      } else {
+        expect(stored.accounts[0]!.accessTokenExpiresAt).toBeNull();
+      }
+
       return {
         start: ctx.snapshot(flow.start),
         callback: { status: flow.response.status, location: flow.response.headers.get("location") },
@@ -450,6 +520,7 @@ for (const expiry of ["absent", "zero", "fractional"] as const)
     },
     ["POST /sign-in/social", "GET /callback/{}"],
   );
+}
 
 for (const variant of [
   "wrong-state",
@@ -462,49 +533,62 @@ for (const variant of [
   "missing-email",
   "signup-disabled",
   "implicit-disabled",
-] as const)
+] as const) {
   compatScenario(
     `kakao browser ${variant} denies before any owned or foreign identity write`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        original = profile(ctx);
-      if (variant === "missing-subject") delete original.id;
-      if (variant === "null-subject") original.id = null;
-      if (variant === "blank-subject") original.id = " ";
-      if (variant === "missing-email") delete (original.kakao_account as Row).email;
+      const other = await foreign(ctx);
+      const original = profile(ctx);
+
+      if (variant === "missing-subject") {
+        delete original.id;
+      }
+
+      if (variant === "null-subject") {
+        original.id = null;
+      }
+
+      if (variant === "blank-subject") {
+        original.id = " ";
+      }
+
+      if (variant === "missing-email") {
+        delete (original.kakao_account as Row).email;
+      }
+
       await control(ctx, {
         profile: original,
         ...(variant === "token-http-error" ? { tokenStatus: 503 } : {}),
         ...(variant === "userinfo-http-error" ? { userInfoStatus: 503 } : {}),
       });
       const fixture: FixtureProfile =
-          variant === "signup-disabled"
-            ? "social-kakao-signup-disabled"
-            : variant === "implicit-disabled"
-              ? "social-kakao-implicit-disabled"
-              : "social-kakao-default",
-        actor = ctx.actor("kakao", fixture),
-        start = await actor.client.signIn.social({
-          provider: "kakao",
-          callbackURL: "/dashboard",
-          requestSignUp: variant === "signup-disabled",
-        });
+        variant === "signup-disabled"
+          ? "social-kakao-signup-disabled"
+          : variant === "implicit-disabled"
+            ? "social-kakao-implicit-disabled"
+            : "social-kakao-default";
+      const actor = ctx.actor("kakao", fixture);
+      const start = await actor.client.signIn.social({
+        provider: "kakao",
+        callbackURL: "/dashboard",
+        requestSignUp: variant === "signup-disabled",
+      });
       expect(start.error).toBeNull();
-      const url = new URL(start.data!.url!),
-        callbackState =
-          variant === "wrong-state"
-            ? ctx.uniqueToken("wrong-state")
-            : url.searchParams.get("state")!,
-        provider = variant === "wrong-provider" ? "unknown-kakao" : "kakao",
-        response = await actor.fetch(
-          ctx.baseURL +
-            authProfilePath(fixture) +
-            `/callback/${provider}?code=fixture-code&state=${encodeURIComponent(callbackState)}`,
-          { redirect: "manual" },
-        );
+
+      const url = new URL(start.data!.url!);
+      const callbackState =
+        variant === "wrong-state" ? ctx.uniqueToken("wrong-state") : url.searchParams.get("state")!;
+      const provider = variant === "wrong-provider" ? "unknown-kakao" : "kakao";
+      const response = await actor.fetch(
+        ctx.baseURL +
+          authProfilePath(fixture) +
+          `/callback/${provider}?code=fixture-code&state=${encodeURIComponent(callbackState)}`,
+        { redirect: "manual" },
+      );
       expect(response.status).toBe(302);
-      const location = response.headers.get("location")!,
-        error = new URL(location, ctx.baseURL).searchParams.get("error");
+
+      const location = response.headers.get("location")!;
+      const error = new URL(location, ctx.baseURL).searchParams.get("error");
       expect(error).toBe(
         variant === "wrong-state"
           ? "state_mismatch"
@@ -520,6 +604,7 @@ for (const variant of [
       );
       expect(await state(ctx)).toEqual(other.before);
       expect((await actor.client.getSession()).data).toBeNull();
+
       const requests = await receipts(ctx);
       expect(requests.map((row) => row.path)).toEqual(
         ["wrong-state", "wrong-provider"].includes(variant)
@@ -528,6 +613,7 @@ for (const variant of [
             ? ["/token"]
             : ["/token", "/userinfo"],
       );
+
       return {
         before: other.before,
         start: ctx.snapshot(start),
@@ -538,32 +624,40 @@ for (const variant of [
     },
     ["GET /callback/{}"],
   );
+}
 
 compatScenario(
   "kakao disabled default scope omits an empty scope parameter",
   async (ctx) => {
-    const before = await state(ctx),
-      result = await ctx
-        .actor("kakao", "social-kakao-disabled-scope")
-        .client.signIn.social({ provider: "kakao" });
+    const before = await state(ctx);
+    const result = await ctx
+      .actor("kakao", "social-kakao-disabled-scope")
+      .client.signIn.social({ provider: "kakao" });
     expect(result.error).toBeNull();
     expect(new URL(result.data!.url!).searchParams.has("scope")).toBeFalse();
     expect(await state(ctx)).toEqual(before);
     expect(await receipts(ctx)).toEqual([]);
+
     return { result: ctx.snapshot(result), before, after: await state(ctx) };
   },
   ["POST /sign-in/social"],
 );
+
 compatScenario(
   "kakao explicit signup overrides implicit signup policy",
   async (ctx) => {
     await control(ctx, { profile: profile(ctx) });
     const flow = await callback(ctx, "social-kakao-implicit-disabled", true);
     expect(flow.response.headers.get("location")).toBe("/dashboard");
+
     const stored = await state(ctx);
-    for (const table of ["users", "accounts", "sessions"] as const)
+
+    for (const table of ["users", "accounts", "sessions"] as const) {
       expect(stored[table]).toHaveLength(1);
+    }
+
     expect((await flow.actor.client.getSession()).data?.user.id).toBe(stored.users[0]!.id);
+
     return {
       start: ctx.snapshot(flow.start),
       callback: { status: flow.response.status, location: flow.response.headers.get("location") },
@@ -573,62 +667,75 @@ compatScenario(
   },
   ["POST /sign-in/social", "GET /callback/{}"],
 );
+
 compatScenario(
   "kakao rejects direct ID-token sign-in without remote verification or identity writes",
   async (ctx) => {
-    const other = await foreign(ctx),
-      result = await ctx
-        .actor("kakao", "social-kakao-default")
-        .client.signIn.social({ provider: "kakao", idToken: { token: "unsupported-proof" } });
+    const other = await foreign(ctx);
+    const result = await ctx
+      .actor("kakao", "social-kakao-default")
+      .client.signIn.social({ provider: "kakao", idToken: { token: "unsupported-proof" } });
     expect(result.error?.code).toBe("ID_TOKEN_NOT_SUPPORTED");
     expect(await state(ctx)).toEqual(other.before);
     expect(await receipts(ctx)).toEqual([]);
+
     return { result: ctx.snapshot(result), before: other.before, after: await state(ctx) };
   },
 );
-for (const mode of ["empty-clients"] as const)
+
+for (const mode of ["empty-clients"] as const) {
   compatScenario(`kakao ${mode} requires a real client before identity writes`, async (ctx) => {
-    const other = await foreign(ctx),
-      result = await ctx
-        .actor("kakao", `social-kakao-${mode}`)
-        .client.signIn.social({ provider: "kakao" });
+    const other = await foreign(ctx);
+    const result = await ctx
+      .actor("kakao", `social-kakao-${mode}`)
+      .client.signIn.social({ provider: "kakao" });
     expect(result.error?.status).toBe(500);
     expect(await state(ctx)).toEqual(other.before);
     expect(await receipts(ctx)).toEqual([]);
+
     return { result: ctx.snapshot(result), before: other.before, after: await state(ctx) };
   });
+}
 
-for (const valid of [true, false])
+for (const valid of [true, false]) {
   compatScenario(
     `kakao explicit browser link ${valid ? "admits raw account" : "rejects missing raw account"} while retaining the existing principal`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        actor = ctx.actor("kakao", "social-kakao-default"),
-        email = ctx.uniqueEmail("kakao-link");
+      const other = await foreign(ctx);
+      const actor = ctx.actor("kakao", "social-kakao-default");
+      const email = ctx.uniqueEmail("kakao-link");
       const signup = await actor.client.signUp.email({
         email,
         password: "Password123!",
         name: "Existing local user",
       });
       expect(signup.error).toBeNull();
-      const before = await state(ctx),
-        original = profile(ctx);
+
+      const before = await state(ctx);
+      const original = profile(ctx);
       (original.kakao_account as Row).email = email;
-      if (!valid) delete original.id;
+
+      if (!valid) {
+        delete original.id;
+      }
+
       await control(ctx, { profile: original });
       const start = await actor.client.linkSocial({ provider: "kakao", callbackURL: "/linked" });
       expect(start.error).toBeNull();
-      const url = new URL(start.data!.url!),
-        path =
-          authProfilePath("social-kakao-default") +
-          `/callback/kakao?code=fixture-code&state=${encodeURIComponent(url.searchParams.get("state")!)}`,
-        response = await actor.fetch(ctx.baseURL + path, { redirect: "manual" });
+
+      const url = new URL(start.data!.url!);
+      const path =
+        authProfilePath("social-kakao-default") +
+        `/callback/kakao?code=fixture-code&state=${encodeURIComponent(url.searchParams.get("state")!)}`;
+      const response = await actor.fetch(ctx.baseURL + path, { redirect: "manual" });
       expect(response.status).toBe(302);
-      const location = response.headers.get("location")!,
-        after = await state(ctx);
+
+      const location = response.headers.get("location")!;
+      const after = await state(ctx);
       unchangedForeign(other.before, after);
       expect(after.users).toEqual(before.users);
       expect(after.sessions).toEqual(before.sessions);
+
       if (valid) {
         expect(location).toBe("/linked");
         expect(after.accounts).toHaveLength(before.accounts.length + 1);
@@ -642,8 +749,10 @@ for (const valid of [true, false])
         );
         expect(after).toEqual(before);
       }
+
       expect((await actor.client.getSession()).data?.user.id).toBe(signup.data!.user.id);
       expect((await receipts(ctx)).map((row) => row.path)).toEqual(["/token", "/userinfo"]);
+
       const replay = await actor.fetch(ctx.baseURL + path, { redirect: "manual" });
       expect(replay.status).toBe(302);
       expect(
@@ -651,6 +760,7 @@ for (const valid of [true, false])
       ).toBeTruthy();
       expect(await state(ctx)).toEqual(after);
       expect(await receipts(ctx)).toHaveLength(2);
+
       return {
         before,
         start: ctx.snapshot(start),
@@ -661,18 +771,20 @@ for (const valid of [true, false])
     },
     ["POST /link-social", "GET /callback/{}"],
   );
+}
 
 compatScenario(
   "kakao existing account info uses real GET without readmitting a changed raw account subject",
   async (ctx) => {
-    const other = await foreign(ctx),
-      original = profile(ctx);
+    const other = await foreign(ctx);
+    const original = profile(ctx);
     await control(ctx, { profile: original });
     const flow = await callback(ctx);
     expect(flow.response.headers.get("location")).toBe("/dashboard");
-    const before = await state(ctx),
-      user = before.users.find((row) => !other.before.users.some((old) => old.id === row.id))!,
-      account = before.accounts.find((row) => row.userId === user.id)!;
+
+    const before = await state(ctx);
+    const user = before.users.find((row) => !other.before.users.some((old) => old.id === row.id))!;
+    const account = before.accounts.find((row) => row.userId === user.id)!;
     delete original.id;
     await control(ctx, { profile: original });
     const denied = await other.actor.client.$fetch("/account-info", {
@@ -681,6 +793,7 @@ compatScenario(
     expect(denied.error).not.toBeNull();
     expect(await receipts(ctx)).toHaveLength(2);
     expect(await state(ctx)).toEqual(before);
+
     const result = await flow.actor.client.$fetch("/account-info", {
       query: { accountId: account.id },
     });
@@ -703,6 +816,7 @@ compatScenario(
       contentType: null,
       body: "",
     });
+
     return {
       before,
       denied: ctx.snapshot(denied),

@@ -1,11 +1,14 @@
 import { expect } from "bun:test";
+
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { createAuthClient } from "better-auth/client";
 import { multiSessionClient } from "better-auth/client/plugins";
+
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 type Profile = "bearer-default" | "bearer-signed" | "bearer-composition";
+
 function client(ctx: ScenarioContext, profile: Profile, actor: string) {
   return createAuthClient({
     baseURL: `${ctx.baseURL}${authProfilePath(profile)}`,
@@ -13,6 +16,7 @@ function client(ctx: ScenarioContext, profile: Profile, actor: string) {
     fetchOptions: { customFetchImpl: ctx.actor(actor, profile).fetch },
   });
 }
+
 function receipt(response: Response) {
   return {
     token: response.headers.get("set-auth-token"),
@@ -24,8 +28,8 @@ for (const profile of ["bearer-default", "bearer-signed", "bearer-composition"] 
   compatScenario(
     `bearer ${profile} preserves signed issuance header precedence and physical session lifecycle`,
     async (ctx) => {
-      const owner = client(ctx, profile, "bearer-owner"),
-        foreign = client(ctx, profile, "bearer-foreign");
+      const owner = client(ctx, profile, "bearer-owner");
+      const foreign = client(ctx, profile, "bearer-foreign");
       let issued: ReturnType<typeof receipt> | undefined;
       let foreignIssued: ReturnType<typeof receipt> | undefined;
       const first = await owner.signUp.email(
@@ -54,23 +58,38 @@ for (const profile of ["bearer-default", "bearer-signed", "bearer-composition"] 
       );
       expect(first.error).toBeNull();
       expect(other.error).toBeNull();
-      if (!first.data?.token || !other.data?.token || !issued?.token || !foreignIssued?.token)
+
+      if (!first.data?.token || !other.data?.token || !issued?.token || !foreignIssued?.token) {
         throw new Error("real signed session issuance required");
-      const token = first.data.token,
-        signed = issued.token;
+      }
+
+      const token = first.data.token;
+      const signed = issued.token;
       const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
       const paddingChar = signed.at(-2);
-      if (!paddingChar || !signed.endsWith("=")) throw new Error("actual padded HMAC required");
+
+      if (!paddingChar || !signed.endsWith("=")) {
+        throw new Error("actual padded HMAC required");
+      }
+
       const aliasChar = alphabet[alphabet.indexOf(paddingChar) + 1];
-      if (!aliasChar) throw new Error("HMAC padding alias required");
+
+      if (!aliasChar) {
+        throw new Error("HMAC padding alias required");
+      }
+
       const alias = `${signed.slice(0, -2)}${aliasChar}=`;
       expect(decodeURIComponent(signed).split(".")[0]).toBe(token);
       expect(issued.expose?.split(", ")).toContain("set-auth-token");
-      if (profile === "bearer-signed")
+
+      if (profile === "bearer-signed") {
         expect(issued.expose).toBe("X-First, X-Second, set-auth-token");
+      }
+
       const ownerState = await ctx.readUserState({ userId: first.data.user.id });
       const foreignState = await ctx.readUserState({ userId: other.data.user.id });
       const results = [];
+
       for (const [index, [authorization, expected]] of (
         [
           [undefined, null],
@@ -96,22 +115,31 @@ for (const profile of ["bearer-default", "bearer-signed", "bearer-composition"] 
         expect(result.data?.user.id ?? null).toBe(expected);
         expect(await ctx.readUserState({ userId: first.data.user.id })).toEqual(ownerState);
         expect(await ctx.readUserState({ userId: other.data.user.id })).toEqual(foreignState);
+
         results.push(result);
       }
+
       // A valid header replaces a foreign browser cookie; rejected signatures leave it intact.
       const precedence = await foreign.getSession({
         fetchOptions: { headers: { authorization: `Bearer ${signed}` } },
       });
       expect(precedence.data?.user.id).toBe(first.data.user.id);
+
       const ignored = await foreign.getSession({
         fetchOptions: { headers: { authorization: "Bearer invalid.signature" } },
       });
       expect(ignored.data?.user.id).toBe(other.data.user.id);
+
       const composition: unknown[] = [];
+
       if (profile === "bearer-composition") {
         const key = await owner.apiKey.create({ name: "bearer-composition" });
         expect(key.error).toBeNull();
-        if (!key.data?.key) throw new Error("real API key required");
+
+        if (!key.data?.key) {
+          throw new Error("real API key required");
+        }
+
         let virtualHeaders: ReturnType<typeof receipt> | undefined;
         const virtual = await client(ctx, profile, "bearer-api-key").getSession({
           fetchOptions: {
@@ -125,14 +153,17 @@ for (const profile of ["bearer-default", "bearer-signed", "bearer-composition"] 
         expect(virtual.data?.session.token).toBe(key.data.key);
         expect(virtualHeaders?.token).toBeNull();
         expect(await ctx.readUserState({ userId: first.data.user.id })).toEqual(ownerState);
+
         const list = await owner.multiSession.listDeviceSessions({
           fetchOptions: { headers: { authorization: `Bearer ${signed}` } },
         });
         expect(list.error).toBeNull();
         expect(list.data).toHaveLength(1);
         expect(list.data?.[0]?.user.id).toBe(first.data.user.id);
+
         composition.push(virtual, virtualHeaders, list);
       }
+
       let signoutHeaders: ReturnType<typeof receipt> | undefined;
       const signout = await client(ctx, profile, "bearer-revoker").signOut({
         fetchOptions: {
@@ -144,13 +175,17 @@ for (const profile of ["bearer-default", "bearer-signed", "bearer-composition"] 
       });
       expect(signout.error).toBeNull();
       expect(signoutHeaders?.token).toBeNull();
-      if (profile === "bearer-signed")
+
+      if (profile === "bearer-signed") {
         expect(signoutHeaders?.expose).toBe("X-First, X-First, X-Second");
+      }
+
       const revoked = await foreign.getSession({
         fetchOptions: { headers: { authorization: `Bearer ${signed}` } },
       });
       expect(revoked.data).toBeNull();
       expect(await ctx.readUserState({ userId: other.data.user.id })).toEqual(foreignState);
+
       const gone = await ctx.readUserState({ userId: first.data.user.id });
       const second = await owner.signIn.email(
         { email: first.data.user.email, password: "password123" },
@@ -161,7 +196,11 @@ for (const profile of ["bearer-default", "bearer-signed", "bearer-composition"] 
         },
       );
       expect(second.error).toBeNull();
-      if (!second.data?.token || !issued?.token) throw new Error("second genuine session required");
+
+      if (!second.data?.token || !issued?.token) {
+        throw new Error("second genuine session required");
+      }
+
       const expired = await ctx.rawRequest({
         path: "/__test/expire-session",
         method: "POST",
@@ -171,11 +210,13 @@ for (const profile of ["bearer-default", "bearer-signed", "bearer-composition"] 
         },
       });
       expect(expired.status).toBe(200);
+
       const expiredRead = await client(ctx, profile, "bearer-expired").getSession({
         fetchOptions: { headers: { authorization: `Bearer ${issued.token}` } },
       });
       expect(expiredRead.data).toBeNull();
       expect(await ctx.readUserState({ userId: other.data.user.id })).toEqual(foreignState);
+
       return {
         first,
         other,

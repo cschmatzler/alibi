@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 const row = z.object({ id: z.string() }).passthrough();
@@ -130,11 +132,13 @@ compatScenario(
         })
       ).error,
     ).toBeNull();
+
     const invitation = await owner.client.$fetch("/organization/invite-member", {
       method: "POST",
       body: { organizationId: target.id, email: memberEmail, role: "member" },
     });
     expect(invitation.error).toBeNull();
+
     const invitationId = z.object({ id: z.string() }).parse(invitation.data).id;
     expect(
       (
@@ -161,6 +165,7 @@ compatScenario(
     const empty = await update(owner, target.id, {}, emptyWire);
     expect(emptyWire).toEqual({ status: 500, body: "", contentType: null });
     expect(empty.error?.status).toBe(500);
+
     const afterEmpty = await state(ctx);
     expect(afterEmpty).toEqual(before);
 
@@ -177,6 +182,7 @@ compatScenario(
     expect(
       z.object({ id: z.string(), name: z.string(), logo: z.null() }).parse(retry.data),
     ).toMatchObject({ id: target.id, name: "Recovered", logo: null });
+
     const afterRetry = await state(ctx);
     preserved(before, afterRetry, target.id);
     expect(afterRetry.organizations.find((row) => row.id === target.id)).toEqual({
@@ -189,6 +195,7 @@ compatScenario(
     const veto = await update(owner, target.id, { name: "Vetoed" });
     expect(veto.error?.status).toBe(500);
     expect(await state(ctx)).toEqual(afterRetry);
+
     await storage(ctx, target.id, "none");
 
     return {
@@ -238,6 +245,7 @@ compatScenario(
     expect(after.members.filter((row) => row.organizationId === target.id)).toEqual([]);
     expect(after.users).toEqual(before.users);
     expect(after.sessions).toEqual(before.sessions);
+
     await storage(ctx, target.id, "none");
 
     return {

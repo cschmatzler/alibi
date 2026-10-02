@@ -1,16 +1,21 @@
 import { expect } from "bun:test";
+
 import { passkeyClient } from "@better-auth/passkey/client";
 import { createAuthClient } from "better-auth/client";
 import { z } from "zod";
+
 import { Authenticator } from "../../support/authenticator";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 const identity = z.object({ user: z.object({ id: z.string() }) });
+
 const code = (result: { error: unknown }) =>
   z.object({ code: z.string() }).parse(result.error).code;
+
 const cookieHeader = (cookies: string[]) =>
   cookies.map((cookie) => cookie.split(";")[0]).join("; ");
+
 function client(ctx: ScenarioContext, name = "owner", profile: FixtureProfile = "passkey-first") {
   return createAuthClient({
     baseURL: `${ctx.baseURL}${authProfilePath(profile)}`,
@@ -18,6 +23,7 @@ function client(ctx: ScenarioContext, name = "owner", profile: FixtureProfile = 
     fetchOptions: { customFetchImpl: ctx.actor(name, profile).fetch },
   });
 }
+
 async function signup(
   ctx: ScenarioContext,
   name = "owner",
@@ -38,6 +44,7 @@ async function signup(
     },
   );
   expect(result.error).toBeNull();
+
   return {
     actor,
     result,
@@ -46,6 +53,7 @@ async function signup(
     email: ctx.uniqueEmail(name),
   };
 }
+
 async function enroll(
   ctx: ScenarioContext,
   context: string,
@@ -61,10 +69,13 @@ async function enroll(
       body: JSON.stringify({ context, mode, ...extra }),
     });
   expect(response.status).toBe(200);
+
   const result = z.object({ token: z.string(), userId: z.string() }).parse(await response.json());
   expect(response.headers.getSetCookie()).toHaveLength(1);
+
   return { result, cookies: response.headers.getSetCookie() };
 }
+
 async function options(ctx: ScenarioContext, context: string, headers?: HeadersInit) {
   let cookies: string[] = [];
   const result = await client(ctx).$fetch("/passkey/generate-register-options", {
@@ -77,8 +88,10 @@ async function options(ctx: ScenarioContext, context: string, headers?: HeadersI
   });
   expect(result.error).toBeNull();
   expect(cookies).toHaveLength(1);
+
   return { result, cookies };
 }
+
 async function state(ctx: ScenarioContext, userId: string) {
   return z
     .object({
@@ -100,6 +113,7 @@ async function state(ctx: ScenarioContext, userId: string) {
       ).json(),
     );
 }
+
 async function events(ctx: ScenarioContext) {
   const observed = z
     .object({ events: z.array(z.record(z.string(), z.unknown())) })
@@ -111,7 +125,9 @@ async function events(ctx: ScenarioContext) {
       ).json(),
     ).events;
   for (const event of observed) {
-    if (event.stage !== "verified") continue;
+    if (event.stage !== "verified") {
+      continue;
+    }
     const original = z
       .object({ response: z.object({ clientDataJSON: z.string() }) })
       .parse(event.clientData);
@@ -128,19 +144,26 @@ async function events(ctx: ScenarioContext) {
 // JSON decoding is reversible: retain every original callback value while comparing
 // the challenge and origin through the existing semantic comparator.
 function observation(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(observation);
-  if (value && typeof value === "object")
+  if (Array.isArray(value)) {
+    return value.map(observation);
+  }
+  if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value).map(([key, child]) => {
-        if (key !== "clientDataJSON" || typeof child !== "string") return [key, observation(child)];
+        if (key !== "clientDataJSON" || typeof child !== "string") {
+          return [key, observation(child)];
+        }
+
         const decoded = JSON.parse(Buffer.from(child, "base64url").toString()) as Record<
           string,
           unknown
         >;
         expect(Buffer.from(JSON.stringify(decoded)).toString("base64url")).toBe(child);
+
         return [key, { ...decoded, origin: { url: decoded.origin } }];
       }),
     );
+  }
   return value;
 }
 
@@ -154,8 +177,10 @@ compatScenario(
       userId: other.id,
     });
     expect(enrollment.result.userId).toBe(owner.id);
+
     await owner.actor.client.signOut();
     expect((await owner.actor.client.getSession()).data).toBeNull();
+
     const challenge = await options(ctx, context);
     const authenticator = new Authenticator();
     const response = {
@@ -174,6 +199,7 @@ compatScenario(
       },
     });
     expect(registered.error).toBeNull();
+
     const credential = z
       .object({
         id: z.string(),
@@ -196,10 +222,12 @@ compatScenario(
     expect(credential.session.userId).toBe(owner.id);
     expect(credential.name).toBe("Callback Label");
     expect(credential.credentialID).toBe(response.id);
+
     const current = await owner.actor.client.getSession();
     expect(current.data?.user.id).toBe(owner.id);
     expect(current.data?.session.id).toBe(credential.session.id);
     expect(current.data?.session.token).toBe(credential.session.token);
+
     const observed = await events(ctx);
     expect(observed).toHaveLength(2);
     expect(observed[0]).toMatchObject({
@@ -225,6 +253,7 @@ compatScenario(
       clientData: response,
     });
     expect(observed[1]?.clientData).toEqual(response);
+
     const persisted = await state(ctx, owner.id);
     expect(persisted).toEqual({
       passkeys: [{ userId: owner.id, counter: 0, name: "Callback Label" }],
@@ -232,12 +261,14 @@ compatScenario(
       challenges: { count: 0 },
     });
     expect((await state(ctx, other.id)).sessions.count).toBe(1);
+
     const replay = await client(ctx).$fetch("/passkey/verify-registration", {
       method: "POST",
       body: { response, createSession: true },
     });
     expect(code(replay)).toBe("CHALLENGE_NOT_FOUND");
     expect(await state(ctx, owner.id)).toEqual(persisted);
+
     return {
       enrollment: enrollment.result,
       options: challenge.result,
@@ -271,6 +302,7 @@ compatScenario(
     });
     expect(swapped.error?.status).toBe(403);
     expect(code(swapped)).toBe("ENROLLMENT_DENIED");
+
     const replay = await client(ctx).$fetch("/passkey/verify-registration", {
       method: "POST",
       headers: {
@@ -279,6 +311,7 @@ compatScenario(
       body: { response, createSession: true },
     });
     expect(code(replay)).toBe("CHALLENGE_NOT_FOUND");
+
     const cryptoChallenge = await options(ctx, context);
     const cryptoResponse = new Authenticator().register(cryptoChallenge.result.data, ctx.baseURL);
     const cryptoClientData = JSON.parse(
@@ -302,11 +335,13 @@ compatScenario(
     });
     expect(invalidCrypto.error?.status).toBe(500);
     expect(code(invalidCrypto)).toBe("FAILED_TO_VERIFY_REGISTRATION");
+
     const cryptoReplay = await client(ctx).$fetch("/passkey/verify-registration", {
       method: "POST",
       body: { response: cryptoResponse, createSession: true },
     });
     expect(code(cryptoReplay)).toBe("CHALLENGE_NOT_FOUND");
+
     const segments = ownProof.result.token.split(".");
     const payload = JSON.parse(Buffer.from(segments[1]!, "base64url").toString()) as Record<
       string,
@@ -322,6 +357,7 @@ compatScenario(
     });
     expect(forged.error?.status).toBe(403);
     expect(code(forged)).toBe("ENROLLMENT_DENIED");
+
     let authenticatedCookies: string[] = [];
     await owner.actor.client.signIn.email(
       {
@@ -352,6 +388,7 @@ compatScenario(
     });
     expect(reassigned.error?.status).toBe(401);
     expect(code(reassigned)).toBe("YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY");
+
     const expiredProof = await enroll(ctx, context, "expired");
     await owner.actor.client.signOut();
     const expired = await client(ctx).$fetch("/passkey/generate-register-options", {
@@ -360,6 +397,7 @@ compatScenario(
     });
     expect(expired.error?.status).toBe(403);
     expect(code(expired)).toBe("ENROLLMENT_DENIED");
+
     const guestMint = await ctx
       .actor("guest", "passkey-first")
       .fetch(`${ctx.baseURL}/__test/passkey-enrollment`, {
@@ -368,30 +406,36 @@ compatScenario(
         body: JSON.stringify({ context, userId: foreign.id }),
       });
     expect(guestMint.status).toBe(401);
+
     const persisted = await state(ctx, owner.id);
     expect(persisted.passkeys).toEqual([]);
     expect(persisted.sessions.count).toBe(0);
     expect(persisted.challenges.count).toBe(0);
     expect((await state(ctx, foreign.id)).sessions.count).toBe(1);
+
     const observed = await events(ctx);
     expect(observed.filter((event) => event.stage === "resolved")).toHaveLength(2);
     expect(observed.filter((event) => event.stage === "verified")).toHaveLength(1);
     expect(observed.find((event) => event.stage === "verified")?.clientData).toEqual(
       authenticatedResponse,
     );
+
     const foreignBeforeSuccess = await ctx.readUserState({ userId: foreign.id });
     const authorized = await owner.actor.client.signIn.email({
       email: owner.email,
       password: "password123",
     });
     expect(authorized.error).toBeNull();
+
     const freshContext = ctx.uniqueToken("fresh-owner-context");
     const freshEnrollment = await enroll(ctx, freshContext, "normal", "owner", {
       userId: foreign.id,
     });
     expect(freshEnrollment.result.userId).toBe(owner.id);
+
     const signedOut = await owner.actor.client.signOut();
     expect(signedOut.error).toBeNull();
+
     const freshChallenge = await options(ctx, freshContext);
     const freshResponse = new Authenticator().register(freshChallenge.result.data, ctx.baseURL);
     const success = await client(ctx).$fetch("/passkey/verify-registration", {
@@ -404,6 +448,7 @@ compatScenario(
       },
     });
     expect(success.error).toBeNull();
+
     const credential = z
       .object({
         id: z.string(),
@@ -420,11 +465,13 @@ compatScenario(
     expect(credential.user.id).toBe(owner.id);
     expect(credential.session.userId).toBe(owner.id);
     expect(credential.credentialID).toBe(freshResponse.id);
+
     const current = await owner.actor.client.getSession();
     expect(current.error).toBeNull();
     expect(current.data?.user.id).toBe(owner.id);
     expect(current.data?.session.id).toBe(credential.session.id);
     expect(current.data?.session.token).toBe(credential.session.token);
+
     const successEvents = await events(ctx);
     expect(successEvents).toHaveLength(2);
     expect(successEvents[0]).toMatchObject({
@@ -445,14 +492,17 @@ compatScenario(
       clientData: freshResponse,
     });
     expect(successEvents[1]?.clientData).toEqual(freshResponse);
+
     const final = await state(ctx, owner.id);
     expect(final).toEqual({
       passkeys: [{ userId: owner.id, counter: 0, name: "Callback Label" }],
       sessions: { count: 1 },
       challenges: { count: 0 },
     });
+
     const foreignAfterSuccess = await ctx.readUserState({ userId: foreign.id });
     expect(foreignAfterSuccess).toEqual(foreignBeforeSuccess);
+
     return {
       authorized: ctx.snapshot(authorized),
       signedOut: ctx.snapshot(signedOut),
@@ -488,6 +538,7 @@ compatScenario(
     const owner = await signup(ctx);
     const context = ctx.uniqueToken("failure-policy");
     const failures: unknown[] = [];
+
     for (const [mode, expectedStatus, expectedCode] of [
       ["after-dynamic-api", 500, "APPLICATION_POLICY_DENIED"],
       ["after-forbidden", 403, null],
@@ -515,11 +566,17 @@ compatScenario(
           : {}),
       });
       expect(failed.error?.status).toBe(expectedStatus);
-      if (mode === "after-dynamic-api")
+
+      if (mode === "after-dynamic-api") {
         expect(z.object({ message: z.string() }).parse(failed.error).message).toBe(
           `Application enrollment denied: ${attemptContext}`,
         );
-      if (expectedCode) expect(code(failed)).toBe(expectedCode);
+      }
+
+      if (expectedCode) {
+        expect(code(failed)).toBe(expectedCode);
+      }
+
       if (!expectedCode) {
         expect(failed.error).not.toHaveProperty("code");
         expect(z.object({ message: z.string() }).parse(failed.error).message).toBe(
@@ -528,21 +585,25 @@ compatScenario(
             : "session creation cancelled by database hook",
         );
       }
+
       const replay = await client(ctx).$fetch("/passkey/verify-registration", {
         method: "POST",
         body: { response, createSession: true },
       });
       expect(code(replay)).toBe("CHALLENGE_NOT_FOUND");
+
       const persisted = await state(ctx, owner.id);
       expect(persisted).toEqual({
         passkeys: [],
         sessions: { count: 0 },
         challenges: { count: 0 },
       });
+
       const observed = await events(ctx);
       expect(observed).toHaveLength(2);
       expect(observed[1]?.stage).toBe("verified");
       expect(observed[1]?.clientData).toEqual(response);
+
       failures.push({
         mode,
         enrollment: enrollment.result,
@@ -560,6 +621,7 @@ compatScenario(
         ).error,
       ).toBeNull();
     }
+
     const successContext = `${context}-complete`;
     const enrollment = await enroll(ctx, successContext);
     await owner.actor.client.signOut();
@@ -571,15 +633,18 @@ compatScenario(
     });
     expect(success.error).toBeNull();
     expect(z.object({ name: z.string() }).parse(success.data).name).toBe("Client Label");
+
     const persisted = await state(ctx, owner.id);
     expect(persisted).toEqual({
       passkeys: [{ userId: owner.id, counter: 0, name: "Client Label" }],
       sessions: { count: 1 },
       challenges: { count: 0 },
     });
+
     const observed = await events(ctx);
     expect(observed).toHaveLength(2);
     expect(observed[1]?.clientData).toEqual(response);
+
     return {
       failures,
       enrollment: enrollment.result,
@@ -600,14 +665,17 @@ compatScenario(
     });
     expect(missingResult.error?.status).toBe(400);
     expect(code(missingResult)).toBe("RESOLVE_USER_REQUIRED");
+
     const authenticated = await signup(ctx, "missing", "passkey-first-missing");
     const authenticatedResult = await missing.$fetch("/passkey/generate-register-options", {
       method: "GET",
     });
     expect(authenticatedResult.error).toBeNull();
+
     const owner = await signup(ctx);
     const context = ctx.uniqueToken("resolver-policy");
     const failures: unknown[] = [];
+
     for (const [mode, status, expectedCode] of [
       ["resolver-invalid-id", 400, "RESOLVED_USER_INVALID"],
       ["resolver-invalid-name", 400, "RESOLVED_USER_INVALID"],
@@ -621,11 +689,17 @@ compatScenario(
         query: { context },
       });
       expect(result.error?.status).toBe(status);
-      if (expectedCode) expect(code(result)).toBe(expectedCode);
+
+      if (expectedCode) {
+        expect(code(result)).toBe(expectedCode);
+      }
+
       expect((await state(ctx, owner.id)).passkeys).toEqual([]);
+
       const observed = await events(ctx);
       expect(observed).toHaveLength(1);
       expect(observed[0]?.stage).toBe("resolved");
+
       failures.push({
         enrollment: enrollment.result,
         result: ctx.snapshot(result),
@@ -640,12 +714,14 @@ compatScenario(
         ).error,
       ).toBeNull();
     }
+
     const successContext = `${context}-complete`;
     const enrollment = await enroll(ctx, successContext);
     await owner.actor.client.signOut();
     const challenge = await options(ctx, successContext);
     const response = new Authenticator().register(challenge.result.data, ctx.baseURL);
     const invalidInputs: unknown[] = [];
+
     for (const [createSession, received] of [
       [null, "null"],
       [0, "number"],
@@ -662,13 +738,16 @@ compatScenario(
       expect(z.object({ message: z.string() }).parse(invalid.error).message).toBe(
         `[body.createSession] Invalid input: expected boolean, received ${received}`,
       );
+
       const unchanged = await state(ctx, owner.id);
       expect(unchanged.passkeys).toEqual([]);
       expect(unchanged.sessions.count).toBe(0);
       // Both this guest challenge and the independent authenticated missing-resolver challenge remain.
       expect(unchanged.challenges.count).toBe(2);
+
       invalidInputs.push(ctx.snapshot(invalid));
     }
+
     let cookies: string[] = [];
     const noSession = await client(ctx).$fetch("/passkey/verify-registration", {
       method: "POST",
@@ -678,6 +757,7 @@ compatScenario(
       },
     });
     expect(noSession.error).toBeNull();
+
     const registered = z.object({ userId: z.string(), name: z.string() }).parse(noSession.data);
     expect(registered.userId).toBe(owner.id);
     expect(registered.name).toBe("Callback Label");
@@ -685,12 +765,15 @@ compatScenario(
     expect(noSession.data).not.toHaveProperty("user");
     expect(cookies).toEqual([]);
     expect((await owner.actor.client.getSession()).data).toBeNull();
+
     const persisted = await state(ctx, owner.id);
     expect(persisted.passkeys).toEqual([{ userId: owner.id, counter: 0, name: "Callback Label" }]);
     expect(persisted.sessions.count).toBe(0);
+
     const verified = await events(ctx);
     expect(verified).toHaveLength(2);
     expect(verified[1]?.clientData).toEqual(response);
+
     return {
       missing: ctx.snapshot(missingResult),
       authenticated: ctx.snapshot(authenticatedResult),

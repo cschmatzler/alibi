@@ -5,6 +5,7 @@ import { customSession, jwt, multiSession } from "better-auth/plugins";
 export function createCustomSessionFixture(base: BetterAuthOptions) {
   let counter = 0;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
+
   for (const name of [
     "custom-session",
     "custom-session-jwt",
@@ -52,16 +53,32 @@ export function createCustomSessionFixture(base: BetterAuthOptions) {
           customSession(
             async (session, ctx) => {
               const mode = ctx.headers?.get("x-custom-session");
-              if (mode === "error")
+
+              if (mode === "error") {
                 throw new APIError("FORBIDDEN", {
                   code: "CUSTOM_SESSION_DENIED",
                   message: "Application session denied",
                 });
-              if (mode === "ordinary") throw new Error("Application session failed");
-              if (mode === "null") return null;
-              if (mode === "filtered") return { userId: session.user.id, label: session.user.name };
+              }
+
+              if (mode === "ordinary") {
+                throw new Error("Application session failed");
+              }
+
+              if (mode === "null") {
+                return null;
+              }
+
+              if (mode === "filtered") {
+                return { userId: session.user.id, label: session.user.name };
+              }
+
               const stored = await ctx.context.internalAdapter.findUserById(session.user.id);
-              if (!stored) throw new Error("Authenticated user is missing");
+
+              if (!stored) {
+                throw new Error("Authenticated user is missing");
+              }
+
               return {
                 ...session,
                 application: { userId: stored.id, label: stored.name, path: ctx.path },
@@ -76,6 +93,7 @@ export function createCustomSessionFixture(base: BetterAuthOptions) {
       }),
     );
   }
+
   return {
     profiles,
     reset() {

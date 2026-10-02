@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
+
 import { chromium } from "playwright";
 import { z } from "zod";
+
 import { RUST_BASE_URL, requireHealthy, TS_BASE_URL } from "../support/config";
 import { resetServerState } from "../support/controls";
 
@@ -16,6 +18,7 @@ for (const [label, baseURL] of [
       const browser = await chromium.launch({
         executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
       });
+
       try {
         const context = await browser.newContext();
         const page = await context.newPage();
@@ -33,6 +36,7 @@ for (const [label, baseURL] of [
           { email },
         );
         expect(signup.status).toBe(200);
+
         const user = z
           .object({ user: z.object({ id: z.string().min(1) }) })
           .parse(signup.body).user;
@@ -44,11 +48,13 @@ for (const [label, baseURL] of [
         expect(sessionCookie?.path).toBe("/");
         expect(sessionCookie?.expires).toBeGreaterThan(Date.now() / 1000);
         expect(await page.evaluate(() => document.cookie)).not.toContain("session_token");
+
         await page.reload();
         const session = z
           .object({ user: z.object({ id: z.string() }) })
           .parse(await page.evaluate(async () => (await fetch("/api/auth/get-session")).json()));
         expect(session.user.id).toBe(user.id);
+
         const logout = await page.evaluate(
           async () =>
             (
@@ -63,10 +69,12 @@ for (const [label, baseURL] of [
         expect(
           (await context.cookies()).some((cookie) => cookie.name === "better-auth.session_token"),
         ).toBe(false);
+
         await page.reload();
         expect(
           await page.evaluate(async () => (await fetch("/api/auth/get-session")).json()),
         ).toBeNull();
+
         await context.close();
       } finally {
         await browser.close();

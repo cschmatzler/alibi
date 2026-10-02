@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+
 import { betterAuth } from "better-auth";
 import { twoFactor } from "better-auth/plugins";
 
@@ -9,6 +10,7 @@ type Event = {
   otp?: string;
   ok?: boolean;
 };
+
 type Delivery = {
   serial: number;
   profile: string;
@@ -16,6 +18,7 @@ type Delivery = {
   otp: string;
   release: () => void;
 };
+
 export function createTwoFactorDeliveryFixture(
   base: Parameters<typeof betterAuth>[0],
   database: Database,
@@ -26,10 +29,14 @@ export function createTwoFactorDeliveryFixture(
   let next = 0;
   const event = (value: Event) => {
     events.push(value);
-    for (const listener of listeners) listener();
+    for (const listener of listeners) {
+      listener();
+    }
   };
   const wait = async (predicate: () => boolean) => {
-    if (predicate()) return;
+    if (predicate()) {
+      return;
+    }
     await new Promise<void>((resolve) => {
       const listener = () => {
         if (predicate()) {
@@ -49,12 +56,17 @@ export function createTwoFactorDeliveryFixture(
           .filter((value) => value.profile === profile)
           .at(-1)!.serial;
         event({ kind: "register", serial });
-        if (mode === "observe")
+
+        if (mode === "observe") {
           void completion.then(
             () => event({ kind: "complete", serial, ok: true }),
             () => event({ kind: "complete", serial, ok: false }),
           );
-        if (mode === "throw") throw new Error("application OTP background observer rejected");
+        }
+
+        if (mode === "throw") {
+          throw new Error("application OTP background observer rejected");
+        }
       };
       const auth = betterAuth({
         ...base,
@@ -89,10 +101,16 @@ export function createTwoFactorDeliveryFixture(
     }),
   );
   return async (request: Request, url: URL): Promise<Response | undefined> => {
-    for (const [profile, auth] of profiles)
-      if (url.pathname.startsWith(`/__test/profiles/${profile}/api/auth/`))
+    for (const [profile, auth] of profiles) {
+      if (url.pathname.startsWith(`/__test/profiles/${profile}/api/auth/`)) {
         return auth.handler(request);
-    if (url.pathname !== "/__test/two-factor-delivery" || request.method !== "POST") return;
+      }
+    }
+
+    if (url.pathname !== "/__test/two-factor-delivery" || request.method !== "POST") {
+      return;
+    }
+
     const body = (await request.json()) as {
       action: string;
       profile?: string;
@@ -101,8 +119,12 @@ export function createTwoFactorDeliveryFixture(
       userId?: string;
       identifier?: string;
     };
+
     if (body.action === "reset") {
-      for (const value of deliveries.values()) value.release();
+      for (const value of deliveries.values()) {
+        value.release();
+      }
+
       await wait(
         () =>
           events.filter((value) => value.kind === "finished").length === deliveries.size &&
@@ -116,6 +138,7 @@ export function createTwoFactorDeliveryFixture(
       deliveries.clear();
       next = 0;
     }
+
     if (body.action === "wait") {
       await wait(() =>
         events.some(
@@ -127,29 +150,41 @@ export function createTwoFactorDeliveryFixture(
         body.kind === "entered" &&
         body.serial &&
         deliveries.get(body.serial)?.profile !== "two-factor-delivery-default"
-      )
+      ) {
         await wait(() =>
           events.some((value) => value.kind === "register" && value.serial === body.serial),
         );
+      }
     }
+
     if (body.action === "release") {
       const delivery = deliveries.get(body.serial!);
-      if (!delivery) throw new Error("actual delivery required");
+
+      if (!delivery) {
+        throw new Error("actual delivery required");
+      }
+
       delivery.release();
       await wait(() =>
         events.some((value) => value.kind === "finished" && value.serial === body.serial),
       );
-      if (delivery.profile.endsWith("observe"))
+
+      if (delivery.profile.endsWith("observe")) {
         await wait(() =>
           events.some((value) => value.kind === "complete" && value.serial === body.serial),
         );
+      }
     }
+
     if (body.action === "expire") {
-      if (typeof body.identifier !== "string") throw new Error("actual identifier required");
+      if (typeof body.identifier !== "string") {
+        throw new Error("actual identifier required");
+      }
       database
         .query("UPDATE verification SET expiresAt=? WHERE identifier=?")
         .run(new Date(0).toISOString(), body.identifier);
     }
+
     const selected = body.userId
       ? [...deliveries.values()].filter((value) => value.userId === body.userId)
       : [...deliveries.values()];

@@ -7,6 +7,7 @@ import { bearer, multiSession } from "better-auth/plugins";
 export function createBearerFixture(base: BetterAuthOptions) {
   let counter = 0;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
+
   for (const name of ["bearer-default", "bearer-signed", "bearer-composition"]) {
     const path = `/__test/profiles/${name}/api/auth`;
     profiles.set(
@@ -54,6 +55,7 @@ export function createBearerFixture(base: BetterAuthOptions) {
       }),
     );
   }
+
   return {
     profiles,
     reset() {

@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario } from "../../support/scenario";
 import { CONTRACT, EOA, message, SECOND_EOA, signature } from "../../support/siwe-wallet";
 import { control, identity, nonce, siweActor, state, verify } from "./helpers";
@@ -19,12 +21,15 @@ compatScenario(
     expect(
       Date.parse(issued.proofs[0]!.expiresAt) - Date.parse(issued.proofs[0]!.createdAt),
     ).toBeLessThanOrEqual(900_000);
+
     const firstMessage = message(firstNonce, { address: EOA.toLowerCase() });
     const first = await verify(actor, firstMessage, { email: "ignored@fixture.test" });
     expect(first.error).toBeNull();
+
     const owner = identity.parse(first.data);
     expect(owner.user.walletAddress).toBe(EOA);
     expect(owner.user.chainId).toBe(1);
+
     const firstState = await state(ctx);
     expect(firstState.users).toHaveLength(1);
     expect(firstState.wallets).toHaveLength(1);
@@ -50,15 +55,19 @@ compatScenario(
       providerId: "siwe",
     });
     expect(firstState.sessions[0]).toMatchObject({ userId: owner.user.id, token: owner.token });
+
     const session = await actor.client.getSession();
     expect(session.data?.user.id).toBe(owner.user.id);
     expect(session.data?.session.token).toBe(owner.token);
+
     const replay = await verify(actor, firstMessage);
     expect(replay.error).toMatchObject({
       status: 401,
       code: "UNAUTHORIZED_INVALID_OR_EXPIRED_NONCE",
     });
+
     const observations = [];
+
     for (const [chain, expected, compact] of [
       ["1", 1, true],
       ["0x10", 16, false],
@@ -71,12 +80,15 @@ compatScenario(
       });
       const result = await verify(actor, signed, { compact });
       expect(result.error).toBeNull();
+
       const value = identity.parse(result.data);
       expect(value.user.id).toBe(owner.user.id);
       expect(value.user.chainId).toBe(expected);
       expect(value.token).not.toBe(owner.token);
+
       observations.push({ result: ctx.snapshot(result), persisted: await state(ctx) });
     }
+
     const after = await state(ctx);
     expect(after.users).toEqual(firstState.users);
     expect(after.wallets).toHaveLength(3);
@@ -104,6 +116,7 @@ compatScenario(
     expect(
       after.inputs.every((input) => input.cacao.s.s === input.signature && input.address === EOA),
     ).toBe(true);
+
     return {
       issued,
       first: ctx.snapshot(first),
@@ -122,6 +135,7 @@ compatScenario(
   async (ctx) => {
     const actor = siweActor(ctx);
     const observations = [];
+
     for (const [options, scalar, code] of [
       [{ domain: "attacker.fixture.test" }, 1, "UNAUTHORIZED_SIWE_MESSAGE_MISMATCH"],
       [{ address: "0x123" }, 1, "UNAUTHORIZED_SIWE_MESSAGE_MISMATCH"],
@@ -170,34 +184,44 @@ compatScenario(
       const challenge = await nonce(actor);
       const rejected = await verify(actor, message(challenge, options), { scalar });
       expect(rejected.error?.status).toBe(401);
-      if (code === undefined)
+
+      if (code === undefined) {
         expect(rejected.error?.message).toBe("Unauthorized: Invalid SIWE signature");
-      else expect(rejected.error?.code).toBe(code);
+      } else {
+        expect(rejected.error?.code).toBe(code);
+      }
+
       const after = await state(ctx);
       expect(after.proofs).toEqual([]);
       expect(after.users).toEqual([]);
       expect(after.wallets).toEqual([]);
       expect(after.sessions).toEqual([]);
       expect(after.accounts).toEqual([]);
+
       const retry = await verify(actor, message(challenge));
       expect(retry.error).toMatchObject({
         status: 401,
         code: "UNAUTHORIZED_INVALID_OR_EXPIRED_NONCE",
       });
+
       observations.push({ rejected: ctx.snapshot(rejected), after, retry: ctx.snapshot(retry) });
     }
+
     const challenge = await nonce(actor);
     const before = await state(ctx);
     const invalidSyntax = await verify(actor, message("short"));
     expect(invalidSyntax.error?.code).toBe("UNAUTHORIZED_SIWE_MESSAGE_MISMATCH");
     expect(await state(ctx)).toEqual(before);
+
     await control(ctx, { operation: "proof", nonce: challenge, value: "different stored value" });
     const success = await verify(actor, message(challenge));
     expect(success.error).toBeNull();
+
     const after = await state(ctx);
     expect(after.users).toHaveLength(1);
     expect(after.wallets).toHaveLength(1);
     expect(after.proofs).toEqual([]);
+
     return {
       observations,
       before,
@@ -218,16 +242,19 @@ compatScenario(
     await control(ctx, { operation: "proof", nonce: challenge, expiresAt: expiredAt });
     const before = await state(ctx);
     expect(before.proofs[0]?.expiresAt).toBe(expiredAt);
+
     const rejected = await verify(actor, message(challenge));
     expect(rejected.error).toMatchObject({
       status: 401,
       code: "UNAUTHORIZED_INVALID_OR_EXPIRED_NONCE",
     });
+
     const replay = await verify(actor, message(challenge));
     expect(replay.error).toMatchObject({
       status: 401,
       code: "UNAUTHORIZED_INVALID_OR_EXPIRED_NONCE",
     });
+
     const after = await state(ctx);
     expect(after).toMatchObject({
       users: [],
@@ -237,6 +264,7 @@ compatScenario(
       proofs: [],
       inputs: [],
     });
+
     return { before, rejected: ctx.snapshot(rejected), replay: ctx.snapshot(replay), after };
   },
   ["POST /siwe/get-nonce", "POST /siwe/verify"],
@@ -256,10 +284,13 @@ compatScenario(
     const missing = await verify(actor, signed);
     expect(missing.error?.status).toBe(400);
     expect((await state(ctx)).proofs).toHaveLength(1);
+
     const first = await verify(actor, signed, { email: email.toUpperCase() });
     expect(first.error).toBeNull();
+
     const owner = identity.parse(first.data);
     expect(owner.user.id).not.toBe(existing.userId);
+
     const collision = await state(ctx);
     expect(collision.users[0]).toEqual(before.users[0]);
     expect(collision.users[1]).toMatchObject({
@@ -272,6 +303,7 @@ compatScenario(
     expect(collision.sessions.every((session) => session.userId === owner.user.id)).toBe(true);
     expect(collision.accounts.every((account) => account.userId === owner.user.id)).toBe(true);
     expect(collision.proofs).toEqual([]);
+
     const unused = ctx.uniqueEmail("siwe-unused");
     await control(ctx, { operation: "configure", ens: "throw" });
     const secondNonce = await nonce(actor);
@@ -282,6 +314,7 @@ compatScenario(
       message: "Something went wrong. Please try again later.",
       error: "deterministic ENS failure",
     });
+
     const reservation = await state(ctx);
     expect(reservation.users).toEqual(collision.users);
     expect(reservation.wallets).toEqual(collision.wallets);
@@ -294,6 +327,7 @@ compatScenario(
     expect(
       Date.parse(reservation.proofs[0]!.expiresAt) - Date.parse(reservation.proofs[0]!.createdAt),
     ).toBeGreaterThan(59_000);
+
     await control(ctx, { operation: "configure", ens: "resolve" });
     const thirdNonce = await nonce(actor);
     const fallback = await verify(actor, message(thirdNonce, { address: SECOND_EOA }), {
@@ -301,12 +335,14 @@ compatScenario(
       email: unused,
     });
     expect(fallback.error).toBeNull();
+
     const after = await state(ctx);
     expect(after.users[2]).toMatchObject({
       email: `${SECOND_EOA.toLowerCase()}@wallet.fixture.test`,
       emailVerified: false,
     });
     expect(after.proofs).toEqual(reservation.proofs);
+
     return {
       before,
       missing: ctx.snapshot(missing),
@@ -329,8 +365,10 @@ compatScenario(
     const signed = message(challenge, { address: CONTRACT, chain: "31337" });
     const success = await verify(actor, signed, { scalar: 3 });
     expect(success.error).toBeNull();
+
     const owner = identity.parse(success.data);
     expect(owner.user).toMatchObject({ walletAddress: CONTRACT, chainId: 31337 });
+
     const first = await state(ctx);
     expect(first.rpcCalls).toHaveLength(1);
     expect(first.wallets[0]).toMatchObject({
@@ -339,6 +377,7 @@ compatScenario(
       chainId: 31337,
       isPrimary: true,
     });
+
     const wrongNonce = await nonce(actor);
     const wrongOwner = await verify(
       actor,
@@ -347,15 +386,18 @@ compatScenario(
     );
     expect(wrongOwner.error?.status).toBe(401);
     expect(wrongOwner.error?.message).toBe("Unauthorized: Invalid SIWE signature");
+
     const retry = await verify(actor, message(wrongNonce, { address: CONTRACT, chain: "31337" }), {
       scalar: 3,
     });
     expect(retry.error?.code).toBe("UNAUTHORIZED_INVALID_OR_EXPIRED_NONCE");
+
     const chainNonce = await nonce(actor);
     const wrongChain = await verify(actor, message(chainNonce, { address: CONTRACT, chain: "1" }), {
       scalar: 3,
     });
     expect(wrongChain.error?.status).toBe(401);
+
     const after = await state(ctx);
     expect(after.rpcCalls).toHaveLength(2);
     expect(after.users).toEqual(first.users);
@@ -363,6 +405,7 @@ compatScenario(
     expect(after.accounts).toEqual(first.accounts);
     expect(after.sessions).toEqual(first.sessions);
     expect(after.proofs).toEqual([]);
+
     return {
       success: ctx.snapshot(success),
       first,
@@ -380,27 +423,31 @@ compatScenario(
   async (ctx) => {
     const actor = siweActor(ctx);
     const observations = [];
+
     for (const mode of ["false", "throw", "api-error"]) {
       await control(ctx, { operation: "configure", verifier: mode });
       const challenge = await nonce(actor);
       const result = await verify(actor, message(challenge));
-      if (mode === "api-error")
+
+      if (mode === "api-error") {
         expect(result.error).toMatchObject({
           status: 403,
           code: "WALLET_POLICY_REJECTED",
           message: "configured wallet policy rejected",
         });
-      else if (mode === "throw")
+      } else if (mode === "throw") {
         expect(result.error).toMatchObject({
           status: 401,
           error: "deterministic verifier failure",
           message: "Something went wrong. Please try again later.",
         });
-      else
+      } else {
         expect(result.error).toMatchObject({
           status: 401,
           message: "Unauthorized: Invalid SIWE signature",
         });
+      }
+
       const persisted = await state(ctx);
       expect(persisted).toMatchObject({
         users: [],
@@ -409,13 +456,17 @@ compatScenario(
         sessions: [],
         proofs: [],
       });
+
       observations.push({ mode, result: ctx.snapshot(result), persisted });
     }
+
     await control(ctx, { operation: "configure", nonce: "short" });
     const invalid = await actor.client.siwe.getNonce();
     expect(invalid.error).toMatchObject({ status: 500, code: "SIWE_INVALID_NONCE" });
+
     const after = await state(ctx);
     expect(after.proofs).toEqual([]);
+
     return { observations, invalid: ctx.snapshot(invalid), after };
   },
   ["POST /siwe/get-nonce", "POST /siwe/verify"],
@@ -434,14 +485,17 @@ compatScenario(
     expect(entered.inputs).toHaveLength(1);
     expect(entered.proofs).toEqual([]);
     expect(entered.wallets).toEqual([]);
+
     const loser = await verify(actor, signed);
     expect(loser.error).toMatchObject({
       status: 401,
       code: "UNAUTHORIZED_INVALID_OR_EXPIRED_NONCE",
     });
+
     await control(ctx, { operation: "release-verifier" });
     const success = await winner;
     expect(success.error).toBeNull();
+
     const owner = identity.parse(success.data);
     const after = await state(ctx);
     expect(after.users).toHaveLength(1);
@@ -451,6 +505,7 @@ compatScenario(
     expect(after.inputs).toHaveLength(1);
     expect(after.proofs).toEqual([]);
     expect(after.sessions[0]).toMatchObject({ userId: owner.user.id, token: owner.token });
+
     return { entered, loser: ctx.snapshot(loser), success: ctx.snapshot(success), after };
   },
   ["POST /siwe/verify"],
@@ -464,20 +519,24 @@ compatScenario(
     const challenge = await nonce(actor);
     const first = await verify(actor, message(challenge), { email: email.toUpperCase() });
     expect(first.error).toBeNull();
+
     const owner = identity.parse(first.data);
     const persisted = await state(ctx);
     expect(persisted.users).toHaveLength(1);
     expect(persisted.users[0]).toMatchObject({ id: owner.user.id, email, emailVerified: false });
     expect(persisted.proofs).toEqual([]);
+
     await control(ctx, { operation: "update-user", userId: owner.user.id, banned: true });
     const banNonce = await nonce(actor);
     const denied = await verify(actor, message(banNonce), { email });
     expect(denied.error?.status).toBe(403);
+
     const banned = await state(ctx);
     expect(banned.sessions).toEqual(persisted.sessions);
     expect(banned.accounts).toEqual(persisted.accounts);
     expect(banned.wallets).toEqual(persisted.wallets);
     expect(banned.proofs).toEqual([]);
+
     await control(ctx, {
       operation: "update-user",
       userId: owner.user.id,
@@ -490,6 +549,7 @@ compatScenario(
     });
     expect(next.error).toBeNull();
     expect(identity.parse(next.data).user.id).toBe(owner.user.id);
+
     const after = await state(ctx);
     expect(after.users[0]?.email).toBe(email);
     expect(after.users[0]?.twoFactorEnabled).toBe(true);
@@ -497,6 +557,7 @@ compatScenario(
     expect(after.wallets).toEqual(persisted.wallets);
     expect(after.accounts).toEqual(persisted.accounts);
     expect(after.proofs).toEqual([]);
+
     return {
       first: ctx.snapshot(first),
       persisted,
@@ -519,6 +580,7 @@ compatScenario(
     })) as { userId: string };
     const before = await state(ctx);
     const rejections = [];
+
     for (const alias of ["nonce", "get-nonce"]) {
       const rejection = await ctx.rawRequest({
         path: `/__test/profiles/siwe/api/auth/siwe/${alias}`,
@@ -531,13 +593,16 @@ compatScenario(
         message: '[body] Unrecognized keys: "address", "chainId"',
       });
       expect(await state(ctx)).toEqual(before);
+
       rejections.push(rejection);
     }
+
     const absentBody = await ctx.rawRequest({
       path: "/__test/profiles/siwe/api/auth/siwe/get-nonce",
       method: "POST",
     });
     expect(absentBody.status).toBe(200);
+
     const challenge = (absentBody.body as { nonce: string }).nonce;
     const signed = message(challenge);
     const injected = await ctx.rawRequest({
@@ -550,6 +615,7 @@ compatScenario(
       code: "VALIDATION_ERROR",
       message: '[body] Unrecognized key: "userId"',
     });
+
     const invalidBody = await ctx.rawRequest({
       path: "/__test/profiles/siwe/api/auth/siwe/verify",
       method: "POST",
@@ -561,14 +627,18 @@ compatScenario(
       message:
         '[body.message] Too small: expected string to have >=1 characters; [body.signature] Invalid input: expected string, received boolean; [body.email] Invalid input: expected string, received number; [body] Unrecognized key: "unknown"',
     });
+
     const pending = await state(ctx);
     expect(pending.users).toEqual(before.users);
     expect(pending.proofs).toHaveLength(1);
     expect(pending.inputs).toEqual([]);
+
     const success = await verify(actor, signed);
     expect(success.error).toBeNull();
+
     const owner = identity.parse(success.data);
     expect(owner.user.id).not.toBe(prior.userId);
+
     const after = await state(ctx);
     expect(after.users[0]).toEqual(before.users[0]);
     expect(after.sessions).toHaveLength(1);
@@ -576,16 +646,19 @@ compatScenario(
     expect(after.accounts[0]?.userId).toBe(owner.user.id);
     expect(after.wallets[0]?.userId).toBe(owner.user.id);
     expect(after.proofs).toEqual([]);
+
     const alternateChallenge = await nonce(actor);
     const alternate = await verify(actor, message(alternateChallenge));
     expect(alternate.error).toBeNull();
     expect(identity.parse(alternate.data).user.id).toBe(owner.user.id);
+
     const alternateState = await state(ctx);
     expect(alternateState.proofs).toEqual([]);
     expect(alternateState.users).toEqual(after.users);
     expect(alternateState.accounts).toEqual(after.accounts);
     expect(alternateState.wallets).toEqual(after.wallets);
     expect(alternateState.sessions).toHaveLength(2);
+
     return {
       before,
       rejections,
@@ -613,9 +686,11 @@ compatScenario(
       { scalar: 2 },
     );
     expect(foreignResult.error).toBeNull();
+
     const foreignIdentity = identity.parse(foreignResult.data);
     const foreignSession = await foreign.client.getSession();
     expect(foreignSession.data?.session.token).toBe(foreignIdentity.token);
+
     const actor = siweActor(ctx);
     const challenge = await nonce(actor);
     const signed = message(challenge);
@@ -635,6 +710,7 @@ compatScenario(
         JSON.stringify(rawMediaResponses, null, 2),
       );
     };
+
     for (const path of ["/siwe/nonce", "/siwe/get-nonce", "/siwe/verify"]) {
       for (const media of [
         "text/plain",
@@ -650,6 +726,7 @@ compatScenario(
           headers: media ? { "content-type": media } : {},
         });
         expect(response.status).toBe(415);
+
         const body = await response.json();
         await retainMedia(path, media, response, body);
         expect(body).toEqual({
@@ -659,10 +736,12 @@ compatScenario(
             : "Content-Type is required. Allowed types: application/json",
         });
         expect(await state(ctx)).toEqual(before);
+
         observations.push({ path, media, body });
       }
     }
-    for (const path of ["/siwe/nonce", "/siwe/get-nonce", "/siwe/verify"])
+
+    for (const path of ["/siwe/nonce", "/siwe/get-nonce", "/siwe/verify"]) {
       for (const media of [
         "text/plainapplication/json",
         "TEXT/PLAINapplication/json; charset=UTF-8",
@@ -675,6 +754,7 @@ compatScenario(
           headers: { "content-type": media },
         });
         expect(response.status).toBe(400);
+
         const headers = Object.fromEntries(
           [...response.headers].filter(
             ([key]) =>
@@ -695,14 +775,18 @@ compatScenario(
           message: "[body] Invalid input: expected object, received string",
         });
         expect(await state(ctx)).toEqual(before);
+
         observations.push({ path, media, headers, body });
       }
+    }
+
     const arrayRejected = await actor.fetch(`${ctx.baseURL}/api/auth/siwe/verify`, {
       method: "POST",
       body: JSON.stringify({ message: signed, signature: signature(signed) }),
       headers: { "content-type": "application/octet-streamapplication/json" },
     });
     expect(arrayRejected.status).toBe(400);
+
     const arrayBody = await arrayRejected.json();
     await retainMedia(
       "/siwe/verify",
@@ -716,6 +800,7 @@ compatScenario(
         "[body.message] Invalid input: expected string, received undefined; [body.signature] Invalid input: expected string, received undefined",
     });
     expect(await state(ctx)).toEqual(before);
+
     observations.push({
       path: "/siwe/verify",
       media: "application/octet-streamapplication/json",
@@ -740,6 +825,7 @@ compatScenario(
       headers: { "content-type": "APPLICATION/JSON; charset=UTF-8" },
     });
     expect(accepted.status).toBe(200);
+
     const result = identity.parse(await accepted.json());
     const after = await state(ctx);
     expect(after.proofs).toEqual([]);
@@ -750,30 +836,36 @@ compatScenario(
     expect(after.wallets[0]).toEqual(before.wallets[0]);
     expect(after.accounts[0]).toEqual(before.accounts[0]);
     expect(after.sessions[0]).toEqual(before.sessions[0]);
+
     const replay = await verify(actor, signed);
     expect(replay.error).toMatchObject({
       status: 401,
       code: "UNAUTHORIZED_INVALID_OR_EXPIRED_NONCE",
     });
     expect(await state(ctx)).toEqual(after);
+
     const aliasRetry = await actor.fetch(`${ctx.baseURL}/api/auth/siwe/get-nonce`, {
       method: "POST",
       body: "{}",
       headers: { "content-type": "APPLICATION/JSON; charset=UTF-8" },
     });
     expect(aliasRetry.status).toBe(200);
+
     const aliasNonce = z.object({ nonce: z.string() }).parse(await aliasRetry.json());
     const aliasPending = await state(ctx);
     expect(aliasPending.inputs).toEqual(after.inputs);
     expect(aliasPending.proofs).toHaveLength(1);
+
     const aliasVerified = await verify(actor, message(aliasNonce.nonce));
     expect(aliasVerified.error).toBeNull();
     expect(identity.parse(aliasVerified.data).user.id).toBe(result.user.id);
+
     const aliasAfter = await state(ctx);
     expect(aliasAfter.proofs).toEqual([]);
     expect(aliasAfter.wallets).toEqual(after.wallets);
     expect(aliasAfter.accounts).toEqual(after.accounts);
     expect(aliasAfter.sessions).toHaveLength(3);
+
     return {
       foreignResult: ctx.snapshot(foreignResult),
       foreignSession: ctx.snapshot(foreignSession),
@@ -796,6 +888,7 @@ compatScenario(
   async (ctx) => {
     const actor = siweActor(ctx);
     const observations = [];
+
     for (const [fraction, accepted] of [
       ["0000", false],
       ["0001", true],
@@ -803,20 +896,25 @@ compatScenario(
       const challenge = await nonce(actor);
       const signed = message(challenge, { extra: `Not Before: 2099-01-01T24:00:00.${fraction}Z` });
       const result = await verify(actor, signed);
+
       if (accepted) {
         expect(result.error).toBeNull();
         identity.parse(result.data);
-      } else
+      } else {
         expect(result.error).toMatchObject({
           status: 401,
           code: "UNAUTHORIZED_SIWE_MESSAGE_NOT_YET_VALID",
         });
+      }
+
       const after = await state(ctx);
       expect(after.proofs).toEqual([]);
       expect(after.inputs).toHaveLength(accepted ? 1 : 0);
       expect(after.users).toHaveLength(accepted ? 1 : 0);
+
       observations.push({ fraction, result: ctx.snapshot(result), after });
     }
+
     return observations;
   },
   ["POST /siwe/nonce", "POST /siwe/verify"],
@@ -831,12 +929,15 @@ compatScenario(
       scalar: 2,
     });
     expect(foreignResult.error).toBeNull();
+
     const foreignIdentity = identity.parse(foreignResult.data);
     const foreignSession = await foreign.client.getSession();
     expect(foreignSession.data?.session.token).toBe(foreignIdentity.token);
+
     const actor = siweActor(ctx, "date-owner");
     const original = await state(ctx);
     const observations = [];
+
     for (const [date, position] of [
       ["September 30, 2099 12:00:00 GMT", "future"],
       ["September 30, 2000 12:00:00 GMT", "past"],
@@ -864,7 +965,7 @@ compatScenario(
       ...["UT", "UTC", "GMT", "EST", "EDT", "CST", "CDT", "MST", "MDT", "PDT"].map(
         (zone) => [`Jan 1 2099 00:00:00 ${zone}`, "future"] as const,
       ),
-    ] as const)
+    ] as const) {
       for (const field of ["Not Before", "Expiration Time"] as const) {
         const challenge = await nonce(actor);
         const before = await state(ctx);
@@ -874,7 +975,8 @@ compatScenario(
           (field === "Expiration Time" && position === "past");
         const result = await verify(actor, signed);
         let session: unknown = null;
-        if (rejected)
+
+        if (rejected) {
           expect(result.error).toMatchObject({
             status: 401,
             code:
@@ -882,20 +984,24 @@ compatScenario(
                 ? "UNAUTHORIZED_SIWE_MESSAGE_NOT_YET_VALID"
                 : "UNAUTHORIZED_SIWE_MESSAGE_EXPIRED",
           });
-        else {
+        } else {
           expect(result.error).toBeNull();
+
           const principal = identity.parse(result.data);
           const read = await actor.client.getSession();
           expect(read.data?.user.id).toBe(principal.user.id);
           expect(read.data?.session.token).toBe(principal.token);
+
           session = ctx.snapshot(read);
         }
+
         const after = await state(ctx);
         expect(after.proofs).toEqual([]);
         expect(after.users[0]).toEqual(original.users[0]);
         expect(after.accounts[0]).toEqual(original.accounts[0]);
         expect(after.wallets[0]).toEqual(original.wallets[0]);
         expect(after.sessions[0]).toEqual(original.sessions[0]);
+
         if (rejected) {
           expect(after.users).toEqual(before.users);
           expect(after.accounts).toEqual(before.accounts);
@@ -908,12 +1014,14 @@ compatScenario(
           expect(after.inputs.at(-1)?.signature).toBe(signature(signed));
           expect(after.sessions).toHaveLength(before.sessions.length + 1);
         }
+
         const replay = await verify(actor, signed);
         expect(replay.error).toMatchObject({
           status: 401,
           code: "UNAUTHORIZED_INVALID_OR_EXPIRED_NONCE",
         });
         expect(await state(ctx)).toEqual(after);
+
         observations.push({
           field,
           date,
@@ -925,6 +1033,8 @@ compatScenario(
           replay: ctx.snapshot(replay),
         });
       }
+    }
+
     return {
       foreignResult: ctx.snapshot(foreignResult),
       foreignSession: ctx.snapshot(foreignSession),

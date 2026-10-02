@@ -1,12 +1,15 @@
 import { expect } from "bun:test";
 import { createHash } from "node:crypto";
+
 import { createAuthClient } from "better-auth/client";
 import { verifyPassword } from "better-auth/crypto";
+
 import type { FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { createTracingFetch, type TraceEntry } from "../../support/trace";
 
 type Row = Record<string, unknown>;
+
 type State = {
   users: Row[];
   accounts: Row[];
@@ -15,19 +18,25 @@ type State = {
   events: Row[];
   receipts: Row[];
 };
+
 const DEFAULT_MESSAGE =
   "The password you entered has been compromised. Please choose a different password.";
+
 const RETRY_MESSAGE = "Failed to check password. Please try again later.";
 const password = "Compromised-é-Password123";
+
 function sha1(value: string) {
   return createHash("sha1").update(value, "utf8").digest("hex").toUpperCase();
 }
+
 function suffix(value: string) {
   return sha1(value).slice(5);
 }
+
 async function control(ctx: ScenarioContext, body: Row, actor?: string) {
-  if (!actor)
+  if (!actor) {
     return ctx.rawRequest({ path: "/__test/compromised-password", method: "POST", json: body });
+  }
   const response = await ctx
     .actor(actor, body.profile as FixtureProfile)
     .fetch(
@@ -47,19 +56,26 @@ async function control(ctx: ScenarioContext, body: Row, actor?: string) {
     body: (await response.json()) as unknown,
   };
 }
+
 async function range(ctx: ScenarioContext, body = "", status = 200, contentType = "text/plain") {
   const result = await control(ctx, { operation: "range", body, status, contentType });
   expect(result.status).toBe(200);
   return result;
 }
+
 async function state(ctx: ScenarioContext) {
   const result = await ctx.rawRequest({ path: "/__test/compromised-password/state" });
   expect(result.status).toBe(200);
   return result.body as State;
 }
+
 function hash(value: unknown) {
-  if (typeof value !== "string" || value === "") return value;
+  if (typeof value !== "string" || value === "") {
+    return value;
+  }
+
   expect(value).toMatch(/^[a-f0-9]{32}:[a-f0-9]{128}$/);
+
   const [salt, key] = value.split(":");
   return {
     token: value,
@@ -68,17 +84,19 @@ function hash(value: unknown) {
     encoding: "hex-lower",
   };
 }
+
 function observed(s: State) {
   return {
     ...s,
     accounts: s.accounts.map((row) => ({ ...row, password: hash(row.password) })),
     verifications: s.verifications.map((row) => {
-      if (typeof row.identifier === "string" && row.identifier.startsWith("reset-password:"))
+      if (typeof row.identifier === "string" && row.identifier.startsWith("reset-password:")) {
         return {
           ...row,
           identifier: { prefix: "reset-password:", token: row.identifier.slice(15) },
           value: { userId: row.value },
         };
+      }
       if (typeof row.value === "string" && /^\d{6}:\d+$/.test(row.value)) {
         const [otp, attempts] = row.value.split(":");
         return { ...row, value: { token: otp, length: 6, attempts, separator: ":" } };
@@ -97,6 +115,7 @@ function observed(s: State) {
     })),
   };
 }
+
 function rows(s: State) {
   return {
     users: s.users,
@@ -105,12 +124,15 @@ function rows(s: State) {
     verifications: s.verifications,
   };
 }
+
 function stages(s: State) {
   return s.events.map((event) => event.stage);
 }
+
 function receipt(s: State, pw: string, count = 1) {
   expect(s.receipts).toHaveLength(count);
-  for (const r of s.receipts)
+
+  for (const r of s.receipts) {
     expect(r).toEqual({
       method: "GET",
       path: `/range/${sha1(pw).slice(0, 5)}`,
@@ -123,9 +145,12 @@ function receipt(s: State, pw: string, count = 1) {
       },
       body: "",
     });
+  }
+
   expect(JSON.stringify(s.receipts)).not.toContain(pw);
   expect(JSON.stringify(s.receipts)).not.toContain(suffix(pw));
 }
+
 async function foreign(ctx: ScenarioContext) {
   await range(ctx);
   const signup = await ctx.actor("foreign", "pwned-default").client.signUp.email({
@@ -134,8 +159,10 @@ async function foreign(ctx: ScenarioContext) {
     password: "foreign-password123",
   });
   expect(signup.error).toBeNull();
+
   return { signup, state: await ctx.readUserState({ userId: signup.data!.user.id }) };
 }
+
 async function unchanged(ctx: ScenarioContext, other: Awaited<ReturnType<typeof foreign>>) {
   expect(await ctx.readUserState({ userId: other.signup.data!.user.id })).toEqual(other.state);
 }
@@ -143,9 +170,9 @@ async function unchanged(ctx: ScenarioContext, other: Awaited<ReturnType<typeof 
 compatScenario(
   "compromised password signup denies before real hashing and user creation with prefix-only HTTP",
   async (ctx) => {
-    const other = await foreign(ctx),
-      configured = await range(ctx, `${suffix(password)}:4\r\n`),
-      before = await state(ctx);
+    const other = await foreign(ctx);
+    const configured = await range(ctx, `${suffix(password)}:4\r\n`);
+    const before = await state(ctx);
     const rejected = await ctx.actor("rejected", "pwned-default").client.signUp.email({
       email: ctx.uniqueEmail("pwned-denied"),
       name: "Denied Principal",
@@ -156,19 +183,23 @@ compatScenario(
       code: "PASSWORD_COMPROMISED",
       message: DEFAULT_MESSAGE,
     });
+
     const after = await state(ctx);
     expect(rows(after)).toEqual(rows(before));
     expect(stages(after)).toEqual(["range"]);
+
     receipt(after, password);
-    const configuredClean = await range(ctx, `${suffix(password)}:0\n`),
-      accepted = await ctx.actor("accepted", "pwned-default").client.signUp.email({
-        email: ctx.uniqueEmail("pwned-clean"),
-        name: "Admitted Principal",
-        password,
-      });
+    const configuredClean = await range(ctx, `${suffix(password)}:0\n`);
+    const accepted = await ctx.actor("accepted", "pwned-default").client.signUp.email({
+      email: ctx.uniqueEmail("pwned-clean"),
+      name: "Admitted Principal",
+      password,
+    });
     expect(accepted.error).toBeNull();
+
     const admitted = await state(ctx);
     expect(stages(admitted)).toEqual(["range", "hash-enter", "hash-result", "user-create"]);
+
     receipt(admitted, password);
     const credential = admitted.accounts.find((row) => row.userId === accepted.data!.user.id)!;
     expect(await verifyPassword({ hash: String(credential.password), password })).toBe(true);
@@ -177,6 +208,7 @@ compatScenario(
     expect(admitted.sessions.filter((row) => row.userId === accepted.data!.user.id)).toHaveLength(
       1,
     );
+
     await unchanged(ctx, other);
     return {
       foreign: other,
@@ -195,10 +227,10 @@ compatScenario(
 compatScenario(
   "published compromised password helper retains exact first-match canonical counts and media errors",
   async (ctx) => {
-    const other = await foreign(ctx),
-      before = await state(ctx),
-      s = suffix(password),
-      observations = [];
+    const other = await foreign(ctx);
+    const before = await state(ctx);
+    const s = suffix(password);
+    const observations = [];
     const cases: [string, string, boolean | null, number?, string?][] = [
       ["positive", `${s}:1`, true],
       ["zero", `${s}:0`, false],
@@ -241,13 +273,16 @@ compatScenario(
       ["text-case", `${s}:1`, null, 200, "Text/plain"],
       ["provider-status", '{"service":"unavailable"}', null, 503, "application/json"],
     ];
+
     for (const [kind, body, compromised, status = 200, media = "text/plain"] of cases) {
-      const configured = await range(ctx, body, status, media),
-        result = await control(ctx, { operation: "helper", password }),
-        after = await state(ctx);
+      const configured = await range(ctx, body, status, media);
+      const result = await control(ctx, { operation: "helper", password });
+      const after = await state(ctx);
       expect(rows(after)).toEqual(rows(before));
       expect(stages(after)).toEqual(["range"]);
+
       receipt(after, password);
+
       if (compromised === null) {
         expect(result.status).toBe(500);
         expect(result.body).toEqual({
@@ -257,8 +292,10 @@ compatScenario(
         expect(result.status).toBe(200);
         expect(result.body).toEqual({ compromised });
       }
+
       observations.push({ kind, body, status, media, configured, result, after: observed(after) });
     }
+
     await unchanged(ctx, other);
     return { foreign: other, before: observed(before), observations };
   },
@@ -267,8 +304,9 @@ compatScenario(
 compatScenario(
   "compromised hash policy options retain disabled empty custom paths and message fallback",
   async (ctx) => {
-    const other = await foreign(ctx),
-      observations = [];
+    const other = await foreign(ctx);
+    const observations = [];
+
     for (const profile of [
       "pwned-disabled",
       "pwned-empty",
@@ -277,14 +315,15 @@ compatScenario(
       "pwned-message",
       "pwned-empty-message",
     ] as const) {
-      const configured = await range(ctx, `${suffix(password)}:3`),
-        before = await state(ctx),
-        result = await ctx.actor(profile, profile).client.signUp.email({
-          email: ctx.uniqueEmail(profile),
-          name: "Configured Policy",
-          password,
-        }),
-        after = await state(ctx);
+      const configured = await range(ctx, `${suffix(password)}:3`);
+      const before = await state(ctx);
+      const result = await ctx.actor(profile, profile).client.signUp.email({
+        email: ctx.uniqueEmail(profile),
+        name: "Configured Policy",
+        password,
+      });
+      const after = await state(ctx);
+
       if (profile === "pwned-message" || profile === "pwned-empty-message") {
         expect(result.error).toMatchObject({
           status: 400,
@@ -294,14 +333,17 @@ compatScenario(
         });
         expect(rows(after)).toEqual(rows(before));
         expect(stages(after)).toEqual(["range"]);
+
         receipt(after, password);
       } else {
         expect(result.error).toBeNull();
         expect(after.receipts).toEqual([]);
         expect(stages(after)).toEqual(["hash-enter", "hash-result", "user-create"]);
+
         const account = after.accounts.find((row) => row.userId === result.data!.user.id)!;
         expect(await verifyPassword({ hash: String(account.password), password })).toBe(true);
       }
+
       observations.push({
         profile,
         configured,
@@ -310,6 +352,7 @@ compatScenario(
         after: observed(after),
       });
     }
+
     await unchanged(ctx, other);
     return { foreign: other, observations };
   },
@@ -319,33 +362,37 @@ compatScenario(
 compatScenario(
   "compromise check hashes raw Unicode before genuine normalized scrypt and signup duplicate guards",
   async (ctx) => {
-    const other = await foreign(ctx),
-      pw = "Ｐａｓｓｗｏｒｄ１２３",
-      normalized = pw.normalize("NFKC"),
-      configured = await range(ctx, `${suffix(normalized)}:7`),
-      owner = ctx.actor("unicode", "pwned-default"),
-      email = ctx.uniqueEmail("raw-pwned");
+    const other = await foreign(ctx);
+    const pw = "Ｐａｓｓｗｏｒｄ１２３";
+    const normalized = pw.normalize("NFKC");
+    const configured = await range(ctx, `${suffix(normalized)}:7`);
+    const owner = ctx.actor("unicode", "pwned-default");
+    const email = ctx.uniqueEmail("raw-pwned");
     const signup = await owner.client.signUp.email({
       email,
       name: "Unicode Principal",
       password: pw,
     });
     expect(signup.error).toBeNull();
+
     const admitted = await state(ctx);
     receipt(admitted, pw);
     const credential = admitted.accounts.find((row) => row.userId === signup.data!.user.id)!;
     expect(await verifyPassword({ hash: String(credential.password), password: normalized })).toBe(
       true,
     );
-    const deniedConfig = await range(ctx, `${suffix(pw)}:7`),
-      duplicate = await owner.client.signUp.email({ email, name: "Duplicate", password: pw });
+
+    const deniedConfig = await range(ctx, `${suffix(pw)}:7`);
+    const duplicate = await owner.client.signUp.email({ email, name: "Duplicate", password: pw });
     expect(duplicate.error?.code).toBe("USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL");
+
     const guarded = await state(ctx);
     expect(rows(guarded)).toEqual(rows(admitted));
     expect(guarded.receipts).toEqual([]);
     expect(guarded.events).toEqual([]);
-    const noAuto = ctx.actor("no-auto", "pwned-no-auto"),
-      safeEmail = ctx.uniqueEmail("enumeration");
+
+    const noAuto = ctx.actor("no-auto", "pwned-no-auto");
+    const safeEmail = ctx.uniqueEmail("enumeration");
     await range(ctx);
     const physical = await noAuto.client.signUp.email({
       email: safeEmail,
@@ -353,17 +400,20 @@ compatScenario(
       password: pw,
     });
     expect(physical.error).toBeNull();
-    const safeBefore = await state(ctx),
-      safeConfig = await range(ctx, `${suffix(pw)}:7`),
-      safeDuplicate = await noAuto.client.signUp.email({
-        email: safeEmail,
-        name: "Synthetic Principal",
-        password: pw,
-      });
+
+    const safeBefore = await state(ctx);
+    const safeConfig = await range(ctx, `${suffix(pw)}:7`);
+    const safeDuplicate = await noAuto.client.signUp.email({
+      email: safeEmail,
+      name: "Synthetic Principal",
+      password: pw,
+    });
     expect(safeDuplicate.error?.code).toBe("PASSWORD_COMPROMISED");
+
     const safeAfter = await state(ctx);
     expect(rows(safeAfter)).toEqual(rows(safeBefore));
     expect(stages(safeAfter)).toEqual(["range"]);
+
     receipt(safeAfter, pw);
     await unchanged(ctx, other);
     return {
@@ -389,34 +439,39 @@ compatScenario(
   async (ctx) => {
     const other = await foreign(ctx);
     await range(ctx);
-    const owner = ctx.actor("owner", "pwned-default"),
-      email = ctx.uniqueEmail("change-pwned"),
-      original = "original-password123";
+    const owner = ctx.actor("owner", "pwned-default");
+    const email = ctx.uniqueEmail("change-pwned");
+    const original = "original-password123";
     const signup = await owner.client.signUp.email({
       email,
       name: "Password Owner",
       password: original,
     });
     expect(signup.error).toBeNull();
-    const configured = await range(ctx, `${suffix(password)}:8`),
-      before = await state(ctx);
+
+    const configured = await range(ctx, `${suffix(password)}:8`);
+    const before = await state(ctx);
     const unauth = await ctx.actor("anonymous", "pwned-default").client.changePassword({
       currentPassword: original,
       newPassword: password,
       revokeOtherSessions: true,
     });
     expect(unauth.error?.status).toBe(401);
+
     const noCalls = await state(ctx);
     expect(noCalls.receipts).toEqual([]);
     expect(rows(noCalls)).toEqual(rows(before));
+
     const wrong = await owner.client.changePassword({
       currentPassword: "incorrect-password123",
       newPassword: password,
       revokeOtherSessions: true,
     });
     expect(wrong.error?.code).toBe("PASSWORD_COMPROMISED");
+
     const guarded = await state(ctx);
     expect(rows(guarded)).toEqual(rows(before));
+
     receipt(guarded, password);
     const checkAgain = await range(ctx, `${suffix(password)}:8`);
     const rejected = await owner.client.changePassword({
@@ -425,24 +480,30 @@ compatScenario(
       revokeOtherSessions: true,
     });
     expect(rejected.error?.code).toBe("PASSWORD_COMPROMISED");
+
     const after = await state(ctx);
     expect(rows(after)).toEqual(rows(before));
     expect(stages(after)).toEqual(["range"]);
+
     receipt(after, password);
     const session = await owner.client.getSession();
     expect(session.data?.user.id).toBe(signup.data!.user.id);
-    const clean = await range(ctx, `${suffix(password)}:0`),
-      accepted = await owner.client.changePassword({
-        currentPassword: original,
-        newPassword: password,
-      });
+
+    const clean = await range(ctx, `${suffix(password)}:0`);
+    const accepted = await owner.client.changePassword({
+      currentPassword: original,
+      newPassword: password,
+    });
     expect(accepted.error).toBeNull();
+
     const admitted = await state(ctx);
     receipt(admitted, password);
     expect(stages(admitted)).toEqual(["range", "hash-enter", "hash-result"]);
+
     const account = admitted.accounts.find((row) => row.userId === signup.data!.user.id)!;
     expect(await verifyPassword({ hash: String(account.password), password })).toBe(true);
     expect(admitted.events[2]!.hash).toBe(account.password);
+
     await unchanged(ctx, other);
     return {
       foreign: other,
@@ -465,28 +526,30 @@ compatScenario(
   ["POST /change-password"],
 );
 
-for (const mode of ["compromised", "malformed", "provider-error"] as const)
+for (const mode of ["compromised", "malformed", "provider-error"] as const) {
   compatScenario(
     `password reset ${mode} burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation`,
     async (ctx) => {
       const other = await foreign(ctx);
       await range(ctx);
-      const owner = ctx.actor("owner", "pwned-default"),
-        email = ctx.uniqueEmail(`reset-${mode}`);
+      const owner = ctx.actor("owner", "pwned-default");
+      const email = ctx.uniqueEmail(`reset-${mode}`);
       const signup = await owner.client.signUp.email({
         email,
         name: "Reset Owner",
         password: "original-password123",
       });
       expect(signup.error).toBeNull();
+
       const requested = await owner.client.requestPasswordReset({
         email,
         redirectTo: "/pwned-reset",
       });
       expect(requested.error).toBeNull();
-      const delivered = await state(ctx),
-        delivery = delivered.events.find((event) => event.stage === "reset-delivery")!,
-        token = String(delivery.token);
+
+      const delivered = await state(ctx);
+      const delivery = delivered.events.find((event) => event.stage === "reset-delivery")!;
+      const token = String(delivery.token);
       const proof = delivered.verifications.find(
         (row) => row.identifier === `reset-password:${token}`,
       )!;
@@ -497,13 +560,14 @@ for (const mode of ["compromised", "malformed", "provider-error"] as const)
       expect(
         Date.parse(String(proof.expiresAt)) - Date.parse(String(proof.createdAt)),
       ).toBeLessThanOrEqual(3600000);
+
       const configured = await range(
-          ctx,
-          `${suffix(password)}:${mode === "malformed" ? "01" : "2"}`,
-          mode === "provider-error" ? 503 : 200,
-        ),
-        before = await state(ctx),
-        rejected = await owner.client.resetPassword({ token, newPassword: password });
+        ctx,
+        `${suffix(password)}:${mode === "malformed" ? "01" : "2"}`,
+        mode === "provider-error" ? 503 : 200,
+      );
+      const before = await state(ctx);
+      const rejected = await owner.client.resetPassword({ token, newPassword: password });
       expect(rejected.error).toMatchObject({
         status: mode === "compromised" ? 400 : 500,
         message:
@@ -513,6 +577,7 @@ for (const mode of ["compromised", "malformed", "provider-error"] as const)
               ? "Failed to check password. Status: 503"
               : RETRY_MESSAGE,
       });
+
       const after = await state(ctx);
       expect(after.users).toEqual(before.users);
       expect(after.accounts).toEqual(before.accounts);
@@ -521,30 +586,40 @@ for (const mode of ["compromised", "malformed", "provider-error"] as const)
         before.verifications.filter((row) => row.id !== proof.id),
       );
       expect(stages(after)).toEqual(["range"]);
+
       receipt(after, password);
       const replay = await owner.client.resetPassword({ token, newPassword: password });
       expect(replay.error?.code).toBe("INVALID_TOKEN");
       expect(await state(ctx)).toEqual(after);
+
       const session = await owner.client.getSession();
       expect(session.data?.user.id).toBe(signup.data!.user.id);
-      const clean = await range(ctx),
-        freshRequest = await owner.client.requestPasswordReset({
-          email,
-          redirectTo: "/pwned-reset",
-        });
+
+      const clean = await range(ctx);
+      const freshRequest = await owner.client.requestPasswordReset({
+        email,
+        redirectTo: "/pwned-reset",
+      });
       expect(freshRequest.error).toBeNull();
-      const freshState = await state(ctx),
-        fresh = String(freshState.events.find((event) => event.stage === "reset-delivery")!.token);
-      const clear = await range(ctx, `${suffix(password)}:0`),
-        accepted = await owner.client.resetPassword({ token: fresh, newPassword: password });
+
+      const freshState = await state(ctx);
+      const fresh = String(
+        freshState.events.find((event) => event.stage === "reset-delivery")!.token,
+      );
+      const clear = await range(ctx, `${suffix(password)}:0`);
+      const accepted = await owner.client.resetPassword({ token: fresh, newPassword: password });
       expect(accepted.error).toBeNull();
+
       const admitted = await state(ctx);
       expect(stages(admitted)).toEqual(["range", "hash-enter", "hash-result", "password-reset"]);
+
       receipt(admitted, password);
       expect(admitted.sessions.filter((row) => row.userId === signup.data!.user.id)).toEqual([]);
+
       const account = admitted.accounts.find((row) => row.userId === signup.data!.user.id)!;
       expect(await verifyPassword({ hash: String(account.password), password })).toBe(true);
       expect(admitted.events[2]!.hash).toBe(account.password);
+
       await unchanged(ctx, other);
       return {
         foreign: other,
@@ -567,32 +642,36 @@ for (const mode of ["compromised", "malformed", "provider-error"] as const)
     },
     ["POST /request-password-reset", "POST /reset-password"],
   );
+}
 
 compatScenario(
   "compromised admin create preserves actual pre-hash user creation and set-password keeps configured original hashing",
   async (ctx) => {
     const other = await foreign(ctx);
     await range(ctx);
-    const owner = ctx.actor("admin", "pwned-default"),
-      email = ctx.uniqueEmail("pwned-admin"),
-      signup = await owner.client.signUp.email({
-        email,
-        name: "Administrator",
-        password: "admin-password123",
-      });
+    const owner = ctx.actor("admin", "pwned-default");
+    const email = ctx.uniqueEmail("pwned-admin");
+    const signup = await owner.client.signUp.email({
+      email,
+      name: "Administrator",
+      password: "admin-password123",
+    });
     expect(signup.error).toBeNull();
-    const promoted = await ctx.promoteAdmin({ email }),
-      configured = await range(ctx, `${suffix(password)}:7`),
-      before = await state(ctx),
-      targetEmail = ctx.uniqueEmail("admin-created-pwned");
+
+    const promoted = await ctx.promoteAdmin({ email });
+    const configured = await range(ctx, `${suffix(password)}:7`);
+    const before = await state(ctx);
+    const targetEmail = ctx.uniqueEmail("admin-created-pwned");
     const forbidden = await ctx
       .actor("outsider", "pwned-default")
       .client.admin.createUser({ email: targetEmail, name: "Target", password });
     expect(forbidden.error?.status).toBe(401);
+
     const guarded = await state(ctx);
     expect(rows(guarded)).toEqual(rows(before));
     expect(guarded.events).toEqual([]);
     expect(guarded.receipts).toEqual([]);
+
     const missing = await owner.client.admin.setUserPassword({
       userId: "missing-target-135",
       newPassword: password,
@@ -602,49 +681,59 @@ compatScenario(
       code: "USER_NOT_FOUND",
       message: "User not found",
     });
+
     const missingState = await state(ctx);
     expect(rows(missingState)).toEqual(rows(before));
     expect(missingState.events).toEqual([]);
     expect(missingState.receipts).toEqual([]);
+
     const rejected = await owner.client.admin.createUser({
       email: targetEmail,
       name: "Created Before Check",
       password,
     });
     expect(rejected.error?.code).toBe("PASSWORD_COMPROMISED");
+
     const after = await state(ctx);
     expect(after.users).toHaveLength(before.users.length + 1);
+
     const created = after.users.find((row) => row.email === targetEmail)!;
     expect(created).toMatchObject({ name: "Created Before Check", role: "user" });
     expect(after.accounts).toEqual(before.accounts);
     expect(after.sessions).toEqual(before.sessions);
     expect(after.verifications).toEqual(before.verifications);
     expect(stages(after)).toEqual(["user-create", "range"]);
+
     receipt(after, password);
-    const reset = await range(ctx, `${suffix(password)}:7`),
-      setRejected = await owner.client.admin.setUserPassword({
-        userId: String(created.id),
-        newPassword: password,
-      });
+    const reset = await range(ctx, `${suffix(password)}:7`);
+    const setRejected = await owner.client.admin.setUserPassword({
+      userId: String(created.id),
+      newPassword: password,
+    });
     expect(setRejected.error?.code).toBe("PASSWORD_COMPROMISED");
+
     const denied = await state(ctx);
     expect(rows(denied)).toEqual(rows(after));
     expect(stages(denied)).toEqual(["range"]);
+
     receipt(denied, password);
-    const clean = await range(ctx, `${suffix(password)}:0`),
-      setAccepted = await owner.client.admin.setUserPassword({
-        userId: String(created.id),
-        newPassword: password,
-      });
+    const clean = await range(ctx, `${suffix(password)}:0`);
+    const setAccepted = await owner.client.admin.setUserPassword({
+      userId: String(created.id),
+      newPassword: password,
+    });
     expect(setAccepted.error).toBeNull();
+
     const admitted = await state(ctx);
     expect(stages(admitted)).toEqual(["range", "hash-enter", "hash-result"]);
+
     receipt(admitted, password);
     const account = admitted.accounts.find((row) => row.userId === created.id)!;
     expect(account.accountId).toBe(created.id);
     expect(account.providerId).toBe("credential");
     expect(admitted.events[2]!.hash).toBe(account.password);
     expect(await verifyPassword({ hash: String(account.password), password })).toBe(true);
+
     await unchanged(ctx, other);
     return {
       foreign: other,
@@ -672,25 +761,33 @@ compatScenario(
 compatScenario(
   "compromised server-only set-password uses actual virtual handler identity without a public URL",
   async (ctx) => {
-    const other = await foreign(ctx),
-      observations = [];
+    const other = await foreign(ctx);
+    const observations = [];
+
     for (const profile of ["pwned-default", "pwned-custom", "pwned-virtual"] as const) {
       await range(ctx);
-      const actor = ctx.actor(profile, profile),
-        signup = await actor.client.signUp.email({
-          email: ctx.uniqueEmail(profile),
-          name: "Server Password Owner",
-          password: "original-password123",
-        });
+      const actor = ctx.actor(profile, profile);
+      const signup = await actor.client.signUp.email({
+        email: ctx.uniqueEmail(profile),
+        name: "Server Password Owner",
+        password: "original-password123",
+      });
       expect(signup.error).toBeNull();
-      const initial = await state(ctx),
-        credential = initial.accounts.find((row) => row.userId === signup.data!.user.id)!,
-        cleared = await control(ctx, { operation: "clear-password", accountId: credential.id });
+
+      const initial = await state(ctx);
+      const credential = initial.accounts.find((row) => row.userId === signup.data!.user.id)!;
+      const cleared = await control(ctx, { operation: "clear-password", accountId: credential.id });
       expect(cleared.status).toBe(200);
-      const configured = await range(ctx, `${suffix(password)}:8`),
-        before = await state(ctx),
-        result = await control(ctx, { operation: "set", profile, newPassword: password }, profile),
-        after = await state(ctx);
+
+      const configured = await range(ctx, `${suffix(password)}:8`);
+      const before = await state(ctx);
+      const result = await control(
+        ctx,
+        { operation: "set", profile, newPassword: password },
+        profile,
+      );
+      const after = await state(ctx);
+
       if (profile === "pwned-virtual") {
         expect(result.status).toBe(400);
         expect(result.body).toMatchObject({
@@ -699,16 +796,19 @@ compatScenario(
         });
         expect(rows(after)).toEqual(rows(before));
         expect(stages(after)).toEqual(["range"]);
+
         receipt(after, password);
       } else {
         expect(result.status).toBe(200);
         expect(result.body).toEqual({ status: true });
         expect(after.receipts).toEqual([]);
         expect(stages(after)).toEqual(["hash-enter", "hash-result"]);
+
         const account = after.accounts.find((row) => row.id === credential.id)!;
         expect(await verifyPassword({ hash: String(account.password), password })).toBe(true);
         expect(after.events[1]!.hash).toBe(account.password);
       }
+
       const publicAttempt = await ctx.rawRequest({
         actor: profile,
         path: `/__test/profiles/${profile}/api/auth/set-password`,
@@ -716,6 +816,7 @@ compatScenario(
         json: { newPassword: password },
       });
       expect(publicAttempt.status).toBe(404);
+
       observations.push({
         profile,
         signup,
@@ -728,6 +829,7 @@ compatScenario(
         publicAttempt,
       });
     }
+
     await unchanged(ctx, other);
     return { foreign: other, observations };
   },
@@ -738,27 +840,32 @@ compatScenario(
   async (ctx) => {
     const other = await foreign(ctx);
     await range(ctx);
-    const actor = ctx.actor("stored", "pwned-custom"),
-      email = ctx.uniqueEmail("signin-check"),
-      signup = await actor.client.signUp.email({ email, name: "Stored User", password });
+    const actor = ctx.actor("stored", "pwned-custom");
+    const email = ctx.uniqueEmail("signin-check");
+    const signup = await actor.client.signUp.email({ email, name: "Stored User", password });
     expect(signup.error).toBeNull();
-    const configured = await range(ctx, `${suffix(password)}:5`),
-      before = await state(ctx),
-      signin = await ctx
-        .actor("returning", "pwned-custom")
-        .client.signIn.email({ email, password });
+
+    const configured = await range(ctx, `${suffix(password)}:5`);
+    const before = await state(ctx);
+    const signin = await ctx
+      .actor("returning", "pwned-custom")
+      .client.signIn.email({ email, password });
     expect(signin.error).toBeNull();
+
     const returning = await state(ctx);
     expect(returning.events).toEqual([]);
     expect(returning.receipts).toEqual([]);
     expect(returning.accounts).toEqual(before.accounts);
+
     const missing = await ctx
       .actor("missing", "pwned-custom")
       .client.signIn.email({ email: ctx.uniqueEmail("absent"), password });
     expect(missing.error?.code).toBe("PASSWORD_COMPROMISED");
+
     const after = await state(ctx);
     expect(rows(after)).toEqual(rows(returning));
     expect(stages(after)).toEqual(["range"]);
+
     receipt(after, password);
     await unchanged(ctx, other);
     return {
@@ -775,22 +882,23 @@ compatScenario(
   ["POST /sign-in/email"],
 );
 
-for (const method of ["email-otp", "phone-number"] as const)
+for (const method of ["email-otp", "phone-number"] as const) {
   compatScenario(
     `compromised ${method} reset consumes actual delivered proof before checking and retains foreign credentials`,
     async (ctx) => {
       const other = await foreign(ctx);
       await range(ctx);
-      const owner = ctx.actor("owner", "pwned-default"),
-        email = ctx.uniqueEmail(method),
-        phoneNumber = "+15550001351",
-        signup = await owner.client.signUp.email({
-          email,
-          name: "OTP Password Owner",
-          password: "original-password123",
-          ...(method === "phone-number" ? { phoneNumber } : {}),
-        });
+      const owner = ctx.actor("owner", "pwned-default");
+      const email = ctx.uniqueEmail(method);
+      const phoneNumber = "+15550001351";
+      const signup = await owner.client.signUp.email({
+        email,
+        name: "OTP Password Owner",
+        password: "original-password123",
+        ...(method === "phone-number" ? { phoneNumber } : {}),
+      });
       expect(signup.error).toBeNull();
+
       async function issue() {
         const result =
           method === "email-otp"
@@ -800,18 +908,24 @@ for (const method of ["email-otp", "phone-number"] as const)
                 method: "POST",
                 json: { phoneNumber },
               });
-        if ("error" in result) expect(result.error).toBeNull();
-        else expect(result.status).toBe(200);
-        const delivered = await state(ctx),
-          delivery = delivered.events.findLast(
-            (event) => event.stage === (method === "email-otp" ? "email-otp" : "phone-reset-otp"),
-          )!;
+
+        if ("error" in result) {
+          expect(result.error).toBeNull();
+        } else {
+          expect(result.status).toBe(200);
+        }
+
+        const delivered = await state(ctx);
+        const delivery = delivered.events.findLast(
+          (event) => event.stage === (method === "email-otp" ? "email-otp" : "phone-reset-otp"),
+        )!;
         return {
           result,
           state: delivered,
           proof: String(method === "email-otp" ? delivery.otp : delivery.code),
         };
       }
+
       async function reset(proof: string) {
         return method === "email-otp"
           ? owner.client.emailOtp.resetPassword({ email, otp: proof, password })
@@ -821,39 +935,58 @@ for (const method of ["email-otp", "phone-number"] as const)
               json: { phoneNumber, otp: proof, newPassword: password },
             });
       }
-      const issued = await issue(),
-        configured = await range(ctx, `${suffix(password)}:6`),
-        before = await state(ctx),
-        rejected = await reset(issued.proof);
-      if ("error" in rejected) expect(rejected.error?.code).toBe("PASSWORD_COMPROMISED");
-      else {
+
+      const issued = await issue();
+      const configured = await range(ctx, `${suffix(password)}:6`);
+      const before = await state(ctx);
+      const rejected = await reset(issued.proof);
+
+      if ("error" in rejected) {
+        expect(rejected.error?.code).toBe("PASSWORD_COMPROMISED");
+      } else {
         expect(rejected.status).toBe(400);
         expect(rejected.body).toMatchObject({ code: "PASSWORD_COMPROMISED" });
       }
+
       const after = await state(ctx);
       expect(after.users).toEqual(before.users);
       expect(after.accounts).toEqual(before.accounts);
       expect(after.sessions).toEqual(before.sessions);
       expect(after.verifications).toHaveLength(before.verifications.length - 1);
       expect(stages(after)).toEqual(["range"]);
+
       receipt(after, password);
       const replay = await reset(issued.proof);
-      if ("error" in replay) expect(replay.error?.status).toBe(400);
-      else expect(replay.status).toBe(400);
+
+      if ("error" in replay) {
+        expect(replay.error?.status).toBe(400);
+      } else {
+        expect(replay.status).toBe(400);
+      }
+
       expect(await state(ctx)).toEqual(after);
-      const clean = await range(ctx),
-        fresh = await issue(),
-        clear = await range(ctx, `${suffix(password)}:0`),
-        accepted = await reset(fresh.proof);
-      if ("error" in accepted) expect(accepted.error).toBeNull();
-      else expect(accepted.status).toBe(200);
+
+      const clean = await range(ctx);
+      const fresh = await issue();
+      const clear = await range(ctx, `${suffix(password)}:0`);
+      const accepted = await reset(fresh.proof);
+
+      if ("error" in accepted) {
+        expect(accepted.error).toBeNull();
+      } else {
+        expect(accepted.status).toBe(200);
+      }
+
       const admitted = await state(ctx);
       expect(stages(admitted)).toEqual(["range", "hash-enter", "hash-result", "password-reset"]);
+
       receipt(admitted, password);
       expect(admitted.sessions.filter((row) => row.userId === signup.data!.user.id)).toEqual([]);
+
       const account = admitted.accounts.find((row) => row.userId === signup.data!.user.id)!;
       expect(await verifyPassword({ hash: String(account.password), password })).toBe(true);
       expect(admitted.events[2]!.hash).toBe(account.password);
+
       await unchanged(ctx, other);
       return {
         foreign: other,
@@ -877,37 +1010,42 @@ for (const method of ["email-otp", "phone-number"] as const)
     },
     [`POST /${method}/reset-password`],
   );
+}
 
 compatScenario(
   "concurrent compromised reset consumes one physical proof and sends exactly one range request",
   async (ctx) => {
     const other = await foreign(ctx);
     await range(ctx);
-    const owner = ctx.actor("owner", "pwned-default"),
-      email = ctx.uniqueEmail("pwned-reset-race"),
-      signup = await owner.client.signUp.email({
-        email,
-        name: "Concurrent Owner",
-        password: "original-password123",
-      });
+    const owner = ctx.actor("owner", "pwned-default");
+    const email = ctx.uniqueEmail("pwned-reset-race");
+    const signup = await owner.client.signUp.email({
+      email,
+      name: "Concurrent Owner",
+      password: "original-password123",
+    });
     expect(signup.error).toBeNull();
+
     const requested = await owner.client.requestPasswordReset({ email, redirectTo: "/pwned-race" });
     expect(requested.error).toBeNull();
-    const delivered = await state(ctx),
-      token = String(delivered.events.find((event) => event.stage === "reset-delivery")!.token),
-      proof = delivered.verifications.find((row) => row.identifier === `reset-password:${token}`)!;
-    const configured = await range(ctx, `${suffix(password)}:8`),
-      before = await state(ctx);
+
+    const delivered = await state(ctx);
+    const token = String(delivered.events.find((event) => event.stage === "reset-delivery")!.token);
+    const proof = delivered.verifications.find(
+      (row) => row.identifier === `reset-password:${token}`,
+    )!;
+    const configured = await range(ctx, `${suffix(password)}:8`);
+    const before = await state(ctx);
     const outcomes = await Promise.all(
       [0, 1].map(async () => {
-        const entries: TraceEntry[] = [],
-          path = "/__test/profiles/pwned-default/api/auth",
-          client = createAuthClient({
-            baseURL: ctx.baseURL + path,
-            fetchOptions: {
-              customFetchImpl: createTracingFetch(ctx.baseURL, "racer", entries, path),
-            },
-          });
+        const entries: TraceEntry[] = [];
+        const path = "/__test/profiles/pwned-default/api/auth";
+        const client = createAuthClient({
+          baseURL: ctx.baseURL + path,
+          fetchOptions: {
+            customFetchImpl: createTracingFetch(ctx.baseURL, "racer", entries, path),
+          },
+        });
         return { entries, result: await client.resetPassword({ token, newPassword: password }) };
       }),
     );
@@ -920,16 +1058,19 @@ compatScenario(
     const results = outcomes.map((outcome) => outcome.result);
     expect(results[0]!.error?.code).toBe("PASSWORD_COMPROMISED");
     expect(results[1]!.error?.code).toBe("INVALID_TOKEN");
+
     const after = await state(ctx);
     expect(after.users).toEqual(before.users);
     expect(after.accounts).toEqual(before.accounts);
     expect(after.sessions).toEqual(before.sessions);
     expect(after.verifications).toEqual(before.verifications.filter((row) => row.id !== proof.id));
     expect(stages(after)).toEqual(["range"]);
+
     receipt(after, password);
     const replay = await owner.client.resetPassword({ token, newPassword: password });
     expect(replay.error?.code).toBe("INVALID_TOKEN");
     expect(await state(ctx)).toEqual(after);
+
     await unchanged(ctx, other);
     return {
       foreign: other,
@@ -949,20 +1090,22 @@ compatScenario(
 compatScenario(
   "expired reset and OTP proofs reject before compromised-password HTTP or original hash callbacks",
   async (ctx) => {
-    const other = await foreign(ctx),
-      observations = [];
+    const other = await foreign(ctx);
+    const observations = [];
+
     for (const method of ["reset", "email-otp", "phone-number"] as const) {
       await range(ctx);
-      const owner = ctx.actor(method, "pwned-default"),
-        email = ctx.uniqueEmail(`expired-${method}`),
-        phoneNumber = "+15550001352",
-        signup = await owner.client.signUp.email({
-          email,
-          name: "Expired Proof Owner",
-          password: "original-password123",
-          ...(method === "phone-number" ? { phoneNumber } : {}),
-        });
+      const owner = ctx.actor(method, "pwned-default");
+      const email = ctx.uniqueEmail(`expired-${method}`);
+      const phoneNumber = "+15550001352";
+      const signup = await owner.client.signUp.email({
+        email,
+        name: "Expired Proof Owner",
+        password: "original-password123",
+        ...(method === "phone-number" ? { phoneNumber } : {}),
+      });
       expect(signup.error).toBeNull();
+
       const requested =
         method === "reset"
           ? await owner.client.requestPasswordReset({ email, redirectTo: "/pwned-expired" })
@@ -973,45 +1116,49 @@ compatScenario(
                 method: "POST",
                 json: { phoneNumber },
               });
-      if ("error" in requested) expect(requested.error).toBeNull();
-      else expect(requested.status).toBe(200);
-      const delivered = await state(ctx),
-        delivery = delivered.events.findLast(
-          (event) =>
-            event.stage ===
-            (method === "reset"
-              ? "reset-delivery"
-              : method === "email-otp"
-                ? "email-otp"
-                : "phone-reset-otp"),
-        )!,
-        proof = String(
-          method === "reset"
-            ? delivery.token
+
+      if ("error" in requested) {
+        expect(requested.error).toBeNull();
+      } else {
+        expect(requested.status).toBe(200);
+      }
+
+      const delivered = await state(ctx);
+      const delivery = delivered.events.findLast(
+        (event) =>
+          event.stage ===
+          (method === "reset"
+            ? "reset-delivery"
             : method === "email-otp"
-              ? delivery.otp
-              : delivery.code,
-        ),
-        identifier =
-          method === "reset"
-            ? `reset-password:${proof}`
-            : method === "email-otp"
-              ? `forget-password-otp-${email}`
-              : `${phoneNumber}-request-password-reset`;
+              ? "email-otp"
+              : "phone-reset-otp"),
+      )!;
+      const proof = String(
+        method === "reset" ? delivery.token : method === "email-otp" ? delivery.otp : delivery.code,
+      );
+      const identifier =
+        method === "reset"
+          ? `reset-password:${proof}`
+          : method === "email-otp"
+            ? `forget-password-otp-${email}`
+            : `${phoneNumber}-request-password-reset`;
       expect(delivered.verifications.filter((row) => row.identifier === identifier)).toHaveLength(
         1,
       );
+
       const expired = await ctx.rawRequest({
         path: "/__test/verification-state",
         method: "POST",
         json: { action: "expire", identifier, expiresAt: "2001-01-01T00:00:00.000Z" },
       });
       expect(expired.status).toBe(200);
-      const configured = await range(ctx, `${suffix(password)}:9`),
-        before = await state(ctx);
+
+      const configured = await range(ctx, `${suffix(password)}:9`);
+      const before = await state(ctx);
       expect(before.verifications.find((row) => row.identifier === identifier)!.expiresAt).toBe(
         "2001-01-01T00:00:00.000Z",
       );
+
       async function reset() {
         return method === "reset"
           ? owner.client.resetPassword({ token: proof, newPassword: password })
@@ -1023,19 +1170,32 @@ compatScenario(
                 json: { phoneNumber, otp: proof, newPassword: password },
               });
       }
+
       const rejected = await reset();
-      if ("error" in rejected) expect(rejected.error?.status).toBe(400);
-      else expect(rejected.status).toBe(400);
+
+      if ("error" in rejected) {
+        expect(rejected.error?.status).toBe(400);
+      } else {
+        expect(rejected.status).toBe(400);
+      }
+
       const after = await state(ctx);
       expect(after.users).toEqual(before.users);
       expect(after.accounts).toEqual(before.accounts);
       expect(after.sessions).toEqual(before.sessions);
       expect(after.events).toEqual([]);
       expect(after.receipts).toEqual([]);
+
       const replay = await reset();
-      if ("error" in replay) expect(replay.error?.status).toBe(400);
-      else expect(replay.status).toBe(400);
+
+      if ("error" in replay) {
+        expect(replay.error?.status).toBe(400);
+      } else {
+        expect(replay.status).toBe(400);
+      }
+
       expect(await state(ctx)).toEqual(after);
+
       observations.push({
         method,
         signup,
@@ -1050,6 +1210,7 @@ compatScenario(
         replay,
       });
     }
+
     await unchanged(ctx, other);
     return { foreign: other, observations };
   },
@@ -1061,45 +1222,53 @@ compatScenario(
   async (ctx) => {
     const other = await foreign(ctx);
     await range(ctx);
-    const owner = ctx.actor("owner", "pwned-default"),
-      email = ctx.uniqueEmail("original-hash-policy"),
-      signup = await owner.client.signUp.email({
-        email,
-        name: "Original Hash Owner",
-        password: "original-password123",
-      });
+    const owner = ctx.actor("owner", "pwned-default");
+    const email = ctx.uniqueEmail("original-hash-policy");
+    const signup = await owner.client.signUp.email({
+      email,
+      name: "Original Hash Owner",
+      password: "original-password123",
+    });
     expect(signup.error).toBeNull();
+
     const requested = await owner.client.requestPasswordReset({
       email,
       redirectTo: "/original-hash",
     });
     expect(requested.error).toBeNull();
-    const delivered = await state(ctx),
-      token = String(delivered.events.find((event) => event.stage === "reset-delivery")!.token),
-      proof = delivered.verifications.find((row) => row.identifier === `reset-password:${token}`)!;
+
+    const delivered = await state(ctx);
+    const token = String(delivered.events.find((event) => event.stage === "reset-delivery")!.token);
+    const proof = delivered.verifications.find(
+      (row) => row.identifier === `reset-password:${token}`,
+    )!;
     const configured = await control(ctx, {
-        operation: "range",
-        body: `${suffix(password)}:0`,
-        hashFailure: true,
-      }),
-      before = await state(ctx),
-      rejected = await owner.client.resetPassword({ token, newPassword: password });
+      operation: "range",
+      body: `${suffix(password)}:0`,
+      hashFailure: true,
+    });
+    const before = await state(ctx);
+    const rejected = await owner.client.resetPassword({ token, newPassword: password });
     expect(rejected.error).toMatchObject({
       status: 403,
       code: "ORIGINAL_HASH_REJECTED",
       message: "Original password hash rejected",
     });
+
     const after = await state(ctx);
     expect(after.users).toEqual(before.users);
     expect(after.accounts).toEqual(before.accounts);
     expect(after.sessions).toEqual(before.sessions);
     expect(after.verifications).toEqual(before.verifications.filter((row) => row.id !== proof.id));
     expect(stages(after)).toEqual(["range", "hash-enter", "hash-result"]);
+
     receipt(after, password);
     expect(await verifyPassword({ hash: String(after.events[2]!.hash), password })).toBe(true);
+
     const replay = await owner.client.resetPassword({ token, newPassword: password });
     expect(replay.error?.code).toBe("INVALID_TOKEN");
     expect(await state(ctx)).toEqual(after);
+
     await unchanged(ctx, other);
     return {
       foreign: other,

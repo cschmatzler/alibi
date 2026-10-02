@@ -1,7 +1,9 @@
 import { expect } from "bun:test";
+
 import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { z } from "zod";
+
 import { compatScenario } from "../../support/scenario";
 import { adminActor, signUpAndPromoteAdmin } from "./helpers";
 
@@ -35,7 +37,11 @@ compatScenario(
       name: "Deletion Target",
     });
     expect(signup.error).toBeNull();
-    if (!signup.data) throw new Error("deletion target must be created");
+
+    if (!signup.data) {
+      throw new Error("deletion target must be created");
+    }
+
     const userId = signup.data.user.id;
     await target.client.signIn.email({ email, password: "password123" });
     await ctx.seedOAuthAccount({
@@ -50,14 +56,17 @@ compatScenario(
     });
     const enrollment = await factorClient.twoFactor.enable({ password: "password123" });
     expect(enrollment.error).toBeNull();
+
     const before = persistedUserState.parse(await ctx.readUserState({ userId }));
     expect(before.twoFactorExists).toBe(true);
     expect(before.accounts).toHaveLength(2);
     expect(before.sessions).toHaveLength(2);
     expect(before.accounts.every((account) => account.userId === userId)).toBe(true);
+
     const guest = adminActor(ctx, "guest");
     const unauthenticated = await guest.adminClient.admin.removeUser({ userId });
     expect(unauthenticated.error).toMatchObject({ status: 401 });
+
     const other = adminActor(ctx, "other");
     await other.client.signUp.email({
       email: ctx.uniqueEmail("admin-delete-other"),
@@ -69,27 +78,37 @@ compatScenario(
       status: 403,
       code: "YOU_ARE_NOT_ALLOWED_TO_DELETE_USERS",
     });
+
     const afterRejection = persistedUserState.parse(await ctx.readUserState({ userId }));
     expect(afterRejection).toEqual(before);
+
     const targetSession = await target.client.getSession();
     expect(targetSession.data?.user.id).toBe(userId);
+
     const selfRemoval = await admin.adminClient.admin.removeUser({
       userId: admin.signup.data!.user.id,
     });
     expect(selfRemoval.error).toMatchObject({ status: 400, code: "YOU_CANNOT_REMOVE_YOURSELF" });
     expect(persistedUserState.parse(await ctx.readUserState({ userId }))).toEqual(before);
+
     const remove = await admin.adminClient.admin.removeUser({ userId });
     expect(remove.data).toEqual({ success: true });
+
     const after = persistedUserState.parse(await ctx.readUserState({ userId }));
     expect(after).toEqual({ user: null, accounts: [], sessions: [], twoFactorExists: true });
+
     const revoked = await target.client.getSession();
     expect(revoked.data).toBeNull();
+
     const credentialReuse = await target.client.signIn.email({ email, password: "password123" });
     expect(credentialReuse.error).toMatchObject({ status: 401, code: "INVALID_EMAIL_OR_PASSWORD" });
+
     const deleteAgain = await admin.adminClient.admin.removeUser({ userId });
     expect(deleteAgain.error).toMatchObject({ status: 404, code: "USER_NOT_FOUND" });
+
     const adminSession = await admin.client.getSession();
     expect(adminSession.data?.user.id).toBe(admin.signup.data?.user.id);
+
     return {
       signup: ctx.snapshot(signup),
       before,
@@ -113,10 +132,13 @@ function extractState(url: string | undefined) {
   if (!url) {
     throw new Error("missing OAuth URL");
   }
+
   const state = new URL(url).searchParams.get("state");
+
   if (!state) {
     throw new Error("missing OAuth state");
   }
+
   return state;
 }
 
@@ -293,6 +315,7 @@ compatScenario(
     expect(impersonatedSession.data?.session.expiresAt.getTime()).toBe(
       impersonate.data?.session.expiresAt.getTime(),
     );
+
     const persistedAfterRead = await ctx.readUserState({ userId: targetId });
     expect(persistedAfterRead).toEqual(persistedImpersonation);
 

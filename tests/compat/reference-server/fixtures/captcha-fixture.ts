@@ -32,6 +32,7 @@ export const CAPTCHA_PROFILES = [
 export function createCaptchaFixture(base: BetterAuthOptions, port: number) {
   const events: unknown[] = [];
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
+
   for (const name of CAPTCHA_PROFILES) {
     const provider = name.includes("turnstile")
       ? "cloudflare-turnstile"
@@ -58,12 +59,16 @@ export function createCaptchaFixture(base: BetterAuthOptions, port: number) {
             provider,
             checkBotId: async () => {
               events.push({ profile: name, kind: "bot-check" });
+
               if (name === "captcha-botid-timeout") {
                 await Bun.sleep(11_000);
                 events.push({ profile: name, kind: "bot-finished" });
               }
-              if (name.endsWith("-throw") && !name.endsWith("validator-throw"))
+
+              if (name.endsWith("-throw") && !name.endsWith("validator-throw")) {
                 throw new Error("application bot check failed");
+              }
+
               return {
                 isBot: name !== "captcha-botid",
                 isVerifiedBot: name.includes("custom"),
@@ -79,8 +84,9 @@ export function createCaptchaFixture(base: BetterAuthOptions, port: number) {
                       path: new URL(request.url).pathname,
                       verification,
                     });
-                    if (name.endsWith("validator-throw"))
+                    if (name.endsWith("validator-throw")) {
                       throw new Error("application bot validator failed");
+                    }
                     return (
                       verification.isVerifiedBot === true &&
                       request.headers.get("x-allow-verified") === "yes"
@@ -148,14 +154,22 @@ export function createCaptchaFixture(base: BetterAuthOptions, port: number) {
       }),
     );
   }
+
   return {
     profiles,
     async handle(request: Request) {
       const path = new URL(request.url).pathname;
-      if (path === "/__test/captcha-events") return Response.json(events.splice(0));
-      if (!path.startsWith("/__test/captcha-verify/")) return null;
-      const rawBody = await request.text(),
-        contentType = request.headers.get("content-type");
+
+      if (path === "/__test/captcha-events") {
+        return Response.json(events.splice(0));
+      }
+
+      if (!path.startsWith("/__test/captcha-verify/")) {
+        return null;
+      }
+
+      const rawBody = await request.text();
+      const contentType = request.headers.get("content-type");
       const body = contentType?.includes("application/json")
         ? JSON.parse(rawBody)
         : Object.fromEntries(new URLSearchParams(rawBody));
@@ -168,18 +182,30 @@ export function createCaptchaFixture(base: BetterAuthOptions, port: number) {
         body,
       });
       const token = body.response;
-      if (token === "http-failure")
+
+      if (token === "http-failure") {
         return Response.json({ error: "fixture service failure" }, { status: 502 });
-      if (token === "invalid-json")
+      }
+
+      if (token === "invalid-json") {
         return new Response("invalid", { headers: { "content-type": "application/json" } });
-      if (token === "null") return Response.json(null);
-      if (token === "blob-json")
+      }
+
+      if (token === "null") {
+        return Response.json(null);
+      }
+
+      if (token === "blob-json") {
         return new Response(JSON.stringify({ success: true }), {
           headers: { "content-type": "application/octet-stream" },
         });
-      if (token === "empty-text")
+      }
+
+      if (token === "empty-text") {
         return new Response("", { headers: { "content-type": "text/plain" } });
-      if (token === "slow-body")
+      }
+
+      if (token === "slow-body") {
         return new Response(
           new ReadableStream({
             async start(controller) {
@@ -191,7 +217,12 @@ export function createCaptchaFixture(base: BetterAuthOptions, port: number) {
           }),
           { headers: { "content-type": "application/json" } },
         );
-      if (token === "timeout") await Bun.sleep(11_000);
+      }
+
+      if (token === "timeout") {
+        await Bun.sleep(11_000);
+      }
+
       return Response.json({
         success: token === "truthy-success" ? "false" : token !== "denied",
         ...(token === "missing-action"

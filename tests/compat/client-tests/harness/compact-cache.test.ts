@@ -1,13 +1,16 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
+
 import { betterAuth } from "better-auth";
 import { getCookieCache } from "better-auth/cookies";
 import { getMigrations } from "better-auth/db/migration";
+
 import { type ComparisonContext, compareValues } from "../support/compare";
 import { normalizeClientValue } from "../support/normalize";
 
 const secret = "compact-cache-independent-fixture-secret-32";
+
 type Atom = {
   token: string;
   envelope: any;
@@ -15,6 +18,7 @@ type Atom = {
   observedAt: number;
   effectiveMaxAgeSeconds: number;
 };
+
 async function observe(baseURL: string, maxAge = 300.25, version?: string) {
   const database = new Database(":memory:");
   const options = {
@@ -34,8 +38,8 @@ async function observe(baseURL: string, maxAge = 300.25, version?: string) {
   };
   const { runMigrations } = await getMigrations(options);
   await runMigrations();
-  const auth = betterAuth(options),
-    start = Date.now();
+  const auth = betterAuth(options);
+  const start = Date.now();
   const response = await auth.handler(
     new Request(baseURL + "/api/auth/sign-up/email", {
       method: "POST",
@@ -48,32 +52,39 @@ async function observe(baseURL: string, maxAge = 300.25, version?: string) {
     }),
   );
   expect(response.status).toBe(200);
+
   const signup = await response.json();
   const values = response.headers
     .getSetCookie()
     .filter((value) => value.startsWith("better-auth.session_data"))
     .map((value) => value.split(";")[0]!);
   expect(values.length).toBeGreaterThan(0);
+
   const token = decodeURIComponent(
     values.map((value) => value.slice(value.indexOf("=") + 1)).join(""),
   );
-  const envelope = JSON.parse(Buffer.from(token, "base64url").toString()),
-    observedAt = Date.now();
+  const envelope = JSON.parse(Buffer.from(token, "base64url").toString());
+  const observedAt = Date.now();
   const decoded = await getCookieCache(new Headers({ cookie: values.join("; ") }), {
     secret,
     strategy: "compact",
     isSecure: false,
   });
+
   if (Number.isFinite(maxAge) && maxAge >= 0 && !version) {
     expect(decoded).not.toBeNull();
     expect(decoded!.user.id).toBe(signup.user.id);
     expect(decoded!.session.token).toBe(signup.token);
-  } else expect(decoded).toBeNull();
-  const atom = { token, envelope, decoded, observedAt, effectiveMaxAgeSeconds: maxAge },
-    end = Date.now();
+  } else {
+    expect(decoded).toBeNull();
+  }
+
+  const atom = { token, envelope, decoded, observedAt, effectiveMaxAgeSeconds: maxAge };
+  const end = Date.now();
   database.close();
   return { signup, compactSessionCache: atom, start, end };
 }
+
 function context(
   left: Awaited<ReturnType<typeof observe>>,
   right: Awaited<ReturnType<typeof observe>>,
@@ -88,9 +99,11 @@ function context(
     compactSessionCacheSecret: secret,
   };
 }
+
 function values(value: Awaited<ReturnType<typeof observe>>) {
   return { signup: value.signup, compactSessionCache: value.compactSessionCache };
 }
+
 function signed(atom: Atom, change: (envelope: any) => void): Atom {
   const envelope = structuredClone(atom.envelope);
   change(envelope);
@@ -106,8 +119,8 @@ function signed(atom: Atom, change: (envelope: any) => void): Atom {
 }
 
 test("real published compact cache cookies compare complete authenticated claims across independent issuance clocks", async () => {
-  const left = await observe("http://localhost:3100"),
-    right = await observe("http://localhost:3200");
+  const left = await observe("http://localhost:3100");
+  const right = await observe("http://localhost:3200");
   expect(left.compactSessionCache.token).not.toBe(right.compactSessionCache.token);
   expect(compareValues(values(left), values(right), context(left, right))).toEqual([]);
   expect(
@@ -117,24 +130,28 @@ test("real published compact cache cookies compare complete authenticated claims
     }).length,
   ).toBeGreaterThan(0);
 });
+
 test("compact cache atom catches authentic ownership token lifetime rotation and full-copy corruption", async () => {
-  const left = await observe("http://localhost:3100"),
-    right = await observe("http://localhost:3200"),
-    ctx = context(left, right),
-    a = values(left),
-    b = values(right),
-    original = right.compactSessionCache;
+  const left = await observe("http://localhost:3100");
+  const right = await observe("http://localhost:3200");
+  const ctx = context(left, right);
+  const a = values(left);
+  const b = values(right);
+  const original = right.compactSessionCache;
   const arrayLeft = signed(left.compactSessionCache, (v) => {
-      v.session.extra = ["first", "second"];
-    }),
-    arrayRight = signed(original, (v) => {
-      v.session.extra = ["first", "second"];
-    });
-  for (const atom of [arrayLeft, arrayRight])
+    v.session.extra = ["first", "second"];
+  });
+  const arrayRight = signed(original, (v) => {
+    v.session.extra = ["first", "second"];
+  });
+
+  for (const atom of [arrayLeft, arrayRight]) {
     atom.decoded = await getCookieCache(
       new Headers({ cookie: `better-auth.session_data=${atom.token}` }),
       { secret, strategy: "compact", isSecure: false },
     );
+  }
+
   expect(arrayRight.decoded.extra).toEqual(["first", "second"]);
   expect(
     compareValues(
@@ -143,7 +160,8 @@ test("compact cache atom catches authentic ownership token lifetime rotation and
       ctx,
     ),
   ).toEqual([]);
-  for (const extra of [["second", "first"], ["first"], ["first", "second", "extra"]])
+
+  for (const extra of [["second", "first"], ["first"], ["first", "second", "extra"]]) {
     expect(
       compareValues(
         { ...a, compactSessionCache: arrayLeft },
@@ -156,6 +174,8 @@ test("compact cache atom catches authentic ownership token lifetime rotation and
         ctx,
       ).length,
     ).toBeGreaterThan(0);
+  }
+
   for (const mutate of [
     (v: any) => {
       v.session.user.id = "wrong-owner";
@@ -181,10 +201,12 @@ test("compact cache atom catches authentic ownership token lifetime rotation and
     (v: any) => {
       v.session.extra = ["retained", "extra"];
     },
-  ])
+  ]) {
     expect(
       compareValues(a, { ...b, compactSessionCache: signed(original, mutate) }, ctx).length,
     ).toBeGreaterThan(0);
+  }
+
   for (const bad of [
     { ...original, effectiveMaxAgeSeconds: original.effectiveMaxAgeSeconds + 0.001 },
     { ...original, effectiveMaxAgeSeconds: original.effectiveMaxAgeSeconds - 0.001 },
@@ -199,8 +221,10 @@ test("compact cache atom catches authentic ownership token lifetime rotation and
     { ...original, envelope: { ...original.envelope, extra: "unsigned-outer" } },
     { ...original, observedAt: original.envelope.expiresAt + 1 },
     { ...original, unexpected: "extra-container" },
-  ])
+  ]) {
     expect(compareValues(a, { ...b, compactSessionCache: bad }, ctx).length).toBeGreaterThan(0);
+  }
+
   expect(
     compareValues(
       { ...a, repeated: { compactSessionCache: a.compactSessionCache } },
@@ -222,23 +246,27 @@ test("compact cache atom catches authentic ownership token lifetime rotation and
       ctx,
     ).some((d) => d.reason.includes("rotation")),
   ).toBe(true);
+
   for (const wrap of [
     (v: any) => ({ applicationData: v }),
     (v: any) => ({ metadata: v }),
     (v: any) => ({ additionalFields: v }),
     (v: any) => ({ traces: [{ responseBodyShape: v }] }),
-  ])
+  ]) {
     expect(compareValues(wrap(a), wrap(b), ctx).length).toBeGreaterThan(0);
+  }
 });
+
 test("valid retained compact cache observation stays valid after scenario end while actual expired decoder remains literal", async () => {
-  const left = await observe("http://localhost:3100"),
-    right = await observe("http://localhost:3200");
+  const left = await observe("http://localhost:3100");
+  const right = await observe("http://localhost:3200");
   const ctx = {
     ...context(left, right),
     leftFinishedAt: left.compactSessionCache.envelope.expiresAt + 1,
     rightFinishedAt: right.compactSessionCache.envelope.expiresAt + 1,
   };
   expect(compareValues(values(left), values(right), ctx)).toEqual([]);
+
   const expired = signed(right.compactSessionCache, (v) => {
     v.expiresAt = right.compactSessionCache.observedAt - 1;
   });
@@ -262,11 +290,12 @@ test("genuine published negative and nonfinite cache expiry preserves authentica
     [-Infinity, undefined],
     [300.25, "2025-01-01T00:00:00.000Z"],
   ] as const) {
-    const left = await observe("http://localhost:3100", ttl, version),
-      right = await observe("http://localhost:3200", ttl, version);
+    const left = await observe("http://localhost:3100", ttl, version);
+    const right = await observe("http://localhost:3200", ttl, version);
     expect(left.compactSessionCache.decoded).toBeNull();
     expect(right.compactSessionCache.decoded).toBeNull();
     expect(compareValues(values(left), values(right), context(left, right))).toEqual([]);
+
     const forged = {
       ...right.compactSessionCache,
       envelope: { ...right.compactSessionCache.envelope, signature: "A".repeat(43) },
@@ -283,20 +312,29 @@ test("genuine published negative and nonfinite cache expiry preserves authentica
 });
 
 test("compact authentication rejects declared nonfinite copies of the actual nullable JSON claims", async () => {
-  const left = await observe("http://localhost:3100"),
-    right = await observe("http://localhost:3200");
+  const left = await observe("http://localhost:3100");
+  const right = await observe("http://localhost:3200");
   expect(left.compactSessionCache.envelope.session.user.image).toBeNull();
   expect(right.compactSessionCache.envelope.session.user.image).toBeNull();
-  for (const invalid of [Infinity, -Infinity, NaN, undefined])
+
+  for (const invalid of [Infinity, -Infinity, NaN, undefined]) {
     for (const field of ["envelope", "decoded", "both"]) {
       const wrongCopy = (value: typeof left) => {
         const atom: Atom = structuredClone(value.compactSessionCache);
-        if (field !== "decoded") atom.envelope.session.user.image = invalid;
-        if (field !== "envelope") atom.decoded.user.image = invalid;
+
+        if (field !== "decoded") {
+          atom.envelope.session.user.image = invalid;
+        }
+
+        if (field !== "envelope") {
+          atom.decoded.user.image = invalid;
+        }
+
         return { ...values(value), compactSessionCache: atom };
       };
       expect(
         compareValues(wrongCopy(left), wrongCopy(right), context(left, right)).length,
       ).toBeGreaterThan(0);
     }
+  }
 });

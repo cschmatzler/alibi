@@ -1,6 +1,7 @@
 /** Application options exercised through the actual pinned signup/password routes. */
 
 import type { Database } from "bun:sqlite";
+
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { hashPassword, verifyPassword } from "better-auth/crypto";
@@ -11,6 +12,7 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
   let mode = "normal";
   let releaseExisting: (() => void) | undefined;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
+
   for (const name of [
     "signup-standard",
     "signup-disabled",
@@ -54,7 +56,7 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
         user: {
           create: {
             before: async (_user, context) => {
-              if (name.startsWith("signup-username-"))
+              if (name.startsWith("signup-username-")) {
                 events.push({
                   stage: "username-hook",
                   request: context?.request
@@ -66,6 +68,8 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
                       }
                     : null,
                 });
+              }
+
               if (mode === "user-forbidden") {
                 events.push({ stage: "user-create-denied" });
                 throw new APIError("FORBIDDEN", {
@@ -73,10 +77,12 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
                   message: "Configured user creation denied",
                 });
               }
+
               if (mode === "user-cancel") {
                 events.push({ stage: "user-create-cancelled" });
                 return false;
               }
+
               if (mode === "user-error") {
                 events.push({ stage: "user-create-error" });
                 throw new Error("Actual configured user creation failed");
@@ -129,8 +135,9 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
                   ? {
                       async usernameValidator(value: string) {
                         events.push({ stage: "username", callback: "validate", value });
-                        if (value === "explode")
+                        if (value === "explode") {
                           throw new Error("Actual username validator failed");
+                        }
                         return true;
                       },
                     }
@@ -157,8 +164,9 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
                 ...(name === "signup-username-display-disabled" ? { displayUsername: false } : {}),
               }),
             ].map((plugin) => {
-              if (name === "signup-username-readonly")
+              if (name === "signup-username-readonly") {
                 plugin.schema.user.fields.username.input = false;
+              }
               return plugin;
             })
           : []),
@@ -193,8 +201,9 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
                 handler(completion: Promise<unknown>) {
                   events.push({ stage: "background-register" });
                   void completion;
-                  if (mode === "background-error")
+                  if (mode === "background-error") {
                     throw new Error("Actual background observer failed");
+                  }
                 },
               },
             }
@@ -225,24 +234,36 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
             events.push({ stage: "hash-enter", password });
             const hash = await hashPassword(password);
             events.push({ stage: "hash-result", password, hash });
-            if (mode === "hash-error") throw new Error("Actual configured hash failed");
-            if (mode === "hash-api")
+
+            if (mode === "hash-error") {
+              throw new Error("Actual configured hash failed");
+            }
+
+            if (mode === "hash-api") {
               throw new APIError("FORBIDDEN", {
                 code: "HASH_REJECTED",
                 message: "Configured hash rejected",
               });
+            }
+
             return hash;
           },
           async verify({ hash, password }) {
             events.push({ stage: "verify-enter", hash, password });
             const valid = await verifyPassword({ hash, password });
             events.push({ stage: "verify-result", hash, password, valid });
-            if (mode === "verify-error") throw new Error("Actual configured verifier failed");
-            if (mode === "verify-api")
+
+            if (mode === "verify-error") {
+              throw new Error("Actual configured verifier failed");
+            }
+
+            if (mode === "verify-api") {
               throw new APIError("FORBIDDEN", {
                 code: "VERIFY_REJECTED",
                 message: "Configured verifier rejected",
               });
+            }
+
             return valid;
           },
         },
@@ -259,29 +280,42 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
                 }
               : null,
           });
-          if (mode === "existing-block")
+
+          if (mode === "existing-block") {
             await new Promise<void>((resolve) => {
               releaseExisting = resolve;
             });
-          if (mode === "existing-error") throw new Error("Actual existing-user callback failed");
-          if (mode === "existing-api")
+          }
+
+          if (mode === "existing-error") {
+            throw new Error("Actual existing-user callback failed");
+          }
+
+          if (mode === "existing-api") {
             throw new APIError("FORBIDDEN", {
               code: "EXISTING_REJECTED",
               message: "Configured existing-user rejected",
             });
+          }
+
           events.push({ stage: "existing-complete" });
         },
         ...(name === "signup-custom"
           ? {
               customSyntheticUser({ coreFields, additionalFields, id }) {
                 events.push({ stage: "synthetic-user", coreFields, additionalFields, id });
-                if (mode === "synthetic-error")
+
+                if (mode === "synthetic-error") {
                   throw new Error("Actual synthetic-user callback failed");
-                if (mode === "synthetic-api")
+                }
+
+                if (mode === "synthetic-api") {
                   throw new APIError("FORBIDDEN", {
                     code: "SYNTHETIC_REJECTED",
                     message: "Configured synthetic-user rejected",
                   });
+                }
+
                 return {
                   ...coreFields,
                   id,
@@ -309,8 +343,9 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
                 }
               : null,
           });
-          if (mode === "reset-sender-error")
+          if (mode === "reset-sender-error") {
             throw new Error("Actual configured reset sender failed");
+          }
         },
         async onPasswordReset({ user }, request) {
           events.push({
@@ -325,25 +360,33 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
                 }
               : null,
           });
-          if (mode === "reset-callback-error")
+          if (mode === "reset-callback-error") {
             throw new Error("Actual configured reset callback failed");
-          if (mode === "reset-callback-api")
+          }
+          if (mode === "reset-callback-api") {
             throw new APIError("FORBIDDEN", {
               code: "RESET_REJECTED",
               message: "Configured reset callback rejected",
             });
+          }
         },
       },
     });
     profiles.set(name, instance);
   }
+
   return {
     profiles,
     async handle(request: Request): Promise<Response | undefined> {
       const url = new URL(request.url);
+
       if (url.pathname === "/__test/signup-policy/state") {
         const profile = profiles.get(url.searchParams.get("profile") ?? "signup-standard");
-        if (!profile) return Response.json({ message: "unknown fixture profile" }, { status: 400 });
+
+        if (!profile) {
+          return Response.json({ message: "unknown fixture profile" }, { status: 400 });
+        }
+
         const context = await profile.$context;
         const read = (model: "user" | "account" | "session" | "verification") =>
           context.adapter.findMany<Record<string, unknown>>({
@@ -358,7 +401,11 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
           events,
         });
       }
-      if (url.pathname !== "/__test/signup-policy" || request.method !== "POST") return;
+
+      if (url.pathname !== "/__test/signup-policy" || request.method !== "POST") {
+        return;
+      }
+
       const body = (await request.json()) as {
         operation?: string;
         mode?: string;
@@ -367,28 +414,33 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
         stage?: string;
         password?: string;
       };
+
       if (body.operation === "mode") {
         mode = body.mode ?? "normal";
         events.length = 0;
         return Response.json({ status: true, mode });
       }
+
       if (body.operation === "release-existing") {
         releaseExisting?.();
         releaseExisting = undefined;
         return Response.json({ status: true });
       }
+
       if (body.operation === "wait-stage") {
         const deadline = Date.now() + 4000;
         while (!events.some((event) => event.stage === body.stage)) {
-          if (Date.now() >= deadline)
+          if (Date.now() >= deadline) {
             return Response.json(
               { message: "application callback did not reach requested stage" },
               { status: 408 },
             );
+          }
           await Bun.sleep(5);
         }
         return Response.json({ events });
       }
+
       if (body.operation === "clear-password") {
         const context = await profiles.get(body.profile ?? "signup-standard")!.$context;
         await context.internalAdapter.updateAccount(body.accountId!, {
@@ -396,6 +448,7 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
         });
         return Response.json({ status: true });
       }
+
       return Response.json({ message: "unknown fixture operation" }, { status: 400 });
     },
   };

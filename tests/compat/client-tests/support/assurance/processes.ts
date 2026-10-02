@@ -1,6 +1,8 @@
 import { mkdir, open, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+
 import { z } from "zod";
+
 import {
   activeChildren,
   CLIENT_ROOT,
@@ -21,6 +23,7 @@ export type ManagedFixture = {
   bridge?: string;
   stop(): Promise<void>;
 };
+
 function freePort(): number {
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -31,15 +34,21 @@ function freePort(): number {
   server.stop(true);
   return port;
 }
+
 async function waitUntil(check: () => Promise<boolean>, exited: () => boolean, label: string) {
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
-    if (exited()) throw new Error(`${label} exited before readiness; see its fixture log`);
-    if (await check()) return;
+    if (exited()) {
+      throw new Error(`${label} exited before readiness; see its fixture log`);
+    }
+    if (await check()) {
+      return;
+    }
     await Bun.sleep(100);
   }
   throw new Error(`${label} readiness timed out`);
 }
+
 export async function startFixture(options: {
   directory: string;
   runId: string;
@@ -50,12 +59,16 @@ export async function startFixture(options: {
   rustExecutable?: string;
 }): Promise<ManagedFixture> {
   await mkdir(options.directory, { recursive: true });
-  const port = freePort(),
-    url = `http://localhost:${port}`;
+  const port = freePort();
+  const url = `http://localhost:${port}`;
   const bridge = options.instrument
     ? join(options.directory, `${options.role}-bridge.json`)
     : undefined;
-  if (bridge) await rm(bridge, { force: true });
+
+  if (bridge) {
+    await rm(bridge, { force: true });
+  }
+
   const log = await open(join(options.directory, `${options.role}-fixture.log`), "w", 0o600);
   const child = spawnOwned(
     options.rustExecutable
@@ -85,19 +98,28 @@ export async function startFixture(options: {
     },
   );
   let stopped = false;
+
   async function stop() {
-    if (stopped) return;
+    if (stopped) {
+      return;
+    }
+
     stopped = true;
+
     if (child.exitCode === null) {
       child.kill("SIGTERM");
       await Promise.race([child.exited, Bun.sleep(2000)]);
-      if (child.exitCode === null) child.kill("SIGKILL");
+      if (child.exitCode === null) {
+        child.kill("SIGKILL");
+      }
     }
+
     await child.exited;
     child.kill("SIGKILL");
     activeChildren.delete(child);
     await log.close();
   }
+
   try {
     await waitUntil(
       async () => {
@@ -114,7 +136,7 @@ export async function startFixture(options: {
       () => child.exitCode !== null,
       options.role,
     );
-    if (bridge)
+    if (bridge) {
       await waitUntil(
         async () => {
           try {
@@ -127,6 +149,7 @@ export async function startFixture(options: {
         () => child.exitCode !== null,
         "coverage bridge",
       );
+    }
     return { url, bridge, stop };
   } catch (error) {
     await stop();
@@ -135,7 +158,10 @@ export async function startFixture(options: {
 }
 
 export async function rustExecutable(): Promise<string> {
-  if (process.env.COMPAT_RUST_EXECUTABLE) return process.env.COMPAT_RUST_EXECUTABLE;
+  if (process.env.COMPAT_RUST_EXECUTABLE) {
+    return process.env.COMPAT_RUST_EXECUTABLE;
+  }
+
   const build = await command(
     [
       "cargo",
@@ -147,16 +173,22 @@ export async function rustExecutable(): Promise<string> {
     ],
     { cwd: REPO_ROOT, timeoutMs: 1_800_000 },
   );
-  if (build.code !== 0) throw new Error(`Rust fixture build failed:\n${build.stderr}`);
+
+  if (build.code !== 0) {
+    throw new Error(`Rust fixture build failed:\n${build.stderr}`);
+  }
+
   for (const line of build.stdout.split("\n")) {
     try {
       const message = JSON.parse(line);
-      if (message.target?.name === "compat-rust-server" && typeof message.executable === "string")
+      if (message.target?.name === "compat-rust-server" && typeof message.executable === "string") {
         return message.executable;
+      }
     } catch {
       /* Cargo diagnostic text is not an artifact. */
     }
   }
+
   throw new Error("Cargo did not report the Rust fixture executable");
 }
 
@@ -174,6 +206,7 @@ export type SuiteResult = {
   wireReceipts: unknown[];
   errors: string[];
 };
+
 export const suiteSchema = z
   .object({
     runId: z.string().min(1),
@@ -217,6 +250,7 @@ export const suiteSchema = z
     errors: z.array(z.string()),
   })
   .strict();
+
 export async function runSuite(options: {
   directory: string;
   runId: string;
@@ -254,42 +288,67 @@ export async function runSuite(options: {
     .filter(Boolean)
     .map((line) => JSON.parse(line) as Record<string, unknown>);
   const errors: string[] = [];
-  if ((await harnessDigest()) !== before) errors.push("Harness changed during execution");
+
+  if ((await harnessDigest()) !== before) {
+    errors.push("Harness changed during execution");
+  }
+
   const registered = events
     .filter((event) => event.event === "registered")
     .map((event) => String(event.name));
-  if (!registered.length) errors.push("No compatibility scenarios were registered");
-  if (new Set(registered).size !== registered.length)
+
+  if (!registered.length) {
+    errors.push("No compatibility scenarios were registered");
+  }
+
+  if (new Set(registered).size !== registered.length) {
     errors.push("Duplicate compatibility scenario names");
-  if (events.some((event) => event.runId !== options.runId))
+  }
+
+  if (events.some((event) => event.runId !== options.runId)) {
     errors.push("Stale or foreign run evidence");
+  }
+
   const outcomes = events
     .filter((event) => event.event === "finished")
     .map((event) => event as unknown as ScenarioOutcome);
   const completed = new Set(outcomes.map((outcome) => outcome.name));
+
   if (
     completed.size !== outcomes.length ||
     registered.some((name) => !completed.has(name)) ||
     outcomes.some((outcome) => !registered.includes(outcome.name))
-  )
+  ) {
     errors.push("Scenario execution did not match the registered suite");
+  }
+
   const surfaceIds = new Set(options.inventory.surfaces.map((surface) => surface.id));
   const sourceIds = new Set(options.inventory.sources.map((source) => source.id));
-  for (const outcome of outcomes)
+
+  for (const outcome of outcomes) {
     for (const role of ["TS", "Rust"] as const) {
       const enabled = role === "TS" ? !!options.left.bridge : !!options.right.bridge;
-      if (!enabled) continue;
+
+      if (!enabled) {
+        continue;
+      }
+
       const raw = outcome.coverage[role];
+
       if (!raw) {
         errors.push(`${outcome.name}: missing ${role} coverage acknowledgement`);
         continue;
       }
+
       const parsed = coverageSchema.safeParse(raw);
+
       if (!parsed.success) {
         errors.push(`${outcome.name}: invalid reference coverage`);
         continue;
       }
+
       const coverage = parsed.data;
+
       if (
         coverage.runId !== options.runId ||
         coverage.inventoryDigest !== options.inventory.digest ||
@@ -297,15 +356,24 @@ export async function runSuite(options: {
         coverage.scenario !== outcome.name ||
         coverage.loaded.length === 0 ||
         coverage.loaded.some((id) => !sourceIds.has(id))
-      )
+      ) {
         errors.push(`${outcome.name}: wrong reference coverage provenance`);
-      if (!coverage.mutation && Object.keys(coverage.hits).some((id) => !surfaceIds.has(id)))
+      }
+
+      if (!coverage.mutation && Object.keys(coverage.hits).some((id) => !surfaceIds.has(id))) {
         errors.push(`${outcome.name}: unrecognized coverage anchor`);
+      }
     }
-  if (output.timedOut)
+  }
+
+  if (output.timedOut) {
     errors.push("Suite timed out; a timeout is never evidence of mutation detection");
-  if (output.code !== 0 && outcomes.every((outcome) => outcome.status === "passed"))
+  }
+
+  if (output.code !== 0 && outcomes.every((outcome) => outcome.status === "passed")) {
     errors.push("Runner failed outside recorded compatibility scenarios");
+  }
+
   const result: SuiteResult = {
     runId: options.runId,
     inventoryDigest: options.inventory.digest,
@@ -322,12 +390,16 @@ export async function runSuite(options: {
     wireReceipts: events.filter((event) => event.event === "wire-receipt"),
     errors,
   };
-  for (const outcome of outcomes)
-    if (outcome.reproduction)
+
+  for (const outcome of outcomes) {
+    if (outcome.reproduction) {
       await writeJSON(
         join(options.directory, `replay-${outcomes.indexOf(outcome)}.json`),
         outcome.reproduction,
       );
+    }
+  }
+
   await writeJSON(join(options.directory, "suite.json"), result);
   return result;
 }

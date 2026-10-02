@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+
 import { apiKey } from "@better-auth/api-key";
 import { passkey } from "@better-auth/passkey";
 import { betterAuth } from "better-auth";
@@ -87,6 +88,7 @@ const documentationPlugin = () => ({
     ),
   },
 });
+
 export const OPEN_API_PROFILES = [
   "openapi-minimal",
   "openapi-last-login",
@@ -101,6 +103,7 @@ export const OPEN_API_PROFILES = [
   "openapi-plugins-teams",
   "openapi-plugins-configured",
 ] as const;
+
 export function openApiProfiles(port: number, database: Database) {
   // A real app-owned storage field: the custom schema profile documents this column.
   if (
@@ -108,17 +111,21 @@ export function openApiProfiles(port: number, database: Database) {
       .query<{ name: string }, []>("PRAGMA table_info(user)")
       .all()
       .some((column) => column.name === "metadata")
-  )
+  ) {
     database.exec("ALTER TABLE user ADD COLUMN metadata TEXT");
+  }
+
   for (const field of ["access", "aliases", "score", "anniversary"]) {
     if (
       !database
         .query<{ name: string }, []>("PRAGMA table_info(user)")
         .all()
         .some((column) => column.name === field)
-    )
+    ) {
       database.exec(`ALTER TABLE user ADD COLUMN ${field} TEXT`);
+    }
   }
+
   database.exec(
     "CREATE TABLE IF NOT EXISTS document (id TEXT PRIMARY KEY, label TEXT NOT NULL, visibility TEXT, labels TEXT, secret TEXT, dynamic REAL)",
   );

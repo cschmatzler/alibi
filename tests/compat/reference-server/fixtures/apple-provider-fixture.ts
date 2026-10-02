@@ -25,8 +25,12 @@ export function appleProviderFixture(base: BetterAuthOptions) {
         contentType: request.headers.get("content-type"),
         body,
       });
-      if (path === "/keys") return Response.json(control.keys ?? defaultKeys);
-      if (path === "/token")
+
+      if (path === "/keys") {
+        return Response.json(control.keys ?? defaultKeys);
+      }
+
+      if (path === "/token") {
         return Response.json(
           control.tokenResponse ?? {
             access_token: "fixture-apple-access",
@@ -36,6 +40,8 @@ export function appleProviderFixture(base: BetterAuthOptions) {
             expires_in: 3600,
           },
         );
+      }
+
       return new Response("Unknown trusted Apple destination", { status: 404 });
     },
   });
@@ -43,6 +49,7 @@ export function appleProviderFixture(base: BetterAuthOptions) {
   globalThis.fetch = (async (input, init) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
+
     if (
       url.origin === "https://appleid.apple.com" &&
       ["/auth/keys", "/auth/token"].includes(url.pathname)
@@ -51,9 +58,11 @@ export function appleProviderFixture(base: BetterAuthOptions) {
         new Request(`${transport.url}${url.pathname.endsWith("keys") ? "keys" : "token"}`, request),
       );
     }
+
     return previousFetch(input, init);
   }) as typeof fetch;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
+
   for (const mode of [
     "default",
     "configured",
@@ -116,6 +125,7 @@ export function appleProviderFixture(base: BetterAuthOptions) {
       }),
     );
   }
+
   return {
     profiles,
     reset() {
@@ -124,11 +134,16 @@ export function appleProviderFixture(base: BetterAuthOptions) {
     },
     async handle(request: Request) {
       const path = new URL(request.url).pathname;
+
       if (path === "/__test/apple/control" && request.method === "POST") {
         control = await request.json();
         return Response.json({ status: true });
       }
-      if (path === "/__test/apple/receipts") return Response.json(receipts);
+
+      if (path === "/__test/apple/receipts") {
+        return Response.json(receipts);
+      }
+
       return null;
     },
   };

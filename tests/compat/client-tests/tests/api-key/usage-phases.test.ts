@@ -1,7 +1,9 @@
 import { expect } from "bun:test";
+
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { createAuthClient } from "better-auth/client";
 import { z } from "zod";
+
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 async function control(ctx: ScenarioContext, json: Record<string, unknown>) {
@@ -13,6 +15,7 @@ async function control(ctx: ScenarioContext, json: Record<string, unknown>) {
   expect(response.status).toBe(200);
   return response.body;
 }
+
 const stateSchema = z.array(
   z
     .object({
@@ -26,12 +29,15 @@ const stateSchema = z.array(
     })
     .passthrough(),
 );
+
 async function state(ctx: ScenarioContext) {
   const response = await ctx.rawRequest({ path: "/__test/api-key-background/state?usage=true" });
   expect(response.status).toBe(200);
   return stateSchema.parse(response.body);
 }
+
 type Profile = "api-key-usage-rate" | "api-key-usage-rate-deferred";
+
 async function setup(ctx: ScenarioContext, profile: Profile) {
   await control(ctx, { action: "reset" });
   await control(ctx, { action: "usage-restore" });
@@ -41,38 +47,49 @@ async function setup(ctx: ScenarioContext, profile: Profile) {
       plugins: [apiKeyClient()],
       fetchOptions: { customFetchImpl: ctx.actor(name, profile).fetch },
     });
-  const owner = client("phase-owner"),
-    foreign = client("phase-foreign");
+  const owner = client("phase-owner");
+  const foreign = client("phase-foreign");
   const signup = await owner.signUp.email({
     name: "Phase Owner",
     email: ctx.uniqueEmail("phase-owner"),
     password: "password123",
   });
   expect(signup.error).toBeNull();
+
   const other = await foreign.signUp.email({
     name: "Phase Foreign",
     email: ctx.uniqueEmail("phase-foreign"),
     password: "password123",
   });
   expect(other.error).toBeNull();
+
   const force = await ctx.rawRequest({
     path: `/__test/api-key-background/cleanup?profile=${profile}`,
     method: "POST",
   });
   expect(force.body).toEqual({ success: true, error: null });
-  const target = await owner.apiKey.create({ name: "phase-target" }),
-    retained = await foreign.apiKey.create({ name: "phase-foreign" });
+
+  const target = await owner.apiKey.create({ name: "phase-target" });
+  const retained = await foreign.apiKey.create({ name: "phase-foreign" });
   expect(target.error).toBeNull();
   expect(retained.error).toBeNull();
-  if (!signup.data || !other.data || !target.data || !retained.data)
+
+  if (!signup.data || !other.data || !target.data || !retained.data) {
     throw new Error("actual owners and keys required");
+  }
+
   const originalToken = signup.data.token;
-  if (typeof originalToken !== "string") throw new Error("actual signup session required");
+
+  if (typeof originalToken !== "string") {
+    throw new Error("actual signup session required");
+  }
+
   const denied = await foreign.apiKey.get({ query: { id: target.data.id } });
   expect(denied.error).not.toBeNull();
+
   await control(ctx, { action: "phase-refill", keyId: target.data.id });
-  const before = await state(ctx),
-    selected = before.find((row) => row.id === target.data!.id)!;
+  const before = await state(ctx);
+  const selected = before.find((row) => row.id === target.data!.id)!;
   expect(selected).toMatchObject({
     remaining: 0,
     refillAmount: 3,
@@ -84,8 +101,9 @@ async function setup(ctx: ScenarioContext, profile: Profile) {
     lastRequest: null,
   });
   expect(Date.parse(z.string().parse(selected.lastRefillAt))).toBe(0);
-  const ownerBefore = await ctx.readUserState({ userId: signup.data.user.id }),
-    foreignBefore = await ctx.readUserState({ userId: other.data.user.id });
+
+  const ownerBefore = await ctx.readUserState({ userId: signup.data.user.id });
+  const foreignBefore = await ctx.readUserState({ userId: other.data.user.id });
   const verify = async (permissions?: Record<string, string[]>) =>
     ctx.rawRequest({
       path: `/__test/api-key-background/verify?profile=${profile}`,
@@ -99,6 +117,7 @@ async function setup(ctx: ScenarioContext, profile: Profile) {
     key: null,
   });
   expect(await state(ctx)).toEqual(before);
+
   return {
     owner,
     foreign,
@@ -117,8 +136,9 @@ async function setup(ctx: ScenarioContext, profile: Profile) {
     originalToken,
   };
 }
-for (const profile of ["api-key-usage-rate", "api-key-usage-rate-deferred"] as const)
-  for (const phase of ["rate", "final"] as const)
+
+for (const profile of ["api-key-usage-rate", "api-key-usage-rate-deferred"] as const) {
+  for (const phase of ["rate", "final"] as const) {
     compatScenario(
       `api-key ${profile} ${phase} SQL failure retains genuine prior quota phases and owner-safe retry`,
       async (ctx) => {
@@ -148,10 +168,12 @@ for (const profile of ["api-key-usage-rate", "api-key-usage-rate-deferred"] as c
           },
           key: null,
         });
-        const afterTrusted = await state(ctx),
-          first = afterTrusted.find((row) => row.id === target.data!.id)!;
+
+        const afterTrusted = await state(ctx);
+        const first = afterTrusted.find((row) => row.id === target.data!.id)!;
         expect(first.remaining).toBe(2);
         expect(first.lastRefillAt).not.toBe(selected.lastRefillAt);
+
         z.iso.datetime({ offset: true }).parse(first.lastRefillAt);
         expect(first.updatedAt).toBe(selected.updatedAt);
         expect(first.requestCount).toBe(phase === "rate" ? 0 : 1);
@@ -159,18 +181,21 @@ for (const profile of ["api-key-usage-rate", "api-key-usage-rate-deferred"] as c
         expect(afterTrusted.find((row) => row.id === retained.data!.id)).toEqual(
           before.find((row) => row.id === retained.data!.id),
         );
+
         const middleware = await owner.getSession({
           fetchOptions: { headers: { "x-api-key": target.data!.key } },
         });
         expect(middleware.error?.status).toBe(500);
-        const afterMiddleware = await state(ctx),
-          second = afterMiddleware.find((row) => row.id === target.data!.id)!;
+
+        const afterMiddleware = await state(ctx);
+        const second = afterMiddleware.find((row) => row.id === target.data!.id)!;
         expect(second).toMatchObject({
           remaining: 1,
           lastRefillAt: first.lastRefillAt,
           updatedAt: selected.updatedAt,
           requestCount: phase === "rate" ? 0 : 2,
         });
+
         const failedEvents = await control(ctx, { action: "configure", observer: "observe" });
         expect(
           z
@@ -178,6 +203,7 @@ for (const profile of ["api-key-usage-rate", "api-key-usage-rate-deferred"] as c
             .parse(failedEvents)
             .filter((event) => event.kind === "background-register"),
         ).toEqual([]);
+
         await control(ctx, { action: "usage-restore" });
         const retry = await verify();
         expect(retry.body).toMatchObject({
@@ -191,16 +217,19 @@ for (const profile of ["api-key-usage-rate", "api-key-usage-rate-deferred"] as c
             requestCount: phase === "rate" ? 1 : 3,
           },
         });
+
         const exhausted = await verify();
         expect(exhausted.body).toEqual({
           valid: false,
           error: { code: "USAGE_EXCEEDED", message: "API Key has reached its usage limit" },
           key: null,
         });
+
         const after = await state(ctx);
         expect(after.find((row) => row.id === retained.data!.id)).toEqual(
           before.find((row) => row.id === retained.data!.id),
         );
+
         const row = after.find((row) => row.id === target.data!.id)!;
         const returned = z
           .object({ key: z.object({ updatedAt: z.string(), lastRequest: z.string() }) })
@@ -208,12 +237,14 @@ for (const profile of ["api-key-usage-rate", "api-key-usage-rate-deferred"] as c
         expect(row.updatedAt).toBe(returned.key.updatedAt);
         expect(row.lastRequest).toBe(returned.key.lastRequest);
         expect(row.remaining).toBe(0);
+
         const current = await owner.getSession();
         expect(current.error).toBeNull();
         expect(current.data?.session.token).toBe(originalToken);
         expect(current.data?.user.id).toBe(signup.data!.user.id);
         expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(ownerBefore);
         expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+
         return ctx.snapshot({
           signup,
           other,
@@ -240,6 +271,8 @@ for (const profile of ["api-key-usage-rate", "api-key-usage-rate-deferred"] as c
       },
       ["GET /get-session"],
     );
+  }
+}
 
 compatScenario(
   "api-key final current-row reread retains genuine intervening target changes and original key owner",
@@ -258,14 +291,16 @@ compatScenario(
         requestCount: 1,
       },
     });
-    const after = await state(ctx),
-      row = after.find((value) => value.id === fixture.target.data!.id)!;
+
+    const after = await state(ctx);
+    const row = after.find((value) => value.id === fixture.target.data!.id)!;
     expect(row).toMatchObject({
       name: "current-row",
       remaining: 77,
       requestCount: 1,
       referenceId: fixture.signup.data!.user.id,
     });
+
     const returned = z
       .object({
         key: z.object({ updatedAt: z.string(), lastRequest: z.string(), lastRefillAt: z.string() }),
@@ -283,10 +318,12 @@ compatScenario(
     expect(await ctx.readUserState({ userId: fixture.other.data!.user.id })).toEqual(
       fixture.foreignBefore,
     );
+
     const current = await fixture.owner.getSession();
     expect(current.error).toBeNull();
     expect(current.data?.session.token).toBe(fixture.originalToken);
     expect(current.data?.user.id).toBe(fixture.signup.data!.user.id);
+
     const { owner, foreign, verify, originalToken, ...observed } = fixture;
     return ctx.snapshot({
       ...observed,

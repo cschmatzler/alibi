@@ -1,21 +1,24 @@
 /** Trusted application policy; all receipts originate in the pinned runtime. */
 import { Database } from "bun:sqlite";
+
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { hashPassword } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
 import { admin, anonymous, emailOTP, magicLink, oneTap, phoneNumber } from "better-auth/plugins";
 import { siwe } from "better-auth/plugins/siwe";
+
 import { verifyFixtureEip191 } from "./siwe-fixture";
 
 export async function createUserValidationFixture(database: Database, shared: BetterAuthOptions) {
   const events: Record<string, unknown>[] = [];
   const deliveries = new Map<string, unknown>();
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
-  let mode = "normal",
-    sequence = 0;
+  let mode = "normal";
+  let sequence = 0;
   let release: (() => void) | undefined;
   const snapshot = (value: unknown) => JSON.parse(JSON.stringify(value));
+
   for (const name of [
     "validation",
     "validation-no-auto",
@@ -67,28 +70,43 @@ export async function createUserValidationFixture(database: Database, shared: Be
                       : null,
                   },
                 });
-                if (policyMode === "hold")
+
+                if (policyMode === "hold") {
                   await new Promise<void>((resolve) => {
                     release = resolve;
                   });
+                }
+
                 if (
                   policyMode === "deny" ||
                   policyMode === "hold" ||
                   (policyMode === "deny-empty-name" && data.user.name === "")
-                )
+                ) {
                   return {
                     error: "identity_denied",
                     errorDescription: "Configured identity rejected",
                   };
-                if (mode === "deny-default") return { error: "identity_denied" };
-                if (mode === "empty-error")
+                }
+
+                if (mode === "deny-default") {
+                  return { error: "identity_denied" };
+                }
+
+                if (mode === "empty-error") {
                   return { error: "", errorDescription: "Unused description" };
-                if (mode === "throw") throw new Error("Private application exception");
-                if (mode === "api-error")
+                }
+
+                if (mode === "throw") {
+                  throw new Error("Private application exception");
+                }
+
+                if (mode === "api-error") {
                   throw new APIError("UNAUTHORIZED", {
                     code: "PRIVATE_CALLBACK_CODE",
                     message: "Private callback detail",
                   });
+                }
+
                 if (mode === "mutate") {
                   data.user.name = "Validated Identity";
                   data.user.email = "MUTATED@VALIDATION.FIXTURE.TEST";
@@ -108,7 +126,9 @@ export async function createUserValidationFixture(database: Database, shared: Be
                 user: snapshot(user),
                 path: context?.path ?? null,
               });
-              if (mode === "hook-deny") return false;
+              if (mode === "hook-deny") {
+                return false;
+              }
             },
             after: async (user, context) => {
               events.push({
@@ -186,9 +206,14 @@ export async function createUserValidationFixture(database: Database, shared: Be
         }),
       ],
     };
-    if (name === "validation") await (await getMigrations(options)).runMigrations();
+
+    if (name === "validation") {
+      await (await getMigrations(options)).runMigrations();
+    }
+
     profiles.set(name, betterAuth(options));
   }
+
   return {
     profiles,
     reset() {
@@ -199,6 +224,7 @@ export async function createUserValidationFixture(database: Database, shared: Be
     },
     async handle(request: Request): Promise<Response | undefined> {
       const url = new URL(request.url);
+
       if (url.pathname === "/__test/user-validation/state") {
         const context = await profiles.get("validation")!.$context;
         const read = (model: "user" | "account" | "session" | "verification" | "walletAddress") =>
@@ -215,9 +241,15 @@ export async function createUserValidationFixture(database: Database, shared: Be
           events,
         });
       }
-      if (url.pathname === "/__test/user-validation/delivery")
+
+      if (url.pathname === "/__test/user-validation/delivery") {
         return Response.json(deliveries.get(url.searchParams.get("key") ?? "") ?? null);
-      if (url.pathname !== "/__test/user-validation" || request.method !== "POST") return;
+      }
+
+      if (url.pathname !== "/__test/user-validation" || request.method !== "POST") {
+        return;
+      }
+
       const body = (await request.json()) as {
         operation?: string;
         mode?: string;
@@ -228,28 +260,33 @@ export async function createUserValidationFixture(database: Database, shared: Be
         identifier?: string;
         expiresAt?: string;
       };
+
       if (body.operation === "mode") {
         mode = body.mode ?? "normal";
         events.length = 0;
         return Response.json({ status: true, mode });
       }
+
       if (body.operation === "release") {
         release?.();
         release = undefined;
         return Response.json({ status: true });
       }
+
       if (body.operation === "wait-stage") {
         const deadline = Date.now() + 4000;
         while (!events.some((event) => event.stage === body.stage)) {
-          if (Date.now() >= deadline)
+          if (Date.now() >= deadline) {
             return Response.json(
               { message: "application callback did not reach requested stage" },
               { status: 408 },
             );
+          }
           await Bun.sleep(5);
         }
         return Response.json({ events });
       }
+
       if (body.operation === "proof-expiry") {
         const context = await profiles.get("validation")!.$context;
         await context.adapter.update({
@@ -259,6 +296,7 @@ export async function createUserValidationFixture(database: Database, shared: Be
         });
         return Response.json({ status: true });
       }
+
       if (body.operation === "server-create") {
         const context = await profiles.get(body.profile ?? "validation")!.$context;
         try {
@@ -269,10 +307,13 @@ export async function createUserValidationFixture(database: Database, shared: Be
             ),
           );
         } catch (error) {
-          if (error instanceof APIError) return Response.json(error.body, { status: 403 });
+          if (error instanceof APIError) {
+            return Response.json(error.body, { status: 403 });
+          }
           throw error;
         }
       }
+
       return Response.json({ message: "unknown fixture operation" }, { status: 400 });
     },
   };

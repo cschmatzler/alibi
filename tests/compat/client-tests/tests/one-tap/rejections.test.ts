@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+
 import { credential, issuedAt, signedRawToken } from "../../support/id-token";
 import { compatScenario } from "../../support/scenario";
 import { oneTap, responseSchema, state } from "./helpers";
@@ -46,6 +47,7 @@ compatScenario(
       ].join("."),
     );
     const rejected = [];
+
     for (const token of tokens) {
       const result = responseSchema.parse(await oneTap(ctx, token));
       expect(result.response.error).toMatchObject({
@@ -53,8 +55,10 @@ compatScenario(
         message: "invalid id token",
       });
       expect(result.location).toBe("/before");
+
       rejected.push(result);
     }
+
     for (const email of [undefined, "", false, {}, 123]) {
       const result = responseSchema.parse(
         await oneTap(ctx, await credential({ ...claims, email })),
@@ -65,6 +69,7 @@ compatScenario(
       });
       rejected.push(result);
     }
+
     const raw = JSON.stringify({
       iss: "https://accounts.google.com",
       aud: "one-tap-plugin-client",
@@ -75,6 +80,7 @@ compatScenario(
     }).replace('"sub":1', '"sub":1e400');
     const priority = responseSchema.parse(await oneTap(ctx, await credential({}, {}, false, raw)));
     expect(priority.response.error?.message).toBe("Email not available in token");
+
     const nonfiniteRaw = JSON.stringify({
       ...claims,
       iss: "https://accounts.google.com",
@@ -86,11 +92,13 @@ compatScenario(
       await oneTap(ctx, await credential({}, {}, false, nonfiniteRaw)),
     );
     expect(nonfinite.response.error?.message).toBe("invalid id token");
+
     const persisted = await state(ctx);
     expect(persisted.users).toEqual(initial.users);
     expect(persisted.accounts).toEqual(initial.accounts);
     expect(persisted.sessions).toEqual(initial.sessions);
     expect(persisted.jwksFetches - initial.jwksFetches).toBe(tokens.length + 6);
+
     return {
       rejected,
       priority,
@@ -103,6 +111,7 @@ compatScenario(
   },
   ["POST /one-tap/callback"],
 );
+
 compatScenario(
   "One Tap callback origin and request validation precede Google JWKS reads",
   async (ctx) => {
@@ -118,7 +127,9 @@ compatScenario(
       status: 403,
       code: "INVALID_CALLBACK_URL",
     });
+
     const rejected = [];
+
     for (const json of [{}, { idToken: 123 }, { idToken: token, callbackURL: 123 }]) {
       const result = await ctx.rawRequest({
         path: "/__test/profiles/one-tap-default/api/auth/one-tap/callback",
@@ -128,6 +139,7 @@ compatScenario(
       expect(result.status).toBe(400);
       rejected.push(result);
     }
+
     for (const headers of [new Headers(), new Headers({ "content-type": "text/plain" })]) {
       const result = await ctx.rawRequest({
         path: "/__test/profiles/one-tap-default/api/auth/one-tap/callback",
@@ -138,11 +150,13 @@ compatScenario(
       expect(result.status).toBe(415);
       rejected.push(result);
     }
+
     const persisted = await state(ctx);
     expect(persisted.jwksFetches).toBe(initial.jwksFetches);
     expect(persisted.users).toEqual(initial.users);
     expect(persisted.accounts).toEqual(initial.accounts);
     expect(persisted.sessions).toEqual(initial.sessions);
+
     return { forbidden, rejected, persisted: { ...persisted, jwksFetches: 0 } };
   },
   ["POST /one-tap/callback"],

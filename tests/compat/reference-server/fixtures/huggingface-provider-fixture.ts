@@ -3,13 +3,13 @@ import { type BetterAuthOptions, betterAuth } from "better-auth";
 /** Actual published factory with only its two fixed HTTP destinations redirected. */
 export function huggingfaceProviderFixture(base: BetterAuthOptions) {
   let control: Record<string, unknown> = {};
-  const receipts: unknown[] = [],
-    mapperReceipts: unknown[] = [];
+  const receipts: unknown[] = [];
+  const mapperReceipts: unknown[] = [];
   const transport = Bun.serve({
     port: 0,
     async fetch(request) {
-      const path = new URL(request.url).pathname,
-        text = await request.text();
+      const path = new URL(request.url).pathname;
+      const text = await request.text();
       receipts.push({
         path,
         method: request.method,
@@ -17,7 +17,8 @@ export function huggingfaceProviderFixture(base: BetterAuthOptions) {
         contentType: request.headers.get("content-type"),
         body: path === "/token" ? Object.fromEntries(new URLSearchParams(text)) : text,
       });
-      if (path === "/token")
+
+      if (path === "/token") {
         return Response.json(
           control.tokenResponse ?? {
             access_token: "fixture-huggingface-access",
@@ -27,7 +28,9 @@ export function huggingfaceProviderFixture(base: BetterAuthOptions) {
           },
           { status: typeof control.tokenStatus === "number" ? control.tokenStatus : 200 },
         );
-      if (path === "/userinfo")
+      }
+
+      if (path === "/userinfo") {
         return Response.json(
           control.profile ?? {
             sub: "fixture-huggingface-subject",
@@ -39,13 +42,15 @@ export function huggingfaceProviderFixture(base: BetterAuthOptions) {
           },
           { status: typeof control.userInfoStatus === "number" ? control.userInfoStatus : 200 },
         );
+      }
+
       return new Response("Unknown application-owned HuggingFace destination", { status: 404 });
     },
   });
   const previousFetch = globalThis.fetch.bind(globalThis);
   globalThis.fetch = (async (input, init) => {
-    const request = new Request(input, init),
-      url = new URL(request.url);
+    const request = new Request(input, init);
+    const url = new URL(request.url);
     const route =
       url.origin === "https://huggingface.co" && url.pathname === "/oauth/token"
         ? "token"
@@ -57,6 +62,7 @@ export function huggingfaceProviderFixture(base: BetterAuthOptions) {
       : previousFetch(input, init);
   }) as typeof fetch;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
+
   for (const mode of [
     "default",
     "public",
@@ -116,6 +122,7 @@ export function huggingfaceProviderFixture(base: BetterAuthOptions) {
       }),
     );
   }
+
   return {
     profiles,
     reset() {
@@ -125,12 +132,20 @@ export function huggingfaceProviderFixture(base: BetterAuthOptions) {
     },
     async handle(request: Request) {
       const path = new URL(request.url).pathname;
+
       if (path === "/__test/huggingface/control" && request.method === "POST") {
         control = await request.json();
         return Response.json({ status: true });
       }
-      if (path === "/__test/huggingface/receipts") return Response.json(receipts);
-      if (path === "/__test/huggingface/mapper-receipts") return Response.json(mapperReceipts);
+
+      if (path === "/__test/huggingface/receipts") {
+        return Response.json(receipts);
+      }
+
+      if (path === "/__test/huggingface/mapper-receipts") {
+        return Response.json(mapperReceipts);
+      }
+
       return null;
     },
   };

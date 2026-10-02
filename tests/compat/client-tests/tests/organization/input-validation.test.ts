@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 const storedSchema = z.object({
@@ -46,6 +48,7 @@ async function owner(ctx: ScenarioContext) {
     password: "password123",
   });
   expect(signup.error).toBeNull();
+
   const created = await actor.client.$fetch("/organization/create", {
     method: "POST",
     body: {
@@ -55,6 +58,7 @@ async function owner(ctx: ScenarioContext) {
     },
   });
   expect(created.error).toBeNull();
+
   const id = z.object({ id: z.string() }).parse(created.data).id;
   return { ...actor, email, id, signup, created };
 }
@@ -94,6 +98,7 @@ compatScenario(
     expect(before.organizations[0]?.metadata).toBe('{"guard":"persisted"}');
 
     const observations = [];
+
     for (const [kind, metadata] of [
       ["null", null],
       ["array", []],
@@ -106,12 +111,14 @@ compatScenario(
         body: { name: "Invalid", slug: ctx.uniqueToken(`invalid-${kind}`), metadata },
       });
       expect(created.error).toMatchObject(expected("body.metadata", kind));
+
       const updated = await actor.client.$fetch("/organization/update", {
         method: "POST",
         body: { organizationId: actor.id, data: { name: "must-not-persist", metadata } },
       });
       expect(updated.error).toMatchObject(expected("body.data.metadata", kind));
       expect(await state(ctx, actor.email)).toEqual(before);
+
       observations.push({ kind, created: ctx.snapshot(created), updated: ctx.snapshot(updated) });
     }
 
@@ -123,12 +130,14 @@ compatScenario(
           : `{"organizationId":"${actor.id}","data":{"metadata":1e400}}`;
       const rejected = await authenticatedRaw(ctx, actor, route, body, "application/json");
       expect(rejected.status).toBe(400);
+
       const error = expected(
         route === "create" ? "body.metadata" : "body.data.metadata",
         "Infinity",
       );
       expect(rejected.body).toEqual({ code: error.code, message: error.message });
       expect(await state(ctx, actor.email)).toEqual(before);
+
       observations.push({ route, rejected });
     }
 
@@ -139,6 +148,7 @@ compatScenario(
     });
     expect(valid.error).toBeNull();
     expect(z.object({ metadata: z.unknown() }).parse(valid.data).metadata).toEqual(record);
+
     const after = await state(ctx, actor.email);
     expect(after.organizations[0]?.metadata).toBe(JSON.stringify(record));
     expect(after.receipts).toEqual(before.receipts);
@@ -204,6 +214,7 @@ compatScenario(
       expect(rejected.status).toBe(400);
       expect(rejected.body).toEqual({ code: "VALIDATION_ERROR", message });
       expect(await state(ctx, actor.email)).toEqual(before);
+
       observations.push({ path, rejected });
     }
 
@@ -214,6 +225,7 @@ compatScenario(
       });
       expect(rejected.error).toMatchObject({ status: 400, code: "VALIDATION_ERROR" });
       expect(await state(ctx, actor.email)).toEqual(before);
+
       observations.push({ data, rejected: ctx.snapshot(rejected) });
     }
 
@@ -229,6 +241,7 @@ compatScenario(
         code: "BAD_REQUEST",
         message: "Invalid JSON in request body",
       });
+
       observations.push({ route, malformed });
     }
 
@@ -277,6 +290,7 @@ compatScenario(
           message: `Content-Type "${media}" is not allowed. Allowed types: application/json`,
         });
         expect(await state(ctx, actor.email)).toEqual(before);
+
         observations.push({ media, route, rejected });
       }
     }
@@ -336,6 +350,7 @@ compatScenario(
       password: "password123",
     });
     expect(signup.error).toBeNull();
+
     const userId = z.object({ user: z.object({ id: z.string() }) }).parse(signup.data).user.id;
     const before = await state(ctx, email);
 
@@ -354,6 +369,7 @@ compatScenario(
     });
 
     const observations = [];
+
     for (const [kind, metadata] of [
       ["null", null],
       ["array", []],
@@ -374,6 +390,7 @@ compatScenario(
       expect(rejected.status).toBe(400);
       expect(rejected.body).toEqual({ code: error.code, message: error.message });
       expect(await state(ctx, email)).toEqual(before);
+
       observations.push({ kind, rejected });
     }
 
@@ -390,6 +407,7 @@ compatScenario(
       },
     });
     expect(valid.status).toBe(200);
+
     const organization = z
       .object({
         id: z.string(),

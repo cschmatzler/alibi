@@ -1,7 +1,9 @@
 import { expect } from "bun:test";
+
 import { createAuthClient } from "better-auth/client";
 import { adminClient } from "better-auth/client/plugins";
 import { z } from "zod";
+
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
@@ -18,9 +20,14 @@ async function signup(ctx: ScenarioContext, profile: FixtureProfile, name: strin
     name,
   });
   expect(result.error).toBeNull();
-  if (!result.data) throw new Error("persisted user required");
+
+  if (!result.data) {
+    throw new Error("persisted user required");
+  }
+
   return { client, result, userId: result.data.user.id };
 }
+
 function permission(result: { data: unknown; error: unknown }, allowed: boolean) {
   expect(result.error).toBeNull();
   expect(z.object({ success: z.boolean(), error: z.null() }).parse(result.data)).toEqual({
@@ -32,9 +39,10 @@ function permission(result: { data: unknown; error: unknown }, allowed: boolean)
 compatScenario(
   "admin explicit empty roles deny persisted admin reads and mutations while ordinary builtins still authorize",
   async (ctx) => {
-    const owner = await signup(ctx, "admin-deny-all", "owner"),
-      foreign = await signup(ctx, "admin-standard", "foreign");
+    const owner = await signup(ctx, "admin-deny-all", "owner");
+    const foreign = await signup(ctx, "admin-standard", "foreign");
     expect(owner.result.data?.user.role).toBe("admin");
+
     const before = await ctx.readUserState({ userId: foreign.userId });
     const check = await owner.client.admin.hasPermission({
       permissions: { user: ["get", "ban"] },
@@ -46,20 +54,25 @@ compatScenario(
       query: { id: foreign.userId },
     });
     expect(get.error?.status).toBe(403);
+
     const ban = await owner.client.admin.banUser({
       userId: foreign.userId,
       banReason: "must remain absent",
     });
     expect(ban.error?.status).toBe(403);
+
     const after = await ctx.readUserState({ userId: foreign.userId });
     expect(after).toEqual(before);
+
     const current = await owner.client.getSession();
     expect(current.data?.user.id).toBe(owner.userId);
+
     const allowed = await foreign.client.admin.getUser({
       query: { id: owner.userId },
     });
     expect(allowed.error).toBeNull();
     expect(allowed.data?.id).toBe(owner.userId);
+
     return ctx.snapshot({
       signup: owner.result,
       foreign: foreign.result,
@@ -78,9 +91,10 @@ compatScenario(
 compatScenario(
   "admin comma role tokens retain exact whitespace and cannot acquire authority through body roles or target normalization",
   async (ctx) => {
-    const owner = await signup(ctx, "admin-exact-role", "owner"),
-      admin = await signup(ctx, "admin-standard", "authorized");
+    const owner = await signup(ctx, "admin-exact-role", "owner");
+    const admin = await signup(ctx, "admin-standard", "authorized");
     expect(owner.result.data?.user.role).toBe("user, admin");
+
     const before = await ctx.readUserState({ userId: admin.userId });
     const check = await owner.client.admin.hasPermission({
       permissions: { user: ["ban"] },
@@ -90,16 +104,20 @@ compatScenario(
     permission(check, false);
     const denied = await owner.client.admin.banUser({ userId: admin.userId });
     expect(denied.error?.status).toBe(403);
+
     const after = await ctx.readUserState({ userId: admin.userId });
     expect(after).toEqual(before);
+
     const impersonation = await admin.client.admin.impersonateUser({
       userId: owner.userId,
     });
     expect(impersonation.error).toBeNull();
     expect(impersonation.data?.user.id).toBe(owner.userId);
+
     const current = await admin.client.getSession();
     expect(current.data?.user.id).toBe(owner.userId);
     expect(current.data?.session.impersonatedBy).toBe(admin.userId);
+
     const persistedState = await ctx.readUserState({ userId: owner.userId });
     const persisted = z
       .object({
@@ -118,10 +136,13 @@ compatScenario(
           session.token === current.data?.session.token && session.userId === owner.userId,
       ),
     ).toBe(true);
+
     const stop = await admin.client.admin.stopImpersonating();
     expect(stop.error).toBeNull();
+
     const restored = await admin.client.getSession();
     expect(restored.data?.user.id).toBe(admin.userId);
+
     return ctx.snapshot({
       signup: owner.result,
       admin: admin.result,
@@ -142,9 +163,10 @@ compatScenario(
 compatScenario(
   "admin empty persisted and configured role fall back to the actual configured user grant",
   async (ctx) => {
-    const owner = await signup(ctx, "admin-empty-role", "owner"),
-      foreign = await signup(ctx, "admin-standard", "foreign");
+    const owner = await signup(ctx, "admin-empty-role", "owner");
+    const foreign = await signup(ctx, "admin-standard", "foreign");
     expect(owner.result.data?.user.role).toBe("");
+
     const before = await ctx.readUserState({ userId: foreign.userId });
     const granted = await owner.client.admin.hasPermission({
       permissions: { user: ["get"] },
@@ -155,12 +177,16 @@ compatScenario(
     });
     expect(read.error).toBeNull();
     expect(read.data?.id).toBe(foreign.userId);
+
     const denied = await owner.client.admin.banUser({ userId: foreign.userId });
     expect(denied.error?.status).toBe(403);
+
     const after = await ctx.readUserState({ userId: foreign.userId });
     expect(after).toEqual(before);
+
     const current = await owner.client.getSession();
     expect(current.data?.user.id).toBe(owner.userId);
+
     return ctx.snapshot({
       signup: owner.result,
       foreign: foreign.result,
@@ -178,8 +204,8 @@ compatScenario(
 compatScenario(
   "admin configured grant rejects empty per-resource action requests without losing valid owned reads",
   async (ctx) => {
-    const owner = await signup(ctx, "admin-standard", "owner"),
-      foreign = await signup(ctx, "admin-standard", "foreign");
+    const owner = await signup(ctx, "admin-standard", "owner");
+    const foreign = await signup(ctx, "admin-standard", "foreign");
     const before = await ctx.readUserState({ userId: foreign.userId });
     const granted = await owner.client.admin.hasPermission({
       permissions: { user: ["get"], session: ["list"] },
@@ -206,8 +232,10 @@ compatScenario(
     });
     expect(read.error).toBeNull();
     expect(read.data?.id).toBe(foreign.userId);
+
     const after = await ctx.readUserState({ userId: foreign.userId });
     expect(after).toEqual(before);
+
     return ctx.snapshot({
       signup: owner.result,
       foreign: foreign.result,

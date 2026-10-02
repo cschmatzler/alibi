@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 const stateSchema = z.object({
@@ -46,6 +48,7 @@ async function signup(ctx: ScenarioContext) {
     password: "password123",
   });
   expect(response.error).toBeNull();
+
   const result = z
     .object({ token: z.string(), user: z.object({ id: z.string() }) })
     .parse(response.data);
@@ -76,6 +79,7 @@ compatScenario(
       body: { name: "Record Metadata", slug, logo: "https://fixture.test/record.png", metadata },
     });
     expect(created.error).toBeNull();
+
     const firstId = z.object({ id: z.string() }).parse(created.data).id;
 
     // A second session for the same user, whose active organization must stay independent.
@@ -85,12 +89,14 @@ compatScenario(
       password: "password123",
     });
     expect(signedIn.error).toBeNull();
+
     const otherToken = z.object({ token: z.string() }).parse(signedIn.data).token;
     const emptyCreated = await other.client.$fetch("/organization/create", {
       method: "POST",
       body: { name: "Empty Metadata", slug: ctx.uniqueToken("empty-metadata"), metadata: {} },
     });
     expect(emptyCreated.error).toBeNull();
+
     const secondId = z.object({ id: z.string() }).parse(emptyCreated.data).id;
 
     const before = await state(ctx, owner.email);
@@ -135,6 +141,7 @@ compatScenario(
       id: firstId,
       metadata: JSON.stringify(metadata),
     });
+
     const afterRecord = await state(ctx, owner.email);
     expect(afterRecord).toEqual(before);
 
@@ -195,12 +202,14 @@ compatScenario(
     });
     expect(created.error).toBeNull();
     expect(created.data).not.toHaveProperty("metadata");
+
     const id = z.object({ id: z.string() }).parse(created.data).id;
 
     const before = await state(ctx, owner.email);
     expect(before.organizations[0]?.metadata).toBeNull();
 
     const fetched = [];
+
     for (const path of ["get-organization", "get-full-organization"]) {
       const result = await owner.client.$fetch(`/organization/${path}`, {
         query: { organizationId: id },
@@ -210,6 +219,7 @@ compatScenario(
         id,
         metadata: null,
       });
+
       fetched.push(ctx.snapshot(result));
     }
 
@@ -267,6 +277,7 @@ compatScenario(
       body: { name: "Legacy Literal Null", slug: ctx.uniqueToken("legacy-null") },
     });
     expect(created.error).toBeNull();
+
     const id = z.object({ id: z.string() }).parse(created.data).id;
 
     const otherMetadata = {
@@ -285,6 +296,7 @@ compatScenario(
       },
     });
     expect(otherCreated.error).toBeNull();
+
     const otherId = z.object({ id: z.string() }).parse(otherCreated.data).id;
 
     // A sibling session of the owner points at the other organization.
@@ -319,6 +331,7 @@ compatScenario(
     expect(stored.sessions).toEqual(before.sessions);
 
     const fetched = [];
+
     for (const path of ["get-organization", "get-full-organization"]) {
       const result = await owner.client.$fetch(`/organization/${path}`, {
         query: { organizationId: id },
@@ -328,11 +341,13 @@ compatScenario(
         id,
         metadata: "null",
       });
+
       fetched.push(ctx.snapshot(result));
     }
 
     const listed = await owner.client.$fetch("/organization/list");
     expect(listed.error).toBeNull();
+
     const listRows = z.array(z.object({ id: z.string(), metadata: z.string() })).parse(listed.data);
     expect(listRows.find((row) => row.id === id)?.metadata).toBe("null");
     expect(listRows.find((row) => row.id === otherId)?.metadata).toBe(
@@ -377,6 +392,7 @@ compatScenario(
         })
       ).error,
     ).toBeNull();
+
     const foreignCreated = await foreign.client.$fetch("/organization/create", {
       method: "POST",
       body: {

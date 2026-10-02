@@ -47,7 +47,7 @@ async function signUpAndGetHeaders(
 // =========================================================================
 
 compatScenario("api-key create returns key and all expected fields", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-create");
+  await signUpAndGetHeaders(ctx, "api-key-create");
 
   const res = await ctx.rawRequest({
     actor: "primary",
@@ -87,7 +87,7 @@ compatScenario("api-key create returns key and all expected fields", async (ctx)
 });
 
 compatScenario("api-key create key has expected length and charset", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-keyfmt");
+  await signUpAndGetHeaders(ctx, "api-key-keyfmt");
 
   const res = await ctx.rawRequest({
     actor: "primary",
@@ -108,7 +108,7 @@ compatScenario("api-key create key has expected length and charset", async (ctx)
 });
 
 compatScenario("api-key list returns created keys without key field", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-list");
+  await signUpAndGetHeaders(ctx, "api-key-list");
 
   // Create two keys
   await ctx.rawRequest({
@@ -145,7 +145,7 @@ compatScenario("api-key list returns created keys without key field", async (ctx
 });
 
 compatScenario("api-key get by id returns expected shape", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-get");
+  await signUpAndGetHeaders(ctx, "api-key-get");
 
   const createRes = await ctx.rawRequest({
     actor: "primary",
@@ -171,7 +171,7 @@ compatScenario("api-key get by id returns expected shape", async (ctx) => {
 });
 
 compatScenario("api-key update accepts keyId field and updates name", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-update");
+  await signUpAndGetHeaders(ctx, "api-key-update");
 
   const createRes = await ctx.rawRequest({
     actor: "primary",
@@ -202,7 +202,7 @@ compatScenario("api-key update accepts keyId field and updates name", async (ctx
 });
 
 compatScenario("api-key delete accepts keyId and returns success", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-delete");
+  await signUpAndGetHeaders(ctx, "api-key-delete");
 
   const createRes = await ctx.rawRequest({
     actor: "primary",
@@ -236,7 +236,7 @@ compatScenario("api-key delete accepts keyId and returns success", async (ctx) =
 compatScenario(
   "api-key create with expiresIn sets expiresAt approximately correct",
   async (ctx) => {
-    const { primary } = await signUpAndGetHeaders(ctx, "api-key-expires");
+    await signUpAndGetHeaders(ctx, "api-key-expires");
 
     // expiresIn is in seconds in TS — 86400 = 1 day
     const res = await ctx.rawRequest({
@@ -269,7 +269,7 @@ compatScenario(
 // =========================================================================
 
 compatScenario("api-key create defaults rate limit fields from config", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-defaults");
+  await signUpAndGetHeaders(ctx, "api-key-defaults");
 
   const res = await ctx.rawRequest({
     actor: "primary",
@@ -295,7 +295,7 @@ compatScenario("api-key create defaults rate limit fields from config", async (c
 // =========================================================================
 
 compatScenario("api-key create with metadata preserves it", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-metadata");
+  await signUpAndGetHeaders(ctx, "api-key-metadata");
 
   const res = await ctx.rawRequest({
     actor: "primary",
@@ -319,7 +319,7 @@ compatScenario("api-key create with metadata preserves it", async (ctx) => {
 // =========================================================================
 
 compatScenario("api-key create with prefix includes prefix in start field", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-prefix-start");
+  await signUpAndGetHeaders(ctx, "api-key-prefix-start");
 
   const res = await ctx.rawRequest({
     actor: "primary",
@@ -346,7 +346,7 @@ compatScenario("api-key create with prefix includes prefix in start field", asyn
 });
 
 compatScenario("api-key create without prefix has start from key beginning", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-no-prefix-start");
+  await signUpAndGetHeaders(ctx, "api-key-no-prefix-start");
 
   const res = await ctx.rawRequest({
     actor: "primary",
@@ -371,7 +371,7 @@ compatScenario("api-key create without prefix has start from key beginning", asy
 // =========================================================================
 
 compatScenario("api-key create rejects server-only permissions field from client", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-perms-reject");
+  await signUpAndGetHeaders(ctx, "api-key-perms-reject");
 
   // TS rejects server-only fields (permissions, remaining, refillAmount, etc.)
   // when the request comes over HTTP (i.e. from a client)
@@ -407,7 +407,7 @@ compatScenario("api-key create without session returns 401", async (ctx) => {
 });
 
 compatScenario("api-key get non-existent key returns error", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-get-missing");
+  await signUpAndGetHeaders(ctx, "api-key-get-missing");
 
   const res = await ctx.rawRequest({
     actor: "primary",
@@ -420,7 +420,7 @@ compatScenario("api-key get non-existent key returns error", async (ctx) => {
 });
 
 compatScenario("api-key update non-existent key returns error", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-update-missing");
+  await signUpAndGetHeaders(ctx, "api-key-update-missing");
 
   const res = await ctx.rawRequest({
     actor: "primary",
@@ -438,7 +438,7 @@ compatScenario("api-key update non-existent key returns error", async (ctx) => {
 });
 
 compatScenario("api-key delete non-existent key returns error", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-delete-missing");
+  await signUpAndGetHeaders(ctx, "api-key-delete-missing");
 
   const res = await ctx.rawRequest({
     actor: "primary",
@@ -456,7 +456,7 @@ compatScenario("api-key delete non-existent key returns error", async (ctx) => {
 
 compatScenario("api-key get another users key returns error", async (ctx) => {
   // User A creates a key, user B tries to get it
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-cross-user-get-a");
+  await signUpAndGetHeaders(ctx, "api-key-cross-user-get-a");
 
   const createRes = await ctx.rawRequest({
     actor: "primary",
@@ -489,7 +489,7 @@ compatScenario("api-key get another users key returns error", async (ctx) => {
 // =========================================================================
 
 compatScenario("api-key list returns keys in insertion order", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-list-order");
+  await signUpAndGetHeaders(ctx, "api-key-list-order");
 
   // Create three keys in sequence
   await ctx.rawRequest({
@@ -531,7 +531,7 @@ compatScenario("api-key list returns keys in insertion order", async (ctx) => {
 // =========================================================================
 
 compatScenario("api-key update with no fields returns error", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-update-empty");
+  await signUpAndGetHeaders(ctx, "api-key-update-empty");
 
   const createRes = await ctx.rawRequest({
     actor: "primary",
@@ -557,7 +557,7 @@ compatScenario("api-key update with no fields returns error", async (ctx) => {
 });
 
 compatScenario("api-key update expiresIn null clears expiration", async (ctx) => {
-  const { primary } = await signUpAndGetHeaders(ctx, "api-key-update-null-exp");
+  await signUpAndGetHeaders(ctx, "api-key-update-null-exp");
 
   // Create a key with expiration
   const createRes = await ctx.rawRequest({

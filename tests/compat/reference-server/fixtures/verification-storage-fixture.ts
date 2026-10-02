@@ -3,13 +3,16 @@
 import type { Database } from "bun:sqlite";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
+
 import { runWithTransaction } from "@better-auth/core/context";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { emailOTP, magicLink, oneTimeToken, twoFactor } from "better-auth/plugins";
 
 type Row = Record<string, unknown>;
+
 const hash = (value: string) => createHash("sha256").update(value).digest("base64url");
+
 export const VERIFICATION_PROFILES = [
   "verification-storage-plain",
   "verification-storage-hashed",
@@ -23,19 +26,20 @@ export const VERIFICATION_PROFILES = [
   "verification-storage-cache-default",
   "verification-storage-mixed-default",
 ] as const;
+
 export async function createVerificationStorageFixture(
   database: Database,
   shared: BetterAuthOptions,
 ) {
-  const events: Row[] = [],
-    cacheEvents: Row[] = [],
-    deliveries: Row[] = [],
-    backendEvents: Row[] = [];
-  const frames = new AsyncLocalStorage<{ request: Row; pending?: Row }>(),
-    publications: Row[] = [];
+  const events: Row[] = [];
+  const cacheEvents: Row[] = [];
+  const deliveries: Row[] = [];
+  const backendEvents: Row[] = [];
+  const frames = new AsyncLocalStorage<{ request: Row; pending?: Row }>();
+  const publications: Row[] = [];
   const cache = new Map<string, { value: string; expiresAt: Date }>();
-  let action: Row = {},
-    fault: Row = {};
+  let action: Row = {};
+  let fault: Row = {};
   const stageCalls = new Map<string, number>();
   const secondaryStorage = {
     async set(key: string, value: string, ttl: number) {
@@ -48,32 +52,47 @@ export async function createVerificationStorageFixture(
         executedAt: new Date(),
       };
       cacheEvents.push(event);
-      if (fault.set) throw new Error("verification cache set rejected");
-      const storedAt = Date.now(),
-        expiresAt = new Date(storedAt + ttl * 1000);
+
+      if (fault.set) {
+        throw new Error("verification cache set rejected");
+      }
+
+      const storedAt = Date.now();
+      const expiresAt = new Date(storedAt + ttl * 1000);
       cache.set(key, { value, expiresAt });
       event.storedAt = new Date(storedAt);
       event.storageExpiresAt = expiresAt;
       const pending = frames.getStore()?.pending;
+
       if (key.startsWith("verification:") && pending) {
         pending.set = event;
         publications.push(pending);
       }
     },
     async get(key: string) {
-      if (fault.get) throw new Error("verification cache get rejected");
+      if (fault.get) {
+        throw new Error("verification cache get rejected");
+      }
+
       cacheEvents.push({ operation: "get", key });
       const entry = cache.get(key);
-      if (!entry) return null;
+
+      if (!entry) {
+        return null;
+      }
+
       if (entry.expiresAt.getTime() <= Date.now()) {
         cache.delete(key);
         return null;
       }
+
       return entry.value;
     },
     async delete(key: string) {
       cacheEvents.push({ operation: "delete", key });
-      if (fault.delete) throw new Error("verification cache delete rejected");
+      if (fault.delete) {
+        throw new Error("verification cache delete rejected");
+      }
       cache.delete(key);
     },
     async getAndDelete(key: string) {
@@ -116,8 +135,9 @@ export async function createVerificationStorageFixture(
       .all()
       .map((value) => {
         const row = { ...(value as Row) };
-        for (const key of ["createdAt", "updatedAt", "expiresAt"])
+        for (const key of ["createdAt", "updatedAt", "expiresAt"]) {
           row[key] = new Date(row[key] as string | number);
+        }
         return row;
       });
   const sqlState = async () => {
@@ -137,11 +157,14 @@ export async function createVerificationStorageFixture(
   };
   const before = async (stage: string, data: Row) => {
     const frame = frames.getStore();
-    if (stage === "create-before" && frame)
+
+    if (stage === "create-before" && frame) {
       frame.pending = {
         request: frame.request,
         before: { snapshot: { ...data }, executedAt: new Date() },
       };
+    }
+
     events.push({
       stage,
       data: { ...data },
@@ -157,25 +180,44 @@ export async function createVerificationStorageFixture(
     });
     const calls = (stageCalls.get(stage) ?? 0) + 1;
     stageCalls.set(stage, calls);
-    if (action[stage] === "cancel") return false;
-    if (action[stage] === "throw" || (action[stage] === "throw-once" && calls === 1))
+
+    if (action[stage] === "cancel") {
+      return false;
+    }
+
+    if (action[stage] === "throw" || (action[stage] === "throw-once" && calls === 1)) {
       throw new Error(`verification ${stage} rejected`);
+    }
+
     if (stage === "create-before" && action.mutation) {
       const mutation = { ...(action.mutation as Row) };
-      for (const key of ["createdAt", "updatedAt", "expiresAt"] as const)
-        if (typeof mutation[key] === "string") mutation[key] = new Date(mutation[key]);
+      for (const key of ["createdAt", "updatedAt", "expiresAt"] as const) {
+        if (typeof mutation[key] === "string") {
+          mutation[key] = new Date(mutation[key]);
+        }
+      }
       return { data: mutation };
     }
-    if (stage === "update-before" && action.updateMutation)
+
+    if (stage === "update-before" && action.updateMutation) {
       return { data: action.updateMutation as Row };
+    }
   };
   const after = async (stage: string, data: Row | null) => {
     const pending = frames.getStore()?.pending;
-    if (stage === "create-after" && pending) pending.snapshot = data;
+
+    if (stage === "create-after" && pending) {
+      pending.snapshot = data;
+    }
+
     events.push({ stage, data, cache: cacheState(), verifications: verificationRows() });
     backendEvents.push({ stage, data, cache: rawCacheState(), verifications: verificationRows() });
-    if (action[stage] === "throw") throw new Error(`verification ${stage} rejected`);
+
+    if (action[stage] === "throw") {
+      throw new Error(`verification ${stage} rejected`);
+    }
   };
+
   for (const name of VERIFICATION_PROFILES) {
     const useCache =
       name.startsWith("verification-storage-cache") ||
@@ -245,7 +287,9 @@ export async function createVerificationStorageFixture(
           expiresIn: defaultDuration ? 300 : 300.5,
           async sendVerificationOTP(delivery) {
             const pending = frames.getStore()?.pending;
-            if (pending) pending.delivery = { ...delivery };
+            if (pending) {
+              pending.delivery = { ...delivery };
+            }
             deliveries.push({ type: "otp", ...delivery });
           },
         }),
@@ -253,7 +297,9 @@ export async function createVerificationStorageFixture(
           expiresIn: defaultDuration ? 300 : 300.5,
           async sendMagicLink(delivery) {
             const pending = frames.getStore()?.pending;
-            if (pending) pending.delivery = { ...delivery };
+            if (pending) {
+              pending.delivery = { ...delivery };
+            }
             deliveries.push({ type: "magic", ...delivery });
           },
           generateToken: async (email) => "magic-proof:" + hash(email),
@@ -275,6 +321,7 @@ export async function createVerificationStorageFixture(
     await (await getMigrations(options)).runMigrations();
     profiles.set(name, betterAuth(options));
   }
+
   return {
     profiles,
     reset() {
@@ -290,13 +337,16 @@ export async function createVerificationStorageFixture(
     },
     async profileHandler(profile: ReturnType<typeof betterAuth>, request: Request) {
       const path = new URL(request.url).pathname;
+
       if (
         !/^\/__test\/profiles\/verification-storage-(?:cache|mixed)(?:-default)?\/api\/auth\/(?:sign-in\/social|(?:email-otp\/send-verification-otp|sign-in\/magic-link|one-time-token\/generate))$/.test(
           path,
         ) ||
         (!path.includes("-default/") && !path.endsWith("/sign-in/social"))
-      )
+      ) {
         return profile.handler(request);
+      }
+
       const frame = {
         request: {
           method: request.method,
@@ -314,15 +364,24 @@ export async function createVerificationStorageFixture(
     },
     async handle(request: Request): Promise<Response | undefined> {
       const url = new URL(request.url);
-      if (url.pathname === "/__test/verification-publications" && request.method === "GET")
+
+      if (url.pathname === "/__test/verification-publications" && request.method === "GET") {
         return Response.json({ publications });
-      if (url.pathname !== "/__test/server-api/verification-storage" || request.method !== "POST")
+      }
+
+      if (url.pathname !== "/__test/server-api/verification-storage" || request.method !== "POST") {
         return;
+      }
+
       const body = (await request.json()) as Row;
       const instance = profiles.get(String(body.profile ?? "verification-storage-plain"));
-      if (!instance) return Response.json({ message: "unknown profile" }, { status: 400 });
-      const context = await instance.$context,
-        adapter = context.internalAdapter;
+
+      if (!instance) {
+        return Response.json({ message: "unknown profile" }, { status: 400 });
+      }
+
+      const context = await instance.$context;
+      const adapter = context.internalAdapter;
       const identifier = String(body.identifier ?? "");
       const data = () => ({
         ...(body.data as Row),
@@ -332,6 +391,7 @@ export async function createVerificationStorageFixture(
             ? new Date(String((body.data as Row).expiresAt))
             : new Date(Date.now() + Number(body.expiresInMs ?? 60500)),
       });
+
       try {
         let result: unknown;
         switch (body.operation) {
@@ -378,7 +438,11 @@ export async function createVerificationStorageFixture(
             break;
           case "update": {
             const patch = { ...(body.data as Row) };
-            if (typeof patch.expiresAt === "string") patch.expiresAt = new Date(patch.expiresAt);
+
+            if (typeof patch.expiresAt === "string") {
+              patch.expiresAt = new Date(patch.expiresAt);
+            }
+
             result = await adapter.updateVerificationByIdentifier(identifier, patch);
             break;
           }
@@ -406,7 +470,9 @@ export async function createVerificationStorageFixture(
               const created = await adapter.createVerificationValue(
                 data() as Parameters<typeof adapter.createVerificationValue>[0],
               );
-              if (body.rollback) throw new Error("verification transaction rejected");
+              if (body.rollback) {
+                throw new Error("verification transaction rejected");
+              }
               return created;
             });
             break;

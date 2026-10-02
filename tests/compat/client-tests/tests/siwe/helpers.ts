@@ -1,7 +1,9 @@
 import { expect } from "bun:test";
+
 import { createAuthClient } from "better-auth/client";
 import { adminClient, siweClient, twoFactorClient } from "better-auth/client/plugins";
 import { z } from "zod";
+
 import type { FixtureProfile } from "../../support/profiles";
 import type { ScenarioContext } from "../../support/scenario";
 import { signature } from "../../support/siwe-wallet";
@@ -23,7 +25,9 @@ export const identity = z
     user: z.object({ id: z.string(), walletAddress: z.string(), chainId: z.number() }).strict(),
   })
   .strict();
+
 const dated = { createdAt: z.string(), updatedAt: z.string() };
+
 export const stateSchema = z
   .object({
     users: z.array(
@@ -119,6 +123,7 @@ export async function state(ctx: ScenarioContext) {
   expect(response.status).toBe(200);
   return stateSchema.parse(response.body);
 }
+
 export async function control(ctx: ScenarioContext, body: unknown) {
   const response = await ctx.rawRequest({
     path: "/__test/siwe-control",
@@ -128,11 +133,13 @@ export async function control(ctx: ScenarioContext, body: unknown) {
   expect(response.status).toBe(200);
   return response.body;
 }
+
 export async function nonce(actor: ReturnType<typeof siweActor>, alias = false) {
   const response = alias ? await actor.client.siwe.getNonce() : await actor.client.siwe.nonce();
   expect(response.error).toBeNull();
   return z.object({ nonce: z.string() }).parse(response.data).nonce;
 }
+
 export async function verify(
   actor: ReturnType<typeof siweActor>,
   signed: string,

@@ -1,18 +1,21 @@
 /** Application-owned callbacks over the unchanged pinned removal handler. */
 
 import type { Database } from "bun:sqlite";
+
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
+
 export function organizationMemberRemovalHooksFixture(
   database: Database,
   shared: Parameters<typeof betterAuth>[0],
   origin: string,
 ) {
-  let mode = "record",
-    release: (() => void) | undefined,
-    gate = Promise.resolve();
+  let mode = "record";
+  let release: (() => void) | undefined;
+  let gate = Promise.resolve();
   const receipts: unknown[] = [];
+
   function snapshot() {
     return {
       organizations: database
@@ -39,38 +42,54 @@ export function organizationMemberRemovalHooksFixture(
         .all(),
     };
   }
+
   type Hooks = NonNullable<NonNullable<Parameters<typeof organization>[0]>["organizationHooks"]>;
   type Context = Parameters<NonNullable<Hooks["beforeRemoveMember"]>>[0];
+
   async function note(phase: string, context: Context) {
     await Promise.resolve();
     receipts.push({ phase, ...structuredClone(context), snapshot: snapshot() });
-    if (mode === `public-500-${phase}`)
+
+    if (mode === `public-500-${phase}`) {
       throw new APIError("INTERNAL_SERVER_ERROR", {
         code: "PUBLIC_REMOVAL_500",
         message: `Explicit public ${phase} error`,
       });
-    if (mode === `reject-${phase}`)
+    }
+
+    if (mode === `reject-${phase}`) {
       throw new APIError("BAD_REQUEST", {
         code: "MEMBER_REMOVAL_HOOK_REJECTED",
         message: `Rejected ${phase}`,
       });
+    }
   }
+
   const hooks = {
     async beforeRemoveMember(context: Context) {
       await note("before-remove", context);
-      if (mode === "pause-before") await gate;
+
+      if (mode === "pause-before") {
+        await gate;
+      }
+
       const ctx = await profiles.get("org-member-removal-hooks")!.$context;
-      if (mode === "delete-row")
+
+      if (mode === "delete-row") {
         await ctx.adapter.delete({
           model: "member",
           where: [{ field: "id", value: context.member.id }],
         });
-      if (mode === "sql-before-error")
+      }
+
+      if (mode === "sql-before-error") {
         await ctx.adapter.update({
           model: "user",
           where: [{ field: "id", value: context.user.id }],
           update: { name: "Attempted Before Name" },
         });
+      }
+
       if (mode === "mutate-target") {
         await ctx.adapter.update({
           model: "user",
@@ -139,6 +158,7 @@ export function organizationMemberRemovalHooksFixture(
     configure(body: Record<string, unknown>) {
       const selected = typeof body.mode === "string" ? body.mode : "record";
       let target: { id: string; userId: string; organizationId: string } | null = null;
+
       if (selected.startsWith("sql-")) {
         target = database
           .query<{ id: string; userId: string; organizationId: string }, [string]>(
@@ -149,48 +169,64 @@ export function organizationMemberRemovalHooksFixture(
           !target ||
           target.userId !== body.userId ||
           target.organizationId !== body.organizationId
-        )
+        ) {
           return Response.json(
             { message: "Guard must select an actual matching member" },
             { status: 400 },
           );
+        }
       }
+
       release?.();
       mode = selected;
       receipts.length = 0;
       gate = new Promise<void>((resolve) => (release = resolve));
+
       for (const name of [
         "member_removal_guard_member",
         "member_removal_guard_team",
         "member_removal_guard_user",
-      ])
+      ]) {
         database.exec(`DROP TRIGGER IF EXISTS ${name}`);
+      }
+
       database.exec(
         "CREATE TABLE IF NOT EXISTS __test_member_removal_guard (memberId TEXT,userId TEXT,organizationId TEXT)",
       );
       database.exec("DELETE FROM __test_member_removal_guard");
-      if (target)
+
+      if (target) {
         database
           .query(
             "INSERT INTO __test_member_removal_guard (memberId,userId,organizationId) VALUES (?,?,?)",
           )
           .run(target.id, target.userId, target.organizationId);
-      if (mode === "sql-member-abort")
+      }
+
+      if (mode === "sql-member-abort") {
         database.exec(
           "CREATE TRIGGER member_removal_guard_member BEFORE DELETE ON member WHEN OLD.id=(SELECT memberId FROM __test_member_removal_guard) BEGIN SELECT RAISE(ABORT,'member removal member veto'); END",
         );
-      if (mode === "sql-member-ignore")
+      }
+
+      if (mode === "sql-member-ignore") {
         database.exec(
           "CREATE TRIGGER member_removal_guard_member BEFORE DELETE ON member WHEN OLD.id=(SELECT memberId FROM __test_member_removal_guard) BEGIN SELECT RAISE(IGNORE); END",
         );
-      if (mode === "sql-team-abort")
+      }
+
+      if (mode === "sql-team-abort") {
         database.exec(
           "CREATE TRIGGER member_removal_guard_team BEFORE DELETE ON teamMember WHEN OLD.userId=(SELECT userId FROM __test_member_removal_guard) AND OLD.teamId IN (SELECT id FROM team WHERE organizationId=(SELECT organizationId FROM __test_member_removal_guard)) BEGIN SELECT RAISE(ABORT,'member removal team veto'); END",
         );
-      if (mode === "sql-before-error" || mode === "sql-after-error")
+      }
+
+      if (mode === "sql-before-error" || mode === "sql-after-error") {
         database.exec(
           "CREATE TRIGGER member_removal_guard_user BEFORE UPDATE ON user WHEN OLD.id=(SELECT userId FROM __test_member_removal_guard) BEGIN SELECT RAISE(ABORT,'member removal user veto'); END",
         );
+      }
+
       return Response.json({ configured: true });
     },
     release() {
@@ -204,8 +240,9 @@ export function organizationMemberRemovalHooksFixture(
         attempt < 100 &&
         !receipts.some((receipt) => (receipt as { phase: string }).phase === waitFor);
         attempt++
-      )
+      ) {
         await Bun.sleep(10);
+      }
       return Response.json({ receipts, snapshot: snapshot() });
     },
     async server(request: Request) {
@@ -217,8 +254,9 @@ export function organizationMemberRemovalHooksFixture(
             .api.removeMember({ headers: request.headers, body }),
         );
       } catch (error) {
-        if (error instanceof APIError)
+        if (error instanceof APIError) {
           return Response.json(error.body, { status: error.statusCode, headers: error.headers });
+        }
         throw error;
       }
     },

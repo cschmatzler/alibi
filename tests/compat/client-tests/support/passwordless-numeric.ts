@@ -1,7 +1,9 @@
 import { expect } from "bun:test";
+
 import { createAuthClient } from "better-auth/client";
 import { phoneNumberClient } from "better-auth/client/plugins";
 import { z } from "zod";
+
 import { authProfilePath, type FixtureProfile } from "./profiles";
 import { compatScenario } from "./scenario";
 import { fixtureValue, readUserState, storedVerification, verificationCount } from "./verification";
@@ -29,7 +31,9 @@ const modes = [
 /** Each row exercises actual delivery, proof persistence, and the public consumer. */
 export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | "magic-link") {
   for (const mode of modes) {
-    if (plugin === "magic-link" && !mode.startsWith("lifetime-")) continue;
+    if (plugin === "magic-link" && !mode.startsWith("lifetime-")) {
+      continue;
+    }
     compatScenario(
       `${plugin} raw numeric ${mode} governs delivered proof and consumption`,
       async (ctx) => {
@@ -70,6 +74,7 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
               consume: () => Promise<unknown>;
             }
           | undefined;
+
         if (generationFails || invalidDate) {
           const priorActor =
             plugin === "phone" ? ctx.actor("prior", "phone-signup") : ctx.actor("prior");
@@ -85,6 +90,7 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
                 ? await priorActor.client.emailOtp.sendVerificationOtp({ email, type: "sign-in" })
                 : await priorActor.client.signIn.magicLink({ email });
           expect(priorIssued.error).toBeNull();
+
           const priorDelivery = z
             .record(z.string(), z.unknown())
             .parse(
@@ -120,13 +126,18 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
                   : priorActor.client.magicLink.verify({ query: { token: priorCode } }),
           };
         }
+
         const issuanceStartedAt = Date.now();
         const issued = await issue();
         const issuanceFinishedAt = Date.now();
+
         if (generationFails || invalidDate) {
           expect(issued.error?.status).toBe(500);
-          if (!predecessor)
+
+          if (!predecessor) {
             throw new Error("Failed issuance must have an independently delivered predecessor");
+          }
+
           expect(
             await fixtureValue(
               ctx,
@@ -138,23 +149,29 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
               plugin === "phone" ? { phoneNumber } : { email, type: "sign-in" },
             ),
           ).toEqual(predecessor.delivery);
+
           const remaining = await storedVerification(ctx, predecessor.key);
           const deletedByRetry = plugin === "passwordless" && invalidDate;
           expect(remaining).toEqual(deletedByRetry ? [] : predecessor.rows);
           expect((await client.getSession()).data).toBeNull();
+
           const predecessorResult = await predecessor.consume();
-          if (deletedByRetry)
+
+          if (deletedByRetry) {
             expect(
               z
                 .object({ error: z.object({ code: z.literal("INVALID_OTP") }) })
                 .passthrough()
                 .parse(predecessorResult).error.code,
             ).toBe("INVALID_OTP");
-          else
+          } else {
             expect(
               z.object({ error: z.null() }).passthrough().parse(predecessorResult).error,
             ).toBeNull();
+          }
+
           expect(await verificationCount(ctx, predecessor.key)).toBe(0);
+
           return {
             issued,
             priorIssued: predecessor.issued,
@@ -163,7 +180,9 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
             predecessorResult,
           };
         }
+
         expect(issued.error).toBeNull();
+
         const delivery = z
           .object(
             plugin === "phone"
@@ -198,12 +217,14 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
                 ? 0
                 : 6,
         );
+
         const key = plugin === "magic-link" ? code : identifier;
         const stored = await storedVerification(ctx, key);
         expect(stored).toHaveLength(1);
         expect(stored[0]?.value).toBe(
           plugin === "magic-link" ? JSON.stringify({ email, name: undefined }) : `${code}:0`,
         );
+
         const ttl =
           mode === "lifetime-fraction"
             ? 30_000
@@ -214,12 +235,14 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
                 : 300_000;
         expect(Date.parse(stored[0]!.expiresAt)).toBeGreaterThanOrEqual(issuanceStartedAt + ttl);
         expect(Date.parse(stored[0]!.expiresAt)).toBeLessThanOrEqual(issuanceFinishedAt + ttl);
+
         const consume = (provided: string, recipient = plugin === "phone" ? phoneNumber : email) =>
           plugin === "phone"
             ? phoneClient.phoneNumber.verify({ phoneNumber: recipient, code: provided })
             : plugin === "passwordless"
               ? client.signIn.emailOtp({ email: recipient, otp: provided })
               : client.magicLink.verify({ query: { token: provided } });
+
         if (ttl <= 0) {
           await new Promise((resolve) => setTimeout(resolve, 20));
           const expired =
@@ -234,14 +257,17 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
               : await consume(code);
           expect(await verificationCount(ctx, key)).toBe(0);
           expect((await client.getSession()).data).toBeNull();
+
           return { issued, expiresAt: stored[0]?.expiresAt, codeLength: code.length, expired };
         }
+
         const foreign =
           plugin === "magic-link"
             ? await consume("unissued-foreign-token")
             : await consume(code, plugin === "phone" ? "+19999999999" : ctx.uniqueEmail("foreign"));
         expect(foreign.error).not.toBeNull();
         expect(await storedVerification(ctx, key)).toEqual(stored);
+
         const budget =
           mode === "attempts-negative" ||
           mode === "attempts-negative-infinity" ||
@@ -253,6 +279,7 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
                 ? Infinity
                 : 3;
         const wrong = [];
+
         if (plugin !== "magic-link") {
           for (
             let attempt = 0;
@@ -263,13 +290,17 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
             expect(denied.error?.code).toBe(
               attempt >= budget ? "TOO_MANY_ATTEMPTS" : "INVALID_OTP",
             );
+
             const remaining = await storedVerification(ctx, key);
-            if (attempt >= budget) expect(remaining).toHaveLength(0);
-            else {
+
+            if (attempt >= budget) {
+              expect(remaining).toHaveLength(0);
+            } else {
               expect(remaining).toHaveLength(1);
               expect(remaining[0]?.value).toBe(`${code}:${attempt + 1}`);
               expect(remaining[0]?.expiresAt).toBe(stored[0]?.expiresAt);
             }
+
             wrong.push({
               denied,
               rows: remaining.length,
@@ -281,11 +312,14 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
             const exhausted = await consume(code);
             expect(exhausted.error?.code).toBe("TOO_MANY_ATTEMPTS");
             expect(await verificationCount(ctx, key)).toBe(0);
+
             wrong.push({ exhausted });
           }
         }
+
         const reissued = await issue();
         expect(reissued.error).toBeNull();
+
         const nextDelivery = z
           .record(z.string(), z.unknown())
           .parse(
@@ -308,8 +342,10 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
         const nextStored = await storedVerification(ctx, nextKey);
         expect(nextStored).toHaveLength(plugin !== "magic-link" && budget === Infinity ? 2 : 1);
         expect(nextStored[0]?.id).not.toBe(stored[0]?.id);
+
         // Rotation appends a row when a live proof remains; consumption clears the identifier.
         const verified = await consume(nextCode);
+
         if (budget === 0) {
           expect(verified.error?.code).toBe("TOO_MANY_ATTEMPTS");
           expect((await client.getSession()).data).toBeNull();
@@ -324,7 +360,9 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
             verified,
           };
         }
+
         expect(verified.error).toBeNull();
+
         const user = z.object({ id: z.string() }).parse(verified.data?.user);
         const state =
           plugin === "phone"
@@ -351,6 +389,7 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
           true,
         );
         expect(await verificationCount(ctx, nextKey)).toBe(0);
+
         const replay = await consume(nextCode);
         expect(replay.error).not.toBeNull();
         expect(
@@ -358,6 +397,7 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
             ? await fixtureValue(ctx, "/__test/user-state", { userId: user.id, profile })
             : await readUserState(ctx, user.id),
         ).toEqual(state);
+
         return {
           issued,
           expiresAt: stored[0]?.expiresAt,

@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { passwordlessNumericScenarios } from "../../support/passwordless-numeric";
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario } from "../../support/scenario";
@@ -16,6 +18,7 @@ compatScenario(
   async (ctx) => {
     const actor = ctx.actor("primary", "passwordless-hashed");
     const results = [];
+
     for (const [index, username, displayUsername] of [
       [0, "ab", "Ignored Display"],
       [1, 7, { unexpected: true }],
@@ -23,6 +26,7 @@ compatScenario(
       const email = ctx.uniqueEmail(`unregistered-${index}`);
       const sent = await actor.client.emailOtp.sendVerificationOtp({ email, type: "sign-in" });
       expect(sent.error).toBeNull();
+
       const otp = await readOtp(ctx, email, "sign-in");
       const rawResponse = await actor.fetch(
         new URL(`${authProfilePath("passwordless-hashed")}/sign-in/email-otp`, ctx.baseURL),
@@ -37,6 +41,7 @@ compatScenario(
         body: await rawResponse.json(),
       };
       expect(signedIn.status).toBe(200);
+
       const response = z
         .object({
           token: z.string().min(1),
@@ -48,14 +53,18 @@ compatScenario(
       expect(response.user.email).toBe(email);
       expect(Object.hasOwn(response.user, "username")).toBe(false);
       expect(Object.hasOwn(response.user, "displayUsername")).toBe(false);
+
       const session = await actor.client.getSession();
       expect(session.data?.user.id).toBe(response.user.id);
       expect(session.data?.session.token).toBe(response.token);
       expect(await verificationCount(ctx, `sign-in-otp-${email}`)).toBe(0);
+
       const replay = await actor.client.signIn.emailOtp({ email, otp });
       expect(replay.error?.code).toBe("INVALID_OTP");
+
       results.push({ sent, signedIn, session, replay });
     }
+
     return results;
   },
 );
@@ -81,6 +90,7 @@ compatScenario(
       });
       expect(created.status).toBe(200);
       expect(created.body).toEqual({ status: true });
+
       const seeded = await ctx.rawRequest({
         path: "/__test/verification-state",
         method: "POST",
@@ -93,6 +103,7 @@ compatScenario(
       });
       expect(seeded.status).toBe(200);
       expect(await verificationCount(ctx, identifier)).toBe(1);
+
       const retrieved = await ctx.rawRequest({
         path: "/__test/server-api",
         method: "POST",
@@ -100,17 +111,21 @@ compatScenario(
       });
       expect(retrieved.status).toBe(200);
       expect(z.object({ otp: z.string() }).parse(retrieved.body).otp).toBe(otp);
+
       const unrelatedAfterRead = await storedVerification(ctx, identifier);
       expect(unrelatedAfterRead).toHaveLength(profile === "verification-no-cleanup" ? 1 : 0);
       expect(await verificationCount(ctx, `sign-in-otp-${email}`)).toBe(1);
+
       const signedIn = await client.signIn.emailOtp({ email, otp });
       expect(signedIn.error).toBeNull();
       expect(await verificationCount(ctx, `sign-in-otp-${email}`)).toBe(0);
       expect(await verificationCount(ctx, identifier)).toBe(
         profile === "verification-no-cleanup" ? 1 : 0,
       );
+
       const state = await readUserState(ctx, requireUser(signedIn.data?.user).id);
       expect(state.sessions).toHaveLength(1);
+
       observations.push({ profile, retrieved, unrelatedAfterRead, signedIn, state });
     }
     return observations;
@@ -125,22 +140,27 @@ compatScenario(
     const email = ctx.uniqueEmail("hashed-otp");
     const issue = await client.emailOtp.sendVerificationOtp({ email, type: "sign-in" });
     expect(issue.error).toBeNull();
+
     const otp = await readOtp(ctx, email, "sign-in");
     const hash = new Bun.CryptoHasher("sha256").update(otp).digest("base64url");
     const stored = await storedVerification(ctx, `sign-in-otp-${email}`);
     expect(stored).toHaveLength(1);
     expect(stored.at(0)?.value).toBe(`${hash}:0`);
+
     const unavailable = await ctx.rawRequest({
       path: "/__test/server-api",
       method: "POST",
       json: { operation: "get-email-otp", profile, email, type: "sign-in" },
     });
     expect(unavailable.status).toBe(400);
+
     const signIn = await client.signIn.emailOtp({ email, otp });
     expect(signIn.error).toBeNull();
+
     const user = requireUser(signIn.data?.user);
     const state = await readUserState(ctx, user.id);
     expect(state.sessions).toHaveLength(1);
+
     return {
       issue: ctx.snapshot(issue),
       unavailable: ctx.snapshot(unavailable),
@@ -162,8 +182,10 @@ compatScenario(
     const initial = await storedVerification(ctx, `sign-in-otp-${email}`);
     expect(initial.at(0)?.value).toMatch(/^[a-f0-9]+:0$/);
     expect(initial.at(0)?.value).not.toContain(otp);
+
     const wrong = await client.signIn.emailOtp({ email, otp: "incorrect" });
     expect(wrong.error?.code).toBe("INVALID_OTP");
+
     const narrowed = new Date(Date.now() + 30_000).toISOString();
     const seed = await ctx.rawRequest({
       path: "/__test/verification-state",
@@ -171,25 +193,33 @@ compatScenario(
       json: { action: "expire", identifier: `sign-in-otp-${email}`, expiresAt: narrowed },
     });
     expect(seed.status).toBe(200);
+
     const resent = await client.emailOtp.sendVerificationOtp({ email, type: "sign-in" });
     expect(resent.error).toBeNull();
     expect(await readOtp(ctx, email, "sign-in")).toBe(otp);
+
     const refreshed = await storedVerification(ctx, `sign-in-otp-${email}`);
     expect(refreshed).toHaveLength(1);
     expect(refreshed.at(0)?.value).toMatch(/:1$/);
     expect(Date.parse(refreshed.at(0)?.expiresAt ?? "") - Date.now()).toBeGreaterThan(298_000);
+
     const retrieve = await ctx.rawRequest({
       path: "/__test/server-api",
       method: "POST",
       json: { operation: "get-email-otp", profile, email, type: "sign-in" },
     });
     const code = z.object({ otp: z.string() }).safeParse(retrieve.body);
-    if (!code.success)
+
+    if (!code.success) {
       throw new Error("Encrypted codes must be recoverable through the server interface");
+    }
+
     expect(code.data.otp).toBe(otp);
+
     const signIn = await client.signIn.emailOtp({ email, otp });
     expect(signIn.error).toBeNull();
     expect(await verificationCount(ctx, `sign-in-otp-${email}`)).toBe(0);
+
     return {
       first: ctx.snapshot(first),
       wrong: ctx.snapshot(wrong),
@@ -217,19 +247,27 @@ compatScenario(
     const before = await client.getSession();
     const send = await client.sendVerificationEmail({ email });
     expect(send.error).toBeNull();
+
     const otp = await readOtp(ctx, email, "email-verification");
     const verified = await client.emailOtp.verifyEmail({ email, otp });
     expect(verified.error).toBeNull();
+
     const verifiedToken = z.string().min(1).safeParse(verified.data?.token);
-    if (!verifiedToken.success)
+
+    if (!verifiedToken.success) {
       throw new Error("Automatic verification sign-in must return the new session token");
+    }
+
     const session = await client.getSession();
     expect(session.data?.session.id).not.toBe(before.data?.session.id);
     expect(session.data?.session.token).toBe(verifiedToken.data);
+
     const verifiedState = await readUserState(ctx, user.id);
     expect(verifiedState.sessions).toHaveLength(2);
+
     const missing = await client.emailOtp.requestEmailChange({ newEmail: target });
     expect(missing.error?.message).toBe("OTP is required to verify current email");
+
     await client.emailOtp.sendVerificationOtp({ email, type: "email-verification" });
     const currentOtp = await readOtp(ctx, email, "email-verification");
     const requested = await client.emailOtp.requestEmailChange({
@@ -238,14 +276,18 @@ compatScenario(
     });
     expect(requested.error).toBeNull();
     expect(await verificationCount(ctx, `email-verification-otp-${email}`)).toBe(0);
+
     const targetOtp = await readOtp(ctx, target, "change-email");
     const changed = await client.emailOtp.changeEmail({ newEmail: target, otp: targetOtp });
     expect(changed.error).toBeNull();
+
     const finalSession = await client.getSession();
     expect(finalSession.data?.session.id).toBe(session.data?.session.id);
     expect(finalSession.data?.user.email).toBe(target);
+
     const state = await readUserState(ctx, user.id);
     expect(state.user?.emailVerified).toBe(true);
+
     return {
       before: ctx.snapshot(before),
       send: ctx.snapshot(send),
@@ -278,17 +320,24 @@ compatScenario(
     expect(denied.error).toBeNull();
     expect(await deliveredOtpCount(ctx, absent, "sign-in")).toBe(0);
     expect(await verificationCount(ctx, `sign-in-otp-${absent}`)).toBe(0);
+
     const seeded = await ctx.rawRequest({
       path: "/__test/server-api",
       method: "POST",
       json: { operation: "create-email-otp", profile, email: absent, type: "sign-in" },
     });
     const code = z.string().safeParse(seeded.body);
-    if (!code.success) throw new Error("Server OTP fixture must return the issued secret");
+
+    if (!code.success) {
+      throw new Error("Server OTP fixture must return the issued secret");
+    }
+
     const cannotSignup = await client.signIn.emailOtp({ email: absent, otp: code.data });
     expect(cannotSignup.error?.code).toBe("INVALID_OTP");
+
     const empty = await client.getSession();
     expect(empty.data).toBeNull();
+
     const existingEmail = ctx.uniqueEmail("disabled-existing");
     const signup = await client.signUp.email({
       email: existingEmail,
@@ -301,9 +350,11 @@ compatScenario(
     const existing = await client.signIn.emailOtp({ email: existingEmail, otp });
     expect(existing.error).toBeNull();
     expect(existing.data?.user.id).toBe(user.id);
+
     const state = await readUserState(ctx, user.id);
     expect(state.sessions).toHaveLength(1);
     expect(state.accounts).toHaveLength(0);
+
     return {
       denied: ctx.snapshot(denied),
       cannotSignup: ctx.snapshot(cannotSignup),
@@ -335,6 +386,7 @@ compatScenario(
     expect(sent.error).toBeNull();
     expect(await deliveredOtpCount(ctx, email, "email-verification")).toBe(0);
     expect(await verificationCount(ctx, `email-verification-otp-${email}`)).toBe(0);
+
     const delivery = z
       .object({ token: z.string().min(1), url: z.url() })
       .parse(await ctx.readVerificationEmail({ email }));
@@ -342,16 +394,21 @@ compatScenario(
     expect(link.pathname).toBe(`${authProfilePath(profile)}/verify-email`);
     expect(link.searchParams.get("token")).toBe(delivery.token);
     expect(link.searchParams.get("callbackURL")).toBe("/proof-complete?source=explicit");
+
     const response = await actor.fetch(delivery.url, { redirect: "manual" });
     expect(response.status).toBe(302);
+
     const location = response.headers.get("location");
     expect(new URL(location ?? "", ctx.baseURL).pathname).toBe("/proof-complete");
+
     const after = await actor.client.getSession();
     expect(after.data?.user.id).toBe(user.id);
     expect(after.data?.user.emailVerified).toBe(true);
     expect(after.data?.session.id).toBe(before.data?.session.id);
+
     const state = await readUserState(ctx, user.id);
     expect(state.sessions).toHaveLength(1);
+
     return {
       before,
       sent,

@@ -46,6 +46,7 @@ async function postControl(baseURL: string, path: string, body: unknown) {
 
 async function getControl(baseURL: string, path: string, params: Record<string, string>) {
   const url = new URL(path, baseURL);
+
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
@@ -208,6 +209,7 @@ export async function readDeviceState(
 ): Promise<unknown> {
   return getControl(baseURL, "/__test/device-state", args);
 }
+
 /** Set an actual persisted device-code expiry. */
 export async function expireDevice(
   baseURL: string,
@@ -215,6 +217,7 @@ export async function expireDevice(
 ): Promise<unknown> {
   return postControl(baseURL, "/__test/expire-device", args);
 }
+
 export async function expireInvitation(
   baseURL: string,
   args: { invitationId: string; expiresAt: string },

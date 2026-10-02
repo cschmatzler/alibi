@@ -1,18 +1,21 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { organization } from "better-auth/plugins";
+
 import { compareValues } from "../support/compare";
 import { normalizeClientValue } from "../support/normalize";
 
 type Data = Record<string, any>;
+
 async function capture(baseURL: string) {
-  const database = new Database(":memory:"),
-    events: Data[] = [];
+  const database = new Database(":memory:");
+  const events: Data[] = [];
   let serial = 0;
   const snapshot = (stage: string, ctx: Data) =>
     events.push({
@@ -65,6 +68,7 @@ async function capture(baseURL: string) {
     ],
   });
   const startedAt = Date.now();
+
   try {
     await (await getMigrations(auth.options)).runMigrations();
     const owner = await auth.api.signUpEmail({
@@ -90,7 +94,11 @@ async function capture(baseURL: string) {
           error: { status: error.statusCode, body: error.body, message: error.message },
         }),
       );
-      if (result.ok) result.value.headers = Object.fromEntries(result.value.headers);
+
+      if (result.ok) {
+        result.value.headers = Object.fromEntries(result.value.headers);
+      }
+
       return normalizeClientValue({ result, events: [...events] }) as Data;
     };
     const key = await run("createApiKey", {
@@ -112,6 +120,7 @@ async function capture(baseURL: string) {
     });
     expect(revoked.result.ok).toBe(true);
     expect(revoked.result.value.response.enabled).toBe(false);
+
     const created = await run("createOrganization", {
       body: { userId: owner.user.id, name: "Observed", slug: "observed" },
     });
@@ -147,6 +156,7 @@ async function capture(baseURL: string) {
     expect(memberRows.find((row) => row.id === otherMember.result.value.response.id)!.userId).toBe(
       foreign.user.id,
     );
+
     const removed = await run("removeMember", {
       body: {
         organizationId: created.result.value.response.id,
@@ -156,6 +166,7 @@ async function capture(baseURL: string) {
     });
     expect(removed.result.ok).toBe(true);
     expect(removed.result.value.response.member.id).toBe(added.result.value.response.id);
+
     const emailRemoved = await run("removeMember", {
       body: {
         organizationId: created.result.value.response.id,
@@ -166,6 +177,7 @@ async function capture(baseURL: string) {
     expect(emailRemoved.result.ok).toBe(true);
     expect(emailRemoved.result.value.response.member.id).toBe(otherMember.result.value.response.id);
     expect(database.query("SELECT * FROM member").all()).toHaveLength(1);
+
     const revokedDenied = await run("removeMember", {
       body: {
         organizationId: created.result.value.response.id,
@@ -175,6 +187,7 @@ async function capture(baseURL: string) {
     });
     expect(revokedDenied.result.ok).toBe(false);
     expect(revokedDenied.result.error.body.code).toBe("KEY_DISABLED");
+
     const keyRows = database
       .query(
         "SELECT *,hex(CAST(start AS BLOB)) AS startHex,typeof(start) AS startType FROM apikey ORDER BY name,id",
@@ -184,22 +197,36 @@ async function capture(baseURL: string) {
         const row = { ...(raw as Data) };
         row.enabled = !!row.enabled;
         row.rateLimitEnabled = !!row.rateLimitEnabled;
-        for (const field of ["createdAt", "updatedAt", "expiresAt", "lastRequest", "lastRefillAt"])
-          if (row[field] !== null) row[field] = new Date(row[field]).toISOString();
+
+        for (const field of [
+          "createdAt",
+          "updatedAt",
+          "expiresAt",
+          "lastRequest",
+          "lastRefillAt",
+        ]) {
+          if (row[field] !== null) {
+            row[field] = new Date(row[field]).toISOString();
+          }
+        }
+
         return row;
       });
+
     for (const issued of [key, otherKey, revokedKey]) {
-      const output = issued.result.value.response,
-        stored = keyRows.find((row) => row.id === output.id)!;
+      const output = issued.result.value.response;
+      const stored = keyRows.find((row) => row.id === output.id)!;
       expect(stored.referenceId).toBe(output.referenceId);
       expect(stored.key).toBe(createHash("sha256").update(output.key).digest("base64url"));
       expect(stored.startType).toBe("text");
       expect(stored.startHex).toBe(Buffer.from(output.start).toString("hex").toUpperCase());
     }
+
     expect(keyRows.find((row) => row.id === key.result.value.response.id)!.remaining).toBe(36);
     expect(keyRows.find((row) => row.id === revokedKey.result.value.response.id)!.remaining).toBe(
       40,
     );
+
     return {
       value: normalizeClientValue({
         observation: {
@@ -230,8 +257,8 @@ async function capture(baseURL: string) {
 }
 
 test("actual Source server selectors retain issued key and member ownership relationships with literal emails", async () => {
-  const left = await capture("http://localhost:3100"),
-    right = await capture("http://localhost:3200");
+  const left = await capture("http://localhost:3100");
+  const right = await capture("http://localhost:3200");
   const context = {
     leftBaseURL: left.baseURL,
     rightBaseURL: right.baseURL,
@@ -240,14 +267,18 @@ test("actual Source server selectors retain issued key and member ownership rela
     rightStartedAt: right.startedAt,
     rightFinishedAt: right.finishedAt,
   };
-  if (Bun.env.COMPAT_SERVER_SELECTOR_CAPTURE)
+
+  if (Bun.env.COMPAT_SERVER_SELECTOR_CAPTURE) {
     await Bun.write(
       Bun.env.COMPAT_SERVER_SELECTOR_CAPTURE,
       JSON.stringify({ left: left.value, right: right.value, context }, null, 2),
     );
+  }
+
   expect(compareValues(left.value, right.value, context)).toEqual([]);
-  const keyPath = "observation.revoked.events.0.body.keyId",
-    memberPath = "observation.removed.events.0.body.memberIdOrEmail";
+
+  const keyPath = "observation.revoked.events.0.body.keyId";
+  const memberPath = "observation.removed.events.0.body.memberIdOrEmail";
   const keyRowIndex = right.value.observation.keyRows.findIndex(
     (row: Data) => row.id === right.value.observation.revokedKey.result.value.response.id,
   );
@@ -347,6 +378,7 @@ test("actual Source server selectors retain issued key and member ownership rela
       reason: "server selector lacks its observed entity on both sides",
     },
   ];
+
   for (const mutation of mutations) {
     const changed = structuredClone(right.value);
     mutation.mutate(changed);
@@ -355,6 +387,7 @@ test("actual Source server selectors retain issued key and member ownership rela
       reason: mutation.reason,
     });
   }
+
   for (const field of ["metadata", "additionalFields", "custom", "applicationData"]) {
     const appLeft = {
       ...left.value,
@@ -377,6 +410,7 @@ test("actual Source server selectors retain issued key and member ownership rela
       reason: "value or type differs",
     });
   }
+
   const literalLeft = {
     ...left.value,
     unknown: { keyId: "literal-left", memberIdOrEmail: "literal-left" },
@@ -393,6 +427,7 @@ test("actual Source server selectors retain issued key and member ownership rela
     path: "unknown.memberIdOrEmail",
     reason: "value or type differs",
   });
+
   const claimLeft = {
     ...left.value,
     claims: {
@@ -423,18 +458,21 @@ test("actual Source server selectors retain issued key and member ownership rela
     path: "claims.memberIdOrEmail",
     reason: "value or type differs",
   });
+
   const missingReceipts = structuredClone(right.value);
   const removeMemberReceipts = (value: unknown) => {
-    if (Array.isArray(value)) value.forEach(removeMemberReceipts);
-    else if (value && typeof value === "object") {
+    if (Array.isArray(value)) {
+      value.forEach(removeMemberReceipts);
+    } else if (value && typeof value === "object") {
       const row = value as Data;
       if (
         typeof row.id === "string" &&
         typeof row.userId === "string" &&
         typeof row.organizationId === "string" &&
         "createdAt" in row
-      )
+      ) {
         delete row.role;
+      }
       Object.values(row).forEach(removeMemberReceipts);
     }
   };

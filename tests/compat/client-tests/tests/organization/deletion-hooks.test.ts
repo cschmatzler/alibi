@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import type { FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { createTracingFetch, type TraceEntry } from "../../support/trace";
@@ -111,9 +113,11 @@ function isolation(
       before[key].filter(belongsTo(target.foreignOrg.id)),
     );
   }
+
   for (const key of ["teams", "teamMembers", "users"] as const) {
     expect(after[key]).toEqual(before[key]);
   }
+
   expect(after.sessions.filter((r) => r.id !== target.session.id)).toEqual(
     before.sessions.filter((r) => r.id !== target.session.id),
   );
@@ -151,6 +155,7 @@ compatScenario(
 
     const after = await state(ctx);
     expect(after.receipts.map((r) => r.phase)).toEqual(["before", "after"]);
+
     for (const r of after.receipts) {
       expect(r.user).toMatchObject({
         id: target.owner.user.id,
@@ -173,6 +178,7 @@ compatScenario(
         path: "/organization/delete",
         header: "actual-http-header",
       });
+
       isolation(before.snapshot, r.snapshot, target);
     }
 
@@ -180,6 +186,7 @@ compatScenario(
       expect(after.receipts[0]!.snapshot[key].some(belongsTo(target.org.id))).toBe(true);
       expect(after.receipts[1]!.snapshot[key].some(belongsTo(target.org.id))).toBe(false);
     }
+
     isolation(before.snapshot, after.snapshot, target);
     expect(data(await target.sibling.getSession()).session.activeOrganizationId).toBe(
       target.org.id,
@@ -218,7 +225,9 @@ compatScenario(
       expect(after.receipts.map((r) => r.phase)).toEqual(
         phase === "before" ? ["before"] : ["before", "after"],
       );
+
       isolation(before.snapshot, after.snapshot, target);
+
       for (const key of ["organizations", "members", "invitations"] as const) {
         if (phase === "before") {
           expect(after.snapshot[key]).toEqual(before.snapshot[key]);
@@ -279,9 +288,11 @@ compatScenario(
 
     const after = await state(ctx);
     expect(after.receipts).toEqual([]);
+
     for (const key of ["organizations", "members", "invitations"] as const) {
       expect(after.snapshot[key]).toEqual(rows.snapshot[key]);
     }
+
     isolation(rows.snapshot, after.snapshot, target);
 
     const disabled = await signUp(ctx, "hook-disabled", "org-deletion-hooks-disabled");
@@ -365,12 +376,14 @@ compatScenario(
 
     const after = await state(ctx);
     expect(after.receipts.map((r) => r.phase)).toEqual(["before", "after"]);
+
     for (const r of after.receipts) {
       expect(r.request).toBeNull();
       expect(r.header).toBe("actual-trusted-header");
       expect(r.user.id).toBe(target.owner.user.id);
       expect(r.session.activeOrganizationId).toBe(target.org.id);
     }
+
     isolation(before.snapshot, after.snapshot, target);
 
     const next = data(
@@ -399,9 +412,11 @@ compatScenario(
     expect(afterReject.receipts).toHaveLength(1);
     expect(afterReject.receipts[0]!.request).toBeNull();
     expect(afterReject.receipts[0]!.header).toBe("actual-trusted-header");
+
     for (const key of ["organizations", "members", "invitations"] as const) {
       expect(afterReject.snapshot[key]).toEqual(beforeReject.snapshot[key]);
     }
+
     isolation(beforeReject.snapshot, afterReject.snapshot, rejecting);
 
     const disabledGuest = await call("trusted-guest", next.id, "org-deletion-hooks-disabled");
@@ -443,6 +458,7 @@ compatScenario(
     ).toMatchObject({ name: "Written By Hook" });
     expect(after.receipts[1]!.organization.name).toBe(target.org.name);
     expect(after.snapshot.organizations.some((r) => r.id === target.org.id)).toBe(false);
+
     isolation(before.snapshot, after.snapshot, target);
 
     return { before, deleted: ctx.snapshot(deleted), after };
@@ -465,13 +481,16 @@ compatScenario(
 
     let paused: Awaited<ReturnType<typeof state>> | undefined;
     const releaseTrace: TraceEntry[] = [];
+
     try {
       paused = await state(ctx, "before");
       expect(completed).toBe(false);
       expect(paused.receipts.map((r) => r.phase)).toEqual(["before"]);
+
       for (const key of ["organizations", "members", "invitations"] as const) {
         expect(paused.snapshot[key]).toEqual(before.snapshot[key]);
       }
+
       isolation(before.snapshot, paused.snapshot, target);
     } finally {
       // Preserve both complete concurrent traces in a defined observation order.
@@ -491,6 +510,7 @@ compatScenario(
     const after = await state(ctx);
     expect(after.receipts.map((r) => r.phase)).toEqual(["before", "after"]);
     expect(after.snapshot.organizations.some((r) => r.id === target.org.id)).toBe(false);
+
     isolation(before.snapshot, after.snapshot, target);
 
     await configure(ctx, "record");
@@ -523,10 +543,12 @@ compatScenario(
     // The actual signed-in token was selected before the raw request was sent.
     let abortPaused: Awaited<ReturnType<typeof state>> | undefined;
     let dropped: unknown;
+
     try {
       abortPaused = await state(ctx, "before");
       expect(abortPaused.receipts.map((r) => r.phase)).toEqual(["before"]);
       expect(abortPaused.snapshot.organizations).toEqual(abortBefore.snapshot.organizations);
+
       dropped = await wire.close();
     } finally {
       wire.dispose();
@@ -545,9 +567,11 @@ compatScenario(
 
     const continued = await state(ctx, "after");
     expect(continued.receipts.map((r) => r.phase)).toEqual(["before", "after"]);
+
     for (const key of ["organizations", "members", "invitations"] as const) {
       expect(continued.snapshot[key].some(belongsTo(abortTarget.org.id))).toBe(false);
     }
+
     isolation(abortBefore.snapshot, continued.snapshot, abortTarget);
     expect(continued.receipts[1]!.user.id).toBe(abortTarget.owner.user.id);
 

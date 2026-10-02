@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import type { FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { disconnectedRequest } from "./disconnect";
@@ -81,6 +83,7 @@ async function signup(
   const email = ctx.uniqueEmail(name);
   const result = await actor.client.signUp.email({ name, email, password: "password123" });
   expect(result.error).toBeNull();
+
   return {
     ...actor,
     email,
@@ -123,6 +126,7 @@ compatScenario(
       role: "admin",
     });
     expect(result.error).toBeNull();
+
     const org = organization.parse(result.data);
     expect(org).toMatchObject({
       id: chosenId,
@@ -188,6 +192,7 @@ compatScenario(
     const owner = await signup(ctx, "patch-owner", "org-creation-hooks-no-team");
 
     const observations = [];
+
     for (const mode of [
       "clear-metadata",
       "empty-metadata",
@@ -198,6 +203,7 @@ compatScenario(
       await configure(ctx, mode);
       const result = await create(ctx, owner, mode);
       expect(result.error).toBeNull();
+
       const org = organization.parse(result.data);
       const after = await state(ctx);
       const stored = after.snapshot.organizations.find((r) => r.id === org.id)!;
@@ -213,19 +219,23 @@ compatScenario(
         expect(org.logo).toBeNull();
         expect(stored.metadata).toBeNull();
       }
+
       if (mode === "empty-metadata") {
         expect(org.metadata).toEqual({});
         expect(stored.metadata).toBe("{}");
       }
+
       if (mode === "absent-metadata") {
         expect(org.name).toBe("Patched Without Metadata");
         expect(org.metadata).toEqual({ original: true });
         expect(stored.metadata).toBe('{"original":true}');
       }
+
       if (mode === "empty-name") {
         expect(org.name).toBe("");
         expect(stored.name).toBe("");
       }
+
       if (mode === "empty-member") {
         const member = org.members[0]!;
         expect(member.role).toBe("");
@@ -234,8 +244,10 @@ compatScenario(
       }
 
       expect(after.snapshot.teams).toEqual([]);
+
       observations.push({ mode, result: ctx.snapshot(result), after });
     }
+
     return observations;
   },
   ["POST /organization/create"],
@@ -255,6 +267,7 @@ compatScenario(
     ).toBeNull();
 
     const observations = [];
+
     for (const [phase, counts] of [
       ["before-org", [0, 0, 0, 0]],
       ["before-member", [1, 0, 0, 0]],
@@ -276,6 +289,7 @@ compatScenario(
       expect(after.receipts.map((r) => r.phase)).toEqual(
         phases.slice(0, phases.indexOf(phase) + 1),
       );
+
       for (const [index, key] of (
         ["organizations", "members", "teams", "teamMembers"] as const
       ).entries()) {
@@ -284,11 +298,13 @@ compatScenario(
           expect(after.snapshot[key].find((r) => r.id === old.id)).toEqual(old);
         }
       }
+
       expect(after.snapshot.sessions).toEqual(before.snapshot.sessions);
       expect(after.snapshot.users).toEqual(before.snapshot.users);
 
       observations.push({ phase, before, rejected: ctx.snapshot(rejected), after });
     }
+
     return observations;
   },
   ["POST /organization/create"],
@@ -335,6 +351,7 @@ compatScenario(
       },
     });
     expect(trusted.status).toBe(200);
+
     const org = organization.parse(trusted.body);
 
     const after = await state(ctx);
@@ -384,6 +401,7 @@ compatScenario(
     await configure(ctx, "stored-member");
     const result = await create(ctx, owner, "stored-member");
     expect(result.error).toBeNull();
+
     const org = organization.parse(result.data);
     const member = org.members[0]!;
     const after = await state(ctx);
@@ -417,6 +435,7 @@ compatScenario(
     });
 
     let paused: Awaited<ReturnType<typeof state>> | undefined;
+
     try {
       paused = await state(ctx, "after-member");
       expect(paused.receipts.some((r) => r.phase === "after-member")).toBe(true);
@@ -441,6 +460,7 @@ compatScenario(
 
     const result = await pending;
     expect(result.error).toBeNull();
+
     const after = await state(ctx);
     expect(after.receipts.map((r) => r.phase)).toEqual(phases);
     expect(after.snapshot.teams).toHaveLength(1);
@@ -473,6 +493,7 @@ compatScenario(
 
     let dropped: unknown;
     let abortPaused: Awaited<ReturnType<typeof state>> | undefined;
+
     try {
       abortPaused = await state(ctx, "after-member");
       expect(abortPaused.receipts.map((r) => r.phase)).toEqual([
@@ -481,6 +502,7 @@ compatScenario(
         "after-member",
       ]);
       expect(abortPaused.snapshot.teams).toEqual(abortBefore.snapshot.teams);
+
       dropped = await wire.close();
     } finally {
       wire.dispose();
@@ -493,6 +515,7 @@ compatScenario(
 
     const continued = await state(ctx, "after-org");
     expect(continued.receipts.map((r) => r.phase)).toEqual(phases);
+
     const stored = continued.snapshot.organizations.find(
       (r) => r.slug === ctx.uniqueToken(abortName),
     )!;
@@ -551,6 +574,7 @@ compatScenario(
     await configure(ctx, "record");
     const prior = await create(ctx, owner, "authority-prior");
     expect(prior.error).toBeNull();
+
     const existing = organization.parse(prior.data);
 
     const before = await state(ctx);
@@ -564,6 +588,7 @@ compatScenario(
       organizationId: existing.id,
     });
     expect(result.error).toBeNull();
+
     const org = organization.parse(result.data);
 
     const after = await state(ctx);
@@ -601,6 +626,7 @@ compatScenario(
     for (const row of before.snapshot.members) {
       expect(after.snapshot.members.find((r) => r.id === row.id)).toEqual(row);
     }
+
     for (const row of before.snapshot.organizations) {
       expect(after.snapshot.organizations.find((r) => r.id === row.id)).toEqual(row);
     }

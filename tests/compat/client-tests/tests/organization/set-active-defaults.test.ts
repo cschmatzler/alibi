@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 const stateSchema = z.object({
@@ -47,6 +49,7 @@ async function setup(ctx: ScenarioContext) {
     password: "password123",
   });
   expect(signedUp.error).toBeNull();
+
   const { token, user } = z
     .object({ token: z.string(), user: z.object({ id: z.string() }) })
     .parse(signedUp.data);
@@ -57,11 +60,13 @@ async function setup(ctx: ScenarioContext) {
     body: { name: "First Selection", slug: firstSlug, metadata: { guard: "first" } },
   });
   expect(firstCreated.error).toBeNull();
+
   const firstId = z.object({ id: z.string() }).parse(firstCreated.data).id;
 
   const other = ctx.actor("selector-other-token", "org-creation-empty-role");
   const signedIn = await other.client.signIn.email({ email, password: "password123" });
   expect(signedIn.error).toBeNull();
+
   const otherToken = z.object({ token: z.string() }).parse(signedIn.data).token;
   const secondSlug = ctx.uniqueToken("selector-second");
   const secondCreated = await other.client.$fetch("/organization/create", {
@@ -69,6 +74,7 @@ async function setup(ctx: ScenarioContext) {
     body: { name: "Second Selection", slug: secondSlug, metadata: { guard: "second" } },
   });
   expect(secondCreated.error).toBeNull();
+
   const secondId = z.object({ id: z.string() }).parse(secondCreated.data).id;
 
   const before = await state(ctx, email);
@@ -129,6 +135,7 @@ compatScenario(
     const slug = await set(ctx, owner, { organizationId: "", organizationSlug: secondSlug });
     expect(slug.status).toBe(200);
     expect(z.object({ id: z.string() }).parse(slug.body).id).toBe(secondId);
+
     const afterSlug = await state(ctx, email);
     expect(afterSlug.organizations).toEqual(before.organizations);
     expect(afterSlug.sessions.find((row) => row.token === token)?.activeOrganizationId).toBe(
@@ -156,6 +163,7 @@ compatScenario(
     // An explicit null id takes precedence over the slug and clears the selection.
     const nullWins = await set(ctx, owner, { organizationId: null, organizationSlug: secondSlug });
     expect(nullWins).toEqual({ status: 200, body: null, hasCookie: true });
+
     const cleared = await state(ctx, email);
     expect(cleared.sessions).toEqual(
       before.sessions.map((row) =>
@@ -166,6 +174,7 @@ compatScenario(
 
     // With nothing selected, an empty selector is a no-op that writes no cookie.
     const unselected = [];
+
     for (const body of [
       { organizationId: null },
       {},
@@ -174,6 +183,7 @@ compatScenario(
       const result = await set(ctx, owner, body);
       expect(result).toEqual({ status: 200, body: null, hasCookie: false });
       expect(await state(ctx, email)).toEqual(cleared);
+
       unselected.push(result);
     }
 
@@ -215,6 +225,7 @@ compatScenario(
         })
       ).error,
     ).toBeNull();
+
     const foreignCreated = await foreign.client.$fetch("/organization/create", {
       method: "POST",
       body: {
@@ -224,6 +235,7 @@ compatScenario(
       },
     });
     expect(foreignCreated.error).toBeNull();
+
     const foreignId = z.object({ id: z.string() }).parse(foreignCreated.data).id;
     const foreignBefore = await state(ctx, foreignEmail);
 

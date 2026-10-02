@@ -1,6 +1,8 @@
 import { expect } from "bun:test";
+
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { createAuthClient } from "better-auth/client";
+
 import { compatScenario } from "../../support/scenario";
 
 type Context = Parameters<Parameters<typeof compatScenario>[1]>[0];
@@ -28,6 +30,7 @@ async function serverKey(ctx: Context, options: Record<string, unknown> = {}) {
     json: { userId, ...options },
   });
   expect(result.status).toBe(200);
+
   return record(result.body);
 }
 
@@ -38,8 +41,10 @@ async function verify(ctx: Context, key: string, options: Record<string, unknown
     json: { key, ...options },
   });
   expect(response.status).toBe(200);
+
   const body = record(response.body);
   expect(body.key?.key).toBeUndefined();
+
   return body;
 }
 
@@ -67,9 +72,11 @@ compatScenario("api-key SDK uses the standalone 1.7 client plugin", async (ctx) 
   const created = await client.apiKey.create({ name: "sdk-key" });
   expect(created.error).toBeNull();
   expect(created.data!.key).toBeString();
+
   const listed = await client.apiKey.list();
   expect(listed.error).toBeNull();
   expect(listed.data!.total).toBe(1);
+
   const deleted = await client.apiKey.delete({ keyId: created.data!.id });
   return {
     name: created.data!.name,
@@ -109,12 +116,14 @@ compatScenario("api-key HTTP requests cannot select a different owner", async (c
   });
   expect(create.status).toBe(401);
   expect(update.status).toBe(401);
+
   return { create, update };
 });
 
 compatScenario("api-key list validates pagination and sort direction", async (ctx) => {
   await signUp(ctx);
   const responses = [];
+
   for (const query of [
     "limit=-1",
     "limit=1.5",
@@ -126,14 +135,17 @@ compatScenario("api-key list validates pagination and sort direction", async (ct
     const response = await ctx.rawRequest({ path: `/api/auth/api-key/list?${query}` });
     expect(response.status).toBe(400);
     expect(record(response.body).code).toBe("VALIDATION_ERROR");
+
     responses.push(response);
   }
+
   return responses;
 });
 
 compatScenario("api-key create validates prefix expiration and null fields", async (ctx) => {
   await signUp(ctx);
   const responses = [];
+
   for (const json of [{ prefix: "invalid prefix" }, { expiresIn: 0 }, { name: null }]) {
     const response = await ctx.rawRequest({
       path: "/api/auth/api-key/create",
@@ -142,8 +154,10 @@ compatScenario("api-key create validates prefix expiration and null fields", asy
     });
     expect(response.status).toBe(400);
     expect(record(response.body).code).toBe("VALIDATION_ERROR");
+
     responses.push(response);
   }
+
   return responses;
 });
 
@@ -164,6 +178,7 @@ compatScenario(
     expect(valid.valid).toBe(true);
     expect(valid.key.requestCount).toBe(1);
     expect(scoped.key.requestCount).toBe(2);
+
     return [wrongConfig, denied, valid, scoped].map(verificationResult);
   },
 );
@@ -178,6 +193,7 @@ compatScenario("api-key usage exhaustion deletes the exhausted key", async (ctx)
   expect(second.key.remaining).toBe(0);
   expect(exhausted.error.code).toBe("USAGE_EXCEEDED");
   expect(deleted.error.code).toBe("INVALID_API_KEY");
+
   return [first, second, exhausted, deleted].map(verificationResult);
 });
 
@@ -199,9 +215,11 @@ compatScenario("api-key concurrent verification cannot overdraw quota", async (c
   const rejected = results.filter((result) => !result.valid).map((result) => result.error.code);
   expect(accepted).toBe(2);
   expect(rejected).toEqual(Array(6).fill("USAGE_EXCEEDED"));
+
   const stored = await ctx.rawRequest({ path: `/api/auth/api-key/get?id=${key.id}` });
   expect(record(stored.body).remaining).toBe(0);
   expect(record(stored.body).requestCount).toBe(2);
+
   return {
     accepted,
     rejected,
@@ -223,9 +241,11 @@ compatScenario("api-key rate limit rejection consumes remaining quota", async (c
   expect(limited.error.code).toBe("RATE_LIMITED");
   expect(limited.error.details.tryAgainIn).toBeGreaterThan(0);
   expect(limited.error.details.tryAgainIn).toBeLessThanOrEqual(60_000);
+
   const stored = await ctx.rawRequest({ path: `/api/auth/api-key/get?id=${key.id}` });
   expect(record(stored.body).remaining).toBe(2);
   expect(record(stored.body).requestCount).toBe(2);
+
   return {
     allowed: [first, second].map(verificationResult),
     denied: { ...limited.error, details: { tryAgainIn: "<positive milliseconds>" } },
@@ -241,14 +261,17 @@ compatScenario("api-key server update revokes a machine credential", async (ctx)
     json: { userId: key.referenceId, keyId: key.id, enabled: false },
   });
   expect(updated.status).toBe(200);
+
   const result = await verify(ctx, key.key);
   expect(result.error.code).toBe("KEY_DISABLED");
+
   return verificationResult(result);
 });
 
 compatScenario("api-key session accepts configured headers for GET and POST", async (ctx) => {
   const key = await serverKey(ctx, { configId: "session" });
   const sessions = [];
+
   for (const [method, header] of [
     ["GET", "x-api-key"],
     ["POST", "x-api-key"],
@@ -261,15 +284,18 @@ compatScenario("api-key session accepts configured headers for GET and POST", as
       headers: { [header!]: key.key },
     });
     expect(response.status).toBe(200);
+
     const body = record(response.body);
     expect(body.session.token).toBe(key.key);
     expect(body.session.id).toBe(key.id);
     expect(body.user.id).toBe(key.referenceId);
+
     sessions.push({
       status: response.status,
       ownerMatches: body.session.userId === key.referenceId,
     });
   }
+
   const listed = await ctx.rawRequest({
     actor: "machine",
     path: "/api/auth/api-key/list",
@@ -277,6 +303,7 @@ compatScenario("api-key session accepts configured headers for GET and POST", as
   });
   expect(listed.status).toBe(200);
   expect(record(listed.body).total).toBe(1);
+
   return { sessions, listedTotal: record(listed.body).total };
 });
 
@@ -289,11 +316,16 @@ compatScenario("api-key server numeric fields retain fractional values", async (
     rateLimitTimeWindow: 60_000.5,
   };
   const key = await serverKey(ctx, numbers);
-  for (const [field, value] of Object.entries(numbers)) expect(key[field]).toBe(value);
+
+  for (const [field, value] of Object.entries(numbers)) {
+    expect(key[field]).toBe(value);
+  }
+
   const verified = await verify(ctx, key.key);
   expect(verified.valid).toBe(true);
   expect(verified.key.remaining).toBe(1.5);
   expect(verified.key.requestCount).toBe(1);
+
   const second = await verify(ctx, key.key);
   const third = await verify(ctx, key.key);
   const exhausted = await verify(ctx, key.key);
@@ -302,6 +334,7 @@ compatScenario("api-key server numeric fields retain fractional values", async (
   expect(third.key.remaining).toBe(-0.5);
   expect(third.key.requestCount).toBe(3);
   expect(exhausted.error.code).toBe("USAGE_EXCEEDED");
+
   return {
     numbers: Object.fromEntries(Object.keys(numbers).map((field) => [field, key[field]])),
     verified: [verified, second, third, exhausted].map(verificationResult),
@@ -311,6 +344,7 @@ compatScenario("api-key server numeric fields retain fractional values", async (
 compatScenario("api-key shared headers select the first configured session", async (ctx) => {
   const userId = await signUp(ctx);
   const results = [];
+
   for (const configId of ["shared-first", "shared-second"]) {
     const created = await ctx.rawRequest({
       path: "/__test/api-key/create",
@@ -318,14 +352,17 @@ compatScenario("api-key shared headers select the first configured session", asy
       json: { userId, configId },
     });
     expect(created.status).toBe(200);
+
     const response = await ctx.rawRequest({
       actor: "machine",
       path: "/api/auth/get-session",
       headers: { "x-shared-key": record(created.body).key },
     });
     expect(response.status).toBe(configId === "shared-first" ? 200 : 401);
+
     results.push({ config: configId, status: response.status, error: record(response.body).code });
   }
+
   return results;
 });
 
@@ -334,6 +371,7 @@ compatScenario(
   async (ctx) => {
     await signUp(ctx);
     const keys = [];
+
     for (const configId of ["default", "secondary"]) {
       const response = await ctx.rawRequest({
         path: "/api/auth/api-key/create",
@@ -343,6 +381,7 @@ compatScenario(
       expect(response.status).toBe(200);
       keys.push(record(response.body));
     }
+
     const key = keys[1]!;
     const getWrong = await ctx.rawRequest({ path: `/api/auth/api-key/get?id=${key.id}` });
     const updateWrong = await ctx.rawRequest({
@@ -355,13 +394,18 @@ compatScenario(
       method: "POST",
       json: { keyId: key.id },
     });
-    for (const response of [getWrong, updateWrong, deleteWrong]) expect(response.status).toBe(404);
+
+    for (const response of [getWrong, updateWrong, deleteWrong]) {
+      expect(response.status).toBe(404);
+    }
+
     const all = record((await ctx.rawRequest({ path: "/api/auth/api-key/list" })).body);
     const scoped = record(
       (await ctx.rawRequest({ path: "/api/auth/api-key/list?configId=secondary" })).body,
     );
     expect(all.total).toBe(2);
     expect(scoped.total).toBe(1);
+
     return {
       errors: [getWrong, updateWrong, deleteWrong],
       allNames: all.apiKeys.map((value: any) => value.name),
@@ -378,6 +422,7 @@ compatScenario("api-key organization ownership rejects unrelated users", async (
     json: { name: "Fleet", slug: ctx.uniqueToken("fleet") },
   });
   expect(organization.status).toBe(200);
+
   const organizationId = record(organization.body).id;
   const created = await ctx.rawRequest({
     path: "/api/auth/api-key/create",
@@ -385,21 +430,27 @@ compatScenario("api-key organization ownership rejects unrelated users", async (
     json: { configId: "organization", organizationId, name: "org-key" },
   });
   expect(created.status).toBe(200);
+
   const key = record(created.body);
   expect(key.referenceId).toBe(organizationId);
+
   await signUp(ctx, "outsider");
   const unrelated = await ctx.rawRequest({
     actor: "outsider",
     path: `/api/auth/api-key/get?configId=organization&id=${key.id}`,
   });
   expect(unrelated.status).toBe(403);
+
   const verified = await verify(ctx, key.key, { configId: "organization" });
   expect(verified.valid).toBe(true);
+
   const listed = await ctx.rawRequest({
     path: `/api/auth/api-key/list?organizationId=${organizationId}`,
   });
   expect(record(listed.body).total).toBe(1);
+
   const memberErrors = [];
+
   for (const role of ["member", "admin"]) {
     await signUp(ctx, role);
     const invited = await ctx.rawRequest({
@@ -408,6 +459,7 @@ compatScenario("api-key organization ownership rejects unrelated users", async (
       json: { organizationId, email: ctx.uniqueEmail(`api-key-server-${role}`), role },
     });
     expect(invited.status).toBe(200);
+
     const accepted = await ctx.rawRequest({
       actor: role,
       path: "/api/auth/organization/accept-invitation",
@@ -415,14 +467,17 @@ compatScenario("api-key organization ownership rejects unrelated users", async (
       json: { invitationId: record(invited.body).id },
     });
     expect(accepted.status).toBe(200);
+
     const denied = await ctx.rawRequest({
       actor: role,
       path: `/api/auth/api-key/get?configId=organization&id=${key.id}`,
     });
     expect(denied.status).toBe(403);
     expect(record(denied.body).code).toBe("INSUFFICIENT_API_KEY_PERMISSIONS");
+
     memberErrors.push(denied);
   }
+
   const serverCreated = await ctx.rawRequest({
     path: "/__test/api-key/create",
     method: "POST",
@@ -430,6 +485,7 @@ compatScenario("api-key organization ownership rejects unrelated users", async (
   });
   expect(serverCreated.status).toBe(200);
   expect(record(serverCreated.body).referenceId).toBe(organizationId);
+
   return {
     unrelated,
     memberErrors,

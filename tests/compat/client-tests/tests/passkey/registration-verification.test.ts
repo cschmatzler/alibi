@@ -1,9 +1,11 @@
 import { expect } from "bun:test";
+
 import { passkeyClient } from "@better-auth/passkey/client";
 import { type CBORType, decodeCBOR, decodePartialCBOR, encodeCBOR } from "@levischuck/tiny-cbor";
 import { createAuthClient } from "better-auth/client";
 import { Cookie } from "tough-cookie";
 import { z } from "zod";
+
 import { Authenticator } from "../../support/authenticator";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
@@ -14,8 +16,11 @@ function registration(value: any): any {
   expect(Buffer.from(JSON.stringify(clientData)).toString("base64url")).toBe(
     value.response.clientDataJSON,
   );
+
   const encoded = Buffer.from(value.response.attestationObject, "base64url");
-  let decoded: CBORType, length: number;
+  let decoded: CBORType;
+  let length: number;
+
   try {
     [decoded, length] = decodePartialCBOR(Uint8Array.from(encoded), 0);
   } catch {
@@ -29,9 +34,11 @@ function registration(value: any): any {
       },
     };
   }
-  const prefix = Buffer.from(encodeCBOR(decoded)),
-    canonical = prefix.length === length && encoded.subarray(0, length).equals(prefix),
-    remainder = encoded.subarray(length);
+
+  const prefix = Buffer.from(encodeCBOR(decoded));
+  const canonical = prefix.length === length && encoded.subarray(0, length).equals(prefix);
+  const remainder = encoded.subarray(length);
+
   if (canonical) {
     expect(prefix.length).toBe(length);
     expect(encoded.subarray(0, length).equals(prefix)).toBe(true);
@@ -40,15 +47,25 @@ function registration(value: any): any {
     expect(Buffer.from(encoded.toString("base64"), "base64").equals(encoded)).toBe(true);
     expect(Buffer.concat([encoded.subarray(0, length), remainder]).equals(encoded)).toBe(true);
   }
+
   function cbor(value: CBORType, key?: string | number): unknown {
-    if (value instanceof Map) return [...value].map(([key, child]) => [key, cbor(child, key)]);
-    if (value instanceof Uint8Array)
+    if (value instanceof Map) {
+      return [...value].map(([key, child]) => [key, cbor(child, key)]);
+    }
+
+    if (value instanceof Uint8Array) {
       return key === "sig"
         ? { token: Buffer.from(value).toString("base64url") }
         : Buffer.from(value).toString("base64");
-    if (Array.isArray(value)) return value.map((child) => cbor(child));
+    }
+
+    if (Array.isArray(value)) {
+      return value.map((child) => cbor(child));
+    }
+
     return value;
   }
+
   return {
     ...value,
     response: {
@@ -62,14 +79,17 @@ function registration(value: any): any {
     },
   };
 }
+
 function authentication(value: any, options: any): any {
   const clientData = JSON.parse(Buffer.from(value.response.clientDataJSON, "base64url").toString());
   expect(Buffer.from(JSON.stringify(clientData)).toString("base64url")).toBe(
     value.response.clientDataJSON,
   );
   expect(value.response.userHandle).toBe(options.user.id);
+
   const generatedId = Buffer.from(value.response.userHandle, "base64url").toString();
   expect(Buffer.from(generatedId).toString("base64url")).toBe(value.response.userHandle);
+
   return {
     ...value,
     response: {
@@ -80,9 +100,10 @@ function authentication(value: any, options: any): any {
     },
   };
 }
+
 async function setup(ctx: ScenarioContext, profile: FixtureProfile = "passkey-first") {
-  const requests: any[] = [],
-    authenticationRequests: any[] = [];
+  const requests: any[] = [];
+  const authenticationRequests: any[] = [];
   const make = (name: string) =>
     createAuthClient({
       baseURL: `${ctx.baseURL}${authProfilePath(profile)}`,
@@ -90,22 +111,28 @@ async function setup(ctx: ScenarioContext, profile: FixtureProfile = "passkey-fi
       fetchOptions: {
         customFetchImpl: async (input, init) => {
           const request = new Request(input, init);
-          if (new URL(request.url).pathname.endsWith("/passkey/verify-registration"))
+
+          if (new URL(request.url).pathname.endsWith("/passkey/verify-registration")) {
             requests.push(await request.clone().json());
-          if (new URL(request.url).pathname.endsWith("/passkey/verify-authentication"))
+          }
+
+          if (new URL(request.url).pathname.endsWith("/passkey/verify-authentication")) {
             authenticationRequests.push(await request.clone().json());
+          }
+
           return ctx.actor(name, profile).fetch(request);
         },
       },
     });
-  const owner = make("registration-owner"),
-    foreign = make("registration-foreign");
+  const owner = make("registration-owner");
+  const foreign = make("registration-foreign");
   const signup = await owner.signUp.email({
     email: ctx.uniqueEmail("registration-owner"),
     name: "Registration Owner",
     password: "password123",
   });
   expect(signup.error).toBeNull();
+
   let foreignCookies: string[] = [];
   const foreignSignup = await foreign.signUp.email(
     {
@@ -120,6 +147,7 @@ async function setup(ctx: ScenarioContext, profile: FixtureProfile = "passkey-fi
     },
   );
   expect(foreignSignup.error).toBeNull();
+
   const context = ctx.uniqueToken("source-registration");
   const enrollmentResponse = await ctx
     .actor("registration-owner", profile)
@@ -129,11 +157,13 @@ async function setup(ctx: ScenarioContext, profile: FixtureProfile = "passkey-fi
       body: JSON.stringify({ context, mode: "normal", userId: foreignSignup.data!.user.id }),
     });
   expect(enrollmentResponse.status).toBe(200);
+
   const enrollment = await enrollmentResponse.json();
   expect(enrollment.userId).toBe(signup.data!.user.id);
+
   await owner.signOut();
-  const before = await ctx.readUserState({ userId: signup.data!.user.id }),
-    foreignBefore = await ctx.readUserState({ userId: foreignSignup.data!.user.id });
+  const before = await ctx.readUserState({ userId: signup.data!.user.id });
+  const foreignBefore = await ctx.readUserState({ userId: foreignSignup.data!.user.id });
   const events = async () => {
     const response = await ctx.rawRequest({ path: "/__test/passkey-registration-events" });
     expect(response.status).toBe(200);
@@ -182,20 +212,21 @@ async function setup(ctx: ScenarioContext, profile: FixtureProfile = "passkey-fi
     foreignHeaders,
   };
 }
+
 for (const mode of [
   "none-uv-absent",
   "packed-uv-absent",
   "packed-uv-absent-backed",
   "eddsa-none-uv-absent",
   "eddsa-packed-uv-absent",
-] as const)
+] as const) {
   compatScenario(
     `passkey ${mode} registration verifies genuine credential before callback session and signed authentication`,
     async (ctx) => {
-      const fixture = await setup(ctx),
-        options = await fixture.options(),
-        registrationOptions = options.data,
-        device = new Authenticator(mode.startsWith("eddsa") ? "Ed25519" : "ES256");
+      const fixture = await setup(ctx);
+      const options = await fixture.options();
+      const registrationOptions = options.data;
+      const device = new Authenticator(mode.startsWith("eddsa") ? "Ed25519" : "ES256");
       const backed = mode.endsWith("backed");
       const response = {
         ...device.register(options.data, ctx.baseURL, {
@@ -226,6 +257,7 @@ for (const mode of [
         user: { id: fixture.signup.data!.user.id },
         session: { userId: fixture.signup.data!.user.id },
       });
+
       const events = await fixture.events();
       expect(events).toHaveLength(2);
       expect(events[1]).toMatchObject({
@@ -238,32 +270,39 @@ for (const mode of [
       });
       expect(events[1]!.clientData).toEqual(fixture.requests[0].response);
       expect(fixture.requests[0].response).toEqual(response);
+
       const current = await fixture.owner.getSession();
       expect(current.data?.user.id).toBe(fixture.signup.data!.user.id);
+
       const registeredSession = z
         .object({ session: z.object({ id: z.string(), token: z.string() }) })
         .parse(accepted.data);
       expect(current.data?.session.id).toBe(registeredSession.session.id);
       expect(current.data?.session.token).toBe(registeredSession.session.token);
+
       const listed = await fixture.owner.$fetch("/passkey/list-user-passkeys", { method: "GET" });
       expect(listed.data).toMatchObject([{ credentialID: response.id, counter: 0 }]);
+
       const replay = await fixture.owner.$fetch("/passkey/verify-registration", {
         method: "POST",
         body: { response, createSession: true },
       });
       expect(replay.error).toMatchObject({ status: 400, code: "CHALLENGE_NOT_FOUND" });
       expect(await fixture.events()).toEqual([]);
+
       const enrolled = await fixture.state();
       expect(enrolled).toMatchObject({
         passkeys: [{ userId: fixture.signup.data!.user.id, counter: 0 }],
         sessions: { count: 1 },
         challenges: { count: 0 },
       });
+
       await fixture.owner.signOut();
       const challenge = await fixture.owner.$fetch("/passkey/generate-authenticate-options", {
         method: "GET",
       });
       expect(challenge.error).toBeNull();
+
       const authenticated = await fixture.owner.$fetch("/passkey/verify-authentication", {
         method: "POST",
         body: {
@@ -279,13 +318,16 @@ for (const mode of [
         user: { id: fixture.signup.data!.user.id },
         session: { userId: fixture.signup.data!.user.id },
       });
+
       const authenticatedCurrent = await fixture.owner.getSession();
       expect(authenticatedCurrent.data?.user.id).toBe(fixture.signup.data!.user.id);
+
       const authenticatedSession = z
         .object({ session: z.object({ id: z.string(), token: z.string() }) })
         .parse(authenticated.data);
       expect(authenticatedCurrent.data?.session.id).toBe(authenticatedSession.session.id);
       expect(authenticatedCurrent.data?.session.token).toBe(authenticatedSession.session.token);
+
       const authenticatedList = await fixture.owner.$fetch("/passkey/list-user-passkeys", {
         method: "GET",
       });
@@ -298,15 +340,20 @@ for (const mode of [
           backedUp: backed,
         },
       ]);
+
       const authenticationFailures = [];
+
       if (mode === "eddsa-packed-uv-absent") {
-        const beforeFailure = await fixture.state(),
-          ownerBeforeFailure = await ctx.readUserState({ userId: fixture.signup.data!.user.id });
+        const beforeFailure = await fixture.state();
+        const ownerBeforeFailure = await ctx.readUserState({
+          userId: fixture.signup.data!.user.id,
+        });
         for (const failure of ["signature", "signature-length"] as const) {
           const options = await fixture.owner.$fetch("/passkey/generate-authenticate-options", {
             method: "GET",
           });
           expect(options.error).toBeNull();
+
           const proof = device.authenticate(options.data, ctx.baseURL, {
             userVerified: false,
             counter: 2,
@@ -317,22 +364,26 @@ for (const mode of [
             body: { response: proof },
           });
           expect(denied.error).toMatchObject({ status: 401, code: "AUTHENTICATION_FAILED" });
+
           const replay = await fixture.owner.$fetch("/passkey/verify-authentication", {
             method: "POST",
             body: { response: proof },
           });
           expect(replay.error).toMatchObject({ status: 400, code: "CHALLENGE_NOT_FOUND" });
+
           const state = await fixture.state();
           expect(state).toEqual(beforeFailure);
           expect(await ctx.readUserState({ userId: fixture.signup.data!.user.id })).toEqual(
             ownerBeforeFailure,
           );
+
           const original = fixture.authenticationRequests.at(-2);
           expect(original).toEqual({ response: proof });
           expect(fixture.authenticationRequests.at(-1)).toEqual(original);
           expect(Buffer.from(proof.response.signature, "base64url")).toHaveLength(
             failure === "signature" ? 64 : 1,
           );
+
           authenticationFailures.push({
             failure,
             options,
@@ -343,6 +394,7 @@ for (const mode of [
           });
         }
       }
+
       const ownerAfter = await ctx.readUserState({ userId: fixture.signup.data!.user.id });
       const after = await fixture.state();
       expect(after).toMatchObject({
@@ -350,8 +402,10 @@ for (const mode of [
         sessions: { count: 1 },
         challenges: { count: 0 },
       });
+
       const foreignAfter = await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id });
       expect(foreignAfter).toEqual(fixture.foreignBefore);
+
       return {
         signup: fixture.signup,
         foreignSignup: fixture.foreignSignup,
@@ -384,13 +438,15 @@ for (const mode of [
     },
     ["POST /passkey/verify-registration", "POST /passkey/verify-authentication"],
   );
+}
 
 compatScenario(
   "passkey registration rejects actual packed signature failures malformed proofs flags origins and wrong owner before writes",
   async (ctx) => {
-    const fixture = await setup(ctx),
-      device = new Authenticator(),
-      outputs = [];
+    const fixture = await setup(ctx);
+    const device = new Authenticator();
+    const outputs = [];
+
     for (const mode of [
       "signature",
       "signature-der",
@@ -440,9 +496,8 @@ compatScenario(
         flags,
       );
       let cookies: string[] = [];
-      const result = await (mode.endsWith("foreign-owner")
-        ? fixture.foreign
-        : fixture.owner
+      const result = await (
+        mode.endsWith("foreign-owner") ? fixture.foreign : fixture.owner
       ).$fetch("/passkey/verify-registration", {
         method: "POST",
         body: { response, createSession: true },
@@ -463,6 +518,7 @@ compatScenario(
           : "FAILED_TO_VERIFY_REGISTRATION",
       });
       expect(cookies).toEqual([]);
+
       const events = await fixture.events();
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({
@@ -470,12 +526,14 @@ compatScenario(
         context: fixture.context,
         userId: fixture.signup.data!.user.id,
       });
+
       const replay = await fixture.owner.$fetch("/passkey/verify-registration", {
         method: "POST",
         body: { response, createSession: true },
       });
       expect(replay.error).toMatchObject({ status: 400, code: "CHALLENGE_NOT_FOUND" });
       expect(await fixture.events()).toEqual([]);
+
       const state = await fixture.state();
       expect(state).toEqual({ passkeys: [], sessions: { count: 0 }, challenges: { count: 0 } });
       expect(await ctx.readUserState({ userId: fixture.signup.data!.user.id })).toEqual(
@@ -484,8 +542,10 @@ compatScenario(
       expect(await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id })).toEqual(
         fixture.foreignBefore,
       );
+
       outputs.push({ mode, options, result, cookies, events, replay, state });
     }
+
     return {
       signup: fixture.signup,
       foreignSignup: fixture.foreignSignup,
@@ -501,13 +561,13 @@ compatScenario(
   ["POST /passkey/verify-registration"],
 );
 
-for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
+for (const algorithm of ["Ed448", "Ed25519Curve8"] as const) {
   compatScenario(
     `passkey ${algorithm} none enrollment retains original owner while genuine and invalid signed authentication reject before writes`,
     async (ctx) => {
-      const fixture = await setup(ctx),
-        options = await fixture.options(),
-        device = new Authenticator(algorithm);
+      const fixture = await setup(ctx);
+      const options = await fixture.options();
+      const device = new Authenticator(algorithm);
       const initialCounter = algorithm === "Ed25519Curve8" ? 25 : 0;
       const proof = {
         ...device.register(options.data, ctx.baseURL, {
@@ -516,11 +576,16 @@ for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
         }),
         userId: fixture.foreignSignup.data!.user.id,
       };
+
       if (algorithm === "Ed25519Curve8") {
         const attestation = decodeCBOR(
           Uint8Array.from(Buffer.from(proof.response.attestationObject, "base64url")),
         );
-        if (!(attestation instanceof Map)) throw new Error("actual attestation required");
+
+        if (!(attestation instanceof Map)) {
+          throw new Error("actual attestation required");
+        }
+
         const data = Buffer.from(attestation.get("authData") as Uint8Array);
         data[32] = data[32]! | 0x80;
         attestation.set(
@@ -542,6 +607,7 @@ for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
           "base64url",
         );
       }
+
       const accepted = await fixture.owner.$fetch("/passkey/verify-registration", {
         method: "POST",
         body: {
@@ -559,16 +625,21 @@ for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
         user: { id: fixture.signup.data!.user.id },
         session: { userId: fixture.signup.data!.user.id },
       });
+
       if (algorithm === "Ed25519Curve8") {
         const [decoded] = decodePartialCBOR(
           Uint8Array.from(Buffer.from(proof.response.attestationObject, "base64url")),
           0,
         );
         const attestation = decoded as Map<string, CBORType>;
-        const data = Buffer.from(attestation.get("authData") as Uint8Array),
-          start = 55 + data.readUInt16BE(53),
-          [rawKey] = decodePartialCBOR(Uint8Array.from(data.subarray(start)), 0);
-        if (!(rawKey instanceof Map)) throw new Error("actual raw key required");
+        const data = Buffer.from(attestation.get("authData") as Uint8Array);
+        const start = 55 + data.readUInt16BE(53);
+        const [rawKey] = decodePartialCBOR(Uint8Array.from(data.subarray(start)), 0);
+
+        if (!(rawKey instanceof Map)) {
+          throw new Error("actual raw key required");
+        }
+
         expect(rawKey.get(1)).toBe(1);
         expect(rawKey.get(3)).toBe(-8);
         expect(rawKey.get(-1)).toBe(8);
@@ -577,6 +648,7 @@ for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
         ).toEqual(Buffer.from(encodeCBOR(rawKey)));
         expect(accepted.data).not.toHaveProperty("credential");
       }
+
       const events = await fixture.events();
       expect(events).toHaveLength(2);
       expect(events[1]).toMatchObject({
@@ -591,49 +663,58 @@ for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
         userId: fixture.foreignSignup.data!.user.id,
         context: "foreign-context",
       });
+
       const current = await fixture.owner.getSession();
       expect(current.data?.user.id).toBe(fixture.signup.data!.user.id);
+
       const issued = z
         .object({ session: z.object({ id: z.string(), token: z.string() }) })
         .parse(accepted.data);
       expect(current.data?.session.id).toBe(issued.session.id);
       expect(current.data?.session.token).toBe(issued.session.token);
+
       const listed = await fixture.owner.$fetch("/passkey/list-user-passkeys", { method: "GET" });
       expect(listed.data).toMatchObject([
         { credentialID: proof.id, userId: fixture.signup.data!.user.id, counter: initialCounter },
       ]);
+
       const replay = await fixture.owner.$fetch("/passkey/verify-registration", {
         method: "POST",
         body: { response: proof, createSession: true },
       });
       expect(replay.error).toMatchObject({ status: 400, code: "CHALLENGE_NOT_FOUND" });
       expect(await fixture.events()).toEqual([]);
+
       await fixture.owner.signOut();
-      const enrolled = await fixture.state(),
-        ownerBefore = await ctx.readUserState({ userId: fixture.signup.data!.user.id });
+      const enrolled = await fixture.state();
+      const ownerBefore = await ctx.readUserState({ userId: fixture.signup.data!.user.id });
       expect(enrolled).toMatchObject({
         passkeys: [{ userId: fixture.signup.data!.user.id, counter: initialCounter }],
         sessions: { count: 0 },
         challenges: { count: 0 },
       });
+
       const authenticator = createAuthClient({
         baseURL: `${ctx.baseURL}${authProfilePath("passkey-auth-accept")}`,
         plugins: [passkeyClient()],
         fetchOptions: {
           customFetchImpl: async (input, init) => {
             const request = new Request(input, init);
-            if (new URL(request.url).pathname.endsWith("/passkey/verify-authentication"))
+            if (new URL(request.url).pathname.endsWith("/passkey/verify-authentication")) {
               fixture.authenticationRequests.push(await request.clone().json());
+            }
             return ctx.actor("ed448-authentication", "passkey-auth-accept").fetch(request);
           },
         },
       });
       const attempts = [];
+
       for (const mode of ["genuine", "signature", "length"] as const) {
         const challenge = await authenticator.$fetch("/passkey/generate-authenticate-options", {
           method: "GET",
         });
         expect(challenge.error).toBeNull();
+
         const assertion = device.authenticate(challenge.data, ctx.baseURL, {
           userVerified: false,
           counter: initialCounter + 1,
@@ -646,6 +727,7 @@ for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
         expect(Buffer.from(assertion.response.signature, "base64url")).toHaveLength(
           mode === "length" ? 1 : algorithm === "Ed448" ? 114 : 64,
         );
+
         let cookies: string[] = [];
         const denied = await authenticator.$fetch("/passkey/verify-authentication", {
           method: "POST",
@@ -656,6 +738,7 @@ for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
         });
         expect(denied.error).toMatchObject({ status: 400, code: "AUTHENTICATION_FAILED" });
         expect(cookies).toEqual([]);
+
         const replay = await authenticator.$fetch("/passkey/verify-authentication", {
           method: "POST",
           body: { response: assertion },
@@ -664,11 +747,13 @@ for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
         expect(fixture.authenticationRequests.at(-2)).toEqual({ response: assertion });
         expect(fixture.authenticationRequests.at(-1)).toEqual({ response: assertion });
         expect(await fixture.events()).toEqual([]);
+
         const authenticationEvents = await ctx.rawRequest({
           path: "/__test/passkey-authentication-events",
         });
         expect(authenticationEvents.status).toBe(200);
         expect(authenticationEvents.body).toEqual([]);
+
         const state = await fixture.state();
         expect(state).toEqual(enrolled);
         expect(await ctx.readUserState({ userId: fixture.signup.data!.user.id })).toEqual(
@@ -677,6 +762,7 @@ for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
         expect(await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id })).toEqual(
           fixture.foreignBefore,
         );
+
         attempts.push({
           mode,
           challenge,
@@ -688,6 +774,7 @@ for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
           state,
         });
       }
+
       return {
         signup: fixture.signup,
         foreignSignup: fixture.foreignSignup,
@@ -715,34 +802,49 @@ for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
     },
     ["POST /passkey/verify-registration", "POST /passkey/verify-authentication"],
   );
+}
 
-for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
+for (const algorithm of ["Ed448", "Ed25519Curve8"] as const) {
   compatScenario(
     `passkey ${algorithm} packed self attestation rejects genuine false and malformed signatures before callback enrollment or session`,
     async (ctx) => {
-      const fixture = await setup(ctx),
-        device = new Authenticator(algorithm),
-        attempts = [];
+      const fixture = await setup(ctx);
+      const device = new Authenticator(algorithm);
+      const attempts = [];
+
       for (const mode of ["genuine", "signature", "length"] as const) {
-        const options = await fixture.options(),
-          proof = device.register(options.data, ctx.baseURL, {
-            userVerified: false,
-            attestation: "packed",
-            ...(mode === "signature"
-              ? { badSignature: true }
-              : mode === "length"
-                ? { malformedSignature: true }
-                : {}),
-          });
+        const options = await fixture.options();
+        const proof = device.register(options.data, ctx.baseURL, {
+          userVerified: false,
+          attestation: "packed",
+          ...(mode === "signature"
+            ? { badSignature: true }
+            : mode === "length"
+              ? { malformedSignature: true }
+              : {}),
+        });
         const attestation = decodeCBOR(
           Uint8Array.from(Buffer.from(proof.response.attestationObject, "base64url")),
         );
-        if (!(attestation instanceof Map)) throw new Error("actual attestation map required");
+
+        if (!(attestation instanceof Map)) {
+          throw new Error("actual attestation map required");
+        }
+
         const statement = attestation.get("attStmt");
-        if (!(statement instanceof Map)) throw new Error("actual statement map required");
+
+        if (!(statement instanceof Map)) {
+          throw new Error("actual statement map required");
+        }
+
         const signature = statement.get("sig");
-        if (!(signature instanceof Uint8Array)) throw new Error("actual signature bytes required");
+
+        if (!(signature instanceof Uint8Array)) {
+          throw new Error("actual signature bytes required");
+        }
+
         expect(signature).toHaveLength(mode === "length" ? 1 : algorithm === "Ed448" ? 114 : 64);
+
         let cookies: string[] = [];
         const denied = await fixture.owner.$fetch("/passkey/verify-registration", {
           method: "POST",
@@ -753,6 +855,7 @@ for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
         });
         expect(denied.error).toMatchObject({ status: 500, code: "FAILED_TO_VERIFY_REGISTRATION" });
         expect(cookies).toEqual([]);
+
         const events = await fixture.events();
         expect(events).toHaveLength(1);
         expect(events[0]).toMatchObject({
@@ -761,12 +864,14 @@ for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
           context: fixture.context,
         });
         expect(fixture.requests.at(-1)).toEqual({ response: proof, createSession: true });
+
         const replay = await fixture.owner.$fetch("/passkey/verify-registration", {
           method: "POST",
           body: { response: proof, createSession: true },
         });
         expect(replay.error).toMatchObject({ status: 400, code: "CHALLENGE_NOT_FOUND" });
         expect(await fixture.events()).toEqual([]);
+
         const state = await fixture.state();
         expect(state).toEqual({ passkeys: [], sessions: { count: 0 }, challenges: { count: 0 } });
         expect(await ctx.readUserState({ userId: fixture.signup.data!.user.id })).toEqual(
@@ -775,8 +880,10 @@ for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
         expect(await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id })).toEqual(
           fixture.foreignBefore,
         );
+
         attempts.push({ mode, options, denied, cookies, events, replay, state });
       }
+
       return {
         signup: fixture.signup,
         foreignSignup: fixture.foreignSignup,
@@ -791,13 +898,15 @@ for (const algorithm of ["Ed448", "Ed25519Curve8"] as const)
     },
     ["POST /passkey/verify-registration"],
   );
+}
 
 compatScenario(
   "passkey raw curve8 none admission validates the actual ceremony before callback persistence and owner issuance",
   async (ctx) => {
-    const fixture = await setup(ctx),
-      device = new Authenticator("Ed25519Curve8"),
-      attempts = [];
+    const fixture = await setup(ctx);
+    const device = new Authenticator("Ed25519Curve8");
+    const attempts = [];
+
     for (const mode of [
       "presence",
       "backup-flags",
@@ -850,20 +959,26 @@ compatScenario(
         Uint8Array.from(Buffer.from(proof.response.attestationObject, "base64url")),
       ) as Map<string, CBORType>;
       let data = Buffer.from(attestation.get("authData") as Uint8Array);
+
       if (mode === "key-nonminimal") {
         const start = 55 + data.readUInt16BE(53) + 8;
         expect(data[start]).toBe(0x58);
         expect(data[start + 1]).toBe(32);
+
         data = Buffer.concat([
           data.subarray(0, start),
           Buffer.from([0x59, 0, 32]),
           data.subarray(start + 2),
         ]);
       }
-      if (mode === "authdata-tail") data = Buffer.concat([data, Buffer.from([0])]);
+
+      if (mode === "authdata-tail") {
+        data = Buffer.concat([data, Buffer.from([0])]);
+      }
+
       if (mode.startsWith("extensions")) {
         data[32] = data[32]! | 0x80;
-        if (mode !== "extensions-missing")
+        if (mode !== "extensions-missing") {
           data = Buffer.concat([
             data,
             Buffer.from(
@@ -876,12 +991,24 @@ compatScenario(
               ),
             ),
           ]);
-        if (mode === "extensions-tail") data = Buffer.concat([data, Buffer.from([0])]);
+        }
+        if (mode === "extensions-tail") {
+          data = Buffer.concat([data, Buffer.from([0])]);
+        }
       }
+
       attestation.set("authData", data);
-      if (mode === "statement") attestation.set("attStmt", new Map([["unexpected", true]]));
-      if (mode === "statement-null") attestation.set("attStmt", null);
+
+      if (mode === "statement") {
+        attestation.set("attStmt", new Map([["unexpected", true]]));
+      }
+
+      if (mode === "statement-null") {
+        attestation.set("attStmt", null);
+      }
+
       proof.response.attestationObject = Buffer.from(encodeCBOR(attestation)).toString("base64url");
+
       if (mode === "outer-indefinite") {
         const encoded = Buffer.from(proof.response.attestationObject, "base64url");
         expect(encoded[0]).toBe(0xa3);
@@ -891,17 +1018,20 @@ compatScenario(
           Buffer.from([0xff]),
         ]).toString("base64url");
       }
+
       if (mode === "statement-indefinite") {
-        const encoded = Buffer.from(proof.response.attestationObject, "base64url"),
-          label = Buffer.from(encodeCBOR("attStmt")),
-          start = encoded.indexOf(label) + label.length;
+        const encoded = Buffer.from(proof.response.attestationObject, "base64url");
+        const label = Buffer.from(encodeCBOR("attStmt"));
+        const start = encoded.indexOf(label) + label.length;
         expect(encoded[start]).toBe(0xa0);
+
         proof.response.attestationObject = Buffer.concat([
           encoded.subarray(0, start),
           Buffer.from([0x9f, 0xff]),
           encoded.subarray(start + 1),
         ]).toString("base64url");
       }
+
       if (
         mode === "duplicate-fmt" ||
         mode === "duplicate-auth-data" ||
@@ -910,6 +1040,7 @@ compatScenario(
       ) {
         const encoded = Buffer.from(proof.response.attestationObject, "base64url");
         expect(encoded[0]).toBe(0xa3);
+
         const key =
           mode === "duplicate-fmt"
             ? "fmt"
@@ -926,9 +1057,11 @@ compatScenario(
           Buffer.from(encodeCBOR(value)),
         ]).toString("base64url");
       }
+
       if (mode.endsWith("collision")) {
         const encoded = Buffer.from(proof.response.attestationObject, "base64url");
         expect(encoded[0]).toBe(0xa3);
+
         const extra =
           mode === "numeric-map-key-collision"
             ? [1, 9, 0xfa, 0x3f, 0x80, 0, 0, 9]
@@ -941,11 +1074,13 @@ compatScenario(
           Buffer.from(extra),
         ]).toString("base64url");
       }
+
       if (mode === "finite-half-statement" || mode === "huge-integer-statement") {
-        const encoded = Buffer.from(proof.response.attestationObject, "base64url"),
-          label = Buffer.from(encodeCBOR("attStmt")),
-          start = encoded.indexOf(label) + label.length;
+        const encoded = Buffer.from(proof.response.attestationObject, "base64url");
+        const label = Buffer.from(encodeCBOR("attStmt"));
+        const start = encoded.indexOf(label) + label.length;
         expect(encoded[start]).toBe(0xa0);
+
         const value =
           mode === "finite-half-statement"
             ? [0xf9, 0x3c, 0x00]
@@ -956,12 +1091,25 @@ compatScenario(
           encoded.subarray(start + 1),
         ]).toString("base64url");
       }
+
       const cd = JSON.parse(Buffer.from(proof.response.clientDataJSON, "base64url").toString());
-      if (mode === "client-type") cd.type = "webauthn.get";
-      if (mode === "token-binding") cd.tokenBinding = { status: "unexpected" };
+
+      if (mode === "client-type") {
+        cd.type = "webauthn.get";
+      }
+
+      if (mode === "token-binding") {
+        cd.tokenBinding = { status: "unexpected" };
+      }
+
       proof.response.clientDataJSON = Buffer.from(JSON.stringify(cd)).toString("base64url");
-      if (mode === "credential-type") proof.type = "password";
+
+      if (mode === "credential-type") {
+        proof.type = "password";
+      }
+
       let expired: unknown = null;
+
       if (mode === "expired") {
         const clock = await ctx.rawRequest({
           path: "/__test/passkey-challenge-clock",
@@ -970,8 +1118,10 @@ compatScenario(
         });
         expect(clock.status).toBe(200);
         expect(clock.body).toEqual({ updated: true });
+
         expired = clock;
       }
+
       let cookies: string[] = [];
       const denied = await (mode === "foreign-owner" ? fixture.foreign : fixture.owner).$fetch(
         "/passkey/verify-registration",
@@ -994,6 +1144,7 @@ compatScenario(
               : "FAILED_TO_VERIFY_REGISTRATION",
       });
       expect(cookies).toEqual([]);
+
       const events = await fixture.events();
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({
@@ -1002,12 +1153,14 @@ compatScenario(
         userId: fixture.signup.data!.user.id,
       });
       expect(fixture.requests.at(-1)).toEqual({ response: proof, createSession: true });
+
       const replay = await fixture.owner.$fetch("/passkey/verify-registration", {
         method: "POST",
         body: { response: proof, createSession: true },
       });
       expect(replay.error).toMatchObject({ status: 400, code: "CHALLENGE_NOT_FOUND" });
       expect(await fixture.events()).toEqual([]);
+
       const state = await fixture.state();
       expect(state).toEqual({ passkeys: [], sessions: { count: 0 }, challenges: { count: 0 } });
       expect(await ctx.readUserState({ userId: fixture.signup.data!.user.id })).toEqual(
@@ -1016,8 +1169,10 @@ compatScenario(
       expect(await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id })).toEqual(
         fixture.foreignBefore,
       );
+
       attempts.push({ mode, options, expired, denied, cookies, events, replay, state });
     }
+
     return {
       signup: fixture.signup,
       foreignSignup: fixture.foreignSignup,
@@ -1036,8 +1191,9 @@ compatScenario(
 compatScenario(
   "passkey raw none source iterable extensions and primitive statements preserve actual enrollment and callbacks",
   async (ctx) => {
-    const fixture = await setup(ctx),
-      outputs = [];
+    const fixture = await setup(ctx);
+    const outputs = [];
+
     for (const mode of [
       "statement-array",
       "statement-string",
@@ -1046,12 +1202,11 @@ compatScenario(
       "tag-statement",
       "lossy-text-key",
     ] as const) {
-      const options = await fixture.options(),
-        proof = new Authenticator("Ed25519Curve8", Buffer.from(`compat-raw-none-${mode}`)).register(
-          options.data,
-          ctx.baseURL,
-          { userVerified: false },
-        );
+      const options = await fixture.options();
+      const proof = new Authenticator(
+        "Ed25519Curve8",
+        Buffer.from(`compat-raw-none-${mode}`),
+      ).register(options.data, ctx.baseURL, { userVerified: false });
       const attestation = decodeCBOR(
         Uint8Array.from(Buffer.from(proof.response.attestationObject, "base64url")),
       ) as Map<string, CBORType>;
@@ -1081,11 +1236,13 @@ compatScenario(
             : 9,
       );
       proof.response.attestationObject = Buffer.from(encodeCBOR(attestation)).toString("base64url");
+
       if (mode === "infinite-half-statement" || mode === "tag-statement") {
-        const encoded = Buffer.from(proof.response.attestationObject, "base64url"),
-          label = Buffer.from(encodeCBOR("attStmt")),
-          start = encoded.indexOf(label) + label.length;
+        const encoded = Buffer.from(proof.response.attestationObject, "base64url");
+        const label = Buffer.from(encodeCBOR("attStmt"));
+        const start = encoded.indexOf(label) + label.length;
         expect(encoded[start]).toBe(9);
+
         const value = mode === "infinite-half-statement" ? [0xf9, 0x7c, 0x00] : [0xd8, 0x63, 0x09];
         proof.response.attestationObject = Buffer.concat([
           encoded.subarray(0, start),
@@ -1093,6 +1250,7 @@ compatScenario(
           encoded.subarray(start + 1),
         ]).toString("base64url");
       }
+
       if (mode === "lossy-text-key") {
         const encoded = Buffer.from(proof.response.attestationObject, "base64url");
         expect(encoded[0]).toBe(0xa3);
@@ -1102,6 +1260,7 @@ compatScenario(
           Buffer.from([0x61, 0xff, 0x09]),
         ]).toString("base64url");
       }
+
       const result = await fixture.owner.$fetch("/passkey/verify-registration", {
         method: "POST",
         body: { response: proof, createSession: true },
@@ -1114,6 +1273,7 @@ compatScenario(
         user: { id: fixture.signup.data!.user.id },
         session: { userId: fixture.signup.data!.user.id },
       });
+
       const events = await fixture.events();
       expect(events).toHaveLength(2);
       expect(events[1]).toMatchObject({
@@ -1123,19 +1283,22 @@ compatScenario(
       });
       expect(events[1]!.clientData).toEqual(proof);
       expect(fixture.requests.at(-1)).toEqual({ response: proof, createSession: true });
-      const current = await fixture.owner.getSession(),
-        issued = z
-          .object({ session: z.object({ id: z.string(), token: z.string() }) })
-          .parse(result.data);
+
+      const current = await fixture.owner.getSession();
+      const issued = z
+        .object({ session: z.object({ id: z.string(), token: z.string() }) })
+        .parse(result.data);
       expect(current.data?.session.id).toBe(issued.session.id);
       expect(current.data?.session.token).toBe(issued.session.token);
       expect(current.data?.user.id).toBe(fixture.signup.data!.user.id);
+
       const replay = await fixture.owner.$fetch("/passkey/verify-registration", {
         method: "POST",
         body: { response: proof, createSession: true },
       });
       expect(replay.error).toMatchObject({ status: 400, code: "CHALLENGE_NOT_FOUND" });
       expect(await fixture.events()).toEqual([]);
+
       await fixture.owner.signOut();
       const state = await fixture.state();
       const stored = z
@@ -1159,6 +1322,7 @@ compatScenario(
       expect(await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id })).toEqual(
         fixture.foreignBefore,
       );
+
       outputs.push({
         mode,
         options,
@@ -1171,6 +1335,7 @@ compatScenario(
         state,
       });
     }
+
     return {
       signup: fixture.signup,
       foreignSignup: fixture.foreignSignup,
@@ -1186,7 +1351,10 @@ compatScenario(
   ["POST /passkey/verify-registration"],
 );
 
-for (const profile of ["passkey-first-trusted-origin", "passkey-first-configured-origin"] as const)
+for (const profile of [
+  "passkey-first-trusted-origin",
+  "passkey-first-configured-origin",
+] as const) {
   compatScenario(
     `passkey raw none ${profile} verifies current request origin and configured precedence`,
     async (ctx) => {
@@ -1218,9 +1386,10 @@ for (const profile of ["passkey-first-trusted-origin", "passkey-first-configured
           })
           .parse(response.body).rows;
       };
-      const fixture = await setup(ctx, profile),
-        configured = profile === "passkey-first-configured-origin",
-        observations = [];
+      const fixture = await setup(ctx, profile);
+      const configured = profile === "passkey-first-configured-origin";
+      const observations = [];
+
       for (const mode of [
         "base-proof-alternate-header",
         "alternate-proof-base-header",
@@ -1228,11 +1397,13 @@ for (const profile of ["passkey-first-trusted-origin", "passkey-first-configured
         "base-control",
         "alternate-control",
       ] as const) {
-        const before = await fixture.state(),
-          beforeRows = await storedRows(fixture.signup.data!.user.id),
-          foreignRows = await storedRows(fixture.foreignSignup.data!.user.id),
-          ownerBefore = await ctx.readUserState({ userId: fixture.signup.data!.user.id }),
-          foreignBefore = await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id });
+        const before = await fixture.state();
+        const beforeRows = await storedRows(fixture.signup.data!.user.id);
+        const foreignRows = await storedRows(fixture.foreignSignup.data!.user.id);
+        const ownerBefore = await ctx.readUserState({ userId: fixture.signup.data!.user.id });
+        const foreignBefore = await ctx.readUserState({
+          userId: fixture.foreignSignup.data!.user.id,
+        });
         const options = await fixture.options();
         const proofOrigin =
           mode === "alternate-proof-base-header" ||
@@ -1284,7 +1455,9 @@ for (const profile of ["passkey-first-trusted-origin", "passkey-first-configured
           userId: fixture.foreignSignup.data!.user.id,
           context: "forged-body-origin-context",
         });
+
         let current: unknown = null;
+
         if (accepted) {
           expect(result.error, `${profile}:${mode}`).toBeNull();
           expect(result.data).toMatchObject({
@@ -1302,13 +1475,15 @@ for (const profile of ["passkey-first-trusted-origin", "passkey-first-configured
             context: fixture.context,
           });
           expect(events[1]!.clientData).toEqual(proof);
-          const session = await fixture.owner.getSession(),
-            issued = z
-              .object({ session: z.object({ id: z.string(), token: z.string() }) })
-              .parse(result.data);
+
+          const session = await fixture.owner.getSession();
+          const issued = z
+            .object({ session: z.object({ id: z.string(), token: z.string() }) })
+            .parse(result.data);
           expect(session.data?.user.id).toBe(fixture.signup.data!.user.id);
           expect(session.data?.session.id).toBe(issued.session.id);
           expect(session.data?.session.token).toBe(issued.session.token);
+
           current = ctx.snapshot(session);
         } else {
           expect(result.error, `${profile}:${mode}`).toMatchObject({
@@ -1325,6 +1500,7 @@ for (const profile of ["passkey-first-trusted-origin", "passkey-first-configured
             ownerBefore,
           );
         }
+
         const replay = await fixture.owner.$fetch("/passkey/verify-registration", {
           method: "POST",
           headers: { origin: requestOrigin },
@@ -1332,7 +1508,11 @@ for (const profile of ["passkey-first-trusted-origin", "passkey-first-configured
         });
         expect(replay.error).toMatchObject({ status: 400, code: "CHALLENGE_NOT_FOUND" });
         expect(await fixture.events()).toEqual([]);
-        if (accepted) await fixture.owner.signOut();
+
+        if (accepted) {
+          await fixture.owner.signOut();
+        }
+
         const after = await fixture.state();
         expect(after).toMatchObject({ sessions: { count: 0 }, challenges: { count: 0 } });
         expect(await ctx.readUserState({ userId: fixture.signup.data!.user.id })).toEqual(
@@ -1341,8 +1521,10 @@ for (const profile of ["passkey-first-trusted-origin", "passkey-first-configured
         expect(await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id })).toEqual(
           foreignBefore,
         );
+
         const rows = await storedRows(fixture.signup.data!.user.id);
         expect(await storedRows(fixture.foreignSignup.data!.user.id)).toEqual(foreignRows);
+
         if (accepted) {
           expect(rows).toHaveLength(beforeRows.length + 1);
           expect(rows.find((row) => row.credentialID === proof.id)).toMatchObject({
@@ -1354,6 +1536,7 @@ for (const profile of ["passkey-first-trusted-origin", "passkey-first-configured
           expect(after).toEqual(before);
           expect(rows).toEqual(beforeRows);
         }
+
         observations.push({
           mode,
           proofOrigin: { url: proofOrigin },
@@ -1376,6 +1559,7 @@ for (const profile of ["passkey-first-trusted-origin", "passkey-first-configured
           foreignAfter: await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id }),
         });
       }
+
       return {
         alternate,
         profile,
@@ -1388,6 +1572,7 @@ for (const profile of ["passkey-first-trusted-origin", "passkey-first-configured
     },
     ["POST /passkey/verify-registration"],
   );
+}
 
 // Primary raw-key authority owner. Original COSE tags and signed bytes are
 // retained; typed siblings exercise the same state/callback lifecycle.
@@ -1399,12 +1584,12 @@ for (const [attestation, algorithm, statementAlgorithm] of [
   ["packed", "Ed25519", -8],
   ["packed", "ES256", -7],
   ["packed", "Ed25519Alg7", -8],
-] as const)
+] as const) {
   compatScenario(
     `passkey raw authority ${algorithm} ${attestation}${attestation === "packed" && algorithm === "Ed25519Alg7" && statementAlgorithm === -8 ? " statement8" : ""} preserves signed tags and full lifecycle`,
     async (ctx) => {
-      const fixture = await setup(ctx),
-        device = new Authenticator(algorithm);
+      const fixture = await setup(ctx);
+      const device = new Authenticator(algorithm);
       const rows = async (userId: string) => {
         const result = await ctx.rawRequest({
           path: `/__test/passkey-registration-state?userId=${encodeURIComponent(userId)}`,
@@ -1414,6 +1599,7 @@ for (const [attestation, algorithm, statementAlgorithm] of [
       };
       const foreignRows = await rows(fixture.foreignSignup.data!.user.id);
       const outputs: any[] = [];
+
       for (const failure of [
         "owner",
         "rp",
@@ -1462,17 +1648,20 @@ for (const [attestation, algorithm, statementAlgorithm] of [
                 : 500,
         });
         expect(cookies).toEqual([]);
+
         const events = await fixture.events();
         expect(events).toHaveLength(1);
         expect(events[0]!.stage).toBe("resolved");
+
         const replay = await fixture.owner.$fetch("/passkey/verify-registration", {
           method: "POST",
           body: { response: proof, createSession: true },
         });
         expect(replay.error).toMatchObject({ status: 400, code: "CHALLENGE_NOT_FOUND" });
         expect(await fixture.events()).toEqual([]);
-        const state = await fixture.state(),
-          ownerRows = await rows(fixture.signup.data!.user.id);
+
+        const state = await fixture.state();
+        const ownerRows = await rows(fixture.signup.data!.user.id);
         expect(ownerRows).toEqual({ rows: [] });
         expect(state).toEqual({ passkeys: [], sessions: { count: 0 }, challenges: { count: 0 } });
         expect(await ctx.readUserState({ userId: fixture.signup.data!.user.id })).toEqual(
@@ -1482,6 +1671,7 @@ for (const [attestation, algorithm, statementAlgorithm] of [
           fixture.foreignBefore,
         );
         expect(await rows(fixture.foreignSignup.data!.user.id)).toEqual(foreignRows);
+
         outputs.push({
           failure,
           options,
@@ -1494,13 +1684,14 @@ for (const [attestation, algorithm, statementAlgorithm] of [
           ownerRows,
         });
       }
-      const options = await fixture.options(),
-        proof = device.register(options.data, ctx.baseURL, {
-          attestation,
-          statementAlgorithm,
-          userVerified: false,
-          counter: 25,
-        });
+
+      const options = await fixture.options();
+      const proof = device.register(options.data, ctx.baseURL, {
+        attestation,
+        statementAlgorithm,
+        userVerified: false,
+        counter: 25,
+      });
       const accepted = await fixture.owner.$fetch("/passkey/verify-registration", {
         method: "POST",
         body: {
@@ -1511,6 +1702,7 @@ for (const [attestation, algorithm, statementAlgorithm] of [
         },
       });
       expect(accepted.error).toBeNull();
+
       const events = await fixture.events();
       expect(events).toHaveLength(2);
       expect(events[1]!.clientData).toEqual(proof);
@@ -1519,10 +1711,12 @@ for (const [attestation, algorithm, statementAlgorithm] of [
         context: fixture.context,
         counter: 25,
       });
+
       const saved = await rows(fixture.signup.data!.user.id);
       expect(saved).toMatchObject({
         rows: [{ credentialID: proof.id, userId: fixture.signup.data!.user.id, counter: 25 }],
       });
+
       const attestationObject = decodeCBOR(
         Uint8Array.from(Buffer.from(proof.response.attestationObject, "base64url")),
       ) as Map<string, CBORType>;
@@ -1531,15 +1725,18 @@ for (const [attestation, algorithm, statementAlgorithm] of [
       expect(Buffer.from(authData.subarray(keyStart)).toString("base64")).toBe(
         (saved as any).rows[0].publicKey,
       );
+
       const key = decodeCBOR(
         Uint8Array.from(Buffer.from((saved as any).rows[0].publicKey, "base64")),
       );
       expect(key).toBeInstanceOf(Map);
       expect((key as Map<number, CBORType>).get(3)).toBe(algorithm === "Ed25519" ? -8 : -7);
       expect((key as Map<number, CBORType>).get(-1)).toBe(algorithm === "ES256" ? 1 : 6);
+
       const current = await fixture.owner.getSession();
       expect(current.data?.user.id).toBe(fixture.signup.data!.user.id);
       expect(current.data?.session.token).toBe((accepted.data as any).session.token);
+
       await fixture.owner.signOut();
       const authClient = (actor: string) =>
         createAuthClient({
@@ -1550,14 +1747,15 @@ for (const [attestation, algorithm, statementAlgorithm] of [
               ctx.actor(actor, "passkey-auth-accept").fetch(input, init),
           },
         });
-      const auth = authClient("raw-authority-auth"),
-        authForeign = authClient("raw-authority-foreign");
+      const auth = authClient("raw-authority-auth");
+      const authForeign = authClient("raw-authority-foreign");
       const authEvents = async () => {
         const result = await ctx.rawRequest({ path: "/__test/passkey-authentication-events" });
         expect(result.status).toBe(200);
         return result.body as any[];
       };
       const assertions: any[] = [];
+
       for (const failure of [
         "rp",
         "origin",
@@ -1569,13 +1767,14 @@ for (const [attestation, algorithm, statementAlgorithm] of [
         "stale-counter",
         "next-success",
       ]) {
-        const before = await rows(fixture.signup.data!.user.id),
-          ownerBefore = await ctx.readUserState({ userId: fixture.signup.data!.user.id }),
-          beforeEvents = await authEvents();
+        const before = await rows(fixture.signup.data!.user.id);
+        const ownerBefore = await ctx.readUserState({ userId: fixture.signup.data!.user.id });
+        const beforeEvents = await authEvents();
         const challenge = await auth.$fetch("/passkey/generate-authenticate-options", {
           method: "GET",
         });
         expect(challenge.error).toBeNull();
+
         const assertion = {
           ...device.authenticate(
             failure === "challenge"
@@ -1604,9 +1803,10 @@ for (const [attestation, algorithm, statementAlgorithm] of [
             cookies = response.headers.getSetCookie();
           },
         });
-        const success = failure === "success" || failure === "next-success",
-          afterEvents = await authEvents();
+        const success = failure === "success" || failure === "next-success";
+        const afterEvents = await authEvents();
         let session: any = null;
+
         if (success) {
           expect(result.error).toBeNull();
           expect(result.data).toMatchObject({
@@ -1615,6 +1815,7 @@ for (const [attestation, algorithm, statementAlgorithm] of [
           });
           expect(cookies.length).toBeGreaterThan(0);
           expect(afterEvents).toHaveLength(beforeEvents.length + 1);
+
           const event = afterEvents.at(-1);
           expect(event.clientData).toEqual(assertion);
           expect(event.facts).toMatchObject({
@@ -1627,9 +1828,11 @@ for (const [attestation, algorithm, statementAlgorithm] of [
           expect(event.storedPasskey.counter).toBe(failure === "success" ? 25 : 26);
           expect(event.sessions).toEqual({ count: 0 });
           expect(event.challenges).toEqual({ count: 0 });
+
           session = await auth.getSession();
           expect(session.data?.user.id).toBe(fixture.signup.data!.user.id);
           expect(session.data?.session.token).toBe((result.data as any).session.token);
+
           await auth.signOut();
         } else {
           expect(result.error).toMatchObject({
@@ -1646,25 +1849,31 @@ for (const [attestation, algorithm, statementAlgorithm] of [
             ownerBefore,
           );
         }
+
         const replay = await auth.$fetch("/passkey/verify-authentication", {
           method: "POST",
           body: { response: assertion },
         });
         expect(replay.error).toMatchObject({ status: 400, code: "CHALLENGE_NOT_FOUND" });
         expect(await authEvents()).toEqual(afterEvents);
+
         const after = await rows(fixture.signup.data!.user.id);
-        if (success)
+
+        if (success) {
           expect(after).toEqual({
             rows: (before as any).rows.map((row: any) => ({
               ...row,
               counter: failure === "success" ? 26 : 27,
             })),
           });
+        }
+
         expect(await rows(fixture.foreignSignup.data!.user.id)).toEqual(foreignRows);
         expect(await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id })).toEqual(
           fixture.foreignBefore,
         );
         expect(await authForeign.getSession()).toMatchObject({ data: null });
+
         assertions.push({
           failure,
           before,
@@ -1674,7 +1883,9 @@ for (const [attestation, algorithm, statementAlgorithm] of [
           result,
           cookies: cookies.map((raw) => {
             const cookie = Cookie.parse(raw);
-            if (!cookie) throw new Error("Invalid issued cookie");
+            if (!cookie) {
+              throw new Error("Invalid issued cookie");
+            }
             return {
               key: cookie.key,
               token: cookie.value,
@@ -1701,6 +1912,7 @@ for (const [attestation, algorithm, statementAlgorithm] of [
           after,
         });
       }
+
       return {
         algorithm,
         attestation,
@@ -1724,3 +1936,4 @@ for (const [attestation, algorithm, statementAlgorithm] of [
     },
     ["POST /passkey/verify-registration", "POST /passkey/verify-authentication"],
   );
+}

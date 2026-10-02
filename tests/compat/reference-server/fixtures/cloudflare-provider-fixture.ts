@@ -20,7 +20,8 @@ export function cloudflareProviderFixture(base: BetterAuthOptions) {
         contentType: request.headers.get("content-type"),
         body,
       });
-      if (path === "/token" || path === "/leak")
+
+      if (path === "/token" || path === "/leak") {
         return Response.json(
           control.tokenResponse ?? {
             access_token: "fixture-cloudflare-access",
@@ -36,7 +37,9 @@ export function cloudflareProviderFixture(base: BetterAuthOptions) {
               : {}),
           },
         );
-      if (path === "/user")
+      }
+
+      if (path === "/user") {
         return Response.json(
           control.envelope ?? {
             success: true,
@@ -49,6 +52,8 @@ export function cloudflareProviderFixture(base: BetterAuthOptions) {
           },
           { status: Number(control.profileStatus ?? 200) },
         );
+      }
+
       return new Response("Unknown trusted Cloudflare destination", { status: 404 });
     },
   });
@@ -56,19 +61,23 @@ export function cloudflareProviderFixture(base: BetterAuthOptions) {
   globalThis.fetch = (async (input, init) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
+
     if (
       url.href === "https://dash.cloudflare.com/oauth2/token" ||
       url.href === "https://api.cloudflare.com/client/v4/user"
-    )
+    ) {
       return previousFetch(
         new Request(
           `${transport.url}${url.pathname.endsWith("token") ? "token" : "user"}`,
           request,
         ),
       );
+    }
+
     return previousFetch(input, init);
   }) as typeof fetch;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
+
   for (const mode of [
     "default",
     "configured",
@@ -134,6 +143,7 @@ export function cloudflareProviderFixture(base: BetterAuthOptions) {
       }),
     );
   }
+
   return {
     profiles,
     reset() {
@@ -143,12 +153,20 @@ export function cloudflareProviderFixture(base: BetterAuthOptions) {
     },
     async handle(request: Request) {
       const path = new URL(request.url).pathname;
+
       if (path === "/__test/cloudflare/control" && request.method === "POST") {
         control = await request.json();
         return Response.json({ status: true });
       }
-      if (path === "/__test/cloudflare/receipts") return Response.json(receipts);
-      if (path === "/__test/cloudflare/mapper-receipts") return Response.json(mapperReceipts);
+
+      if (path === "/__test/cloudflare/receipts") {
+        return Response.json(receipts);
+      }
+
+      if (path === "/__test/cloudflare/mapper-receipts") {
+        return Response.json(mapperReceipts);
+      }
+
       return null;
     },
   };

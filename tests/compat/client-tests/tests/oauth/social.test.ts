@@ -4,10 +4,13 @@ function extractState(url: string | undefined) {
   if (!url) {
     throw new Error("missing OAuth URL");
   }
+
   const state = new URL(url).searchParams.get("state");
+
   if (!state) {
     throw new Error("missing OAuth state");
   }
+
   return state;
 }
 

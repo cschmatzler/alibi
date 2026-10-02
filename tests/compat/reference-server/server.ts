@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { Database } from "bun:sqlite";
+
 import { apiKey } from "@better-auth/api-key";
 import { passkey } from "@better-auth/passkey";
 import { type BetterAuthPlugin, betterAuth } from "better-auth";
@@ -21,6 +22,7 @@ import { createAccessControl } from "better-auth/plugins/access";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { organization } from "better-auth/plugins/organization";
 import { defaultStatements } from "better-auth/plugins/organization/access";
+
 import { additionalFieldsFixture } from "./fixtures/additional-fields-fixture";
 import { createAdminBannedMessageFixture } from "./fixtures/admin-banned-message-fixture";
 import { createAdminPermissionFixture } from "./fixtures/admin-permission-fixture";
@@ -625,48 +627,88 @@ const additionalFields = await additionalFieldsFixture(authOptions);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
-for (const [path, instance] of additionalFields.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of userLifecycleFixture.profiles)
+for (const [path, instance] of additionalFields.profiles) {
   verificationProfiles.set(path, instance);
-for (const [path, instance] of cloudflareFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of cognitoFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of dropboxFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of facebookFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of figmaFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of huggingfaceFixture.profiles)
+}
+for (const [path, instance] of userLifecycleFixture.profiles) {
   verificationProfiles.set(path, instance);
-for (const [path, instance] of kakaoFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of kickFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of atlassianFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of appleFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of socialProvidersFixture.profiles)
+}
+for (const [path, instance] of cloudflareFixture.profiles) {
   verificationProfiles.set(path, instance);
-for (const [path, instance] of anonymousProfiles.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of sessionCookieCacheProfiles.profiles)
+}
+for (const [path, instance] of cognitoFixture.profiles) {
   verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of dropboxFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of facebookFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of figmaFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of huggingfaceFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of kakaoFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of kickFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of atlassianFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of appleFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of socialProvidersFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of anonymousProfiles.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of sessionCookieCacheProfiles.profiles) {
+  verificationProfiles.set(path, instance);
+}
 const apiKeyBackground = await apiKeyBackgroundFixture(database, authOptions);
-for (const [path, instance] of apiKeyBackground.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of apiKeyBackground.profiles) {
+  verificationProfiles.set(path, instance);
+}
 const apiKeyGenerationFixture = createApiKeyGenerationFixture(database, authOptions);
 verificationProfiles.set(apiKeyGenerationFixture.path, apiKeyGenerationFixture.auth);
 const apiKeyOptionsFixture = createApiKeyOptionsFixture(database, authOptions);
 verificationProfiles.set(apiKeyOptionsFixture.path, apiKeyOptionsFixture.auth);
 const apiKeyHookFixture = createApiKeyHookFixture(database, authOptions);
 verificationProfiles.set(apiKeyHookFixture.path, apiKeyHookFixture.auth);
-for (const [path, instance] of siweFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of adminBannedMessageFixture.profiles)
+for (const [path, instance] of siweFixture.profiles) {
   verificationProfiles.set(path, instance);
-for (const [path, instance] of adminPermissionFixture.profiles)
+}
+for (const [path, instance] of adminBannedMessageFixture.profiles) {
   verificationProfiles.set(path, instance);
-for (const [path, instance] of customSessionFixture.profiles)
+}
+for (const [path, instance] of adminPermissionFixture.profiles) {
   verificationProfiles.set(path, instance);
-for (const [path, instance] of multipleSessionFixture.profiles)
+}
+for (const [path, instance] of customSessionFixture.profiles) {
   verificationProfiles.set(path, instance);
-for (const [path, instance] of bearerFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of dispatchFixture.profiles) verificationProfiles.set(path, instance);
-for (const [path, instance] of passkeyRegistration.profiles)
+}
+for (const [path, instance] of multipleSessionFixture.profiles) {
   verificationProfiles.set(path, instance);
-for (const [path, instance] of passkeyAuthentication.profiles)
+}
+for (const [path, instance] of bearerFixture.profiles) {
   verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of dispatchFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of passkeyRegistration.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of passkeyAuthentication.profiles) {
+  verificationProfiles.set(path, instance);
+}
 for (const name of [
   "email-verification-required",
   "email-verification-no-signup-mail",
@@ -717,7 +759,9 @@ for (const name of [
       secondaryStorage: {
         async get(key) {
           const entry = cache.get(key);
-          if (!entry) return null;
+          if (!entry) {
+            return null;
+          }
           if (entry.expiresAt <= Date.now()) {
             cache.delete(key);
             return null;
@@ -880,7 +924,9 @@ const twoFactorPolicyFixture = createTwoFactorPolicyFixture(authOptions, databas
 const twoFactorOtpFixture = createTwoFactorOtpFixture(authOptions, database);
 const twoFactorDeliveryFixture = createTwoFactorDeliveryFixture(authOptions, database);
 const physicalCookies = physicalCookieProfiles(authOptions, database);
-for (const [path, auth] of physicalCookies.profiles) verificationProfiles.set(path, auth);
+for (const [path, auth] of physicalCookies.profiles) {
+  verificationProfiles.set(path, auth);
+}
 const auth = betterAuth(authOptions);
 const errorPageAuth = betterAuth({
   ...authOptions,
@@ -1108,7 +1154,9 @@ async function waitForRolePolicy(promise: Promise<void>, message: string) {
       }),
     ]);
   } finally {
-    if (timer !== undefined) clearTimeout(timer);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
   }
 }
 
@@ -1161,7 +1209,9 @@ const teamProfiles = new Map(
                           const row = database
                             .query("SELECT name FROM organization WHERE id=?")
                             .get(organizationId) as { name: string } | null;
-                          if (!row) throw new Error("Organization not found");
+                          if (!row) {
+                            throw new Error("Organization not found");
+                          }
                           return row.name === "Two role budget" ? 2 : 1;
                         },
                       }
@@ -1214,11 +1264,14 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
   }
   if (url.pathname === "/__test/organization-state" && request.method === "GET") {
     const organizationId = url.searchParams.get("organizationId");
-    if (!organizationId)
+    if (!organizationId) {
       return jsonResponse({ message: "organizationId is required" }, { status: 400 });
+    }
     const profileName = url.searchParams.get("profile") ?? "org-teams";
     const selected = [...teamProfiles.entries()].find(([name]) => name === profileName)?.[1].auth;
-    if (!selected) return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
+    if (!selected) {
+      return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
+    }
     const { adapter } = await selected.$context;
     const where = [{ field: "organizationId", value: organizationId }];
     const sortBy = { field: "createdAt", direction: "asc" } as const;
@@ -1227,7 +1280,9 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
         adapter.findMany<Record<string, unknown>>({ model, where, sortBy, limit: 10000 }),
       ),
     );
-    if (!teams || !members || !invitations) throw new Error("Organization state query failed");
+    if (!teams || !members || !invitations) {
+      throw new Error("Organization state query failed");
+    }
     const roles =
       profileName === "org-teams-dynamic" || profileName.startsWith("org-roles-")
         ? await adapter.findMany<Record<string, unknown>>({
@@ -1273,13 +1328,17 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
     const body = await readJson(request);
     const profileName = typeof body?.profile === "string" ? body.profile : "org-teams";
     const selected = [...teamProfiles.entries()].find(([name]) => name === profileName)?.[1].auth;
-    if (!selected) return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
+    if (!selected) {
+      return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
+    }
     try {
       if (body?.operation === "orphan-organization" && typeof body.organizationId === "string") {
         const row = database
           .query("SELECT id FROM organization WHERE id=?")
           .get(body.organizationId);
-        if (!row) return jsonResponse({ message: "Organization not found" }, { status: 400 });
+        if (!row) {
+          return jsonResponse({ message: "Organization not found" }, { status: 400 });
+        }
         database.query("DELETE FROM organization WHERE id=?").run(body.organizationId);
         return jsonResponse({ removed: true });
       }
@@ -1291,10 +1350,11 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
           return jsonResponse({ message: "Role policy organization not found" }, { status: 400 });
         }
         if (body.stage === "arm") {
-          if (rolePolicyBarriers.has(body.organizationId))
+          if (rolePolicyBarriers.has(body.organizationId)) {
             return jsonResponse({ message: "Role policy already armed" }, { status: 400 });
-          const entered = Promise.withResolvers<void>(),
-            released = Promise.withResolvers<void>();
+          }
+          const entered = Promise.withResolvers<void>();
+          const released = Promise.withResolvers<void>();
           rolePolicyBarriers.set(body.organizationId, {
             entered: entered.promise,
             enter: entered.resolve,
@@ -1303,16 +1363,20 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
           });
         } else if (body.stage === "wait") {
           const barrier = rolePolicyBarriers.get(body.organizationId);
-          if (!barrier)
+          if (!barrier) {
             return jsonResponse({ message: "Role policy is not armed" }, { status: 400 });
+          }
           await waitForRolePolicy(barrier.entered, "Role policy entry timed out");
         } else if (body.stage === "release") {
           const barrier = rolePolicyBarriers.get(body.organizationId);
-          if (!barrier)
+          if (!barrier) {
             return jsonResponse({ message: "Role policy is not armed" }, { status: 400 });
+          }
           rolePolicyBarriers.delete(body.organizationId);
           barrier.release();
-        } else return jsonResponse({ message: "Invalid role policy stage" }, { status: 400 });
+        } else {
+          return jsonResponse({ message: "Invalid role policy stage" }, { status: 400 });
+        }
         return jsonResponse({ organizationId: body.organizationId, stage: body.stage });
       }
       if (
@@ -1350,13 +1414,17 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
           { field: "id", value: body.memberId },
         ];
         const member = await adapter.findOne<Record<string, unknown>>({ model: "member", where });
-        if (!member) return jsonResponse({ message: "Member not found" }, { status: 400 });
+        if (!member) {
+          return jsonResponse({ message: "Member not found" }, { status: 400 });
+        }
         const updated = await adapter.update<Record<string, unknown>>({
           model: "member",
           where,
           update: { role: body.role },
         });
-        if (!updated) throw new Error("Member role update failed");
+        if (!updated) {
+          throw new Error("Member role update failed");
+        }
         return jsonResponse({
           memberId: updated.id,
           organizationId: updated.organizationId,
@@ -1417,7 +1485,9 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       }
       return jsonResponse({ message: "Invalid organization operation" }, { status: 400 });
     } catch (error) {
-      if (error instanceof APIError) return jsonResponse(error.body, { status: error.statusCode });
+      if (error instanceof APIError) {
+        return jsonResponse(error.body, { status: error.statusCode });
+      }
       throw error;
     }
   }
@@ -1438,7 +1508,9 @@ const RESET_MODELS = [
 
 async function resetDatabaseState() {
   const { adapter } = await teamProfiles.get("org-teams")!.auth.$context;
-  for (const model of ["teamMember", "team"]) await adapter.deleteMany({ model, where: [] });
+  for (const model of ["teamMember", "team"]) {
+    await adapter.deleteMany({ model, where: [] });
+  }
   const roleAdapter = (await teamProfiles.get("org-teams-dynamic")!.auth.$context).adapter;
   await roleAdapter.deleteMany({ model: "organizationRole", where: [] });
   for (const model of RESET_MODELS) {
@@ -1455,17 +1527,21 @@ function controlRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 async function oneTimeTokenControl(request: Request, url: URL): Promise<Response | undefined> {
-  if (url.pathname !== "/__test/one-time-token" || request.method !== "POST") return;
+  if (url.pathname !== "/__test/one-time-token" || request.method !== "POST") {
+    return;
+  }
   const body: unknown = await readJson(request);
-  if (!controlRecord(body))
+  if (!controlRecord(body)) {
     return jsonResponse({ message: "invalid server operation" }, { status: 400 });
+  }
   const selected = ottProfiles.get(
     typeof body.profile === "string"
       ? (body.profile as (typeof OTT_PROFILE_NAMES)[number])
       : "ott-default",
   )?.auth;
-  if (!selected || body.operation !== "generate")
+  if (!selected || body.operation !== "generate") {
     return jsonResponse({ message: "invalid server operation" }, { status: 400 });
+  }
   return jsonResponse(await selected.api.generateOneTimeToken({ headers: request.headers }));
 }
 
@@ -1483,212 +1559,315 @@ const server = Bun.serve({
       }
       organizationTransport.observe(request);
       const rateLimitResponse = await rateLimitFixture.handle(request);
-      if (rateLimitResponse) return rateLimitResponse;
-      const clientIpResponse = await clientIpFixture.handle(request);
-      if (clientIpResponse) return clientIpResponse;
-      const anonymousControl = await anonymousProfiles.handle(request);
-      if (anonymousControl) return anonymousControl;
-      const proxyControl = await oauthProxyProfiles.handle(request);
-      if (proxyControl) return proxyControl;
-      const cloudflareControl = await cloudflareFixture.handle(request);
-      if (cloudflareControl) return cloudflareControl;
-      const facebookControl = await facebookFixture.handle(request);
-      if (facebookControl) return facebookControl;
-      const dropboxControl = await dropboxFixture.handle(request);
-      if (dropboxControl) return dropboxControl;
-      const figmaControl = await figmaFixture.handle(request);
-      if (figmaControl) return figmaControl;
-      const huggingfaceControl = await huggingfaceFixture.handle(request);
-      if (huggingfaceControl) return huggingfaceControl;
-      const kakaoControl = await kakaoFixture.handle(request);
-      if (kakaoControl) return kakaoControl;
-      const kickControl = await kickFixture.handle(request);
-      if (kickControl) return kickControl;
-      const cognitoControl = await cognitoFixture.handle(request);
-      if (cognitoControl) return cognitoControl;
-      const additionalControl = await additionalFields.handle(request);
-      if (additionalControl) return additionalControl;
-      const atlassianControl = await atlassianFixture.handle(request);
-      if (atlassianControl) return atlassianControl;
-      const appleControl = await appleFixture.handle(request);
-      if (appleControl) return appleControl;
-      const socialProviderControl = await socialProvidersFixture.handle(request);
-      if (socialProviderControl) return socialProviderControl;
-      const transportControl = await organizationTransport.handle(request, url);
-      if (transportControl) return transportControl;
-      if (url.pathname === "/__test/session-field-state")
-        return jsonResponse(sessionFieldsFixture.state(url.searchParams.get("email") ?? ""));
-      const cacheControl = await sessionCookieCacheProfiles.handle(request);
-      if (cacheControl) return cacheControl;
-      const lifecycleControl = await userLifecycleFixture.handle(request);
-      if (lifecycleControl) return lifecycleControl;
-      for (const [name, profile] of sessionFieldsFixture.profiles)
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
-          return profile.handler(request);
-      for (const [name, profile] of organizationCreationFixture.profiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
-          return profile.handler(request);
+      if (rateLimitResponse) {
+        return rateLimitResponse;
       }
-      for (const [name, profile] of organizationHooksFixture.profiles)
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+      const clientIpResponse = await clientIpFixture.handle(request);
+      if (clientIpResponse) {
+        return clientIpResponse;
+      }
+      const anonymousControl = await anonymousProfiles.handle(request);
+      if (anonymousControl) {
+        return anonymousControl;
+      }
+      const proxyControl = await oauthProxyProfiles.handle(request);
+      if (proxyControl) {
+        return proxyControl;
+      }
+      const cloudflareControl = await cloudflareFixture.handle(request);
+      if (cloudflareControl) {
+        return cloudflareControl;
+      }
+      const facebookControl = await facebookFixture.handle(request);
+      if (facebookControl) {
+        return facebookControl;
+      }
+      const dropboxControl = await dropboxFixture.handle(request);
+      if (dropboxControl) {
+        return dropboxControl;
+      }
+      const figmaControl = await figmaFixture.handle(request);
+      if (figmaControl) {
+        return figmaControl;
+      }
+      const huggingfaceControl = await huggingfaceFixture.handle(request);
+      if (huggingfaceControl) {
+        return huggingfaceControl;
+      }
+      const kakaoControl = await kakaoFixture.handle(request);
+      if (kakaoControl) {
+        return kakaoControl;
+      }
+      const kickControl = await kickFixture.handle(request);
+      if (kickControl) {
+        return kickControl;
+      }
+      const cognitoControl = await cognitoFixture.handle(request);
+      if (cognitoControl) {
+        return cognitoControl;
+      }
+      const additionalControl = await additionalFields.handle(request);
+      if (additionalControl) {
+        return additionalControl;
+      }
+      const atlassianControl = await atlassianFixture.handle(request);
+      if (atlassianControl) {
+        return atlassianControl;
+      }
+      const appleControl = await appleFixture.handle(request);
+      if (appleControl) {
+        return appleControl;
+      }
+      const socialProviderControl = await socialProvidersFixture.handle(request);
+      if (socialProviderControl) {
+        return socialProviderControl;
+      }
+      const transportControl = await organizationTransport.handle(request, url);
+      if (transportControl) {
+        return transportControl;
+      }
+      if (url.pathname === "/__test/session-field-state") {
+        return jsonResponse(sessionFieldsFixture.state(url.searchParams.get("email") ?? ""));
+      }
+      const cacheControl = await sessionCookieCacheProfiles.handle(request);
+      if (cacheControl) {
+        return cacheControl;
+      }
+      const lifecycleControl = await userLifecycleFixture.handle(request);
+      if (lifecycleControl) {
+        return lifecycleControl;
+      }
+      for (const [name, profile] of sessionFieldsFixture.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return profile.handler(request);
+        }
+      }
+      for (const [name, profile] of organizationCreationFixture.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
+          return profile.handler(request);
+        }
+      }
+      for (const [name, profile] of organizationHooksFixture.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
+          return profile.handler(request);
+        }
+      }
       for (const [name, profile] of organizationDeletionFixture.profiles) {
         const base = `/__test/profiles/${name}/api/auth`;
-        if (url.pathname === base || url.pathname.startsWith(base + "/"))
+        if (url.pathname === base || url.pathname.startsWith(base + "/")) {
           return profile.handler(request);
+        }
       }
       if (
         url.pathname === "/__test/organization-delete-hooks-configure" &&
         request.method === "POST"
-      )
+      ) {
         return organizationDeletionFixture.configure(
           (await request.json()) as Record<string, unknown>,
         );
-      if (url.pathname === "/__test/organization-delete-hooks-release" && request.method === "POST")
+      }
+      if (
+        url.pathname === "/__test/organization-delete-hooks-release" &&
+        request.method === "POST"
+      ) {
         return organizationDeletionFixture.release();
-      if (url.pathname === "/__test/organization-delete-hooks-state" && request.method === "GET")
+      }
+      if (url.pathname === "/__test/organization-delete-hooks-state" && request.method === "GET") {
         return organizationDeletionFixture.state(url.searchParams.get("waitFor"));
-      if (url.pathname === "/__test/organization-delete-hooks-server" && request.method === "POST")
+      }
+      if (
+        url.pathname === "/__test/organization-delete-hooks-server" &&
+        request.method === "POST"
+      ) {
         return organizationDeletionFixture.server(
           (await request.json()) as Record<string, unknown>,
           request.headers,
         );
-      if (url.pathname === "/__test/organization-hooks-configure" && request.method === "POST")
+      }
+      if (url.pathname === "/__test/organization-hooks-configure" && request.method === "POST") {
         return organizationHooksFixture.configure(
           (await request.json()) as Record<string, unknown>,
         );
-      for (const [name, profile] of organizationMembershipFixture.profiles)
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+      }
+      for (const [name, profile] of organizationMembershipFixture.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return profile.handler(request);
+        }
+      }
       if (
         url.pathname === "/__test/organization-membership-policy/state" &&
         request.method === "GET"
-      )
+      ) {
         return organizationMembershipFixture.state();
+      }
       if (
         url.pathname === "/__test/organization-membership-policy/configure" &&
         request.method === "POST"
-      )
+      ) {
         return organizationMembershipFixture.configure();
+      }
       if (
         url.pathname === "/__test/organization-membership-policy/server" &&
         request.method === "POST"
-      )
+      ) {
         return organizationMembershipFixture.server(request);
-      for (const [name, profile] of organizationInvitationFixture.profiles)
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+      }
+      for (const [name, profile] of organizationInvitationFixture.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return profile.handler(request);
+        }
+      }
       if (
         url.pathname === "/__test/organization-invitation-stage/configure" &&
         request.method === "POST"
-      )
+      ) {
         return organizationInvitationFixture.configure(await request.json());
+      }
       if (
         url.pathname === "/__test/organization-invitation-stage/release" &&
         request.method === "POST"
-      )
+      ) {
         return organizationInvitationFixture.release();
+      }
       if (
         url.pathname === "/__test/organization-invitation-stage/state" &&
         request.method === "GET"
-      )
+      ) {
         return organizationInvitationFixture.state(url.searchParams.get("waitFor"));
-      for (const [name, profile] of organizationAdditionFixture.profiles)
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+      }
+      for (const [name, profile] of organizationAdditionFixture.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return profile.handler(request);
+        }
+      }
       if (
         url.pathname === "/__test/organization-member-addition/configure" &&
         request.method === "POST"
-      )
+      ) {
         return organizationAdditionFixture.configure(
           (await request.json()) as Record<string, unknown>,
         );
+      }
       if (
         url.pathname === "/__test/organization-member-addition/release" &&
         request.method === "POST"
-      )
+      ) {
         return organizationAdditionFixture.release();
-      if (url.pathname === "/__test/organization-member-addition/state" && request.method === "GET")
+      }
+      if (
+        url.pathname === "/__test/organization-member-addition/state" &&
+        request.method === "GET"
+      ) {
         return organizationAdditionFixture.state(url.searchParams.get("waitFor"));
+      }
       if (
         url.pathname === "/__test/organization-member-addition/server" &&
         request.method === "POST"
-      )
+      ) {
         return organizationAdditionFixture.server(request);
-      if (url.pathname === "/__test/organization-member-addition/seed" && request.method === "POST")
+      }
+      if (
+        url.pathname === "/__test/organization-member-addition/seed" &&
+        request.method === "POST"
+      ) {
         return organizationAdditionFixture.seed((await request.json()) as Record<string, unknown>);
-      for (const [name, profile] of organizationMemberRemovalFixture.profiles)
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+      }
+      for (const [name, profile] of organizationMemberRemovalFixture.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return profile.handler(request);
+        }
+      }
       if (
         url.pathname === "/__test/organization-member-removal-hooks-configure" &&
         request.method === "POST"
-      )
+      ) {
         return organizationMemberRemovalFixture.configure(
           (await request.json()) as Record<string, unknown>,
         );
+      }
       if (
         url.pathname === "/__test/organization-member-removal-hooks-release" &&
         request.method === "POST"
-      )
+      ) {
         return organizationMemberRemovalFixture.release();
+      }
       if (
         url.pathname === "/__test/organization-member-removal-hooks-state" &&
         request.method === "GET"
-      )
+      ) {
         return organizationMemberRemovalFixture.state(url.searchParams.get("waitFor"));
+      }
       if (
         url.pathname === "/__test/organization-member-removal-hooks-server" &&
         request.method === "POST"
-      )
+      ) {
         return organizationMemberRemovalFixture.server(request);
-      if (url.pathname.startsWith("/__test/profiles/org-member-role-hooks/api/auth/"))
+      }
+      if (url.pathname.startsWith("/__test/profiles/org-member-role-hooks/api/auth/")) {
         return organizationMemberRoleFixture.auth.handler(request);
+      }
       if (
         url.pathname === "/__test/organization-member-role-hooks-configure" &&
         request.method === "POST"
-      )
+      ) {
         return organizationMemberRoleFixture.configure(
           (await request.json()) as Record<string, unknown>,
         );
+      }
       if (
         url.pathname === "/__test/organization-member-role-hooks-release" &&
         request.method === "POST"
-      )
+      ) {
         return organizationMemberRoleFixture.release();
+      }
       if (
         url.pathname === "/__test/organization-member-role-hooks-state" &&
         request.method === "GET"
-      )
+      ) {
         return organizationMemberRoleFixture.state(url.searchParams.get("waitFor"));
-      for (const [name, auth] of twoFactorPendingLookupFixture.profiles)
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+      }
+      for (const [name, auth] of twoFactorPendingLookupFixture.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return auth.handler(request);
-      if (url.pathname === "/__test/two-factor-pending-lookup" && request.method === "POST")
+        }
+      }
+      if (url.pathname === "/__test/two-factor-pending-lookup" && request.method === "POST") {
         return twoFactorPendingLookupFixture.control(
           (await request.json()) as Record<string, unknown>,
         );
-      if (url.pathname.startsWith("/__test/profiles/org-update-hooks/api/auth/"))
+      }
+      if (url.pathname.startsWith("/__test/profiles/org-update-hooks/api/auth/")) {
         return organizationUpdateFixture.auth.handler(request);
+      }
       if (
         url.pathname === "/__test/organization-update-hooks-configure" &&
         request.method === "POST"
-      )
+      ) {
         return organizationUpdateFixture.configure(
           (await request.json()) as Record<string, unknown>,
         );
-      if (url.pathname === "/__test/organization-update-storage" && request.method === "POST")
+      }
+      if (url.pathname === "/__test/organization-update-storage" && request.method === "POST") {
         return organizationUpdateFixture.storage((await request.json()) as Record<string, unknown>);
-      if (url.pathname === "/__test/organization-update-hooks-release" && request.method === "POST")
+      }
+      if (
+        url.pathname === "/__test/organization-update-hooks-release" &&
+        request.method === "POST"
+      ) {
         return organizationUpdateFixture.release();
-      if (url.pathname === "/__test/organization-update-hooks-state" && request.method === "GET")
+      }
+      if (url.pathname === "/__test/organization-update-hooks-state" && request.method === "GET") {
         return organizationUpdateFixture.state(url.searchParams.get("waitFor"));
-      if (url.pathname === "/__test/organization-hooks-release" && request.method === "POST")
+      }
+      if (url.pathname === "/__test/organization-hooks-release" && request.method === "POST") {
         return organizationHooksFixture.release();
-      if (url.pathname === "/__test/organization-hooks-state" && request.method === "GET")
+      }
+      if (url.pathname === "/__test/organization-hooks-state" && request.method === "GET") {
         return organizationHooksFixture.state(url.searchParams.get("waitFor"));
-      if (url.pathname === "/__test/organization-hooks-create" && request.method === "POST")
+      }
+      if (url.pathname === "/__test/organization-hooks-create" && request.method === "POST") {
         return organizationHooksFixture.server((await request.json()) as Record<string, unknown>);
+      }
       if (url.pathname === "/__test/organization-creation-state" && request.method === "GET") {
         return jsonResponse(
           organizationCreationFixture.state(
@@ -1708,14 +1887,17 @@ const server = Bun.serve({
           (await request.json()) as Record<string, unknown>,
         );
       }
-      for (const [name, profile] of deviceProfiles)
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+      for (const [name, profile] of deviceProfiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return profile.handler(request);
+        }
+      }
 
       if (url.pathname === "/__test/device-state" && request.method === "GET") {
         const deviceCode = url.searchParams.get("deviceCode");
-        if (!deviceCode)
+        if (!deviceCode) {
           return jsonResponse({ message: "deviceCode is required" }, { status: 400 });
+        }
         return jsonResponse(
           await authContext.adapter.findOne({
             model: "deviceCode",
@@ -1730,11 +1912,12 @@ const server = Bun.serve({
           typeof body.deviceCode !== "string" ||
           typeof body.expiresAt !== "string" ||
           !Number.isFinite(Date.parse(body.expiresAt))
-        )
+        ) {
           return jsonResponse(
             { message: "deviceCode and valid expiresAt are required" },
             { status: 400 },
           );
+        }
         await authContext.adapter.updateMany({
           model: "deviceCode",
           where: [{ field: "deviceCode", value: body.deviceCode }],
@@ -1744,8 +1927,9 @@ const server = Bun.serve({
       }
       if (url.pathname === "/__test/expire-invitation" && request.method === "POST") {
         const body = await readJson(request);
-        if (typeof body?.invitationId !== "string" || typeof body?.expiresAt !== "string")
+        if (typeof body?.invitationId !== "string" || typeof body?.expiresAt !== "string") {
           return jsonResponse({ message: "Invalid invitation clock" }, { status: 400 });
+        }
         const result = database
           .query("UPDATE invitation SET expiresAt = ? WHERE id = ?")
           .run(new Date(body.expiresAt).toISOString(), body.invitationId);
@@ -1755,13 +1939,17 @@ const server = Bun.serve({
       if (url.pathname === "/__test/secondary-session/control" && request.method === "POST") {
         const body = (await request.json()) as { profile: string; token: string; action: string };
         const cache = secondarySessionCaches.get(body.profile);
-        if (!cache) return Response.json({ error: "Unknown profile" }, { status: 400 });
+        if (!cache) {
+          return Response.json({ error: "Unknown profile" }, { status: 400 });
+        }
         if (body.action === "remove") {
           cache.delete(body.token);
           return Response.json(null);
         }
         const entry = cache.get(body.token);
-        if (entry && entry.expiresAt <= Date.now()) cache.delete(body.token);
+        if (entry && entry.expiresAt <= Date.now()) {
+          cache.delete(body.token);
+        }
         return Response.json({ present: cache.has(body.token) });
       }
       for (const [name, instance] of openApiInstances) {
@@ -1773,32 +1961,50 @@ const server = Bun.serve({
             headers: { "content-type": "application/json" },
           });
         }
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return instance.handler(request);
+        }
       }
       for (const [name, profile] of ottProfiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return profile.auth.handler(request);
+        }
       }
       const policyControl = await twoFactorPolicyFixture(request, url);
-      if (policyControl) return policyControl;
+      if (policyControl) {
+        return policyControl;
+      }
       const deliveryControl = await twoFactorDeliveryFixture(request, url);
-      if (deliveryControl) return deliveryControl;
+      if (deliveryControl) {
+        return deliveryControl;
+      }
       const otpControl = await twoFactorOtpFixture(request, url);
-      if (otpControl) return otpControl;
+      if (otpControl) {
+        return otpControl;
+      }
       const totpControl = await twoFactorTotpFixture(request, url);
-      if (totpControl) return totpControl;
+      if (totpControl) {
+        return totpControl;
+      }
       const ottControl = await oneTimeTokenControl(request, url);
-      if (ottControl) return ottControl;
+      if (ottControl) {
+        return ottControl;
+      }
 
       const teamResponse = await teamFixture(request, url);
-      if (teamResponse) return teamResponse;
+      if (teamResponse) {
+        return teamResponse;
+      }
 
       const siweResponse = await siweFixture.handle(request);
-      if (siweResponse) return siweResponse;
+      if (siweResponse) {
+        return siweResponse;
+      }
 
       const dispatchControl = dispatchFixture.handle(request);
-      if (dispatchControl) return dispatchControl;
+      if (dispatchControl) {
+        return dispatchControl;
+      }
       if (url.pathname === "/__test/lifecycle" && request.method === "GET") {
         const email = url.searchParams.get("email");
         const user = email
@@ -1839,64 +2045,89 @@ const server = Bun.serve({
       }
 
       const verificationStorageControl = await verificationStorageFixture.handle(request);
-      if (verificationStorageControl) return verificationStorageControl;
+      if (verificationStorageControl) {
+        return verificationStorageControl;
+      }
       for (const [name, profile] of verificationStorageFixture.profiles) {
         const path = `/__test/profiles/${name}/api/auth`;
-        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) {
           return verificationStorageFixture.profileHandler(profile, request);
+        }
       }
       const userValidationControl = await userValidationFixture.handle(request);
-      if (userValidationControl) return userValidationControl;
+      if (userValidationControl) {
+        return userValidationControl;
+      }
       for (const [name, profile] of userValidationFixture.profiles) {
         const path = `/__test/profiles/${name}/api/auth`;
-        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) {
           return profile.handler(request);
+        }
       }
       const compromisedPasswordControl = await compromisedPasswordFixture.handle(request);
-      if (compromisedPasswordControl) return compromisedPasswordControl;
+      if (compromisedPasswordControl) {
+        return compromisedPasswordControl;
+      }
       for (const [name, profile] of compromisedPasswordFixture.profiles) {
         const path = `/__test/profiles/${name}/api/auth`;
-        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) {
           return profile.handler(request);
+        }
       }
       const signupPolicyControl = await signupPolicyFixture.handle(request);
-      if (signupPolicyControl) return signupPolicyControl;
+      if (signupPolicyControl) {
+        return signupPolicyControl;
+      }
       for (const [name, profile] of signupPolicyFixture.profiles) {
         const path = `/__test/profiles/${name}/api/auth`;
-        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) {
           return profile.handler(request);
+        }
       }
       const captchaControl = await captchaFixture.handle(request);
-      if (captchaControl) return captchaControl;
+      if (captchaControl) {
+        return captchaControl;
+      }
       for (const [path, auth] of captchaFixture.profiles) {
-        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) {
           return auth.handler(request);
+        }
       }
       for (const [name, auth] of lastLoginMethodFixture.profiles) {
         const path = `/__test/profiles/${name}/api/auth`;
-        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) {
           return auth.handler(request);
+        }
       }
       for (const [name, auth] of jwtKeyringFixture.profiles) {
         const path = `/__test/profiles/${name}/api/auth`;
-        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) {
           return auth.handler(request);
+        }
       }
       const jwtKeyringControl = await jwtKeyringFixture.handle(request);
-      if (jwtKeyringControl) return jwtKeyringControl;
+      if (jwtKeyringControl) {
+        return jwtKeyringControl;
+      }
       for (const [name, auth] of remoteJwtFixture.profiles) {
         const path = `/__test/profiles/${name}/api/auth`;
-        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) {
           return auth.handler(request);
+        }
       }
       const remoteJwtControl = await remoteJwtFixture.handle(request);
-      if (remoteJwtControl) return remoteJwtControl;
+      if (remoteJwtControl) {
+        return remoteJwtControl;
+      }
       const lastLoginControl = await lastLoginMethodFixture.handle(request);
-      if (lastLoginControl) return lastLoginControl;
+      if (lastLoginControl) {
+        return lastLoginControl;
+      }
       for (const [name, profile] of jwtProfiles) {
         const path = `/__test/profiles/${name}/api/auth`;
-        if (url.pathname === path || url.pathname.startsWith(`${path}/`))
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) {
           return profile.auth.handler(request);
+        }
       }
       if (url.pathname === "/__test/jwks-state" && request.method === "GET") {
         const context = await jwtProfiles.get("jwt-default")!.auth.$context;
@@ -1928,8 +2159,9 @@ const server = Bun.serve({
           typeof body.id !== "string" ||
           typeof body.expiresAt !== "string" ||
           !Number.isFinite(Date.parse(body.expiresAt))
-        )
+        ) {
           return jsonResponse({ message: "id and valid expiresAt are required" }, { status: 400 });
+        }
         const context = await jwtProfiles.get("jwt-default")!.auth.$context;
         await context.adapter.updateMany({
           model: "jwks",
@@ -1940,17 +2172,21 @@ const server = Bun.serve({
       }
       if (url.pathname === "/__test/jwt" && request.method === "POST") {
         const body: unknown = await readJson(request);
-        if (!jwtRecord(body))
+        if (!jwtRecord(body)) {
           return jsonResponse({ message: "invalid server operation" }, { status: 400 });
+        }
         const selected = jwtProfiles.get(
           typeof body.profile === "string"
             ? (body.profile as (typeof JWT_PROFILE_NAMES)[number])
             : "jwt-default",
         )?.auth;
-        if (!selected) return jsonResponse({ message: "unknown fixture profile" }, { status: 400 });
-        if (body.operation === "sign" && jwtRecord(body.payload))
+        if (!selected) {
+          return jsonResponse({ message: "unknown fixture profile" }, { status: 400 });
+        }
+        if (body.operation === "sign" && jwtRecord(body.payload)) {
           return jsonResponse(await selected.api.signJWT({ body: { payload: body.payload } }));
-        if (body.operation === "verify" && typeof body.token === "string")
+        }
+        if (body.operation === "verify" && typeof body.token === "string") {
           return jsonResponse(
             await selected.api.verifyJWT({
               body: {
@@ -1959,6 +2195,7 @@ const server = Bun.serve({
               },
             }),
           );
+        }
         if (body.operation === "session-state" && typeof body.token === "string") {
           const context = await selected.$context;
           return jsonResponse(await context.internalAdapter.findSession(body.token));
@@ -2022,21 +2259,37 @@ const server = Bun.serve({
         return jsonResponse(await auth.api.updateApiKey({ body: await readJson(request) }));
       }
       const apiKeyBackgroundControl = await apiKeyBackground.control(request);
-      if (apiKeyBackgroundControl) return apiKeyBackgroundControl;
+      if (apiKeyBackgroundControl) {
+        return apiKeyBackgroundControl;
+      }
       const apiKeyGenerationControl = await apiKeyGenerationFixture.control(request);
-      if (apiKeyGenerationControl) return apiKeyGenerationControl;
+      if (apiKeyGenerationControl) {
+        return apiKeyGenerationControl;
+      }
       const apiKeyOptionsControl = await apiKeyOptionsFixture.control(request);
-      if (apiKeyOptionsControl) return apiKeyOptionsControl;
+      if (apiKeyOptionsControl) {
+        return apiKeyOptionsControl;
+      }
       const physicalCookieControl = physicalCookies.control(request);
-      if (physicalCookieControl) return physicalCookieControl;
+      if (physicalCookieControl) {
+        return physicalCookieControl;
+      }
       const serverEndpointControl = await serverEndpointFixture.control(request);
-      if (serverEndpointControl) return serverEndpointControl;
+      if (serverEndpointControl) {
+        return serverEndpointControl;
+      }
       const serverEndpointCacheControl = await serverEndpointCacheFixture.control(request);
-      if (serverEndpointCacheControl) return serverEndpointCacheControl;
+      if (serverEndpointCacheControl) {
+        return serverEndpointCacheControl;
+      }
       const serverEndpointVersionControl = await serverEndpointVersionFixture.control(request);
-      if (serverEndpointVersionControl) return serverEndpointVersionControl;
+      if (serverEndpointVersionControl) {
+        return serverEndpointVersionControl;
+      }
       const apiKeyHookControl = await apiKeyHookFixture.control(request);
-      if (apiKeyHookControl) return apiKeyHookControl;
+      if (apiKeyHookControl) {
+        return apiKeyHookControl;
+      }
       if (url.pathname === "/__test/api-key/verify" && request.method === "POST") {
         return jsonResponse(await auth.api.verifyApiKey({ body: await readJson(request) }));
       }
@@ -2051,10 +2304,12 @@ const server = Bun.serve({
           ) ?? null,
         );
       }
-      if (url.pathname === "/__test/phone-callbacks" && request.method === "GET")
+      if (url.pathname === "/__test/phone-callbacks" && request.method === "GET") {
         return jsonResponse(phoneFixture.callbacks);
-      if (url.pathname === "/__test/phone-consume-otp" && request.method === "POST")
+      }
+      if (url.pathname === "/__test/phone-consume-otp" && request.method === "POST") {
         return phoneFixture.consume(await readJson(request));
+      }
       if (url.pathname === "/__test/email-otp" && request.method === "GET") {
         return jsonResponse(
           emailOtpOutbox.get(`${url.searchParams.get("type")}:${url.searchParams.get("email")}`) ??
@@ -2073,39 +2328,45 @@ const server = Bun.serve({
       }
       if (url.pathname === "/__test/verification-state" && request.method === "POST") {
         const body: unknown = await readJson(request);
-        if (!body || typeof body !== "object" || Array.isArray(body))
+        if (!body || typeof body !== "object" || Array.isArray(body)) {
           return jsonResponse({ message: "invalid verification action" }, { status: 400 });
+        }
         const record = body as Record<string, unknown>;
-        if (typeof record.identifier !== "string" || typeof record.expiresAt !== "string")
+        if (typeof record.identifier !== "string" || typeof record.expiresAt !== "string") {
           return jsonResponse({ message: "invalid verification action" }, { status: 400 });
+        }
         const expiresAt = new Date(record.expiresAt);
-        if (record.action === "seed" && typeof record.value === "string")
+        if (record.action === "seed" && typeof record.value === "string") {
           await authContext.internalAdapter.createVerificationValue({
             identifier: record.identifier,
             value: record.value,
             expiresAt,
           });
-        else if (record.action === "expire")
+        } else if (record.action === "expire") {
           await authContext.adapter.updateMany({
             model: "verification",
             where: [{ field: "identifier", value: record.identifier }],
             update: { expiresAt },
           });
-        else return jsonResponse({ message: "invalid verification action" }, { status: 400 });
+        } else {
+          return jsonResponse({ message: "invalid verification action" }, { status: 400 });
+        }
         return jsonResponse({ status: true });
       }
       if (url.pathname === "/__test/server-api" && request.method === "POST") {
         const body: unknown = await readJson(request);
-        if (!body || typeof body !== "object" || Array.isArray(body))
+        if (!body || typeof body !== "object" || Array.isArray(body)) {
           return jsonResponse({ message: "invalid server operation" }, { status: 400 });
+        }
         const record = body as Record<string, unknown>;
         if (
           typeof record.email !== "string" ||
           !["sign-in", "email-verification", "forget-password", "change-email"].includes(
             String(record.type),
           )
-        )
+        ) {
           return jsonResponse({ message: "invalid server operation" }, { status: 400 });
+        }
         const type =
           record.type === "email-verification"
             ? "email-verification"
@@ -2116,19 +2377,23 @@ const server = Bun.serve({
                 : "sign-in";
         const selected =
           typeof record.profile === "string" ? otpProfiles.get(record.profile) : auth;
-        if (!selected) return jsonResponse({ message: "unknown fixture profile" }, { status: 400 });
+        if (!selected) {
+          return jsonResponse({ message: "unknown fixture profile" }, { status: 400 });
+        }
         try {
-          if (record.operation === "create-email-otp")
+          if (record.operation === "create-email-otp") {
             return jsonResponse(
               await selected.api.createVerificationOTP({ body: { email: record.email, type } }),
             );
-          if (record.operation === "get-email-otp")
+          }
+          if (record.operation === "get-email-otp") {
             return jsonResponse(
               await selected.api.getVerificationOTP({ query: { email: record.email, type } }),
             );
+          }
           if (record.operation === "race-email-otp" && typeof record.otp === "string") {
-            const email = record.email,
-              otp = record.otp;
+            const email = record.email;
+            const otp = record.otp;
             const results = await Promise.all(
               [0, 1].map(async () => {
                 const response = await selected.api.signInEmailOTP({
@@ -2143,7 +2408,7 @@ const server = Bun.serve({
             });
           }
         } catch (error) {
-          if (error instanceof APIError)
+          if (error instanceof APIError) {
             return jsonResponse(error.body, {
               status:
                 typeof error.status === "number"
@@ -2152,6 +2417,7 @@ const server = Bun.serve({
                     ? 400
                     : 500,
             });
+          }
           throw error;
         }
         return jsonResponse({ message: "unknown server operation" }, { status: 400 });
@@ -2214,8 +2480,9 @@ const server = Bun.serve({
           model: "member",
           where: memberWhere,
         });
-        if (!org || !member || member.organizationId !== org.id)
+        if (!org || !member || member.organizationId !== org.id) {
           return jsonResponse({ message: "Not found" }, { status: 404 });
+        }
         const createdAt = new Date(body.createdAt);
         await authContext.adapter.update({
           model: "organization",
@@ -2245,37 +2512,53 @@ const server = Bun.serve({
       }
 
       const authenticationControl = await passkeyAuthentication.handle(request);
-      if (authenticationControl) return authenticationControl;
+      if (authenticationControl) {
+        return authenticationControl;
+      }
       const enrollmentControl = await passkeyRegistration.handle(request);
-      if (enrollmentControl) return enrollmentControl;
+      if (enrollmentControl) {
+        return enrollmentControl;
+      }
       const passkeyControl = await passkeyControls(request);
-      if (passkeyControl) return passkeyControl;
+      if (passkeyControl) {
+        return passkeyControl;
+      }
 
       if (url.pathname === "/__test/expire-session" && request.method === "POST") {
         const body = await readJson(request);
-        if (typeof body?.token !== "string" || typeof body?.expiresAt !== "string")
+        if (typeof body?.token !== "string" || typeof body?.expiresAt !== "string") {
           return jsonResponse({ message: "Invalid session clock" }, { status: 400 });
+        }
         const result = database
           .query("UPDATE session SET expiresAt = ? WHERE token = ?")
           .run(new Date(body.expiresAt).toISOString(), body.token);
-        if (typeof body.createdAt === "string")
+        if (typeof body.createdAt === "string") {
           database
             .query("UPDATE session SET createdAt = ? WHERE token = ?")
             .run(new Date(body.createdAt).toISOString(), body.token);
+        }
         return jsonResponse({ updated: result.changes });
       }
 
       const adminBannedMessageResponse = adminBannedMessageFixture.handle(request);
-      if (adminBannedMessageResponse) return adminBannedMessageResponse;
+      if (adminBannedMessageResponse) {
+        return adminBannedMessageResponse;
+      }
       const adminRoleStateResponse = adminPermissionFixture.handle(request);
-      if (adminRoleStateResponse) return adminRoleStateResponse;
+      if (adminRoleStateResponse) {
+        return adminRoleStateResponse;
+      }
 
       if (url.pathname === "/__test/user-state" && request.method === "GET") {
         const userId = url.searchParams.get("userId");
-        if (!userId) return jsonResponse({ message: "userId is required" }, { status: 400 });
+        if (!userId) {
+          return jsonResponse({ message: "userId is required" }, { status: 400 });
+        }
         const profileName = url.searchParams.get("profile");
         const selected = profileName ? phoneFixture.profiles.get(profileName) : auth;
-        if (!selected) return jsonResponse({ message: "unknown fixture profile" }, { status: 400 });
+        if (!selected) {
+          return jsonResponse({ message: "unknown fixture profile" }, { status: 400 });
+        }
         const selectedContext = await selected.$context;
         const where = [{ field: "userId", value: userId }];
         const [user, accounts, sessions, twoFactor] = await Promise.all([
@@ -2623,35 +2906,49 @@ const server = Bun.serve({
       }
 
       for (const [name, instance] of phoneFixture.profiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return instance.handler(request);
+        }
       }
       const setPasswordResponse = await setPasswordFixture.handle(request);
-      if (setPasswordResponse) return setPasswordResponse;
-      for (const [name, instance] of setPasswordFixture.profiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
-          return instance.handler(request);
+      if (setPasswordResponse) {
+        return setPasswordResponse;
       }
-      if (url.pathname === "/__test/one-tap/jwks") return googleOneTapJwks();
-      if (url.pathname === "/__test/one-tap/state") return oneTapState(oneTapProfiles);
-      for (const [name, instance] of googleIdProfiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+      for (const [name, instance] of setPasswordFixture.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return instance.handler(request);
+        }
+      }
+      if (url.pathname === "/__test/one-tap/jwks") {
+        return googleOneTapJwks();
+      }
+      if (url.pathname === "/__test/one-tap/state") {
+        return oneTapState(oneTapProfiles);
+      }
+      for (const [name, instance] of googleIdProfiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
+          return instance.handler(request);
+        }
       }
       for (const [name, instance] of oneTapProfiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return instance.handler(request);
+        }
       }
       for (const [name, instance] of magicProfiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return instance.handler(request);
+        }
       }
       for (const [name, instance] of otpProfiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return instance.handler(request);
+        }
       }
       for (const [path, instance] of verificationProfiles) {
-        if (url.pathname.startsWith(`${path}/`)) return instance.handler(request);
+        if (url.pathname.startsWith(`${path}/`)) {
+          return instance.handler(request);
+        }
       }
       return auth.handler(request);
     } catch (error) {

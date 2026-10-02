@@ -1,22 +1,28 @@
 import { expect } from "bun:test";
+
 import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
+
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 const secret = ["compat", "test", "only", "key", "not", "real", "minimum", "32chars"].join("-");
 // Both scenario executions import the exact same genuine published ciphertext.
 const publishedImport = symmetricEncrypt({ key: secret, data: "published-import-access" });
+
 const wrongSecretImport = symmetricEncrypt({
   key: "wrong-actual-oauth-secret-32-chars",
   data: "wrong-secret-token",
 });
+
 type Row = Record<string, unknown>;
 type Store = { users: Row[]; accounts: Row[]; sessions: Row[]; receipts: Row[] };
+
 async function read(ctx: ScenarioContext): Promise<Store> {
   const result = await ctx.rawRequest({ path: "/__test/social-provider/state" });
   expect(result.status).toBe(200);
   return result.body as Store;
 }
+
 function observed(store: Store) {
   const cipher = (value: unknown) =>
     typeof value === "string" && value.length % 2 === 0 && /^[0-9a-f]+$/i.test(value)
@@ -50,16 +56,18 @@ function observed(store: Store) {
     }),
   };
 }
+
 async function setup(ctx: ScenarioContext) {
   const profile = "social-gitlab-encrypted";
-  const owner = ctx.actor("encrypted-owner", profile),
-    foreign = ctx.actor("encrypted-foreign", profile);
+  const owner = ctx.actor("encrypted-owner", profile);
+  const foreign = ctx.actor("encrypted-foreign", profile);
   const foreignSignup = await foreign.client.signUp.email({
     email: ctx.uniqueEmail("encrypted-foreign"),
     password: "password123",
     name: "Foreign Owner",
   });
   expect(foreignSignup.error).toBeNull();
+
   const configured = await ctx.rawRequest({
     path: "/__test/social-provider/profile",
     method: "POST",
@@ -74,6 +82,7 @@ async function setup(ctx: ScenarioContext) {
     },
   });
   expect(configured.status).toBe(200);
+
   const before = await read(ctx);
   const issued = await owner.client.signIn.social({
     provider: "gitlab",
@@ -81,9 +90,11 @@ async function setup(ctx: ScenarioContext) {
     disableRedirect: true,
   });
   expect(issued.error).toBeNull();
-  const url = new URL(issued.data!.url!),
-    state = url.searchParams.get("state");
+
+  const url = new URL(issued.data!.url!);
+  const state = url.searchParams.get("state");
   expect(state).toBeTruthy();
+
   const callbackPath = `${authProfilePath(profile)}/callback/gitlab?${new URLSearchParams({ state: state!, code: "encrypted-code" })}`;
   const response = await owner.fetch(callbackPath, { redirect: "manual" });
   const callback = {
@@ -92,10 +103,12 @@ async function setup(ctx: ScenarioContext) {
     body: await response.text(),
   };
   expect(callback).toMatchObject({ status: 302, location: "/encrypted-done" });
+
   const current = await owner.client.getSession();
   expect(current.error).toBeNull();
-  const stored = await read(ctx),
-    account = stored.accounts.find((row) => row.providerId === "gitlab")!;
+
+  const stored = await read(ctx);
+  const account = stored.accounts.find((row) => row.providerId === "gitlab")!;
   expect(account).toMatchObject({
     userId: current.data!.user.id,
     accountId: "42",
@@ -104,6 +117,7 @@ async function setup(ctx: ScenarioContext) {
   expect(stored.users).toHaveLength(before.users.length + 1);
   expect(stored.accounts).toHaveLength(before.accounts.length + 1);
   expect(stored.sessions).toHaveLength(before.sessions.length + 1);
+
   const foreignBefore = await ctx.readUserState({ userId: foreignSignup.data!.user.id });
   return {
     owner,
@@ -120,6 +134,7 @@ async function setup(ctx: ScenarioContext) {
     foreignBefore,
   };
 }
+
 async function importTokens(ctx: ScenarioContext, account: Row, patch: Row) {
   const imported = await ctx.rawRequest({
     path: "/__test/social-provider/import-tokens",
@@ -129,6 +144,7 @@ async function importTokens(ctx: ScenarioContext, account: Row, patch: Row) {
   expect(imported.status).toBe(200);
   return imported;
 }
+
 async function assertCipher(account: Row, access: string, refresh: string, id: string) {
   expect(account.accessToken).toMatch(/^[0-9a-f]+$/);
   expect(account.refreshToken).toMatch(/^[0-9a-f]+$/);
@@ -157,17 +173,20 @@ compatScenario(
       scopes: ["read_user", "issued-scope"],
     });
     expect(await read(ctx)).toEqual(s.stored);
+
     const deniedRead = await s.foreign.client.getAccessToken({ accountId: String(s.account.id) });
     const deniedRefresh = await s.foreign.client.refreshToken({ accountId: String(s.account.id) });
     expect(deniedRead.error).not.toBeNull();
     expect(deniedRefresh.error).not.toBeNull();
     expect(await read(ctx)).toEqual(s.stored);
+
     const guest = ctx.actor("encrypted-guest", "social-gitlab-encrypted");
-    const guestRead = await guest.client.getAccessToken({ accountId: String(s.account.id) }),
-      guestRefresh = await guest.client.refreshToken({ accountId: String(s.account.id) });
+    const guestRead = await guest.client.getAccessToken({ accountId: String(s.account.id) });
+    const guestRefresh = await guest.client.refreshToken({ accountId: String(s.account.id) });
     expect(guestRead.error).toEqual({ status: 401, statusText: "Unauthorized" });
     expect(guestRefresh.error).toEqual({ status: 401, statusText: "Unauthorized" });
     expect(await read(ctx)).toEqual(s.stored);
+
     const refreshed = await s.owner.client.refreshToken({ accountId: String(s.account.id) });
     expect(refreshed.error).toBeNull();
     expect(refreshed.data).toMatchObject({
@@ -175,8 +194,9 @@ compatScenario(
       refreshToken: "fixture-gitlab-refreshed-refresh",
       idToken: "fixture-encrypted-id-rotated",
     });
-    const rotated = await read(ctx),
-      account = rotated.accounts.find((row) => row.id === s.account.id)!;
+
+    const rotated = await read(ctx);
+    const account = rotated.accounts.find((row) => row.id === s.account.id)!;
     await assertCipher(
       account,
       "fixture-gitlab-refreshed-access",
@@ -198,6 +218,7 @@ compatScenario(
       path: "/__test/social-provider/gitlab/oauth/token",
       body: { grant_type: "refresh_token", refresh_token: "fixture-gitlab-refresh" },
     });
+
     const reread = await s.owner.client.getAccessToken({ accountId: String(s.account.id) });
     expect(reread.error).toBeNull();
     expect(reread.data).toMatchObject({
@@ -205,6 +226,7 @@ compatScenario(
       idToken: "fixture-encrypted-id-rotated",
     });
     expect(await read(ctx)).toEqual(rotated);
+
     const replayResponse = await s.owner.fetch(s.callbackPath, { redirect: "manual" });
     const replay = {
       status: replayResponse.status,
@@ -216,6 +238,7 @@ compatScenario(
     expect(await ctx.readUserState({ userId: s.foreignSignup.data!.user.id })).toEqual(
       s.foreignBefore,
     );
+
     return {
       foreignSignup: ctx.snapshot(s.foreignSignup),
       configured: s.configured,
@@ -243,8 +266,8 @@ compatScenario(
 compatScenario(
   "encrypted OAuth imports authenticate pinned ciphertext and reject corrupt secrets without touching any principal",
   async (ctx) => {
-    const s = await setup(ctx),
-      outcomes = [];
+    const s = await setup(ctx);
+    const outcomes = [];
     const published = await publishedImport;
     const wrongSecret = await wrongSecretImport;
     const altered = published.slice(0, -2) + (published.endsWith("00") ? "01" : "00");
@@ -266,27 +289,32 @@ compatScenario(
       { mode: "wrong-secret", accessToken: wrongSecret, expected: null },
       { mode: "short-even-hex", accessToken: "aabb", expected: null },
     ];
+
     for (const entry of cases) {
-      const imported = await importTokens(ctx, s.account, { accessToken: entry.accessToken }),
-        before = await read(ctx);
+      const imported = await importTokens(ctx, s.account, { accessToken: entry.accessToken });
+      const before = await read(ctx);
       const result = await s.owner.client.getAccessToken({ accountId: String(s.account.id) });
-      if (entry.expected === null)
+
+      if (entry.expected === null) {
         expect(result.error).toMatchObject({
           status: 400,
           code: "FAILED_TO_GET_ACCESS_TOKEN",
           message: "Failed to get a valid access token",
         });
-      else {
+      } else {
         expect(result.error).toBeNull();
         expect(result.data).toMatchObject({
           accessToken: entry.expected,
           idToken: "fixture-encrypted-id",
         });
       }
+
       expect(await read(ctx)).toEqual(before);
+
       const denied = await s.foreign.client.getAccessToken({ accountId: String(s.account.id) });
       expect(denied.error).not.toBeNull();
       expect(await read(ctx)).toEqual(before);
+
       outcomes.push({
         mode: entry.mode,
         imported,
@@ -296,14 +324,16 @@ compatScenario(
         after: observed(await read(ctx)),
       });
     }
+
     const refreshImported = await importTokens(ctx, s.account, {
       accessToken: published,
       refreshToken: wrongSecret,
     });
-    const beforeRefresh = await read(ctx),
-      validRead = await s.owner.client.getAccessToken({ accountId: String(s.account.id) });
+    const beforeRefresh = await read(ctx);
+    const validRead = await s.owner.client.getAccessToken({ accountId: String(s.account.id) });
     expect(validRead.error).toBeNull();
     expect(validRead.data?.accessToken).toBe("published-import-access");
+
     const refreshDenied = await s.owner.client.refreshToken({ accountId: String(s.account.id) });
     expect(refreshDenied.error).toMatchObject({
       status: 400,
@@ -314,6 +344,7 @@ compatScenario(
     expect(await ctx.readUserState({ userId: s.foreignSignup.data!.user.id })).toEqual(
       s.foreignBefore,
     );
+
     return {
       foreignSignup: ctx.snapshot(s.foreignSignup),
       configured: s.configured,

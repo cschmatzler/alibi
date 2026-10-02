@@ -1,6 +1,8 @@
 import { expect } from "bun:test";
+
 import { createAuthClient } from "better-auth/client";
 import { z } from "zod";
+
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { createTracingFetch, type TraceEntry } from "../../support/trace";
 
@@ -68,6 +70,7 @@ async function configure(ctx: ScenarioContext, mode: string, fields: Record<stri
 async function fullState(ctx: ScenarioContext) {
   const response = await ctx.rawRequest({ path: `${root}/state?waitFor=full` });
   expect(response.status).toBe(200);
+
   const value = stateSchema.parse(response.body);
 
   return {
@@ -202,6 +205,7 @@ compatScenario(
       teamId: ownTeam.id,
     });
     expect(original.status).toBe(200);
+
     const originalMember = member.parse(original.body);
     const foreignMembership = await add(ctx, {
       organizationId: other.id,
@@ -221,6 +225,7 @@ compatScenario(
       });
       expect(joined.error).toBeNull();
     }
+
     const activated = await target.client.$fetch("/organization/set-active", {
       method: "POST",
       body: { organizationId: own.id },
@@ -247,6 +252,7 @@ compatScenario(
       role: "member",
     });
     expect(created.status).toBe(200);
+
     const duplicate = member.parse(created.body);
     expect(duplicate).toMatchObject({
       organizationId: own.id,
@@ -263,10 +269,12 @@ compatScenario(
       role: "member",
     });
     expect(admitted.receipts[1]!.member).toEqual(duplicate);
+
     for (const receipt of admitted.receipts) {
       expect(receipt.user).toEqual(candidate.user);
       expect(receipt.organization).toEqual(ctx.snapshot(rawOrg.data));
     }
+
     expect(
       admitted.full.members.filter(
         (item) => item.organizationId === own.id && item.userId === target.user.id,
@@ -306,6 +314,7 @@ compatScenario(
       },
     });
     expect(foreignUpdate.error?.status).toBe(400);
+
     const foreignRemoval = await foreign.client.$fetch("/organization/remove-member", {
       method: "POST",
       body: { organizationId: own.id, memberIdOrEmail: duplicate.id },
@@ -371,6 +380,7 @@ compatScenario(
     });
     expect(retry.status).toBe(400);
     expect(retry.body).toHaveProperty("code", "USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION");
+
     const retryState = await fullState(ctx);
     expect(retryState.receipts).toEqual([]);
     expect(retryState.full).toEqual(after.full);
@@ -449,6 +459,7 @@ compatScenario(
     const foreignBefore = await ctx.readUserState({ userId: foreign.user.id });
 
     const observations = [];
+
     for (const [profile, limit] of [
       ["org-member-multiplicity", 100],
       ["org-member-multiplicity-page-two", 2],
@@ -475,17 +486,20 @@ compatScenario(
       });
 
       let deleted: unknown = null;
+
       if (limit === 100) {
         expect(creation.error?.status).toBe(403);
         expect(await fullState(ctx)).toEqual(prior);
       } else {
         expect(creation.error).toBeNull();
+
         const created = row.parse(creation.data);
         const removal = await actor.client.$fetch("/organization/delete", {
           method: "POST",
           body: { organizationId: created.id },
         });
         expect(removal.error).toBeNull();
+
         deleted = ctx.snapshot(removal);
         expect((await fullState(ctx)).full).toEqual(prior.full);
       }
@@ -544,6 +558,7 @@ compatScenario(
     const usersBefore = await ownStates(ctx, principals);
 
     const traces: TraceEntry[] = [];
+
     async function call(name: string) {
       const response = await createTracingFetch(
         ctx.baseURL,
@@ -593,6 +608,7 @@ compatScenario(
         path: `${root}/state?waitFor=before-pair`,
       });
       expect(held.status).toBe(200);
+
       const heldBody = z
         .object({
           receipts: z.array(z.record(z.string(), z.unknown())),
@@ -659,6 +675,7 @@ compatScenario(
       query: { organizationId: own.id, limit: 1 },
     });
     expect(listed.error).toBeNull();
+
     const page = z.object({ members: z.array(row), total: z.number() }).parse(listed.data);
     expect(page.total).toBe(3);
     expect(page.members).toHaveLength(1);

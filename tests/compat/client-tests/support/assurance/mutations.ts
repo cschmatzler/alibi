@@ -1,10 +1,12 @@
 import { join } from "node:path";
+
 import { writeJSON } from "./common";
 import type { Inventory, SourceMutation } from "./inventory";
 import { type ManagedFixture, runSuite, type SuiteResult, startFixture } from "./processes";
 import { type WireMutation, wireMutationSchema } from "./wire";
 
 export type Mutation = (SourceMutation & { kind: "source" }) | WireMutation;
+
 export type Verdict = {
   id: string;
   kind: Mutation["kind"];
@@ -13,6 +15,7 @@ export type Verdict = {
   reason?: string;
   execution?: SuiteResult;
 };
+
 export type Campaign = {
   schemaVersion: 1;
   runId: string;
@@ -25,6 +28,7 @@ export type Campaign = {
   notRun: string[];
   errors: string[];
 };
+
 export function cleanSuite(suite: SuiteResult): boolean {
   return (
     validSuite(suite) &&
@@ -32,6 +36,7 @@ export function cleanSuite(suite: SuiteResult): boolean {
     suite.outcomes.every((outcome) => outcome.status === "passed")
   );
 }
+
 export function validSuite(suite: SuiteResult): boolean {
   return (
     suite.complete &&
@@ -44,6 +49,7 @@ export function validSuite(suite: SuiteResult): boolean {
       JSON.stringify(suite.outcomes.map((outcome) => outcome.name).sort())
   );
 }
+
 export function matchingSuites(left: SuiteResult, right: SuiteResult): boolean {
   return (
     left.runId === right.runId &&
@@ -65,13 +71,17 @@ export function classifyMutation(
     status: "inconclusive",
     killingScenarios: [],
   };
-  if (!cleanSuite(baseline) || !validSuite(candidate) || !matchingSuites(baseline, candidate))
+
+  if (!cleanSuite(baseline) || !validSuite(candidate) || !matchingSuites(baseline, candidate)) {
     return {
       ...verdict,
       reason: "Baseline, execution, or scenario-set integrity failed",
     };
-  const reached = new Set<string>(),
-    changed = new Set<string>();
+  }
+
+  const reached = new Set<string>();
+  const changed = new Set<string>();
+
   if (mutation.kind === "source") {
     for (const outcome of candidate.outcomes) {
       const coverage = outcome.coverage.Rust;
@@ -86,7 +96,7 @@ export function classifyMutation(
         changed.add(outcome.name);
       }
     }
-  } else
+  } else {
     for (const raw of candidate.wireReceipts) {
       const receipt = raw as {
         id?: unknown;
@@ -95,10 +105,15 @@ export function classifyMutation(
       };
       if (receipt.id === mutation.id && typeof receipt.scenario === "string") {
         reached.add(receipt.scenario);
-        if (receipt.changed === true) changed.add(receipt.scenario);
+        if (receipt.changed === true) {
+          changed.add(receipt.scenario);
+        }
       }
     }
+  }
+
   const failures = candidate.outcomes.filter((outcome) => outcome.status === "failed");
+
   if (
     failures.some(
       (outcome) =>
@@ -106,22 +121,28 @@ export function classifyMutation(
         !["comparison", "assertion", "model"].includes(outcome.failure ?? "") ||
         !changed.has(outcome.name),
     )
-  )
+  ) {
     return {
       ...verdict,
       reason: "Failure was not a behavioral assertion in a scenario that reached the mutation",
     };
-  if (failures.length)
+  }
+
+  if (failures.length) {
     return {
       ...verdict,
       status: "killed",
       killingScenarios: failures.map((outcome) => outcome.name),
     };
-  if (candidate.code !== 0)
+  }
+
+  if (candidate.code !== 0) {
     return {
       ...verdict,
       reason: "Test runner failed without a recorded behavioral failure",
     };
+  }
+
   return {
     ...verdict,
     status: changed.size ? "survived" : reached.size ? "no-change" : "not-reached",
@@ -151,8 +172,8 @@ export async function mutationCampaign(options: {
     return fixture;
   };
   try {
-    const left = await start("oracle"),
-      pristine = await start("baseline");
+    const left = await start("oracle");
+    const pristine = await start("baseline");
     const baseline = await runSuite({
       ...options,
       directory: join(options.directory, "baseline"),
@@ -178,8 +199,11 @@ export async function mutationCampaign(options: {
         .map((candidate) => candidate.id),
     ];
     const unknown = wanted.filter((id) => !byId.has(id));
-    if (unknown.length)
+
+    if (unknown.length) {
       throw new Error(`Mutation identifiers do not exist in this inventory: ${unknown.join(", ")}`);
+    }
+
     const selected = [...new Set(wanted)].slice(0, options.budget);
     const campaign: Campaign = {
       schemaVersion: 1,
@@ -192,6 +216,7 @@ export async function mutationCampaign(options: {
       notRun: [...byId.keys()].filter((id) => !selected.includes(id)),
       errors: [],
     };
+
     if (!cleanSuite(baseline)) {
       campaign.errors.push(
         "Pristine upstream baseline failed; mutation results cannot be credited",
@@ -199,13 +224,18 @@ export async function mutationCampaign(options: {
       campaign.notRun = campaign.universe;
     } else {
       for (const [index, id] of selected.entries()) {
-        const mutation = byId.get(id)!,
-          directory = join(options.directory, `mutation-${index}`);
+        const mutation = byId.get(id)!;
+        const directory = join(options.directory, `mutation-${index}`);
         console.log(`Mutation ${index + 1}/${selected.length}: ${id}`);
         let right: ManagedFixture | undefined;
+
         try {
           const wirePath = join(directory, "wire.json");
-          if (mutation.kind === "wire") await writeJSON(wirePath, mutation);
+
+          if (mutation.kind === "wire") {
+            await writeJSON(wirePath, mutation);
+          }
+
           right =
             mutation.kind === "source"
               ? await startFixture({
@@ -254,8 +284,11 @@ export async function mutationCampaign(options: {
             reason: error instanceof Error ? error.message : String(error),
           });
         } finally {
-          if (right && right !== pristine) await right.stop();
+          if (right && right !== pristine) {
+            await right.stop();
+          }
         }
+
         await writeJSON(join(options.directory, "mutations.json"), campaign);
       }
       // A clean rerun brackets the campaign; failure invalidates apparent kills.
@@ -279,9 +312,12 @@ export async function mutationCampaign(options: {
         );
       }
     }
+
     await writeJSON(join(options.directory, "mutations.json"), campaign);
     return campaign;
   } finally {
-    for (const fixture of owned.reverse()) await fixture.stop();
+    for (const fixture of owned.reverse()) {
+      await fixture.stop();
+    }
   }
 }

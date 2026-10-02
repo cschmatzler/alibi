@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+
 import { compareValues } from "../support/compare";
 import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
 
@@ -15,8 +16,9 @@ test("expired, cleared, wrong-domain and wrong-path cookies are never sent", asy
           "scoped=secret; Path=/scoped",
           "foreign=secret; Domain=example.com",
           "valid=ok; Path=/; HttpOnly; SameSite=Lax",
-        ])
+        ]) {
           headers.append("set-cookie", cookie);
+        }
         return new Response("{}", { headers });
       }
       return Response.json({ cookie: request.headers.get("cookie") });
@@ -42,11 +44,14 @@ test("redirects capture intermediate cookies and preserve Fetch method and body 
     port: 0,
     async fetch(request) {
       const url = new URL(request.url);
-      if (url.pathname === "/start")
+
+      if (url.pathname === "/start") {
         return new Response(null, {
           status: Number(url.searchParams.get("status")),
           headers: { location: "/end", "set-cookie": "redirect=ok; Path=/" },
         });
+      }
+
       const receipt = {
         cookie: request.headers.get("cookie"),
         body: await request.text(),
@@ -179,8 +184,8 @@ test("organization application creation receipts retain full bodies with bounded
   });
   try {
     for (const path of paths) {
-      const left: TraceEntry[] = [],
-        right: TraceEntry[] = [];
+      const left: TraceEntry[] = [];
+      const right: TraceEntry[] = [];
       const first = await (
         await createTracingFetch(server.url.origin, "owner", left)(path, { method: "POST" })
       ).json();
@@ -190,6 +195,7 @@ test("organization application creation receipts retain full bodies with bounded
       ).json();
       expect(left[0]!.responseBody).toEqual(first);
       expect(right[0]!.responseBody).toEqual(second);
+
       const context = {
         leftBaseURL: server.url.origin,
         rightBaseURL: server.url.origin,
@@ -198,9 +204,10 @@ test("organization application creation receipts retain full bodies with bounded
         leftRequestWindows: left.map((entry) => entry[requestWindow]),
         rightRequestWindows: right.map((entry) => entry[requestWindow]),
       };
-      const a = { observation: first, traces: left },
-        b = { observation: second, traces: right };
+      const a = { observation: first, traces: left };
+      const b = { observation: second, traces: right };
       expect(compareValues(a, b, context)).toEqual([]);
+
       for (const corrupt of [
         {
           ...second,
@@ -227,9 +234,11 @@ test("organization application creation receipts retain full bodies with bounded
           ).length,
         ).toBeGreaterThan(0);
       }
+
       expect(
         compareValues(a, { ...b, traces: [{ ...right[0], responseStatus: 201 }] }, context).length,
       ).toBeGreaterThan(0);
+
       const rejected: TraceEntry[] = [];
       const body = await (
         await createTracingFetch(

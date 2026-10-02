@@ -1,14 +1,17 @@
 import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
+
 import { createAuthClient } from "better-auth/client";
 import { jwtClient } from "better-auth/client/plugins";
 import { getCookieCache } from "better-auth/cookies";
 import { compactVerify, importJWK, type JWK, jwtVerify } from "jose";
 import { z } from "zod";
+
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 const profile: FixtureProfile = "jwt-keyring-standard";
+
 function client(ctx: ScenarioContext, actor: string, mode: FixtureProfile = profile) {
   return createAuthClient({
     baseURL: ctx.baseURL + authProfilePath(mode),
@@ -19,6 +22,7 @@ function client(ctx: ScenarioContext, actor: string, mode: FixtureProfile = prof
     },
   });
 }
+
 async function control(
   ctx: ScenarioContext,
   value: Record<string, unknown> = {},
@@ -33,6 +37,7 @@ async function control(
   expect(result.status).toBe(200);
   return result;
 }
+
 const stateSchema = z.object({
   keys: z.array(
     z.object({
@@ -47,10 +52,12 @@ const stateSchema = z.object({
   ),
   events: z.array(z.record(z.string(), z.unknown())),
 });
+
 async function state(ctx: ScenarioContext, mode: FixtureProfile = profile) {
   const result = await control(ctx, {}, mode);
   return stateSchema.parse(result.body);
 }
+
 async function signed(
   ctx: ScenarioContext,
   payload: Record<string, unknown>,
@@ -64,6 +71,7 @@ async function signed(
     headers: { "x-keyring-proof": "server-marker" },
   });
 }
+
 async function verified(
   token: string,
   keys: JWK[],
@@ -74,6 +82,7 @@ async function verified(
   const key = keys.find((key) => key.kid === header.kid);
   expect(key).toBeDefined();
   expect(key!.d).toBeUndefined();
+
   const result = await jwtVerify(token, await importJWK(key!, header.alg), {
     algorithms: [header.alg],
     issuer: ctx.baseURL,
@@ -81,6 +90,7 @@ async function verified(
   });
   return { header: result.protectedHeader, payload: result.payload };
 }
+
 async function token(result: Awaited<ReturnType<typeof signed>>) {
   expect(result.status).toBe(200);
   return z.object({ token: z.string() }).parse(result.body).token;
@@ -90,58 +100,72 @@ compatScenario(
   "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
   async (ctx) => {
     await control(ctx, { operation: "reset" });
-    const owner = client(ctx, "owner"),
-      foreign = client(ctx, "foreign"),
-      guest = client(ctx, "guest");
+    const owner = client(ctx, "owner");
+    const foreign = client(ctx, "foreign");
+    const guest = client(ctx, "guest");
     const signup = await owner.signUp.email({
       email: ctx.uniqueEmail("keyring-errors-owner"),
       password: "password123",
       name: "Keyring Owner",
     });
     expect(signup.error).toBeNull();
+
     const other = await foreign.signUp.email({
       email: ctx.uniqueEmail("keyring-errors-foreign"),
       password: "password123",
       name: "Keyring Foreign",
     });
     expect(other.error).toBeNull();
-    const ownerBefore = await ctx.readUserState({ userId: signup.data!.user.id }),
-      foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
+
+    const ownerBefore = await ctx.readUserState({ userId: signup.data!.user.id });
+    const foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
     const failures = [];
+
     for (const operation of ["read", "create"]) {
       for (const kind of ["ordinary", "api", "api500"]) {
         await control(ctx, { operation: "reset" });
         await control(ctx, { operation: "failure", failure: { operation, kind } });
         const rejected = await guest.jwks();
         expect(rejected.error?.status).toBe(kind === "api" ? 403 : 500);
-        if (kind !== "ordinary")
+
+        if (kind !== "ordinary") {
           expect(rejected.error).toMatchObject({
             code: "APPLICATION_KEYRING_DENIED",
             message: "application denied keys",
           });
+        }
+
         const observed = await state(ctx);
         expect(observed.keys).toEqual([]);
         expect(observed.events).toHaveLength(operation === "read" ? 1 : 2);
-        for (const event of observed.events)
+
+        for (const event of observed.events) {
           expect(event.context).toEqual({
             path: "/jwks",
             method: "GET",
             marker: "application-marker",
             hasCookie: false,
           });
+        }
+
         expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(ownerBefore);
         expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
         expect((await ctx.rawRequest({ path: "/__test/jwks-state" })).body).toEqual([]);
+
         failures.push({ operation, kind, rejected: ctx.snapshot(rejected), observed });
       }
     }
+
     await control(ctx, { operation: "reset" });
     const keys = await guest.jwks();
     expect(keys.error).toBeNull();
+
     const original = await state(ctx);
     expect(original.keys).toHaveLength(1);
     expect(original.keys[0]!.privateKeyEncrypted).toBe(true);
+
     const callbackFailures = [];
+
     for (const operation of ["payload", "subject", "read"]) {
       for (const kind of ["ordinary", "api", "api500"]) {
         for (const entry of ["token", "session-header"]) {
@@ -149,11 +173,14 @@ compatScenario(
           await control(ctx, { operation: "failure", failure: { operation, kind } });
           const rejected = entry === "token" ? await owner.token() : await owner.getSession();
           expect(rejected.error?.status).toBe(kind === "api" ? 403 : 500);
-          if (kind !== "ordinary")
+
+          if (kind !== "ordinary") {
             expect(rejected.error).toMatchObject({
               code: "APPLICATION_KEYRING_DENIED",
               message: "application denied keys",
             });
+          }
+
           const observed = await state(ctx);
           expect(observed.keys).toEqual(original.keys);
           expect(observed.events.map((event) => event.operation)).toEqual(
@@ -165,6 +192,7 @@ compatScenario(
           );
           expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(ownerBefore);
           expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+
           callbackFailures.push({
             operation,
             kind,
@@ -175,18 +203,23 @@ compatScenario(
         }
       }
     }
+
     await control(ctx, { operation: "failure", failure: null });
     const success = await owner.token();
     expect(success.error).toBeNull();
+
     const checked = await verified(success.data!.token, keys.data!.keys as JWK[], ctx);
     expect(checked.payload.sub).toBe(signup.data!.user.email);
+
     const signout = await owner.signOut();
     expect(signout.error).toBeNull();
-    const beforeReplay = await state(ctx),
-      replay = await owner.token();
+
+    const beforeReplay = await state(ctx);
+    const replay = await owner.token();
     expect(replay.error?.status).toBe(401);
     expect(await state(ctx)).toEqual(beforeReplay);
     expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+
     return {
       signup: ctx.snapshot(signup),
       other: ctx.snapshot(other),
@@ -213,40 +246,47 @@ compatScenario(
   async (ctx) => {
     await control(ctx, { operation: "reset" });
     const observations = [];
+
     for (const mode of [
       "jwt-keyring-standard",
       "jwt-keyring-empty-subject",
       "jwt-keyring-null-subject",
     ] as const) {
       await control(ctx, { operation: "clear-events" }, mode);
-      const owner = client(ctx, "owner-" + mode, mode),
-        foreign = client(ctx, "foreign-" + mode, mode),
-        guest = client(ctx, "guest-" + mode, mode);
+      const owner = client(ctx, "owner-" + mode, mode);
+      const foreign = client(ctx, "foreign-" + mode, mode);
+      const guest = client(ctx, "guest-" + mode, mode);
       const signup = await owner.signUp.email({
         email: ctx.uniqueEmail(mode),
         password: "password123",
         name: "External Keys Owner",
       });
       expect(signup.error).toBeNull();
+
       const other = await foreign.signUp.email({
         email: ctx.uniqueEmail(mode + "-foreign"),
         password: "password123",
         name: "External Keys Foreign",
       });
       expect(other.error).toBeNull();
+
       const foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
       const denied = await guest.token();
       expect(denied.error?.status).toBe(401);
       expect((await state(ctx, mode)).events).toEqual([]);
+
       const keys = await guest.jwks();
       expect(keys.error).toBeNull();
+
       const created = await state(ctx, mode);
       expect(created.keys).toHaveLength(1);
       expect(created.keys[0]!.privateKeyEncrypted).toBe(true);
       expect(created.events.map((event) => event.operation)).toEqual(["read", "create", "read"]);
+
       await control(ctx, { operation: "clear-events" }, mode);
       const issued = await owner.token();
       expect(issued.error).toBeNull();
+
       const checked = await verified(issued.data!.token, keys.data!.keys as JWK[], ctx);
       expect(checked.payload.application).toBe("external-keyring");
       expect(checked.payload.sub).toBe(
@@ -260,6 +300,7 @@ compatScenario(
         user: { id: signup.data!.user.id, email: signup.data!.user.email },
         session: { userId: signup.data!.user.id, token: signup.data!.token },
       });
+
       const after = await state(ctx, mode);
       expect(after.keys).toEqual(created.keys);
       expect(after.events.map((event) => event.operation)).toEqual(["payload", "subject", "read"]);
@@ -269,6 +310,7 @@ compatScenario(
         marker: "application-marker",
         hasCookie: true,
       });
+
       const serverVerified = await control(
         ctx,
         { operation: "verify", token: issued.data!.token },
@@ -277,6 +319,7 @@ compatScenario(
       expect(serverVerified.body).toEqual({
         payload: mode === "jwt-keyring-empty-subject" ? null : checked.payload,
       });
+
       const wrongAudience = await signed(
         ctx,
         { sub: "server-owner", exp: 4102444800, aud: "foreign-audience" },
@@ -289,14 +332,17 @@ compatScenario(
         mode,
       );
       expect(wrong.body).toEqual({ payload: null });
+
       const signout = await owner.signOut();
       expect(signout.error).toBeNull();
-      const beforeReplay = await state(ctx, mode),
-        replay = await owner.token();
+
+      const beforeReplay = await state(ctx, mode);
+      const replay = await owner.token();
       expect(replay.error?.status).toBe(401);
       expect(await state(ctx, mode)).toEqual(beforeReplay);
       expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
       expect((await ctx.rawRequest({ path: "/__test/jwks-state" })).body).toEqual([]);
+
       observations.push({
         mode,
         signup: ctx.snapshot(signup),
@@ -318,6 +364,7 @@ compatScenario(
         foreignAfter: await ctx.readUserState({ userId: other.data!.user.id }),
       });
     }
+
     return { observations };
   },
   ["GET /jwks", "GET /token", "POST /sign-up/email", "POST /sign-out"],
@@ -328,27 +375,31 @@ compatScenario(
   async (ctx) => {
     const mode: FixtureProfile = "jwt-keyring-plain";
     await control(ctx, { operation: "reset" }, mode);
-    const owner = client(ctx, "owner", mode),
-      foreign = client(ctx, "foreign", mode),
-      guest = client(ctx, "guest", mode);
+    const owner = client(ctx, "owner", mode);
+    const foreign = client(ctx, "foreign", mode);
+    const guest = client(ctx, "guest", mode);
     const signup = await owner.signUp.email({
       email: ctx.uniqueEmail("keyring-rotation-owner"),
       password: "password123",
       name: "Rotation Owner",
     });
     expect(signup.error).toBeNull();
+
     const other = await foreign.signUp.email({
       email: ctx.uniqueEmail("keyring-rotation-foreign"),
       password: "password123",
       name: "Rotation Foreign",
     });
     expect(other.error).toBeNull();
+
     const foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
     const jwks = await guest.jwks();
     expect(jwks.error).toBeNull();
+
     const original = await state(ctx, mode);
     expect(original.keys).toHaveLength(1);
     expect(original.keys[0]!.privateKeyEncrypted).toBe(false);
+
     const firstId = original.keys[0]!.id;
     const firstPublic = original.keys[0]!.publicKey as JWK;
     expect(firstPublic.kty).toBe("RSA");
@@ -356,6 +407,7 @@ compatScenario(
     expect(Date.parse(original.keys[0]!.expiresAt!) - Date.parse(original.keys[0]!.createdAt)).toBe(
       3600000,
     );
+
     const payload = {
       sub: "installed-key-owner",
       iat: 100,
@@ -383,16 +435,20 @@ compatScenario(
       typ: "application+jwt",
       cty: "application/json",
     });
+
     const extra = await signed(ctx, payload, { signingAlgorithm: "ES256" }, mode);
     const extraToken = await token(extra);
     const extraState = await state(ctx, mode);
     expect(extraState.keys).toHaveLength(2);
     expect(extraState.keys[1]!.alg).toBe("ES256");
     expect(extraState.keys[1]!.privateKeyEncrypted).toBe(false);
+
     const both = await guest.jwks();
     expect(both.error).toBeNull();
+
     const extraChecked = await verified(extraToken, both.data!.keys as JWK[], ctx);
     expect(extraChecked.header.alg).toBe("ES256");
+
     await control(ctx, { operation: "clear-events" }, mode);
     const reused = await signed(
       ctx,
@@ -404,9 +460,12 @@ compatScenario(
     const reusedState = await state(ctx, mode);
     expect(reusedState.events.map((event) => event.operation)).toEqual(["read"]);
     expect(reusedState.keys).toEqual(extraState.keys);
+
     const reusedChecked = await verified(reusedToken, both.data!.keys as JWK[], ctx);
     expect(reusedChecked.header.kid).toBe(firstId);
+
     const rejected = [];
+
     for (const options of [
       { signingKeyId: "missing" },
       { signingKeyId: firstId, signingAlgorithm: "ES256" },
@@ -419,64 +478,90 @@ compatScenario(
       expect(response.status).toBe(500);
       expect(response.body).toEqual({ message: "Internal server error" });
       expect((await state(ctx, mode)).keys).toEqual(extraState.keys);
+
       rejected.push({ options, response });
     }
+
     const oldExpiry = new Date(Date.now() - 1800000).toISOString();
-    for (const key of extraState.keys)
+
+    for (const key of extraState.keys) {
       await control(ctx, { operation: "expire", id: key.id, expiresAt: oldExpiry }, mode);
+    }
+
     const rotated = await signed(ctx, payload, {}, mode);
     const rotatedToken = await token(rotated);
     const withinGrace = await guest.jwks();
     expect(withinGrace.data!.keys).toHaveLength(3);
+
     const rotatedState = await state(ctx, mode);
     expect(rotatedState.keys).toHaveLength(3);
+
     const rotatedChecked = await verified(rotatedToken, withinGrace.data!.keys as JWK[], ctx);
     expect(rotatedChecked.header.alg).toBe("RS256");
     expect(rotatedChecked.header.kid).not.toBe(firstId);
+
     const oldVerified = await verified(primaryToken, withinGrace.data!.keys as JWK[], ctx);
     expect(oldVerified.payload).toEqual(primaryChecked.payload);
+
     const expiredPinned = await signed(ctx, payload, { signingKeyId: firstId }, mode);
     expect(expiredPinned.status).toBe(500);
     expect((await state(ctx, mode)).keys).toEqual(rotatedState.keys);
+
     const retiredExpiry = new Date(Date.now() - 7200000).toISOString();
-    for (const key of extraState.keys)
+
+    for (const key of extraState.keys) {
       await control(ctx, { operation: "expire", id: key.id, expiresAt: retiredExpiry }, mode);
+    }
+
     const afterGrace = await guest.jwks();
     expect(afterGrace.data!.keys).toHaveLength(1);
+
     const privateVerification = await control(
       ctx,
       { operation: "verify", token: primaryToken },
       mode,
     );
     expect(privateVerification.body).toEqual({ payload: primaryChecked.payload });
+
     const activeId = rotatedState.keys[2]!.id;
     await control(ctx, { operation: "corrupt", id: activeId, field: "private" }, mode);
     const brokenPrivate = await owner.token();
     expect(brokenPrivate.error?.status).toBe(500);
+
     const privateState = await state(ctx, mode);
     expect(privateState.keys).toHaveLength(3);
     expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+
     await control(ctx, { operation: "corrupt", id: activeId, field: "public" }, mode);
     const brokenPublic = await guest.jwks();
     expect(brokenPublic.error?.status).toBe(500);
+
     const corruptVerification = await control(
       ctx,
       { operation: "verify", token: rotatedToken },
       mode,
     );
     expect(corruptVerification.body).toEqual({ payload: null });
+
     const corruptState = await state(ctx, mode);
     expect(corruptState.keys[2]!.publicKey).toBe("corrupt");
+
     await control(ctx, { operation: "delete", id: activeId }, mode);
     const retired = await guest.jwks();
     expect(retired.data!.keys).toEqual([]);
     expect((await state(ctx, mode)).keys).toHaveLength(2);
-    for (const key of extraState.keys)
+
+    for (const key of extraState.keys) {
       await control(ctx, { operation: "delete", id: key.id }, mode);
+    }
+
     const recovered = await guest.jwks();
     expect(recovered.error).toBeNull();
+
     const recoveredState = await state(ctx, mode);
     expect(recoveredState.keys).toHaveLength(1);
+    const recoveredKeyId = recoveredState.keys[0]!.id;
+
     const recovery = await owner.token();
     expect(recovery.error).toBeNull();
     const recoveryChecked = await verified(
@@ -484,20 +569,20 @@ compatScenario(
       recovered.data!.keys as JWK[],
       ctx,
     );
-    const legacy = await control(
-      ctx,
-      { operation: "legacy", id: recoveredState.keys[0]!.id },
-      mode,
-    );
+
+    // A stored key without alg/crv columns is published and used as RS256.
+    const legacy = await control(ctx, { operation: "legacy", id: recoveredKeyId }, mode);
     const legacyState = await state(ctx, mode);
     expect(legacyState.keys[0]!.alg).toBeNull();
     expect(legacyState.keys[0]!.crv).toBeNull();
+
     const legacyJwks = await guest.jwks();
     expect(legacyJwks.data!.keys[0]!.alg).toBe("RS256");
+
     const legacyIssued = await signed(
       ctx,
       payload,
-      { signingKeyId: recoveredState.keys[0]!.id, signingAlgorithm: "RS256" },
+      { signingKeyId: recoveredKeyId, signingAlgorithm: "RS256" },
       mode,
     );
     const legacyChecked = await verified(
@@ -505,12 +590,14 @@ compatScenario(
       legacyJwks.data!.keys as JWK[],
       ctx,
     );
-    expect(legacyChecked.header.kid).toBe(recoveredState.keys[0]!.id);
+    expect(legacyChecked.header.kid).toBe(recoveredKeyId);
+
     await control(ctx, { operation: "clear-events" }, mode);
     const createStartedAt = Date.now();
     const manuallyCreated = await control(ctx, { operation: "create" }, mode);
     const createFinishedAt = Date.now();
     expect(manuallyCreated.body).toEqual({ created: true });
+
     const manualState = await state(ctx, mode);
     expect(manualState.keys).toHaveLength(2);
     expect(manualState.keys[0]).toEqual(legacyState.keys[0]);
@@ -521,14 +608,17 @@ compatScenario(
       marker: "server-marker",
       hasCookie: false,
     });
+
     const { id: manualId, createdAt, expiresAt, ...manualKey } = manualState.keys[1]!;
     expect(createdAt).toBe(new Date(createdAt).toISOString());
     expect(expiresAt).toBe(new Date(expiresAt!).toISOString());
     expect(Date.parse(createdAt)).toBeGreaterThanOrEqual(createStartedAt);
     expect(Date.parse(createdAt)).toBeLessThanOrEqual(createFinishedAt);
+
     const lifetimeMilliseconds = Date.parse(expiresAt!) - Date.parse(createdAt);
     expect(lifetimeMilliseconds).toBe(3600000);
     expect(manualState.events[0]!.key).toEqual({ ...manualKey, createdAt, expiresAt });
+
     // Key generation can take different amounts of time on each server. Check
     // its actual request clock above, then compare the complete key and lifetime.
     const manualObservation = {
@@ -537,6 +627,7 @@ compatScenario(
     };
     const manualJwks = await guest.jwks();
     expect(manualJwks.data!.keys).toHaveLength(2);
+
     const manualIssued = await signed(
       ctx,
       payload,
@@ -552,6 +643,7 @@ compatScenario(
     expect((await state(ctx, mode)).keys).toEqual(manualState.keys);
     expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
     expect((await ctx.rawRequest({ path: "/__test/jwks-state" })).body).toEqual([]);
+
     return {
       signup: ctx.snapshot(signup),
       other: ctx.snapshot(other),
@@ -617,12 +709,14 @@ compatScenario(
     });
     const initial = await first;
     expect(initial.status).toBe(200);
+
     const firstKeys = z
       .object({ keys: z.array(z.record(z.string(), z.unknown())).length(1) })
       .parse(initial.body).keys as JWK[];
     const released = await control(ctx, { operation: "race-release" });
     const concurrent = await second;
     expect(concurrent.status).toBe(200);
+
     const keys = z
       .object({ keys: z.array(z.record(z.string(), z.unknown())).length(2) })
       .parse(concurrent.body).keys as JWK[];
@@ -645,7 +739,9 @@ compatScenario(
     ).toEqual(["race-first", "race-second"]);
     expect(keys[0]!.kid).toBe(firstKeys[0]!.kid);
     expect(keys.map((key) => key.kid)).toEqual(persisted.keys.map((key) => key.id));
+
     const signatures = [];
+
     for (const key of keys) {
       const issued = await signed(
         ctx,
@@ -654,10 +750,13 @@ compatScenario(
       );
       const checked = await verified(await token(issued), keys, ctx);
       expect(checked.header.kid).toBe(key.kid);
+
       signatures.push({ issued, checked });
     }
+
     expect((await state(ctx)).keys).toEqual(persisted.keys);
     expect((await ctx.rawRequest({ path: "/__test/jwks-state" })).body).toEqual([]);
+
     return { initial, released, concurrent, persisted, signatures, after: await state(ctx) };
   },
   ["GET /jwks"],
@@ -670,6 +769,7 @@ compatScenario(
     const guest = client(ctx, "guest");
     const jwks = await guest.jwks();
     expect(jwks.error).toBeNull();
+
     const original = await state(ctx);
     const cases = [
       { expiration: { number: 4102444800.25 }, expected: 4102444800.25 },
@@ -684,6 +784,7 @@ compatScenario(
       { expiration: { source: "+2 years", milliseconds: 63115200000 }, expected: 63115300 },
     ];
     const observations = [];
+
     for (const item of cases) {
       const issued = await signed(
         ctx,
@@ -700,11 +801,13 @@ compatScenario(
       expect(payload.exp).toBe(item.expected);
       expect(payload.iat).toBe(100);
       expect(payload.sub).toBe("configured-expiration-owner");
+
       const serverVerified = await control(ctx, { operation: "verify", token: value });
       expect(serverVerified.body).toEqual({
         payload: item.expected === 4102444800.25 || item.expected === 4102444800 ? payload : null,
       });
       expect((await state(ctx)).keys).toEqual(original.keys);
+
       observations.push({
         expiration: item.expiration,
         issued,
@@ -713,7 +816,9 @@ compatScenario(
         serverVerified,
       });
     }
+
     const rejected = [];
+
     for (const expiration of [
       { nan: true },
       { nonfinite: "positive" },
@@ -726,6 +831,7 @@ compatScenario(
       );
       expect(issued.status).toBe(500);
       expect(issued.body).toEqual({ message: "Internal server error" });
+
       const overridden = await signed(
         ctx,
         { sub: "configured-expiration-owner", iat: 100, exp: 4102444800 },
@@ -734,9 +840,12 @@ compatScenario(
       const checked = await verified(await token(overridden), jwks.data!.keys as JWK[], ctx);
       expect(checked.payload.exp).toBe(4102444800);
       expect((await state(ctx)).keys).toEqual(original.keys);
+
       rejected.push({ expiration, issued, overridden, checked });
     }
+
     expect((await ctx.rawRequest({ path: "/__test/jwks-state" })).body).toEqual([]);
+
     return { jwks, original, observations, rejected, after: await state(ctx) };
   },
   ["GET /jwks"],
@@ -747,9 +856,9 @@ compatScenario(
   async (ctx) => {
     const mode: FixtureProfile = "jwt-keyring-cache";
     await control(ctx, { operation: "reset" }, mode);
-    const owner = client(ctx, "owner", mode),
-      foreign = client(ctx, "foreign", mode),
-      guest = client(ctx, "guest", mode);
+    const owner = client(ctx, "owner", mode);
+    const foreign = client(ctx, "foreign", mode);
+    const guest = client(ctx, "guest", mode);
     const receipts: Headers[] = [];
     const signup = await owner.signUp.email(
       {
@@ -764,12 +873,14 @@ compatScenario(
       },
     );
     expect(signup.error).toBeNull();
+
     const other = await foreign.signUp.email({
       email: ctx.uniqueEmail("keyring-cache-foreign"),
       password: "password123",
       name: "Foreign Cached JWT Owner",
     });
     expect(other.error).toBeNull();
+
     const foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
     const cookie = receipts[0]!
       .getSetCookie()
@@ -782,6 +893,7 @@ compatScenario(
     });
     expect(cache!.session.token).toBe(signup.data!.token!);
     expect(cache!.user.name).toBe("Original Cached JWT Owner");
+
     const cacheToken = decodeURIComponent(
       cookie
         .split("; ")
@@ -802,6 +914,7 @@ compatScenario(
     };
     const jwks = await guest.jwks();
     expect(jwks.error).toBeNull();
+
     const created = await state(ctx, mode);
     const renamed = await ctx.rawRequest({
       path: "/__test/session-cookie-cache/control",
@@ -814,6 +927,7 @@ compatScenario(
       },
     });
     expect(renamed.status).toBe(200);
+
     await control(ctx, { operation: "clear-events" }, mode);
     const cached = await owner.getSession({
       fetchOptions: {
@@ -823,18 +937,22 @@ compatScenario(
       },
     });
     expect(cached.data!.user.name).toBe("Original Cached JWT Owner");
+
     const header = receipts[1]!.get("set-auth-jwt");
     expect(header).not.toBeNull();
     expect(receipts[1]!.get("access-control-expose-headers")).toBe("set-auth-jwt");
+
     const checked = await verified(header!, jwks.data!.keys as JWK[], ctx);
     expect(checked.payload).toMatchObject({
       id: signup.data!.user.id,
       name: "Original Cached JWT Owner",
       sub: signup.data!.user.id,
     });
+
     const cachedState = await state(ctx, mode);
     expect(cachedState.events.map((event) => event.operation)).toEqual(["read"]);
     expect(cachedState.keys).toEqual(created.keys);
+
     const bypass = await owner.getSession({
       query: { disableCookieCache: true, disableRefresh: true },
       fetchOptions: {
@@ -844,29 +962,38 @@ compatScenario(
       },
     });
     expect(bypass.data!.user.name).toBe("Authoritative JWT Owner");
+
     const bypassChecked = await verified(
       receipts[2]!.get("set-auth-jwt")!,
       jwks.data!.keys as JWK[],
       ctx,
     );
     expect(bypassChecked.payload).toMatchObject({ name: "Authoritative JWT Owner" });
+
     const revoked = await ctx.rawRequest({
       path: "/__test/session-cookie-cache/control",
       method: "POST",
       json: { mode: "standard", action: "revoke", token: signup.data!.token },
     });
     expect(revoked.status).toBe(200);
+
     const revokedOwner = await ctx.readUserState({ userId: signup.data!.user.id });
     expect((revokedOwner as any).sessions).toEqual([]);
+
     // Default EdDSA tokens repeat for the same principal within one second.
     // Make the post-revocation issuance a real later lifecycle phase, rather
     // than coupling token identity to which backend crosses a clock boundary.
     const cachedIat = z.number().int().parse(checked.payload.iat);
     const remaining = (cachedIat + 1) * 1000 - Date.now();
     expect(remaining).toBeLessThanOrEqual(1000);
-    if (remaining > 0) await Bun.sleep(remaining + 5);
+
+    if (remaining > 0) {
+      await Bun.sleep(remaining + 5);
+    }
+
     const retained = await owner.token();
     expect(retained.error).toBeNull();
+
     const retainedChecked = await verified(retained.data!.token, jwks.data!.keys as JWK[], ctx);
     expect(retainedChecked.payload).toMatchObject({
       id: signup.data!.user.id,
@@ -876,10 +1003,12 @@ compatScenario(
     expect(retainedChecked.payload.iat!).toBeGreaterThan(cachedIat);
     expect(retained.data!.token).not.toBe(header!);
     expect(retainedChecked.payload.exp! - retainedChecked.payload.iat!).toBe(900);
-    const beforeDenial = await state(ctx, mode),
-      denied = await guest.token();
+
+    const beforeDenial = await state(ctx, mode);
+    const denied = await guest.token();
     expect(denied.error?.status).toBe(401);
     expect(await state(ctx, mode)).toEqual(beforeDenial);
+
     const cleared = await owner.getSession({
       query: { disableCookieCache: true, disableRefresh: true },
       fetchOptions: {
@@ -890,11 +1019,13 @@ compatScenario(
     });
     expect(cleared.data).toBeNull();
     expect(receipts[3]!.get("set-auth-jwt")).toBeNull();
+
     const replay = await owner.token();
     expect(replay.error?.status).toBe(401);
     expect((await state(ctx, mode)).keys).toEqual(created.keys);
     expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(revokedOwner);
     expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+
     return {
       signup: ctx.snapshot(signup),
       other: ctx.snapshot(other),
@@ -934,20 +1065,25 @@ compatScenario(
       json: { operation: "clear" },
     });
     expect(cleared.status).toBe(200);
-    const before = await ctx.rawRequest({ path: "/__test/jwt-remote" }),
-      keysBefore = await ctx.rawRequest({ path: "/__test/jwks-state" });
+
+    const before = await ctx.rawRequest({ path: "/__test/jwt-remote" });
+    const keysBefore = await ctx.rawRequest({ path: "/__test/jwks-state" });
     expect(keysBefore.body).toEqual([]);
     expect((await state(ctx)).keys).toEqual([]);
+
     const responses = [];
+
     for (const mode of ["jwt-remote-raw", "jwt-remote-result", "jwt-remote-error"] as const) {
       const rejected = await ctx.rawRequest({ path: authProfilePath(mode) + "/jwks" });
       expect(rejected.status).toBe(404);
       expect(rejected.body).toBeNull();
+
       responses.push({ mode, rejected });
       expect((await ctx.rawRequest({ path: "/__test/jwt-remote" })).body).toEqual(before.body);
       expect((await ctx.rawRequest({ path: "/__test/jwks-state" })).body).toEqual(keysBefore.body);
       expect((await state(ctx)).keys).toEqual([]);
     }
+
     return { cleared, before, keysBefore, responses, after: await state(ctx) };
   },
   ["GET /jwks"],
@@ -958,9 +1094,9 @@ compatScenario(
   async (ctx) => {
     const mode: FixtureProfile = "jwt-keyring-custom-cache";
     await control(ctx, { operation: "reset" }, mode);
-    const owner = client(ctx, "owner", mode),
-      foreign = client(ctx, "foreign", mode),
-      guest = client(ctx, "guest", mode);
+    const owner = client(ctx, "owner", mode);
+    const foreign = client(ctx, "foreign", mode);
+    const guest = client(ctx, "guest", mode);
     const receipts: Headers[] = [];
     const signup = await owner.signUp.email(
       {
@@ -975,12 +1111,14 @@ compatScenario(
       },
     );
     expect(signup.error).toBeNull();
+
     const other = await foreign.signUp.email({
       email: ctx.uniqueEmail("keyring-custom-cache-foreign"),
       password: "password123",
       name: "Custom Cached Foreign",
     });
     expect(other.error).toBeNull();
+
     const foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
     const cookie = receipts[0]!
       .getSetCookie()
@@ -992,6 +1130,7 @@ compatScenario(
       isSecure: false,
     });
     expect(cache).not.toBeNull();
+
     const cacheToken = decodeURIComponent(
       cookie
         .split("; ")
@@ -1012,6 +1151,7 @@ compatScenario(
     };
     const jwks = await guest.jwks();
     expect(jwks.error).toBeNull();
+
     const original = await state(ctx, mode);
     const renamed = await ctx.rawRequest({
       path: "/__test/session-cookie-cache/control",
@@ -1024,6 +1164,7 @@ compatScenario(
       },
     });
     expect(renamed.status).toBe(200);
+
     const ownerBefore = await ctx.readUserState({ userId: signup.data!.user.id });
     await control(ctx, { operation: "clear-events" }, mode);
     const cached = await owner.getSession({
@@ -1034,8 +1175,10 @@ compatScenario(
       },
     });
     expect(cached.data!.user.name).toBe("Custom Cached Owner");
+
     const header = receipts[1]!.get("set-auth-jwt");
     expect(header).not.toBeNull();
+
     const cachedChecked = await verified(header!, jwks.data!.keys as JWK[], ctx);
     const snapshot = z
       .object({
@@ -1054,14 +1197,18 @@ compatScenario(
       JSON.parse(JSON.stringify(cached.data)),
     );
     expect(cachedChecked.payload.sub).toBe(`${signup.data!.user.email}|version:1|clock:number`);
+
     const cachedState = await state(ctx, mode);
     expect(cachedState.events.map((event) => event.operation)).toEqual([
       "payload",
       "subject",
       "read",
     ]);
-    for (const event of cachedState.events.filter((event) => event.operation !== "read"))
+
+    for (const event of cachedState.events.filter((event) => event.operation !== "read")) {
       expect(event.session).toEqual(snapshot);
+    }
+
     expect(cachedState.events[2]!.context).toEqual({
       path: "/get-session",
       method: "GET",
@@ -1069,9 +1216,11 @@ compatScenario(
       hasCookie: true,
     });
     expect(cachedState.keys).toEqual(original.keys);
+
     await control(ctx, { operation: "clear-events" }, mode);
     const nested = await owner.token();
     expect(nested.error).toBeNull();
+
     const nestedChecked = await verified(nested.data!.token, jwks.data!.keys as JWK[], ctx);
     expect(nestedChecked.payload.snapshot).toEqual({
       user: snapshot.user,
@@ -1080,20 +1229,25 @@ compatScenario(
     expect(nestedChecked.payload.sub).toBe(
       `${signup.data!.user.email}|version:absent|clock:undefined`,
     );
+
     const nestedState = await state(ctx, mode);
     expect(nestedState.events.map((event) => event.operation)).toEqual([
       "payload",
       "subject",
       "read",
     ]);
-    for (const event of nestedState.events.filter((event) => event.operation !== "read"))
+
+    for (const event of nestedState.events.filter((event) => event.operation !== "read")) {
       expect(event.session).toEqual(nestedChecked.payload.snapshot);
+    }
+
     expect(nestedState.events[2]!.context).toEqual({
       path: "/token",
       method: "GET",
       marker: "application-marker",
       hasCookie: true,
     });
+
     // An authenticated older envelope can omit version. Retain the exact real
     // issued identity/clock and use independent HMAC to authenticate that format.
     const legacyEnvelope = JSON.parse(Buffer.from(cacheToken, "base64url").toString());
@@ -1117,6 +1271,7 @@ compatScenario(
     });
     expect(legacyDecoded).not.toBeNull();
     expect(Object.hasOwn(legacyDecoded!, "version")).toBe(false);
+
     const legacyCache = {
       compactSessionCache: {
         token: legacyToken,
@@ -1137,6 +1292,7 @@ compatScenario(
       },
     });
     expect(legacy.error).toBeNull();
+
     const legacyChecked = await verified(
       legacyHeaders[0]!.get("set-auth-jwt")!,
       jwks.data!.keys as JWK[],
@@ -1148,14 +1304,18 @@ compatScenario(
     expect(legacyChecked.payload.sub).toBe(
       `${signup.data!.user.email}|version:absent|clock:number`,
     );
+
     const legacyState = await state(ctx, mode);
     expect(legacyState.events.map((event) => event.operation)).toEqual([
       "payload",
       "subject",
       "read",
     ]);
-    for (const event of legacyState.events.filter((event) => event.operation !== "read"))
+
+    for (const event of legacyState.events.filter((event) => event.operation !== "read")) {
       expect(event.session).toEqual(versionlessSnapshot);
+    }
+
     await control(ctx, { operation: "clear-events" }, mode);
     const bypass = await owner.getSession({
       query: { disableCookieCache: true, disableRefresh: true },
@@ -1166,6 +1326,7 @@ compatScenario(
       },
     });
     expect(bypass.data!.user.name).toBe("Updated Custom Owner");
+
     const bypassChecked = await verified(
       receipts[2]!.get("set-auth-jwt")!,
       jwks.data!.keys as JWK[],
@@ -1175,13 +1336,18 @@ compatScenario(
     expect(bypassChecked.payload.sub).toBe(
       `${signup.data!.user.email}|version:absent|clock:undefined`,
     );
+
     const bypassState = await state(ctx, mode);
-    for (const event of bypassState.events.filter((event) => event.operation !== "read"))
+
+    for (const event of bypassState.events.filter((event) => event.operation !== "read")) {
       expect(event.session).toEqual(bypassChecked.payload.snapshot);
+    }
+
     expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(ownerBefore);
     expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
     expect((await state(ctx, mode)).keys).toEqual(original.keys);
     expect((await ctx.rawRequest({ path: "/__test/jwks-state" })).body).toEqual([]);
+
     return {
       signup: ctx.snapshot(signup),
       other: ctx.snapshot(other),
@@ -1217,23 +1383,25 @@ compatScenario(
   "application JWT keyring server-only signing and verification preserve an absent HTTP request and the real virtual endpoint context",
   async (ctx) => {
     await control(ctx, { operation: "reset" });
-    const owner = client(ctx, "owner"),
-      foreign = client(ctx, "foreign"),
-      guest = client(ctx, "guest");
+    const owner = client(ctx, "owner");
+    const foreign = client(ctx, "foreign");
+    const guest = client(ctx, "guest");
     const signup = await owner.signUp.email({
       email: ctx.uniqueEmail("keyring-server-owner"),
       password: "password123",
       name: "Server JWT Owner",
     });
     expect(signup.error).toBeNull();
+
     const other = await foreign.signUp.email({
       email: ctx.uniqueEmail("keyring-server-foreign"),
       password: "password123",
       name: "Server JWT Foreign",
     });
     expect(other.error).toBeNull();
-    const ownerBefore = await ctx.readUserState({ userId: signup.data!.user.id }),
-      foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
+
+    const ownerBefore = await ctx.readUserState({ userId: signup.data!.user.id });
+    const foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
     const payload = {
       sub: "server-owned-subject",
       iat: 100,
@@ -1245,18 +1413,24 @@ compatScenario(
     const issuedState = await state(ctx);
     expect(issuedState.keys).toHaveLength(1);
     expect(issuedState.events.map((event) => event.operation)).toEqual(["read", "read", "create"]);
-    for (const event of issuedState.events)
+
+    for (const event of issuedState.events) {
       expect(event.context).toEqual({
         path: "virtual:",
         method: null,
         marker: null,
         hasCookie: false,
       });
+    }
+
     const jwks = await guest.jwks();
     expect(jwks.error).toBeNull();
+
     const checked = await verified(issuedToken, jwks.data!.keys as JWK[], ctx);
     expect(checked.payload).toMatchObject(payload);
+
     const verifiedContexts = [];
+
     for (const absentRequest of [true, false]) {
       await control(ctx, { operation: "clear-events" });
       const accepted = await control(ctx, {
@@ -1265,6 +1439,7 @@ compatScenario(
         absentRequest,
       });
       expect(accepted.body).toEqual({ payload: checked.payload });
+
       const acceptedState = await state(ctx);
       expect(acceptedState.events.map((event) => event.operation)).toEqual(["read"]);
       expect(acceptedState.events[0]!.context).toEqual({
@@ -1274,6 +1449,7 @@ compatScenario(
         hasCookie: false,
       });
       expect(acceptedState.keys).toEqual(issuedState.keys);
+
       await control(ctx, { operation: "clear-events" });
       const wrong = await control(ctx, {
         operation: "verify",
@@ -1282,14 +1458,18 @@ compatScenario(
         absentRequest,
       });
       expect(wrong.body).toEqual({ payload: null });
+
       const wrongState = await state(ctx);
       expect(wrongState.events.map((event) => event.operation)).toEqual(["read"]);
       expect(wrongState.events[0]!.context).toEqual(acceptedState.events[0]!.context);
+
       verifiedContexts.push({ absentRequest, accepted, acceptedState, wrong, wrongState });
     }
+
     expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(ownerBefore);
     expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
     expect((await ctx.rawRequest({ path: "/__test/jwks-state" })).body).toEqual([]);
+
     return {
       signup: ctx.snapshot(signup),
       other: ctx.snapshot(other),

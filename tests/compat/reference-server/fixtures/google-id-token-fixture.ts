@@ -1,5 +1,6 @@
 /** Default published Google verifier; only its real HTTP JWKS transport is redirected. */
 import { type BetterAuthOptions, betterAuth } from "better-auth";
+
 export function googleIdTokenProfiles(options: BetterAuthOptions) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   for (const name of [

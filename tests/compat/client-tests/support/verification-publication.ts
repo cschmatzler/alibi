@@ -1,27 +1,40 @@
 import { createHash } from "node:crypto";
+
 import type { RequestWindow } from "./trace";
 
 export const verificationPublicationObserver = "/__test/verification-publications";
+
 type Row = Record<string, unknown>;
+
 const row = (value: unknown): value is Row =>
   value !== null && typeof value === "object" && !Array.isArray(value);
+
 const exact = (a: unknown, b: unknown): boolean => {
-  if (Array.isArray(a))
+  if (Array.isArray(a)) {
     return Array.isArray(b) && a.length === b.length && a.every((v, i) => exact(v, b[i]));
-  if (row(a))
+  }
+  if (row(a)) {
     return (
       row(b) &&
       Object.keys(a).length === Object.keys(b).length &&
       Object.entries(a).every(([k, v]) => Object.hasOwn(b, k) && exact(v, b[k]))
     );
+  }
   return Object.is(a, b);
 };
+
 const time = (value: unknown): number | undefined => {
-  if (typeof value !== "string") return;
+  if (typeof value !== "string") {
+    return;
+  }
   const parsed = Date.parse(value);
-  if (Number.isFinite(parsed) && new Date(parsed).toISOString() === value) return parsed;
+  if (Number.isFinite(parsed) && new Date(parsed).toISOString() === value) {
+    return parsed;
+  }
 };
+
 const hash = (value: string) => createHash("sha256").update(value).digest("base64url");
+
 const cookie = (value: unknown): string | undefined =>
   typeof value === "string"
     ? value
@@ -52,11 +65,14 @@ export function verificationPublicationPairs(
   ) => boolean,
   stateCookie: (state: string, cookie: string) => boolean,
 ): PublicationPair[] {
-  if (!row(left) || !row(right) || !Array.isArray(left.traces) || !Array.isArray(right.traces))
+  if (!row(left) || !row(right) || !Array.isArray(left.traces) || !Array.isArray(right.traces)) {
     return [];
-  const lt = left.traces,
-    rt = right.traces;
+  }
+
+  const lt = left.traces;
+  const rt = right.traces;
   const result: PublicationPair[] = [];
+
   function admission(
     value: Row,
     traces: unknown[],
@@ -68,26 +84,31 @@ export function verificationPublicationPairs(
       !row(value.before.snapshot) ||
       !row(value.snapshot) ||
       !row(value.set)
-    )
+    ) {
       return;
-    const req = value.request,
-      before = value.before,
-      candidate = value.before.snapshot,
-      snapshot = value.snapshot,
-      set = value.set;
-    const requestStart = time(req.startedAt),
-      requestEnd = time(req.finishedAt),
-      hookAt = time(before.executedAt),
-      setAt = time(set.executedAt),
-      expiry = time(snapshot.expiresAt);
-    const storedAt = time(set.storedAt),
-      storageExpiresAt = time(set.storageExpiresAt);
+    }
+
+    const req = value.request;
+    const before = value.before;
+    const candidate = value.before.snapshot;
+    const snapshot = value.snapshot;
+    const set = value.set;
+    const requestStart = time(req.startedAt);
+    const requestEnd = time(req.finishedAt);
+    const hookAt = time(before.executedAt);
+    const setAt = time(set.executedAt);
+    const expiry = time(snapshot.expiresAt);
+    const storedAt = time(set.storedAt);
+    const storageExpiresAt = time(set.storageExpiresAt);
+
     if (
       [requestStart, requestEnd, hookAt, setAt, expiry, storedAt, storageExpiresAt].some(
         (v) => v === undefined,
       )
-    )
+    ) {
       return;
+    }
+
     if (
       !(
         requestStart! <= hookAt! &&
@@ -95,8 +116,10 @@ export function verificationPublicationPairs(
         setAt! <= storedAt! &&
         storedAt! <= requestEnd!
       )
-    )
+    ) {
       return;
+    }
+
     if (
       set.operation !== "set" ||
       typeof set.key !== "string" ||
@@ -106,8 +129,10 @@ export function verificationPublicationPairs(
       set.rawValue !== JSON.stringify(set.value) ||
       !exact(set.value, snapshot) ||
       !Object.entries(candidate).every(([k, v]) => exact(v, snapshot[k]))
-    )
+    ) {
       return;
+    }
+
     if (
       typeof set.ttl !== "number" ||
       !Number.isInteger(set.ttl) ||
@@ -115,13 +140,19 @@ export function verificationPublicationPairs(
       storageExpiresAt !== storedAt! + set.ttl * 1000 ||
       set.ttl < Math.max(Math.floor((expiry! - setAt!) / 1000), 0) ||
       set.ttl > Math.max(Math.floor((expiry! - hookAt!) / 1000), 0)
-    )
+    ) {
       return;
+    }
+
     const suffix =
       /^(\/__test\/profiles\/verification-storage-(?:cache|mixed)(?:-default)?\/api\/auth)\/(email-otp\/send-verification-otp|sign-in\/(?:magic-link|social)|one-time-token\/generate)$/.exec(
         String(req.path),
       );
-    if (!suffix) return;
+
+    if (!suffix) {
+      return;
+    }
+
     const kind: PublicationPair["kind"] =
       suffix[2] === "email-otp/send-verification-otp"
         ? "otp"
@@ -130,11 +161,20 @@ export function verificationPublicationPairs(
           : suffix[2] === "sign-in/social"
             ? "oauth"
             : "transfer";
-    if (kind !== "oauth" && !suffix[1]!.includes("-default/")) return;
+
+    if (kind !== "oauth" && !suffix[1]!.includes("-default/")) {
+      return;
+    }
+
     const lifetime = kind === "transfer" ? 180000 : kind === "oauth" ? 600000 : 300000;
-    if (expiry! < requestStart! + lifetime || expiry! > requestEnd! + lifetime) return;
+
+    if (expiry! < requestStart! + lifetime || expiry! > requestEnd! + lifetime) {
+      return;
+    }
+
     const matching = traces.flatMap((trace, index) => {
       const window = windows?.[index];
+
       if (
         !row(trace) ||
         !window ||
@@ -152,13 +192,17 @@ export function verificationPublicationPairs(
         window.finishedAt < requestEnd! ||
         !Object.hasOwn(window, "verificationInput") ||
         !exact(window.verificationInput, req.body)
-      )
+      ) {
         return [];
+      }
+
       if (
         kind === "transfer" &&
         (!window.sessionCookie || window.sessionCookie !== cookie(req.cookie))
-      )
+      ) {
         return [];
+      }
+
       // Adjacent identical requests can touch the same millisecond. Select the
       // actual signed state before requiring one producer; time alone is not an ID.
       if (kind === "oauth") {
@@ -170,16 +214,23 @@ export function verificationPublicationPairs(
             typeof payload.oauthState !== "string" ||
             !window.issuedVerificationStateCookie ||
             !stateCookie(payload.oauthState, window.issuedVerificationStateCookie)
-          )
+          ) {
             return [];
+          }
         } catch {
           return [];
         }
       }
+
       return [index];
     });
-    if (matching.length !== 1 || typeof snapshot.identifier !== "string") return;
+
+    if (matching.length !== 1 || typeof snapshot.identifier !== "string") {
+      return;
+    }
+
     let logical: string;
+
     if (kind === "otp") {
       if (
         req.method !== "POST" ||
@@ -192,8 +243,9 @@ export function verificationPublicationPairs(
         typeof value.delivery.otp !== "string" ||
         !/^\d{6}$/.test(value.delivery.otp) ||
         snapshot.value !== `${value.delivery.otp}:0`
-      )
+      ) {
         return;
+      }
       logical = `sign-in-otp-${req.body.email}`;
     } else if (kind === "magic") {
       if (
@@ -204,12 +256,14 @@ export function verificationPublicationPairs(
         value.delivery.email !== req.body.email ||
         typeof value.delivery.token !== "string" ||
         snapshot.value !== JSON.stringify({ email: req.body.email, name: req.body.name })
-      )
+      ) {
         return;
+      }
       logical = value.delivery.token;
     } else if (kind === "oauth") {
-      const trace = traces[matching[0]!] as Row,
-        window = windows![matching[0]!]!;
+      const trace = traces[matching[0]!] as Row;
+      const window = windows![matching[0]!]!;
+
       if (
         req.method !== "POST" ||
         !row(req.body) ||
@@ -220,11 +274,14 @@ export function verificationPublicationPairs(
         typeof trace.responseBody.url !== "string" ||
         typeof snapshot.value !== "string" ||
         !window.issuedVerificationStateCookie
-      )
+      ) {
         return;
+      }
+
       try {
-        const url = new URL(trace.responseBody.url),
-          payload: unknown = JSON.parse(snapshot.value);
+        const url = new URL(trace.responseBody.url);
+        const payload: unknown = JSON.parse(snapshot.value);
+
         if (
           !row(payload) ||
           JSON.stringify(payload) !== snapshot.value ||
@@ -244,8 +301,10 @@ export function verificationPublicationPairs(
           url.searchParams.getAll("code_challenge_method").length !== 1 ||
           url.searchParams.get("code_challenge_method") !== "S256" ||
           !stateCookie(payload.oauthState, window.issuedVerificationStateCookie)
-        )
+        ) {
           return;
+        }
+
         logical = payload.oauthState;
       } catch {
         return;
@@ -257,15 +316,22 @@ export function verificationPublicationPairs(
         !row(trace.responseBody) ||
         typeof trace.responseBody.token !== "string" ||
         typeof snapshot.value !== "string"
-      )
+      ) {
         return;
+      }
       logical = `one-time-token:${trace.responseBody.token}`;
     }
-    if (snapshot.identifier !== hash(logical)) return;
+
+    if (snapshot.identifier !== hash(logical)) {
+      return;
+    }
+
     return { index: matching[0]!, kind, cookie: cookie(req.cookie) };
   }
+
   lt.forEach((trace, index) => {
     const other = rt[index];
+
     if (
       !row(trace) ||
       !row(other) ||
@@ -280,8 +346,10 @@ export function verificationPublicationPairs(
       !row(other.responseBody) ||
       !Array.isArray(trace.responseBody.publications) ||
       !Array.isArray(other.responseBody.publications)
-    )
+    ) {
       return;
+    }
+
     const trusted = (body: unknown, window: RequestWindow | undefined) =>
       typeof window?.verificationObserverDigest === "string" &&
       /^[a-f0-9]{64}$/.test(window.verificationObserverDigest) &&
@@ -293,9 +361,13 @@ export function verificationPublicationPairs(
     const others = other.responseBody.publications;
     trace.responseBody.publications.forEach((a, publicationIndex) => {
       const b = others[publicationIndex];
-      if (!row(a) || !row(b)) return;
-      const pa = admission(a, lt, leftWindows),
-        pb = admission(b, rt, rightWindows);
+
+      if (!row(a) || !row(b)) {
+        return;
+      }
+
+      const pa = admission(a, lt, leftWindows);
+      const pb = admission(b, rt, rightWindows);
       const sameProducer =
         pa &&
         pb &&

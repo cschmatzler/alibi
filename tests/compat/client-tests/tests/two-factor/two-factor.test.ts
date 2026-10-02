@@ -1,8 +1,10 @@
 import { expect } from "bun:test";
+
 import { createAuthClient } from "better-auth/client";
 import { organizationClient, twoFactorClient } from "better-auth/client/plugins";
 import { Cookie } from "tough-cookie";
 import { z } from "zod";
+
 import { compatScenario } from "../../support/scenario";
 import { generateCurrentTotp, redactTwoFactorPayload } from "../../support/totp";
 import { organizationActor } from "../organization/helpers";
@@ -61,8 +63,11 @@ compatScenario(
     });
 
     const enable = await client.twoFactor.enable({ password });
-    if (!enable.data || !("totpURI" in enable.data))
+
+    if (!enable.data || !("totpURI" in enable.data)) {
       throw new Error("TOTP enrollment must return a URI");
+    }
+
     const code = await generateCurrentTotp(enable.data.totpURI);
     const verifyTotp = await client.twoFactor.verifyTotp({ code });
     const session = await client.getSession();
@@ -110,14 +115,23 @@ compatScenario(
     const verificationStartedAt = Date.now();
     const verifyOtp = await client.twoFactor.verifyOtp({ code: otpRecord.otp });
     const verificationFinishedAt = Date.now();
-    if (!verifyOtp.data?.user.id) throw new Error("Second-factor completion must return its owner");
+
+    if (!verifyOtp.data?.user.id) {
+      throw new Error("Second-factor completion must return its owner");
+    }
+
     const persistedBeforeRead = await ctx.readUserState({ userId: verifyOtp.data.user.id });
     const session = await client.getSession();
     expect(session.data?.session.token).toBe(verifyOtp.data.token);
     expect(session.data?.session.userId).toBe(verifyOtp.data.user.id);
+
     const persistedAfterRead = await ctx.readUserState({ userId: verifyOtp.data.user.id });
     expect(persistedAfterRead).toEqual(persistedBeforeRead);
-    if (!session.data) throw new Error("Second-factor session must authenticate");
+
+    if (!session.data) {
+      throw new Error("Second-factor session must authenticate");
+    }
+
     expect(session.data.session.expiresAt.getTime()).toBeGreaterThanOrEqual(
       verificationStartedAt + 86_400_000,
     );
@@ -186,8 +200,14 @@ compatScenario(
 );
 
 function enrollmentUri(value: unknown): string {
-  if (value && typeof value === "object" && "totpURI" in value && typeof value.totpURI === "string")
+  if (
+    value &&
+    typeof value === "object" &&
+    "totpURI" in value &&
+    typeof value.totpURI === "string"
+  ) {
     return value.totpURI;
+  }
   throw new Error("TOTP enrollment must return a URI");
 }
 
@@ -199,16 +219,23 @@ compatScenario(
     const password = "password123";
     const signup = await client.signUp.email({ email, password, name: "Disable Two Factor User" });
     expect(signup.error).toBeNull();
-    if (!signup.data) throw new Error("two-factor user must be created");
+
+    if (!signup.data) {
+      throw new Error("two-factor user must be created");
+    }
+
     const userId = signup.data.user.id;
     const enable = await client.twoFactor.enable({ password });
     expect(enable.error).toBeNull();
+
     const setupCode = await generateCurrentTotp(enrollmentUri(enable.data));
     const enrolled = await client.twoFactor.verifyTotp({ code: setupCode });
     expect(enrolled.error).toBeNull();
+
     await client.signOut();
     const signIn = await client.signIn.email({ email, password, rememberMe: false });
     expect(signIn.error).toBeNull();
+
     z.object({ twoFactorRedirect: z.literal(true) }).parse(signIn.data);
     await client.twoFactor.sendOtp({});
     const otp = z.object({ otp: z.string().min(6) }).parse(await ctx.readTwoFactorOtp({ email }));
@@ -221,34 +248,46 @@ compatScenario(
         onSuccess(context) {
           for (const header of context.response.headers.getSetCookie()) {
             const cookie = Cookie.parse(header);
-            if (cookie?.key.endsWith(".trust_device")) signedTrustCookie = cookie.value;
-            if (cookie?.key.endsWith(".session_token"))
+            if (cookie?.key.endsWith(".trust_device")) {
+              signedTrustCookie = cookie.value;
+            }
+            if (cookie?.key.endsWith(".session_token")) {
               signedSessionCookie = `${cookie.key}=${cookie.value}`;
+            }
           }
         },
       },
     });
     expect(trusted.error).toBeNull();
-    if (!signedTrustCookie || !signedSessionCookie)
+
+    if (!signedTrustCookie || !signedSessionCookie) {
       throw new Error("trusted verification must set both signed cookies");
+    }
+
     const decodedTrustCookie = decodeURIComponent(signedTrustCookie);
     const trustIdentifier = decodedTrustCookie
       .slice(0, decodedTrustCookie.lastIndexOf("."))
       .split("!")[1];
-    if (!trustIdentifier)
+
+    if (!trustIdentifier) {
       throw new Error("trust cookie must identify its persisted verification record");
+    }
+
     const trustBeforeRaw = await ctx.readVerificationState({ identifier: trustIdentifier });
     const trustBefore = z.array(z.object({ value: z.string() })).parse(trustBeforeRaw);
     expect(trustBefore).toHaveLength(1);
     expect(trustBefore[0]?.value).toBe(userId);
+
     const organization = await organizationActor(ctx).orgClient.organization.create({
       name: "Two Factor Org",
       slug: ctx.uniqueToken("two-factor-disable-org"),
     });
     expect(organization.error).toBeNull();
+
     const before = await client.getSession();
     expect(before.data?.user.twoFactorEnabled).toBe(true);
     expect(before.data?.session.activeOrganizationId).toBe(organization.data?.id);
+
     const stateBefore = z
       .object({ twoFactorExists: z.boolean() })
       .parse(await ctx.readUserState({ userId }));
@@ -258,8 +297,10 @@ compatScenario(
     const guestValidation = await disableGuestValidation(ctx);
     const unauthenticated = await twoFactorActor(ctx, "guest").twoFactor.disable({ password });
     expect(unauthenticated.error).toMatchObject({ status: 401 });
+
     const wrongPassword = await client.twoFactor.disable({ password: "incorrect-password" });
     expect(wrongPassword.error).toMatchObject({ status: 400, code: "INVALID_PASSWORD" });
+
     const other = twoFactorActor(ctx, "foreign-user");
     const foreignSignup = await other.signUp.email({
       email: ctx.uniqueEmail("foreign-disable"),
@@ -267,8 +308,10 @@ compatScenario(
       name: "Other User",
     });
     expect(foreignSignup.error).toBeNull();
+
     const wrongUser = await other.twoFactor.disable({ password });
     expect(wrongUser.error).toMatchObject({ status: 400, code: "INVALID_PASSWORD" });
+
     const rejectedState = await ctx.readUserState({ userId });
     expect(rejectedState).toEqual(ownerBeforeRejections);
     expect(
@@ -277,17 +320,20 @@ compatScenario(
     expect(await ctx.readVerificationState({ identifier: trustIdentifier })).toEqual(
       trustBeforeRaw,
     );
+
     const unchanged = await client.getSession();
     expect(unchanged.data?.session.token).toBe(before.data?.session.token);
     expect(unchanged.data?.user.twoFactorEnabled).toBe(true);
 
     const disable = await client.twoFactor.disable({ password });
     expect(disable.data).toEqual({ status: true });
+
     const after = await client.getSession();
     expect(after.data?.user.id).toBe(userId);
     expect(after.data?.user.twoFactorEnabled).toBe(false);
     expect(after.data?.session.token).not.toBe(before.data?.session.token);
     expect(after.data?.session.activeOrganizationId).toBe(organization.data?.id);
+
     const afterStateRaw = await ctx.readUserState({ userId });
     const afterState = z
       .object({ twoFactorExists: z.boolean(), sessions: z.array(z.object({ token: z.string() })) })
@@ -295,27 +341,34 @@ compatScenario(
     expect(afterState.twoFactorExists).toBe(false);
     expect(afterState.sessions).toHaveLength(1);
     expect(afterState.sessions[0]?.token).toBe(after.data?.session.token);
+
     const trustAfter = await ctx.readVerificationState({ identifier: trustIdentifier });
     expect(trustAfter).toEqual([]);
+
     const revoked = await twoFactorActor(ctx, "old-session").getSession({
       fetchOptions: { headers: { cookie: signedSessionCookie } },
     });
     expect(revoked.data).toBeNull();
+
     const replayDisable = await twoFactorActor(ctx, "old-session").twoFactor.disable({
       password,
       fetchOptions: { headers: { cookie: signedSessionCookie } },
     });
     expect(replayDisable.error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
     expect(await ctx.readUserState({ userId })).toEqual(afterStateRaw);
+
     const removedFactor = await client.twoFactor.getTotpUri({ password });
     expect(removedFactor.error).toMatchObject({ status: 400, code: "TOTP_NOT_ENABLED" });
+
     await client.signOut();
     const passwordOnly = await client.signIn.email({ email, password });
     expect(passwordOnly.error).toBeNull();
     expect(passwordOnly.data).toHaveProperty("token");
+
     const sessionAfterSignIn = await client.getSession();
     expect(sessionAfterSignIn.data?.user.id).toBe(userId);
     expect(sessionAfterSignIn.data?.user.twoFactorEnabled).toBe(false);
+
     return {
       enrolled: ctx.snapshot(enrolled),
       signIn: ctx.snapshot(signIn),
@@ -352,21 +405,28 @@ compatScenario(
       name: "Sensitive Factor Owner",
     });
     expect(signup.error).toBeNull();
-    if (!signup.data) throw new Error("factor owner requires a session");
+
+    if (!signup.data) {
+      throw new Error("factor owner requires a session");
+    }
+
     const userId = signup.data.user.id;
     const enable = await client.twoFactor.enable({ password });
     const enrolled = await client.twoFactor.verifyTotp({
       code: await generateCurrentTotp(enrollmentUri(enable.data)),
     });
     expect(enrolled.error).toBeNull();
+
     const before = await client.getSession();
     expect(before.data?.user.twoFactorEnabled).toBe(true);
+
     const keyResponse = await ctx.rawRequest({
       path: "/__test/api-key/create",
       method: "POST",
       json: { userId, configId: "session" },
     });
     expect(keyResponse.status).toBe(200);
+
     const key = z
       .object({ id: z.string(), key: z.string(), referenceId: z.string() })
       .parse(keyResponse.body);
@@ -376,6 +436,7 @@ compatScenario(
       headers: { "x-api-key": key.key },
     });
     expect(machine.status).toBe(200);
+
     const virtual = z
       .object({
         user: z.object({ id: z.string() }),
@@ -385,6 +446,7 @@ compatScenario(
     expect(virtual.user.id).toBe(userId);
     expect(virtual.session.id).toBe(key.id);
     expect(virtual.session.token).toBe(key.key);
+
     const apiKeyDisable = await ctx.rawRequest({
       actor: "machine",
       path: "/api/auth/two-factor/disable",
@@ -396,6 +458,7 @@ compatScenario(
       status: 401,
       body: { message: "Unauthorized", code: "UNAUTHORIZED" },
     });
+
     const bearerDisable = await ctx.rawRequest({
       actor: "bare-bearer",
       path: "/api/auth/two-factor/disable",
@@ -407,15 +470,19 @@ compatScenario(
       status: 401,
       body: { message: "Unauthorized", code: "UNAUTHORIZED" },
     });
+
     const unchanged = await client.getSession();
     expect(unchanged.data?.session.token).toBe(before.data?.session.token);
     expect(unchanged.data?.user.twoFactorEnabled).toBe(true);
+
     const state = z
       .object({ twoFactorExists: z.boolean() })
       .parse(await ctx.readUserState({ userId }));
     expect(state.twoFactorExists).toBe(true);
+
     const disable = await client.twoFactor.disable({ password });
     expect(disable.data).toEqual({ status: true });
+
     return {
       signup: ctx.snapshot(signup),
       enrolled: ctx.snapshot(enrolled),

@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+
 import { tryGetCurrentAuthEndpointContext } from "@better-auth/core/context";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
@@ -18,6 +19,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
       resetCollection: () => void;
     }
   >();
+
   for (const mode of [
     "normal",
     "output",
@@ -43,6 +45,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
     const output = (entity: string, field: string) => async (value: unknown) => {
       events.push({ phase: "output", entity, field, value });
       await Promise.resolve();
+
       if (
         entity === "session" &&
         field === "label" &&
@@ -61,6 +64,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
           ...(requestPath === "/list-sessions" ? { requestPath } : {}),
         });
       }
+
       if (entity === "session" && field === "label" && value === "collection-coordinated-slow") {
         await collection.pending.promise;
         const requestPath = tryGetCurrentAuthEndpointContext()?.path;
@@ -73,16 +77,24 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
           requestPath,
         });
       }
-      if (entity === "session" && field === "omitted" && value === "collection-coordinated-slow")
+
+      if (entity === "session" && field === "omitted" && value === "collection-coordinated-slow") {
         collection.drained.resolve();
-      if (entity === "session" && field === "omitted" && value === "collection-ready")
+      }
+
+      if (entity === "session" && field === "omitted" && value === "collection-ready") {
         collection.ready.resolve();
+      }
+
       if (entity === "session" && field === "label" && value === "collection-coordinated-reject") {
         await collection.ready.promise;
         throw new Error("application output failed");
       }
-      if (field === "label" && (value === "throw" || value === "collection-reject"))
+
+      if (field === "label" && (value === "throw" || value === "collection-reject")) {
         throw new Error("application output failed");
+      }
+
       return field === "hidden"
         ? String(value).toUpperCase()
         : field === "omitted"
@@ -96,14 +108,18 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
           events.push({ phase: "after", entity, action, record: null });
           return;
         }
+
         const owner = entity === "user" ? record.id : record.userId;
+
         if (
           mode === "cached" &&
           entity === "session" &&
           action === "update" &&
           (record.label as { stored?: string })?.stored === "after-error"
-        )
+        ) {
           throw new Error("application after failed");
+        }
+
         events.push({
           phase: "after",
           entity,
@@ -125,7 +141,9 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
       };
     const validateLabel = (value: unknown) => {
       events.push({ phase: "validation", entity: "user", field: "label", value });
-      if (mode === "async-validation") return Promise.resolve({ value });
+      if (mode === "async-validation") {
+        return Promise.resolve({ value });
+      }
       return typeof value !== "string" || value === "reject"
         ? { issues: [{ message: "Label rejected" }] }
         : { value: value.trim() };
@@ -133,7 +151,11 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
     const bindLabel = async (value: unknown) => {
       events.push({ phase: "input", entity: "user", field: "label", value });
       await Promise.resolve();
-      if (value === "explode") throw new Error("application input failed");
+
+      if (value === "explode") {
+        throw new Error("application input failed");
+      }
+
       return `bound:${value}`;
     };
     const fields = (entity: string) => ({
@@ -484,22 +506,36 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
                           const command =
                             data.hidden ??
                             (!Object.hasOwn(data, "label") ? stored?.hidden : undefined);
-                          if (command === "cancel") return false;
-                          if (command === "ordinary-error")
+
+                          if (command === "cancel") {
+                            return false;
+                          }
+
+                          if (command === "ordinary-error") {
                             throw new Error("application before failed");
-                          if (command === "api-error")
+                          }
+
+                          if (command === "api-error") {
                             throw new APIError("FORBIDDEN", {
                               code: "APP_DENIED",
                               message: "Application denied",
                             });
-                          if (command === "delete")
+                          }
+
+                          if (command === "delete") {
                             database
                               .query("DELETE FROM app_session WHERE token=?")
                               .run(token ?? "");
-                          if (command === "after-error" || command === "throw")
+                          }
+
+                          if (command === "after-error" || command === "throw") {
                             return { data: { ...data, label: command } };
-                          if (command === "mutate")
+                          }
+
+                          if (command === "mutate") {
                             return { data: { ...data, label: "hook-updated" } };
+                          }
+
                           return { data };
                         },
                       }
@@ -512,7 +548,11 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
         : {}),
     });
     await (await getMigrations(auth.options)).runMigrations();
-    if (mode !== "plugin") database.run("ALTER TABLE app_user ADD COLUMN role TEXT");
+
+    if (mode !== "plugin") {
+      database.run("ALTER TABLE app_user ADD COLUMN role TEXT");
+    }
+
     database.run(
       "ALTER TABLE app_user ADD COLUMN private_column TEXT NOT NULL DEFAULT 'physical-private'",
     );
@@ -529,6 +569,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
       },
     });
   }
+
   return {
     profiles,
     reset() {
@@ -536,20 +577,29 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
       for (const { database, events, resetCollection } of applications.values()) {
         resetCollection();
         events.length = 0;
-        for (const table of ["app_session", "app_account", "app_verification", "app_user"])
+        for (const table of ["app_session", "app_account", "app_verification", "app_user"]) {
           database.run(`DELETE FROM ${table}`);
+        }
       }
     },
     async handle(request: Request) {
       const url = new URL(request.url);
+
       if (
         url.pathname !== "/__test/additional-fields/state" &&
         url.pathname !== "/__test/additional-fields/rewind-session"
-      )
+      ) {
         return null;
+      }
+
       const application = applications.get(url.searchParams.get("profile") ?? "normal");
-      if (!application) return Response.json({ message: "Unknown application" }, { status: 404 });
+
+      if (!application) {
+        return Response.json({ message: "Unknown application" }, { status: 404 });
+      }
+
       const { database, events } = application;
+
       if (url.pathname === "/__test/additional-fields/rewind-session") {
         const { token, expiresAt, hidden, label, omitted, releaseCollection } =
           (await request.json()) as {
@@ -560,39 +610,56 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
             omitted?: string;
             releaseCollection?: boolean;
           };
+
         if (
           request.method !== "POST" ||
           typeof token !== "string" ||
           !Number.isFinite(new Date(expiresAt).getTime())
-        )
+        ) {
           return Response.json({ message: "Invalid operator input" }, { status: 400 });
-        if (releaseCollection) await application.releasePending();
+        }
+
+        if (releaseCollection) {
+          await application.releasePending();
+        }
+
         database.run("UPDATE app_session SET expiresAt=? WHERE token=?", [
           new Date(expiresAt).toISOString(),
           token,
         ]);
-        if (label !== undefined)
+
+        if (label !== undefined) {
           database.run("UPDATE app_session SET label=? WHERE token=?", [label, token]);
-        if (omitted !== undefined)
+        }
+
+        if (omitted !== undefined) {
           database.run("UPDATE app_session SET omitted=? WHERE token=?", [omitted, token]);
-        if (hidden !== undefined)
+        }
+
+        if (hidden !== undefined) {
           database.run("UPDATE app_session SET hidden=? WHERE token=?", [hidden, token]);
+        }
       }
+
       const rows = (table: string) =>
         database
           .query(`SELECT * FROM ${table}`)
           .all()
           .map((value) => {
             const row = value as Record<string, unknown>;
+
             for (const field of [
               "createdAt",
               "updatedAt",
               "expiresAt",
               "accessTokenExpiresAt",
               "refreshTokenExpiresAt",
-            ])
-              if (row[field] !== null && row[field] !== undefined)
+            ]) {
+              if (row[field] !== null && row[field] !== undefined) {
                 row[field] = new Date(row[field] as string | number).toISOString();
+              }
+            }
+
             if (table === "app_user") {
               row.name = row.display_name;
               delete row.display_name;
@@ -600,6 +667,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
               delete row.user_label;
               row.emailVerified = row.emailVerified === 1;
             }
+
             return row;
           });
       return Response.json({

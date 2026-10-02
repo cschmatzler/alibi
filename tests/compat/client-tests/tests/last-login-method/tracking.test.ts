@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+
 import { passkeyClient } from "@better-auth/passkey/client";
 import { createAuthClient } from "better-auth/client";
 import {
@@ -12,6 +13,7 @@ import {
 } from "better-auth/client/plugins";
 import { Cookie } from "tough-cookie";
 import { z } from "zod";
+
 import { Authenticator } from "../../support/authenticator";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
@@ -41,9 +43,11 @@ function actor(ctx: ScenarioContext, name: string, profile: FixtureProfile) {
   });
   return { client, cookies, fetch: transport.fetch };
 }
+
 function tracking(headers: string[], name = "better-auth.last_used_login_method") {
   return headers.map((header) => Cookie.parse(header)).find((cookie) => cookie?.key === name);
 }
+
 async function control(ctx: ScenarioContext, body: Record<string, unknown>) {
   const result = await ctx.rawRequest({
     path: "/__test/last-login-method",
@@ -53,6 +57,7 @@ async function control(ctx: ScenarioContext, body: Record<string, unknown>) {
   expect(result.status).toBe(200);
   return result.body;
 }
+
 async function state(ctx: ScenarioContext) {
   const result = await ctx.rawRequest({ path: "/__test/last-login-method" });
   expect(result.status).toBe(200);
@@ -70,6 +75,7 @@ async function state(ctx: ScenarioContext) {
     })
     .parse(result.body);
 }
+
 function observed(headers: string[], name: string) {
   const cookie = tracking(headers, name);
   return cookie
@@ -87,15 +93,17 @@ function observed(headers: string[], name: string) {
       }
     : null;
 }
+
 function projectEvents(value: Awaited<ReturnType<typeof state>>) {
   return {
     ...value,
     events: value.events.map((event) => {
       const body = event.body as any;
-      if (!body?.response?.response)
+      if (!body?.response?.response) {
         return typeof body?.otp === "string"
           ? { ...event, body: { ...body, otp: { token: body.otp } } }
           : event;
+      }
       return {
         ...event,
         body: {
@@ -116,6 +124,7 @@ function projectEvents(value: Awaited<ReturnType<typeof state>>) {
     }),
   };
 }
+
 for (const mode of [
   "default",
   "database",
@@ -134,18 +143,19 @@ for (const mode of [
     `last login ${mode} preserves real cookie consent database updates and failed authentication ownership`,
     async (ctx) => {
       const profile = `last-login-${mode}` as FixtureProfile;
-      const owner = actor(ctx, "owner", profile),
-        sibling = actor(ctx, "sibling", profile),
-        foreign = actor(ctx, "foreign", profile),
-        guest = actor(ctx, "guest", profile);
+      const owner = actor(ctx, "owner", profile);
+      const sibling = actor(ctx, "sibling", profile);
+      const foreign = actor(ctx, "foreign", profile);
+      const guest = actor(ctx, "guest", profile);
       await control(ctx, { action: "reset" });
-      const email = ctx.uniqueEmail("last-login-owner"),
-        password = "password123";
+      const email = ctx.uniqueEmail("last-login-owner");
+      const password = "password123";
       const headers = {
         "x-last-login-probe": "original signup",
         "x-last-login-method": "custom/signup% owner",
       };
       let forged: unknown = null;
+
       if (mode !== "default") {
         const before = await state(ctx);
         forged = await guest.client.signUp.email({
@@ -162,25 +172,33 @@ for (const mode of [
             .parse(forged),
         ).toBeDefined();
         expect((await state(ctx)).users).toEqual(before.users);
+
         await control(ctx, { action: "clear" });
       }
+
       const signup = await owner.client.signUp.email(
         { email, password, name: "Owner" },
         { headers },
       );
       expect(signup.error).toBeNull();
-      if (!signup.data) throw new Error("real owner required");
+
+      if (!signup.data) {
+        throw new Error("real owner required");
+      }
+
       const name =
-          mode === "custom"
-            ? "fixture.last_login_method"
-            : mode === "policy"
-              ? "policy.last_login_method"
-              : "better-auth.last_used_login_method",
-        method =
-          mode === "custom" || mode === "update-error" ? headers["x-last-login-method"] : "email";
+        mode === "custom"
+          ? "fixture.last_login_method"
+          : mode === "policy"
+            ? "policy.last_login_method"
+            : "better-auth.last_used_login_method";
+      const method =
+        mode === "custom" || mode === "update-error" ? headers["x-last-login-method"] : "email";
       const cookie = tracking(owner.cookies.at(-1)!, name);
-      if (mode === "denied" || mode === "cookie-error") expect(cookie).toBeUndefined();
-      else {
+
+      if (mode === "denied" || mode === "cookie-error") {
+        expect(cookie).toBeUndefined();
+      } else {
         expect(decodeURIComponent(cookie!.value)).toBe(method);
         expect(cookie!.httpOnly).toBe(false);
         expect(cookie!.maxAge).toBe(
@@ -196,19 +214,25 @@ for (const mode of [
         expect(cookie!.sameSite).toBe(mode === "policy" ? "strict" : "lax");
         expect(cookie!.expires).toBe("Infinity");
       }
+
       const afterSignup = await state(ctx);
       expect(
         afterSignup.users.find((row) => row.id === signup.data!.user.id)?.lastLoginMethod,
       ).toBe(mode === "default" ? null : mode === "transform" ? `stored:${method}` : method);
       expect(signup.data.user).toMatchObject(mode === "default" ? {} : { lastLoginMethod: method });
       expect(afterSignup.events.filter((event) => event.kind === "cookie")).toHaveLength(1);
+
       const other = await foreign.client.signUp.email({
         email: ctx.uniqueEmail("last-login-foreign"),
         password,
         name: "Foreign",
       });
       expect(other.error).toBeNull();
-      if (!other.data) throw new Error("real foreign owner required");
+
+      if (!other.data) {
+        throw new Error("real foreign owner required");
+      }
+
       const foreignBefore = await ctx.readUserState({
         userId: other.data.user.id,
       });
@@ -216,6 +240,7 @@ for (const mode of [
         userId: signup.data.user.id,
       });
       let injectedUpdate: unknown = null;
+
       if (mode !== "default") {
         injectedUpdate = await owner.client.updateUser({
           lastLoginMethod: "forged-update",
@@ -238,9 +263,14 @@ for (const mode of [
       expect(failed.error?.code).toBe("INVALID_EMAIL_OR_PASSWORD");
       expect(tracking(guest.cookies.at(-1)!, name)).toBeUndefined();
       expect(await ctx.readUserState({ userId: signup.data.user.id })).toEqual(ownerBefore);
+
       const afterFailed = await state(ctx);
       expect(afterFailed.events.filter((event) => event.kind === "cookie")).toHaveLength(0);
-      if (mode === "update-error") await control(ctx, { action: "update-error" });
+
+      if (mode === "update-error") {
+        await control(ctx, { action: "update-error" });
+      }
+
       const secondHeaders = {
         "x-last-login-probe": "sibling sign-in",
         "x-last-login-method": "custom/signin",
@@ -251,7 +281,11 @@ for (const mode of [
       );
       expect(second.error).toBeNull();
       expect(second.data?.user.id).toBe(signup.data.user.id);
-      if (mode === "update-error") await control(ctx, { action: "restore-updates" });
+
+      if (mode === "update-error") {
+        await control(ctx, { action: "restore-updates" });
+      }
+
       const afterSecond = await state(ctx);
       expect(
         afterSecond.users.find((row) => row.id === signup.data!.user.id)?.lastLoginMethod,
@@ -266,7 +300,9 @@ for (const mode of [
                 ? "stored:email"
                 : "email",
       );
+
       let deviceSessions: unknown = null;
+
       if (mode === "composition") {
         const another = await owner.client.signUp.email({
           email: ctx.uniqueEmail("retained-device"),
@@ -274,6 +310,7 @@ for (const mode of [
           name: "Device Owner",
         });
         expect(another.error).toBeNull();
+
         deviceSessions = await owner.client.multiSession.listDeviceSessions();
         expect(
           z
@@ -281,19 +318,23 @@ for (const mode of [
             .passthrough()
             .parse(deviceSessions),
         ).toBeDefined();
+
         const active = await owner.client.multiSession.setActive({
           sessionToken: signup.data.token!,
         });
         expect(active.error).toBeNull();
         expect(tracking(owner.cookies.at(-1)!, name)).toBeUndefined();
       }
+
       const sessions = await owner.client.getSession();
       expect(sessions.error).toBeNull();
       expect(sessions.data?.user.id).toBe(signup.data.user.id);
+
       const siblingSession = await sibling.client.getSession();
       expect(siblingSession.error).toBeNull();
       expect(siblingSession.data?.user.id).toBe(signup.data.user.id);
       expect(siblingSession.data?.session.token).not.toBe(sessions.data?.session.token);
+
       const ownerState = await ctx.readUserState({
         userId: signup.data.user.id,
       });
@@ -304,7 +345,9 @@ for (const mode of [
           .parse(ownerState).sessions,
       ).toHaveLength(2);
       expect(await ctx.readUserState({ userId: other.data.user.id })).toEqual(foreignBefore);
+
       let resolverRejected: unknown = null;
+
       if (mode === "resolver-error") {
         const before = await state(ctx);
         resolverRejected = await guest.client.signIn.email(
@@ -315,15 +358,19 @@ for (const mode of [
           z.object({ error: z.object({ status: z.literal(500) }) }).parse(resolverRejected),
         ).toBeDefined();
         expect(tracking(guest.cookies.at(-1)!, name)).toBeUndefined();
+
         const after = await state(ctx);
         expect(after.users).toEqual(before.users);
+
         const remaining = z
           .object({ sessions: z.array(z.unknown()) })
           .passthrough()
           .parse(await ctx.readUserState({ userId: signup.data.user.id }));
         expect(remaining.sessions).toHaveLength(3);
       }
+
       let suppressed: unknown = null;
+
       if (mode === "custom") {
         const before = await state(ctx);
         suppressed = await guest.client.signIn.email(
@@ -334,6 +381,7 @@ for (const mode of [
         expect(tracking(guest.cookies.at(-1)!, name)).toBeUndefined();
         expect((await state(ctx)).users).toEqual(before.users);
       }
+
       return ctx.snapshot({
         injectedUpdate,
         suppressed,
@@ -369,17 +417,18 @@ for (const mode of [
     ],
   );
 }
+
 compatScenario(
   "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
   async (ctx) => {
     const profile: FixtureProfile = "last-login-database";
     await control(ctx, { action: "reset" });
-    const owner = actor(ctx, "owner", profile),
-      foreign = actor(ctx, "foreign", profile),
-      upgrade = actor(ctx, "upgrade", profile);
-    const password = "password123",
-      email = ctx.uniqueEmail("method-owner"),
-      username = "methodowner";
+    const owner = actor(ctx, "owner", profile);
+    const foreign = actor(ctx, "foreign", profile);
+    const upgrade = actor(ctx, "upgrade", profile);
+    const password = "password123";
+    const email = ctx.uniqueEmail("method-owner");
+    const username = "methodowner";
     const signup = await owner.client.signUp.email({
       email,
       password,
@@ -387,13 +436,18 @@ compatScenario(
       username,
     } as any);
     expect(signup.error).toBeNull();
-    if (!signup.data) throw new Error("real owner required");
+
+    if (!signup.data) {
+      throw new Error("real owner required");
+    }
+
     const other = await foreign.client.signUp.email({
       email: ctx.uniqueEmail("method-foreign"),
       password,
       name: "Foreign",
     });
     expect(other.error).toBeNull();
+
     const foreignBefore = await ctx.readUserState({
       userId: other.data!.user.id,
     });
@@ -403,15 +457,23 @@ compatScenario(
       expect(current.users.find((row) => row.id === signup.data!.user.id)?.lastLoginMethod).toBe(
         method ?? "email",
       );
+
       const cookie = tracking(owner.cookies.at(-1)!);
-      if (method) expect(decodeURIComponent(cookie!.value)).toBe(method);
-      else expect(cookie).toBeUndefined();
+
+      if (method) {
+        expect(decodeURIComponent(cookie!.value)).toBe(method);
+      } else {
+        expect(cookie).toBeUndefined();
+      }
+
       expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+
       return projectEvents(current);
     };
     await owner.client.signOut();
     const signed = await owner.client.signIn.username({ username, password });
     expect(signed.error).toBeNull();
+
     outputs.push({ signed, state: await check(null) });
     await owner.client.signOut();
     const sent = await owner.client.emailOtp.sendVerificationOtp({
@@ -419,6 +481,7 @@ compatScenario(
       type: "sign-in",
     });
     expect(sent.error).toBeNull();
+
     const delivered = z
       .object({ otp: z.string() })
       .parse(await control(ctx, { action: "delivery", key: `sign-in:${email}` }));
@@ -427,6 +490,7 @@ compatScenario(
       otp: delivered.otp,
     });
     expect(otp.error).toBeNull();
+
     outputs.push({
       sent,
       delivered: { ...delivered, otp: { token: delivered.otp } },
@@ -436,21 +500,25 @@ compatScenario(
     const authenticator = new Authenticator();
     const registration = await owner.client.$fetch("/passkey/generate-register-options");
     expect(registration.error).toBeNull();
+
     const registrationResponse = authenticator.register(registration.data, ctx.baseURL);
     const registered = await owner.client.$fetch("/passkey/verify-registration", {
       method: "POST",
       body: { response: registrationResponse, name: "Owned key" },
     });
     expect(registered.error).toBeNull();
+
     await owner.client.signOut();
     const authOptions = await owner.client.$fetch("/passkey/generate-authenticate-options");
     expect(authOptions.error).toBeNull();
+
     const authenticationResponse = authenticator.authenticate(authOptions.data, ctx.baseURL);
     const passkey = await owner.client.$fetch("/passkey/verify-authentication", {
       method: "POST",
       body: { response: authenticationResponse },
     });
     expect(passkey.error).toBeNull();
+
     const callbackReceipts = await state(ctx);
     expect(
       callbackReceipts.events
@@ -477,6 +545,7 @@ compatScenario(
         .filter((event) => event.path === "/sign-in/email-otp")
         .every((event) => (event.body as any).otp === delivered.otp),
     ).toBe(true);
+
     outputs.push({
       registration,
       registered,
@@ -490,12 +559,14 @@ compatScenario(
       callbackURL: "/dashboard",
     });
     expect(link.error).toBeNull();
+
     const delivery = z
       .object({ url: z.string(), token: z.string() })
       .passthrough()
       .parse(await control(ctx, { action: "delivery", key: `magic:${email}` }));
     const magic = await owner.fetch(delivery.url, { redirect: "manual" });
     expect(magic.status).toBe(302);
+
     owner.cookies.push(magic.headers.getSetCookie());
     outputs.push({
       link,
@@ -517,17 +588,21 @@ compatScenario(
       callbackURL: "/dashboard",
     });
     expect(initiated.error).toBeNull();
+
     const socialState = new URL(initiated.data!.url!).searchParams.get("state")!;
     const callback = await social.fetch(
       `${authProfilePath(profile)}/callback/google?code=compat-code&state=${encodeURIComponent(socialState)}`,
       { redirect: "manual" },
     );
     expect(callback.status).toBe(302);
+
     social.cookies.push(callback.headers.getSetCookie());
     expect(decodeURIComponent(tracking(social.cookies.at(-1)!)!.value)).toBe("google");
+
     const socialSession = await social.client.getSession();
     expect(socialSession.error).toBeNull();
     expect(socialSession.data?.user.email).toBe(socialEmail);
+
     const afterSocial = await state(ctx);
     expect(afterSocial.users.find((row) => row.email === socialEmail)?.lastLoginMethod).toBe(
       "google",
@@ -540,9 +615,11 @@ compatScenario(
           event.requestPath === "/callback/google",
       ),
     ).toBe(true);
+
     const wallet = actor(ctx, "wallet", profile);
     const nonce = await wallet.client.siwe.nonce();
     expect(nonce.error).toBeNull();
+
     const signedMessage = walletMessage(z.object({ nonce: z.string() }).parse(nonce.data).nonce, {
       domain: "last-login.fixture",
     });
@@ -552,15 +629,19 @@ compatScenario(
     });
     expect(verified.error).toBeNull();
     expect(decodeURIComponent(tracking(wallet.cookies.at(-1)!)!.value)).toBe("siwe");
+
     const walletSession = await wallet.client.getSession();
     expect(walletSession.error).toBeNull();
+
     const afterWallet = await state(ctx);
     expect(
       afterWallet.users.find((row) => row.id === walletSession.data!.user.id)?.lastLoginMethod,
     ).toBe("siwe");
+
     const anonymous = await upgrade.client.signIn.anonymous();
     expect(anonymous.error).toBeNull();
     expect(tracking(upgrade.cookies.at(-1)!)).toBeUndefined();
+
     const beforeUpgrade = await ctx.readUserState({
       userId: anonymous.data!.user.id,
     });
@@ -586,6 +667,7 @@ compatScenario(
       twoFactorExists: false,
     });
     expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+
     return ctx.snapshot({
       signup,
       other,
@@ -645,9 +727,11 @@ compatScenario(
     });
     expect(result.error?.status).toBe(500);
     expect(tracking(owner.cookies.at(-1)!)).toBeUndefined();
+
     const persisted = await state(ctx);
     const user = persisted.users.find((row) => row.email === email)!;
     expect(user.lastLoginMethod).toBe("email");
+
     const physical = await ctx.readUserState({ userId: user.id });
     expect(
       z
@@ -658,6 +742,7 @@ compatScenario(
         .passthrough()
         .parse(physical),
     ).toBeDefined();
+
     return ctx.snapshot({
       result,
       persisted,
@@ -684,12 +769,14 @@ compatScenario(
       body,
     });
     expect(result.status).toBe(200);
+
     const returned = await result.json();
     expect(
       decodeURIComponent(
         tracking(result.headers.getSetCookie(), "fixture.last_login_method")!.value,
       ),
     ).toBe("body:Infinity:-0");
+
     const persisted = await state(ctx);
     expect(persisted.users.find((row) => row.email === email)?.lastLoginMethod).toBe(
       "body:Infinity:-0",
@@ -698,6 +785,7 @@ compatScenario(
     expect(
       persisted.events.filter((event) => event.kind === "cookie").map((event) => event.requestBody),
     ).toEqual([body]);
+
     for (const event of persisted.events) {
       expect(event.body).toEqual({
         email,
@@ -712,6 +800,7 @@ compatScenario(
         },
       });
     }
+
     return ctx.snapshot({
       returned,
       persisted,

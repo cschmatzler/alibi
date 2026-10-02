@@ -7,11 +7,14 @@ export function decodeBase32(secret: string) {
 
   for (const char of normalized) {
     const idx = alphabet.indexOf(char);
+
     if (idx === -1) {
       continue;
     }
+
     value = (value << 5) | idx;
     bits += 5;
+
     while (bits >= 8) {
       output.push((value >>> (bits - 8)) & 0xff);
       bits -= 8;
@@ -24,6 +27,7 @@ export function decodeBase32(secret: string) {
 export async function generateCurrentTotp(totpURI: string) {
   const url = new URL(totpURI);
   const secret = url.searchParams.get("secret");
+
   if (!secret) {
     throw new Error("TOTP URI is missing the secret");
   }
@@ -62,6 +66,7 @@ export function redactTwoFactorPayload<T>(value: T): T {
   }
 
   const clone = structuredClone(value as object) as Record<string, unknown>;
+
   if (clone.data && typeof clone.data === "object" && !Array.isArray(clone.data)) {
     const data = clone.data as Record<string, unknown>;
     if (typeof data.totpURI === "string") {
@@ -71,5 +76,6 @@ export function redactTwoFactorPayload<T>(value: T): T {
       data.backupCodes = data.backupCodes.map(() => "<backup-code>");
     }
   }
+
   return clone as T;
 }

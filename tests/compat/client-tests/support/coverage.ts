@@ -1,5 +1,7 @@
 import { mkdir } from "node:fs/promises";
+
 import { z } from "zod";
+
 import type { TraceEntry } from "./trace";
 
 /** One category can require several independent configuration or lifecycle scenarios. */
@@ -30,8 +32,10 @@ export const inventorySchema = z
     ),
   })
   .strict();
+
 /** Independent evidence categories; none implies complete endpoint coverage. */
 export type EvidenceKind = "success" | "rejection" | "authorization" | "state";
+
 const inventory = inventorySchema.parse(
   await Bun.file(new URL("../../capabilities.json", import.meta.url)).json(),
 );
@@ -48,7 +52,11 @@ export function collectCoverage(
     const requestURL = new URL(trace.path, "http://compat.local");
     const pathname = requestURL.pathname;
     const prefix = pathname.match(/^(?:\/__test\/profiles\/[a-z0-9-]+)?\/api\/auth(?=\/)/)?.[0];
-    if (!prefix) continue;
+
+    if (!prefix) {
+      continue;
+    }
+
     const path = pathname.slice(prefix.length);
     const route =
       inventory.capabilities.find((entry) => entry.route === `${trace.method} ${path}`)?.route ??
@@ -65,6 +73,7 @@ export function collectCoverage(
     const kinds: EvidenceKind[] = [];
     let rejectedCallback = false;
     let rejectedReset = false;
+
     if (
       baseURL &&
       trace.method === "GET" &&
@@ -72,8 +81,8 @@ export function collectCoverage(
       trace.responseStatus === 302
     ) {
       try {
-        const base = new URL(baseURL),
-          location = new URL(trace.responseHeaders.location ?? "", base);
+        const base = new URL(baseURL);
+        const location = new URL(trace.responseHeaders.location ?? "", base);
         const errors = location.searchParams.getAll("error");
         rejectedCallback =
           !!trace.responseHeaders.location &&
@@ -90,12 +99,14 @@ export function collectCoverage(
         /* Malformed locations cannot supply callback admission evidence. */
       }
     }
+
     if (baseURL && route === "GET /reset-password/{}" && trace.responseStatus === 302) {
       try {
-        const base = new URL(baseURL),
-          callbacks = requestURL.searchParams.getAll("callbackURL");
+        const base = new URL(baseURL);
+        const callbacks = requestURL.searchParams.getAll("callbackURL");
         const callback =
           callbacks.length === 1 ? new URL(callbacks[0]!, new URL(prefix, base)) : undefined;
+
         if (
           callback &&
           callback.origin === base.origin &&
@@ -114,13 +125,22 @@ export function collectCoverage(
         /* An unbound or malformed application redirect cannot supply denial evidence. */
       }
     }
+
     // These measured Source errors use the default OAuth error channel. Owners
     // still prove their actual denial and unchanged state; arbitrary configured
     // application callbacks are not generally inferable from transport alone.
-    if (rejectedCallback) kinds.push("rejection", "authorization");
-    else if (rejectedReset) kinds.push("rejection");
-    else if (trace.responseStatus >= 200 && trace.responseStatus < 400) kinds.push("success");
-    if (trace.responseStatus >= 400 && trace.responseStatus < 500) kinds.push("rejection");
+    if (rejectedCallback) {
+      kinds.push("rejection", "authorization");
+    } else if (rejectedReset) {
+      kinds.push("rejection");
+    } else if (trace.responseStatus >= 200 && trace.responseStatus < 400) {
+      kinds.push("success");
+    }
+
+    if (trace.responseStatus >= 400 && trace.responseStatus < 500) {
+      kinds.push("rejection");
+    }
+
     const error = trace.responseErrorBody;
     const code =
       error !== null &&
@@ -137,14 +157,23 @@ export function collectCoverage(
       ((["POST /refresh-token", "POST /unlink-account"].includes(route) &&
         code === "ACCOUNT_NOT_FOUND") ||
         (route === "POST /delete-user" && code === "CREDENTIAL_ACCOUNT_NOT_FOUND"));
-    if ([401, 403].includes(trace.responseStatus) || rejectedOwnership) kinds.push("authorization");
-    if (stateTransitions.includes(route)) kinds.push("state");
+
+    if ([401, 403].includes(trace.responseStatus) || rejectedOwnership) {
+      kinds.push("authorization");
+    }
+
+    if (stateTransitions.includes(route)) {
+      kinds.push("state");
+    }
+
     const record = observations.get(route) ?? new Map<EvidenceKind, Set<string>>();
+
     for (const kind of kinds) {
       const scenarios = record.get(kind) ?? new Set<string>();
       scenarios.add(scenario);
       record.set(kind, scenarios);
     }
+
     observations.set(route, record);
   }
   return Object.fromEntries(
@@ -164,7 +193,10 @@ export async function recordCoverage(
   stateTransitions: readonly string[],
   baseURL?: string,
 ) {
-  if (process.env.COMPAT_COVERAGE !== "1") return;
+  if (process.env.COMPAT_COVERAGE !== "1") {
+    return;
+  }
+
   const output = collectCoverage(scenario, traces, stateTransitions, baseURL);
   const directory = new URL("../artifacts/evidence/", import.meta.url);
   await mkdir(directory, { recursive: true });

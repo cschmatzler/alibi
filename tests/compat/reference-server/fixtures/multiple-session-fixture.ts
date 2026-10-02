@@ -5,6 +5,7 @@ import { multiSession } from "better-auth/plugins";
 export function createMultipleSessionFixture(base: BetterAuthOptions) {
   let counter = 0;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
+
   for (const name of ["multi-session", "multi-session-limited"]) {
     const path = `/__test/profiles/${name}/api/auth`;
     profiles.set(
@@ -32,6 +33,7 @@ export function createMultipleSessionFixture(base: BetterAuthOptions) {
       }),
     );
   }
+
   return {
     profiles,
     reset() {

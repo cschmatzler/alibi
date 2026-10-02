@@ -1,18 +1,21 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario } from "../../support/scenario";
 
 const stateSchema = z.object({
   sessions: z.array(z.record(z.string(), z.unknown())),
   events: z.array(z.record(z.string(), z.unknown())),
 });
+
 compatScenario(
   "update-session publishes transformed current-token cache and preserves sibling and foreign physical sessions",
   async (ctx) => {
     const profile = "additional-cached-fields";
-    const owner = ctx.actor("projection-owner", profile),
-      sibling = ctx.actor("projection-sibling", profile),
-      foreign = ctx.actor("projection-foreign", profile);
+    const owner = ctx.actor("projection-owner", profile);
+    const sibling = ctx.actor("projection-sibling", profile);
+    const foreign = ctx.actor("projection-foreign", profile);
     const email = ctx.uniqueEmail("projection-owner");
     expect(
       (
@@ -39,14 +42,17 @@ compatScenario(
         })
       ).error,
     ).toBeNull();
+
     const initial = await owner.client.getSession();
     expect(initial.error).toBeNull();
+
     const token = z.string().parse(initial.data?.session.token);
     const read = async () => {
       const result = await ctx.rawRequest({
         path: "/__test/additional-fields/state?profile=cached",
       });
       expect(result.status).toBe(200);
+
       const state = stateSchema.parse(result.body);
       state.events = state.events.filter((event) => event.entity !== "account");
       return state;
@@ -66,18 +72,23 @@ compatScenario(
       },
     });
     expect(updated.error).toBeNull();
+
     for (const name of ["session_token", "session_data", "dont_remember"]) {
       const cookie = updateCookies.find((value) => value.startsWith(`better-auth.${name}=`));
       expect(cookie).toBeDefined();
       expect(cookie!.toLowerCase()).not.toContain("max-age=");
     }
+
     expect(updated.data).toMatchObject({
       session: { token, label: { stored: "configured-update" } },
     });
-    for (const field of ["hidden", "omitted", "private_column"])
+
+    for (const field of ["hidden", "omitted", "private_column"]) {
       expect(
         z.object({ session: z.record(z.string(), z.unknown()) }).parse(updated.data).session,
       ).not.toHaveProperty(field);
+    }
+
     const after = await read();
     expect(after.sessions.find((row) => row.token === token)).toMatchObject({
       label: "configured-update",
@@ -88,12 +99,15 @@ compatScenario(
       before.sessions.filter((row) => row.token !== token),
     );
     expect(after.events.filter((event) => event.phase === "on-update")).toEqual([]);
+
     const cached = await owner.client.getSession();
     expect(cached.error).toBeNull();
     expect(cached.data?.session).toMatchObject({ token, label: { stored: "configured-update" } });
+
     const physical = await owner.client.getSession({ query: { disableCookieCache: true } });
     expect(physical.error).toBeNull();
     expect(physical.data?.session).toMatchObject({ token, label: { stored: "configured-update" } });
+
     const omitted = await owner.client.$fetch("/update-session", {
       method: "POST",
       body: { hidden: "private-second" },
@@ -102,6 +116,7 @@ compatScenario(
     expect(omitted.data).toMatchObject({
       session: { token, label: { stored: "session-updated" } },
     });
+
     const final = await read();
     expect(final.events.filter((event) => event.phase === "on-update")).toEqual([
       { phase: "on-update", entity: "session", field: "label" },
@@ -113,26 +128,31 @@ compatScenario(
     expect(final.sessions.filter((row) => row.token !== token)).toEqual(
       before.sessions.filter((row) => row.token !== token),
     );
+
     const replacement = await owner.client.changePassword({
       currentPassword: "Password123!",
       newPassword: "Replacement184!",
       revokeOtherSessions: true,
     });
     expect(replacement.error).toBeNull();
+
     const replacementToken = z.string().parse(replacement.data?.token);
     expect(replacementToken).not.toBe(token);
+
     const replaced = await owner.client.getSession();
     expect(replaced.error).toBeNull();
     expect(replaced.data?.session).toMatchObject({
       token: replacementToken,
       label: { stored: "session-initial" },
     });
+
     const replacementState = await read();
     expect(replacementState.sessions.find((row) => row.token === replacementToken)).toMatchObject({
       label: "session-initial",
       hidden: "session-secret",
       omitted: "drop",
     });
+
     const ownerId = initial.data!.session.userId;
     expect(
       replacementState.sessions.filter((row) => row.userId === ownerId).map((row) => row.token),
@@ -143,6 +163,7 @@ compatScenario(
     expect(
       (await sibling.client.getSession({ query: { disableCookieCache: true } })).data,
     ).toBeNull();
+
     return {
       initial: ctx.snapshot(initial),
       before,
@@ -173,17 +194,20 @@ compatScenario(
         })
       ).error,
     ).toBeNull();
+
     const read = async () => {
       const result = await ctx.rawRequest({
         path: "/__test/additional-fields/state?profile=async-validation",
       });
       expect(result.status).toBe(200);
+
       const state = stateSchema.parse(result.body);
       state.events = state.events.filter((event) => event.entity !== "account");
       return state;
     };
-    const before = await read(),
-      responses = [];
+    const before = await read();
+    const responses = [];
+
     for (const literal of ['"attempt"', "1e999", "-0"]) {
       const response = await actor.fetch(
         `${ctx.baseURL}/__test/profiles/additional-async-validation-fields/api/auth/update-session`,
@@ -194,13 +218,16 @@ compatScenario(
         },
       );
       expect(response.status).toBe(500);
+
       const body = await response.json();
       expect(body).toMatchObject({
         code: "ASYNC_VALIDATION_NOT_SUPPORTED",
         message: "Async validation is not supported",
       });
+
       responses.push({ status: response.status, body });
     }
+
     const after = await read();
     expect(after.sessions).toEqual(before.sessions);
     expect(after.events.filter((event) => event.phase === "after")).toEqual(
@@ -232,12 +259,13 @@ compatScenario(
         infinite: false,
       },
     ]);
+
     return { before, responses, after };
   },
   ["POST /update-session"],
 );
 
-for (const expiry of [false, true])
+for (const expiry of [false, true]) {
   for (const command of [
     "mutate",
     "cancel",
@@ -246,13 +274,13 @@ for (const expiry of [false, true])
     "after-error",
     "throw",
     "delete",
-  ] as const)
+  ] as const) {
     compatScenario(
       `session ${expiry ? "expiry renewal" : "configured update"} observes ${command} callback and physical commit boundary`,
       async (ctx) => {
-        const actor = ctx.actor("hook-owner", "additional-cached-fields"),
-          sibling = ctx.actor("hook-sibling", "additional-cached-fields"),
-          foreign = ctx.actor("hook-foreign", "additional-cached-fields");
+        const actor = ctx.actor("hook-owner", "additional-cached-fields");
+        const sibling = ctx.actor("hook-sibling", "additional-cached-fields");
+        const foreign = ctx.actor("hook-foreign", "additional-cached-fields");
         const email = ctx.uniqueEmail("hook-owner");
         expect(
           (await actor.client.signUp.email({ email, name: "Hook owner", password: "Password123!" }))
@@ -270,6 +298,7 @@ for (const expiry of [false, true])
             })
           ).error,
         ).toBeNull();
+
         const initial = await actor.client.getSession();
         const token = z.string().parse(initial.data?.session.token);
         const read = async () => {
@@ -277,10 +306,12 @@ for (const expiry of [false, true])
             path: "/__test/additional-fields/state?profile=cached",
           });
           expect(result.status).toBe(200);
+
           const state = stateSchema.parse(result.body);
           state.events = state.events.filter((event) => event.entity !== "account");
           return state;
         };
+
         if (expiry) {
           // Operator setup bypasses auth callbacks only to make the persisted session due for renewal.
           const setup = await ctx.rawRequest({
@@ -294,6 +325,7 @@ for (const expiry of [false, true])
           });
           expect(setup.status).toBe(200);
         }
+
         const before = await read();
         const result = expiry
           ? await actor.client.getSession({ query: { disableCookieCache: true } })
@@ -308,8 +340,10 @@ for (const expiry of [false, true])
         expect(after.sessions.filter((row) => row.token !== token)).toEqual(
           before.sessions.filter((row) => row.token !== token),
         );
-        const row = after.sessions.find((row) => row.token === token),
-          prior = before.sessions.find((row) => row.token === token)!;
+
+        const row = after.sessions.find((row) => row.token === token);
+        const prior = before.sessions.find((row) => row.token === token)!;
+
         if (command === "mutate") {
           expect(result.error).toBeNull();
           expect(result.data).toMatchObject({
@@ -318,19 +352,27 @@ for (const expiry of [false, true])
           expect(row).toMatchObject({ label: "hook-updated" });
         } else if (command === "cancel" || command === "delete") {
           expect(result.error).toMatchObject({ status: 401, code: "FAILED_TO_GET_SESSION" });
-          if (command === "cancel") expect(row).toEqual(prior);
-          else expect(row).toBeUndefined();
+          if (command === "cancel") {
+            expect(row).toEqual(prior);
+          } else {
+            expect(row).toBeUndefined();
+          }
           expect((await actor.client.getSession()).data).toBeNull();
         } else {
           expect(result.error?.status).toBe(command === "api-error" ? 403 : 500);
-          if (command === "api-error")
+          if (command === "api-error") {
             expect(result.error).toMatchObject({
               code: "APP_DENIED",
               message: "Application denied",
             });
-          if (command === "ordinary-error" || command === "api-error") expect(row).toEqual(prior);
-          else expect(row).toMatchObject({ label: command });
+          }
+          if (command === "ordinary-error" || command === "api-error") {
+            expect(row).toEqual(prior);
+          } else {
+            expect(row).toMatchObject({ label: command });
+          }
         }
+
         const callbacks = after.events
           .slice(before.events.length)
           .filter((event) => event.phase === "before" || event.phase === "after");
@@ -344,20 +386,25 @@ for (const expiry of [false, true])
                 label: command === "after-error" || command === "throw" ? command : "requested",
               },
         });
-        if (command === "mutate")
+
+        if (command === "mutate") {
           expect(callbacks.find((event) => event.phase === "after")).toMatchObject({
             action: "update",
             record: { token, label: { stored: "hook-updated" }, hidden: "MUTATE" },
             persisted: { sessions: 2 },
           });
+        }
+
         if (
           command === "cancel" ||
           command === "ordinary-error" ||
           command === "api-error" ||
           command === "throw" ||
           command === "after-error"
-        )
+        ) {
           expect(callbacks).toHaveLength(1);
+        }
+
         return {
           before,
           result: ctx.snapshot(result),
@@ -366,13 +413,15 @@ for (const expiry of [false, true])
       },
       ["POST /update-session", "GET /get-session"],
     );
+  }
+}
 
 compatScenario(
   "session replacement continues after collection rejection while launched callbacks retain deleted physical snapshots",
   async (ctx) => {
-    const owner = ctx.actor("collection-owner", "additional-cached-fields"),
-      rejecting = ctx.actor("collection-rejecting", "additional-cached-fields"),
-      slow = ctx.actor("collection-slow", "additional-cached-fields");
+    const owner = ctx.actor("collection-owner", "additional-cached-fields");
+    const rejecting = ctx.actor("collection-rejecting", "additional-cached-fields");
+    const slow = ctx.actor("collection-slow", "additional-cached-fields");
     const email = ctx.uniqueEmail("collection-owner");
     expect(
       (
@@ -387,15 +436,17 @@ compatScenario(
       (await rejecting.client.signIn.email({ email, password: "Password123!" })).error,
     ).toBeNull();
     expect((await slow.client.signIn.email({ email, password: "Password123!" })).error).toBeNull();
+
     const rejectedToken = z
-        .string()
-        .parse((await rejecting.client.getSession()).data?.session.token),
-      slowToken = z.string().parse((await slow.client.getSession()).data?.session.token);
+      .string()
+      .parse((await rejecting.client.getSession()).data?.session.token);
+    const slowToken = z.string().parse((await slow.client.getSession()).data?.session.token);
     const expiresAt = new Date(Date.now() + 86_400_000 * 6).toISOString();
+
     for (const [token, label] of [
       [rejectedToken, "collection-reject"],
       [slowToken, "collection-slow"],
-    ])
+    ]) {
       expect(
         (
           await ctx.rawRequest({
@@ -405,11 +456,14 @@ compatScenario(
           })
         ).status,
       ).toBe(200);
+    }
+
     const read = async () => {
       const result = await ctx.rawRequest({
         path: "/__test/additional-fields/state?profile=cached",
       });
       expect(result.status).toBe(200);
+
       const state = stateSchema.parse(result.body);
       state.events = state.events.filter((event) => event.entity !== "account");
       return state;
@@ -419,12 +473,14 @@ compatScenario(
       "collection-reject",
     );
     expect(before.sessions.find((row) => row.token === slowToken)?.label).toBe("collection-slow");
+
     const result = await owner.client.changePassword({
       currentPassword: "Password123!",
       newPassword: "Replacement184!",
       revokeOtherSessions: true,
     });
     expect(result.error).toBeNull();
+
     const replacementToken = z.string().parse(result.data?.token);
     const pending = await read();
     expect(pending.sessions.map((row) => row.token)).toEqual([replacementToken]);
@@ -437,6 +493,7 @@ compatScenario(
           event.value === "collection-slow",
       ),
     ).toHaveLength(1);
+
     await new Promise((resolve) => setTimeout(resolve, 350));
     const final = await read();
     expect(final.events.filter((event) => event.phase === "settled")).toEqual([
@@ -449,6 +506,7 @@ compatScenario(
       },
     ]);
     expect(final.sessions).toEqual(pending.sessions);
+
     // State reads are real HTTP observations; callback receipts remain independently comparable.
     return {
       sessions: before.sessions,

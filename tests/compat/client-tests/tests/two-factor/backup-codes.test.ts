@@ -1,5 +1,6 @@
 import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
+
 import { compatScenario } from "../../support/scenario";
 import { generateCurrentTotp } from "../../support/totp";
 
@@ -23,6 +24,7 @@ function redactBackupCodePayload<T>(value: T): T {
   }
 
   const clone = structuredClone(value as object) as Record<string, unknown>;
+
   if (clone.data && typeof clone.data === "object" && !Array.isArray(clone.data)) {
     const data = clone.data as Record<string, unknown>;
     if (Array.isArray(data.backupCodes)) {
@@ -32,6 +34,7 @@ function redactBackupCodePayload<T>(value: T): T {
       data.totpURI = "<totpURI>";
     }
   }
+
   return clone as T;
 }
 
@@ -41,6 +44,7 @@ function redactRawBackupCodeResponse<T>(value: T): T {
   }
 
   const clone = structuredClone(value as object) as Record<string, unknown>;
+
   if (clone.body && typeof clone.body === "object" && !Array.isArray(clone.body)) {
     const body = clone.body as Record<string, unknown>;
     if (Array.isArray(body.backupCodes)) {
@@ -182,7 +186,13 @@ compatScenario(
 );
 
 function enrollmentUri(value: unknown): string {
-  if (value && typeof value === "object" && "totpURI" in value && typeof value.totpURI === "string")
+  if (
+    value &&
+    typeof value === "object" &&
+    "totpURI" in value &&
+    typeof value.totpURI === "string"
+  ) {
     return value.totpURI;
+  }
   throw new Error("TOTP enrollment must return a URI");
 }

@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 const storedSchema = z.object({
@@ -42,6 +44,7 @@ async function signup(ctx: ScenarioContext, name: string) {
   const email = ctx.uniqueEmail(name);
   const response = await actor.client.signUp.email({ name, email, password: "password123" });
   expect(response.error).toBeNull();
+
   const userId = z.object({ user: z.object({ id: z.string() }) }).parse(response.data).user.id;
   return { ...actor, email, userId };
 }
@@ -58,6 +61,7 @@ async function create(
     body: { name, slug: ctx.uniqueToken(name), logo, metadata },
   });
   expect(response.error).toBeNull();
+
   const id = z.object({ id: z.string() }).parse(response.data).id;
   return { id, logo, metadata };
 }
@@ -71,6 +75,7 @@ async function setup(ctx: ScenarioContext) {
   expect(
     (await otherToken.client.signIn.email({ email: owner.email, password: "password123" })).error,
   ).toBeNull();
+
   const first = await create(
     ctx,
     { ...otherToken, email: owner.email, userId: owner.userId },
@@ -86,6 +91,7 @@ async function setup(ctx: ScenarioContext) {
     [first.id, second.id].sort(),
   );
   expect(before.organizations.map((row) => row.userId)).toEqual([owner.userId, owner.userId]);
+
   return { owner, first, second, otherToken, foreign, foreignOrganization, before, foreignBefore };
 }
 
@@ -101,6 +107,7 @@ compatScenario(
     });
     expect(omitted.error).toBeNull();
     expect(z.object({ logo: z.string() }).parse(omitted.data).logo).toBe(first.logo);
+
     const afterOmitted = await state(ctx, owner.email);
     expect(afterOmitted.organizations.find((row) => row.id === first.id)).toMatchObject({
       name: "Omitted Logo",
@@ -121,6 +128,7 @@ compatScenario(
       logo: null,
       metadata: first.metadata,
     });
+
     const afterClear = await state(ctx, owner.email);
     expect(afterClear.organizations.find((row) => row.id === first.id)).toMatchObject({
       logo: null,
@@ -155,6 +163,7 @@ compatScenario(
       code: "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
       message: "User is not a member of the organization",
     });
+
     const guest = await ctx.rawRequest({
       path: "/__test/profiles/org-creation-empty-role/api/auth/organization/update",
       method: "POST",
@@ -219,6 +228,7 @@ compatScenario(
     expect(
       z.object({ id: z.string(), name: z.string(), logo: z.null() }).parse(selected.data),
     ).toMatchObject({ id: second.id, name: "Current Token Selected", logo: null });
+
     const afterCurrent = await state(ctx, owner.email);
     expect(afterCurrent.organizations.find((row) => row.id === first.id)).toEqual(
       before.organizations.find((row) => row.id === first.id),
@@ -236,6 +246,7 @@ compatScenario(
     });
     expect(other.error).toBeNull();
     expect(z.object({ id: z.string() }).parse(other.data).id).toBe(first.id);
+
     const afterOther = await state(ctx, owner.email);
     expect(afterOther.organizations.find((row) => row.id === first.id)).toMatchObject({
       name: "Other Token Selected",
@@ -253,6 +264,7 @@ compatScenario(
       (await noSelection.client.signIn.email({ email: foreign.email, password: "password123" }))
         .error,
     ).toBeNull();
+
     const foreignWithOtherToken = await state(ctx, foreign.email);
     const absent = await noSelection.client.$fetch("/organization/update", {
       method: "POST",
@@ -274,6 +286,7 @@ compatScenario(
       foreignOrganization.id,
     );
     expect(await state(ctx, owner.email)).toEqual(afterOther);
+
     const foreignAfter = await state(ctx, foreign.email);
     expect(foreignAfter.organizations[0]).toMatchObject({
       name: "Foreign Selected",

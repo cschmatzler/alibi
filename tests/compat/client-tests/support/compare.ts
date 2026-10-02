@@ -1,15 +1,18 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+
 import { sessionSchema, userSchema } from "@better-auth/core/db";
 import { safeJSONParse } from "@better-auth/core/utils/json";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { Cookie } from "tough-cookie";
 import { z } from "zod";
+
 import { normalizeClientValue } from "./normalize";
 import type { RequestWindow } from "./trace";
 import { samePublication, verificationPublicationPairs } from "./verification-publication";
 
 /** A safe diagnostic without response secrets. */
 export type Difference = { readonly path: string; readonly reason: string };
+
 /** Original complete responses from the existing read-only physical controls. */
 export type PhysicalObservation = {
   readonly kind: "session" | "verification";
@@ -17,6 +20,7 @@ export type PhysicalObservation = {
   readonly body: unknown;
   readonly digest: string;
 };
+
 /** Explicit fixture origins and scenario clocks used to compare runtime output. */
 export type ComparisonContext = {
   readonly leftPhysicalObservations?: readonly PhysicalObservation[];
@@ -52,6 +56,7 @@ const entityKeys = new Set([
   "impersonatedBy",
   "referenceId",
 ]);
+
 const opaqueKeys = new Set([
   "token",
   "sessionToken",
@@ -63,11 +68,13 @@ const opaqueKeys = new Set([
   "access_token",
   "refresh_token",
 ]);
+
 const opaqueAliases: Readonly<Record<string, string>> = {
   deviceCode: "device_code",
   userCode: "user_code",
   "set-ott": "token",
 };
+
 const urlKeys = new Set([
   "url",
   "location",
@@ -96,18 +103,25 @@ export function compareValues(
   const fail = (path: string, reason: string) => {
     differences.push({ path, reason });
   };
-  const normalizedLeft = normalizeClientValue(left),
-    normalizedRight = normalizeClientValue(right);
+  const normalizedLeft = normalizeClientValue(left);
+  const normalizedRight = normalizeClientValue(right);
   // Decoded payload copies cannot authorize their own generated identities.
   // Keep independently observed user/session fields available for default JWTs.
   const payloads: Record<string, unknown>[] = [];
+
   function collectPayloads(value: unknown) {
     if (typeof value === "string") {
       const token = jwt(value);
-      if (token) payloads.push(token.payload);
-    } else if (Array.isArray(value)) value.forEach(collectPayloads);
-    else if (record(value)) Object.values(value).forEach(collectPayloads);
+      if (token) {
+        payloads.push(token.payload);
+      }
+    } else if (Array.isArray(value)) {
+      value.forEach(collectPayloads);
+    } else if (record(value)) {
+      Object.values(value).forEach(collectPayloads);
+    }
   }
+
   collectPayloads(normalizedLeft);
   collectPayloads(normalizedRight);
   const claimObject = (value: Record<string, unknown>) =>
@@ -120,6 +134,7 @@ export function compareValues(
   const claimEvidence = new Set<string>();
   const claimPair = (key: string, a: string, b: string) =>
     JSON.stringify([claimNamespace(key), a, b]);
+
   function collectClaimEvidence(a: unknown, b: unknown) {
     if (Array.isArray(a) && Array.isArray(b)) {
       a.forEach((child, index) => collectClaimEvidence(child, b[index]));
@@ -128,15 +143,19 @@ export function compareValues(
         if (
           applicationField(key) ||
           ["requestBodyShape", "responseBodyShape", "accountCookie"].includes(key)
-        )
+        ) {
           continue;
+        }
         const other = b[key];
-        if (typeof value === "string" && typeof other === "string")
+        if (typeof value === "string" && typeof other === "string") {
           claimEvidence.add(claimPair(key, value, other));
-        else collectClaimEvidence(value, other);
+        } else {
+          collectClaimEvidence(value, other);
+        }
       }
     }
   }
+
   collectClaimEvidence(normalizedLeft, normalizedRight);
   const pairedDates = new Set<string>();
   const invalidLifetimes = new Set<string>();
@@ -145,19 +164,25 @@ export function compareValues(
     JSON.stringify([owner, field, Date.parse(a), Date.parse(b)]);
   const physicalOwners = new WeakMap<object, WeakMap<object, string>>();
   let nextPhysicalOwner = 0;
+
   function physicalOwner(a: Record<string, unknown>, b: Record<string, unknown>): string {
     let rights = physicalOwners.get(a);
+
     if (!rights) {
       rights = new WeakMap();
       physicalOwners.set(a, rights);
     }
+
     let owner = rights.get(b);
+
     if (!owner) {
       owner = `physical:${nextPhysicalOwner++}`;
       rights.set(b, owner);
     }
+
     return owner;
   }
+
   const dateOwners = (a: Record<string, unknown>, b: Record<string, unknown>) => [
     ...["id", "token"].flatMap((key) =>
       typeof a[key] === "string" && typeof b[key] === "string"
@@ -169,7 +194,9 @@ export function compareValues(
   const approvedDate = (owners: readonly string[], field: string, a: string, b: string) =>
     owners.some((owner) => pairedDates.has(dateKey(owner, field, a, b)));
   const approveDate = (owners: readonly string[], field: string, a: string, b: string) => {
-    for (const owner of owners) pairedDates.add(dateKey(owner, field, a, b));
+    for (const owner of owners) {
+      pairedDates.add(dateKey(owner, field, a, b));
+    }
   };
   const isDate = (value: unknown): value is string =>
     typeof value === "string" &&
@@ -182,8 +209,8 @@ export function compareValues(
     rightUser: string;
     authPath: string;
   };
-  const issuances = new Map<string, ClockReceipt>(),
-    cookieOwners = new Map<string, ClockReceipt>();
+  const issuances = new Map<string, ClockReceipt>();
+  const cookieOwners = new Map<string, ClockReceipt>();
   const signedCookieIssuances = new Set<string>();
   const issuedMultiNames = new Map<
     string,
@@ -195,47 +222,68 @@ export function compareValues(
     ClockReceipt & { lifetime: number; trust?: boolean }
   >();
   const sessionCookieName = /^(?:__Secure-)?better-auth\.session_token$/;
+
   function signedCookie(
     value: string,
   ): { token: string; error?: never } | { error: string; token?: never } {
     try {
-      const decoded = decodeURIComponent(value),
-        separator = decoded.lastIndexOf(".");
-      if (separator < 1 || encodeURIComponent(decoded) !== value)
+      const decoded = decodeURIComponent(value);
+      const separator = decoded.lastIndexOf(".");
+
+      if (separator < 1 || encodeURIComponent(decoded) !== value) {
         return { error: "signed session cookie encoding is not canonical" };
-      const token = decoded.slice(0, separator),
-        encodedSignature = decoded.slice(separator + 1);
+      }
+
+      const token = decoded.slice(0, separator);
+      const encodedSignature = decoded.slice(separator + 1);
       const signature = Buffer.from(encodedSignature, "base64");
       const expected = createHmac("sha256", context.sessionCookieSecret!).update(token).digest();
+
       if (
         signature.toString("base64") !== encodedSignature ||
         signature.length !== expected.length ||
         !timingSafeEqual(signature, expected)
-      )
+      ) {
         return { error: "signed session cookie signature is invalid" };
+      }
+
       return { token };
     } catch {
       return { error: "signed session cookie encoding is not canonical" };
     }
   }
+
   function issuedCookie(value: string | undefined, token: string): boolean {
-    if (!value) return false;
+    if (!value) {
+      return false;
+    }
+
     const separator = value.indexOf("=");
-    if (separator < 1 || !sessionCookieName.test(value.slice(0, separator))) return false;
+
+    if (separator < 1 || !sessionCookieName.test(value.slice(0, separator))) {
+      return false;
+    }
+
     return signedCookie(value.slice(separator + 1)).token === token;
   }
+
   const updates = new Map<string, ClockReceipt[]>();
   const inWindows = (a: number, b: number, left: RequestWindow, right: RequestWindow) =>
     a >= left.startedAt - 5 &&
     a <= left.finishedAt &&
     b >= right.startedAt - 5 &&
     b <= right.finishedAt;
+
   function collectResponseDates(a: unknown, b: unknown, left: RequestWindow, right: RequestWindow) {
     if (Array.isArray(a) && Array.isArray(b)) {
       a.forEach((value, index) => collectResponseDates(value, b[index], left, right));
       return;
     }
-    if (!record(a) || !record(b) || claimObject(a) || claimObject(b)) return;
+
+    if (!record(a) || !record(b) || claimObject(a) || claimObject(b)) {
+      return;
+    }
+
     const owners = dateOwners(a, b);
     const issuance =
       typeof a.token === "string" && typeof b.token === "string"
@@ -245,25 +293,35 @@ export function compareValues(
       issuance && issuance.leftUser === a.userId && issuance.rightUser === b.userId
         ? issuance
         : undefined;
+
     for (const key of Object.keys(a)) {
-      if (["metadata", "custom", "additionalFields", "applicationData"].includes(key)) continue;
-      const av = a[key],
-        bv = b[key];
+      if (["metadata", "custom", "additionalFields", "applicationData"].includes(key)) {
+        continue;
+      }
+
+      const av = a[key];
+      const bv = b[key];
+
       if (["createdAt", "updatedAt"].includes(key) && isDate(av) && isDate(bv)) {
-        const at = Date.parse(av),
-          bt = Date.parse(bv);
+        const at = Date.parse(av);
+        const bt = Date.parse(bv);
         const updateReceipts =
           key === "updatedAt" && typeof a.id === "string" && typeof b.id === "string"
             ? (updates.get(JSON.stringify([a.id, b.id])) ?? [])
             : [];
+
         if (
           inWindows(at, bt, left, right) ||
           (issuedSession && inWindows(at, bt, issuedSession.left, issuedSession.right)) ||
           updateReceipts.some((receipt) => inWindows(at, bt, receipt.left, receipt.right))
-        )
+        ) {
           approveDate(owners, key, av, bv);
-      } else collectResponseDates(av, bv, left, right);
+        }
+      } else {
+        collectResponseDates(av, bv, left, right);
+      }
     }
+
     // A session's expiry remains tied to its observed creation/update clock.
     if (
       typeof a.token === "string" &&
@@ -274,22 +332,25 @@ export function compareValues(
       isDate(b.expiresAt)
     ) {
       for (const anchor of ["createdAt", "updatedAt"]) {
-        const av = a[anchor],
-          bv = b[anchor];
+        const av = a[anchor];
+        const bv = b[anchor];
         if (isDate(av) && isDate(bv) && approvedDate(owners, anchor, av, bv)) {
           if (
             Math.abs(
               Date.parse(a.expiresAt) - Date.parse(av) - (Date.parse(b.expiresAt) - Date.parse(bv)),
             ) <= 1500
-          )
+          ) {
             approveDate(owners, "expiresAt", a.expiresAt, b.expiresAt);
-          else
-            for (const owner of owners)
+          } else {
+            for (const owner of owners) {
               invalidLifetimes.add(dateKey(owner, "expiresAt", a.expiresAt, b.expiresAt));
+            }
+          }
         }
       }
     }
   }
+
   function collectFixtureTokenDate(
     a: Record<string, unknown>,
     b: Record<string, unknown>,
@@ -305,8 +366,9 @@ export function compareValues(
       b.accessToken !== "fixture-gitlab-access" ||
       !isDate(a.accessTokenExpiresAt) ||
       !isDate(b.accessTokenExpiresAt)
-    )
+    ) {
       return;
+    }
     const owners = dateOwners(a, b);
     if (
       inWindows(
@@ -315,14 +377,17 @@ export function compareValues(
         left,
         right,
       )
-    )
+    ) {
       approveDate(owners, "accessTokenExpiresAt", a.accessTokenExpiresAt, b.accessTokenExpiresAt);
-    else
-      for (const owner of owners)
+    } else {
+      for (const owner of owners) {
         invalidLifetimes.add(
           dateKey(owner, "accessTokenExpiresAt", a.accessTokenExpiresAt, b.accessTokenExpiresAt),
         );
+      }
+    }
   }
+
   if (
     record(normalizedLeft) &&
     record(normalizedRight) &&
@@ -331,11 +396,14 @@ export function compareValues(
   ) {
     const rightTraces = normalizedRight.traces;
     normalizedLeft.traces.forEach((trace, index) => {
-      const other = rightTraces[index],
-        left = context.leftRequestWindows?.[index],
-        right = context.rightRequestWindows?.[index];
-      if (!record(trace) || !record(other) || !left || !right || trace.method !== other.method)
+      const other = rightTraces[index];
+      const left = context.leftRequestWindows?.[index];
+      const right = context.rightRequestWindows?.[index];
+
+      if (!record(trace) || !record(other) || !left || !right || trace.method !== other.method) {
         return;
+      }
+
       if (
         trace.path === other.path &&
         typeof trace.path === "string" &&
@@ -347,8 +415,9 @@ export function compareValues(
           /^(\/(?:api\/auth|__test\/profiles\/[^/]+\/api\/auth))\/sign-(?:in|up)\/email$/.exec(
             trace.path,
           );
-        const a = trace.responseBody,
-          b = other.responseBody;
+        const a = trace.responseBody;
+        const b = other.responseBody;
+
         if (
           issuancePath &&
           record(a) &&
@@ -368,19 +437,22 @@ export function compareValues(
             authPath: issuancePath[1]!,
           };
           issuances.set(JSON.stringify([a.token, b.token]), receipt);
+
           if (
             context.sessionCookieSecret &&
             issuedCookie(left.issuedSessionCookie, a.token) &&
             issuedCookie(right.issuedSessionCookie, b.token)
           ) {
             signedCookieIssuances.add(JSON.stringify([a.token, b.token]));
-            if (typeof a.user.email === "string" && typeof b.user.email === "string")
+            if (typeof a.user.email === "string" && typeof b.user.email === "string") {
               emailOwners.set(JSON.stringify([receipt.authPath, a.user.email, b.user.email]), {
                 leftUser: a.user.id,
                 rightUser: b.user.id,
               });
+            }
             identity(a.token, b.token, `traces.${index}.responseBody.token`, "token");
           }
+
           const containsToken = (cookie: string | undefined, token: string) => {
             try {
               return (
@@ -391,15 +463,18 @@ export function compareValues(
               return false;
             }
           };
+
           if (
             containsToken(left.issuedSessionCookie, a.token) &&
             containsToken(right.issuedSessionCookie, b.token)
-          )
+          ) {
             cookieOwners.set(
               JSON.stringify([left.issuedSessionCookie, right.issuedSessionCookie]),
               receipt,
             );
+          }
         }
+
         if (
           issuancePath &&
           record(a) &&
@@ -417,12 +492,13 @@ export function compareValues(
             /^(?:__Secure-)?better-auth\.two_factor=/.test(cookie)
               ? signedCookie(cookie.slice(cookie.indexOf("=") + 1)).token
               : undefined;
-          const at = decode(left.issuedTwoFactorCookie),
-            bt = decode(right.issuedTwoFactorCookie);
+          const at = decode(left.issuedTwoFactorCookie);
+          const bt = decode(right.issuedTwoFactorCookie);
           const profile =
             /^\/__test\/profiles\/(two-factor-(?:skip-verification|trust-(?:fractional|zero-challenge|negative-challenge|zero|negative|cleanup-disabled)))\/api\/auth$/.exec(
               issuancePath[1]!,
             );
+
           if (
             owner &&
             at &&
@@ -452,10 +528,12 @@ export function compareValues(
             identity(at, bt, `traces.${index}.responseBody.twoFactorRedirect`, "token");
           }
         }
+
         const trustPath =
           /^(\/__test\/profiles\/(two-factor-(?:skip-verification|trust-(?:fractional|zero-challenge|negative-challenge|zero|negative|cleanup-disabled)))\/api\/auth)\/(?:two-factor\/verify-(?:otp|totp|backup-code)|sign-in\/email)$/.exec(
             trace.path,
           );
+
         if (
           trustPath &&
           context.sessionCookieSecret &&
@@ -471,9 +549,16 @@ export function compareValues(
           issuedCookie(right.issuedSessionCookie, b.token)
         ) {
           const identifier = (cookie: string | undefined, userId: string) => {
-            if (!cookie || !/^(?:__Secure-)?better-auth\.trust_device=/.test(cookie)) return;
+            if (!cookie || !/^(?:__Secure-)?better-auth\.trust_device=/.test(cookie)) {
+              return;
+            }
+
             const proof = signedCookie(cookie.slice(cookie.indexOf("=") + 1)).token?.split("!");
-            if (proof?.length !== 2 || !proof[1]?.startsWith("trust-device-")) return;
+
+            if (proof?.length !== 2 || !proof[1]?.startsWith("trust-device-")) {
+              return;
+            }
+
             return proof[0] ===
               createHmac("sha256", context.sessionCookieSecret!)
                 .update(`${userId}!${proof[1]}`)
@@ -481,18 +566,19 @@ export function compareValues(
               ? proof[1]
               : undefined;
           };
-          const at = identifier(left.issuedTrustCookie, a.user.id),
-            bt = identifier(right.issuedTrustCookie, b.user.id);
+          const at = identifier(left.issuedTrustCookie, a.user.id);
+          const bt = identifier(right.issuedTrustCookie, b.user.id);
+
           if (at && bt) {
-            const profile = trustPath[2]!,
-              lifetime =
-                profile === "two-factor-trust-zero"
-                  ? 0
-                  : profile === "two-factor-trust-negative"
-                    ? -250
-                    : profile === "two-factor-skip-verification"
-                      ? 2592000000
-                      : 1200875;
+            const profile = trustPath[2]!;
+            const lifetime =
+              profile === "two-factor-trust-zero"
+                ? 0
+                : profile === "two-factor-trust-negative"
+                  ? -250
+                  : profile === "two-factor-skip-verification"
+                    ? 2592000000
+                    : 1200875;
             verificationIssuances.set(JSON.stringify([at, bt]), {
               left,
               right,
@@ -504,10 +590,12 @@ export function compareValues(
             });
           }
         }
+
         const owner =
           left.sessionCookie && right.sessionCookie
             ? cookieOwners.get(JSON.stringify([left.sessionCookie, right.sessionCookie]))
             : undefined;
+
         // Enabling a factor rotates the authenticated session, but its response
         // contains setup data rather than the new token. Bind that rotation to
         // the previously proved owner and the actual signed primary cookie.
@@ -522,12 +610,13 @@ export function compareValues(
             sessionCookieName.test(cookie.slice(0, cookie.indexOf("=")))
               ? signedCookie(cookie.slice(cookie.indexOf("=") + 1)).token
               : undefined;
-          const at = token(left.issuedSessionCookie),
-            bt = token(right.issuedSessionCookie);
+          const at = token(left.issuedSessionCookie);
+          const bt = token(right.issuedSessionCookie);
           const previous = JSON.stringify([
             token(left.sessionCookie!),
             token(right.sessionCookie!),
           ]);
+
           if (
             at &&
             bt &&
@@ -535,8 +624,8 @@ export function compareValues(
             !identities.has(`token:${at}`) &&
             !reverseIdentities.has(`token:${bt}`)
           ) {
-            const receipt = { ...owner, left, right },
-              pair = JSON.stringify([at, bt]);
+            const receipt = { ...owner, left, right };
+            const pair = JSON.stringify([at, bt]);
             issuances.set(pair, receipt);
             signedCookieIssuances.add(pair);
             cookieOwners.set(
@@ -546,11 +635,13 @@ export function compareValues(
             identity(at, bt, `traces.${index}.responseCookies`, "token");
           }
         }
+
         if (owner && trace.path === `${owner.authPath}/update-user`) {
           const key = JSON.stringify([owner.leftUser, owner.rightUser]);
           updates.set(key, [...(updates.get(key) ?? []), { ...owner, left, right }]);
         }
       }
+
       for (const [key, a] of Object.entries(left.inputDates)) {
         const b = right.inputDates[key];
         if (
@@ -559,7 +650,7 @@ export function compareValues(
           right.inputOwner &&
           left.inputOwner.field === right.inputOwner.field &&
           Math.abs(Date.parse(a) - left.startedAt - (Date.parse(b) - right.startedAt)) <= 1500
-        )
+        ) {
           approveDate(
             [
               JSON.stringify([
@@ -572,7 +663,9 @@ export function compareValues(
             a,
             b,
           );
+        }
       }
+
       collectResponseDates(trace.responseBody, other.responseBody, left, right);
     });
   }
@@ -583,9 +676,10 @@ export function compareValues(
     Array.isArray(normalizedLeft.traces) &&
     Array.isArray(normalizedRight.traces)
       ? normalizedLeft.traces.flatMap((a, index) => {
-          const b = (normalizedRight.traces as unknown[])[index],
-            left = context.leftRequestWindows?.[index],
-            right = context.rightRequestWindows?.[index];
+          const b = (normalizedRight.traces as unknown[])[index];
+          const left = context.leftRequestWindows?.[index];
+          const right = context.rightRequestWindows?.[index];
+
           if (
             !record(a) ||
             !record(b) ||
@@ -595,11 +689,14 @@ export function compareValues(
             typeof a.path !== "string" ||
             typeof b.path !== "string" ||
             a.path.split("?")[0] !== b.path.split("?")[0]
-          )
+          ) {
             return [];
+          }
+
           return [{ a, b, left, right, path: a.path.split("?")[0]! }];
         })
       : [];
+
   function controlBody(
     window: RequestWindow,
     kind: "member-addition" | "social-provider" | "user-validation",
@@ -612,17 +709,22 @@ export function compareValues(
       ? observation.body
       : undefined;
   }
+
   for (const [index, observer] of tracePairs.entries()) {
     if (
       observer.a.method !== "GET" ||
       observer.a.responseStatus !== 200 ||
       observer.b.responseStatus !== 200
-    )
+    ) {
       continue;
+    }
+
     const previous = tracePairs.slice(0, index).reverse();
+
     if (observer.path === "/__test/organization-member-addition/state") {
-      const a = controlBody(observer.left, "member-addition"),
-        b = controlBody(observer.right, "member-addition");
+      const a = controlBody(observer.left, "member-addition");
+      const b = controlBody(observer.right, "member-addition");
+
       if (
         !a ||
         !b ||
@@ -632,12 +734,15 @@ export function compareValues(
         !record(b.snapshot) ||
         !Array.isArray(a.snapshot.members) ||
         !Array.isArray(b.snapshot.members)
-      )
+      ) {
         continue;
-      const leftMembers = a.snapshot.members,
-        rightMembers = b.snapshot.members;
+      }
+
+      const leftMembers = a.snapshot.members;
+      const rightMembers = b.snapshot.members;
       a.receipts.forEach((receipt, receiptIndex) => {
         const other = (b.receipts as unknown[])[receiptIndex];
+
         if (
           !record(receipt) ||
           !record(other) ||
@@ -645,10 +750,12 @@ export function compareValues(
           other.phase !== "after-add" ||
           !record(receipt.member) ||
           !record(other.member)
-        )
+        ) {
           return;
-        const am = receipt.member,
-          bm = other.member;
+        }
+
+        const am = receipt.member;
+        const bm = other.member;
         const backed = (
           member: Record<string, unknown>,
           rows: unknown[],
@@ -666,7 +773,11 @@ export function compareValues(
                 (field) => row[field] === member[field],
               ),
           );
-        if (!backed(am, leftMembers, receipt) || !backed(bm, rightMembers, other)) return;
+
+        if (!backed(am, leftMembers, receipt) || !backed(bm, rightMembers, other)) {
+          return;
+        }
+
         const producer = previous.find(
           (pair) =>
             pair.path === "/__test/organization-member-addition/server" &&
@@ -676,6 +787,7 @@ export function compareValues(
             pair.left.memberAdditionOwner?.userId === am.userId &&
             pair.right.memberAdditionOwner?.userId === bm.userId,
         );
+
         if (
           producer &&
           isDate(am.createdAt) &&
@@ -686,10 +798,12 @@ export function compareValues(
             producer.left,
             producer.right,
           )
-        )
+        ) {
           approveDate(dateOwners(am, bm), "createdAt", am.createdAt, bm.createdAt);
+        }
       });
     }
+
     if (
       ["/__test/user-validation/state", "/__test/social-provider/state"].includes(observer.path) &&
       context.sessionCookieSecret
@@ -697,8 +811,9 @@ export function compareValues(
       const kind = observer.path.includes("user-validation")
         ? "user-validation"
         : "social-provider";
-      const a = controlBody(observer.left, kind),
-        b = controlBody(observer.right, kind);
+      const a = controlBody(observer.left, kind);
+      const b = controlBody(observer.right, kind);
+
       if (
         !a ||
         !b ||
@@ -706,31 +821,38 @@ export function compareValues(
         !Array.isArray(b.accounts) ||
         !Array.isArray(a.users) ||
         !Array.isArray(b.users)
-      )
+      ) {
         continue;
-      const leftUsers = a.users,
-        rightUsers = b.users;
+      }
+
+      const leftUsers = a.users;
+      const rightUsers = b.users;
+
       for (const producer of previous) {
         const callback =
           /^(\/(?:api\/auth|__test\/profiles\/[^/]+\/api\/auth))\/callback\/([^/]+)$/.exec(
             producer.path,
           );
+
         if (
           !callback ||
           producer.a.method !== "GET" ||
           producer.a.responseStatus !== 302 ||
           producer.b.responseStatus !== 302
-        )
+        ) {
           continue;
+        }
+
         const token = (window: RequestWindow) =>
           window.sessionCookie &&
           sessionCookieName.test(window.sessionCookie.slice(0, window.sessionCookie.indexOf("=")))
             ? signedCookie(window.sessionCookie.slice(window.sessionCookie.indexOf("=") + 1)).token
             : undefined;
-        const at = token(producer.left),
-          bt = token(producer.right),
-          pair = JSON.stringify([at, bt]),
-          owner = issuances.get(pair);
+        const at = token(producer.left);
+        const bt = token(producer.right);
+        const pair = JSON.stringify([at, bt]);
+        const owner = issuances.get(pair);
+
         if (
           !at ||
           !bt ||
@@ -742,8 +864,10 @@ export function compareValues(
           !previous
             .slice(previous.indexOf(producer) + 1)
             .some((candidate) => candidate.left === owner.left && candidate.right === owner.right)
-        )
+        ) {
           continue;
+        }
+
         // Linking returns a redirect with no new session. Its authenticated
         // request owns only account rows newly observed after this callback.
         const before = previous
@@ -757,19 +881,23 @@ export function compareValues(
               candidate.left.finishedAt <= producer.left.startedAt &&
               candidate.right.finishedAt <= producer.right.startedAt,
           );
-        const priorLeft = before && controlBody(before.left, kind),
-          priorRight = before && controlBody(before.right, kind);
+        const priorLeft = before && controlBody(before.left, kind);
+        const priorRight = before && controlBody(before.right, kind);
+
         if (
           !priorLeft ||
           !priorRight ||
           !Array.isArray(priorLeft.accounts) ||
           !Array.isArray(priorRight.accounts)
-        )
+        ) {
           continue;
-        const leftAccounts = priorLeft.accounts,
-          rightAccounts = priorRight.accounts;
+        }
+
+        const leftAccounts = priorLeft.accounts;
+        const rightAccounts = priorRight.accounts;
         a.accounts.forEach((account, accountIndex) => {
           const other = (b.accounts as unknown[])[accountIndex];
+
           if (
             !record(account) ||
             !record(other) ||
@@ -791,16 +919,20 @@ export function compareValues(
             !rightUsers.some((user: unknown) => record(user) && user.id === other.userId) ||
             leftAccounts.some((row) => record(row) && row.id === account.id) ||
             rightAccounts.some((row) => record(row) && row.id === other.id)
-          )
+          ) {
             return;
+          }
+
           collectResponseDates(account, other, producer.left, producer.right);
           collectFixtureTokenDate(account, other, producer.left, producer.right);
         });
       }
     }
+
     if (observer.path === "/__test/social-provider/state" && context.sessionCookieSecret) {
-      const a = controlBody(observer.left, "social-provider"),
-        b = controlBody(observer.right, "social-provider");
+      const a = controlBody(observer.left, "social-provider");
+      const b = controlBody(observer.right, "social-provider");
+
       if (
         !a ||
         !b ||
@@ -810,8 +942,10 @@ export function compareValues(
         !Array.isArray(b.users) ||
         !Array.isArray(a.accounts) ||
         !Array.isArray(b.accounts)
-      )
+      ) {
         continue;
+      }
+
       for (const producer of previous) {
         // The local GitLab fixture issues a one-hour provider token and the
         // default seven-day session. Its actual signed redirect owns these rows.
@@ -822,39 +956,52 @@ export function compareValues(
           producer.a.method !== "GET" ||
           producer.a.responseStatus !== 302 ||
           producer.b.responseStatus !== 302
-        )
+        ) {
           continue;
+        }
+
         const token = (window: RequestWindow) => {
           const cookie = window.issuedSessionCookie;
           return cookie && sessionCookieName.test(cookie.slice(0, cookie.indexOf("=")))
             ? signedCookie(cookie.slice(cookie.indexOf("=") + 1)).token
             : undefined;
         };
-        const at = token(producer.left),
-          bt = token(producer.right);
-        if (!at || !bt) continue;
+        const at = token(producer.left);
+        const bt = token(producer.right);
+
+        if (!at || !bt) {
+          continue;
+        }
+
         const session = (body: Record<string, unknown>, token: string) =>
           (body.sessions as unknown[]).find((row) => record(row) && row.token === token);
-        const am = session(a, at),
-          bm = session(b, bt);
+        const am = session(a, at);
+        const bm = session(b, bt);
+
         if (
           !record(am) ||
           !record(bm) ||
           typeof am.userId !== "string" ||
           typeof bm.userId !== "string"
-        )
+        ) {
           continue;
+        }
+
         const user = (body: Record<string, unknown>, id: string) =>
           (body.users as unknown[]).find((row) => record(row) && row.id === id);
         const account = (body: Record<string, unknown>, id: string) =>
           (body.accounts as unknown[]).find(
             (row) => record(row) && row.userId === id && row.providerId === "gitlab",
           );
-        const au = user(a, am.userId),
-          bu = user(b, bm.userId),
-          aa = account(a, am.userId),
-          ba = account(b, bm.userId);
-        if (!record(au) || !record(bu) || !record(aa) || !record(ba)) continue;
+        const au = user(a, am.userId);
+        const bu = user(b, bm.userId);
+        const aa = account(a, am.userId);
+        const ba = account(b, bm.userId);
+
+        if (!record(au) || !record(bu) || !record(aa) || !record(ba)) {
+          continue;
+        }
+
         collectResponseDates(
           { session: am, user: au, account: aa },
           { session: bm, user: bu, account: ba },
@@ -862,6 +1009,7 @@ export function compareValues(
           producer.right,
         );
         collectFixtureTokenDate(aa, ba, producer.left, producer.right);
+
         for (const [left, right, field, lifetime] of [[am, bm, "expiresAt", 604800000]] as const) {
           if (
             isDate(left[field]) &&
@@ -872,12 +1020,14 @@ export function compareValues(
               producer.left,
               producer.right,
             )
-          )
+          ) {
             approveDate(dateOwners(left, right), field, left[field], right[field]);
+          }
         }
       }
     }
   }
+
   // API-key middleware constructs a new virtual session on every request. Bind
   // signed snapshot dates to the signing request, actual key issuance and a
   // separately returned virtual session with the same owner and lifetime.
@@ -887,8 +1037,10 @@ export function compareValues(
       !producer.path.endsWith("/api/auth/token") ||
       producer.a.responseStatus !== 200 ||
       producer.b.responseStatus !== 200
-    )
+    ) {
       continue;
+    }
+
     const a =
       record(producer.a.responseBody) && typeof producer.a.responseBody.token === "string"
         ? jwt(producer.a.responseBody.token)?.payload
@@ -897,6 +1049,7 @@ export function compareValues(
       record(producer.b.responseBody) && typeof producer.b.responseBody.token === "string"
         ? jwt(producer.b.responseBody.token)?.payload
         : undefined;
+
     if (
       !a ||
       !b ||
@@ -904,11 +1057,13 @@ export function compareValues(
       !record(b.snapshot) ||
       !record(a.snapshot.session) ||
       !record(b.snapshot.session)
-    )
+    ) {
       continue;
-    const leftSession = a.snapshot.session,
-      rightSession = b.snapshot.session,
-      base = producer.path.slice(0, -6);
+    }
+
+    const leftSession = a.snapshot.session;
+    const rightSession = b.snapshot.session;
+    const base = producer.path.slice(0, -6);
     const sameOwner = (row: Record<string, unknown>, session: Record<string, unknown>) =>
       row.id === session.id && row.token === session.token && row.userId === session.userId;
     const issued = tracePairs.some(
@@ -932,7 +1087,11 @@ export function compareValues(
           );
         }),
     );
-    if (!issued) continue;
+
+    if (!issued) {
+      continue;
+    }
+
     const independent = tracePairs.find(
       (pair) =>
         pair.path === `${base}/get-session` &&
@@ -946,18 +1105,27 @@ export function compareValues(
         sameOwner(pair.a.responseBody.session, leftSession) &&
         sameOwner(pair.b.responseBody.session, rightSession),
     );
-    if (!independent) continue;
+
+    if (!independent) {
+      continue;
+    }
+
     const leftObserved = (independent.a.responseBody as { session: Record<string, unknown> })
-        .session,
-      rightObserved = (independent.b.responseBody as { session: Record<string, unknown> }).session;
+      .session;
+    const rightObserved = (independent.b.responseBody as { session: Record<string, unknown> })
+      .session;
+
     if (
       ![leftObserved, rightObserved, leftSession, rightSession].every((row) =>
         ["createdAt", "updatedAt", "expiresAt"].every((field) => isDate(row[field])),
       )
-    )
+    ) {
       continue;
+    }
+
     const lifetime = (row: Record<string, unknown>) =>
       Date.parse(String(row.expiresAt)) - Date.parse(String(row.createdAt));
+
     if (
       Math.abs(lifetime(leftObserved) - lifetime(rightObserved)) > 5 ||
       !approvedDate(
@@ -966,8 +1134,10 @@ export function compareValues(
         String(leftObserved.createdAt),
         String(rightObserved.createdAt),
       )
-    )
+    ) {
       continue;
+    }
+
     const valid =
       ["createdAt", "updatedAt"].every((field) =>
         inWindows(
@@ -983,14 +1153,17 @@ export function compareValues(
         producer.left,
         producer.right,
       );
-    if (valid)
-      for (const field of ["createdAt", "updatedAt", "expiresAt"])
+
+    if (valid) {
+      for (const field of ["createdAt", "updatedAt", "expiresAt"]) {
         approveDate(
           dateOwners(leftSession, rightSession),
           field,
           String(leftSession[field]),
           String(rightSession[field]),
         );
+      }
+    }
   }
 
   function observedPhysical(
@@ -1000,24 +1173,28 @@ export function compareValues(
   ): boolean {
     const raw = { ...value };
     if (kind === "verification") {
-      if (record(raw.identifier) && Object.keys(raw.identifier).join() === "token")
+      if (record(raw.identifier) && Object.keys(raw.identifier).join() === "token") {
         raw.identifier = raw.identifier.token;
-      if (record(raw.value) && Object.keys(raw.value).join() === "userId")
+      }
+      if (record(raw.value) && Object.keys(raw.value).join() === "userId") {
         raw.value = raw.value.userId;
+      }
     }
     return !!observations?.some((observation) => {
       if (
         observation.kind !== kind ||
         observation.digest !==
           createHash("sha256").update(JSON.stringify(observation.body)).digest("hex")
-      )
+      ) {
         return false;
-      if (kind === "verification")
+      }
+      if (kind === "verification") {
         return (
           raw.identifier === observation.owner &&
           Array.isArray(observation.body) &&
           observation.body.some((row) => samePublication(raw, row))
         );
+      }
       return (
         raw.userId === observation.owner &&
         record(observation.body) &&
@@ -1028,19 +1205,22 @@ export function compareValues(
       );
     });
   }
+
   function physicalShape(a: Record<string, unknown>, b: Record<string, unknown>) {
     for (const field of ["createdAt", "updatedAt", "expiresAt"]) {
-      const av = a[field],
-        bv = b[field];
+      const av = a[field];
+      const bv = b[field];
       if (
         isDate(av) &&
         isDate(bv) &&
         (new Date(Date.parse(av)).toISOString() !== av ||
           new Date(Date.parse(bv)).toISOString() !== bv)
-      )
+      ) {
         invalidPhysicalDates.add(dateKey(physicalOwner(a, b), field, av, bv));
+      }
     }
   }
+
   // Physical observer rows need their producer's clock, not the scenario clock.
   // Only a verified issued cookie and its exact token/user pair may supply it.
   function physicalSessions(a: unknown, b: unknown) {
@@ -1048,7 +1228,11 @@ export function compareValues(
       a.forEach((child, i) => physicalSessions(child, b[i]));
       return;
     }
-    if (!record(a) || !record(b)) return;
+
+    if (!record(a) || !record(b)) {
+      return;
+    }
+
     if (
       typeof a.id === "string" &&
       typeof b.id === "string" &&
@@ -1059,10 +1243,11 @@ export function compareValues(
       isDate(a.expiresAt) &&
       isDate(b.expiresAt)
     ) {
-      const pair = JSON.stringify([a.token, b.token]),
-        receipt = issuances.get(pair);
-      const observedLeft = observedPhysical(a, context.leftPhysicalObservations, "session"),
-        observedRight = observedPhysical(b, context.rightPhysicalObservations, "session");
+      const pair = JSON.stringify([a.token, b.token]);
+      const receipt = issuances.get(pair);
+      const observedLeft = observedPhysical(a, context.leftPhysicalObservations, "session");
+      const observedRight = observedPhysical(b, context.rightPhysicalObservations, "session");
+
       if (
         receipt &&
         signedCookieIssuances.has(pair) &&
@@ -1074,10 +1259,13 @@ export function compareValues(
           b.userId === receipt.rightUser
         )
       ) {
-        for (const field of ["createdAt", "updatedAt", "expiresAt"])
-          if (isDate(a[field]) && isDate(b[field]))
+        for (const field of ["createdAt", "updatedAt", "expiresAt"]) {
+          if (isDate(a[field]) && isDate(b[field])) {
             invalidPhysicalDates.add(dateKey(physicalOwner(a, b), field, a[field], b[field]));
+          }
+        }
       }
+
       if (
         receipt &&
         signedCookieIssuances.has(pair) &&
@@ -1088,16 +1276,19 @@ export function compareValues(
       ) {
         physicalShape(a, b);
         const owners = [physicalOwner(a, b)];
+
         for (const field of ["createdAt", "updatedAt"]) {
-          const av = a[field],
-            bv = b[field];
+          const av = a[field];
+          const bv = b[field];
           if (
             isDate(av) &&
             isDate(bv) &&
             inWindows(Date.parse(av), Date.parse(bv), receipt.left, receipt.right)
-          )
+          ) {
             approveDate(owners, field, av, bv);
+          }
         }
+
         // This fixture uses the real default seven-day session policy. Its
         // narrow observer omits creation dates; subtract the configured lifetime
         // and require the independent issuance windows on both runtimes.
@@ -1109,11 +1300,13 @@ export function compareValues(
               receipt.left,
               receipt.right,
             )
-          )
+          ) {
             approveDate(owners, "expiresAt", a.expiresAt, b.expiresAt);
-          else
-            for (const owner of owners)
+          } else {
+            for (const owner of owners) {
               invalidLifetimes.add(dateKey(owner, "expiresAt", a.expiresAt, b.expiresAt));
+            }
+          }
         } else if (
           isDate(a.createdAt) &&
           isDate(b.createdAt) &&
@@ -1125,14 +1318,17 @@ export function compareValues(
                 Date.parse(a.createdAt) -
                 (Date.parse(b.expiresAt) - Date.parse(b.createdAt)),
             ) <= 5
-          )
+          ) {
             approveDate(owners, "expiresAt", a.expiresAt, b.expiresAt);
-          else
-            for (const owner of owners)
+          } else {
+            for (const owner of owners) {
               invalidLifetimes.add(dateKey(owner, "expiresAt", a.expiresAt, b.expiresAt));
+            }
+          }
         }
       }
     }
+
     for (const [key, child] of Object.entries(a)) {
       if (
         ![
@@ -1145,10 +1341,12 @@ export function compareValues(
           "compactSessionCache",
           "traces",
         ].includes(key)
-      )
+      ) {
         physicalSessions(child, b[key]);
+      }
     }
   }
+
   physicalSessions(normalizedLeft, normalizedRight);
 
   // Physical challenge, counter and trust rows use authenticated issuance
@@ -1162,12 +1360,17 @@ export function compareValues(
     }
   >();
   const verificationRows: { a: Record<string, unknown>; b: Record<string, unknown> }[] = [];
+
   function collectVerificationRows(a: unknown, b: unknown) {
     if (Array.isArray(a) && Array.isArray(b)) {
       a.forEach((child, i) => collectVerificationRows(child, b[i]));
       return;
     }
-    if (!record(a) || !record(b)) return;
+
+    if (!record(a) || !record(b)) {
+      return;
+    }
+
     if (
       typeof a.id === "string" &&
       typeof b.id === "string" &&
@@ -1179,8 +1382,9 @@ export function compareValues(
       if (
         observedPhysical(a, context.leftPhysicalObservations, "verification") &&
         observedPhysical(b, context.rightPhysicalObservations, "verification")
-      )
+      ) {
         verificationRows.push({ a, b });
+      }
       const receipt = verificationIssuances.get(
         JSON.stringify([a.identifier.token, b.identifier.token]),
       );
@@ -1192,14 +1396,16 @@ export function compareValues(
         record(b.value) &&
         a.value.userId === receipt.leftUser &&
         b.value.userId === receipt.rightUser
-      )
+      ) {
         issuedVerificationRows.set(JSON.stringify([a.identifier.token, b.identifier.token]), {
           a,
           b,
           receipt,
         });
+      }
     }
-    for (const [key, child] of Object.entries(a))
+
+    for (const [key, child] of Object.entries(a)) {
       if (
         ![
           "metadata",
@@ -1209,17 +1415,22 @@ export function compareValues(
           "requestBodyShape",
           "responseBodyShape",
         ].includes(key)
-      )
+      ) {
         collectVerificationRows(child, b[key]);
+      }
+    }
   }
+
   collectVerificationRows(normalizedLeft, normalizedRight);
+
   for (const { a, b } of verificationRows) {
-    const at = (a.identifier as { token: string }).token,
-      bt = (b.identifier as { token: string }).token;
+    const at = (a.identifier as { token: string }).token;
+    const bt = (b.identifier as { token: string }).token;
     const attempt = at.startsWith("2fa-attempts-") && bt.startsWith("2fa-attempts-");
     const challenge = issuedVerificationRows.get(
       JSON.stringify(attempt ? [at.slice(13), bt.slice(13)] : [at, bt]),
     );
+
     if (
       !challenge ||
       (attempt
@@ -1229,11 +1440,13 @@ export function compareValues(
           a.expiresAt !== challenge.a.expiresAt ||
           b.expiresAt !== challenge.b.expiresAt
         : a !== challenge.a || b !== challenge.b)
-    )
+    ) {
       continue;
+    }
+
     physicalShape(a, b);
-    const { receipt } = challenge,
-      owners = [physicalOwner(a, b)];
+    const { receipt } = challenge;
+    const owners = [physicalOwner(a, b)];
     const mutation = receipt.trust
       ? tracePairs.find(
           (pair) =>
@@ -1251,17 +1464,21 @@ export function compareValues(
             pair.right.verificationInput.expiresAt === b.expiresAt,
         )
       : undefined;
+
     for (const field of ["createdAt", "updatedAt"]) {
-      const av = a[field],
-        bv = b[field];
+      const av = a[field];
+      const bv = b[field];
       const producer = field === "updatedAt" && mutation ? mutation : receipt;
+
       if (
         isDate(av) &&
         isDate(bv) &&
         inWindows(Date.parse(av), Date.parse(bv), producer.left, producer.right)
-      )
+      ) {
         approveDate(owners, field, av, bv);
+      }
     }
+
     if (isDate(a.expiresAt) && isDate(b.expiresAt)) {
       if (
         mutation ||
@@ -1271,11 +1488,13 @@ export function compareValues(
           receipt.left,
           receipt.right,
         )
-      )
+      ) {
         approveDate(owners, "expiresAt", a.expiresAt, b.expiresAt);
-      else
-        for (const owner of owners)
+      } else {
+        for (const owner of owners) {
           invalidLifetimes.add(dateKey(owner, "expiresAt", a.expiresAt, b.expiresAt));
+        }
+      }
     }
   }
 
@@ -1285,8 +1504,9 @@ export function compareValues(
     context.leftRequestWindows,
     context.rightRequestWindows,
     (a, b, leftCookie, rightCookie) => {
-      if (!context.sessionCookieSecret || !signedCookieIssuances.has(JSON.stringify([a, b])))
+      if (!context.sessionCookieSecret || !signedCookieIssuances.has(JSON.stringify([a, b]))) {
         return false;
+      }
       return (
         signedCookie(leftCookie.slice(leftCookie.indexOf("=") + 1)).token === a &&
         signedCookie(rightCookie.slice(rightCookie.indexOf("=") + 1)).token === b
@@ -1300,37 +1520,48 @@ export function compareValues(
 
   function traceEndpoint(root: unknown, path: string): string | undefined {
     const index = /^traces\.(\d+)\.responseBody(?:\.|$)/.exec(path)?.[1];
-    if (index === undefined || !record(root) || !Array.isArray(root.traces)) return;
+
+    if (index === undefined || !record(root) || !Array.isArray(root.traces)) {
+      return;
+    }
+
     const trace = root.traces[Number(index)];
     return record(trace) && typeof trace.path === "string" ? trace.path.split("?")[0] : undefined;
   }
 
   function sessions(value: unknown, result = new Map<string, number>()): Map<string, number> {
-    if (Array.isArray(value)) for (const child of value) sessions(child, result);
-    else if (record(value) && !claimObject(value)) {
+    if (Array.isArray(value)) {
+      for (const child of value) {
+        sessions(child, result);
+      }
+    } else if (record(value) && !claimObject(value)) {
       if (
         typeof value.token === "string" &&
         typeof value.expiresAt === "string" &&
         Number.isFinite(Date.parse(value.expiresAt))
-      )
+      ) {
         result.set(value.token, Date.parse(value.expiresAt));
-      for (const child of Object.values(value)) sessions(child, result);
+      }
+      for (const child of Object.values(value)) {
+        sessions(child, result);
+      }
     }
     return result;
   }
-  const leftSessions = sessions(normalizedLeft),
-    rightSessions = sessions(normalizedRight);
+
+  const leftSessions = sessions(normalizedLeft);
+  const rightSessions = sessions(normalizedRight);
 
   function deviceSessions(
     value: unknown,
     path = "",
     result = new Map<string, number>(),
   ): Map<string, number> {
-    if (Array.isArray(value))
+    if (Array.isArray(value)) {
       value.forEach((child, index) =>
         deviceSessions(child, path ? `${path}.${index}` : `${index}`, result),
       );
-    else if (
+    } else if (
       record(value) &&
       !claimObject(value) &&
       !/(?:^|\.)(?:metadata|additionalFields|custom|applicationData)(?:\.|$)/.test(path) &&
@@ -1342,40 +1573,60 @@ export function compareValues(
         typeof value.token === "string" &&
         typeof value.expiresAt === "string" &&
         Number.isFinite(Date.parse(value.expiresAt))
-      )
+      ) {
         result.set(value.token, Date.parse(value.expiresAt));
-      for (const [key, child] of Object.entries(value))
+      }
+      for (const [key, child] of Object.entries(value)) {
         deviceSessions(child, path ? `${path}.${key}` : key, result);
+      }
     }
     return result;
   }
-  const leftDeviceSessions = deviceSessions(normalizedLeft),
-    rightDeviceSessions = deviceSessions(normalizedRight);
+
+  const leftDeviceSessions = deviceSessions(normalizedLeft);
+  const rightDeviceSessions = deviceSessions(normalizedRight);
 
   function issuedTokens(value: unknown, result = new Set<string>()): Set<string> {
-    if (Array.isArray(value)) for (const child of value) issuedTokens(child, result);
-    else if (record(value) && !claimObject(value))
-      for (const [key, child] of Object.entries(value)) {
-        if (applicationField(key)) continue;
-        if ((key === "token" || key === "set-ott") && typeof child === "string") result.add(child);
+    if (Array.isArray(value)) {
+      for (const child of value) {
         issuedTokens(child, result);
       }
+    } else if (record(value) && !claimObject(value)) {
+      for (const [key, child] of Object.entries(value)) {
+        if (applicationField(key)) {
+          continue;
+        }
+        if ((key === "token" || key === "set-ott") && typeof child === "string") {
+          result.add(child);
+        }
+        issuedTokens(child, result);
+      }
+    }
     return result;
   }
-  const leftTokens = issuedTokens(normalizedLeft),
-    rightTokens = issuedTokens(normalizedRight);
+
+  const leftTokens = issuedTokens(normalizedLeft);
+  const rightTokens = issuedTokens(normalizedRight);
 
   function oneTimeIdentifier(
     value: string,
     tokens: ReadonlySet<string>,
   ): { token: string; mode: "plain" | "hashed" } | undefined {
     const prefix = "one-time-token:";
-    if (!value.startsWith(prefix)) return;
+
+    if (!value.startsWith(prefix)) {
+      return;
+    }
+
     const stored = value.slice(prefix.length);
+
     for (const token of tokens) {
-      if (stored === token) return { token, mode: "plain" };
-      if (stored === createHash("sha256").update(token).digest("base64url"))
+      if (stored === token) {
+        return { token, mode: "plain" };
+      }
+      if (stored === createHash("sha256").update(token).digest("base64url")) {
         return { token, mode: "hashed" };
+      }
     }
   }
 
@@ -1401,11 +1652,11 @@ export function compareValues(
     path = "",
     result = new Map<string, string>(),
   ): Map<string, string> {
-    if (Array.isArray(value))
+    if (Array.isArray(value)) {
       value.forEach((child, index) =>
         issuedApiKeys(child, path ? `${path}.${index}` : `${index}`, result),
       );
-    else if (
+    } else if (
       record(value) &&
       !claimObject(value) &&
       !/(?:^|\.)(?:metadata|additionalFields|custom|applicationData)(?:\.|$)/.test(path) &&
@@ -1418,63 +1669,85 @@ export function compareValues(
         typeof value.key === "string"
       ) {
         const previous = result.get(value.id);
-        if (previous !== undefined && previous !== value.key)
+        if (previous !== undefined && previous !== value.key) {
           fail(path, "API key changed for a persisted row");
+        }
         result.set(value.id, value.key);
       }
-      for (const [key, child] of Object.entries(value))
+      for (const [key, child] of Object.entries(value)) {
         issuedApiKeys(child, path ? `${path}.${key}` : key, result);
+      }
     }
     return result;
   }
-  const leftApiKeys = issuedApiKeys(normalizedLeft),
-    rightApiKeys = issuedApiKeys(normalizedRight);
+
+  const leftApiKeys = issuedApiKeys(normalizedLeft);
+  const rightApiKeys = issuedApiKeys(normalizedRight);
 
   function codeUnitBytes(unit: number): number[] {
-    if (unit <= 0x7f) return [unit];
-    if (unit <= 0x7ff) return [0xc0 | (unit >> 6), 0x80 | (unit & 0x3f)];
+    if (unit <= 0x7f) {
+      return [unit];
+    }
+    if (unit <= 0x7ff) {
+      return [0xc0 | (unit >> 6), 0x80 | (unit & 0x3f)];
+    }
     return [0xe0 | (unit >> 12), 0x80 | ((unit >> 6) & 0x3f), 0x80 | (unit & 0x3f)];
   }
+
   // Find an actual UTF-16 prefix whose WTF-8 encoding equals the persisted
   // bytes. A cut between a surrogate pair encodes its high code unit as three
   // bytes; a complete pair uses ordinary UTF-8. No replacement text is accepted
   // without this derivation and the exact database readback.
   function utf16PrefixUnits(key: string, bytes: Buffer): number | undefined {
-    if (!bytes.length) return 0;
+    if (!bytes.length) {
+      return 0;
+    }
     const prefix: number[] = [];
     for (let index = 0; index < key.length; index++) {
-      const unit = key.charCodeAt(index),
-        next = key.charCodeAt(index + 1);
+      const unit = key.charCodeAt(index);
+      const next = key.charCodeAt(index + 1);
+
       if (unit >= 0xd800 && unit <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
         if (
           prefix.length + 3 === bytes.length &&
           Buffer.from([...prefix, ...codeUnitBytes(unit)]).equals(bytes)
-        )
+        ) {
           return index + 1;
+        }
         prefix.push(...Buffer.from(key.substring(index, index + 2)));
         index++;
-      } else prefix.push(...codeUnitBytes(unit));
-      if (prefix.length === bytes.length && Buffer.from(prefix).equals(bytes)) return index + 1;
-      if (prefix.length > bytes.length) return;
+      } else {
+        prefix.push(...codeUnitBytes(unit));
+      }
+
+      if (prefix.length === bytes.length && Buffer.from(prefix).equals(bytes)) {
+        return index + 1;
+      }
+
+      if (prefix.length > bytes.length) {
+        return;
+      }
     }
   }
+
   type SqliteApiKey = {
     key: string;
     mode: "plain" | "hashed";
     start: string | null;
     units: number | null;
   };
+
   function sqliteApiKeys(
     value: unknown,
     issued: ReadonlyMap<string, string>,
     path = "",
     result = new Map<string, SqliteApiKey[]>(),
   ): Map<string, SqliteApiKey[]> {
-    if (Array.isArray(value))
+    if (Array.isArray(value)) {
       value.forEach((child, index) =>
         sqliteApiKeys(child, issued, path ? `${path}.${index}` : `${index}`, result),
       );
-    else if (
+    } else if (
       record(value) &&
       !/(?:^|\.)(?:metadata|additionalFields|custom|applicationData)(?:\.|$)/.test(path) &&
       !traceShape(path)
@@ -1488,29 +1761,40 @@ export function compareValues(
                 value.key === createHash("sha256").update(plaintext).digest("base64url")
               ? "hashed"
               : undefined;
-        if (mode === undefined)
+
+        if (mode === undefined) {
           fail(`${path}.key`, "SQLite API-key storage is not derived from its observed issuance");
+        }
+
         let units: number | null | undefined;
-        if (value.startType !== "text" && value.startType !== "null")
+
+        if (value.startType !== "text" && value.startType !== "null") {
           fail(`${path}.startType`, "SQLite API-key storage type is neither text nor null");
-        if (value.startType === "null" && value.start === null && value.startHex === "")
+        }
+
+        if (value.startType === "null" && value.start === null && value.startHex === "") {
           units = null;
-        else if (
+        } else if (
           value.startType === "text" &&
           typeof value.start === "string" &&
           typeof value.startHex === "string" &&
           /^(?:[0-9A-Fa-f]{2})*$/.test(value.startHex)
         ) {
           const bytes = Buffer.from(value.startHex, "hex");
-          if (bytes.toString("utf8") !== value.start)
+          if (bytes.toString("utf8") !== value.start) {
             fail(`${path}.start`, "SQLite API-key text readback disagrees with its actual bytes");
-          else if (plaintext !== undefined) units = utf16PrefixUnits(plaintext, bytes);
+          } else if (plaintext !== undefined) {
+            units = utf16PrefixUnits(plaintext, bytes);
+          }
         }
-        if (units === undefined)
+
+        if (units === undefined) {
           fail(
             `${path}.startHex`,
             "SQLite API-key bytes are not an actual UTF-16 credential prefix",
           );
+        }
+
         if (
           mode !== undefined &&
           units !== undefined &&
@@ -1523,13 +1807,16 @@ export function compareValues(
           result.set(value.id, receipts);
         }
       }
-      for (const [key, child] of Object.entries(value))
+      for (const [key, child] of Object.entries(value)) {
         sqliteApiKeys(child, issued, path ? `${path}.${key}` : key, result);
+      }
     }
     return result;
   }
-  const leftSqliteApiKeys = sqliteApiKeys(normalizedLeft, leftApiKeys),
-    rightSqliteApiKeys = sqliteApiKeys(normalizedRight, rightApiKeys);
+
+  const leftSqliteApiKeys = sqliteApiKeys(normalizedLeft, leftApiKeys);
+  const rightSqliteApiKeys = sqliteApiKeys(normalizedRight, rightApiKeys);
+
   function sqliteStorage(
     value: Record<string, unknown>,
     receipts: ReadonlyMap<string, SqliteApiKey[]>,
@@ -1538,107 +1825,163 @@ export function compareValues(
       ? receipts.get(value.id)?.find((row) => row.key === value.key && row.start === value.start)
       : undefined;
   }
+
   function observedPrefixUnits(
     value: Record<string, unknown>,
     plaintext: string,
     receipts: ReadonlyMap<string, SqliteApiKey[]>,
   ): number | undefined {
-    if (typeof value.start !== "string") return;
+    if (typeof value.start !== "string") {
+      return;
+    }
     if (typeof value.id === "string") {
       const receipt = receipts.get(value.id)?.find((row) => row.start === value.start);
-      if (receipt && receipt.units !== null) return receipt.units;
+      if (receipt && receipt.units !== null) {
+        return receipt.units;
+      }
     }
     return plaintext.startsWith(value.start) ? value.start.length : undefined;
   }
 
   function entityValues(value: unknown, result = new Set<string>()): Set<string> {
-    if (Array.isArray(value)) for (const child of value) entityValues(child, result);
-    else if (record(value) && !claimObject(value))
-      for (const [key, child] of Object.entries(value)) {
-        if (applicationField(key)) continue;
-        if (entityKeys.has(key) && typeof child === "string") result.add(child);
+    if (Array.isArray(value)) {
+      for (const child of value) {
         entityValues(child, result);
       }
+    } else if (record(value) && !claimObject(value)) {
+      for (const [key, child] of Object.entries(value)) {
+        if (applicationField(key)) {
+          continue;
+        }
+        if (entityKeys.has(key) && typeof child === "string") {
+          result.add(child);
+        }
+        entityValues(child, result);
+      }
+    }
     return result;
   }
-  const leftEntities = entityValues(normalizedLeft),
-    rightEntities = entityValues(normalizedRight);
 
-  const leftMemberIds = new Set<string>(),
-    rightMemberIds = new Set<string>();
-  const leftKeyIds = new Set<string>(),
-    rightKeyIds = new Set<string>();
+  const leftEntities = entityValues(normalizedLeft);
+  const rightEntities = entityValues(normalizedRight);
+
+  const leftMemberIds = new Set<string>();
+  const rightMemberIds = new Set<string>();
+  const leftKeyIds = new Set<string>();
+  const rightKeyIds = new Set<string>();
   const memberReceipt = (value: Record<string, unknown>) =>
     typeof value.id === "string" &&
     typeof value.organizationId === "string" &&
     typeof value.userId === "string" &&
     typeof value.role === "string" &&
     isDate(value.createdAt);
+
   function observedSelectors(a: unknown, b: unknown, path = "", applicationData = false) {
-    if (applicationData || traceShape(path)) return;
+    if (applicationData || traceShape(path)) {
+      return;
+    }
     if (Array.isArray(a) && Array.isArray(b)) {
       a.forEach((child, index) =>
         observedSelectors(child, b[index], path ? `${path}.${index}` : `${index}`),
       );
     } else if (record(a) && record(b)) {
-      if (claimObject(a) || claimObject(b)) return;
-      const leftMember = memberReceipt(a),
-        rightMember = memberReceipt(b);
-      if (leftMember) leftMemberIds.add(String(a.id));
-      if (rightMember) rightMemberIds.add(String(b.id));
+      if (claimObject(a) || claimObject(b)) {
+        return;
+      }
+
+      const leftMember = memberReceipt(a);
+      const rightMember = memberReceipt(b);
+
+      if (leftMember) {
+        leftMemberIds.add(String(a.id));
+      }
+
+      if (rightMember) {
+        rightMemberIds.add(String(b.id));
+      }
+
       if (leftMember && rightMember) {
         identity(String(a.id), String(b.id), `${path}.id`, "entity");
       }
+
       const leftKey = sqliteApiKeyReceipt(a) && sqliteStorage(a, leftSqliteApiKeys);
       const rightKey = sqliteApiKeyReceipt(b) && sqliteStorage(b, rightSqliteApiKeys);
-      if (leftKey) leftKeyIds.add(String(a.id));
-      if (rightKey) rightKeyIds.add(String(b.id));
+
+      if (leftKey) {
+        leftKeyIds.add(String(a.id));
+      }
+
+      if (rightKey) {
+        rightKeyIds.add(String(b.id));
+      }
+
       if (leftKey && rightKey) {
         identity(String(a.id), String(b.id), `${path}.id`, "entity");
       }
-      for (const [key, child] of Object.entries(a))
+
+      for (const [key, child] of Object.entries(a)) {
         observedSelectors(
           child,
           b[key],
           path ? `${path}.${key}` : key,
           ["metadata", "additionalFields", "custom", "applicationData"].includes(key),
         );
+      }
     }
   }
+
   observedSelectors(normalizedLeft, normalizedRight);
 
   function compactPart(value: string, whitespace: boolean): Buffer | undefined {
     const encoded = whitespace ? value.replace(/[ \t\n\r\f]/g, "") : value;
-    if (!/^[A-Za-z0-9_-]+={0,2}$/.test(encoded)) return;
+
+    if (!/^[A-Za-z0-9_-]+={0,2}$/.test(encoded)) {
+      return;
+    }
+
     const unpadded = encoded.replace(/=+$/, "");
     const padding = encoded.length - unpadded.length;
+
     if (
       unpadded.length % 4 === 1 ||
       (padding > 0 && (encoded.length % 4 !== 0 || unpadded.length % 4 === 0))
-    )
+    ) {
       return;
+    }
+
     return Buffer.from(unpadded, "base64url");
   }
+
   function jwt(
     value: string,
   ):
     | { header: Record<string, unknown>; payload: Record<string, unknown>; signature: Buffer }
     | undefined {
     const parts = value.split(".");
-    if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return;
-    const headerBytes = compactPart(parts[0], false),
-      payloadBytes = compactPart(parts[1], true),
-      signature = compactPart(parts[2], true);
-    if (!headerBytes || !payloadBytes || !signature) return;
+
+    if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+      return;
+    }
+
+    const headerBytes = compactPart(parts[0], false);
+    const payloadBytes = compactPart(parts[1], true);
+    const signature = compactPart(parts[2], true);
+
+    if (!headerBytes || !payloadBytes || !signature) {
+      return;
+    }
+
     try {
       const header: unknown = JSON.parse(headerBytes.toString());
       const payload: unknown = JSON.parse(payloadBytes.toString());
-      if (record(header) && typeof header.alg === "string" && record(payload))
+      if (record(header) && typeof header.alg === "string" && record(payload)) {
         return { header, payload, signature };
+      }
     } catch {
       return;
     }
   }
+
   // Only fixture observations authenticated by the published decoder use this
   // envelope. Application JSON and unrelated JWT-shaped objects stay literal.
   function encryptedAccountCookie(value: Record<string, unknown>): boolean {
@@ -1647,22 +1990,31 @@ export function compareValues(
       typeof value.token !== "string" ||
       !record(value.header) ||
       !record(value.payload)
-    )
+    ) {
       return false;
+    }
+
     const parts = value.token.split(".");
-    if (parts.length !== 5 || parts[1] !== "") return false;
-    const header = compactPart(parts[0] ?? "", false),
-      iv = compactPart(parts[2] ?? "", false);
-    const ciphertext = compactPart(parts[3] ?? "", false),
-      tag = compactPart(parts[4] ?? "", false);
+
+    if (parts.length !== 5 || parts[1] !== "") {
+      return false;
+    }
+
+    const header = compactPart(parts[0] ?? "", false);
+    const iv = compactPart(parts[2] ?? "", false);
+    const ciphertext = compactPart(parts[3] ?? "", false);
+    const tag = compactPart(parts[4] ?? "", false);
+
     if (
       !header ||
       iv?.length !== 16 ||
       !ciphertext?.length ||
       ciphertext.length % 16 !== 0 ||
       tag?.length !== 32
-    )
+    ) {
       return false;
+    }
+
     try {
       const decoded: unknown = JSON.parse(header.toString());
       return (
@@ -1675,23 +2027,29 @@ export function compareValues(
       return false;
     }
   }
+
   function stableJSON(value: unknown): string {
-    if (Array.isArray(value)) return `[${value.map(stableJSON).join(",")}]`;
-    if (record(value))
+    if (Array.isArray(value)) {
+      return `[${value.map(stableJSON).join(",")}]`;
+    }
+    if (record(value)) {
       return `{${Object.keys(value)
         .sort()
         .map((key) => `${JSON.stringify(key)}:${stableJSON(value[key])}`)
         .join(",")}}`;
+    }
     return JSON.stringify(value) ?? "undefined";
   }
+
   function exactCacheCopy(a: unknown, b: unknown): boolean {
-    if (Array.isArray(a))
+    if (Array.isArray(a)) {
       return (
         Array.isArray(b) &&
         a.length === b.length &&
         a.every((child, index) => exactCacheCopy(child, b[index]))
       );
-    if (record(a))
+    }
+    if (record(a)) {
       return (
         record(b) &&
         Object.keys(a).length === Object.keys(b).length &&
@@ -1699,54 +2057,89 @@ export function compareValues(
           ([key, child]) => Object.hasOwn(b, key) && exactCacheCopy(child, b[key]),
         )
       );
+    }
     return Object.is(a, b);
   }
+
   const cachePayloadSchema = z.looseObject({
     session: sessionSchema.loose(),
     user: userSchema.loose(),
     updatedAt: z.number(),
     version: z.string().optional(),
   });
+
   function compactCookieHeaders(
     value: Record<string, unknown>,
   ): { name: string; attributes: string; tombstone: boolean }[] | undefined {
-    if (!Object.hasOwn(value, "rawCookies")) return [];
+    if (!Object.hasOwn(value, "rawCookies")) {
+      return [];
+    }
+
     if (
       !Array.isArray(value.rawCookies) ||
       !value.rawCookies.length ||
       typeof value.token !== "string"
-    )
+    ) {
       return;
+    }
+
     const result: { name: string; attributes: string; tombstone: boolean }[] = [];
     const live: { name: string; value: string; attributes: string; raw: string }[] = [];
+
     for (const raw of value.rawCookies) {
-      if (typeof raw !== "string") return;
+      if (typeof raw !== "string") {
+        return;
+      }
+
       const cookie = Cookie.parse(raw);
-      if (!cookie || !/^better-auth\.session_data(?:\.(?:0|[1-9]\d*))?$/.test(cookie.key)) return;
-      const separator = raw.indexOf(";"),
-        pair = separator < 0 ? raw : raw.slice(0, separator),
-        attributes = separator < 0 ? "" : raw.slice(separator);
+
+      if (!cookie || !/^better-auth\.session_data(?:\.(?:0|[1-9]\d*))?$/.test(cookie.key)) {
+        return;
+      }
+
+      const separator = raw.indexOf(";");
+      const pair = separator < 0 ? raw : raw.slice(0, separator);
+      const attributes = separator < 0 ? "" : raw.slice(separator);
       let decoded: string;
+
       try {
         decoded = decodeURIComponent(cookie.value);
       } catch {
         return;
       }
-      if (pair !== `${cookie.key}=${encodeURIComponent(decoded)}`) return;
+
+      if (pair !== `${cookie.key}=${encodeURIComponent(decoded)}`) {
+        return;
+      }
+
       const tombstone = decoded === "" && cookie.maxAge === 0;
-      if (decoded === "" && !tombstone) return;
+
+      if (decoded === "" && !tombstone) {
+        return;
+      }
+
       result.push({ name: cookie.key, attributes, tombstone });
-      if (!tombstone) live.push({ name: cookie.key, value: decoded, attributes, raw });
+
+      if (!tombstone) {
+        live.push({ name: cookie.key, value: decoded, attributes, raw });
+      }
     }
+
     if (
       !live.length ||
       live.length > 100 ||
       live.map((part) => part.value).join("") !== value.token
-    )
+    ) {
       return;
-    const attributes = live[0]!.attributes,
-      capacity = 4050 - `better-auth.session_data.99=${attributes}`.length;
-    if (capacity <= 0) return;
+    }
+
+    const attributes = live[0]!.attributes;
+    const capacity = 4050 - `better-auth.session_data.99=${attributes}`.length;
+
+    if (capacity <= 0) {
+      return;
+    }
+
     for (let index = 0; index < live.length; index++) {
       const part = live[index]!;
       const name =
@@ -1756,12 +2149,18 @@ export function compareValues(
         part.attributes !== attributes ||
         Buffer.byteLength(part.raw) > 4050 ||
         part.value.length !== Math.min(capacity, value.token.length - index * capacity)
-      )
+      ) {
         return;
+      }
     }
-    if (live.length !== Math.ceil(value.token.length / capacity)) return;
+
+    if (live.length !== Math.ceil(value.token.length / capacity)) {
+      return;
+    }
+
     return result;
   }
+
   function authenticatedCompactCache(
     value: Record<string, unknown>,
     start: number,
@@ -1784,20 +2183,29 @@ export function compareValues(
       !Number.isFinite(value.observedAt) ||
       value.observedAt < start ||
       value.observedAt > (finish ?? start)
-    )
+    ) {
       return false;
+    }
     try {
       const bytes = Buffer.from(value.token, "base64url");
-      if (bytes.toString("base64url") !== value.token) return false;
+
+      if (bytes.toString("base64url") !== value.token) {
+        return false;
+      }
+
       const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
       const parsedEnvelope: unknown = JSON.parse(text);
+
       if (
         JSON.stringify(parsedEnvelope) !== text ||
         JSON.stringify(value.envelope) !== text ||
         !exactCacheCopy(parsedEnvelope, value.envelope)
-      )
+      ) {
         return false;
+      }
+
       const raw = value.envelope;
+
       if (
         !record(raw.session) ||
         typeof raw.session.updatedAt !== "number" ||
@@ -1805,38 +2213,52 @@ export function compareValues(
         raw.session.updatedAt > value.observedAt ||
         typeof raw.signature !== "string" ||
         !/^[A-Za-z0-9_-]{43}$/.test(raw.signature)
-      )
+      ) {
         return false;
+      }
+
       const signature = Buffer.from(raw.signature, "base64url");
       const mac = (payload: Record<string, unknown>, expiresAt: unknown) =>
         createHmac("sha256", context.compactSessionCacheSecret!)
           .update(JSON.stringify({ ...payload, expiresAt }))
           .digest();
       const expected = mac(raw.session, raw.expiresAt);
+
       if (
         signature.toString("base64url") !== raw.signature ||
         signature.length !== expected.length ||
         !timingSafeEqual(signature, expected)
-      )
+      ) {
         return false;
+      }
+
       const clip = (value: number) =>
         Number.isFinite(value) && Math.abs(value) <= 8.64e15 ? Math.trunc(value) : NaN;
       const age = value.effectiveMaxAgeSeconds;
-      const earliest = clip(raw.session.updatedAt + age * 1000),
-        latest = clip(value.observedAt + age * 1000);
+      const earliest = clip(raw.session.updatedAt + age * 1000);
+      const latest = clip(value.observedAt + age * 1000);
+
       if (Number.isNaN(earliest) || Number.isNaN(latest)) {
-        if (raw.expiresAt !== null) return false;
+        if (raw.expiresAt !== null) {
+          return false;
+        }
       } else if (
         typeof raw.expiresAt !== "number" ||
         !Number.isInteger(raw.expiresAt) ||
         raw.expiresAt < earliest ||
         raw.expiresAt > latest
-      )
+      ) {
         return false;
+      }
+
       // Independent Source decoder contract: Date revival precedes its HMAC
       // and loose payload schema; complete passthrough fields remain observable.
       const revived = safeJSONParse(text);
-      if (!record(revived) || !record(revived.session)) return false;
+
+      if (!record(revived) || !record(revived.session)) {
+        return false;
+      }
+
       const parsed = cachePayloadSchema.safeParse(revived.session);
       const valid =
         typeof revived.expiresAt === "number" &&
@@ -1852,25 +2274,35 @@ export function compareValues(
       return false;
     }
   }
+
   const compactHeaderIssuances = new Map<string, readonly [string, string]>();
+
   function observedCompactHeaders(a: unknown, b: unknown, path = "", applicationData = false) {
-    if (applicationData || traceShape(path)) return;
+    if (applicationData || traceShape(path)) {
+      return;
+    }
     if (Array.isArray(a) && Array.isArray(b)) {
       a.forEach((child, index) => observedCompactHeaders(child, b[index], `${path}.${index}`));
     } else if (record(a) && record(b)) {
-      if (claimObject(a) || claimObject(b)) return;
+      if (claimObject(a) || claimObject(b)) {
+        return;
+      }
       for (const [key, child] of Object.entries(a)) {
         if (key === "compactSessionCache" && record(child) && record(b[key])) {
           const other = b[key];
+
           if (
             !authenticatedCompactCache(child, context.leftStartedAt, context.leftFinishedAt) ||
             !authenticatedCompactCache(other, context.rightStartedAt, context.rightFinishedAt)
-          )
+          ) {
             continue;
-          const leftCookies = compactCookieHeaders(child),
-            rightCookies = compactCookieHeaders(other);
-          const left = child.decoded,
-            right = other.decoded;
+          }
+
+          const leftCookies = compactCookieHeaders(child);
+          const rightCookies = compactCookieHeaders(other);
+          const left = child.decoded;
+          const right = other.decoded;
+
           if (
             leftCookies?.length !== 1 ||
             rightCookies?.length !== 1 ||
@@ -1884,10 +2316,13 @@ export function compareValues(
             !record(right.user) ||
             !record(left.session) ||
             !record(right.session)
-          )
+          ) {
             continue;
-          const pair = JSON.stringify([left.session.token, right.session.token]),
-            issuance = issuances.get(pair);
+          }
+
+          const pair = JSON.stringify([left.session.token, right.session.token]);
+          const issuance = issuances.get(pair);
+
           if (
             !issuance ||
             !signedCookieIssuances.has(pair) ||
@@ -1895,27 +2330,34 @@ export function compareValues(
             right.user.id !== right.session.userId ||
             issuance.leftUser !== left.user.id ||
             issuance.rightUser !== right.user.id
-          )
+          ) {
             continue;
+          }
+
           compactHeaderIssuances.set(JSON.stringify([child.token, other.token]), [
             String(left.session.token),
             String(right.session.token),
           ]);
-        } else
+        } else {
           observedCompactHeaders(
             child,
             b[key],
             `${path}.${key}`,
             ["metadata", "additionalFields", "custom", "applicationData"].includes(key),
           );
+        }
       }
     }
   }
+
   observedCompactHeaders(normalizedLeft, normalizedRight);
+
   function cacheClock(a: number, b: number, path: string) {
-    if (a !== b && Math.abs(a - context.leftStartedAt - (b - context.rightStartedAt)) > 1500)
+    if (a !== b && Math.abs(a - context.leftStartedAt - (b - context.rightStartedAt)) > 1500) {
       fail(path, "compact cache timestamp differs");
+    }
   }
+
   function authenticatedProxyProfile(value: Record<string, unknown>): boolean {
     if (
       !context.oauthProxyProfileSecret ||
@@ -1923,22 +2365,24 @@ export function compareValues(
       typeof value.token !== "string" ||
       !/^(?:[0-9a-f]{2}){40,}$/.test(value.token) ||
       !record(value.payload)
-    )
+    ) {
       return false;
+    }
     try {
-      const bytes = Buffer.from(value.token, "hex"),
-        key = createHash("sha256").update(context.oauthProxyProfileSecret).digest();
+      const bytes = Buffer.from(value.token, "hex");
+      const key = createHash("sha256").update(context.oauthProxyProfileSecret).digest();
       const plaintext = xchacha20poly1305(key, bytes.subarray(0, 24)).decrypt(bytes.subarray(24));
       const text = new TextDecoder("utf-8", { fatal: true }).decode(plaintext);
       const parsed: unknown = JSON.parse(text);
       const exactCopy = (a: unknown, b: unknown): boolean => {
-        if (Array.isArray(a))
+        if (Array.isArray(a)) {
           return (
             Array.isArray(b) &&
             a.length === b.length &&
             a.every((child, index) => exactCopy(child, b[index]))
           );
-        if (record(a))
+        }
+        if (record(a)) {
           return (
             record(b) &&
             Object.keys(a).length === Object.keys(b).length &&
@@ -1946,14 +2390,18 @@ export function compareValues(
               ([key, child]) => Object.hasOwn(b, key) && exactCopy(child, b[key]),
             )
           );
+        }
         return Object.is(a, b);
       };
+
       if (
         JSON.stringify(parsed) !== text ||
         JSON.stringify(value.payload) !== text ||
         !exactCopy(parsed, value.payload)
-      )
+      ) {
         return false;
+      }
+
       // Authentication proves the complete submitted JSON, including schema-invalid
       // or expired input. Endpoint admission remains the primary owner's proof.
       return true;
@@ -1961,22 +2409,23 @@ export function compareValues(
       return false;
     }
   }
+
   function proxyProfiles(
     value: unknown,
     path = "",
     applicationData = false,
     result = new Map<string, Record<string, unknown>>(),
   ): Map<string, Record<string, unknown>> {
-    if (Array.isArray(value))
+    if (Array.isArray(value)) {
       value.forEach((child, index) =>
         proxyProfiles(child, path ? `${path}.${index}` : `${index}`, applicationData, result),
       );
-    else if (record(value) && !applicationData && !traceShape(path))
+    } else if (record(value) && !applicationData && !traceShape(path)) {
       for (const [key, child] of Object.entries(value)) {
         const childPath = path ? `${path}.${key}` : key;
-        if (key === "oauthProxyProfile" && record(child) && authenticatedProxyProfile(child))
+        if (key === "oauthProxyProfile" && record(child) && authenticatedProxyProfile(child)) {
           result.set(String(child.token), child.payload as Record<string, unknown>);
-        else
+        } else {
           proxyProfiles(
             child,
             childPath,
@@ -1985,32 +2434,42 @@ export function compareValues(
             ),
             result,
           );
+        }
       }
+    }
     return result;
   }
+
   const leftProxyProfiles = proxyProfiles(normalizedLeft);
   const rightProxyProfiles = proxyProfiles(normalizedRight);
-  const leftEncryptedClaims = new Map<string, string>(),
-    rightEncryptedClaims = new Map<string, string>();
+  const leftEncryptedClaims = new Map<string, string>();
+  const rightEncryptedClaims = new Map<string, string>();
+
   function rememberEncryptedClaims(
     value: Record<string, unknown>,
     seen: Map<string, string>,
     path: string,
   ) {
-    const token = String(value.token),
-      claims = stableJSON(value.payload),
-      previous = seen.get(token);
-    if (previous !== undefined && previous !== claims)
+    const token = String(value.token);
+    const claims = stableJSON(value.payload);
+    const previous = seen.get(token);
+
+    if (previous !== undefined && previous !== claims) {
       fail(path, "the same encrypted cookie has different decoded claims");
+    }
+
     seen.set(token, claims);
   }
+
   function clock(a: number, b: number, path: string) {
     if (
       a !== b &&
       Math.abs(a - context.leftStartedAt / 1000 - (b - context.rightStartedAt / 1000)) > 1.5
-    )
+    ) {
       fail(path, "JWT timestamp differs");
+    }
   }
+
   function sessionLifetime(
     a: Record<string, unknown>,
     b: Record<string, unknown>,
@@ -2023,11 +2482,17 @@ export function compareValues(
       typeof b.access_token !== "string" ||
       typeof a.expires_in !== "number" ||
       typeof b.expires_in !== "number"
-    )
+    ) {
       return false;
-    const leftExpiry = leftDeviceSessions.get(a.access_token),
-      rightExpiry = rightDeviceSessions.get(b.access_token);
-    if (leftExpiry === undefined || rightExpiry === undefined) return false;
+    }
+
+    const leftExpiry = leftDeviceSessions.get(a.access_token);
+    const rightExpiry = rightDeviceSessions.get(b.access_token);
+
+    if (leftExpiry === undefined || rightExpiry === undefined) {
+      return false;
+    }
+
     // The reference floors (absolute persisted expiry - response time) to seconds.
     // Only this proven session relationship gets the one-second floor allowance.
     for (const [ttl, expiry, start, end] of [
@@ -2039,21 +2504,28 @@ export function compareValues(
         typeof expiry !== "number" ||
         typeof start !== "number" ||
         typeof end !== "number"
-      )
+      ) {
         return false;
+      }
       if (
         !Number.isInteger(ttl) ||
         ttl < Math.floor((expiry - end) / 1000) ||
         ttl > Math.floor((expiry - start) / 1000)
-      )
+      ) {
         fail(path, "session TTL disagrees with persisted expiry and execution interval");
+      }
     }
-    if (Math.abs(a.expires_in - b.expires_in) > 1)
+
+    if (Math.abs(a.expires_in - b.expires_in) > 1) {
       fail(path, "session TTL differs beyond floor boundary");
+    }
+
     if (
       Math.abs(leftExpiry - context.leftStartedAt - (rightExpiry - context.rightStartedAt)) > 1500
-    )
+    ) {
       fail(path, "persisted session lifetime differs");
+    }
+
     return true;
   }
 
@@ -2062,8 +2534,10 @@ export function compareValues(
       fail(path, "empty identity or token");
       return;
     }
+
     const source = `${namespace}:${a}`;
     const target = `${namespace}:${b}`;
+
     if (
       (identities.has(source) && identities.get(source) !== target) ||
       (reverseIdentities.has(target) && reverseIdentities.get(target) !== source)
@@ -2076,36 +2550,48 @@ export function compareValues(
   }
 
   function sessionHeader(a: string, b: string, path: string, setCookie: boolean): boolean {
-    if (!context.sessionCookieSecret) return false;
+    if (!context.sessionCookieSecret) {
+      return false;
+    }
+
     // Preserve the complete raw header around its credential: name, spacing,
     // order, every other cookie and all Set-Cookie attributes remain literal.
     const pattern = setCookie
       ? /(?:^|,\s*)((?:__Secure-)?better-auth\.session_token)=([^;,\s]*)/g
       : /(?:^|;\s*)((?:__Secure-)?better-auth\.session_token)=([^;\s]*)/g;
-    const left = [...a.matchAll(pattern)],
-      right = [...b.matchAll(pattern)];
-    if (!left.length && !right.length) return false;
+    const left = [...a.matchAll(pattern)];
+    const right = [...b.matchAll(pattern)];
+
+    if (!left.length && !right.length) {
+      return false;
+    }
+
     if (left.length !== 1 || right.length !== 1 || left[0]![1] !== right[0]![1]) {
       fail(path, "signed session cookie presence or name differs");
       return true;
     }
-    const av = left[0]![2]!,
-      bv = right[0]![2]!;
-    const ac = signedCookie(av),
-      bc = signedCookie(bv);
+
+    const av = left[0]![2]!;
+    const bv = right[0]![2]!;
+    const ac = signedCookie(av);
+    const bc = signedCookie(bv);
+
     if (ac.error || bc.error) {
       fail(path, ac.error ?? bc.error!);
       return true;
     }
+
     if (!signedCookieIssuances.has(JSON.stringify([ac.token, bc.token]))) {
       fail(path, "signed session cookie does not match corresponding observed issuance");
       return true;
     }
+
     const cachePattern = setCookie
       ? /(?:^|,\s*)(better-auth\.session_data)=([^;,\s]*)/g
       : /(?:^|;\s*)(better-auth\.session_data)=([^;\s]*)/g;
-    const leftCache = [...a.matchAll(cachePattern)],
-      rightCache = [...b.matchAll(cachePattern)];
+    const leftCache = [...a.matchAll(cachePattern)];
+    const rightCache = [...b.matchAll(cachePattern)];
+
     if (leftCache.length || rightCache.length) {
       const pair =
         leftCache.length === 1 && rightCache.length === 1
@@ -2116,16 +2602,20 @@ export function compareValues(
         return true;
       }
     }
+
     const scaffold = (raw: string, matches: readonly RegExpMatchArray[]) => {
       for (const match of [...matches].sort((a, b) => b.index! - a.index!)) {
-        const value = match[2]!,
-          start = match.index! + match[0].length - value.length;
+        const value = match[2]!;
+        const start = match.index! + match[0].length - value.length;
         raw = `${raw.slice(0, start)}<verified-${match[1]}>${raw.slice(start + value.length)}`;
       }
       return raw;
     };
-    if (scaffold(a, [left[0]!, ...leftCache]) !== scaffold(b, [right[0]!, ...rightCache]))
+
+    if (scaffold(a, [left[0]!, ...leftCache]) !== scaffold(b, [right[0]!, ...rightCache])) {
       fail(path, "signed session cookie header bytes or attributes differ");
+    }
+
     identity(ac.token!, bc.token!, path, "token");
     return true;
   }
@@ -2188,29 +2678,39 @@ export function compareValues(
     literalClaims = false,
   ) {
     const multiTrace = /^traces\.(\d+)\.responseCookies$/.exec(path);
+
     if (multiTrace && record(a) && record(b) && context.sessionCookieSecret) {
       const index = Number(multiTrace[1]);
-      const leftWindow = context.leftRequestWindows?.[index],
-        rightWindow = context.rightRequestWindows?.[index];
-      const leftCookies = leftWindow?.issuedMultiSessionCookies ?? [],
-        rightCookies = rightWindow?.issuedMultiSessionCookies ?? [];
+      const leftWindow = context.leftRequestWindows?.[index];
+      const rightWindow = context.rightRequestWindows?.[index];
+      const leftCookies = leftWindow?.issuedMultiSessionCookies ?? [];
+      const rightCookies = rightWindow?.issuedMultiSessionCookies ?? [];
+
       if (leftCookies.length || rightCookies.length) {
-        if (leftCookies.length !== rightCookies.length)
+        if (leftCookies.length !== rightCookies.length) {
           fail(path, "multi-session cookie count differs");
-        const remainingLeft = { ...a },
-          remainingRight = { ...b };
+        }
+
+        const remainingLeft = { ...a };
+        const remainingRight = { ...b };
+
         for (
           let position = 0;
           position < Math.max(leftCookies.length, rightCookies.length);
           position++
         ) {
-          const leftRaw = leftCookies[position],
-            rightRaw = rightCookies[position];
-          if (!leftRaw || !rightRaw) continue;
-          const leftCookie = Cookie.parse(leftRaw),
-            rightCookie = Cookie.parse(rightRaw);
-          const leftName = /^(.*?)_multi-(.+)$/.exec(leftCookie?.key ?? ""),
-            rightName = /^(.*?)_multi-(.+)$/.exec(rightCookie?.key ?? "");
+          const leftRaw = leftCookies[position];
+          const rightRaw = rightCookies[position];
+
+          if (!leftRaw || !rightRaw) {
+            continue;
+          }
+
+          const leftCookie = Cookie.parse(leftRaw);
+          const rightCookie = Cookie.parse(rightRaw);
+          const leftName = /^(.*?)_multi-(.+)$/.exec(leftCookie?.key ?? "");
+          const rightName = /^(.*?)_multi-(.+)$/.exec(rightCookie?.key ?? "");
+
           if (
             !leftCookie ||
             !rightCookie ||
@@ -2221,6 +2721,7 @@ export function compareValues(
             fail(path, "multi-session cookie prefix or encoding differs");
             continue;
           }
+
           const retired = issuedMultiNames.get(leftCookie.key);
           const tombstone =
             leftCookie.value === "" &&
@@ -2234,6 +2735,7 @@ export function compareValues(
           const rightSigned = tombstone
             ? { token: retired!.rightToken }
             : signedCookie(rightCookie.value);
+
           if (
             !leftSigned.token ||
             !rightSigned.token ||
@@ -2243,12 +2745,14 @@ export function compareValues(
             fail(path, "multi-session cookie name does not identify its signed credential");
             continue;
           }
+
           const pair = JSON.stringify([leftSigned.token, rightSigned.token]);
-          const leftPrimary = leftWindow?.issuedSessionCookie,
-            rightPrimary = rightWindow?.issuedSessionCookie;
+          const leftPrimary = leftWindow?.issuedSessionCookie;
+          const rightPrimary = rightWindow?.issuedSessionCookie;
           const primary =
             issuedCookie(leftPrimary, leftSigned.token) &&
             issuedCookie(rightPrimary, rightSigned.token);
+
           if (
             (!tombstone && !signedCookieIssuances.has(pair) && !primary) ||
             identities.get(`token:${leftSigned.token}`) !== `token:${rightSigned.token}`
@@ -2259,28 +2763,40 @@ export function compareValues(
             );
             continue;
           }
-          if (!tombstone)
+
+          if (!tombstone) {
             issuedMultiNames.set(leftCookie.key, {
               right: rightCookie.key,
               leftToken: leftSigned.token,
               rightToken: rightSigned.token,
             });
+          }
+
           const scaffold = (raw: string, cookie: Cookie) =>
             raw.replace(`${cookie.key}=${cookie.value}`, `${leftName[1]}_multi-<issued>=<signed>`);
-          if (scaffold(leftRaw, leftCookie) !== scaffold(rightRaw, rightCookie))
+
+          if (scaffold(leftRaw, leftCookie) !== scaffold(rightRaw, rightCookie)) {
             fail(path, "multi-session cookie bytes, order or attributes differ");
+          }
+
           const leftKey = `${leftCookie.key};${leftCookie.domain ?? ""};${leftCookie.path ?? "/"}`;
           const rightKey = `${rightCookie.key};${rightCookie.domain ?? ""};${rightCookie.path ?? "/"}`;
-          if (!Object.hasOwn(a, leftKey) || !Object.hasOwn(b, rightKey))
+
+          if (!Object.hasOwn(a, leftKey) || !Object.hasOwn(b, rightKey)) {
             fail(path, "multi-session cookie scope observation is missing");
-          else visit(a[leftKey], b[rightKey], `${path}.multi-${position}`, "");
+          } else {
+            visit(a[leftKey], b[rightKey], `${path}.multi-${position}`, "");
+          }
+
           delete remainingLeft[leftKey];
           delete remainingRight[rightKey];
         }
+
         visit(remainingLeft, remainingRight, `${path}.literal`, "");
         return;
       }
     }
+
     if (
       !applicationData &&
       !jwtPayload &&
@@ -2314,16 +2830,21 @@ export function compareValues(
           samePublication(a, pair.left.delivery) &&
           samePublication(b, pair.right.delivery),
       );
+
       if (otpDelivery) {
         for (const field of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
           const child = `${path}.${field}`;
-          if (!Object.hasOwn(a, field) || !Object.hasOwn(b, field))
+          if (!Object.hasOwn(a, field) || !Object.hasOwn(b, field)) {
             fail(child, "field presence differs");
-          else if (field === "otp") identity(String(a.otp), String(b.otp), child, "token");
-          else visit(a[field], b[field], child, field);
+          } else if (field === "otp") {
+            identity(String(a.otp), String(b.otp), child, "token");
+          } else {
+            visit(a[field], b[field], child, field);
+          }
         }
         return;
       }
+
       const observed =
         (complete || cacheSet) &&
         verificationPublications.some(
@@ -2331,18 +2852,19 @@ export function compareValues(
             samePublication(a, complete ? pair.left : pair.left.set) ||
             samePublication(b, complete ? pair.right : pair.right.set),
         );
+
       if (observed) {
         const receipt = verificationPublications.find(
           (pair) =>
             samePublication(a, complete ? pair.left : pair.left.set) &&
             samePublication(b, complete ? pair.right : pair.right.set),
         );
-        if (!receipt?.valid)
+        if (!receipt?.valid) {
           fail(
             `${path}.${complete ? "set." : ""}ttl`,
             "verification TTL lacks its exact issuing-request publication proof",
           );
-        else {
+        } else {
           const snapshot = (
             left: Record<string, unknown>,
             right: Record<string, unknown>,
@@ -2352,37 +2874,40 @@ export function compareValues(
               ...new Set([...Object.keys(left), ...Object.keys(right)]),
             ].sort()) {
               const child = `${target}.${field}`;
-              if (!Object.hasOwn(left, field) || !Object.hasOwn(right, field))
+              if (!Object.hasOwn(left, field) || !Object.hasOwn(right, field)) {
                 fail(child, "field presence differs");
-              else if (field === "identifier" && receipt.kind === "oauth")
+              } else if (field === "identifier" && receipt.kind === "oauth") {
                 identity(
                   String(left.identifier),
                   String(right.identifier),
                   child,
                   "verification-identifier",
                 );
-              else if (field === "value" && receipt.kind === "otp") {
-                const [leftCode, leftCounter] = String(left.value).split(":"),
-                  [rightCode, rightCounter] = String(right.value).split(":");
+              } else if (field === "value" && receipt.kind === "otp") {
+                const [leftCode, leftCounter] = String(left.value).split(":");
+                const [rightCode, rightCounter] = String(right.value).split(":");
                 identity(leftCode!, rightCode!, `${child}.otp`, "token");
                 visit(leftCounter, rightCounter, `${child}.counter`, "counter");
-              } else if (field === "value" && receipt.kind === "transfer")
+              } else if (field === "value" && receipt.kind === "transfer") {
                 identity(String(left.value), String(right.value), child, "token");
-              else if (field === "value" && receipt.kind === "oauth") {
-                const a = JSON.parse(String(left.value)),
-                  b = JSON.parse(String(right.value));
+              } else if (field === "value" && receipt.kind === "oauth") {
+                const a = JSON.parse(String(left.value));
+                const b = JSON.parse(String(right.value));
                 for (const key of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
                   const target = `${child}.${key}`;
-                  if (!Object.hasOwn(a, key) || !Object.hasOwn(b, key))
+                  if (!Object.hasOwn(a, key) || !Object.hasOwn(b, key)) {
                     fail(target, "field presence differs");
-                  else if (key === "expiresAt")
+                  } else if (key === "expiresAt") {
                     continue; // Each exact 600s deadline was independently admitted.
-                  else if (key === "codeVerifier")
+                  } else if (key === "codeVerifier") {
                     identity(a[key], b[key], target, "code-verifier");
-                  else if (key === "oauthState") identity(a[key], b[key], target, "state");
-                  else visit(a[key], b[key], target, key);
+                  } else if (key === "oauthState") {
+                    identity(a[key], b[key], target, "state");
+                  } else {
+                    visit(a[key], b[key], target, key);
+                  }
                 }
-              } else
+              } else {
                 visit(
                   left[field],
                   right[field],
@@ -2399,6 +2924,7 @@ export function compareValues(
                   false,
                   dateOwners(left, right),
                 );
+              }
             }
           };
           const set = (
@@ -2410,86 +2936,113 @@ export function compareValues(
               ...new Set([...Object.keys(left), ...Object.keys(right)]),
             ].sort()) {
               const child = `${target}.${field}`;
+
               if (!Object.hasOwn(left, field) || !Object.hasOwn(right, field)) {
                 fail(child, "field presence differs");
                 continue;
               }
-              if (["ttl", "executedAt", "storedAt", "storageExpiresAt"].includes(field)) continue;
-              if (field === "key" && receipt.kind === "oauth")
+
+              if (["ttl", "executedAt", "storedAt", "storageExpiresAt"].includes(field)) {
+                continue;
+              }
+
+              if (field === "key" && receipt.kind === "oauth") {
                 identity(
                   String(left.key).slice("verification:".length),
                   String(right.key).slice("verification:".length),
                   child,
                   "verification-identifier",
                 );
-              else if (field === "rawValue")
+              } else if (field === "rawValue") {
                 snapshot(
                   JSON.parse(String(left.rawValue)),
                   JSON.parse(String(right.rawValue)),
                   child,
                 );
-              else if (field === "value")
+              } else if (field === "value") {
                 snapshot(
                   left.value as Record<string, unknown>,
                   right.value as Record<string, unknown>,
                   child,
                 );
-              else visit(left[field], right[field], child, field);
+              } else {
+                visit(left[field], right[field], child, field);
+              }
             }
           };
-          if (cacheSet) set(a, b, path);
-          else
+
+          if (cacheSet) {
+            set(a, b, path);
+          } else {
             for (const field of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
               const child = `${path}.${field}`;
+
               if (!Object.hasOwn(a, field) || !Object.hasOwn(b, field)) {
                 fail(child, "field presence differs");
                 continue;
               }
-              const av = a[field] as Record<string, unknown>,
-                bv = b[field] as Record<string, unknown>;
-              if (field === "set") set(av, bv, child);
-              else if (field === "snapshot") snapshot(av, bv, child);
-              else if (field === "before")
+
+              const av = a[field] as Record<string, unknown>;
+              const bv = b[field] as Record<string, unknown>;
+
+              if (field === "set") {
+                set(av, bv, child);
+              } else if (field === "snapshot") {
+                snapshot(av, bv, child);
+              } else if (field === "before") {
                 for (const key of [...new Set([...Object.keys(av), ...Object.keys(bv)])].sort()) {
                   if (!Object.hasOwn(av, key) || !Object.hasOwn(bv, key)) {
                     fail(`${child}.${key}`, "field presence differs");
                     continue;
                   }
-                  if (key === "executedAt") continue;
-                  if (key === "snapshot")
+                  if (key === "executedAt") {
+                    continue;
+                  }
+                  if (key === "snapshot") {
                     snapshot(
                       av.snapshot as Record<string, unknown>,
                       bv.snapshot as Record<string, unknown>,
                       `${child}.snapshot`,
                     );
-                  else visit(av[key], bv[key], `${child}.${key}`, key);
+                  } else {
+                    visit(av[key], bv[key], `${child}.${key}`, key);
+                  }
                 }
-              else if (field === "request")
+              } else if (field === "request") {
                 for (const key of [...new Set([...Object.keys(av), ...Object.keys(bv)])].sort()) {
                   if (!Object.hasOwn(av, key) || !Object.hasOwn(bv, key)) {
                     fail(`${child}.${key}`, "field presence differs");
                     continue;
                   }
-                  if (["startedAt", "finishedAt"].includes(key)) continue;
+                  if (["startedAt", "finishedAt"].includes(key)) {
+                    continue;
+                  }
                   if (
                     key === "cookie" &&
                     typeof av.cookie === "string" &&
                     typeof bv.cookie === "string"
-                  )
+                  ) {
                     visit(
                       { headers: { cookie: av.cookie } },
                       { headers: { cookie: bv.cookie } },
                       child,
                       "",
                     );
-                  else visit(av[key], bv[key], `${child}.${key}`, key, false, key === "body");
+                  } else {
+                    visit(av[key], bv[key], `${child}.${key}`, key, false, key === "body");
+                  }
                 }
-              else visit(a[field], b[field], child, field);
+              } else {
+                visit(a[field], b[field], child, field);
+              }
             }
+          }
+
           return;
         }
       }
     }
+
     if (
       literalClaims &&
       typeof a === "string" &&
@@ -2497,11 +3050,15 @@ export function compareValues(
       !claimEvidence.has(claimPair(key, a, b)) &&
       !(isDate(a) && isDate(b) && approvedDate(owners, key, a, b))
     ) {
-      if (a !== b) fail(path, "value or type differs");
+      if (a !== b) {
+        fail(path, "value or type differs");
+      }
       return;
     }
-    const leftEndpoint = traceEndpoint(normalizedLeft, path),
-      rightEndpoint = traceEndpoint(normalizedRight, path);
+
+    const leftEndpoint = traceEndpoint(normalizedLeft, path);
+    const rightEndpoint = traceEndpoint(normalizedRight, path);
+
     if (
       leftEndpoint &&
       leftEndpoint === rightEndpoint &&
@@ -2514,10 +3071,11 @@ export function compareValues(
         /\/two-factor\/(?:enable|get-totp-uri)$/.test(leftEndpoint)
       ) {
         try {
-          const leftURI = new URL(a),
-            rightURI = new URL(b),
-            leftSecret = leftURI.searchParams.get("secret"),
-            rightSecret = rightURI.searchParams.get("secret");
+          const leftURI = new URL(a);
+          const rightURI = new URL(b);
+          const leftSecret = leftURI.searchParams.get("secret");
+          const rightSecret = rightURI.searchParams.get("secret");
+
           if (
             leftURI.searchParams.getAll("secret").length !== 1 ||
             rightURI.searchParams.getAll("secret").length !== 1
@@ -2525,6 +3083,7 @@ export function compareValues(
             fail(path, "TOTP URI must contain exactly one secret");
             return;
           }
+
           if (
             leftURI.protocol !== "otpauth:" ||
             rightURI.protocol !== "otpauth:" ||
@@ -2539,10 +3098,14 @@ export function compareValues(
             fail(path, "TOTP secret encoding or URI protocol differs");
             return;
           }
+
           identity(leftSecret, rightSecret, `${path}.secret`, "totp-secret");
           leftURI.searchParams.set("secret", "<generated>");
           rightURI.searchParams.set("secret", "<generated>");
-          if (leftURI.href !== rightURI.href) fail(path, "TOTP URI configuration differs");
+
+          if (leftURI.href !== rightURI.href) {
+            fail(path, "TOTP URI configuration differs");
+          }
         } catch {
           fail(path, "invalid TOTP URI");
         }
@@ -2558,16 +3121,18 @@ export function compareValues(
           !/^[a-zA-Z0-9-]+$/.test(a) ||
           !/^[a-zA-Z0-9-]+$/.test(b) ||
           a.replace(/[a-zA-Z0-9]/g, "x") !== b.replace(/[a-zA-Z0-9]/g, "x")
-        )
+        ) {
           fail(path, "backup-code format differs");
+        }
         identity(a, b, path, "backup-code");
         return;
       }
       if (key === "responseBody" && /\/(?:reference|docs)$/.test(leftEndpoint)) {
         const embedded =
           /<script\s+id="api-reference"\s+type="application\/json">\s*([^]*?)\s*<\/script>/;
-        const am = embedded.exec(a),
-          bm = embedded.exec(b);
+        const am = embedded.exec(a);
+        const bm = embedded.exec(b);
+
         if (am?.[1] && bm?.[1]) {
           try {
             visit(
@@ -2584,11 +3149,14 @@ export function compareValues(
         }
       }
     }
+
     if (proxyPayload && key === "timestamp" && typeof a === "number" && typeof b === "number") {
-      if (a !== b && Math.abs(a - context.leftStartedAt - (b - context.rightStartedAt)) > 1500)
+      if (a !== b && Math.abs(a - context.leftStartedAt - (b - context.rightStartedAt)) > 1500) {
         fail(path, "OAuth proxy profile timestamp differs");
+      }
       return;
     }
+
     if (
       compactCache &&
       typeof a === "number" &&
@@ -2600,6 +3168,7 @@ export function compareValues(
       cacheClock(a, b, path);
       return;
     }
+
     if (
       typeof a === "string" &&
       typeof b === "string" &&
@@ -2611,8 +3180,10 @@ export function compareValues(
         !jwtPayload &&
         /\.headers\.(?:cookie|set-cookie)$/.test(path) &&
         sessionHeader(a, b, path, key === "set-cookie")
-      )
+      ) {
         return;
+      }
+
       if (
         !applicationData &&
         !jwtPayload &&
@@ -2621,54 +3192,74 @@ export function compareValues(
         const leftKnown = key === "keyId" ? leftKeyIds : leftMemberIds;
         const rightKnown = key === "keyId" ? rightKeyIds : rightMemberIds;
         if (leftKnown.has(a) || rightKnown.has(b)) {
-          if (!leftKnown.has(a) || !rightKnown.has(b))
+          if (!leftKnown.has(a) || !rightKnown.has(b)) {
             fail(path, "server selector lacks its observed entity on both sides");
-          else identity(a, b, path, "entity");
+          } else {
+            identity(a, b, path, "entity");
+          }
           return;
         }
       }
+
       if (key === "profile" && urlQueryContext === "query" && proxyProviders) {
-        const leftPayload = leftProxyProfiles.get(a),
-          rightPayload = rightProxyProfiles.get(b);
+        const leftPayload = leftProxyProfiles.get(a);
+        const rightPayload = rightProxyProfiles.get(b);
+
         if (!leftPayload || !rightPayload) {
-          if (a !== b) fail(path, "unverified OAuth proxy URL profile differs literally");
+          if (a !== b) {
+            fail(path, "unverified OAuth proxy URL profile differs literally");
+          }
         } else {
           const provider = (payload: Record<string, unknown>) =>
             record(payload.account) && typeof payload.account.providerId === "string"
               ? payload.account.providerId
               : undefined;
-          const leftProvider = provider(leftPayload),
-            rightProvider = provider(rightPayload);
+          const leftProvider = provider(leftPayload);
+          const rightProvider = provider(rightPayload);
+
           if (
             leftProvider !== undefined &&
             rightProvider !== undefined &&
             proxyProviders[0] !== undefined &&
             proxyProviders[1] !== undefined &&
             (leftProvider === proxyProviders[0]) !== (rightProvider === proxyProviders[1])
-          )
+          ) {
             fail(path, "OAuth proxy provider-route relationship differs");
+          }
+
           identity(a, b, path, "token");
         }
+
         return;
       }
+
       if (key === "teamId" && (a.includes(",") || b.includes(","))) {
-        const leftTeams = a.split(","),
-          rightTeams = b.split(",");
-        if (leftTeams.length !== rightTeams.length) fail(path, "team selection length differs");
+        const leftTeams = a.split(",");
+        const rightTeams = b.split(",");
+
+        if (leftTeams.length !== rightTeams.length) {
+          fail(path, "team selection length differs");
+        }
+
         leftTeams.forEach((team, index) => {
           const other = rightTeams[index];
-          if (other === undefined) return;
+          if (other === undefined) {
+            return;
+          }
           identity(team, other, `${path}.${index}`, "entity");
         });
         return;
       }
-      const leftJwt = jwt(a),
-        rightJwt = jwt(b);
+
+      const leftJwt = jwt(a);
+      const rightJwt = jwt(b);
+
       if (leftJwt || rightJwt) {
         if (!leftJwt || !rightJwt) {
           fail(path, "JWT structure differs");
           return;
         }
+
         identity(a, b, path, "jwt");
         visit(leftJwt.header, rightJwt.header, `${path}.header`, "", false, false, true);
         visit(
@@ -2688,49 +3279,69 @@ export function compareValues(
           [],
           true,
         );
-        if (leftJwt.signature.length !== rightJwt.signature.length)
+
+        if (leftJwt.signature.length !== rightJwt.signature.length) {
           fail(path, "JWT signature length differs");
+        }
+
         return;
       }
+
       if (entityKeys.has(key) && !path.endsWith(".rp.id")) {
         if (urlQueryContext === "query" && !a.trim() && !b.trim()) {
-          if (a !== b) fail(path, "literal empty URL selector differs");
-        } else identity(a, b, path, "entity");
+          if (a !== b) {
+            fail(path, "literal empty URL selector differs");
+          }
+        } else {
+          identity(a, b, path, "entity");
+        }
         return;
       }
+
       if (
         key === "identifier" &&
         (a.startsWith("one-time-token:") || b.startsWith("one-time-token:"))
       ) {
-        const leftIdentifier = oneTimeIdentifier(a, leftTokens),
-          rightIdentifier = oneTimeIdentifier(b, rightTokens);
+        const leftIdentifier = oneTimeIdentifier(a, leftTokens);
+        const rightIdentifier = oneTimeIdentifier(b, rightTokens);
         if (leftIdentifier || rightIdentifier) {
-          if (!leftIdentifier || !rightIdentifier || leftIdentifier.mode !== rightIdentifier.mode)
+          if (!leftIdentifier || !rightIdentifier || leftIdentifier.mode !== rightIdentifier.mode) {
             fail(path, "one-time-token storage derivation differs");
-          else identity(leftIdentifier.token, rightIdentifier.token, path, "token");
+          } else {
+            identity(leftIdentifier.token, rightIdentifier.token, path, "token");
+          }
           return;
         }
       }
+
       const opaqueKey =
         (key === "deviceCode" || key === "userCode") && (applicationData || jwtPayload)
           ? key
           : (opaqueAliases[key] ?? key);
+
       if (opaqueKeys.has(opaqueKey)) {
         identity(a, b, path, opaqueKey);
         return;
       }
+
       if (key.endsWith("At") || key === "lastRequest" || key === "banExpires") {
         if (owners.some((owner) => invalidPhysicalDates.has(dateKey(owner, key, a, b)))) {
           fail(path, "physical row timestamp shape or provenance differs");
           return;
         }
-        if (approvedDate(owners, key, a, b)) return;
+
+        if (approvedDate(owners, key, a, b)) {
+          return;
+        }
+
         if (owners.some((owner) => invalidLifetimes.has(dateKey(owner, key, a, b)))) {
           fail(path, "session lifetime differs from its observed issuance clock");
           return;
         }
-        const at = Date.parse(a),
-          bt = Date.parse(b);
+
+        const at = Date.parse(a);
+        const bt = Date.parse(b);
+
         if (
           !/^\d{4}-\d\d-\d\dT/.test(a) ||
           !/^\d{4}-\d\d-\d\dT/.test(b) ||
@@ -2744,20 +3355,24 @@ export function compareValues(
         ) {
           fail(path, `timestamp or lifetime differs: ${a} vs ${b}`);
         }
+
         return;
       }
+
       if (
         urlKeys.has(key) ||
         key.endsWith("URL") ||
         key.endsWith("Url") ||
         key === "redirect_uri"
       ) {
-        const ap = urlParts(a, context.leftBaseURL, context.leftOAuthURL),
-          bp = urlParts(b, context.rightBaseURL, context.rightOAuthURL);
+        const ap = urlParts(a, context.leftBaseURL, context.leftOAuthURL);
+        const bp = urlParts(b, context.rightBaseURL, context.rightOAuthURL);
+
         if (!ap || !bp) {
           fail(path, "invalid URL");
           return;
         }
+
         const adminPath = /^\/(?:api\/auth|__test\/profiles\/[^/]+\/api\/auth)\/admin\/list-users$/;
         const observedAdminUrl =
           ap.origin === "<server>" &&
@@ -2807,8 +3422,11 @@ export function compareValues(
         return;
       }
     }
+
     if (Array.isArray(a) && Array.isArray(b)) {
-      if (a.length !== b.length) fail(path, "array length differs");
+      if (a.length !== b.length) {
+        fail(path, "array length differs");
+      }
       a.forEach((child, index) =>
         visit(
           child,
@@ -2830,6 +3448,7 @@ export function compareValues(
       );
       return;
     }
+
     if (record(a) && record(b)) {
       if (key === "oauthProxyProfile") {
         if (
@@ -2839,10 +3458,12 @@ export function compareValues(
           !authenticatedProxyProfile(a) ||
           !authenticatedProxyProfile(b)
         ) {
-          if (stableJSON(a) !== stableJSON(b))
+          if (stableJSON(a) !== stableJSON(b)) {
             fail(path, "unverified or application OAuth proxy profile differs literally");
+          }
           return;
         }
+
         const providerAccountMatches = (payload: unknown) =>
           record(payload) &&
           record(payload.account) &&
@@ -2851,8 +3472,11 @@ export function compareValues(
           typeof payload.userInfo.id === "string"
             ? payload.account.accountId === payload.userInfo.id
             : undefined;
-        if (providerAccountMatches(a.payload) !== providerAccountMatches(b.payload))
+
+        if (providerAccountMatches(a.payload) !== providerAccountMatches(b.payload)) {
           fail(path, "OAuth proxy provider account identity relationship differs");
+        }
+
         identity(String(a.token), String(b.token), `${path}.token`, "token");
         visit(
           a.payload,
@@ -2871,22 +3495,29 @@ export function compareValues(
         );
         return;
       }
+
       if (key === "compactSessionCache") {
         if (applicationData || traceShape(path) || /(?:^|\.)applicationData(?:\.|$)/.test(path)) {
-          if (stableJSON(a) !== stableJSON(b))
+          if (stableJSON(a) !== stableJSON(b)) {
             fail(path, "application compact-cache-shaped data differs literally");
+          }
           return;
         }
+
         if (
           !authenticatedCompactCache(a, context.leftStartedAt, context.leftFinishedAt) ||
           !authenticatedCompactCache(b, context.rightStartedAt, context.rightFinishedAt)
         ) {
-          if (stableJSON(a) !== stableJSON(b))
+          if (stableJSON(a) !== stableJSON(b)) {
             fail(path, "unverified compact cache observation differs literally");
+          }
           return;
         }
-        if (Object.hasOwn(a, "rawCookies") !== Object.hasOwn(b, "rawCookies"))
+
+        if (Object.hasOwn(a, "rawCookies") !== Object.hasOwn(b, "rawCookies")) {
           fail(`${path}.rawCookies`, "raw compact cookie presence differs");
+        }
+
         visit(
           compactCookieHeaders(a),
           compactCookieHeaders(b),
@@ -2900,12 +3531,15 @@ export function compareValues(
           false,
           false,
         );
-        const leftEnvelope = a.envelope as Record<string, unknown>,
-          rightEnvelope = b.envelope as Record<string, unknown>;
-        const leftPayload = leftEnvelope.session as Record<string, unknown>,
-          rightPayload = rightEnvelope.session as Record<string, unknown>;
-        if (!Object.is(a.effectiveMaxAgeSeconds, b.effectiveMaxAgeSeconds))
+        const leftEnvelope = a.envelope as Record<string, unknown>;
+        const rightEnvelope = b.envelope as Record<string, unknown>;
+        const leftPayload = leftEnvelope.session as Record<string, unknown>;
+        const rightPayload = rightEnvelope.session as Record<string, unknown>;
+
+        if (!Object.is(a.effectiveMaxAgeSeconds, b.effectiveMaxAgeSeconds)) {
           fail(path, "compact cache effective lifetime differs");
+        }
+
         identity(String(a.token), String(b.token), `${path}.token`, "token");
         cacheClock(Number(a.observedAt), Number(b.observedAt), `${path}.observedAt`);
         visit(
@@ -2949,21 +3583,27 @@ export function compareValues(
         );
         return;
       }
+
       if (key === "accountCookie" && !applicationData && !traceShape(path)) {
         if (!encryptedAccountCookie(a) || !encryptedAccountCookie(b)) {
           fail(path, "authenticated encrypted account-cookie envelope differs");
           return;
         }
+
         rememberEncryptedClaims(a, leftEncryptedClaims, path);
         rememberEncryptedClaims(b, rightEncryptedClaims, path);
         identity(String(a.token), String(b.token), `${path}.token`, "token");
+
         // The same configured secret gives the same key thumbprint. Protected
         // encryption headers retain their complete literal values and presence.
-        if (stableJSON(a.header) !== stableJSON(b.header))
+        if (stableJSON(a.header) !== stableJSON(b.header)) {
           fail(`${path}.header`, "protected encrypted cookie header differs");
+        }
+
         visit(a.payload, b.payload, `${path}.payload`, "", true, false, false, true);
         return;
       }
+
       const oneTimeRow =
         typeof a.identifier === "string" &&
         typeof b.identifier === "string" &&
@@ -3028,6 +3668,7 @@ export function compareValues(
                 inClock(a.exp - lifetime, context.leftStartedAt, context.leftFinishedAt) &&
                 inClock(b.exp - lifetime, context.rightStartedAt, context.rightFinishedAt),
             )));
+
       if (
         jwtClaims &&
         typeof a.exp === "number" &&
@@ -3035,32 +3676,38 @@ export function compareValues(
         typeof a.iat === "number" &&
         typeof b.iat === "number" &&
         a.exp - a.iat !== b.exp - b.iat
-      )
+      ) {
         fail(path, "JWT lifetime differs");
+      }
+
       for (const childKey of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
         const childPath = path ? `${path}.${childKey}` : childKey;
-        if (!Object.hasOwn(a, childKey) || !Object.hasOwn(b, childKey))
+        if (!Object.hasOwn(a, childKey) || !Object.hasOwn(b, childKey)) {
           fail(childPath, "field presence differs");
-        else if (proxyPayload && ["userInfo", "profile"].includes(childKey)) {
-          if (stableJSON(a[childKey]) !== stableJSON(b[childKey]))
+        } else if (proxyPayload && ["userInfo", "profile"].includes(childKey)) {
+          if (stableJSON(a[childKey]) !== stableJSON(b[childKey])) {
             fail(childPath, "OAuth proxy provider JSON differs literally");
-        } else if (computedLifetime && childKey === "expires_in") continue;
-        else if (
+          }
+        } else if (computedLifetime && childKey === "expires_in") {
+          continue;
+        } else if (
           computedLifetime &&
           childKey === "access_token" &&
           typeof a.access_token === "string" &&
           typeof b.access_token === "string"
-        )
+        ) {
           identity(a.access_token, b.access_token, childPath, "token");
-        else if (
+        } else if (
           oneTimeRow &&
           childKey === "value" &&
           typeof a.value === "string" &&
           typeof b.value === "string"
         ) {
-          if (!leftSessions.has(a.value) || !rightSessions.has(b.value))
+          if (!leftSessions.has(a.value) || !rightSessions.has(b.value)) {
             fail(childPath, "one-time-token value is not an observed persisted session token");
-          else identity(a.value, b.value, childPath, "token");
+          } else {
+            identity(a.value, b.value, childPath, "token");
+          }
         } else if (
           childKey === "kid" &&
           !inApplicationData &&
@@ -3070,9 +3717,11 @@ export function compareValues(
         ) {
           // A provider may use the literal empty selector in a protected header.
           // Public key IDs and every nonempty selector still use the bijection.
-          if (jwtHeader && !jwk && (a.kid === "" || b.kid === ""))
+          if (jwtHeader && !jwk && (a.kid === "" || b.kid === "")) {
             visit(a.kid, b.kid, childPath, childKey);
-          else identity(a.kid, b.kid, childPath, "entity");
+          } else {
+            identity(a.kid, b.kid, childPath, "entity");
+          }
         } else if (childKey === "jti" && encryptedClaims) {
           const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
           if (
@@ -3080,60 +3729,66 @@ export function compareValues(
             typeof b.jti !== "string" ||
             !uuid.test(a.jti) ||
             !uuid.test(b.jti)
-          )
+          ) {
             fail(childPath, "encrypted JWT identifier is not a generated UUID");
-          else identity(a.jti, b.jti, childPath, "encrypted-jwt-id");
+          } else {
+            identity(a.jti, b.jti, childPath, "encrypted-jwt-id");
+          }
         } else if (
           childKey === "sub" &&
           jwtClaims &&
           typeof a.sub === "string" &&
           typeof b.sub === "string" &&
           (leftEntities.has(a.sub) || rightEntities.has(b.sub))
-        )
+        ) {
           identity(a.sub, b.sub, childPath, "entity");
-        else if (
+        } else if (
           runtimeDates &&
           ["iat", "exp"].includes(childKey) &&
           typeof a[childKey] === "number" &&
           typeof b[childKey] === "number"
-        )
+        ) {
           clock(a[childKey], b[childKey], childPath);
-        else if (jwtClaims && ["iss", "aud"].includes(childKey))
+        } else if (jwtClaims && ["iss", "aud"].includes(childKey)) {
           visit(
             a[childKey],
             b[childKey],
             childPath,
             childKey === "iss" ? "issuerURL" : "audienceURL",
           );
-        else if (
+        } else if (
           jwk &&
           ["x", "y", "n"].includes(childKey) &&
           typeof a[childKey] === "string" &&
           typeof b[childKey] === "string"
         ) {
-          const leftMaterial = a[childKey],
-            rightMaterial = b[childKey];
+          const leftMaterial = a[childKey];
+          const rightMaterial = b[childKey];
+
           if (
             !/^[A-Za-z0-9_-]+$/.test(leftMaterial) ||
             !/^[A-Za-z0-9_-]+$/.test(rightMaterial) ||
             Buffer.from(leftMaterial, "base64url").length !==
               Buffer.from(rightMaterial, "base64url").length
-          )
+          ) {
             fail(childPath, "JWK key encoding or size differs");
+          }
+
           identity(leftMaterial, rightMaterial, childPath, `jwk:${childKey}`);
         } else if (sqliteApiKey && childKey === "key") {
-          const leftStorage = sqliteStorage(a, leftSqliteApiKeys),
-            rightStorage = sqliteStorage(b, rightSqliteApiKeys);
+          const leftStorage = sqliteStorage(a, leftSqliteApiKeys);
+          const rightStorage = sqliteStorage(b, rightSqliteApiKeys);
           if (
             !leftStorage ||
             !rightStorage ||
             issuedLeft === undefined ||
             issuedRight === undefined
-          )
+          ) {
             fail(childPath, "SQLite API-key lacks independently validated issuance and storage");
-          else {
-            if (leftStorage.mode !== rightStorage.mode)
+          } else {
+            if (leftStorage.mode !== rightStorage.mode) {
               fail(childPath, "SQLite API-key plaintext-versus-hashed storage differs");
+            }
             identity(issuedLeft, issuedRight, childPath, "api-key");
           }
         } else if (
@@ -3142,7 +3797,9 @@ export function compareValues(
           typeof a.key === "string" &&
           typeof b.key === "string"
         ) {
-          if (a.key.length !== b.key.length) fail(childPath, "API key length differs");
+          if (a.key.length !== b.key.length) {
+            fail(childPath, "API key length differs");
+          }
           // Application generators own the full key and need not prepend prefix.
           // Retain the relationship observed in the source, including its absence.
           if (
@@ -3150,8 +3807,9 @@ export function compareValues(
             (typeof a.prefix === "string" &&
               typeof b.prefix === "string" &&
               a.key.startsWith(a.prefix) !== b.key.startsWith(b.prefix))
-          )
+          ) {
             fail(childPath, "API key prefix relationship differs");
+          }
           identity(a.key, b.key, childPath, "api-key");
         } else if (
           apiKey &&
@@ -3160,15 +3818,19 @@ export function compareValues(
           typeof b.start === "string" &&
           (issuedLeft !== undefined || issuedRight !== undefined)
         ) {
-          if (a.start.length !== b.start.length)
+          if (a.start.length !== b.start.length) {
             fail(childPath, "API key stored-prefix length differs");
-          if (issuedLeft === undefined || issuedRight === undefined)
+          }
+          if (issuedLeft === undefined || issuedRight === undefined) {
             fail(childPath, "API key stored-prefix lacks observed issuance");
-          else {
-            const leftUnits = observedPrefixUnits(a, issuedLeft, leftSqliteApiKeys),
-              rightUnits = observedPrefixUnits(b, issuedRight, rightSqliteApiKeys);
-            if (leftUnits === undefined || rightUnits === undefined || leftUnits !== rightUnits)
+          } else {
+            const leftUnits = observedPrefixUnits(a, issuedLeft, leftSqliteApiKeys);
+            const rightUnits = observedPrefixUnits(b, issuedRight, rightSqliteApiKeys);
+
+            if (leftUnits === undefined || rightUnits === undefined || leftUnits !== rightUnits) {
               fail(childPath, "API key stored-prefix relationship differs");
+            }
+
             identity(issuedLeft, issuedRight, childPath, "api-key");
           }
         } else if (
@@ -3189,7 +3851,7 @@ export function compareValues(
           // Only complete independently observed IDs in this real ID selector
           // use the existing graph. Arity, order, duplicates and URL fields stay.
           visit(a.filterValue, b.filterValue, childPath, "id", false, false, false, false, "query");
-        } else
+        } else {
           visit(
             a[childKey],
             b[childKey],
@@ -3215,11 +3877,17 @@ export function compareValues(
             dateOwners(a, b),
             childClaims,
           );
+        }
       }
+
       return;
     }
-    if (!Object.is(a, b)) fail(path, "value or type differs");
+
+    if (!Object.is(a, b)) {
+      fail(path, "value or type differs");
+    }
   }
+
   visit(normalizedLeft, normalizedRight, "", "");
   return differences;
 }

@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+
 import { compatScenario } from "../../support/scenario";
 import { signUpUser } from "./helpers";
 
@@ -13,6 +14,7 @@ compatScenario(
       slug: ctx.uniqueToken("timestamp-org"),
     });
     expect(created.error).toBeNull();
+
     const organizationId = created.data!.id;
     const memberId = created.data!.members[0]!.id;
     const userId = owner.signup.data!.user.id;
@@ -44,6 +46,7 @@ compatScenario(
     expect(full.data!.createdAt).toBeInstanceOf(Date);
     expect(full.data!.createdAt.toISOString()).toBe(expectedTimestamp);
     expect(full.data!.members).toHaveLength(1);
+
     const fullMember = full.data!.members[0]!;
     expect(fullMember).toMatchObject({
       id: memberId,

@@ -1,4 +1,5 @@
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
+
 import { type CBORType, encodeCBOR } from "@levischuck/tiny-cbor";
 import { ed448 } from "@noble/curves/ed448.js";
 import { z } from "zod";
@@ -8,6 +9,7 @@ const es256Key = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
 const jwk = es256Key.publicKey.export({ format: "jwk" });
 const coordinates = z.object({ x: z.string(), y: z.string() }).parse(jwk);
 const defaultCredential = Buffer.from("compat-authenticator-credential-id");
+
 const es256PublicKey = encodeCBOR(
   new Map<number, CBORType>([
     [1, 2],
@@ -17,10 +19,13 @@ const es256PublicKey = encodeCBOR(
     [-3, Buffer.from(coordinates.y, "base64url")],
   ]),
 );
+
 const ed25519Key = generateKeyPairSync("ed25519");
+
 const ed25519Jwk = z
   .object({ x: z.string() })
   .parse(ed25519Key.publicKey.export({ format: "jwk" }));
+
 const ed25519PublicKey = encodeCBOR(
   new Map<number, CBORType>([
     [1, 1],
@@ -29,6 +34,7 @@ const ed25519PublicKey = encodeCBOR(
     [-2, Buffer.from(ed25519Jwk.x, "base64url")],
   ]),
 );
+
 const mismatchedEd25519PublicKey = encodeCBOR(
   new Map<number, CBORType>([
     [1, 1],
@@ -37,6 +43,7 @@ const mismatchedEd25519PublicKey = encodeCBOR(
     [-2, Buffer.from(ed25519Jwk.x, "base64url")],
   ]),
 );
+
 const unknownOkpPublicKey = encodeCBOR(
   new Map<number, CBORType>([
     [1, 1],
@@ -45,7 +52,9 @@ const unknownOkpPublicKey = encodeCBOR(
     [-2, Buffer.from(ed25519Jwk.x, "base64url")],
   ]),
 );
+
 const ed448Key = ed448.keygen();
+
 const ed448PublicKey = encodeCBOR(
   new Map<number, CBORType>([
     [1, 1],
@@ -54,11 +63,13 @@ const ed448PublicKey = encodeCBOR(
     [-2, ed448Key.publicKey],
   ]),
 );
+
 const registrationOptions = z.object({
   challenge: z.string().min(1),
   rp: z.object({ id: z.string() }),
   user: z.object({ id: z.string() }),
 });
+
 const authenticationOptions = z.object({ challenge: z.string().min(1), rpId: z.string() });
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest();
 
@@ -75,6 +86,7 @@ type BackupFlags = {
   malformedKey?: boolean;
   statementAlgorithm?: -7 | -8;
 };
+
 const flags = (base: number, state: BackupFlags) =>
   ((state.userVerified === false ? base & ~0x04 : base) &
     (state.userPresent === false ? ~0x01 : 0xff)) |
@@ -97,7 +109,9 @@ export class Authenticator {
   ) {}
 
   private sign(input: Uint8Array) {
-    if (this.algorithm === "Ed448") return Buffer.from(ed448.sign(input, ed448Key.secretKey));
+    if (this.algorithm === "Ed448") {
+      return Buffer.from(ed448.sign(input, ed448Key.secretKey));
+    }
     return this.algorithm === "Ed25519" ||
       this.algorithm === "Ed25519Curve8" ||
       this.algorithm === "Ed25519Alg7"
@@ -143,7 +157,11 @@ export class Authenticator {
     const signature = backup.malformedSignature
       ? Buffer.from([0x01])
       : this.sign(Buffer.concat([authData, hash(clientDataJSON)]));
-    if (backup.badSignature) signature[signature.length - 1] = signature[signature.length - 1]! ^ 1;
+
+    if (backup.badSignature) {
+      signature[signature.length - 1] = signature[signature.length - 1]! ^ 1;
+    }
+
     const attestation = encodeCBOR(
       new Map<string, CBORType>([
         ["fmt", backup.attestation ?? "none"],
@@ -198,7 +216,11 @@ export class Authenticator {
     const signature = backup.malformedSignature
       ? Buffer.from([0x01])
       : this.sign(Buffer.concat([authenticatorData, hash(clientDataJSON)]));
-    if (backup.badSignature) signature[signature.length - 1] = signature[signature.length - 1]! ^ 1;
+
+    if (backup.badSignature) {
+      signature[signature.length - 1] = signature[signature.length - 1]! ^ 1;
+    }
+
     return {
       id: Buffer.from(this.credential).toString("base64url"),
       rawId: Buffer.from(this.credential).toString("base64url"),

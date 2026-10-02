@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import type { FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
@@ -16,6 +18,7 @@ compatScenario(
       code: "UNAUTHORIZED",
       message: "Unauthorized",
     });
+
     const malformed = await ctx.rawRequest({
       actor: "guest",
       path: "/api/auth/update-session",
@@ -27,6 +30,7 @@ compatScenario(
       code: "VALIDATION_ERROR",
       message: "[body] Invalid input: expected record, received array",
     });
+
     const user = ctx.actor("owner").client;
     const email = ctx.uniqueEmail("update-session-default");
     const signup = await user.signUp.email({
@@ -35,11 +39,13 @@ compatScenario(
       password: "password123",
     });
     expect(signup.error).toBeNull();
+
     const before = await ctx.readUserState({
       userId: z.object({ user: z.object({ id: z.string() }) }).parse(signup.data).user.id,
     });
     const empty = await user.$fetch("/update-session", { method: "POST", body: {} });
     expect(empty.error).toMatchObject({ status: 400, message: "No fields to update" });
+
     const immutable = await user.$fetch("/update-session", {
       method: "POST",
       body: {
@@ -50,6 +56,7 @@ compatScenario(
       },
     });
     expect(immutable.error).toMatchObject({ status: 400, message: "No fields to update" });
+
     const foreignScope = await user.$fetch("/update-session", {
       method: "POST",
       body: { activeOrganizationId: "forged-organization" },
@@ -59,6 +66,7 @@ compatScenario(
       code: "FIELD_NOT_ALLOWED",
       message: "activeOrganizationId is not allowed to be set",
     });
+
     const media = await ctx.rawRequest({
       actor: "owner",
       path: "/api/auth/update-session",
@@ -76,6 +84,7 @@ compatScenario(
         userId: z.object({ user: z.object({ id: z.string() }) }).parse(signup.data).user.id,
       }),
     ).toEqual(before);
+
     return {
       unauthenticated: ctx.snapshot(unauthenticated),
       malformed,
@@ -107,6 +116,7 @@ const stateRow = z.object({
   activeTeamId: z.string().nullable(),
   impersonatedBy: z.string().nullable(),
 });
+
 const responseSession = z.object({
   session: z
     .object({
@@ -120,6 +130,7 @@ const responseSession = z.object({
     })
     .passthrough(),
 });
+
 async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
   const actor = ctx.actor("owner", profile);
   const email = ctx.uniqueEmail(`update-${profile}`);
@@ -129,8 +140,10 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
     password: "password123",
   });
   expect(signup.error).toBeNull();
+
   const get = await actor.client.getSession();
   expect(get.error).toBeNull();
+
   const initial = responseSession.parse(get.data).session;
   expect(initial).toMatchObject({
     label: "initial",
@@ -146,6 +159,7 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
       ? "adapter:configured-default-org"
       : "declared-without-plugin",
   );
+
   const read = async (target = email) => {
     const result = await ctx.rawRequest({
       path: `/__test/session-field-state?email=${encodeURIComponent(target)}`,
@@ -155,6 +169,7 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
   };
   const first = await read();
   expect(first[0]).toMatchObject({ id: initial.id, hidden: "server-secret" });
+
   const other = ctx.actor("other", profile).client;
   const otherEmail = ctx.uniqueEmail(`foreign-${profile}`);
   const otherSignup = await other.signUp.email({
@@ -163,14 +178,17 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
     password: "password123",
   });
   expect(otherSignup.error).toBeNull();
+
   const otherSession = responseSession.parse((await other.getSession()).data).session;
   const sameOwner = ctx.actor("same-owner-second-token", profile).client;
   expect((await sameOwner.signIn.email({ email, password: "password123" })).error).toBeNull();
+
   const sameOwnerSession = responseSession.parse((await sameOwner.getSession()).data).session;
   const otherBefore = await read(otherEmail);
   const allBefore = await read();
   const unrelatedBefore = allBefore.find((row) => row.id === sameOwnerSession.id);
   expect(unrelatedBefore).toBeDefined();
+
   const payload = {
     "$serde_json::private::Number": "literal",
     empty: {},
@@ -192,6 +210,7 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
     },
   });
   expect(update.error).toBeNull();
+
   const changed = responseSession.parse(update.data).session;
   expect(changed).toMatchObject({
     id: initial.id,
@@ -205,6 +224,7 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
     callback: "callback-created",
   });
   expect(changed).not.toHaveProperty("hidden");
+
   const after = await read();
   expect(after.find((row) => row.id === initial.id)).toMatchObject({
     hidden: "updated-secret",
@@ -216,6 +236,7 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
   });
   expect(after.find((row) => row.id === sameOwnerSession.id)).toEqual(unrelatedBefore);
   expect(await read(otherEmail)).toEqual(otherBefore);
+
   const invalid = await actor.client.$fetch("/update-session", {
     method: "POST",
     body: { label: "must-not-save", validated: " " },
@@ -225,6 +246,7 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
     code: "VALIDATION_ERROR",
     message: "configured validation rejected the value",
   });
+
   const forbidden = await actor.client.$fetch("/update-session", {
     method: "POST",
     body: { label: "must-not-save", serverOnly: [] },
@@ -235,6 +257,7 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
     message: "serverOnly is not allowed to be set",
   });
   expect(await read()).toEqual(after);
+
   const falsy = await actor.client.$fetch("/update-session", {
     method: "POST",
     body: { label: null, serverOnly: false },
@@ -244,6 +267,7 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
     label: null,
     serverOnly: "locked",
   });
+
   const raw = async (body: string) => {
     const response = await actor.fetch(
       `${ctx.baseURL}/__test/profiles/${profile}/api/auth/update-session`,
@@ -251,9 +275,11 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
     );
     const result = { status: response.status, body: await response.json() };
     expect(result.status).toBe(200);
+
     return result;
   };
   const numeric = [];
+
   for (const [literal, expected] of [
     ["1e20", "1.0e+20"],
     ["1e-20", "1.0e-20"],
@@ -263,9 +289,12 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
     const result = await raw(`{"label":${literal}}`);
     expect(responseSession.parse(result.body).session.label).toBe(expected);
     expect((await read()).find((row) => row.id === initial.id)?.label).toBe(expected);
+
     numeric.push(result);
   }
+
   const callbacks = [];
+
   for (const [literal, expected] of [
     ["1e999", "stored:Infinity"],
     ["-1e999", "stored:-Infinity"],
@@ -275,12 +304,14 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
     expect(responseSession.parse(result.body).session.validated).toBe(expected);
     callbacks.push(result);
   }
+
   const omitted = await actor.client.$fetch("/update-session", {
     method: "POST",
     body: { transformed: "omit" },
   });
   expect(omitted.error).toBeNull();
   expect(responseSession.parse(omitted.data).session.transformed).toBe("stage:stage:uppercase");
+
   const omittedBinding = await actor.client.$fetch("/update-session", {
     method: "POST",
     body: { transformed: "omit-at-binding" },
@@ -292,12 +323,14 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
   expect((await read()).find((row) => row.id === initial.id)?.transformed).toBe(
     "stage:stage:uppercase",
   );
+
   const undefinedHook = await actor.client.$fetch("/update-session", {
     method: "POST",
     body: { transformed: "omit", label: "restore-undefined" },
   });
   expect(undefinedHook.error).toBeNull();
   expect(responseSession.parse(undefinedHook.data).session.transformed).toBe("stage:hook-current");
+
   const errorBefore = await read();
   const transformError = await actor.client.$fetch("/update-session", {
     method: "POST",
@@ -305,6 +338,7 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
   });
   expect(transformError.error?.status).toBe(500);
   expect(await read()).toEqual(errorBefore);
+
   const transformedHook = await actor.client.$fetch("/update-session", {
     method: "POST",
     body: { transformed: "hook-input" },
@@ -316,17 +350,21 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
   expect((await read()).find((row) => row.id === initial.id)?.transformed).toBe(
     "stage:hook-current",
   );
+
   const hook = await actor.client.$fetch("/update-session", {
     method: "POST",
     body: { label: "native-hook" },
   });
   expect(hook.error).toBeNull();
   expect(responseSession.parse(hook.data).session.label).toBe("model-override");
+
   const readAfter = await actor.client.getSession();
   expect(responseSession.parse(readAfter.data).session.label).toBe("model-override");
   expect(await read(otherEmail)).toEqual(otherBefore);
   expect((await read()).find((row) => row.id === sameOwnerSession.id)).toEqual(unrelatedBefore);
+
   let pluginRejections = [];
+
   if (profile === "session-fields") {
     const explicit = await actor.client.$fetch("/update-session", {
       method: "POST",
@@ -339,8 +377,10 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
     expect((await read()).find((row) => row.id === initial.id)?.activeOrganizationId).toBe(
       "declared-update",
     );
+
     pluginRejections.push(ctx.snapshot(explicit));
   }
+
   if (profile === "session-fields-plugins") {
     for (const name of ["activeOrganizationId", "activeTeamId", "impersonatedBy"]) {
       const result = await actor.client.$fetch("/update-session", {
@@ -355,10 +395,12 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
       pluginRejections.push(ctx.snapshot(result));
     }
   }
+
   const browser = ctx.actor("browser-session", profile).client;
   expect(
     (await browser.signIn.email({ email, password: "password123", rememberMe: false })).error,
   ).toBeNull();
+
   const browserSession = responseSession.parse((await browser.getSession()).data).session;
   const browserUpdate = await browser.$fetch("/update-session", {
     method: "POST",
@@ -366,6 +408,7 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
   });
   expect(browserUpdate.error).toBeNull();
   expect(responseSession.parse(browserUpdate.data).session.id).toBe(browserSession.id);
+
   const cancelBefore = await read();
   const cancelled = await browser.$fetch("/update-session", {
     method: "POST",
@@ -378,6 +421,7 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
   });
   expect(await read()).toEqual(cancelBefore);
   expect((await browser.getSession()).data).toBeNull();
+
   const deleted = await actor.client.$fetch("/update-session", {
     method: "POST",
     body: { label: "delete-before" },
@@ -391,6 +435,7 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
   expect((await actor.client.getSession()).data).toBeNull();
   expect((await sameOwner.getSession()).error).toBeNull();
   expect(await read(otherEmail)).toEqual(otherBefore);
+
   return {
     signup: ctx.snapshot(signup),
     get: ctx.snapshot(get),
@@ -419,9 +464,11 @@ async function fieldsScenario(ctx: ScenarioContext, profile: FixtureProfile) {
     remaining: await read(),
   };
 }
-for (const profile of ["session-fields", "session-fields-plugins"] as const)
+
+for (const profile of ["session-fields", "session-fields-plugins"] as const) {
   compatScenario(
     `update-session ${profile} persists configured fields only for the current token with defaults policies callbacks and deletion failure`,
     (ctx) => fieldsScenario(ctx, profile),
     ["POST /update-session"],
   );
+}

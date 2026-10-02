@@ -20,14 +20,20 @@ export function socialProviderFixture(base: BetterAuthOptions) {
         contentType: request.headers.get("content-type"),
         body,
       });
-      if (path === "/token")
+
+      if (path === "/token") {
         return Response.json({
           access_token: "fixture-discord-access",
           token_type: "Bearer",
           scope: "identify email",
           expires_in: 3600,
         });
-      if (path === "/userinfo") return Response.json(profile);
+      }
+
+      if (path === "/userinfo") {
+        return Response.json(profile);
+      }
+
       return new Response("Unknown local provider endpoint", { status: 404 });
     },
   });
@@ -35,15 +41,21 @@ export function socialProviderFixture(base: BetterAuthOptions) {
   globalThis.fetch = (async (input, init) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
-    if (url.origin === "https://discord.com" && url.pathname === "/api/oauth2/token")
+
+    if (url.origin === "https://discord.com" && url.pathname === "/api/oauth2/token") {
       return previousFetch(new Request(`${provider.url}token`, request));
+    }
+
     if (
       url.origin === "https://discord.com" &&
       decodeURIComponent(url.pathname) === "/api/users/@me"
-    )
+    ) {
       return previousFetch(new Request(`${provider.url}userinfo`, request));
+    }
+
     return previousFetch(input, init);
   }) as typeof fetch;
+
   for (const name of ["google", "github", "discord"] as const) {
     for (const mode of [
       "default",
@@ -61,8 +73,10 @@ export function socialProviderFixture(base: BetterAuthOptions) {
       if (
         name !== "discord" &&
         !["default", "configured", "disabled", "disabled-configured"].includes(mode)
-      )
+      ) {
         continue;
+      }
+
       const path = `/__test/profiles/social-${name}-${mode}/api/auth`;
       const options = {
         clientId: "fixture-social-client",
@@ -88,6 +102,7 @@ export function socialProviderFixture(base: BetterAuthOptions) {
       profiles.set(path, betterAuth(authOptions));
     }
   }
+
   for (const mode of [
     "default",
     "configured",
@@ -121,6 +136,7 @@ export function socialProviderFixture(base: BetterAuthOptions) {
     };
     profiles.set(path, betterAuth(authOptions));
   }
+
   async function state(includePassword = false) {
     const { adapter } = await profiles.get("/__test/profiles/social-discord-default/api/auth")!
       .$context;
@@ -176,6 +192,7 @@ export function socialProviderFixture(base: BetterAuthOptions) {
       receipts,
     });
   }
+
   return {
     profiles,
     reset() {
@@ -184,6 +201,7 @@ export function socialProviderFixture(base: BetterAuthOptions) {
     },
     async handle(request: Request) {
       const url = new URL(request.url);
+
       if (
         url.pathname === "/__test/social-provider/gitlab/oauth/token" ||
         url.pathname === "/__test/social-provider/gitlab/api/v4/user"
@@ -199,7 +217,8 @@ export function socialProviderFixture(base: BetterAuthOptions) {
           contentType: request.headers.get("content-type"),
           body,
         });
-        if (url.pathname.endsWith("/token"))
+
+        if (url.pathname.endsWith("/token")) {
           return Response.json(
             body?.grant_type === "refresh_token"
               ? {
@@ -221,8 +240,11 @@ export function socialProviderFixture(base: BetterAuthOptions) {
                   expires_in: 3600,
                 },
           );
+        }
+
         return Response.json(profile);
       }
+
       if (
         url.pathname === "/__test/social-provider/clear-credential-password" &&
         request.method === "POST"
@@ -234,6 +256,7 @@ export function socialProviderFixture(base: BetterAuthOptions) {
         await internalAdapter.updateAccount(body.accountId, { password: null });
         return Response.json({ status: true });
       }
+
       if (
         url.pathname === "/__test/social-provider/duplicate-account" &&
         request.method === "POST"
@@ -250,20 +273,28 @@ export function socialProviderFixture(base: BetterAuthOptions) {
           model: "account",
           where: [{ field: "id", value: body.accountId }],
         });
-        if (!row) return Response.json({ message: "Account not found" }, { status: 404 });
+
+        if (!row) {
+          return Response.json({ message: "Account not found" }, { status: 404 });
+        }
+
         const { id, createdAt, updatedAt, ...fields } = row;
         const created = await internalAdapter.createAccount({
           ...fields,
           userId: body.userId,
         } as Parameters<typeof internalAdapter.createAccount>[0]);
-        if (body.createdAt)
+
+        if (body.createdAt) {
           await adapter.update({
             model: "account",
             where: [{ field: "id", value: created.id }],
             update: { createdAt: new Date(body.createdAt), updatedAt: new Date(body.createdAt) },
           });
+        }
+
         return Response.json({ status: true, accountId: created.id });
       }
+
       if (url.pathname === "/__test/social-provider/import-tokens" && request.method === "POST") {
         const body = (await request.json()) as {
           accountId: string;
@@ -282,7 +313,11 @@ export function socialProviderFixture(base: BetterAuthOptions) {
             { field: "userId", value: body.userId },
           ],
         });
-        if (!row) return Response.json({ message: "Account not found" }, { status: 404 });
+
+        if (!row) {
+          return Response.json({ message: "Account not found" }, { status: 404 });
+        }
+
         const patch = Object.fromEntries(
           ["accessToken", "refreshToken", "idToken"]
             .filter((key) => Object.hasOwn(body, key))
@@ -291,12 +326,20 @@ export function socialProviderFixture(base: BetterAuthOptions) {
         await internalAdapter.updateAccount(body.accountId, patch);
         return Response.json({ status: true });
       }
+
       if (url.pathname === "/__test/social-provider/profile" && request.method === "POST") {
         profile = await request.json();
         return Response.json({ status: true, profile });
       }
-      if (url.pathname === "/__test/social-provider/duplicate-state") return state(true);
-      if (url.pathname === "/__test/social-provider/state") return state();
+
+      if (url.pathname === "/__test/social-provider/duplicate-state") {
+        return state(true);
+      }
+
+      if (url.pathname === "/__test/social-provider/state") {
+        return state();
+      }
+
       return null;
     },
   };

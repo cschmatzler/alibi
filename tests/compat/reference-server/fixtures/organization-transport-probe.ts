@@ -1,5 +1,6 @@
 import type { BetterAuthPlugin } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
+
 /** Observe real Bun request aborts independently of the authentication callbacks. */
 export function organizationTransportProbe() {
   const aborted = new Set<string>();
@@ -12,7 +13,9 @@ export function organizationTransportProbe() {
           matcher: (ctx) => Boolean(ctx.headers?.get("x-continuation-marker")),
           handler: createAuthMiddleware(async (ctx) => {
             const marker = ctx.headers?.get("x-continuation-marker");
-            if (marker) completed.add(marker);
+            if (marker) {
+              completed.add(marker);
+            }
           }),
         },
       ],
@@ -22,10 +25,11 @@ export function organizationTransportProbe() {
     plugin,
     observe(request: Request) {
       const marker = request.headers.get("x-continuation-marker");
-      if (marker)
+      if (marker) {
         request.signal.addEventListener("abort", () => aborted.add(marker), {
           once: true,
         });
+      }
     },
     async handle(request: Request, url: URL) {
       if (url.pathname === "/__test/organization-transport-reset" && request.method === "POST") {
@@ -33,14 +37,25 @@ export function organizationTransportProbe() {
         completed.clear();
         return Response.json({ reset: true });
       }
+
       if (url.pathname === "/__test/organization-transport-completion") {
         const marker = url.searchParams.get("marker") ?? "";
-        for (let i = 0; i < 200 && !completed.has(marker); i++) await Bun.sleep(10);
+        for (let i = 0; i < 200 && !completed.has(marker); i++) {
+          await Bun.sleep(10);
+        }
         return Response.json({ marker, completed: completed.has(marker) });
       }
-      if (url.pathname !== "/__test/organization-transport-state") return;
+
+      if (url.pathname !== "/__test/organization-transport-state") {
+        return;
+      }
+
       const marker = url.searchParams.get("marker") ?? "";
-      for (let i = 0; i < 200 && !aborted.has(marker); i++) await Bun.sleep(10);
+
+      for (let i = 0; i < 200 && !aborted.has(marker); i++) {
+        await Bun.sleep(10);
+      }
+
       return Response.json({ marker, aborted: aborted.has(marker) });
     },
   };

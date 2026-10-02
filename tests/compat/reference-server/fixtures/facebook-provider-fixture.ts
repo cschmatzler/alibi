@@ -1,19 +1,20 @@
 import { readFileSync } from "node:fs";
+
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 
 /** Actual published Facebook factory; only fixed trusted HTTP authorities redirect. */
 export function facebookProviderFixture(base: BetterAuthOptions) {
   let control: Record<string, unknown> = {};
-  const receipts: unknown[] = [],
-    mapperReceipts: unknown[] = [];
+  const receipts: unknown[] = [];
+  const mapperReceipts: unknown[] = [];
   const defaultKeys = JSON.parse(
     readFileSync(new URL("../../../fixtures/one-tap/jwks.json", import.meta.url), "utf8"),
   );
   const transport = Bun.serve({
     port: 0,
     async fetch(request) {
-      const url = new URL(request.url),
-        path = url.pathname;
+      const url = new URL(request.url);
+      const path = url.pathname;
       const body =
         request.method === "POST"
           ? Object.fromEntries(new URLSearchParams(await request.text()))
@@ -26,8 +27,12 @@ export function facebookProviderFixture(base: BetterAuthOptions) {
         query: Object.fromEntries(url.searchParams),
         body,
       });
-      if (path === "/keys") return Response.json(control.keys ?? defaultKeys);
-      if (path === "/token")
+
+      if (path === "/keys") {
+        return Response.json(control.keys ?? defaultKeys);
+      }
+
+      if (path === "/token") {
         return Response.json(
           control.tokenResponse ?? {
             access_token: "fixture-facebook-access",
@@ -38,7 +43,9 @@ export function facebookProviderFixture(base: BetterAuthOptions) {
           },
           { status: typeof control.tokenStatus === "number" ? control.tokenStatus : 200 },
         );
-      if (path === "/debug")
+      }
+
+      if (path === "/debug") {
         return Response.json(
           control.inspection ?? {
             data: {
@@ -51,7 +58,9 @@ export function facebookProviderFixture(base: BetterAuthOptions) {
           },
           { status: typeof control.inspectionStatus === "number" ? control.inspectionStatus : 200 },
         );
-      if (path === "/userinfo")
+      }
+
+      if (path === "/userinfo") {
         return Response.json(
           control.profile ?? {
             id: "fixture-facebook-subject",
@@ -69,13 +78,15 @@ export function facebookProviderFixture(base: BetterAuthOptions) {
           },
           { status: typeof control.userInfoStatus === "number" ? control.userInfoStatus : 200 },
         );
+      }
+
       return new Response("Unknown trusted Facebook destination", { status: 404 });
     },
   });
   const previousFetch = globalThis.fetch.bind(globalThis);
   globalThis.fetch = (async (input, init) => {
-    const request = new Request(input, init),
-      url = new URL(request.url);
+    const request = new Request(input, init);
+    const url = new URL(request.url);
     const route =
       url.origin === "https://graph.facebook.com"
         ? url.pathname === "/v24.0/oauth/access_token"
@@ -146,6 +157,7 @@ export function facebookProviderFixture(base: BetterAuthOptions) {
       "weak-modulus",
     ].map((name) => `keys-${name}`),
   ];
+
   for (const mode of modes) {
     const path = `/__test/profiles/social-facebook-${mode}/api/auth`;
     profiles.set(
@@ -203,6 +215,7 @@ export function facebookProviderFixture(base: BetterAuthOptions) {
       }),
     );
   }
+
   return {
     profiles,
     reset() {
@@ -212,12 +225,20 @@ export function facebookProviderFixture(base: BetterAuthOptions) {
     },
     async handle(request: Request) {
       const path = new URL(request.url).pathname;
+
       if (path === "/__test/facebook/control" && request.method === "POST") {
         control = await request.json();
         return Response.json({ status: true });
       }
-      if (path === "/__test/facebook/receipts") return Response.json(receipts);
-      if (path === "/__test/facebook/mapper-receipts") return Response.json(mapperReceipts);
+
+      if (path === "/__test/facebook/receipts") {
+        return Response.json(receipts);
+      }
+
+      if (path === "/__test/facebook/mapper-receipts") {
+        return Response.json(mapperReceipts);
+      }
+
       return null;
     },
   };

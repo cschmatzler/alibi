@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+
 import { betterAuth } from "better-auth";
 import { twoFactor } from "better-auth/plugins";
 
@@ -6,8 +7,8 @@ export function createTwoFactorOtpFixture(
   base: Parameters<typeof betterAuth>[0],
   database: Database,
 ) {
-  const deliveries = new Map<string, { userId: string; otp: string }>(),
-    receipts = new Map<string, Array<{ phase: string; input: string }>>();
+  const deliveries = new Map<string, { userId: string; otp: string }>();
+  const receipts = new Map<string, Array<{ phase: string; input: string }>>();
   const record = (profile: string, phase: string, input: string) => {
     const values = receipts.get(profile) ?? [];
     values.push({ phase, input });
@@ -72,7 +73,9 @@ export function createTwoFactorOtpFixture(
                 ...settings,
                 storeOTP: storage,
                 sendOTP: async ({ user, otp }) => {
-                  if (user.email) deliveries.set(user.email, { userId: user.id, otp });
+                  if (user.email) {
+                    deliveries.set(user.email, { userId: user.id, otp });
+                  }
                   record(name, "send", otp);
                 },
               },
@@ -83,10 +86,16 @@ export function createTwoFactorOtpFixture(
     }),
   );
   const handler = async (request: Request, url: URL): Promise<Response | undefined> => {
-    for (const [name, auth] of profiles)
-      if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+    for (const [name, auth] of profiles) {
+      if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
         return auth.handler(request);
-    if (url.pathname !== "/__test/two-factor-otp-config" || request.method !== "POST") return;
+      }
+    }
+
+    if (url.pathname !== "/__test/two-factor-otp-config" || request.method !== "POST") {
+      return;
+    }
+
     const body = (await request.json()) as {
       profile: string;
       email: string;
@@ -108,16 +117,20 @@ export function createTwoFactorOtpFixture(
             )
             .get(`2fa-otp-${delivery.userId}!%`, delivery.userId)
         : null;
+
     if (row && typeof body.counter === "string") {
       const current = row as { identifier: string; value: string };
       database
         .query("UPDATE verification SET value=? WHERE identifier=?")
         .run(`${current.value.split(":")[0]}:${body.counter}`, current.identifier);
     }
-    if (row && body.expire === true)
+
+    if (row && body.expire === true) {
       database
         .query("UPDATE verification SET expiresAt=? WHERE identifier=?")
         .run(new Date(Date.now() - 1000).toISOString(), (row as { identifier: string }).identifier);
+    }
+
     const current = row
       ? database
           .query(

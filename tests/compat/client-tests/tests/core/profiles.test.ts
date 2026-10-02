@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+
 import { authProfilePath, FIXTURE_PROFILES } from "../../support/profiles";
 import { compatScenario } from "../../support/scenario";
 
@@ -9,6 +10,7 @@ import { compatScenario } from "../../support/scenario";
 compatScenario("every declared fixture profile is served by both runtimes", async (ctx) => {
   const statuses: Record<string, number> = {};
   const missing: string[] = [];
+
   for (const profile of FIXTURE_PROFILES) {
     // The installed runtime shares memory rate buckets across auth instances.
     // Give availability probes their own client, separate from scenario traffic.
@@ -22,9 +24,13 @@ compatScenario("every declared fixture profile is served by both runtimes", asyn
       },
     });
     statuses[profile] = response.status;
-    if (response.status !== 200) missing.push(`${profile} -> ${response.status}`);
+    if (response.status !== 200) {
+      missing.push(`${profile} -> ${response.status}`);
+    }
   }
+
   expect(missing, `${ctx.baseURL} does not serve every declared profile`).toEqual([]);
   expect(new Set(FIXTURE_PROFILES).size).toBe(FIXTURE_PROFILES.length);
+
   return { profiles: FIXTURE_PROFILES.length, statuses };
 });

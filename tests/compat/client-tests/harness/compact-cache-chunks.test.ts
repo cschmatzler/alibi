@@ -1,14 +1,17 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
+
 import { betterAuth } from "better-auth";
 import { getCookieCache } from "better-auth/cookies";
 import { getMigrations } from "better-auth/db/migration";
+
 import { type ComparisonContext, compareValues } from "../support/compare";
 
 const secret = "compact-chunk-source-fixture-secret-32";
+
 async function observed(baseURL: string, uuid: boolean) {
-  const database = new Database(":memory:"),
-    version = { current: "1" };
+  const database = new Database(":memory:");
+  const version = { current: "1" };
   const options = {
     baseURL,
     secret,
@@ -26,8 +29,8 @@ async function observed(baseURL: string, uuid: boolean) {
     ...(uuid ? { advanced: { database: { generateId: () => crypto.randomUUID() } } } : {}),
   };
   await (await getMigrations(options)).runMigrations();
-  const auth = betterAuth(options),
-    start = Date.now();
+  const auth = betterAuth(options);
+  const start = Date.now();
   const response = await auth.handler(
     new Request(baseURL + "/api/auth/sign-up/email", {
       method: "POST",
@@ -40,6 +43,7 @@ async function observed(baseURL: string, uuid: boolean) {
     }),
   );
   expect(response.status).toBe(200);
+
   const signup = await response.json();
   const observe = async (headers: Headers) => {
     const rawCookies = headers
@@ -49,17 +53,19 @@ async function observed(baseURL: string, uuid: boolean) {
       .filter((value) => value.split(";")[0]!.split("=")[1])
       .map((value) => decodeURIComponent(value.split(";")[0]!.slice(value.indexOf("=") + 1)))
       .join("");
-    const envelope = JSON.parse(Buffer.from(token, "base64url").toString()),
-      observedAt = Date.now();
+    const envelope = JSON.parse(Buffer.from(token, "base64url").toString());
+    const observedAt = Date.now();
     const decoded = await getCookieCache(
       new Headers({ cookie: rawCookies.map((value) => value.split(";")[0]).join("; ") }),
       { secret, strategy: "compact", isSecure: false },
     );
     expect(decoded).not.toBeNull();
+
     return { token, envelope, decoded, observedAt, effectiveMaxAgeSeconds: 300, rawCookies };
   };
   const compactSessionCache = await observe(response.headers);
   expect(compactSessionCache.rawCookies.length).toBeGreaterThan(1);
+
   version.current = "2";
   const renewed = await auth.handler(
     new Request(baseURL + "/api/auth/get-session", {
@@ -72,10 +78,12 @@ async function observed(baseURL: string, uuid: boolean) {
     }),
   );
   expect(renewed.status).toBe(200);
+
   const renewedCache = await observe(renewed.headers);
   expect(
     renewedCache.rawCookies.some((cookie) => cookie.startsWith("better-auth.session_data=;")),
   ).toBe(true);
+
   const end = Date.now();
   database.close();
   return {
@@ -86,6 +94,7 @@ async function observed(baseURL: string, uuid: boolean) {
     end,
   };
 }
+
 function ctx(
   left: Awaited<ReturnType<typeof observed>>,
   right: Awaited<ReturnType<typeof observed>>,
@@ -100,6 +109,7 @@ function ctx(
     rightFinishedAt: right.end,
   };
 }
+
 function value(input: Awaited<ReturnType<typeof observed>>) {
   return {
     signup: input.signup,
@@ -109,14 +119,15 @@ function value(input: Awaited<ReturnType<typeof observed>>) {
 }
 
 test("published compact writer preserves every raw chunk and tombstone across actual default32 and UUID36 identities", async () => {
-  const left = await observed("http://localhost:3100", false),
-    right = await observed("http://localhost:3200", true);
+  const left = await observed("http://localhost:3100", false);
+  const right = await observed("http://localhost:3200", true);
   expect(left.signup.user.id.length).toBe(32);
   expect(right.signup.user.id.length).toBe(36);
   expect(left.compactSessionCache.rawCookies.at(-1)!.length).not.toBe(
     right.compactSessionCache.rawCookies.at(-1)!.length,
   );
   expect(compareValues(value(left), value(right), ctx(left, right))).toEqual([]);
+
   const original = right.compactSessionCache;
   const corruptions = [
     original.rawCookies.slice(1),
@@ -132,7 +143,8 @@ test("published compact writer preserves every raw chunk and tombstone across ac
     original.rawCookies.map((cookie) => cookie.replace("Path=/", "Path=/foreign")),
     original.rawCookies.map((cookie) => cookie + "; Priority=High"),
   ];
-  for (const rawCookies of corruptions)
+
+  for (const rawCookies of corruptions) {
     expect(
       compareValues(
         value(left),
@@ -140,12 +152,15 @@ test("published compact writer preserves every raw chunk and tombstone across ac
         ctx(left, right),
       ).length,
     ).toBeGreaterThan(0);
+  }
+
   const omitted = { ...original } as Record<string, unknown>;
   delete omitted.rawCookies;
   expect(
     compareValues(value(left), { ...value(right), compactSessionCache: omitted }, ctx(left, right))
       .length,
   ).toBeGreaterThan(0);
+
   const changedTombstone = structuredClone(right.renewed.compactSessionCache);
   changedTombstone.rawCookies[0] = changedTombstone.rawCookies[0]!.replace(
     "Path=/",

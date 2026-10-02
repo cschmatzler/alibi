@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario } from "../../support/scenario";
 
 compatScenario("list sessions and revoke a session through the SDK", async (ctx) => {
@@ -124,7 +126,8 @@ compatScenario("revoke other sessions keeps the caller alive", async (ctx) => {
 });
 
 const listModes = ["reject", "success", "coordinated"] as const;
-for (const mode of listModes)
+
+for (const mode of listModes) {
   compatScenario(
     `list sessions ${mode === "coordinated" ? "coordinates ready callbacks before rejection and retains pending siblings" : mode === "reject" ? "rejects configured output while started callbacks continue" : "publishes ordered configured output without changing physical authority"}`,
     async (ctx) => {
@@ -140,10 +143,13 @@ for (const mode of listModes)
         (await owner.client.signUp.email({ email, name: "List owner", password: "Password123!" }))
           .error,
       ).toBeNull();
-      for (const actor of [sibling, slow, expired])
+
+      for (const actor of [sibling, slow, expired]) {
         expect(
           (await actor.client.signIn.email({ email, password: "Password123!" })).error,
         ).toBeNull();
+      }
+
       expect(
         (
           await foreign.client.signUp.email({
@@ -153,6 +159,7 @@ for (const mode of listModes)
           })
         ).error,
       ).toBeNull();
+
       const initial = await owner.client.getSession();
       const token = z.string().parse(initial.data?.session.token);
       const siblingToken = z
@@ -166,6 +173,7 @@ for (const mode of listModes)
         .string()
         .parse((await foreign.client.getSession()).data?.session.token);
       const expiresAt = new Date(Date.now() + 86_400_000 * 6).toISOString();
+
       // Operator setup writes real application columns, preserving genuine issued credentials.
       for (const [target, label] of [
         [
@@ -195,6 +203,7 @@ for (const mode of listModes)
           ).status,
         ).toBe(200);
       }
+
       expect(
         (
           await ctx.rawRequest({
@@ -208,7 +217,8 @@ for (const mode of listModes)
           })
         ).status,
       ).toBe(200);
-      if (mode === "reject")
+
+      if (mode === "reject") {
         expect(
           (
             await ctx.rawRequest({
@@ -218,7 +228,9 @@ for (const mode of listModes)
             })
           ).status,
         ).toBe(200);
-      if (mode === "coordinated")
+      }
+
+      if (mode === "coordinated") {
         expect(
           (
             await ctx.rawRequest({
@@ -228,11 +240,14 @@ for (const mode of listModes)
             })
           ).status,
         ).toBe(200);
+      }
+
       const read = async () => {
         const result = await ctx.rawRequest({
           path: "/__test/additional-fields/state?profile=cached",
         });
         expect(result.status).toBe(200);
+
         const state = z
           .object({
             users: z.array(z.record(z.string(), z.unknown())),
@@ -255,9 +270,14 @@ for (const mode of listModes)
       };
       const before = await read();
       const result = await owner.client.listSessions();
-      if (rejection) expect(result.error?.status).toBe(500);
+
+      if (rejection) {
+        expect(result.error?.status).toBe(500);
+      }
+
       const pending = await read();
       expect(pending.physical).toEqual(before.physical);
+
       const callbacks = pending.events.slice(before.events.length);
       expect(
         callbacks.filter(
@@ -268,20 +288,25 @@ for (const mode of listModes)
               (mode === "coordinated" ? "collection-coordinated-slow" : "collection-slow"),
         ),
       ).toHaveLength(1);
-      if (mode === "reject")
+
+      if (mode === "reject") {
         expect(
           callbacks.filter(
             (event) => event.phase === "output" && event.value === "collection-slower",
           ),
         ).toHaveLength(1);
+      }
+
       expect(
         callbacks.filter((event) => event.phase === "output" && event.value === "throw"),
       ).toEqual([]);
+
       if (rejection) {
         expect(result.error?.status).toBe(500);
         expect(callbacks.filter((event) => event.phase === "settled")).toEqual([]);
       } else {
         expect(result.error).toBeNull();
+
         const sessions = z.array(z.record(z.string(), z.unknown())).parse(result.data);
         const ownerRows = before.sessions.filter(
           (row) => row.userId === initial.data!.session.userId && row.token !== expiredToken,
@@ -290,13 +315,17 @@ for (const mode of listModes)
         expect(sessions.map((row) => row.label)).toEqual(
           ownerRows.map((row) => ({ stored: row.label })),
         );
+
         for (const session of sessions) {
           expect(session.userId).toBe(initial.data!.session.userId);
-          for (const field of ["hidden", "omitted", "private_column"])
+          for (const field of ["hidden", "omitted", "private_column"]) {
             expect(session).not.toHaveProperty(field);
+          }
         }
+
         expect(sessions.some((row) => row.token === foreignToken)).toBe(false);
       }
+
       if (mode === "coordinated") {
         const ready = callbacks.findIndex(
           (event) =>
@@ -319,7 +348,11 @@ for (const mode of listModes)
           ).status,
         ).toBe(200);
       }
-      if (mode !== "coordinated") await new Promise((resolve) => setTimeout(resolve, 550));
+
+      if (mode !== "coordinated") {
+        await new Promise((resolve) => setTimeout(resolve, 550));
+      }
+
       const after = await read();
       expect(after.physical).toEqual(before.physical);
       expect(
@@ -337,13 +370,16 @@ for (const mode of listModes)
           requestPath: "/list-sessions",
         })),
       );
+
       // The authenticated foreign caller can list only its own physical session.
       const cached = await owner.client.getSession();
       expect(cached.error).toBeNull();
       expect(cached.data?.session.token).toBe(token);
+
       const foreignList = await foreign.client.listSessions();
       expect(foreignList.error).toBeNull();
       expect(foreignList.data?.map((session) => session.token)).toEqual([foreignToken]);
+
       return {
         initial: ctx.snapshot(initial),
         before: before.sessions,
@@ -357,3 +393,4 @@ for (const mode of listModes)
     },
     ["GET /list-sessions", "GET /get-session"],
   );
+}

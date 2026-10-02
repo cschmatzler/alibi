@@ -1,7 +1,9 @@
 import { readdir, readFile, rm } from "node:fs/promises";
 import { join, relative } from "node:path";
+
 import { parse } from "@babel/parser";
 import { createInstrumenter } from "istanbul-lib-instrument";
+
 import { digest, filesUnder, upstreamPin, writeJSON } from "./common";
 import { upstreamSource, verifiedPublishedRoots } from "./source";
 
@@ -12,6 +14,7 @@ type Node = {
   loc?: { start: { line: number } };
   [key: string]: unknown;
 };
+
 export type Source = {
   id: string;
   package: string;
@@ -19,6 +22,7 @@ export type Source = {
   origin: "published" | "repository";
   sha256: string;
 };
+
 export type Surface = {
   id: string;
   source: string;
@@ -39,6 +43,7 @@ export type Surface = {
   snippetHash?: string;
   dynamic?: boolean;
 };
+
 export type SourceMutation = {
   id: string;
   source: string;
@@ -50,6 +55,7 @@ export type SourceMutation = {
   operator: "negate-condition" | "boundary" | "omit-effect";
   line: number;
 };
+
 export type Inventory = {
   schemaVersion: 1;
   version: string;
@@ -63,6 +69,7 @@ export type Inventory = {
 function node(value: unknown): value is Node {
   return !!value && typeof value === "object" && "type" in value && typeof value.type === "string";
 }
+
 function children(value: Node): Node[] {
   return Object.entries(value)
     .filter(
@@ -80,11 +87,19 @@ function children(value: Node): Node[] {
       Array.isArray(child) ? child.filter(node) : node(child) ? [child] : [],
     );
 }
+
 function named(value: unknown): string | undefined {
-  if (!node(value)) return;
-  if (value.type === "Identifier") return String(value.name);
-  if (value.type === "StringLiteral") return String(value.value);
+  if (!node(value)) {
+    return;
+  }
+  if (value.type === "Identifier") {
+    return String(value.name);
+  }
+  if (value.type === "StringLiteral") {
+    return String(value.value);
+  }
 }
+
 function ast(source: string, types: boolean): Node {
   return parse(source, {
     sourceType: "module",
@@ -92,6 +107,7 @@ function ast(source: string, types: boolean): Node {
     errorRecovery: false,
   }) as unknown as Node;
 }
+
 function surface(
   source: Source,
   text: string,
@@ -128,22 +144,38 @@ export function sourceSurfaces(source: Source, text: string): Surface[] {
     "sequential",
     "fails",
   ]);
+
   function testRoot(
     value: unknown,
     scope: ReadonlyMap<string, "suite" | "case">,
   ): "suite" | "case" | undefined {
-    if (!node(value)) return;
-    if (value.type === "Identifier") return scope.get(String(value.name));
+    if (!node(value)) {
+      return;
+    }
+
+    if (value.type === "Identifier") {
+      return scope.get(String(value.name));
+    }
+
     if (
       value.type === "MemberExpression" &&
       !value.computed &&
       modifiers.has(named(value.property) ?? "")
-    )
+    ) {
       return testRoot(value.object, scope);
-    if (value.type === "CallExpression") return testRoot(value.callee, scope);
-    if (value.type === "TaggedTemplateExpression") return testRoot(value.tag, scope);
+    }
+
+    if (value.type === "CallExpression") {
+      return testRoot(value.callee, scope);
+    }
+
+    if (value.type === "TaggedTemplateExpression") {
+      return testRoot(value.tag, scope);
+    }
   }
+
   const program = root.program as Node;
+
   for (const value of program.body as Node[]) {
     if (
       value.type === "ImportDeclaration" &&
@@ -151,13 +183,15 @@ export function sourceSurfaces(source: Source, text: string): Surface[] {
       ["vitest", "bun:test", "node:test"].includes(String(value.source.value))
     ) {
       for (const specifier of value.specifiers as Node[]) {
-        const imported = named(specifier.imported),
-          local = named(specifier.local);
-        if (local && imported && ["test", "it", "describe", "suite"].includes(imported))
+        const imported = named(specifier.imported);
+        const local = named(specifier.local);
+        if (local && imported && ["test", "it", "describe", "suite"].includes(imported)) {
           bindings.set(local, ["describe", "suite"].includes(imported) ? "suite" : "case");
+        }
       }
     }
   }
+
   function options(value: Node, parent: string) {
     // Callback arguments describe hook context, not additional configuration keys.
     if (
@@ -167,28 +201,39 @@ export function sourceSurfaces(source: Source, text: string): Surface[] {
         "TSCallSignatureDeclaration",
         "TSConstructorType",
       ].includes(value.type)
-    )
+    ) {
       return;
+    }
     if (value.type === "TSPropertySignature") {
       const name =
         named(value.key) ?? text.slice((value.key as Node).start, (value.key as Node).end);
       parent = `${parent}.${name}`;
       result.push(surface(source, text, value, "option", parent));
     }
-    for (const child of children(value)) options(child, parent);
+    for (const child of children(value)) {
+      options(child, parent);
+    }
   }
+
   function visit(value: Node, scope: Map<string, "suite" | "case">, suites: string[]) {
     let nested = suites;
+
     if (
       ["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"].includes(value.type)
     ) {
       scope = new Map(scope);
       for (const param of (value.params as Node[]) ?? []) {
         const name = named(param);
-        if (name) scope.delete(name);
+        if (name) {
+          scope.delete(name);
+        }
       }
     }
-    if (value.type === "BlockStatement") scope = new Map(scope);
+
+    if (value.type === "BlockStatement") {
+      scope = new Map(scope);
+    }
+
     if (value.type === "VariableDeclarator" && named(value.id)) {
       const name = named(value.id)!;
       const init = value.init;
@@ -201,11 +246,15 @@ export function sourceSurfaces(source: Source, text: string): Surface[] {
           ? testRoot(init.callee.object, scope)
           : undefined;
       scope.delete(name);
-      if (extended) scope.set(name, extended);
+
+      if (extended) {
+        scope.set(name, extended);
+      }
     }
+
     if (value.type === "CallExpression") {
-      const kind = testRoot(value.callee, scope),
-        args = value.arguments as Node[];
+      const kind = testRoot(value.callee, scope);
+      const args = value.arguments as Node[];
       const title = args[0];
       const callback = args.some((arg) =>
         ["ArrowFunctionExpression", "FunctionExpression"].includes(arg.type),
@@ -213,6 +262,7 @@ export function sourceSurfaces(source: Source, text: string): Surface[] {
       const deferred = text
         .slice((value.callee as Node).start, (value.callee as Node).end)
         .endsWith(".todo");
+
       if (
         kind &&
         title &&
@@ -221,20 +271,24 @@ export function sourceSurfaces(source: Source, text: string): Surface[] {
       ) {
         const name =
           title.type === "StringLiteral" ? String(title.value) : text.slice(title.start, title.end);
-        if (kind === "case")
+        if (kind === "case") {
           result.push({
             ...surface(source, text, value, "upstream-test", [...suites, name].join(" > ")),
             dynamic: title.type !== "StringLiteral" || (value.callee as Node).type !== "Identifier",
           });
-        else nested = [...suites, name];
+        } else {
+          nested = [...suites, name];
+        }
       }
     }
+
     if (
       ["TSTypeAliasDeclaration", "TSInterfaceDeclaration"].includes(value.type) &&
       /(?:Options|Config)$/.test(named(value.id) ?? "")
     ) {
       options(value, named(value.id)!);
     }
+
     if (value.type === "ExportNamedDeclaration") {
       if (node(value.declaration)) {
         const declaration = value.declaration;
@@ -244,20 +298,32 @@ export function sourceSurfaces(source: Source, text: string): Surface[] {
             : [declaration];
         for (const item of declarations) {
           const name = named(item.id);
-          if (name) result.push(surface(source, text, item, "export", name));
+          if (name) {
+            result.push(surface(source, text, item, "export", name));
+          }
         }
       }
       for (const specifier of (value.specifiers as Node[]) ?? []) {
         const name = named(specifier.exported);
-        if (name) result.push(surface(source, text, specifier, "export", name));
+        if (name) {
+          result.push(surface(source, text, specifier, "export", name));
+        }
       }
     }
-    if (value.type === "ExportAllDeclaration")
+
+    if (value.type === "ExportAllDeclaration") {
       result.push(surface(source, text, value, "export", `* from ${named(value.source)}`));
-    if (value.type === "ExportDefaultDeclaration")
+    }
+
+    if (value.type === "ExportDefaultDeclaration") {
       result.push(surface(source, text, value, "export", "default"));
-    for (const child of children(value)) visit(child, scope, nested);
+    }
+
+    for (const child of children(value)) {
+      visit(child, scope, nested);
+    }
   }
+
   visit(root, bindings, []);
   return result;
 }
@@ -271,6 +337,7 @@ export function runtimeEvidence(source: Source, text: string) {
   instrumenter.instrumentSync(text, source.id);
   const coverage = instrumenter.lastFileCoverage();
   const surfaces: Surface[] = [];
+
   for (const [id, branch] of Object.entries(coverage.branchMap)) {
     branch.locations.forEach((location, arm) =>
       surfaces.push({
@@ -282,7 +349,8 @@ export function runtimeEvidence(source: Source, text: string) {
       }),
     );
   }
-  for (const [id, fn] of Object.entries(coverage.fnMap))
+
+  for (const [id, fn] of Object.entries(coverage.fnMap)) {
     surfaces.push({
       id: `${source.id}#function:${id}`,
       source: source.id,
@@ -290,7 +358,10 @@ export function runtimeEvidence(source: Source, text: string) {
       name: fn.name,
       line: fn.loc.start.line,
     });
+  }
+
   const mutations: SourceMutation[] = [];
+
   function add(value: Node, operator: SourceMutation["operator"], replacement: string) {
     const original = text.slice(value.start, value.end);
     mutations.push({
@@ -305,6 +376,7 @@ export function runtimeEvidence(source: Source, text: string) {
       line: value.loc?.start.line ?? 1,
     });
   }
+
   function visit(value: Node) {
     if (
       [
@@ -317,10 +389,14 @@ export function runtimeEvidence(source: Source, text: string) {
         "DoWhileStatement",
         "CatchClause",
       ].includes(value.type)
-    )
+    ) {
       surfaces.push(surface(source, text, value, "unmeasured-control-flow", value.type));
-    if (["IfStatement", "ConditionalExpression"].includes(value.type) && node(value.test))
+    }
+
+    if (["IfStatement", "ConditionalExpression"].includes(value.type) && node(value.test)) {
       add(value.test, "negate-condition", `!(${text.slice(value.test.start, value.test.end)})`);
+    }
+
     if (
       value.type === "BinaryExpression" &&
       ["<", "<=", ">", ">="].includes(String(value.operator)) &&
@@ -334,6 +410,7 @@ export function runtimeEvidence(source: Source, text: string) {
         `(${text.slice(value.left.start, value.left.end)}) ${changed} (${text.slice(value.right.start, value.right.end)})`,
       );
     }
+
     if (
       value.type === "AwaitExpression" &&
       node(value.argument) &&
@@ -342,27 +419,35 @@ export function runtimeEvidence(source: Source, text: string) {
       value.argument.callee.type === "MemberExpression"
     ) {
       const effect = named(value.argument.callee.property) ?? "";
-      if (/^(?:delete|update|create|consume|send|revoke)/.test(effect))
+      if (/^(?:delete|update|create|consume|send|revoke)/.test(effect)) {
         add(value, "omit-effect", "undefined");
+      }
     }
+
     // Delivery callbacks are frequently passed to runInBackgroundOrAwait.
     if (
       value.type === "CallExpression" &&
       node(value.callee) &&
       value.callee.type === "MemberExpression" &&
-      /^send/.test(named(value.callee.property) ?? "")
-    )
+      (named(value.callee.property) ?? "").startsWith("send")
+    ) {
       add(value, "omit-effect", "undefined");
-    for (const child of children(value)) visit(child);
+    }
+
+    for (const child of children(value)) {
+      visit(child);
+    }
   }
+
   visit(ast(text, false));
   return { surfaces, mutations };
 }
 
 async function buildInventory(): Promise<Inventory> {
-  const sources: Source[] = [],
-    surfaces: Surface[] = [],
-    mutations: SourceMutation[] = [];
+  const sources: Source[] = [];
+  const surfaces: Surface[] = [];
+  const mutations: SourceMutation[] = [];
+
   for (const { name, root } of await verifiedPublishedRoots()) {
     const text = await readFile(join(root, "package.json"), "utf8");
     const manifest: Source = {
@@ -374,8 +459,9 @@ async function buildInventory(): Promise<Inventory> {
     };
     sources.push(manifest);
     const exports = (JSON.parse(text) as { exports?: unknown }).exports;
-    if (exports && typeof exports === "object")
-      for (const path of Object.keys(exports))
+
+    if (exports && typeof exports === "object") {
+      for (const path of Object.keys(exports)) {
         surfaces.push({
           id: `${manifest.id}#export:${path}`,
           source: manifest.id,
@@ -383,11 +469,14 @@ async function buildInventory(): Promise<Inventory> {
           name: path,
           line: 1,
         });
+      }
+    }
+
     for (const path of (await filesUnder(join(root, "dist"))).filter((path) =>
       /\.(?:mjs|d\.mts)$/.test(path),
     )) {
-      const text = await readFile(path, "utf8"),
-        relativePath = relative(root, path).replaceAll("\\", "/");
+      const text = await readFile(path, "utf8");
+      const relativePath = relative(root, path).replaceAll("\\", "/");
       const source: Source = {
         id: `npm:${name}/${relativePath}`,
         package: name,
@@ -397,6 +486,7 @@ async function buildInventory(): Promise<Inventory> {
       };
       sources.push(source);
       surfaces.push(...sourceSurfaces(source, text));
+
       if (path.endsWith(".mjs")) {
         const evidence = runtimeEvidence(source, text);
         surfaces.push(...evidence.surfaces);
@@ -404,15 +494,20 @@ async function buildInventory(): Promise<Inventory> {
       }
     }
   }
+
   const repository = await upstreamSource();
+
   try {
     for (const entry of (await readdir(join(repository, "packages"), { withFileTypes: true })).sort(
       (a, b) => a.name.localeCompare(b.name),
     )) {
-      if (!entry.isDirectory()) continue;
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
       const root = join(repository, "packages", entry.name);
-      const metadataPath = join(root, "package.json"),
-        metadataText = await readFile(metadataPath, "utf8");
+      const metadataPath = join(root, "package.json");
+      const metadataText = await readFile(metadataPath, "utf8");
       const metadata = JSON.parse(metadataText) as { name: string };
       const pkg: Source = {
         id: `git:packages/${entry.name}/package.json`,
@@ -429,10 +524,11 @@ async function buildInventory(): Promise<Inventory> {
         name: metadata.name,
         line: 1,
       });
+
       // All repository packages enter the denominator, including uninstalled plugins/adapters.
       for (const path of (await filesUnder(root)).filter((path) => /\.[cm]?[jt]sx?$/.test(path))) {
-        const text = await readFile(path, "utf8"),
-          relativePath = relative(repository, path).replaceAll("\\", "/");
+        const text = await readFile(path, "utf8");
+        const relativePath = relative(repository, path).replaceAll("\\", "/");
         const source: Source = {
           id: `git:${relativePath}`,
           package: metadata.name,
@@ -460,6 +556,7 @@ async function buildInventory(): Promise<Inventory> {
   } finally {
     await rm(repository, { recursive: true, force: true });
   }
+
   sources.sort((a, b) => a.id.localeCompare(b.id));
   surfaces.sort((a, b) => a.id.localeCompare(b.id));
   mutations.sort((a, b) => a.id.localeCompare(b.id));
@@ -467,8 +564,11 @@ async function buildInventory(): Promise<Inventory> {
   const duplicates = surfaces
     .filter((value) => seen.has(value.id) || !seen.add(value.id))
     .map((value) => value.id);
-  if (duplicates.length)
+
+  if (duplicates.length) {
     throw new Error(`Duplicate upstream surface identity: ${duplicates.slice(0, 5).join(", ")}`);
+  }
+
   const identity = {
     version: upstreamPin.version,
     commit: upstreamPin.commit,

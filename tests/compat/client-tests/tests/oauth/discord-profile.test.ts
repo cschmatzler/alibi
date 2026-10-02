@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
@@ -20,6 +21,7 @@ type State = {
   sessions: { id: string; userId: string; token: string }[];
   receipts: { path: string; body: unknown }[];
 };
+
 async function state(ctx: ScenarioContext) {
   const result = await ctx.rawRequest({ path: "/__test/social-provider/state" });
   expect(result.status).toBe(200);
@@ -37,6 +39,7 @@ compatScenario(
       name: "Foreign Owner",
     });
     expect(foreignSignup.error).toBeNull();
+
     const foreignBefore = await ctx.readUserState({ userId: foreignSignup.data!.user.id });
     const before = await state(ctx);
     const table = [
@@ -131,6 +134,7 @@ compatScenario(
       },
     ];
     const results = [];
+
     for (const [index, entry] of table.entries()) {
       const { mode, name, image, ...fields } = entry;
       const profile = { ...fields, email: ctx.uniqueEmail(`discord-profile-${mode}`) };
@@ -140,6 +144,7 @@ compatScenario(
         json: profile,
       });
       expect(control.status).toBe(200);
+
       const actor = ctx.actor(mode, fixture);
       const signin = await actor.client.signIn.social({
         provider: "discord",
@@ -147,8 +152,13 @@ compatScenario(
         disableRedirect: true,
       });
       expect(signin.error).toBeNull();
+
       const issuedState = new URL(signin.data!.url!).searchParams.get("state");
-      if (!issuedState) throw new Error("genuine issued state required");
+
+      if (!issuedState) {
+        throw new Error("genuine issued state required");
+      }
+
       const callbackResponse = await actor.fetch(
         `${authProfilePath(fixture)}/callback/discord?${new URLSearchParams({ code: "fixture-code", state: issuedState })}`,
         { redirect: "manual" },
@@ -159,9 +169,14 @@ compatScenario(
         body: await callbackResponse.text(),
       };
       expect(callback).toMatchObject({ status: 302, location: "/social-done" });
+
       const current = await actor.client.getSession();
       expect(current.error).toBeNull();
-      if (!current.data) throw new Error("real provider session required");
+
+      if (!current.data) {
+        throw new Error("real provider session required");
+      }
+
       expect(current.data.user).toMatchObject({
         email: profile.email,
         name,
@@ -170,6 +185,7 @@ compatScenario(
       });
       expect(current.data.user.id).not.toBe(foreignSignup.data!.user.id);
       expect(current.data.session.userId).toBe(current.data.user.id);
+
       const after = await state(ctx);
       expect(after.users).toHaveLength(before.users.length + index + 1);
       expect(after.accounts).toHaveLength(before.accounts.length + index + 1);
@@ -198,6 +214,7 @@ compatScenario(
       expect(await ctx.readUserState({ userId: foreignSignup.data!.user.id })).toEqual(
         foreignBefore,
       );
+
       results.push({
         mode,
         control,
@@ -207,10 +224,12 @@ compatScenario(
         after,
       });
     }
-    const foreignAfter = await ctx.readUserState({ userId: foreignSignup.data!.user.id }),
-      foreignCurrent = await foreign.client.getSession();
+
+    const foreignAfter = await ctx.readUserState({ userId: foreignSignup.data!.user.id });
+    const foreignCurrent = await foreign.client.getSession();
     expect(foreignAfter).toEqual(foreignBefore);
     expect(foreignCurrent.data!.session.token).toBe(foreignSignup.data!.token!);
+
     return {
       foreignSignup: ctx.snapshot(foreignSignup),
       foreignBefore,

@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { admin, twoFactor, username } from "better-auth/plugins";
@@ -10,6 +11,7 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
     user: ["get", "create", "set-role", "update", "impersonate", "impersonate-admins"],
   });
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
+
   for (const name of [
     "admin-impersonation-privileged",
     "admin-impersonation-ordinary",
@@ -42,11 +44,12 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
                   update: {
                     ...base.databaseHooks?.user?.update,
                     before: async (user) => {
-                      if ("banned" in user && user.banned === true)
+                      if ("banned" in user && user.banned === true) {
                         throw new APIError("FORBIDDEN", {
                           code: "APPLICATION_BAN_REFUSED",
                           message: "Invalid Date",
                         });
+                      }
                     },
                   },
                 },
@@ -55,11 +58,12 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
                   create: {
                     ...base.databaseHooks?.session?.create,
                     before: async (session) => {
-                      if ("impersonatedBy" in session && session.impersonatedBy)
+                      if ("impersonatedBy" in session && session.impersonatedBy) {
                         throw new APIError("INTERNAL_SERVER_ERROR", {
                           code: "APPLICATION_SESSION_REFUSED",
                           message: "Invalid Date",
                         });
+                      }
                     },
                   },
                 },
@@ -150,10 +154,12 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
       }),
     );
   }
+
   return {
     profiles,
     handle(request: Request) {
       const url = new URL(request.url);
+
       if (url.pathname === "/__test/admin-user-timestamps" && request.method === "POST") {
         return request
           .json()
@@ -169,11 +175,15 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
                 { status: 400 },
               );
             }
+
             const result = database
               .query("UPDATE user SET createdAt=?,updatedAt=? WHERE id=?")
               .run(body.createdAt, body.updatedAt, body.userId);
-            if (result.changes !== 1)
+
+            if (result.changes !== 1) {
               return Response.json({ message: "user required" }, { status: 404 });
+            }
+
             return Response.json(
               database
                 .query("SELECT id AS userId,createdAt,updatedAt FROM user WHERE id=?")
@@ -181,9 +191,17 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
             );
           });
       }
-      if (url.pathname !== "/__test/admin-role-state" || request.method !== "GET") return;
+
+      if (url.pathname !== "/__test/admin-role-state" || request.method !== "GET") {
+        return;
+      }
+
       const email = url.searchParams.get("email");
-      if (!email) return Response.json({ message: "email required" }, { status: 400 });
+
+      if (!email) {
+        return Response.json({ message: "email required" }, { status: 400 });
+      }
+
       const user = database
         .query(
           "SELECT id,email,name,role,banned,banReason,banExpires,createdAt,updatedAt FROM user WHERE email=?",

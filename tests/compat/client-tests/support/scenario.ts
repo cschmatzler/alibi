@@ -1,5 +1,6 @@
 import { test } from "bun:test";
 import { createHash } from "node:crypto";
+
 import { createAuthClient } from "better-auth/client";
 import {
   adminClient,
@@ -8,6 +9,7 @@ import {
   usernameClient,
 } from "better-auth/client/plugins";
 import { ZodError } from "zod";
+
 import { compareValues, type Difference, type PhysicalObservation } from "./compare";
 import { recordCoverage } from "./coverage";
 import { authProfilePath, type FixtureProfile } from "./profiles";
@@ -157,13 +159,14 @@ async function runScenario(
   const startedAt = Date.now();
   const traces: TraceEntry[] = [];
   const physicalObservations: PhysicalObservation[] = [];
+
   async function physical(
     kind: PhysicalObservation["kind"],
     owner: string,
     read: Promise<unknown>,
   ) {
-    const value = await read,
-      body = structuredClone(value);
+    const value = await read;
+    const body = structuredClone(value);
     physicalObservations.push({
       kind,
       owner,
@@ -172,6 +175,7 @@ async function runScenario(
     });
     return value;
   }
+
   const actors = new Map<
     string,
     {
@@ -186,6 +190,7 @@ async function runScenario(
     actor(name = "primary", profile) {
       const actorKey = `${profile ?? "default"}:${name}`;
       const existing = actors.get(actorKey);
+
       if (existing) {
         return existing;
       }
@@ -213,6 +218,7 @@ async function runScenario(
     async rawRequest({ actor = "primary", path, method = "GET", body, headers, json, redirect }) {
       const requestHeaders = new Headers(headers);
       let requestBody = body;
+
       if (json !== undefined) {
         requestHeaders.set("content-type", "application/json");
         requestBody = JSON.stringify(json);
@@ -226,6 +232,7 @@ async function runScenario(
       });
       const text = await response.text();
       let parsed: unknown = null;
+
       if (text) {
         try {
           parsed = JSON.parse(text);
@@ -233,6 +240,7 @@ async function runScenario(
           parsed = text;
         }
       }
+
       return {
         status: response.status,
         location: response.headers.get("location"),
@@ -299,6 +307,7 @@ async function runScenario(
   };
 
   await scenarioCoverage("begin", label, scenarioName);
+
   try {
     return {
       oauthURL: health.oauthBaseURL ?? baseURL.replace("localhost", "127.0.0.1"),
@@ -310,7 +319,9 @@ async function runScenario(
     };
   } finally {
     const coverage = await scenarioCoverage("end", label, scenarioName);
-    if (coverage) onCoverage(coverage);
+    if (coverage) {
+      onCoverage(coverage);
+    }
   }
 }
 
@@ -353,6 +364,7 @@ export function compatScenario(
       let phase: "TS" | "Rust" = "TS";
       let failure: ScenarioOutcome["failure"] = "scenario";
       assuranceEvent({ event: "started", name: scenarioName });
+
       try {
         const ts = await runScenario(
           "TS",
@@ -402,17 +414,24 @@ export function compatScenario(
         const { clientDiffs, rawDiffs, unclassified } = classifyDifferences(differences);
         outcome.paths = differences.map((difference) => difference.path);
         failure = "comparison";
-        if (unclassified.length)
+
+        if (unclassified.length) {
           throw new Error(
             formatDiffs(
               `Comparator reported drift outside the observation and trace roots: ${scenarioName}`,
               unclassified,
             ),
           );
-        if (clientDiffs.length)
+        }
+
+        if (clientDiffs.length) {
           throw new Error(formatDiffs(`Client-visible drift: ${scenarioName}`, clientDiffs));
-        if (rawDiffs.length)
+        }
+
+        if (rawDiffs.length) {
           throw new Error(formatDiffs(`Raw trace drift: ${scenarioName}`, rawDiffs));
+        }
+
         failure = "infrastructure";
         await recordCoverage(scenarioName, ts.traces, stateTransitions, TS_BASE_URL);
         outcome.status = "passed";
@@ -425,7 +444,7 @@ export function compatScenario(
               : error instanceof Error && error.name === "ModelViolation"
                 ? "model"
                 : error instanceof Error &&
-                    (/^expect\(/.test(error.message) || error.name === "ZodError")
+                    (error.message.startsWith("expect(") || error.name === "ZodError")
                   ? "assertion"
                   : "scenario";
         outcome.phase = phase;
@@ -439,10 +458,15 @@ export function compatScenario(
               ? error.message.split("\n")[0]
               : String(error)
         }`;
-        if (outcome.failure === "assertion" && error instanceof Error)
+
+        if (outcome.failure === "assertion" && error instanceof Error) {
           outcome.signature += `:${error.stack?.split("\n").find((line) => line.includes("/tests/") && !line.includes("/support/")) ?? "unknown-assertion-site"}`;
-        if (error instanceof ZodError)
+        }
+
+        if (error instanceof ZodError) {
           outcome.signature = `${phase}:assertion:validation:${JSON.stringify(error.issues.map((issue) => ({ code: issue.code, path: issue.path })))}`;
+        }
+
         outcome.reproduction = reproduction;
         throw error;
       } finally {

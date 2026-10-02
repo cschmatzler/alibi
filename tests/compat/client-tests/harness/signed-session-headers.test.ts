@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
+
 import { betterAuth } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { createAuthClient } from "better-auth/client";
@@ -9,6 +10,7 @@ import { verifyPassword } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
 import { jwt, multiSession, oneTimeToken, twoFactor } from "better-auth/plugins";
 import { createLocalJWKSet, jwtVerify } from "jose";
+
 import { type ComparisonContext, compareValues } from "../support/compare";
 import { normalizeClientValue } from "../support/normalize";
 import {
@@ -19,16 +21,19 @@ import {
 } from "../support/trace";
 
 const secret = "signed-header-harness-application-secret32";
+
 type Data = Record<string, any>;
 
 async function capture(compact = false) {
-  const database = new Database(":memory:"),
-    traces: TraceEntry[] = [],
-    events: Data[] = [];
-  let baseURL = "",
-    active = false;
+  const database = new Database(":memory:");
+  const traces: TraceEntry[] = [];
+  const events: Data[] = [];
+  let baseURL = "";
+  let active = false;
   const observe = (stage: string, ctx: Data) => {
-    if (!active) return;
+    if (!active) {
+      return;
+    }
     events.push({
       stage,
       path: ctx.path,
@@ -47,11 +52,14 @@ async function capture(compact = false) {
   const server = Bun.serve({
     port: 0,
     async fetch(request) {
-      if (new URL(request.url).pathname !== "/__test/signed-header-call")
+      if (new URL(request.url).pathname !== "/__test/signed-header-call") {
         return auth.handler(request);
+      }
+
       const physical = request.clone();
       events.length = 0;
       active = true;
+
       try {
         const headers = new Headers({ cookie: request.headers.get("cookie")! });
         const token = await auth.api.getToken({ headers, request: physical, asResponse: false });
@@ -108,27 +116,31 @@ async function capture(compact = false) {
     },
   });
   const startedAt = Date.now();
+
   async function compactReceipt(headers: Headers) {
     const rawCookies = headers
       .getSetCookie()
       .filter((raw) => raw.startsWith("better-auth.session_data="));
     expect(rawCookies).toHaveLength(1);
+
     const token = decodeURIComponent(
       rawCookies[0]!.split(";")[0]!.slice("better-auth.session_data=".length),
     );
-    const envelope = JSON.parse(Buffer.from(token, "base64url").toString()),
-      observedAt = Date.now();
+    const envelope = JSON.parse(Buffer.from(token, "base64url").toString());
+    const observedAt = Date.now();
     expect(envelope.signature).toBe(
       createHmac("sha256", secret)
         .update(JSON.stringify({ ...envelope.session, expiresAt: envelope.expiresAt }))
         .digest("base64url"),
     );
+
     const decoded = await getCookieCache(new Headers({ cookie: rawCookies[0]!.split(";")[0]! }), {
       secret,
       strategy: "compact",
       isSecure: false,
     });
     expect(decoded).not.toBeNull();
+
     return {
       compactSessionCache: {
         token,
@@ -140,6 +152,7 @@ async function capture(compact = false) {
       },
     };
   }
+
   try {
     await (await getMigrations(auth.options)).runMigrations();
     const signup = async (name: string) => {
@@ -163,15 +176,17 @@ async function capture(compact = false) {
       });
       expect(result.error).toBeNull();
       expect(cookie).toContain("better-auth.session_token=");
+
       const pair = cookie
         .split("; ")
         .find((pair) => pair.startsWith("better-auth.session_token="))!;
-      const raw = decodeURIComponent(pair.slice(pair.indexOf("=") + 1)),
-        dot = raw.lastIndexOf(".");
+      const raw = decodeURIComponent(pair.slice(pair.indexOf("=") + 1));
+      const dot = raw.lastIndexOf(".");
       expect(raw.slice(0, dot)).toBe(result.data!.token!);
       expect(raw.slice(dot + 1)).toBe(
         createHmac("sha256", secret).update(result.data!.token!).digest("base64"),
       );
+
       return {
         result: result.data,
         headers: { cookie },
@@ -180,8 +195,8 @@ async function capture(compact = false) {
         ...(compact ? { issued: await compactReceipt(rawHeaders!) } : {}),
       };
     };
-    const owner = await signup("owner"),
-      foreign = await signup("foreign");
+    const owner = await signup("owner");
+    const foreign = await signup("foreign");
     const response = await owner.fetch(`${baseURL}/__test/signed-header-call`, {
       method: "POST",
       headers: {
@@ -192,12 +207,14 @@ async function capture(compact = false) {
       body: "{}",
     });
     expect(response.status).toBe(200);
+
     const observed = (await response.json()) as Data;
     const jwks = await auth.api.getJwks({});
     const verifiedToken = await jwtVerify(observed.token.token, createLocalJWKSet(jwks));
     expect(verifiedToken.payload.sub).toBe(owner.result!.user.id);
     expect(observed.verified.response.session.token).toBe(owner.result!.token);
     expect(observed.events.length).toBeGreaterThan(0);
+
     for (const event of observed.events.filter((event: Data) => event.headers?.cookie)) {
       if (compact) {
         const decoded = await getCookieCache(new Headers({ cookie: event.headers.cookie }), {
@@ -208,8 +225,11 @@ async function capture(compact = false) {
         expect(decoded).not.toBeNull();
         expect(decoded!.user.id).toBe(owner.result!.user.id);
         expect(decoded!.session.token).toBe(owner.result!.token!);
-      } else expect(event.headers.cookie).toBe(owner.headers.cookie);
+      } else {
+        expect(event.headers.cookie).toBe(owner.headers.cookie);
+      }
     }
+
     const restoredCookie = observed.verified.headers["set-cookie"].split(";")[0];
     const restored = await auth.api.getSession({
       headers: new Headers({
@@ -217,6 +237,7 @@ async function capture(compact = false) {
       }),
     });
     expect(restored!.user.id).toBe(owner.result!.user.id);
+
     const replay = await auth.api.verifyOneTimeToken({ body: observed.generated }).then(
       () => null,
       (error) => error,
@@ -224,6 +245,7 @@ async function capture(compact = false) {
     expect(replay.statusCode).toBe(400);
     expect(replay.body).toEqual({ message: "Invalid token" });
     expect(database.query("SELECT * FROM verification").all()).toEqual([]);
+
     let rotatedCookie = "";
     let rotatedHeaders: Headers | undefined;
     const rotated = await owner.client.signIn.email({
@@ -243,7 +265,9 @@ async function capture(compact = false) {
     expect(rotated.data!.user.id).toBe(owner.result!.user.id);
     expect(rotated.data!.token).not.toBe(owner.result!.token);
     expect(database.query("SELECT * FROM session").all()).toHaveLength(3);
+
     const rows: Data = {};
+
     if (compact) {
       for (const table of ["user", "account", "session", "verification"]) {
         const stored = database
@@ -255,13 +279,17 @@ async function capture(compact = false) {
           .all() as Data[];
         rows[table] = await Promise.all(
           stored.map(async (row) => {
-            if (table !== "account" || row.password === null) return row;
+            if (table !== "account" || row.password === null) {
+              return row;
+            }
+
             expect(await verifyPassword({ hash: row.password, password: "password123" })).toBe(
               true,
             );
             expect(
               await verifyPassword({ hash: row.password, password: "foreign-password-control" }),
             ).toBe(false);
+
             const [salt, key] = row.password.split(":");
             return {
               ...row,
@@ -285,6 +313,7 @@ async function capture(compact = false) {
         expect(decoded.session.expiresAt.toISOString()).toBe(stored.expiresAt);
       }
     }
+
     const value = normalizeClientValue({
       observation: {
         owner: {
@@ -324,8 +353,8 @@ async function capture(compact = false) {
 }
 
 test("actual Source signed session headers retain HMAC issuance physical and logical cookie relationships", async () => {
-  const left = await capture(),
-    right = await capture();
+  const left = await capture();
+  const right = await capture();
   const context: ComparisonContext = {
     leftBaseURL: left.baseURL,
     rightBaseURL: right.baseURL,
@@ -337,17 +366,19 @@ test("actual Source signed session headers retain HMAC issuance physical and log
     leftRequestWindows: left.windows,
     rightRequestWindows: right.windows,
   };
+
   // These are complete real Source captures. The comparator must reconcile the
   // independently random credentials without editing any header observation.
   expect(compareValues(left.value, right.value, context)).toEqual([]);
+
   const cookiePath = "observation.owner.headers.cookie";
   const cookie = (value: Data) => value.observation.owner.headers.cookie as string;
   const setCookiePath = "observation.observed.verified.headers.set-cookie";
   const invalidSignature = (raw: string) => {
-    const separator = raw.indexOf("="),
-      decoded = decodeURIComponent(raw.slice(separator + 1));
-    const dot = decoded.lastIndexOf("."),
-      signature = decoded.slice(dot + 1);
+    const separator = raw.indexOf("=");
+    const decoded = decodeURIComponent(raw.slice(separator + 1));
+    const dot = decoded.lastIndexOf(".");
+    const signature = decoded.slice(dot + 1);
     return `${raw.slice(0, separator + 1)}${encodeURIComponent(`${decoded.slice(0, dot + 1)}${signature[0] === "A" ? "B" : "A"}${signature.slice(1)}`)}`;
   };
   const mutations: { mutate: (value: Data) => void; path: string; reason: string }[] = [
@@ -420,6 +451,7 @@ test("actual Source signed session headers retain HMAC issuance physical and log
       reason: "signed session cookie header bytes or attributes differ",
     })),
   ];
+
   for (const mutation of mutations) {
     const changed = structuredClone(right.value);
     mutation.mutate(changed);
@@ -428,6 +460,7 @@ test("actual Source signed session headers retain HMAC issuance physical and log
       reason: mutation.reason,
     });
   }
+
   const unrecorded = {
     ...context,
     rightRequestWindows: right.windows.map(
@@ -438,6 +471,7 @@ test("actual Source signed session headers retain HMAC issuance physical and log
     path: cookiePath,
     reason: "signed session cookie does not match corresponding observed issuance",
   });
+
   const wrongSecret = {
     ...context,
     sessionCookieSecret: "another-real-application-secret-for-negative",
@@ -446,24 +480,28 @@ test("actual Source signed session headers retain HMAC issuance physical and log
     path: cookiePath,
     reason: "signed session cookie signature is invalid",
   });
-  const invalidLeft = structuredClone(left.value),
-    invalidRight = structuredClone(right.value);
+
+  const invalidLeft = structuredClone(left.value);
+  const invalidRight = structuredClone(right.value);
   invalidLeft.observation.owner.headers.cookie = invalidRight.observation.owner.headers.cookie =
     invalidSignature(cookie(right.value));
   expect(compareValues(invalidLeft, invalidRight, context)).toContainEqual({
     path: cookiePath,
     reason: "signed session cookie signature is invalid",
   });
-  const orderedLeft = structuredClone(left.value),
-    orderedRight = structuredClone(right.value);
+
+  const orderedLeft = structuredClone(left.value);
+  const orderedRight = structuredClone(right.value);
   orderedLeft.observation.owner.headers.cookie += "; application=literal";
   orderedRight.observation.owner.headers.cookie += "; application=literal";
   expect(compareValues(orderedLeft, orderedRight, context)).toEqual([]);
+
   orderedRight.observation.owner.headers.cookie = `application=literal; ${cookie(right.value)}`;
   expect(compareValues(orderedLeft, orderedRight, context)).toContainEqual({
     path: cookiePath,
     reason: "signed session cookie header bytes or attributes differ",
   });
+
   for (const field of ["metadata", "additionalFields", "custom", "applicationData"]) {
     const appLeft = { ...left.value, [field]: { headers: left.value.observation.owner.headers } };
     const appRight = {
@@ -475,14 +513,15 @@ test("actual Source signed session headers retain HMAC issuance physical and log
       reason: "value or type differs",
     });
   }
+
   expect(
     compareValues(left.value, right.value, { ...context, sessionCookieSecret: undefined }),
   ).toContainEqual({ path: cookiePath, reason: "value or type differs" });
 });
 
 test("actual Source co-present compact cookie headers bind authenticated cache to signed issuance and complete persisted owners", async () => {
-  const left = await capture(true),
-    right = await capture(true);
+  const left = await capture(true);
+  const right = await capture(true);
   const context: ComparisonContext = {
     leftBaseURL: left.baseURL,
     rightBaseURL: right.baseURL,
@@ -496,8 +535,9 @@ test("actual Source co-present compact cookie headers bind authenticated cache t
     rightRequestWindows: right.windows,
   };
   expect(compareValues(left.value, right.value, context)).toEqual([]);
-  const cookiePath = "observation.owner.headers.cookie",
-    setCookiePath = "observation.observed.verified.headers.set-cookie";
+
+  const cookiePath = "observation.owner.headers.cookie";
+  const setCookiePath = "observation.observed.verified.headers.set-cookie";
   const cacheMismatch =
     "compact cookie does not match authenticated corresponding session issuance";
   const scaffoldMismatch = "signed session cookie header bytes or attributes differ";
@@ -656,6 +696,7 @@ test("actual Source co-present compact cookie headers bind authenticated cache t
       reason: scaffoldMismatch,
     })),
   ];
+
   for (const mutation of mutations) {
     const changed = structuredClone(right.value);
     mutation.mutate(changed);
@@ -664,9 +705,10 @@ test("actual Source co-present compact cookie headers bind authenticated cache t
       reason: mutation.reason,
     });
   }
+
   const resign = (value: Data, change: (cache: Data) => void) => {
-    const cache = receipt(value),
-      old = cache.token;
+    const cache = receipt(value);
+    const old = cache.token;
     change(cache);
     cache.envelope.signature = createHmac("sha256", secret)
       .update(JSON.stringify({ ...cache.envelope.session, expiresAt: cache.envelope.expiresAt }))
@@ -717,18 +759,24 @@ test("actual Source co-present compact cookie headers bind authenticated cache t
       reason: "value or type differs",
     },
   ];
+
   for (const mutation of payloadMutations) {
     const changed = structuredClone(right.value);
     resign(changed, mutation.change);
     const differences = compareValues(left.value, changed, context);
-    for (const prefix of ["envelope.session", "decoded"])
+
+    for (const prefix of ["envelope.session", "decoded"]) {
       expect(differences).toContainEqual({
         path: `observation.owner.issued.compactSessionCache.${prefix}.${mutation.field}`,
         reason: mutation.reason,
       });
-    if (["session.userId", "session.token"].includes(mutation.field))
+    }
+
+    if (["session.userId", "session.token"].includes(mutation.field)) {
       expect(differences).toContainEqual({ path: cookiePath, reason: cacheMismatch });
+    }
   }
+
   const expiryChanged = structuredClone(right.value);
   const changedExpiry = new Date(
     Date.parse(receipt(expiryChanged).decoded.session.expiresAt) + 3_600_000,
@@ -736,19 +784,24 @@ test("actual Source co-present compact cookie headers bind authenticated cache t
   resign(expiryChanged, (cache) => {
     cache.envelope.session.session.expiresAt = cache.decoded.session.expiresAt = changedExpiry;
   });
-  for (const prefix of ["envelope.session", "decoded"])
+
+  for (const prefix of ["envelope.session", "decoded"]) {
     expect(compareValues(left.value, expiryChanged, context)).toContainEqual({
       path: `observation.owner.issued.compactSessionCache.${prefix}.session.expiresAt`,
       reason: `timestamp or lifetime differs: ${receipt(left.value).decoded.session.expiresAt} vs ${changedExpiry}`,
     });
+  }
+
   for (const changedContext of [
     { ...context, compactSessionCacheSecret: undefined },
     { ...context, compactSessionCacheSecret: "another-real-compact-application-secret32" },
-  ])
+  ]) {
     expect(compareValues(left.value, right.value, changedContext)).toContainEqual({
       path: cookiePath,
       reason: cacheMismatch,
     });
+  }
+
   const missingIssuance = {
     ...context,
     rightRequestWindows: right.windows.map(
@@ -759,8 +812,10 @@ test("actual Source co-present compact cookie headers bind authenticated cache t
     path: cookiePath,
     reason: "signed session cookie does not match corresponding observed issuance",
   });
-  const corruptLeft = structuredClone(left.value),
-    corruptRight = structuredClone(right.value);
+
+  const corruptLeft = structuredClone(left.value);
+  const corruptRight = structuredClone(right.value);
+
   // Identical corrupt cache bytes must still fail authentication at the header.
   replaceCache(corruptLeft, "better-auth.session_data=not-a-real-envelope");
   replaceCache(corruptRight, "better-auth.session_data=not-a-real-envelope");
@@ -768,39 +823,46 @@ test("actual Source co-present compact cookie headers bind authenticated cache t
     path: cookiePath,
     reason: cacheMismatch,
   });
+
   const corruptEnvelope = structuredClone(receipt(right.value).envelope);
   corruptEnvelope.signature = "A".repeat(43);
   const corruptToken = Buffer.from(JSON.stringify(corruptEnvelope)).toString("base64url");
+
   for (const value of [corruptLeft, corruptRight]) {
-    const cache = receipt(value),
-      old = cache.token;
+    const cache = receipt(value);
+    const old = cache.token;
     cache.token = corruptToken;
     cache.envelope = structuredClone(corruptEnvelope);
     cache.rawCookies = cache.rawCookies.map((raw: string) => raw.replace(old, corruptToken));
     replaceCache(value, `better-auth.session_data=${corruptToken}`);
   }
+
   expect(compareValues(corruptLeft, corruptRight, context)).toContainEqual({
     path: cookiePath,
     reason: cacheMismatch,
   });
-  const orderedLeft = structuredClone(left.value),
-    orderedRight = structuredClone(right.value);
+
+  const orderedLeft = structuredClone(left.value);
+  const orderedRight = structuredClone(right.value);
   orderedLeft.observation.owner.headers.cookie +=
     "; application=literal; better-auth.session_data.0=literal-chunk";
   orderedRight.observation.owner.headers.cookie +=
     "; application=literal; better-auth.session_data.0=literal-chunk";
   expect(compareValues(orderedLeft, orderedRight, context)).toEqual([]);
+
   orderedRight.observation.owner.headers.cookie =
     orderedRight.observation.owner.headers.cookie.replace("literal-chunk", "changed-chunk");
   expect(compareValues(orderedLeft, orderedRight, context)).toContainEqual({
     path: cookiePath,
     reason: scaffoldMismatch,
   });
+
   orderedRight.observation.owner.headers.cookie = `application=literal; ${right.value.observation.owner.headers.cookie}; better-auth.session_data.0=literal-chunk`;
   expect(compareValues(orderedLeft, orderedRight, context)).toContainEqual({
     path: cookiePath,
     reason: scaffoldMismatch,
   });
+
   for (const field of ["metadata", "additionalFields", "custom", "applicationData"]) {
     const appLeft = {
       ...left.value,
@@ -825,8 +887,8 @@ test("actual Source co-present compact cookie headers bind authenticated cache t
 
 test("actual Source factor rotation binds multi-session issuance and later tombstones to authenticated request ownership", async () => {
   async function captureRotation() {
-    const database = new Database(":memory:"),
-      traces: TraceEntry[] = [];
+    const database = new Database(":memory:");
+    const traces: TraceEntry[] = [];
     let handler: (request: Request) => Promise<Response>;
     const server = Bun.serve({ port: 0, fetch: (request) => handler(request) });
     const baseURL = `http://localhost:${server.port}`;
@@ -839,6 +901,7 @@ test("actual Source factor rotation binds multi-session issuance and later tombs
       plugins: [twoFactor({ otpOptions: { sendOTP: async () => {} } }), multiSession()],
     };
     const startedAt = Date.now();
+
     try {
       await (await getMigrations(options)).runMigrations();
       handler = betterAuth(options).handler;
@@ -862,18 +925,22 @@ test("actual Source factor rotation binds multi-session issuance and later tombs
       });
       expect(signup.error).toBeNull();
       expect(other.error).toBeNull();
+
       const enabled = await owner.$fetch("/two-factor/enable", {
         method: "POST",
         body: { method: "otp", password: "password123" },
       });
       expect(enabled.data).toEqual({ method: "otp" });
+
       const rows = database
         .query("SELECT token,userId FROM session WHERE userId=?")
         .all(signup.data!.user.id) as { token: string; userId: string }[];
       expect(rows).toHaveLength(1);
       expect(rows[0]!.token).not.toBe(signup.data!.token!);
+
       const rotated = traces[2]![requestWindow]!;
       expect(rotated.issuedSessionCookie).toContain(encodeURIComponent(rows[0]!.token));
+
       // Isolate this device's retirement; concurrent cleanup of other device
       // cookies has independent completion order in the installed runtime.
       const cookie = `${rotated.issuedSessionCookie}; ${rotated.issuedMultiSessionCookies![0]!.split(";")[0]}`;
@@ -881,6 +948,7 @@ test("actual Source factor rotation binds multi-session issuance and later tombs
       expect(
         database.query("SELECT token FROM session WHERE userId=?").all(signup.data!.user.id),
       ).toEqual([]);
+
       return {
         value: { traces },
         windows: traces.map((trace) => trace[requestWindow]!),
@@ -893,8 +961,9 @@ test("actual Source factor rotation binds multi-session issuance and later tombs
       database.close();
     }
   }
-  const left = await captureRotation(),
-    right = await captureRotation();
+
+  const left = await captureRotation();
+  const right = await captureRotation();
   const context: ComparisonContext = {
     leftBaseURL: left.baseURL,
     rightBaseURL: right.baseURL,
@@ -907,6 +976,7 @@ test("actual Source factor rotation binds multi-session issuance and later tombs
     rightRequestWindows: right.windows,
   };
   expect(compareValues(left.value, right.value, context)).toEqual([]);
+
   const ownership = "multi-session credential lacks corresponding observed issuance and ownership";
   const credential = "multi-session cookie name does not identify its signed credential";
   type Mutation = { value: { traces: TraceEntry[] }; windows: RequestWindow[] };
@@ -1033,6 +1103,7 @@ test("actual Source factor rotation binds multi-session issuance and later tombs
       index: 3,
     },
   ];
+
   for (const change of changes) {
     const altered: Mutation = {
       value: structuredClone(right.value),
@@ -1050,6 +1121,7 @@ test("actual Source factor rotation binds multi-session issuance and later tombs
       reason: change.reason,
     });
   }
+
   // Identical corrupt credentials must fail before literal equality can hide them.
   const windows = structuredClone(right.windows);
   windows[2]!.issuedMultiSessionCookies![0] = windows[2]!.issuedMultiSessionCookies![0]!.replace(

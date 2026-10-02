@@ -1,6 +1,7 @@
 /** Concrete app session fields; every handler remains the pinned 1.7.6 runtime. */
 
 import { Database } from "bun:sqlite";
+
 import { betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { admin, openAPI, organization } from "better-auth/plugins";
@@ -24,9 +25,18 @@ export async function createSessionFieldsFixture(
         required: false,
         transform: {
           input: (value: unknown) => {
-            if (value === undefined) return "generated-without-default";
-            if (value === "stage:throw-at-binding") throw new Error("configured transform failed");
-            if (value === "omit" || value === "stage:omit-at-binding") return undefined;
+            if (value === undefined) {
+              return "generated-without-default";
+            }
+
+            if (value === "stage:throw-at-binding") {
+              throw new Error("configured transform failed");
+            }
+
+            if (value === "omit" || value === "stage:omit-at-binding") {
+              return undefined;
+            }
+
             return `stage:${typeof value === "string" ? value : ""}`;
           },
         },
@@ -41,10 +51,18 @@ export async function createSessionFieldsFixture(
               version: 1,
               vendor: "session-fields-fixture",
               validate(value: unknown) {
-                if (typeof value === "string" && value.trim()) return { value: value.trim() };
-                if (typeof value === "number" && !Number.isFinite(value))
+                if (typeof value === "string" && value.trim()) {
+                  return { value: value.trim() };
+                }
+
+                if (typeof value === "number" && !Number.isFinite(value)) {
                   return { value: String(value) };
-                if (Object.is(value, -0)) return { value: "-0" };
+                }
+
+                if (Object.is(value, -0)) {
+                  return { value: "-0" };
+                }
+
                 return { issues: [{ message: "configured validation rejected the value" }] };
               },
             },
@@ -111,17 +129,28 @@ export async function createSessionFieldsFixture(
         session: {
           update: {
             async before(data, ctx) {
-              if (data.label === "delete-before")
+              if (data.label === "delete-before") {
                 database
                   .query("DELETE FROM session WHERE token=?")
                   .run(ctx?.context.session?.session.token ?? "");
-              if (data.label === "cancel-before") return false;
-              if (data.label === "restore-undefined")
+              }
+
+              if (data.label === "cancel-before") {
+                return false;
+              }
+
+              if (data.label === "restore-undefined") {
                 return { data: { ...data, transformed: "hook-current" } };
-              if (data.transformed === "stage:hook-input")
+              }
+
+              if (data.transformed === "stage:hook-input") {
                 return { data: { ...data, transformed: "hook-current" } };
-              if (data.label === "native-hook")
+              }
+
+              if (data.label === "native-hook") {
                 return { data: { ...data, label: "model-override" } };
+              }
+
               return { data };
             },
           },

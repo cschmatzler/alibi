@@ -1,7 +1,9 @@
 import { expect } from "bun:test";
+
 import { passkeyClient } from "@better-auth/passkey/client";
 import { createAuthClient } from "better-auth/client";
 import { z } from "zod";
+
 import { Authenticator } from "../../support/authenticator";
 import { compatScenario } from "../../support/scenario";
 
@@ -88,6 +90,7 @@ compatScenario(
       name: "Passkey Owner",
     });
     expect(signup.error).toBeNull();
+
     const user = z.object({ user: z.object({ id: z.string() }) }).parse(signup.data).user;
     const authenticator = new Authenticator();
     const options = await ctx.rawRequest({
@@ -95,6 +98,7 @@ compatScenario(
       path: "/api/auth/passkey/generate-register-options",
     });
     expect(options.status).toBe(200);
+
     const response = authenticator.register(options.body, ctx.baseURL);
     const registration = await ctx.rawRequest({
       actor: "owner",
@@ -103,6 +107,7 @@ compatScenario(
       json: { response, name: "Laptop" },
     });
     expect(registration.status).toBe(200);
+
     const passkey = z
       .object({ id: z.string(), userId: z.string(), credentialID: z.string(), counter: z.number() })
       .parse(registration.body);
@@ -116,6 +121,7 @@ compatScenario(
       name: "Other User",
     });
     expect(attackerSignup.error).toBeNull();
+
     const forbiddenDelete = await ctx.rawRequest({
       actor: "attacker",
       path: "/api/auth/passkey/delete-passkey",
@@ -123,6 +129,7 @@ compatScenario(
       json: { id: passkey.id },
     });
     expect(forbiddenDelete.status).toBe(401);
+
     const forbiddenUpdate = await ctx.rawRequest({
       actor: "attacker",
       path: "/api/auth/passkey/update-passkey",
@@ -130,6 +137,7 @@ compatScenario(
       json: { id: passkey.id, name: "Hijacked" },
     });
     expect(forbiddenUpdate.status).toBe(401);
+
     const renamed = await ctx.rawRequest({
       actor: "owner",
       path: "/api/auth/passkey/update-passkey",
@@ -137,6 +145,7 @@ compatScenario(
       json: { id: passkey.id, name: "Renamed" },
     });
     expect(renamed.status).toBe(200);
+
     const listed = await ctx.rawRequest({
       actor: "owner",
       path: "/api/auth/passkey/list-user-passkeys",
@@ -147,13 +156,16 @@ compatScenario(
         .parse(listed.body)
         .map((key) => key.name),
     ).toEqual(["Renamed"]);
+
     await owner.client.signOut();
     expect((await owner.client.getSession()).data).toBeNull();
+
     const authOptions = await ctx.rawRequest({
       actor: "owner",
       path: "/api/auth/passkey/generate-authenticate-options",
     });
     expect(authOptions.status).toBe(200);
+
     const assertion = authenticator.authenticate(authOptions.body, ctx.baseURL);
     const authentication = await ctx.rawRequest({
       actor: "owner",
@@ -162,8 +174,10 @@ compatScenario(
       json: { response: assertion },
     });
     expect(authentication.status).toBe(200);
+
     const session = await owner.client.getSession();
     expect(session.data?.user.id).toBe(user.id);
+
     const afterLogin = await ctx.rawRequest({
       actor: "owner",
       path: "/api/auth/passkey/list-user-passkeys",
@@ -174,6 +188,7 @@ compatScenario(
         .parse(afterLogin.body)
         .map((key) => key.counter),
     ).toEqual([1]);
+
     const replay = await ctx.rawRequest({
       actor: "owner",
       path: "/api/auth/passkey/verify-authentication",
@@ -181,6 +196,7 @@ compatScenario(
       json: { response: assertion },
     });
     expect(replay.status).toBeGreaterThanOrEqual(400);
+
     const deleted = await ctx.rawRequest({
       actor: "owner",
       path: "/api/auth/passkey/delete-passkey",
@@ -188,11 +204,13 @@ compatScenario(
       json: { id: passkey.id },
     });
     expect(deleted.status).toBe(200);
+
     const empty = await ctx.rawRequest({
       actor: "owner",
       path: "/api/auth/passkey/list-user-passkeys",
     });
     expect(empty.body).toEqual([]);
+
     return {
       registration,
       renamed,

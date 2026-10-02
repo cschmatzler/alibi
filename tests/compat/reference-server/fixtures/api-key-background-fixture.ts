@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
@@ -9,24 +10,30 @@ export async function apiKeyBackgroundFixture(
   database: Database,
   options: Parameters<typeof betterAuth>[0],
 ) {
-  let events: Record<string, unknown>[] = [],
-    serial = 0,
-    generated = 0;
-  let hold = false,
-    observer = "",
-    generator = "",
-    lastAdmission: number | null = null;
+  let events: Record<string, unknown>[] = [];
+  let serial = 0;
+  let generated = 0;
+  let hold = false;
+  let observer = "";
+  let generator = "";
+  let lastAdmission: number | null = null;
   let observeUsage = false;
   const blocked = new Map<number, () => void>();
   const listeners = new Set<() => void>();
-  const inflight = new Set<Promise<unknown>>(),
-    observed = new Set<Promise<unknown>>();
+  const inflight = new Set<Promise<unknown>>();
+  const observed = new Set<Promise<unknown>>();
+
   function event(value: Record<string, unknown>) {
     events.push(value);
-    for (const listener of listeners) listener();
+    for (const listener of listeners) {
+      listener();
+    }
   }
+
   async function wait(kind: string, count: number) {
-    if (events.filter((value) => value.kind === kind).length >= count) return;
+    if (events.filter((value) => value.kind === kind).length >= count) {
+      return;
+    }
     await new Promise<void>((resolve) => {
       const listener = () => {
         if (events.filter((value) => value.kind === kind).length >= count) {
@@ -38,6 +45,7 @@ export async function apiKeyBackgroundFixture(
       listener();
     });
   }
+
   const createAuth = (path: string, deferUpdates: boolean, rateEnabled: boolean) =>
     betterAuth({
       ...options,
@@ -47,13 +55,22 @@ export async function apiKeyBackgroundFixture(
         backgroundTasks: {
           handler(completion) {
             event({ kind: "background-register" });
-            if (observer === "api")
+
+            if (observer === "api") {
               throw new APIError("FORBIDDEN", {
                 code: "BACKGROUND_TASK_DENIED",
                 message: "Application background observer denied",
               });
-            if (observer === "throw") throw new Error("application background observer rejected");
-            if (observer === "ignore") return;
+            }
+
+            if (observer === "throw") {
+              throw new Error("application background observer rejected");
+            }
+
+            if (observer === "ignore") {
+              return;
+            }
+
             const observation = completion.then(
               () => event({ kind: "background-complete", fulfilled: true }),
               () => event({ kind: "background-complete", fulfilled: false }),
@@ -71,13 +88,16 @@ export async function apiKeyBackgroundFixture(
           rateLimit: { enabled: rateEnabled },
           customKeyGenerator({ length, prefix }) {
             event({ kind: "generator", length, prefix: prefix ?? null });
-            if (generator === "throw") throw new Error("application generator rejected");
+            if (generator === "throw") {
+              throw new Error("application generator rejected");
+            }
             return `public-fixture-automatic-cleanup-credential-${String(++generated).padStart(16, "0")}-stable-fixture-key`;
           },
         }),
       ],
     });
   const profiles = new Map<string, ReturnType<typeof createAuth>>();
+
   for (const [name, deferUpdates, rateEnabled] of [
     ["api-key-automatic", false, false],
     ["api-key-automatic-deferred", true, false],
@@ -96,20 +116,28 @@ export async function apiKeyBackgroundFixture(
         !observeUsage ||
         input.model !== "apikey" ||
         !("remaining" in input.increment || "remaining" in (input.set ?? {}))
-      )
+      ) {
         return incrementOne<T>(input);
-      const id = ++serial,
-        keyId = input.where?.find((value) => value.field === "id")?.value;
+      }
+
+      const id = ++serial;
+      const keyId = input.where?.find((value) => value.field === "id")?.value;
       let release: (() => void) | undefined;
       const gate = hold
         ? new Promise<void>((resolve) => {
             release = resolve;
           })
         : null;
-      if (release) blocked.set(id, release);
+
+      if (release) {
+        blocked.set(id, release);
+      }
+
       event({ kind: "usage-enter", profile: name, serial: id, key: { id: keyId } });
       const work = (async () => {
-        if (gate) await gate;
+        if (gate) {
+          await gate;
+        }
         try {
           const result = await incrementOne<T>(input);
           event({ kind: "usage-complete", serial: id, success: true });
@@ -128,7 +156,10 @@ export async function apiKeyBackgroundFixture(
     };
     const deleteMany = context.adapter.deleteMany.bind(context.adapter);
     context.adapter.deleteMany = (input) => {
-      if (input.model !== "apikey") return deleteMany(input);
+      if (input.model !== "apikey") {
+        return deleteMany(input);
+      }
+
       const id = ++serial;
       lastAdmission = Date.now();
       let release: (() => void) | undefined;
@@ -137,7 +168,11 @@ export async function apiKeyBackgroundFixture(
             release = resolve;
           })
         : null;
-      if (release) blocked.set(id, release);
+
+      if (release) {
+        blocked.set(id, release);
+      }
+
       event({
         kind: "cleanup-enter",
         profile: name,
@@ -145,7 +180,9 @@ export async function apiKeyBackgroundFixture(
         createdAt: new Date().toISOString(),
       });
       const work = (async () => {
-        if (gate) await gate;
+        if (gate) {
+          await gate;
+        }
         try {
           const result = await deleteMany(input);
           event({ kind: "cleanup-complete", serial: id, success: true });
@@ -164,7 +201,10 @@ export async function apiKeyBackgroundFixture(
     };
     const deleteOne = context.adapter.delete.bind(context.adapter);
     context.adapter.delete = (input) => {
-      if (input.model !== "apikey") return deleteOne(input);
+      if (input.model !== "apikey") {
+        return deleteOne(input);
+      }
+
       const id = ++serial;
       const keyId = input.where?.find((value) => value.field === "id")?.value;
       let release: (() => void) | undefined;
@@ -173,10 +213,16 @@ export async function apiKeyBackgroundFixture(
             release = resolve;
           })
         : null;
-      if (release) blocked.set(id, release);
+
+      if (release) {
+        blocked.set(id, release);
+      }
+
       event({ kind: "row-delete-enter", profile: name, serial: id, key: { id: keyId } });
       const work = (async () => {
-        if (gate) await gate;
+        if (gate) {
+          await gate;
+        }
         try {
           const result = await deleteOne(input);
           event({ kind: "row-delete-complete", serial: id, success: true });
@@ -195,6 +241,7 @@ export async function apiKeyBackgroundFixture(
     };
     profiles.set(path, auth);
   }
+
   function release(selected?: number) {
     if (selected !== undefined) {
       const sender = blocked.get(selected);
@@ -202,14 +249,20 @@ export async function apiKeyBackgroundFixture(
       sender?.();
       return;
     }
+
     const senders = [...blocked.values()];
     blocked.clear();
-    for (const sender of senders) sender();
+
+    for (const sender of senders) {
+      sender();
+    }
   }
+
   return {
     profiles,
     async control(request: Request): Promise<Response | null> {
       const url = new URL(request.url);
+
       if (url.pathname === "/__test/api-key-background/state") {
         const usage = url.searchParams.get("usage") === "true";
         const rows = database
@@ -217,7 +270,11 @@ export async function apiKeyBackgroundFixture(
             `SELECT id,name,referenceId,configId,key,remaining,requestCount,expiresAt,createdAt,updatedAt,lastRequest,lastRefillAt${usage ? ",refillAmount,refillInterval,rateLimitEnabled,rateLimitTimeWindow,rateLimitMax" : ""} FROM apikey ORDER BY name`,
           )
           .all();
-        if (url.searchParams.get("rawDates") === "true") return Response.json(rows);
+
+        if (url.searchParams.get("rawDates") === "true") {
+          return Response.json(rows);
+        }
+
         return Response.json(
           rows.map((row: any) => ({
             ...row,
@@ -231,6 +288,7 @@ export async function apiKeyBackgroundFixture(
           })),
         );
       }
+
       if (url.pathname === "/__test/api-key-background/control" && request.method === "POST") {
         const input = await request.json();
         switch (input.action) {
@@ -259,7 +317,9 @@ export async function apiKeyBackgroundFixture(
             await wait(input.kind, input.count);
             break;
           case "window":
-            if (lastAdmission === null) throw new Error("actual cleanup receipt required");
+            if (lastAdmission === null) {
+              throw new Error("actual cleanup receipt required");
+            }
             await Bun.sleep(Math.max(0, lastAdmission + 10020 - Date.now()));
             break;
           case "remaining":
@@ -278,8 +338,10 @@ export async function apiKeyBackgroundFixture(
               .run(new Date(0).toISOString(), input.keyId);
             break;
           case "timestamps": {
-            if (!database.query("SELECT id FROM apikey WHERE id=?").get(input.keyId))
+            if (!database.query("SELECT id FROM apikey WHERE id=?").get(input.keyId)) {
               throw new Error("actual API key required");
+            }
+
             const values = [
               "createdAt",
               "updatedAt",
@@ -287,12 +349,15 @@ export async function apiKeyBackgroundFixture(
               "lastRefillAt",
               "expiresAt",
             ].map((field) => input.dates[field]);
+
             if (
               values.some(
                 (value) => typeof value !== "string" || !Number.isFinite(Date.parse(value)),
               )
-            )
+            ) {
               throw new Error("valid stored dates required");
+            }
+
             database
               .query(
                 "UPDATE apikey SET createdAt=?,updatedAt=?,lastRequest=?,lastRefillAt=?,expiresAt=? WHERE id=?",
@@ -314,7 +379,11 @@ export async function apiKeyBackgroundFixture(
                 : input.phase === "final"
                   ? "NEW.remaining IS OLD.remaining AND NEW.requestCount IS OLD.requestCount AND NEW.lastRequest IS OLD.lastRequest AND NEW.lastRefillAt IS OLD.lastRefillAt"
                   : null;
-            if (!condition) throw new Error("actual phase required");
+
+            if (!condition) {
+              throw new Error("actual phase required");
+            }
+
             database.exec(
               `CREATE TRIGGER usage_phase_veto BEFORE UPDATE ON apikey WHEN OLD.name='phase-target' AND (${condition}) BEGIN SELECT RAISE(ABORT,'actual phase storage veto'); END`,
             );
@@ -347,15 +416,23 @@ export async function apiKeyBackgroundFixture(
         }
         return Response.json(events);
       }
+
       const selected = profiles.get(`/__test/profiles/${url.searchParams.get("profile")}/api/auth`);
+
       if (url.pathname === "/__test/api-key-background/cleanup" && request.method === "POST") {
-        if (!selected) throw new Error("actual profile required");
+        if (!selected) {
+          throw new Error("actual profile required");
+        }
         return Response.json(await selected.api.deleteAllExpiredApiKeys());
       }
+
       if (url.pathname === "/__test/api-key-background/verify" && request.method === "POST") {
-        if (!selected) throw new Error("actual profile required");
+        if (!selected) {
+          throw new Error("actual profile required");
+        }
         return Response.json(await selected.api.verifyApiKey({ body: await request.json() }));
       }
+
       return null;
     },
   };

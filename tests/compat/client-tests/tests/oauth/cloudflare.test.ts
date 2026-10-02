@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
@@ -15,16 +16,23 @@ compatScenario(
         })
       ).error,
     ).toBeNull();
+
     const before = await state(ctx);
     const originals: Record<string, unknown>[] = [];
     const callbacks: unknown[] = [];
+
     for (const variant of ["missing", "null", "empty"] as const) {
       const original: Record<string, unknown> = {
         ...profile(ctx),
         applicationField: "Original profile receipt",
       };
-      if (variant === "missing") delete original.id;
-      else original.id = variant === "null" ? null : "";
+
+      if (variant === "missing") {
+        delete original.id;
+      } else {
+        original.id = variant === "null" ? null : "";
+      }
+
       originals.push(original);
       await control(ctx, { profile: original });
       const flow = await callback(ctx, "social-cloudflare-mapped");
@@ -32,6 +40,7 @@ compatScenario(
       expect(observed.status).toBe(200);
       expect(observed.body).toEqual(originals);
       expect(flow.response.status).toBe(302);
+
       const error = new URL(flow.response.headers.get("location")!, ctx.baseURL).searchParams.get(
         "error",
       );
@@ -39,8 +48,10 @@ compatScenario(
       expect(await state(ctx)).toEqual(before);
       expect((await flow.actor.client.getSession()).data).toBeNull();
       expect(await receipts(ctx)).toHaveLength(originals.length * 2);
+
       callbacks.push({ status: flow.response.status, error });
     }
+
     const mapperReceipts = (await ctx.rawRequest({ path: "/__test/cloudflare/mapper-receipts" }))
       .body as Record<string, unknown>[];
     return {
@@ -65,12 +76,14 @@ async function state(ctx: ScenarioContext) {
     sessions: Array<Record<string, unknown>>;
   };
 }
+
 async function control(ctx: ScenarioContext, value: Record<string, unknown>) {
   expect(
     (await ctx.rawRequest({ path: "/__test/cloudflare/control", method: "POST", json: value }))
       .status,
   ).toBe(200);
 }
+
 async function receipts(ctx: ScenarioContext) {
   const r = await ctx.rawRequest({ path: "/__test/cloudflare/receipts" });
   expect(r.status).toBe(200);
@@ -90,6 +103,7 @@ async function receipts(ctx: ScenarioContext) {
       : row.body) as Record<string, unknown> | null,
   }));
 }
+
 function profile(ctx: ScenarioContext) {
   return {
     id: ctx.uniqueToken("cloudflare-subject"),
@@ -100,6 +114,7 @@ function profile(ctx: ScenarioContext) {
     two_factor_authentication_enabled: true,
   };
 }
+
 async function callback(
   ctx: ScenarioContext,
   mode: FixtureProfile = "social-cloudflare-default",
@@ -112,6 +127,7 @@ async function callback(
     requestSignUp,
   });
   expect(start.error).toBeNull();
+
   const url = new URL(start.data!.url!);
   const path =
     authProfilePath(mode) +
@@ -126,7 +142,7 @@ for (const mode of [
   "disabled-scope",
   "disabled-configured",
   "configured-endpoint",
-] as const)
+] as const) {
   compatScenario(
     `cloudflare published ${mode} authorization deduplicates scopes and uses PKCE`,
     async (ctx) => {
@@ -139,6 +155,7 @@ for (const mode of [
           loginHint: "ignored@example.invalid",
         });
       expect(result.error).toBeNull();
+
       const url = new URL(result.data!.url!);
       expect(url.origin).toBe(
         mode === "configured-endpoint"
@@ -166,6 +183,7 @@ for (const mode of [
           ? "https://configured.example.invalid/callback"
           : ctx.baseURL + authProfilePath(`social-cloudflare-${mode}`) + "/callback/cloudflare",
       );
+
       return {
         result: ctx.snapshot(result),
         persisted: await state(ctx),
@@ -173,16 +191,19 @@ for (const mode of [
       };
     },
   );
+}
+
 compatScenario("cloudflare disabled defaults with no requested scopes omits scope", async (ctx) => {
   const result = await ctx
     .actor("cloudflare", "social-cloudflare-disabled-scope")
     .client.signIn.social({ provider: "cloudflare" });
   expect(result.error).toBeNull();
   expect(new URL(result.data!.url!).searchParams.get("scope")).toBeNull();
+
   return { result: ctx.snapshot(result) };
 });
 
-for (const mode of ["default", "public", "post", "encoded", "configured-endpoint"] as const)
+for (const mode of ["default", "public", "post", "encoded", "configured-endpoint"] as const) {
   compatScenario(
     `cloudflare ${mode} credentials reach real token exchange refresh and owned persistence`,
     async (ctx) => {
@@ -196,6 +217,7 @@ for (const mode of ["default", "public", "post", "encoded", "configured-endpoint
           })
         ).error,
       ).toBeNull();
+
       const before = await state(ctx);
       const data = profile(ctx);
       await control(ctx, { profile: data });
@@ -203,15 +225,19 @@ for (const mode of ["default", "public", "post", "encoded", "configured-endpoint
       const flow = await callback(ctx, fixtureMode);
       expect(flow.response.status).toBe(302);
       expect(flow.response.headers.get("location")).toBe("/dashboard");
+
       const session = await flow.actor.client.getSession();
       expect(session.data?.user).toBeTruthy();
+
       const after = await state(ctx);
+
       for (const table of ["users", "accounts", "sessions"] as const) {
         expect(after[table]).toHaveLength(before[table].length + 1);
         expect(after[table].find((row) => row.id === before[table][0]!.id)).toEqual(
           before[table][0],
         );
       }
+
       const owner = after.users.find((row) => row.id !== before.users[0]!.id)!;
       expect(owner).toMatchObject({
         name: "Cloudflare Name",
@@ -219,6 +245,7 @@ for (const mode of ["default", "public", "post", "encoded", "configured-endpoint
         emailVerified: false,
         image: null,
       });
+
       const account = after.accounts.find((row) => row.userId === owner.id)!;
       expect(account).toMatchObject({
         providerId: "cloudflare",
@@ -228,6 +255,7 @@ for (const mode of ["default", "public", "post", "encoded", "configured-endpoint
         idToken: null,
         scope: "user-details.read",
       });
+
       const raw = await ctx.rawRequest({ path: "/__test/cloudflare/receipts" });
       const rows = raw.body as Array<{
         path: string;
@@ -242,6 +270,7 @@ for (const mode of ["default", "public", "post", "encoded", "configured-endpoint
           await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)),
         ).toString("base64url"),
       );
+
       const credentials: Record<string, string> =
         mode === "public"
           ? { client_id: "fixture-social-client" }
@@ -258,6 +287,7 @@ for (const mode of ["default", "public", "post", "encoded", "configured-endpoint
             : ctx.baseURL + authProfilePath(fixtureMode) + "/callback/cloudflare",
         ...credentials,
       });
+
       const authorization =
         mode === "public" || mode === "post"
           ? null
@@ -270,14 +300,17 @@ for (const mode of ["default", "public", "post", "encoded", "configured-endpoint
         authorization: "Bearer fixture-cloudflare-access",
         body: null,
       });
+
       const replay = await flow.actor.fetch(ctx.baseURL + flow.path, { redirect: "manual" });
       expect(replay.status).toBe(302);
       expect(await state(ctx)).toEqual(after);
       expect(await receipts(ctx)).toHaveLength(2);
+
       const denied = await foreign.client.refreshToken({ accountId: String(account.id) });
       expect(denied.error).toBeTruthy();
       expect(await state(ctx)).toEqual(after);
       expect(await receipts(ctx)).toHaveLength(2);
+
       await control(ctx, {
         tokenResponse: {
           access_token: "rotated-cloudflare-access",
@@ -289,6 +322,7 @@ for (const mode of ["default", "public", "post", "encoded", "configured-endpoint
       });
       const refreshed = await flow.actor.client.refreshToken({ accountId: String(account.id) });
       expect(refreshed.error).toBeNull();
+
       const rotated = await state(ctx);
       expect(rotated.accounts.find((row) => row.id === account.id)).toMatchObject({
         accessToken: "rotated-cloudflare-access",
@@ -300,6 +334,7 @@ for (const mode of ["default", "public", "post", "encoded", "configured-endpoint
       expect(rotated.accounts.find((row) => row.id === before.accounts[0]!.id)).toEqual(
         before.accounts[0],
       );
+
       const refreshRequests = await receipts(ctx);
       expect(refreshRequests[2]).toMatchObject({
         path: "/token",
@@ -311,11 +346,13 @@ for (const mode of ["default", "public", "post", "encoded", "configured-endpoint
         },
       });
       expect((await flow.actor.client.signOut()).error).toBeNull();
+
       const logout = await state(ctx);
       expect(logout.users).toEqual(rotated.users);
       expect(logout.accounts).toEqual(rotated.accounts);
       expect(logout.sessions).toEqual(before.sessions);
       expect(await receipts(ctx)).toEqual(refreshRequests);
+
       return {
         start: ctx.snapshot(flow.start),
         callback: { status: flow.response.status, location: flow.response.headers.get("location") },
@@ -332,6 +369,7 @@ for (const mode of ["default", "public", "post", "encoded", "configured-endpoint
     },
     ["POST /sign-in/social", "GET /callback/{}", "POST /refresh-token", "POST /sign-out"],
   );
+}
 
 for (const variant of [
   "first-only",
@@ -343,40 +381,56 @@ for (const variant of [
   "zero-name",
   "numeric-subject",
   "mapped",
-] as const)
+] as const) {
   compatScenario(
     `cloudflare actual API ${variant} mapping retains independent raw subject`,
     async (ctx) => {
       const data: Record<string, unknown> = profile(ctx);
-      if (variant === "first-only") delete data.last_name;
-      if (variant === "last-only") delete data.first_name;
+
+      if (variant === "first-only") {
+        delete data.last_name;
+      }
+
+      if (variant === "last-only") {
+        delete data.first_name;
+      }
+
       if (variant === "missing-names") {
         delete data.first_name;
         delete data.last_name;
       }
+
       if (variant === "null-names") {
         data.first_name = null;
         data.last_name = null;
       }
+
       if (variant === "empty-names") {
         data.first_name = "";
         data.last_name = "";
       }
+
       if (variant === "numeric-name") {
         data.first_name = 7;
         data.last_name = 42;
       }
+
       if (variant === "zero-name") {
         data.first_name = 0;
         data.last_name = "";
       }
-      if (variant === "numeric-subject") data.id = 42;
+
+      if (variant === "numeric-subject") {
+        data.id = 42;
+      }
+
       await control(ctx, { profile: data });
       const flow = await callback(
         ctx,
         variant === "mapped" ? "social-cloudflare-mapped" : "social-cloudflare-default",
       );
       expect(flow.response.headers.get("location")).toBe("/dashboard");
+
       const persisted = await state(ctx);
       expect(persisted.users).toHaveLength(1);
       expect(persisted.accounts).toHaveLength(1);
@@ -399,8 +453,10 @@ for (const variant of [
         image: variant === "mapped" ? "https://images.example.invalid/mapped-cloudflare.png" : null,
       });
       expect(persisted.accounts[0]!.accountId).toBe(String(data.id));
+
       const session = await flow.actor.client.getSession();
       expect(session.data?.user).toBeTruthy();
+
       return {
         start: ctx.snapshot(flow.start),
         callback: { status: flow.response.status, location: flow.response.headers.get("location") },
@@ -411,6 +467,7 @@ for (const variant of [
     },
     ["POST /sign-in/social", "GET /callback/{}"],
   );
+}
 
 for (const variant of [
   "missing-subject",
@@ -427,7 +484,7 @@ for (const variant of [
   "token-redirect",
   "implicit-disabled",
   "signup-disabled",
-] as const)
+] as const) {
   compatScenario(
     `cloudflare rejects ${variant} without foreign writes`,
     async (ctx) => {
@@ -441,14 +498,34 @@ for (const variant of [
           })
         ).error,
       ).toBeNull();
+
       const before = await state(ctx);
       const data: Record<string, unknown> = profile(ctx);
-      if (variant === "missing-subject") delete data.id;
-      if (variant === "null-subject") data.id = null;
-      if (variant === "empty-subject") data.id = "";
-      if (variant === "missing-email") delete data.email;
-      if (variant === "null-email") data.email = null;
-      if (variant === "empty-email") data.email = "";
+
+      if (variant === "missing-subject") {
+        delete data.id;
+      }
+
+      if (variant === "null-subject") {
+        data.id = null;
+      }
+
+      if (variant === "empty-subject") {
+        data.id = "";
+      }
+
+      if (variant === "missing-email") {
+        delete data.email;
+      }
+
+      if (variant === "null-email") {
+        data.email = null;
+      }
+
+      if (variant === "empty-email") {
+        data.email = "";
+      }
+
       await control(ctx, {
         profile: data,
         ...(variant === "api-denied"
@@ -486,10 +563,16 @@ for (const variant of [
               ? "signup_disabled"
               : "unable_to_get_user_info",
       );
+
       const after = await state(ctx);
       expect(after).toEqual(before);
-      if (variant === "token-redirect") expect(await receipts(ctx)).toHaveLength(1);
+
+      if (variant === "token-redirect") {
+        expect(await receipts(ctx)).toHaveLength(1);
+      }
+
       expect((await flow.actor.client.getSession()).data).toBeNull();
+
       return {
         start: ctx.snapshot(flow.start),
         callback: { status: flow.response.status, location: flow.response.headers.get("location") },
@@ -500,16 +583,20 @@ for (const variant of [
     },
     ["GET /callback/{}"],
   );
+}
+
 compatScenario(
   "cloudflare explicit signup admits disabled implicit signup",
   async (ctx) => {
     await control(ctx, { profile: profile(ctx) });
     const flow = await callback(ctx, "social-cloudflare-implicit-disabled", true);
     expect(flow.response.headers.get("location")).toBe("/dashboard");
+
     const persisted = await state(ctx);
     expect(persisted.users).toHaveLength(1);
     expect(persisted.accounts).toHaveLength(1);
     expect(persisted.sessions).toHaveLength(1);
+
     return {
       start: ctx.snapshot(flow.start),
       callback: { status: flow.response.status, location: flow.response.headers.get("location") },
@@ -519,6 +606,7 @@ compatScenario(
   },
   ["POST /sign-in/social", "GET /callback/{}"],
 );
+
 compatScenario(
   "cloudflare unverified email gate stores account without issuing session",
   async (ctx) => {
@@ -527,12 +615,14 @@ compatScenario(
     expect(
       new URL(flow.response.headers.get("location")!, ctx.baseURL).searchParams.get("error"),
     ).toBe("email_not_verified");
+
     const persisted = await state(ctx);
     expect(persisted.users).toHaveLength(1);
     expect(persisted.users[0]!.emailVerified).toBeFalse();
     expect(persisted.accounts).toHaveLength(1);
     expect(persisted.sessions).toHaveLength(0);
     expect((await flow.actor.client.getSession()).data).toBeNull();
+
     return {
       callback: { status: flow.response.status, location: flow.response.headers.get("location") },
       persisted,
@@ -541,7 +631,8 @@ compatScenario(
   },
   ["POST /sign-in/social", "GET /callback/{}"],
 );
-for (const expiry of ["absent", "zero", "fractional"] as const)
+
+for (const expiry of ["absent", "zero", "fractional"] as const) {
   compatScenario(
     `cloudflare ${expiry} token expiry has no fabricated default`,
     async (ctx) => {
@@ -556,17 +647,24 @@ for (const expiry of ["absent", "zero", "fractional"] as const)
       await control(ctx, { profile: profile(ctx), tokenResponse });
       const flow = await callback(ctx);
       expect(flow.response.headers.get("location")).toBe("/dashboard");
+
       const persisted = await state(ctx);
       const expires = persisted.accounts[0]!.accessTokenExpiresAt;
+
       if (expiry === "fractional") {
         expect(typeof expires).toBe("string");
         expect(Date.parse(String(expires))).toBeGreaterThanOrEqual(started + 120500);
         expect(Date.parse(String(expires))).toBeLessThanOrEqual(Date.now() + 120500);
-      } else expect(expires).toBeNull();
+      } else {
+        expect(expires).toBeNull();
+      }
+
       return { persisted, receipts: await receipts(ctx) };
     },
     ["POST /sign-in/social", "GET /callback/{}"],
   );
+}
+
 compatScenario(
   "cloudflare unsupported ID token and invalid provider state produce no requests",
   async (ctx) => {
@@ -577,8 +675,10 @@ compatScenario(
       idToken: { token: "untrusted.not-signed.token" },
     });
     expect(direct.error?.code).toBe("ID_TOKEN_NOT_SUPPORTED");
+
     const wrong = await actor.client.signIn.social({ provider: "google" });
     expect(wrong.error?.code).toBe("PROVIDER_NOT_FOUND");
+
     const response = await actor.fetch(
       ctx.baseURL +
         authProfilePath("social-cloudflare-default") +
@@ -591,6 +691,7 @@ compatScenario(
     );
     expect(await state(ctx)).toEqual(before);
     expect(await receipts(ctx)).toEqual([]);
+
     return {
       direct: ctx.snapshot(direct),
       wrong: ctx.snapshot(wrong),

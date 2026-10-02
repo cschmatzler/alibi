@@ -1,8 +1,10 @@
 const ingressBodies = new WeakMap<Request, unknown>();
+
 /** Capture physical input before the actual router consumes its request stream. */
 export async function capturePasswordlessRequest(request: Request) {
-  if (request.headers.get("x-callback-probe") === "issue207")
+  if (request.headers.get("x-callback-probe") === "issue207") {
     ingressBodies.set(request, await request.clone().json());
+  }
 }
 
 /** Capture actual callback inputs and query the initialized adapter at callback time. */
@@ -20,7 +22,9 @@ export async function callbackSnapshot(
     | undefined,
   identifier: string,
 ) {
-  if (ctx?.request?.headers.get("x-callback-probe") !== "issue207") return undefined;
+  if (ctx?.request?.headers.get("x-callback-probe") !== "issue207") {
+    return undefined;
+  }
   return {
     method: ctx.request.method,
     path: new URL(ctx.request.url).pathname,

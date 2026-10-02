@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario } from "../../support/scenario";
 import {
@@ -38,6 +40,7 @@ compatScenario(
         body: JSON.stringify(body),
       });
       expect(sent.status).toBe(200);
+
       const delivery = z
         .object({
           otp: z.string().optional(),
@@ -59,7 +62,8 @@ compatScenario(
         basePath: path,
         proofExists: true,
       });
-      if (kind === "otp")
+
+      if (kind === "otp") {
         expect(delivery.generator).toEqual({
           method: "POST",
           path: `${path}${endpoint}`,
@@ -67,6 +71,8 @@ compatScenario(
           body,
           basePath: path,
         });
+      }
+
       const foreign = ctx.actor(`${kind}-foreign`, profile);
       const token = kind === "otp" ? delivery.otp! : delivery.token!;
       const consumed =
@@ -74,20 +80,31 @@ compatScenario(
           ? await actor.client.signIn.emailOtp({ email, otp: token })
           : await actor.client.magicLink.verify({ query: { token } });
       expect(consumed.error).toBeNull();
+
       const user = requireUser(consumed.data?.user);
       const state = await readUserState(ctx, user.id);
       expect(state.user?.email).toBe(email);
       expect(state.accounts).toHaveLength(0);
       expect(state.sessions).toHaveLength(1);
+
       const replay =
         kind === "otp"
           ? await foreign.client.signIn.emailOtp({ email, otp: token })
           : await foreign.client.magicLink.verify({ query: { token } });
-      if (kind === "otp") expect(replay.error?.code).toBe("INVALID_OTP");
-      else expect(replay.data).toBeNull();
+
+      if (kind === "otp") {
+        expect(replay.error?.code).toBe("INVALID_OTP");
+      } else {
+        expect(replay.data).toBeNull();
+      }
+
       const after = await readUserState(ctx, user.id);
       expect(after.sessions).toHaveLength(1);
-      if (kind === "otp") expect(await verificationCount(ctx, `sign-in-otp-${email}`)).toBe(0);
+
+      if (kind === "otp") {
+        expect(await verificationCount(ctx, `sign-in-otp-${email}`)).toBe(0);
+      }
+
       observations.push({
         kind,
         context: delivery.context,
@@ -110,6 +127,7 @@ compatScenario(
     const path = authProfilePath(profile);
     const actor = ctx.actor("phone", profile);
     const phoneNumber = uniquePhone(ctx, "context");
+
     async function post(endpoint: string, body: unknown) {
       const response = await actor.fetch(new URL(`${path}${endpoint}`, ctx.baseURL), {
         method: "POST",
@@ -118,8 +136,10 @@ compatScenario(
       });
       return { status: response.status, body: (await response.json()) as unknown };
     }
+
     const sent = await post("/phone-number/send-otp", { phoneNumber });
     expect(sent.status).toBe(200);
+
     const delivery = z
       .object({ code: z.string(), context: callback })
       .parse(await fixtureValue(ctx, "/__test/phone-otp", { phoneNumber }));
@@ -131,14 +151,17 @@ compatScenario(
       basePath: path,
       proofExists: true,
     });
+
     const foreign = await post("/phone-number/verify", {
       phoneNumber: uniquePhone(ctx, "foreign-context"),
       code: delivery.code,
     });
     expect(foreign.status).toBe(400);
     expect(await verificationCount(ctx, phoneNumber)).toBe(1);
+
     const consumed = await post("/phone-number/verify", { phoneNumber, code: delivery.code });
     expect(consumed.status).toBe(200);
+
     const user = z.object({ user: z.object({ id: z.string() }) }).parse(consumed.body).user;
     const verifier = z
       .object({ context: callback })
@@ -151,6 +174,7 @@ compatScenario(
       basePath: path,
       proofExists: true,
     });
+
     const events = z
       .array(
         z.object({
@@ -165,14 +189,17 @@ compatScenario(
     expect(completed.userId).toBe(user.id);
     expect(completed.context).toEqual({ ...verifier.context, proofExists: false });
     expect(completed.verifiedOwner).toBe(true);
+
     const state = await readPhoneState(ctx, profile, user.id);
     expect(state.accounts).toHaveLength(0);
     expect(state.sessions).toHaveLength(1);
     expect(state.user?.phoneNumberVerified).toBe(true);
+
     const replay = await post("/phone-number/verify", { phoneNumber, code: delivery.code });
     expect(replay.status).toBe(400);
     expect(await verificationCount(ctx, phoneNumber)).toBe(0);
     expect((await readPhoneState(ctx, profile, user.id)).sessions).toHaveLength(1);
+
     // Retain the entire captured request while binding its generated proof to
     // the comparer's existing opaque-token identity contract. The assertions
     // above independently require the exact delivered code in both callbacks.
@@ -210,6 +237,7 @@ compatScenario(
       name: "Callback owner",
     });
     const user = requireUser(signup.data?.user);
+
     async function post(endpoint: string, body: unknown) {
       const response = await actor.fetch(new URL(`${path}${endpoint}`, ctx.baseURL), {
         method: "POST",
@@ -218,6 +246,7 @@ compatScenario(
       });
       return { status: response.status, body: (await response.json()) as unknown };
     }
+
     async function capture(recipient: string, type: string, endpoint: string, body: unknown) {
       const delivery = z
         .object({ otp: z.string(), context: callback })
@@ -232,14 +261,17 @@ compatScenario(
       });
       return delivery;
     }
+
     const verification = await post("/send-verification-email", { email });
     expect(verification.status).toBe(200);
+
     const origin = await capture(email, "email-verification", "/send-verification-email", {
       email,
     });
     const changedRequest = { newEmail: target, otp: origin.otp };
     const requestChange = await post("/email-otp/request-email-change", changedRequest);
     expect(requestChange.status).toBe(200);
+
     const targetDelivery = await capture(
       target,
       "change-email",
@@ -252,8 +284,10 @@ compatScenario(
     });
     expect(changed.error).toBeNull();
     expect(await verificationCount(ctx, `email-verification-otp-${email}`)).toBe(0);
+
     const reset = await post("/email-otp/request-password-reset", { email: target });
     expect(reset.status).toBe(200);
+
     const resetDelivery = await capture(
       target,
       "forget-password",
@@ -266,12 +300,14 @@ compatScenario(
       password: "replacement-password123",
     });
     expect(resetPassword.error).toBeNull();
+
     const state = await readUserState(ctx, user.id);
     expect(state.user?.email).toBe(target);
     expect(state.user?.emailVerified).toBe(true);
     expect(state.accounts).toHaveLength(1);
     expect(state.sessions).toHaveLength(1);
     expect(await verificationCount(ctx, `forget-password-otp-${target}`)).toBe(0);
+
     const changeContext = {
       ...targetDelivery.context,
       body: { ...changedRequest, otp: { token: origin.otp } },

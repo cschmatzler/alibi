@@ -1,8 +1,10 @@
 import { expect } from "bun:test";
+
 import { createAuthClient } from "better-auth/client";
 import { organizationClient } from "better-auth/client/plugins";
 import { Cookie } from "tough-cookie";
 import { z } from "zod";
+
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { createTracingFetch, type TraceEntry } from "../../support/trace";
@@ -104,6 +106,7 @@ async function configure(
   });
   expect(response.status).toBe(200);
   expect(response.body).toEqual({ configured: true });
+
   return response;
 }
 
@@ -147,7 +150,9 @@ async function signup(
       "better-auth.session_token",
       "better-auth.dont_remember",
     ]);
-    for (const raw of cookies.at(-1)!) expect(Cookie.parse(raw)!.maxAge).toBeNull();
+    for (const raw of cookies.at(-1)!) {
+      expect(Cookie.parse(raw)!.maxAge).toBeNull();
+    }
   }
 
   const user = z
@@ -172,6 +177,7 @@ async function setup(
     metadata: { actual: true },
   });
   expect(created.error).toBeNull();
+
   const org = row.parse(created.data);
 
   const other = await foreign.client.organization.create({
@@ -182,6 +188,7 @@ async function setup(
   expect(other.error).toBeNull();
 
   let team: z.infer<typeof row> | undefined;
+
   if (!profile.endsWith("no-team")) {
     const result = await owner.client.organization.createTeam({
       organizationId: org.id,
@@ -198,6 +205,7 @@ async function setup(
     ...(team ? { teamId: team.id } : {}),
   });
   expect(result.error).toBeNull();
+
   const invitation = row.parse(result.data);
 
   // A second session for the recipient, used to check acceptance only touches its own session.
@@ -249,6 +257,7 @@ async function denied(ctx: ScenarioContext, s: Setup, before: Awaited<ReturnType
   });
 
   expect(await state(ctx)).toEqual(before);
+
   return { noSession: ctx.snapshot(noSession), wrong: ctx.snapshot(wrong) };
 }
 
@@ -272,6 +281,7 @@ function unchangedPeers(
   );
 
   const current = after.snapshot.sessions.find((session) => session.id === ownSession.id)!;
+
   if (selected) {
     expect(current).toMatchObject({
       ...ownSession,
@@ -297,6 +307,7 @@ function accepted(
   );
 
   expect(after.snapshot.members).toHaveLength(before.snapshot.members.length + 1);
+
   const member = after.snapshot.members.at(-1)!;
   expect(member).toMatchObject({
     organizationId: s.org.id,
@@ -400,18 +411,21 @@ for (const mode of [
       const failingPhase = early ? "before-accept" : late ? "after-accept" : "team-limit";
       const status = mode.endsWith("error") || mode === "team-full" ? 403 : 500;
       expect(result.error?.status).toBe(status);
+
       if (mode.endsWith("error")) {
         expect(result.error).toMatchObject({
           code: "INVITATION_APPLICATION_REJECTED",
           message: `Rejected ${failingPhase}`,
         });
       }
+
       if (mode.endsWith("public500")) {
         expect(result.error).toMatchObject({
           code: "PUBLIC_INVITATION_500",
           message: `Explicit ${failingPhase} error`,
         });
       }
+
       if (mode.endsWith("internal") || mode.startsWith("sql-")) {
         expect(transport.text).toBe("");
         expect(transport.contentType).toBeNull();
@@ -421,6 +435,7 @@ for (const mode of [
           message: result.error!.message,
         });
       }
+
       const policies = cookiePolicy(cookies, late && mode !== "after-accept-internal");
 
       expect(phases(after)).toEqual(
@@ -476,8 +491,10 @@ for (const mode of [
             resetVeto && row.id === s.invitation.id ? { ...row, status: "accepted" } : row,
           ),
         );
+
         unchangedPeers(s, before, after, false);
       }
+
       expect(await ctx.readUserState({ userId: s.foreign.user.id })).toEqual(s.foreignBefore);
 
       await configure(ctx, "record");
@@ -485,6 +502,7 @@ for (const mode of [
       const retry = await s.target.client.organization.acceptInvitation({
         invitationId: s.invitation.id,
       });
+
       if (late || resetVeto) {
         expect(retry.error).toMatchObject({
           status: 400,
@@ -497,8 +515,12 @@ for (const mode of [
       } else {
         expect(retry.error).toBeNull();
       }
+
       const final = await state(ctx);
-      if (!late && !resetVeto) accepted(s, retryBefore, final);
+
+      if (!late && !resetVeto) {
+        accepted(s, retryBefore, final);
+      }
 
       const current = await s.target.client.getSession();
       expect(current.data!.user.id).toBe(s.target.user.id);
@@ -560,6 +582,7 @@ for (const profile of ["org-invitation-stage", "org-invitation-stage-no-team"] a
         },
       });
       expect(addition.status).toBe(200);
+
       const original = row.parse(addition.body);
 
       await configure(ctx, "record");
@@ -584,16 +607,19 @@ for (const profile of ["org-invitation-stage", "org-invitation-stage-no-team"] a
           ? ["before-accept", "team-limit", "after-accept"]
           : ["before-accept", "after-accept"],
       );
+
       if (s.team) {
         expect(after.receipts[1]!.invitationStatus).toEqual([
           { id: s.invitation.id, status: "accepted" },
         ]);
       }
+
       expect(after.receipts.at(-1)!.context).toMatchObject({
         invitation: ctx.snapshot({ ...s.invitation, status: "accepted" }),
         member: after.snapshot.members.at(-1),
         user: ctx.snapshot(s.target.user),
       });
+
       const policies = cookiePolicy(s.target.cookies.at(-1)!, Boolean(s.team));
 
       const current = await s.target.client.getSession();
@@ -636,6 +662,7 @@ for (const differentRecipients of [false, true]) {
         ? await signup(ctx, "stage-second-target", s.profile)
         : s.target;
       let secondInvitation = s.invitation;
+
       if (differentRecipients) {
         const issued = await s.owner.client.organization.inviteMember({
           organizationId: s.org.id,
@@ -652,6 +679,7 @@ for (const differentRecipients of [false, true]) {
       const guards = await denied(ctx, s, before);
 
       const releaseTraces: TraceEntry[] = [];
+
       async function release(name: string) {
         const response = await createTracingFetch(
           ctx.baseURL,
@@ -669,6 +697,7 @@ for (const differentRecipients of [false, true]) {
       let one;
       let held;
       let firstState;
+
       try {
         first = s.target.client.organization.acceptInvitation({
           invitationId: s.invitation.id,
@@ -697,14 +726,17 @@ for (const differentRecipients of [false, true]) {
         await release("invitation-release-first");
         firstResult = await first;
         expect(firstResult.error).toBeNull();
+
         ctx.recordTransport(releaseTraces.splice(0));
         firstState = await state(ctx);
         expect(firstState.waiting).toBe(1);
+
         accepted(s, before, firstState);
 
         await release("invitation-release-second");
         secondResult = await second;
         ctx.recordTransport(releaseTraces.splice(0));
+
         if (differentRecipients) {
           expect(secondResult.error).toBeNull();
         } else {
@@ -723,6 +755,7 @@ for (const differentRecipients of [false, true]) {
 
       const after = await state(ctx);
       expect(after.waiting).toBe(0);
+
       if (differentRecipients) {
         const secondSetup = {
           ...s,
@@ -742,6 +775,7 @@ for (const differentRecipients of [false, true]) {
           "team-limit",
           "after-accept",
         ]);
+
         cookiePolicy(secondTarget.cookies.at(-1)!, true);
       } else {
         expect(after.snapshot).toEqual(firstState!.snapshot);
@@ -752,6 +786,7 @@ for (const differentRecipients of [false, true]) {
           "team-limit",
           "after-accept",
         ]);
+
         cookiePolicy(s.target.cookies.at(-1)!, false);
       }
 
@@ -822,6 +857,7 @@ compatScenario(
       status: "pending",
       expiresAt: "2000-01-01T00:00:00.000Z",
     });
+
     const principalsBefore = await Promise.all(
       [s.owner, s.target, s.foreign].map(({ user }) => ctx.readUserState({ userId: user.id })),
     );
@@ -858,10 +894,12 @@ compatScenario(
     const after = await state(ctx);
     expect(after).toEqual(before);
     expect(after.receipts).toEqual([]);
+
     const principalsAfter = await Promise.all(
       [s.owner, s.target, s.foreign].map(({ user }) => ctx.readUserState({ userId: user.id })),
     );
     expect(principalsAfter).toEqual(principalsBefore);
+
     cookiePolicy(s.target.cookies.at(-1)!, false);
     expect(await ctx.readUserState({ userId: s.foreign.user.id })).toEqual(s.foreignBefore);
 
@@ -895,6 +933,7 @@ for (const mode of ["record", "after-accept-internal", "after-accept-public500"]
       });
       const cookies = s.target.cookies.at(-1)!;
       const transport = s.target.wire.at(-1)!;
+
       if (mode === "record") {
         expect(result.error).toBeNull();
       } else {
@@ -908,6 +947,7 @@ for (const mode of ["record", "after-accept-internal", "after-accept-public500"]
       }
 
       expect(cookies).toHaveLength(mode === "after-accept-internal" ? 0 : 2);
+
       const policies = cookies.map((raw) => {
         const cookie = Cookie.parse(raw)!;
         expect(cookie).toMatchObject({
@@ -918,8 +958,10 @@ for (const mode of ["record", "after-accept-internal", "after-accept-public500"]
         });
         expect(cookie.maxAge).toBeNull();
         expect(cookie.expires).toBe("Infinity");
+
         const value = decodeURIComponent(cookie.value);
         expect(value.lastIndexOf(".")).toBeGreaterThan(0);
+
         return {
           key: cookie.key,
           path: cookie.path,
@@ -931,6 +973,7 @@ for (const mode of ["record", "after-accept-internal", "after-accept-public500"]
           value: value.slice(0, value.lastIndexOf(".")),
         };
       });
+
       if (policies.length) {
         expect(policies.map((cookie) => cookie.key)).toEqual([
           "better-auth.session_token",
@@ -943,6 +986,7 @@ for (const mode of ["record", "after-accept-internal", "after-accept-public500"]
         );
         expect(policies[1]!.value).toBe("true");
       }
+
       if (mode === "after-accept-internal") {
         expect(transport.text).toBe("");
         expect(transport.contentType).toBeNull();

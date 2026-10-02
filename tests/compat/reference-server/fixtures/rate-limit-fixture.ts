@@ -43,8 +43,9 @@ export function createRateLimitFixture(base: BetterAuthOptions) {
     async handle(request: Request) {
       const url = new URL(request.url);
       for (const [profile, auth] of profiles) {
-        if (url.pathname.startsWith(`/__test/profiles/${profile}/api/auth/`))
+        if (url.pathname.startsWith(`/__test/profiles/${profile}/api/auth/`)) {
           return auth.handler(request);
+        }
       }
       return null;
     },

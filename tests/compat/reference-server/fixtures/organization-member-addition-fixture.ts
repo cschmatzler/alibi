@@ -1,20 +1,23 @@
 /** Privileged application control invoking the unchanged published auth.api.addMember. */
 
 import type { Database } from "bun:sqlite";
+
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
+
 export function organizationMemberAdditionFixture(
   database: Database,
   shared: Parameters<typeof betterAuth>[0],
   origin: string,
 ) {
-  let mode = "off",
-    patch: { organizationId?: string; userId?: string; role?: string } = {};
+  let mode = "off";
+  let patch: { organizationId?: string; userId?: string; role?: string } = {};
   const receipts: unknown[] = [];
   let pairGates: Array<() => void> = [];
-  let release: (() => void) | undefined,
-    gate = Promise.resolve();
+  let release: (() => void) | undefined;
+  let gate = Promise.resolve();
+
   function snapshot() {
     return {
       organizations: database
@@ -41,6 +44,7 @@ export function organizationMemberAdditionFixture(
         .all(),
     };
   }
+
   function full() {
     return {
       members: database
@@ -71,49 +75,80 @@ export function organizationMemberAdditionFixture(
         }),
     };
   }
+
   type Hooks = NonNullable<NonNullable<Parameters<typeof organization>[0]>["organizationHooks"]>;
   type Before = Parameters<NonNullable<Hooks["beforeAddMember"]>>[0];
   type After = Parameters<NonNullable<Hooks["afterAddMember"]>>[0];
+
   async function note(phase: string, context: Before | After) {
     await Promise.resolve();
     receipts.push({ phase, ...structuredClone(context), snapshot: snapshot() });
-    if (mode === `reject-${phase}`)
+
+    if (mode === `reject-${phase}`) {
       throw new APIError("BAD_REQUEST", {
         code: "ADDITION_HOOK_REJECTED",
         message: `Rejected ${phase}`,
       });
-    if (mode === `public500-${phase}`)
+    }
+
+    if (mode === `public500-${phase}`) {
       throw new APIError("INTERNAL_SERVER_ERROR", {
         code: "PUBLIC_ADDITION_500",
         message: `Explicit public ${phase} error`,
       });
+    }
   }
+
   const hooks = {
     async beforeAddMember(context: Before) {
-      if (mode === "off") return;
+      if (mode === "off") {
+        return;
+      }
+
       await note("before-add", context);
-      if (mode === "pause-before") await gate;
-      if (mode === "pause-before-pair")
+
+      if (mode === "pause-before") {
+        await gate;
+      }
+
+      if (mode === "pause-before-pair") {
         await new Promise<void>((resolve) => pairGates.push(resolve));
+      }
+
       const ctx = await profiles.get("org-member-addition")!.$context;
-      if (mode === "mutate-target")
+
+      if (mode === "mutate-target") {
         await ctx.adapter.update({
           model: "user",
           where: [{ field: "id", value: context.user.id }],
           update: { name: "Stored Addition Target" },
         });
-      if (mode === "sql-before-error")
+      }
+
+      if (mode === "sql-before-error") {
         await ctx.adapter.update({
           model: "user",
           where: [{ field: "id", value: context.user.id }],
           update: { name: "Attempted Before Name" },
         });
-      if (mode === "patch-role") return { data: { role: "hook-unregistered-role" } };
-      if (mode === "patch-empty") return { data: { role: "" } };
-      if (mode.startsWith("patch-target")) return { data: patch };
+      }
+
+      if (mode === "patch-role") {
+        return { data: { role: "hook-unregistered-role" } };
+      }
+
+      if (mode === "patch-empty") {
+        return { data: { role: "" } };
+      }
+
+      if (mode.startsWith("patch-target")) {
+        return { data: patch };
+      }
     },
     async afterAddMember(context: After) {
-      if (mode === "off") return;
+      if (mode === "off") {
+        return;
+      }
       await note("after-add", context);
       if (mode === "sql-after-error") {
         const ctx = await profiles.get("org-member-addition")!.$context;
@@ -182,11 +217,15 @@ export function organizationMemberAdditionFixture(
                         context: structuredClone(context),
                         snapshot: snapshot(),
                       });
-                      if (mode === "reject-team-limit" || mode === "patch-target-reject-team-limit")
+                      if (
+                        mode === "reject-team-limit" ||
+                        mode === "patch-target-reject-team-limit"
+                      ) {
                         throw new APIError("FORBIDDEN", {
                           code: "TEAM_LIMIT_POLICY_REJECTED",
                           message: "Actual team-limit rejection",
                         });
+                      }
                       return 1;
                     },
                   }
@@ -201,7 +240,11 @@ export function organizationMemberAdditionFixture(
     profiles,
     async configure(body: Record<string, unknown>) {
       release?.();
-      for (const resolve of pairGates) resolve();
+
+      for (const resolve of pairGates) {
+        resolve();
+      }
+
       pairGates = [];
       mode = typeof body.mode === "string" ? body.mode : "record";
       patch = {
@@ -213,22 +256,30 @@ export function organizationMemberAdditionFixture(
       gate = new Promise<void>((resolve) => {
         release = resolve;
       });
+
       for (const name of [
         "addition_guard_member",
         "addition_guard_team",
         "addition_guard_cleanup",
         "addition_guard_user",
-      ])
+      ]) {
         database.exec(`DROP TRIGGER IF EXISTS ${name}`);
+      }
+
       database.exec(
         "CREATE TABLE IF NOT EXISTS __test_addition_guard(userId TEXT,organizationId TEXT,teamId TEXT);DELETE FROM __test_addition_guard",
       );
+
       if (mode.startsWith("sql-")) {
-        const user = database.query("SELECT id FROM user WHERE id=?").get(String(body.userId)),
-          org = database
-            .query("SELECT id FROM organization WHERE id=?")
-            .get(String(body.organizationId));
-        if (!user || !org) throw new Error("Guard requires actual target user and organization");
+        const user = database.query("SELECT id FROM user WHERE id=?").get(String(body.userId));
+        const org = database
+          .query("SELECT id FROM organization WHERE id=?")
+          .get(String(body.organizationId));
+
+        if (!user || !org) {
+          throw new Error("Guard requires actual target user and organization");
+        }
+
         database
           .query("INSERT INTO __test_addition_guard(userId,organizationId,teamId) VALUES(?,?,?)")
           .run(
@@ -236,28 +287,40 @@ export function organizationMemberAdditionFixture(
             String(body.organizationId),
             typeof body.teamId === "string" ? body.teamId : null,
           );
-        if (mode === "sql-member-abort")
+
+        if (mode === "sql-member-abort") {
           database.exec(
             "CREATE TRIGGER addition_guard_member BEFORE INSERT ON member WHEN NEW.userId=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission member veto'); END",
           );
-        if (mode === "sql-team-abort")
+        }
+
+        if (mode === "sql-team-abort") {
           database.exec(
             "CREATE TRIGGER addition_guard_team BEFORE INSERT ON teamMember WHEN NEW.userId=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission team veto'); END",
           );
-        if (mode === "sql-cleanup-abort")
+        }
+
+        if (mode === "sql-cleanup-abort") {
           database.exec(
             "CREATE TRIGGER addition_guard_cleanup BEFORE DELETE ON member WHEN OLD.userId=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission cleanup veto'); END",
           );
-        if (mode === "sql-before-error" || mode === "sql-after-error")
+        }
+
+        if (mode === "sql-before-error" || mode === "sql-after-error") {
           database.exec(
             "CREATE TRIGGER addition_guard_user BEFORE UPDATE ON user WHEN OLD.id=(SELECT userId FROM __test_addition_guard) BEGIN SELECT RAISE(ABORT,'actual admission callback veto'); END",
           );
+        }
       }
+
       return Response.json({ configured: true });
     },
     release() {
-      if (mode === "pause-before-pair") pairGates.shift()?.();
-      else release?.();
+      if (mode === "pause-before-pair") {
+        pairGates.shift()?.();
+      } else {
+        release?.();
+      }
       return Response.json({ released: true });
     },
     async state(waitFor: string | null) {
@@ -270,8 +333,9 @@ export function organizationMemberAdditionFixture(
           ? pairGates.length === 2
           : receipts.some((value) => (value as { phase: string }).phase === waitFor));
         n++
-      )
+      ) {
         await Bun.sleep(10);
+      }
       return Response.json({
         receipts,
         snapshot: snapshot(),
@@ -285,7 +349,11 @@ export function organizationMemberAdditionFixture(
         body: Parameters<ReturnType<typeof organization>["endpoints"]["addMember"]>[0]["body"];
       };
       const auth = profiles.get(input.profile ?? "org-member-addition");
-      if (!auth) return new Response(null, { status: 404 });
+
+      if (!auth) {
+        return new Response(null, { status: 404 });
+      }
+
       try {
         return Response.json(
           await auth.api.addMember({
@@ -304,13 +372,16 @@ export function organizationMemberAdditionFixture(
     },
     async seed(body: Record<string, unknown>) {
       const ctx = await profiles.get("org-member-addition")!.$context;
-      const organizationId = String(body.organizationId),
-        userId = String(body.userId);
+      const organizationId = String(body.organizationId);
+      const userId = String(body.userId);
+
       if (
         !database.query("SELECT id FROM organization WHERE id=?").get(organizationId) ||
         !database.query("SELECT id FROM user WHERE id=?").get(userId)
-      )
+      ) {
         throw new Error("Actual seed owners required");
+      }
+
       if (body.action === "padding") {
         for (let n = 0; n < Number(body.count); n++) {
           const user = await ctx.internalAdapter.createUser({
@@ -331,7 +402,10 @@ export function organizationMemberAdditionFixture(
             { field: "userId", value: userId },
           ],
         });
-      } else throw new Error("Unknown actual setup action");
+      } else {
+        throw new Error("Unknown actual setup action");
+      }
+
       return Response.json({ seeded: true });
     },
   };

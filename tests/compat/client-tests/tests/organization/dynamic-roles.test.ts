@@ -1,7 +1,9 @@
 import { expect } from "bun:test";
+
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { createAuthClient } from "better-auth/client";
 import { z } from "zod";
+
 import type { FixtureProfile } from "../../support/profiles";
 import { compatScenario } from "../../support/scenario";
 import {
@@ -33,6 +35,7 @@ async function raw(
   });
   const text = await response.text();
   let body: unknown = null;
+
   if (text) {
     try {
       body = JSON.parse(text);
@@ -40,6 +43,7 @@ async function raw(
       body = text;
     }
   }
+
   return { status: response.status, body };
 }
 
@@ -93,6 +97,7 @@ compatScenario(
       permission,
       updatedAt: null,
     });
+
     const persisted = await state(ctx, org.id);
     expect(persisted.parsed.roles[0]?.permission).toBe(JSON.stringify(permission));
 
@@ -100,11 +105,13 @@ compatScenario(
       query: { roleId: roleData.id, organizationId: foreignOrg.id },
     });
     expect(wrongScope.error).toMatchObject({ status: 400, code: "ROLE_NOT_FOUND" });
+
     const invalidResource = await owner.client.organization.createRole({
       role: "invalid-resource",
       permission: { invented: ["read"] },
     });
     expect(invalidResource.error).toMatchObject({ status: 400, code: "INVALID_RESOURCE" });
+
     const predefined = await owner.client.organization.createRole({
       role: "OWNER",
       permission: {},
@@ -120,6 +127,7 @@ compatScenario(
       permissions: { team: ["create"], member: ["update"] },
     });
     expect(data(hasPermission).success).toBe(true);
+
     const team = await member.client.organization.createTeam({ name: "Delegated" });
     data(team);
 
@@ -128,6 +136,7 @@ compatScenario(
       status: 400,
       code: "ROLE_IS_ASSIGNED_TO_MEMBERS",
     });
+
     const unknownRole = await owner.client.organization.updateMemberRole({
       memberId,
       role: "missing",
@@ -143,6 +152,7 @@ compatScenario(
       data: { permission: { team: ["update"] } },
     });
     expect(data(updated).roleData.updatedAt).toBeNull();
+
     const read = await owner.client.organization.getRole({ query: { roleName: "teameditor" } });
     expect(data(read).updatedAt).not.toBeNull();
     expect(data(read).permission).toEqual({ team: ["update"] });
@@ -160,6 +170,7 @@ compatScenario(
     data(reset);
     const deleted = await owner.client.organization.deleteRole({ roleName: "teameditor" });
     expect(data(deleted).success).toBe(true);
+
     const afterDelete = await state(ctx, org.id);
     expect(afterDelete.parsed.roles).toEqual([]);
 
@@ -201,6 +212,7 @@ compatScenario(
   "organization role configuration preserves static quotas and missing access-control behavior",
   async (ctx) => {
     const disabled = [];
+
     for (const [method, path, json] of [
       ["POST", "/organization/create-role", { role: "unavailable", permission: {} }],
       ["POST", "/organization/update-role", { roleId: "unavailable", data: {} }],
@@ -272,6 +284,7 @@ compatScenario(
       "org-roles-no-ac",
     );
     expect(seed.status).toBe(200);
+
     const legacy = seededRole.parse(seed.body);
 
     const read = await noAc.client.organization.getRole({ query: { roleId: legacy.roleId } });
@@ -282,6 +295,7 @@ compatScenario(
       data: { permission: {} },
     });
     expect(update.error).toMatchObject({ status: 501, code: "MISSING_AC_INSTANCE" });
+
     const unchanged = await teamState(ctx, noAcId, "org-roles-no-ac");
     expect(unchanged.parsed.roles[0]?.permission).toBe('{"team":["create"]}');
     expect(unchanged.parsed.roles[0]?.updatedAt).toBeNull();
@@ -334,6 +348,7 @@ compatScenario(
     const twoId = data(two).id;
 
     const created = [];
+
     for (const [organizationId, names] of [
       [oneId, ["one"]],
       [twoId, ["one", "two"]],
@@ -351,9 +366,11 @@ compatScenario(
 
     const lists = [];
     const rejected = [];
+
     for (const organizationId of [oneId, twoId]) {
       const response = await owner.client.organization.listRoles({ query: { organizationId } });
       expect(data(response)).toHaveLength(1);
+
       lists.push(response);
       const overflow = await owner.client.organization.createRole({
         organizationId,
@@ -361,6 +378,7 @@ compatScenario(
         permission: {},
       });
       expect(overflow.error).toMatchObject({ status: 400, code: "TOO_MANY_ROLES" });
+
       rejected.push(overflow);
     }
 
@@ -443,6 +461,7 @@ compatScenario(
     expect(data(signedIn).user.id).toBe(owner.user.id);
 
     const rounds = [];
+
     for (const mode of ["none", "other", "same", "other-profile", "other", "same"] as const) {
       const restored = await owner.client.organization.updateRole({
         organizationId,
@@ -489,7 +508,10 @@ compatScenario(
               organizationId: mode === "other" ? otherId : organizationId,
               permissions: { team: ["create"] },
             });
-      if (reload) expect(data(reload).success).toBe(true);
+
+      if (reload) {
+        expect(data(reload).success).toBe(true);
+      }
 
       const released = await serverOperation(
         ctx,
@@ -500,6 +522,7 @@ compatScenario(
 
       const result = await pending;
       const rejected = mode === "same" || mode === "other-profile";
+
       if (rejected) {
         expect(result.error).toMatchObject({
           status: 403,
@@ -519,7 +542,10 @@ compatScenario(
       const cleanup = rejected
         ? null
         : await owner.client.organization.deleteRole({ organizationId, roleName: "delegated" });
-      if (cleanup) expect(data(cleanup).success).toBe(true);
+
+      if (cleanup) {
+        expect(data(cleanup).success).toBe(true);
+      }
 
       rounds.push({
         mode,
@@ -558,7 +584,7 @@ compatScenario(
     const selected = "org-roles-delegated";
     const owner = await teamSignUp(ctx, "delegating-owner", selected);
     const member = await teamSignUp(ctx, "delegating-member", selected);
-    const outsider = await teamSignUp(ctx, "delegating-outsider", selected);
+    await teamSignUp(ctx, "delegating-outsider", selected);
 
     const created = await owner.client.organization.create({
       name: "Delegation",
@@ -579,6 +605,7 @@ compatScenario(
       permissions: { team: ["create"], member: ["update"] },
     });
     expect(data(combinedPermission).success).toBe(false);
+
     const teamPermission = await member.client.organization.hasPermission({
       permissions: { team: ["create"] },
     });
@@ -730,6 +757,7 @@ compatScenario(
     const otherId = data(other).id;
 
     const seeds = [];
+
     for (const orgId of [organizationId, organizationId, otherId]) {
       const seed = await serverOperation(
         ctx,
@@ -763,6 +791,7 @@ compatScenario(
       data: { permission: { team: ["update"] } },
     });
     expect(data(byId).roleData.updatedAt).toBeNull();
+
     const afterId = await state(ctx, organizationId);
     expect(afterId.parsed.roles.map((role) => role.permission)).toEqual([
       '{"team":["update"]}',
@@ -774,6 +803,7 @@ compatScenario(
       data: { permission: { member: ["update"] } },
     });
     expect(data(byName).roleData.id).toBe(first.roleId);
+
     const afterName = await state(ctx, organizationId);
     expect(afterName.parsed.roles.map((role) => role.permission)).toEqual([
       '{"member":["update"]}',
@@ -793,6 +823,7 @@ compatScenario(
 
     const replay = await owner.client.organization.deleteRole({ roleId: second.roleId });
     expect(replay.error).toMatchObject({ status: 400, code: "ROLE_NOT_FOUND" });
+
     const foreignAfter = await state(ctx, otherId);
     expect(foreignAfter.parsed.roles).toHaveLength(1);
 
@@ -833,6 +864,7 @@ compatScenario(
     const roleId = data(role).roleData.id;
 
     const invalid = [];
+
     for (const [json, message] of [
       [
         { roleName: "", data: {} },
@@ -870,6 +902,7 @@ compatScenario(
     }
 
     const invalidCreates = [];
+
     for (const text of ["", "{malformed"]) {
       const response = await raw(
         ctx,
@@ -895,6 +928,7 @@ compatScenario(
 
     const noBody = await raw(ctx, "role-validation-owner", profile, "/organization/create-role");
     expect(noBody.status).toBe(400);
+
     invalidCreates.push(noBody);
 
     const integerResources = await raw(
@@ -914,6 +948,7 @@ compatScenario(
           "[body.permission.1.0] Invalid input: expected string, received boolean; [body.permission.2.0] Invalid input: expected string, received null; [body.permission.team.0] Invalid input: expected string, received number",
       },
     });
+
     invalidCreates.push(integerResources);
 
     for (const [json, message] of [
@@ -961,6 +996,7 @@ compatScenario(
     expect(selected.status).toBe(200);
 
     const permissions = [];
+
     for (const [json, success] of [
       [{ permissions: {} }, false],
       [{ permissions: { team: [] } }, false],
@@ -1054,6 +1090,7 @@ compatScenario(
       data: { permission: { team: ["delete"] } },
     });
     const unsignedDelete = await unsigned.organization.deleteRole({ organizationId, roleId });
+
     for (const response of [unsignedRead, unsignedList, unsignedUpdate, unsignedDelete]) {
       expect(response.error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
     }
@@ -1064,6 +1101,7 @@ compatScenario(
     const outsiderList = await outsider.client.organization.listRoles({
       query: { organizationId },
     });
+
     for (const response of [outsiderRead, outsiderList]) {
       expect(response.error).toMatchObject({
         status: 403,
@@ -1228,6 +1266,7 @@ compatScenario(
 
     const deleted = await owner.client.organization.deleteRole({ roleId: editorId });
     expect(data(deleted).success).toBe(true);
+
     const after = await teamState(ctx, organizationId, selected);
     expect(after.parsed.roles.map((role) => role.role)).toEqual(["prefixeditor"]);
     expect(after.parsed.members.map((member) => member.role)).toEqual([

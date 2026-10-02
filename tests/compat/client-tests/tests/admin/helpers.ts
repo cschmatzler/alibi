@@ -1,5 +1,6 @@
 import { createAuthClient } from "better-auth/client";
 import { adminClient } from "better-auth/client/plugins";
+
 import { compatScenario } from "../../support/scenario";
 
 export type CompatContext = Parameters<Parameters<typeof compatScenario>[1]>[0];

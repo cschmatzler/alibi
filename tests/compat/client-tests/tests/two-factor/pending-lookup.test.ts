@@ -1,8 +1,10 @@
 import { expect } from "bun:test";
+
 import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { Cookie } from "tough-cookie";
 import { z } from "zod";
+
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { generateCurrentTotp } from "../../support/totp";
@@ -15,6 +17,7 @@ const verification = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
 });
+
 const factorRow = z.object({
   id: z.string(),
   userId: z.string(),
@@ -24,6 +27,7 @@ const factorRow = z.object({
   failedVerificationCount: z.number().nullable(),
   lockedUntil: z.string().nullable(),
 });
+
 const stateSchema = z.object({
   receipts: z.array(z.string()),
   snapshot: z.object({
@@ -31,7 +35,9 @@ const stateSchema = z.object({
     factors: z.array(factorRow),
   }),
 });
+
 type State = z.infer<typeof stateSchema>;
+
 async function control(
   ctx: ScenarioContext,
   profile: FixtureProfile,
@@ -45,9 +51,11 @@ async function control(
   expect(result.status).toBe(200);
   return result.body;
 }
+
 async function state(ctx: ScenarioContext, profile: FixtureProfile) {
   return stateSchema.parse(await control(ctx, profile, { action: "snapshot" }));
 }
+
 function project(value: State) {
   return {
     receipts: value.receipts,
@@ -73,8 +81,9 @@ function project(value: State) {
     },
   };
 }
-for (const cleanup of [true, false] as const)
-  for (const kind of ["totp", "otp", "backup"] as const)
+
+for (const cleanup of [true, false] as const) {
+  for (const kind of ["totp", "otp", "backup"] as const) {
     for (const mode of ["expired", "missing-user", "newest-expired"] as const) {
       compatScenario(
         `two-factor pending ${kind} ${mode} ${cleanup ? "default" : "disabled"} cleanup preserves the actual lookup snapshot and failure stage`,
@@ -101,35 +110,46 @@ for (const cleanup of [true, false] as const)
                 onResponse: ({ response }) => {
                   for (const header of response.headers.getSetCookie()) {
                     const cookie = Cookie.parse(header);
-                    if (cookie?.key.endsWith(".two_factor") && cookie.value)
+                    if (cookie?.key.endsWith(".two_factor") && cookie.value) {
                       cookies.set(name, cookie);
+                    }
                   }
                 },
               },
             });
-          const owner = actor("owner"),
-            sibling = actor("sibling"),
-            foreign = actor("foreign"),
-            raw = actor("raw");
-          const email = ctx.uniqueEmail("pending-owner"),
-            password = "password123";
+          const owner = actor("owner");
+          const sibling = actor("sibling");
+          const foreign = actor("foreign");
+          const raw = actor("raw");
+          const email = ctx.uniqueEmail("pending-owner");
+          const password = "password123";
           const signup = await owner.signUp.email({
             email,
             password,
             name: "Pending Owner",
           });
           expect(signup.error).toBeNull();
-          if (!signup.data) throw new Error("actual owner required");
+
+          if (!signup.data) {
+            throw new Error("actual owner required");
+          }
+
           expect((await sibling.signIn.email({ email, password })).error).toBeNull();
+
           const other = await foreign.signUp.email({
             email: ctx.uniqueEmail("foreign"),
             password,
             name: "Foreign Owner",
           });
           expect(other.error).toBeNull();
-          if (!other.data) throw new Error("actual foreign owner required");
+
+          if (!other.data) {
+            throw new Error("actual foreign owner required");
+          }
+
           const enrollment = await owner.twoFactor.enable({ password });
           expect(enrollment.error).toBeNull();
+
           const enabled = z
             .object({
               method: z.literal("totp"),
@@ -138,16 +158,26 @@ for (const cleanup of [true, false] as const)
             })
             .parse(enrollment.data);
           expect((await foreign.twoFactor.enable({ password })).error).toBeNull();
-          const userId = signup.data.user.id,
-            foreignId = other.data.user.id;
+
+          const userId = signup.data.user.id;
+          const foreignId = other.data.user.id;
           expect((await owner.signOut()).error).toBeNull();
+
           const signIn = await owner.signIn.email({ email, password });
           expect(signIn.data).toMatchObject({ twoFactorRedirect: true });
+
           const cookie = cookies.get("owner");
-          if (!cookie) throw new Error("actual issued pending cookie required");
-          if (mode === "expired") expect(cookie.maxAge).toBe(0);
-          const decoded = decodeURIComponent(cookie.value),
-            key = decoded.slice(0, decoded.lastIndexOf("."));
+
+          if (!cookie) {
+            throw new Error("actual issued pending cookie required");
+          }
+
+          if (mode === "expired") {
+            expect(cookie.maxAge).toBe(0);
+          }
+
+          const decoded = decodeURIComponent(cookie.value);
+          const key = decoded.slice(0, decoded.lastIndexOf("."));
           const rawCookie = cookie.cookieString();
           const setup = await state(ctx, profile);
           expect(setup.snapshot.verifications.find((row) => row.identifier === key)?.value).toBe(
@@ -157,6 +187,7 @@ for (const cleanup of [true, false] as const)
             setup.snapshot.verifications.find((row) => row.identifier === `2fa-attempts-${key}`)
               ?.value,
           ).toBe("0");
+
           const unrelated = ctx.uniqueToken("unrelated-expired");
           await control(ctx, profile, {
             action: "seed",
@@ -197,14 +228,18 @@ for (const cleanup of [true, false] as const)
           const wrongSignature = encodeURIComponent(
             `${decoded.slice(0, dot + 1)}${signature[0] === "A" ? "B" : "A"}${signature.slice(1)}`,
           );
+
           for (const header of ["", `${cookie.key}=${wrongSignature}`]) {
             await control(ctx, profile, { action: "arm" });
             const guard = await verify(raw, { cookie: header });
             expect(guard.error?.code).toBe("INVALID_TWO_FACTOR_COOKIE");
+
             const guarded = await state(ctx, profile);
             expect(guarded.receipts).toEqual([]);
             expect(guarded.snapshot).toEqual(guardState.snapshot);
+
             let sendGuard;
+
             if (kind === "otp") {
               await control(ctx, profile, { action: "arm" });
               sendGuard = await raw.twoFactor.sendOtp({}, { headers: { cookie: header } });
@@ -212,15 +247,19 @@ for (const cleanup of [true, false] as const)
                 status: 401,
                 code: "INVALID_TWO_FACTOR_COOKIE",
               });
+
               const afterSend = await state(ctx, profile);
               expect(afterSend.receipts).toEqual([]);
               expect(afterSend.snapshot).toEqual(guardState.snapshot);
             }
+
             guards.push({ verify: guard, send: sendGuard });
           }
-          let negative: unknown = null,
-            delivery: unknown = null,
-            deliveredCode: string | null = null;
+
+          let negative: unknown = null;
+          let delivery: unknown = null;
+          let deliveredCode: string | null = null;
+
           if (mode === "expired") {
             const beforeJar = await state(ctx, profile);
             negative = await verify(owner);
@@ -235,10 +274,12 @@ for (const cleanup of [true, false] as const)
             ).toBeDefined();
             expect((await state(ctx, profile)).snapshot).toEqual(beforeJar.snapshot);
           }
+
           if (kind === "otp") {
             await control(ctx, profile, { action: "arm" });
             const sent = await raw.twoFactor.sendOtp({}, { headers: { cookie: rawCookie } });
             expect(sent.error).toBeNull();
+
             delivery = await control(ctx, profile, {
               action: "delivery",
               email,
@@ -249,14 +290,18 @@ for (const cleanup of [true, false] as const)
               cleanup ? ["lookup", "cleanup-read", "cleanup-delete", "user"] : ["lookup", "user"],
             );
           }
+
           const ghost = ctx.uniqueToken("missing-user");
-          if (mode === "missing-user")
+
+          if (mode === "missing-user") {
             await control(ctx, profile, {
               action: "patch",
               identifier: key,
               value: ghost,
             });
-          if (mode === "newest-expired")
+          }
+
+          if (mode === "newest-expired") {
             await control(ctx, profile, {
               action: "seed",
               identifier: key,
@@ -264,12 +309,15 @@ for (const cleanup of [true, false] as const)
               expiresAt: "2020-01-01T00:00:00.000Z",
               createdAt: "2030-01-01T00:00:00.000Z",
             });
-          const before = await state(ctx, profile),
-            ownerBefore = await ctx.readUserState({ userId }),
-            foreignBefore = await ctx.readUserState({ userId: foreignId });
+          }
+
+          const before = await state(ctx, profile);
+          const ownerBefore = await ctx.readUserState({ userId });
+          const foreignBefore = await ctx.readUserState({ userId: foreignId });
           await control(ctx, profile, { action: "arm" });
           const rejected = await verify(raw, { cookie: rawCookie });
           expect(rejected.error?.code).toBe("INVALID_TWO_FACTOR_COOKIE");
+
           const after = await state(ctx, profile);
           const expectedReceipts = cleanup
             ? [
@@ -283,6 +331,7 @@ for (const cleanup of [true, false] as const)
           expect(after.snapshot.verifications.some((row) => row.identifier === unrelated)).toBe(
             !cleanup,
           );
+
           const ownerFactorBefore = before.snapshot.factors.find((row) => row.userId === userId)!;
           const ownerFactorAfter = after.snapshot.factors.find((row) => row.userId === userId)!;
           expect(ownerFactorAfter).toEqual({
@@ -294,6 +343,7 @@ for (const cleanup of [true, false] as const)
           );
           expect(await ctx.readUserState({ userId })).toEqual(ownerBefore);
           expect(await ctx.readUserState({ userId: foreignId })).toEqual(foreignBefore);
+
           if (mode === "expired") {
             expect(after.snapshot.verifications.some((row) => row.identifier === key)).toBe(
               !cleanup && kind !== "otp",
@@ -309,26 +359,40 @@ for (const cleanup of [true, false] as const)
               after.snapshot.verifications.find((row) => row.identifier === `2fa-attempts-${key}`)
                 ?.value,
             ).toBe("0");
-            if (kind === "otp")
+            if (kind === "otp") {
               expect(
                 after.snapshot.verifications.find((row) => row.identifier === `2fa-otp-${key}`),
               ).toEqual(
                 before.snapshot.verifications.find((row) => row.identifier === `2fa-otp-${key}`),
               );
+            }
           }
+
           const replay = await verify(raw, { cookie: rawCookie });
+
           if (mode === "newest-expired" && cleanup) {
             expect(replay.error).toBeNull();
             expect(replay.data?.user.id).toBe(userId);
-            if (kind === "backup") code = enabled.backupCodes[1]!;
-          } else expect(replay.error?.code).toBe("INVALID_TWO_FACTOR_COOKIE");
-          let fresh = actor("fresh", positive),
-            retryCookie = rawCookie;
+            if (kind === "backup") {
+              code = enabled.backupCodes[1]!;
+            }
+          } else {
+            expect(replay.error?.code).toBe("INVALID_TWO_FACTOR_COOKIE");
+          }
+
+          let fresh = actor("fresh", positive);
+          let retryCookie = rawCookie;
+
           if (mode === "expired" || (mode === "newest-expired" && cleanup)) {
             const freshSignIn = await fresh.signIn.email({ email, password });
             expect(freshSignIn.data).toMatchObject({ twoFactorRedirect: true });
+
             const issued = cookies.get("fresh");
-            if (!issued) throw new Error("real positive-lifetime retry cookie required");
+
+            if (!issued) {
+              throw new Error("real positive-lifetime retry cookie required");
+            }
+
             retryCookie = issued.cookieString();
           } else {
             // Restore installed state through the real adapter; no factor credential is removed.
@@ -339,6 +403,7 @@ for (const cleanup of [true, false] as const)
               expiresAt: "2031-01-01T00:00:00.000Z",
             });
           }
+
           if (kind === "otp") {
             expect(
               (await fresh.twoFactor.sendOtp({}, { headers: { cookie: retryCookie } })).error,
@@ -347,22 +412,28 @@ for (const cleanup of [true, false] as const)
               .object({ otp: z.string() })
               .parse(await control(ctx, positive, { action: "delivery", email })).otp;
           }
+
           const retry = await verify(fresh, { cookie: retryCookie });
           expect(retry.error).toBeNull();
           expect(retry.data?.user.id).toBe(userId);
           expect(retry.data?.user.name).toBe("Changed Pending Owner");
+
           const finished = await state(ctx, positive);
           expect(
             finished.snapshot.factors.find((row) => row.userId === userId)?.failedVerificationCount,
           ).toBe(0);
           expect(await ctx.readUserState({ userId: foreignId })).toEqual(foreignBefore);
+
           const finalReplay = await verify(raw, { cookie: retryCookie });
-          if (mode !== "newest-expired" || cleanup)
+
+          if (mode !== "newest-expired" || cleanup) {
             expect(finalReplay.error?.code).toBe("INVALID_TWO_FACTOR_COOKIE");
+          }
+
           // With cleanup disabled, a retained older installed identifier is a genuine
           // second generation. Its exact replay behavior is observed, not normalized.
-          const final = await state(ctx, positive),
-            ownerAfter = await ctx.readUserState({ userId });
+          const final = await state(ctx, positive);
+          const ownerAfter = await ctx.readUserState({ userId });
           return ctx.snapshot({
             signup,
             other,
@@ -395,3 +466,5 @@ for (const cleanup of [true, false] as const)
         ],
       );
     }
+  }
+}

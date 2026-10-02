@@ -1,6 +1,7 @@
 /** Actual published hash policy, real HTTP range service and physical SQLite evidence. */
 
 import type { Database } from "bun:sqlite";
+
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { hashPassword, verifyPassword } from "better-auth/crypto";
@@ -12,8 +13,8 @@ export async function createCompromisedPasswordFixture(
   database: Database,
   shared: BetterAuthOptions,
 ) {
-  const events: Record<string, unknown>[] = [],
-    receipts: Record<string, unknown>[] = [];
+  const events: Record<string, unknown>[] = [];
+  const receipts: Record<string, unknown>[] = [];
   let hashFailure = false;
   let service = { body: "", status: 200, contentType: "text/plain" };
   const range = Bun.serve({
@@ -62,6 +63,7 @@ export async function createCompromisedPasswordFixture(
     return previousFetch(input, init);
   }) as typeof fetch;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
+
   for (const name of [
     "pwned-default",
     "pwned-disabled",
@@ -96,11 +98,14 @@ export async function createCompromisedPasswordFixture(
             events.push({ stage: "hash-enter", password });
             const hash = await hashPassword(password);
             events.push({ stage: "hash-result", password, hash });
-            if (hashFailure)
+
+            if (hashFailure) {
               throw new APIError("FORBIDDEN", {
                 code: "ORIGINAL_HASH_REJECTED",
                 message: "Original password hash rejected",
               });
+            }
+
             return hash;
           },
           verify: verifyPassword,
@@ -157,10 +162,12 @@ export async function createCompromisedPasswordFixture(
     await (await getMigrations(options)).runMigrations();
     profiles.set(name, betterAuth(options));
   }
+
   return {
     profiles,
     async handle(request: Request): Promise<Response | undefined> {
       const url = new URL(request.url);
+
       if (url.pathname === "/__test/compromised-password/state") {
         const context = await profiles.get("pwned-default")!.$context;
         const read = (model: "user" | "account" | "session" | "verification") =>
@@ -177,13 +184,16 @@ export async function createCompromisedPasswordFixture(
           receipts,
         });
       }
+
       if (
         !["/__test/compromised-password", "/__test/server-api/compromised-password"].includes(
           url.pathname,
         ) ||
         request.method !== "POST"
-      )
+      ) {
         return;
+      }
+
       const body = (await request.json()) as {
         operation: string;
         profile?: string;
@@ -195,6 +205,7 @@ export async function createCompromisedPasswordFixture(
         newPassword?: string;
         hashFailure?: boolean;
       };
+
       if (body.operation === "range") {
         hashFailure = body.hashFailure === true;
         service = {
@@ -206,26 +217,34 @@ export async function createCompromisedPasswordFixture(
         receipts.length = 0;
         return Response.json({ status: true });
       }
+
       const instance = profiles.get(body.profile ?? "pwned-default")!;
       const context = await instance.$context;
+
       if (body.operation === "clear-password") {
         await context.internalAdapter.updateAccount(body.accountId!, { password: null });
         return Response.json({ status: true });
       }
+
       if (body.operation === "helper") {
         try {
           return Response.json({ compromised: await isPasswordCompromised(body.password!) });
         } catch (error) {
-          if (error instanceof APIError) return Response.json(error.body, { status: 500 });
+          if (error instanceof APIError) {
+            return Response.json(error.body, { status: 500 });
+          }
           throw error;
         }
       }
-      if (body.operation === "set")
+
+      if (body.operation === "set") {
         return instance.api.setPassword({
           body: { newPassword: body.newPassword! },
           headers: request.headers,
           asResponse: true,
         });
+      }
+
       return Response.json({ message: "unknown fixture operation" }, { status: 400 });
     },
   };

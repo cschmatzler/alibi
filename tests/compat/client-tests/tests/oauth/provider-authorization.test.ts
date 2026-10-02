@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
@@ -21,11 +22,13 @@ type ProviderState = {
     body: Record<string, string> | null;
   }[];
 };
+
 async function state(ctx: ScenarioContext) {
   const response = await ctx.rawRequest({ path: "/__test/social-provider/state" });
   expect(response.status).toBe(200);
   return response.body as ProviderState;
 }
+
 const expectedOrigins = {
   google: "https://accounts.google.com/o/oauth2/v2/auth",
   github: "https://github.com/login/oauth/authorize",
@@ -133,6 +136,7 @@ compatScenario(
       ],
     ] as const;
     const results = [];
+
     for (const [provider, mode, expected] of table) {
       const profile = `social-${provider}-${mode}` as FixtureProfile;
       const actor = ctx.actor(profile, profile);
@@ -144,6 +148,7 @@ compatScenario(
           ...(scopes === undefined ? {} : { scopes: [...scopes] }),
         });
         expect(result.error).toBeNull();
+
         const url = new URL(result.data!.url!);
         expect(`${url.origin}${url.pathname}`).toBe(expectedOrigins[provider]);
         expect(url.searchParams.getAll("scope")).toEqual(
@@ -157,11 +162,14 @@ compatScenario(
         expect(url.searchParams.get("redirect_uri")).toBe(
           `${ctx.baseURL}${authProfilePath(profile)}/callback/${provider}`,
         );
+
         results.push({ provider, mode, scopes: scopes ?? null, result: ctx.snapshot(result) });
       }
     }
+
     const after = await state(ctx);
     expect(after).toEqual(before);
+
     return { before, results, after };
   },
   ["POST /sign-in/social"],
@@ -183,6 +191,7 @@ compatScenario(
       ["empty-prompt", [], null, "none"],
     ] as const;
     const results = [];
+
     for (const [mode, scopes, permissions, prompt] of cases) {
       const profile = `social-discord-${mode}` as FixtureProfile;
       const result = await ctx.actor(profile, profile).client.signIn.social({
@@ -192,6 +201,7 @@ compatScenario(
         ...(scopes === undefined ? {} : { scopes: [...scopes] }),
       });
       expect(result.error).toBeNull();
+
       const url = new URL(result.data!.url!);
       expect(`${url.origin}${url.pathname}`).toBe(expectedOrigins.discord);
       expect(url.searchParams.getAll("permissions")).toEqual(
@@ -199,10 +209,13 @@ compatScenario(
       );
       expect(url.searchParams.getAll("prompt")).toEqual([prompt]);
       expect(url.searchParams.has("code_challenge")).toBe(false);
+
       results.push({ mode, scopes: scopes ?? null, result: ctx.snapshot(result) });
     }
+
     const after = await state(ctx);
     expect(after).toEqual(before);
+
     return { before, results, after };
   },
   ["POST /sign-in/social"],
@@ -221,6 +234,7 @@ compatScenario(
         name: "Link Owner",
       });
       expect(signup.error).toBeNull();
+
       const before = await state(ctx);
       const guest = await ctx.actor(`guest-${provider}`, profile).client.linkSocial({
         provider,
@@ -230,6 +244,7 @@ compatScenario(
       });
       expect(guest.error?.status).toBe(401);
       expect(await state(ctx)).toEqual(before);
+
       const link = await owner.client.linkSocial({
         provider,
         callbackURL: "/social-done",
@@ -237,6 +252,7 @@ compatScenario(
         scopes: ["request-scope", "request-scope"],
       });
       expect(link.error).toBeNull();
+
       const url = new URL(link.data!.url!);
       expect(`${url.origin}${url.pathname}`).toBe(expectedOrigins[provider]);
       expect(url.searchParams.get("scope")).toBe(
@@ -247,10 +263,13 @@ compatScenario(
             : "identify email request-scope request-scope configured-scope",
       );
       expect(url.searchParams.has("code_challenge")).toBe(provider !== "discord");
+
       const current = await owner.client.getSession();
       expect(current.data!.user.id).toBe(signup.data!.user.id);
+
       const after = await state(ctx);
       expect(after).toEqual(before);
+
       results.push({
         provider,
         signup: ctx.snapshot(signup),
@@ -278,6 +297,7 @@ compatScenario(
       name: "Foreign User",
     });
     expect(foreignSignup.error).toBeNull();
+
     const foreignBefore = await ctx.readUserState({ userId: foreignSignup.data!.user.id });
     const profile = {
       id: "4194304",
@@ -294,6 +314,7 @@ compatScenario(
       json: profile,
     });
     expect(control.status).toBe(200);
+
     const before = await state(ctx);
     const signin = await primary.client.signIn.social({
       provider: "discord",
@@ -302,8 +323,10 @@ compatScenario(
       scopes: ["requested-scope"],
     });
     expect(signin.error).toBeNull();
+
     const oauth = new URL(signin.data!.url!);
     expect(oauth.searchParams.has("code_challenge")).toBe(false);
+
     const path = `${authProfilePath(fixture)}/callback/discord?${new URLSearchParams({ code: "fixture-code", state: oauth.searchParams.get("state")! })}`;
     const callbackResponse = await primary.fetch(path, { redirect: "manual" });
     const callback = {
@@ -313,8 +336,10 @@ compatScenario(
     };
     expect(callback.status).toBe(302);
     expect(callback.location).toBe("/social-done");
+
     const current = await primary.client.getSession();
     expect(current.data!.user.email).toBe(profile.email);
+
     const after = await state(ctx);
     expect(after.users).toHaveLength(before.users.length + 1);
     expect(after.accounts).toHaveLength(before.accounts.length + 1);
@@ -328,6 +353,7 @@ compatScenario(
       client_secret: "fixture-social-secret",
     });
     expect(after.receipts[1]!.authorization).toBe("Bearer fixture-discord-access");
+
     const account = after.accounts.find((row) => row.providerId === "discord")!;
     expect(account.userId).toBe(current.data!.user.id);
     expect(account.accountId).toBe(profile.id);
@@ -335,6 +361,7 @@ compatScenario(
     expect(account.accessToken).toBe("fixture-discord-access");
     expect(current.data!.session.userId).toBe(current.data!.user.id);
     expect(current.data!.session.userId).not.toBe(foreignSignup.data!.user.id);
+
     const replayResponse = await primary.fetch(path, { redirect: "manual" });
     const replay = {
       status: replayResponse.status,
@@ -343,12 +370,16 @@ compatScenario(
     };
     expect(replay.status).toBe(302);
     expect(replay.location).not.toBe(callback.location);
+
     const afterReplay = await state(ctx);
     expect(afterReplay).toEqual(after);
+
     const foreignAfter = await ctx.readUserState({ userId: foreignSignup.data!.user.id });
     expect(foreignAfter).toEqual(foreignBefore);
+
     const foreignCurrent = await foreign.client.getSession();
     expect(foreignCurrent.data!.user.id).toBe(foreignSignup.data!.user.id);
+
     return {
       foreignSignup: ctx.snapshot(foreignSignup),
       foreignBefore,

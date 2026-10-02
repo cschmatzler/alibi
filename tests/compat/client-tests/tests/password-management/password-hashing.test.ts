@@ -1,5 +1,7 @@
 import { beforeAll, expect } from "bun:test";
+
 import { z } from "zod";
+
 import { RUST_BASE_URL, requireHealthy, TS_BASE_URL } from "../../support/config";
 import { compatScenario } from "../../support/scenario";
 
@@ -17,7 +19,9 @@ async function passwordControl(baseURL: string, body: unknown) {
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(10_000),
   });
-  if (!response.ok) throw new Error(`Password fixture operation failed: ${response.status}`);
+  if (!response.ok) {
+    throw new Error(`Password fixture operation failed: ${response.status}`);
+  }
   return response.json();
 }
 
@@ -36,6 +40,7 @@ beforeAll(async () => {
       await passwordControl(baseURL, { operation: "hash", password }),
     );
     expect(independentlySalted).not.toBe(imported);
+
     const replacement = parseHash(
       await passwordControl(baseURL, {
         operation: "hash",
@@ -51,7 +56,11 @@ for (const source of ["TypeScript", "Rust"] as const) {
     `official client signs in with imported ${source} scrypt credentials`,
     async (ctx) => {
       const hashes = sourceHashes.get(source);
-      if (!hashes) throw new Error(`Missing ${source} password hashes`);
+
+      if (!hashes) {
+        throw new Error(`Missing ${source} password hashes`);
+      }
+
       const owner = ctx.actor("owner");
       const email = ctx.uniqueEmail(`imported-${source.toLowerCase()}`);
       const otherEmail = ctx.uniqueEmail("other-owner");
@@ -67,8 +76,13 @@ for (const source of ["TypeScript", "Rust"] as const) {
       });
       expect(signup.error).toBeNull();
       expect(otherSignup.error).toBeNull();
+
       const ownerId = signup.data?.user.id;
-      if (!ownerId) throw new Error("Sign-up did not return the credential owner");
+
+      if (!ownerId) {
+        throw new Error("Sign-up did not return the credential owner");
+      }
+
       await owner.client.signOut();
 
       const imported = await ctx.rawRequest({
@@ -77,6 +91,7 @@ for (const source of ["TypeScript", "Rust"] as const) {
         json: { operation: "import", email, hash: hashes.imported },
       });
       expect(imported.status).toBe(200);
+
       const persisted = credential.parse(imported.body);
       expect(persisted.userId).toBe(ownerId);
       expect(persisted.hash).toBe(hashes.imported);
@@ -93,6 +108,7 @@ for (const source of ["TypeScript", "Rust"] as const) {
         email: otherEmail,
         password: normalizedPassword,
       });
+
       for (const rejected of [previousPassword, wrongPassword, wrongOwner]) {
         expect(rejected.data).toBeNull();
         expect(rejected.error?.status).toBe(401);
@@ -111,6 +127,7 @@ for (const source of ["TypeScript", "Rust"] as const) {
       expect(originalSpelling.data?.user.id).toBe(ownerId);
       expect(signin.data?.token).toBeTruthy();
       expect(originalSpelling.data?.token).not.toBe(signin.data?.token);
+
       const session = await ctx.actor("normalized-password").client.getSession();
       expect(session.data?.session.userId).toBe(ownerId);
       expect(session.data?.session.token).toBe(signin.data?.token);
@@ -133,17 +150,20 @@ for (const source of ["TypeScript", "Rust"] as const) {
         ...persisted,
         hash: hashes.replacement,
       });
+
       const replacedPassword = await ctx
         .actor("replaced-password")
         .client.signIn.email({ email, password });
       expect(replacedPassword.data).toBeNull();
       expect(replacedPassword.error?.status).toBe(401);
+
       const replacementSignin = await ctx.actor("replacement").client.signIn.email({
         email,
         password: replacementPassword,
       });
       expect(replacementSignin.error).toBeNull();
       expect(replacementSignin.data?.user.id).toBe(ownerId);
+
       const verification = await ctx.rawRequest({
         path: "/__test/password",
         method: "POST",

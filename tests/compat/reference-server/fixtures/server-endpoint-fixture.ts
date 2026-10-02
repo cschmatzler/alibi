@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
+
 import { apiKey } from "@better-auth/api-key";
 import { getCurrentAuthEndpointContext } from "@better-auth/core/context";
 import { type BetterAuthOptions, type BetterAuthPlugin, betterAuth } from "better-auth";
@@ -16,6 +17,7 @@ import {
 import { kAPIErrorHeaderSymbol } from "better-call";
 
 const HASH_PASSWORD = "Actual-Phase-Hash-Password-205";
+
 function hashReceipt(hash: string) {
   const [salt, key] = hash.split(":");
   return {
@@ -27,6 +29,7 @@ function hashReceipt(hash: string) {
 }
 
 const requestBodies = new WeakMap<Request, string>();
+
 function requestSnapshot(request: Request | undefined) {
   return request
     ? {
@@ -38,6 +41,7 @@ function requestSnapshot(request: Request | undefined) {
       }
     : null;
 }
+
 type Context = {
   path?: unknown;
   method?: unknown;
@@ -47,6 +51,7 @@ type Context = {
   request?: Request;
   context: { session?: unknown; returned?: unknown };
 };
+
 function inputSnapshot(ctx: Context) {
   return {
     pathPresent: Object.hasOwn(ctx, "path"),
@@ -62,6 +67,7 @@ function inputSnapshot(ctx: Context) {
     session: ctx.context.session ?? null,
   };
 }
+
 function snapshot(ctx: Context) {
   const returned = ctx.context.returned;
   const current = getCurrentAuthEndpointContext() as unknown as Context;
@@ -84,10 +90,10 @@ export function createServerEndpointFixture(
   base: BetterAuthOptions,
   profile = "server-dispatch",
 ) {
-  const path = `/__test/profiles/${profile}/api/auth`,
-    controlPath = `/__test/${profile}`;
-  let mode = "normal",
-    serial = 0;
+  const path = `/__test/profiles/${profile}/api/auth`;
+  const controlPath = `/__test/${profile}`;
+  let mode = "normal";
+  let serial = 0;
   let hashPhase = "outside";
   const events: unknown[] = [];
   const ranges: unknown[] = [];
@@ -131,12 +137,14 @@ export function createServerEndpointFixture(
       } catch {
         /* Standalone helpers retain their owning fixture service. */
       }
-      if (current?.context.options.basePath === path)
+      if (current?.context.options.basePath === path) {
         return previousFetch(new URL(url.pathname, range.url), init);
+      }
     }
     return previousFetch(input, init);
   }) as typeof fetch;
   const other = betterAuth({ ...base, basePath: controlPath + "/other/api/auth", plugins: [] });
+
   function observer(id: string): BetterAuthPlugin {
     return {
       id: `server-dispatch-${id}`,
@@ -145,20 +153,32 @@ export function createServerEndpointFixture(
           {
             matcher(ctx) {
               events.push({ stage: `${id}-matcher`, ...snapshot(ctx) });
-              if (id === "first" && mode === "matcher-error") throw new Error("private matcher");
+              if (id === "first" && mode === "matcher-error") {
+                throw new Error("private matcher");
+              }
               return true;
             },
             handler: createAuthMiddleware(async (ctx) => {
               events.push({ stage: `${id}-before`, ...snapshot(ctx) });
-              if (mode === "before-headers") ctx.setHeader(`x-${id}`, "before");
+
+              if (mode === "before-headers") {
+                ctx.setHeader(`x-${id}`, "before");
+              }
+
               if (id === "first" && mode === "cancel") {
                 ctx.setHeader("x-before", "cancel");
                 return { cancelled: true, body: ctx.body };
               }
-              if (id === "first" && mode === "before-error") throw new Error("private before");
-              if (id === "first" && mode === "before-api")
+
+              if (id === "first" && mode === "before-error") {
+                throw new Error("private before");
+              }
+
+              if (id === "first" && mode === "before-api") {
                 throw new APIError("FORBIDDEN", { code: "APP_BEFORE", message: "before denied" });
-              if (mode === "patch" || mode === "patch-existing-headers")
+              }
+
+              if (mode === "patch" || mode === "patch-existing-headers") {
                 return {
                   context: {
                     body:
@@ -177,6 +197,7 @@ export function createServerEndpointFixture(
                     headers: new Headers({ [`x-${id}`]: "patched" }),
                   },
                 };
+              }
             }),
           },
         ],
@@ -185,17 +206,23 @@ export function createServerEndpointFixture(
             matcher: () => true,
             handler: createAuthMiddleware(async (ctx) => {
               events.push({ stage: `${id}-after`, ...snapshot(ctx) });
+
               if (id === "second" && mode === "scope-isolation") {
                 events.push({
                   stage: "other-context-session",
                   session: await other.api.getSession({ headers: ctx.headers }),
                 });
               }
+
               if (id === "first" && mode === "after-api") {
                 ctx.setHeader("x-after", "api-error");
                 throw new APIError("FORBIDDEN", { code: "APP_AFTER", message: "after denied" });
               }
-              if (id === "first" && mode === "after-error") throw new Error("private after");
+
+              if (id === "first" && mode === "after-error") {
+                throw new Error("private after");
+              }
+
               if (id === "first" && mode === "after-value") {
                 ctx.setHeader("x-after", "replacement");
                 return { replacement: true, original: ctx.context.returned };
@@ -206,6 +233,7 @@ export function createServerEndpointFixture(
       },
     };
   }
+
   const auth = betterAuth({
     ...base,
     basePath: path,
@@ -255,12 +283,20 @@ export function createServerEndpointFixture(
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
         events.push({ stage: "user-before", ...snapshot(ctx) });
+
         if (mode.startsWith("hash-phase")) {
           hashPhase = "before";
           await ctx.context.password.hash(HASH_PASSWORD);
         }
-        if (mode === "reset-app") serial = 0;
-        if (mode === "before-headers") ctx.setHeader("x-user", "before");
+
+        if (mode === "reset-app") {
+          serial = 0;
+        }
+
+        if (mode === "before-headers") {
+          ctx.setHeader("x-user", "before");
+        }
+
         if ((mode === "request-patch" || mode.startsWith("hash-phase")) && ctx.request) {
           const headers = new Headers(ctx.request.headers);
           headers.set("x-physical-patch", "actual-clone");
@@ -268,13 +304,15 @@ export function createServerEndpointFixture(
           requestBodies.set(patched, await patched.clone().text());
           return { context: { request: patched } };
         }
-        if (mode === "patch" || mode === "patch-existing-headers")
+
+        if (mode === "patch" || mode === "patch-existing-headers") {
           return {
             context: {
               body: { email: "UserPatch@Example.test", nested: { user: true }, actions: ["user"] },
               headers: new Headers({ "x-user": "patched" }),
             },
           };
+        }
       }),
       after: createAuthMiddleware(async (ctx) => {
         events.push({ stage: "user-after", ...snapshot(ctx) });
@@ -336,7 +374,8 @@ export function createServerEndpointFixture(
     auth,
     async control(request: Request): Promise<Response | null> {
       const url = new URL(request.url);
-      if (url.pathname === controlPath + "/state")
+
+      if (url.pathname === controlPath + "/state") {
         return Response.json({
           verification: database.query("SELECT * FROM verification ORDER BY identifier,id").all(),
           apikey: database
@@ -357,7 +396,12 @@ export function createServerEndpointFixture(
             )
             .all(),
         });
-      if (url.pathname !== controlPath + "/call" || request.method !== "POST") return null;
+      }
+
+      if (url.pathname !== controlPath + "/call" || request.method !== "POST") {
+        return null;
+      }
+
       const physicalRequest = request.clone();
       requestBodies.set(physicalRequest, await physicalRequest.clone().text());
       const input = (await request.json()) as {
@@ -377,19 +421,37 @@ export function createServerEndpointFixture(
         (args: Record<string, unknown>) => Promise<unknown>
       >;
       const endpoint = api[input.operation];
-      if (!endpoint)
+
+      if (!endpoint) {
         return Response.json({ message: "unknown installed operation" }, { status: 400 });
+      }
+
       const args: Record<string, unknown> = {
         returnHeaders: true,
         returnStatus: true,
         asResponse: false,
       };
-      if (Object.hasOwn(input, "body")) args.body = input.body;
-      if (Object.hasOwn(input, "query")) args.query = input.query;
-      if (Object.hasOwn(input, "headers")) args.headers = new Headers(input.headers);
-      else if (input.logicalRequestHeaders) args.headers = new Headers(physicalRequest.headers);
-      if (input.physicalRequest) args.request = physicalRequest;
+
+      if (Object.hasOwn(input, "body")) {
+        args.body = input.body;
+      }
+
+      if (Object.hasOwn(input, "query")) {
+        args.query = input.query;
+      }
+
+      if (Object.hasOwn(input, "headers")) {
+        args.headers = new Headers(input.headers);
+      } else if (input.logicalRequestHeaders) {
+        args.headers = new Headers(physicalRequest.headers);
+      }
+
+      if (input.physicalRequest) {
+        args.request = physicalRequest;
+      }
+
       let result: unknown;
+
       try {
         const value = (await endpoint(args)) as {
           response: unknown;
@@ -430,6 +492,7 @@ export function createServerEndpointFixture(
             : null,
         };
       }
+
       return Response.json({ events: [...events], ranges: [...ranges], result });
     },
   };

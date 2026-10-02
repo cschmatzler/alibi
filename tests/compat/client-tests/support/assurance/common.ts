@@ -4,6 +4,7 @@ import { createReadStream } from "node:fs";
 import { mkdir, readdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import { z } from "zod";
 
 export const CLIENT_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -13,12 +14,14 @@ export const REFERENCE_ROOT = join(COMPAT_ROOT, "reference-server");
 export const CACHE_ROOT = join(COMPAT_ROOT, ".cache", "assurance");
 export const ARTIFACT_ROOT = join(CLIENT_ROOT, "artifacts", "assurance");
 export const activeChildren = new Set<ReturnType<typeof spawnOwned>>();
+
 export const ORACLE_PACKAGES = [
   "better-auth",
   "@better-auth/core",
   "@better-auth/api-key",
   "@better-auth/passkey",
 ] as const;
+
 export const pinSchema = z
   .object({
     version: z.string(),
@@ -26,26 +29,35 @@ export const pinSchema = z
     archiveSha256: z.string().regex(/^[0-9a-f]{64}$/),
   })
   .strict();
+
 export const upstreamPin = pinSchema.parse(
   JSON.parse(await readFile(join(COMPAT_ROOT, "upstream-source.json"), "utf8")),
 );
+
 const capabilityPin = z
   .object({ upstreamVersion: z.string() })
   .parse(JSON.parse(await readFile(join(COMPAT_ROOT, "capabilities.json"), "utf8")));
-if (upstreamPin.version !== capabilityPin.upstreamVersion)
+
+if (upstreamPin.version !== capabilityPin.upstreamVersion) {
   throw new Error("Assurance source pin differs from capability runtime pin");
+}
 
 export function digest(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
 }
+
 export async function fileDigest(path: string) {
   const hash = createHash("sha256");
-  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  for await (const chunk of createReadStream(path)) {
+    hash.update(chunk);
+  }
   return hash.digest("hex");
 }
+
 export async function readJSON(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, "utf8"));
 }
+
 export async function writeJSON(path: string, value: unknown) {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.${crypto.randomUUID()}.tmp`;
@@ -54,19 +66,27 @@ export async function writeJSON(path: string, value: unknown) {
   });
   await rename(temporary, path);
 }
+
 export async function filesUnder(directory: string, ignore = new Set<string>()): Promise<string[]> {
   const files: string[] = [];
   for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) =>
     a.name.localeCompare(b.name),
   )) {
     const path = join(directory, entry.name);
-    if (ignore.has(entry.name)) continue;
-    if (entry.isDirectory()) files.push(...(await filesUnder(path, ignore)));
-    else if (entry.isFile()) files.push(path);
-    else throw new Error(`Unexpected symlink or special file in upstream inventory: ${path}`);
+    if (ignore.has(entry.name)) {
+      continue;
+    }
+    if (entry.isDirectory()) {
+      files.push(...(await filesUnder(path, ignore)));
+    } else if (entry.isFile()) {
+      files.push(path);
+    } else {
+      throw new Error(`Unexpected symlink or special file in upstream inventory: ${path}`);
+    }
   }
   return files;
 }
+
 export async function packageRoots() {
   return Promise.all(
     ORACLE_PACKAGES.map(async (name) => {
@@ -74,8 +94,11 @@ export async function packageRoots() {
       const metadata = z
         .object({ name: z.string(), version: z.string(), exports: z.unknown() })
         .parse(await readJSON(join(root, "package.json")));
-      if (metadata.name !== name || metadata.version !== upstreamPin.version)
+
+      if (metadata.name !== name || metadata.version !== upstreamPin.version) {
         throw new Error(`Unpinned oracle package: ${name}`);
+      }
+
       return { name, root, metadata };
     }),
   );
@@ -117,17 +140,22 @@ export function spawnOwned(
     stderr: child.stderr,
     kill(signal: NodeJS.Signals) {
       try {
-        if (child.pid && process.platform !== "win32") process.kill(-child.pid, signal);
-        else child.kill(signal);
+        if (child.pid && process.platform !== "win32") {
+          process.kill(-child.pid, signal);
+        } else {
+          child.kill(signal);
+        }
       } catch (error) {
-        if (!(error && typeof error === "object" && "code" in error && error.code === "ESRCH"))
+        if (!(error && typeof error === "object" && "code" in error && error.code === "ESRCH")) {
           throw error;
+        }
       }
     },
   };
   activeChildren.add(owned);
   return owned;
 }
+
 export async function command(
   argv: string[],
   options: {
@@ -145,10 +173,15 @@ export async function command(
     timedOut = true;
     child.kill("SIGKILL");
   }, options.timeoutMs ?? 600_000);
+
   try {
     async function collect(stream: AsyncIterable<Uint8Array> | null) {
       const chunks: Uint8Array[] = [];
-      if (stream) for await (const chunk of stream) chunks.push(chunk);
+      if (stream) {
+        for await (const chunk of stream) {
+          chunks.push(chunk);
+        }
+      }
       return Buffer.concat(chunks).toString();
     }
     const [code, stdout, stderr] = await Promise.all([
@@ -198,7 +231,11 @@ export async function candidateSourceDigest() {
     ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
     { cwd: REPO_ROOT },
   );
-  if (listing.code !== 0) throw new Error("Cannot fingerprint Rust build inputs");
+
+  if (listing.code !== 0) {
+    throw new Error("Cannot fingerprint Rust build inputs");
+  }
+
   const paths = listing.stdout
     .split("\0")
     .filter(
@@ -209,15 +246,19 @@ export async function candidateSourceDigest() {
     )
     .sort();
   const identities = [];
+
   for (const path of paths) {
     try {
       identities.push([path, await fileDigest(join(REPO_ROOT, path))]);
     } catch (error) {
-      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT")
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
         identities.push([path, "deleted"]);
-      else throw error;
+      } else {
+        throw error;
+      }
     }
   }
+
   return digest(JSON.stringify(identities));
 }
 
@@ -228,7 +269,8 @@ export function localURL(value: string): URL {
     !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) ||
     url.username ||
     url.password
-  )
+  ) {
     throw new Error("Assurance fixture URLs must be credential-free loopback HTTP origins");
+  }
   return url;
 }

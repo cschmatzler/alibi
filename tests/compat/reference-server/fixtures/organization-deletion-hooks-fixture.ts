@@ -1,9 +1,12 @@
 import type { Database } from "bun:sqlite";
+
 /** Application callbacks observe the pinned handler and actual persisted rows. */
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
+
 import type { organizationTransportProbe } from "./organization-transport-probe";
+
 export function organizationDeletionHooksFixture(
   database: Database,
   shared: Parameters<typeof betterAuth>[0],
@@ -14,6 +17,7 @@ export function organizationDeletionHooksFixture(
   const receipts: unknown[] = [];
   let release: (() => void) | undefined;
   let gate = Promise.resolve();
+
   function snapshot() {
     return {
       organizations: database
@@ -41,14 +45,19 @@ export function organizationDeletionHooksFixture(
       users: database.query("SELECT id,email,name FROM user ORDER BY email,id").all(),
     };
   }
+
   type Data = {
     organization: Record<string, unknown>;
     user: { id: string; email: string; name: string };
   };
   type Hooks = NonNullable<NonNullable<Parameters<typeof organization>[0]>["organizationHooks"]>;
   type Context = Parameters<NonNullable<Hooks["beforeDeleteOrganization"]>>[1];
+
   async function note(phase: string, data: Data, ctx: Context) {
-    if (!ctx) throw new Error("Deletion hook did not receive its endpoint context");
+    if (!ctx) {
+      throw new Error("Deletion hook did not receive its endpoint context");
+    }
+
     await Promise.resolve();
     receipts.push({
       phase,
@@ -72,12 +81,15 @@ export function organizationDeletionHooksFixture(
         : null,
       snapshot: snapshot(),
     });
-    if (mode === `reject-${phase}`)
+
+    if (mode === `reject-${phase}`) {
       throw new APIError("BAD_REQUEST", {
         code: "DELETION_HOOK_REJECTED",
         message: `Rejected ${phase}`,
       });
+    }
   }
+
   const hooks = {
     async beforeDeleteOrganization(data: Data, ctx: Context) {
       if (mode === "write-before") {
@@ -89,7 +101,9 @@ export function organizationDeletionHooksFixture(
         });
       }
       await note("before", data, ctx);
-      if (mode === "pause-before") await gate;
+      if (mode === "pause-before") {
+        await gate;
+      }
     },
     async afterDeleteOrganization(data: Data, ctx: Context) {
       await note("after", data, ctx);
@@ -134,13 +148,16 @@ export function organizationDeletionHooksFixture(
         let i = 0;
         waitFor && i < 100 && !receipts.some((r) => (r as { phase: string }).phase === waitFor);
         i++
-      )
+      ) {
         await Bun.sleep(10);
+      }
       return Response.json({ receipts, snapshot: snapshot() });
     },
     async server(body: Record<string, unknown>, supplied: Headers) {
       const profile = profiles.get(String(body.profile));
-      if (!profile) return Response.json({ message: "Unknown fixture profile" }, { status: 400 });
+      if (!profile) {
+        return Response.json({ message: "Unknown fixture profile" }, { status: 400 });
+      }
       try {
         return Response.json(
           await profile.api.deleteOrganization({

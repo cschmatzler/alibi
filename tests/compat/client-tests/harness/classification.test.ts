@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+
 import { compareValues, type Difference } from "../support/compare";
 import { classifyDifferences } from "../support/scenario";
 
@@ -29,6 +30,7 @@ test("comparator paths from nested helper walkers reach the scenario gate", () =
   };
   const differences = compareValues(left, right, context);
   expect(differences.length).toBeGreaterThan(0);
+
   const { clientDiffs, rawDiffs, unclassified } = classifyDifferences(differences);
   expect(unclassified).toEqual([]);
   expect(rawDiffs).toEqual([]);
@@ -69,8 +71,15 @@ test("every comparator difference lands in exactly one gate bucket", () => {
   const buckets = classifyDifferences(differences);
   expect(buckets.unclassified).toEqual([]);
   expect(buckets.clientDiffs.length + buckets.rawDiffs.length).toBe(differences.length);
-  for (const entry of buckets.clientDiffs) expect(entry.path.startsWith("observation")).toBe(true);
-  for (const entry of buckets.rawDiffs) expect(entry.path.startsWith("traces.")).toBe(true);
+
+  for (const entry of buckets.clientDiffs) {
+    expect(entry.path.startsWith("observation")).toBe(true);
+  }
+
+  for (const entry of buckets.rawDiffs) {
+    expect(entry.path.startsWith("traces.")).toBe(true);
+  }
+
   expect(buckets.rawDiffs.map((entry) => entry.path)).toContain("traces.0.responseStatus");
   expect(buckets.rawDiffs.map((entry) => entry.path)).toContain(
     "traces.0.responseCookies.better-auth.session_token;;/.httpOnly",

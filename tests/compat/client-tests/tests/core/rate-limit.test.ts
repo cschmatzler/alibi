@@ -1,6 +1,8 @@
 import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
+
 import { Cookie } from "tough-cookie";
+
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { readUserState, verificationCount } from "../../support/verification";
@@ -15,19 +17,28 @@ async function request(ctx: ScenarioContext, path: string, ip: string, json: unk
   const body = JSON.parse(await response.text());
   const rawCookies = response.headers.getSetCookie();
   let cookie = null;
+
   if (rawCookies.length) {
     expect(rawCookies).toHaveLength(1);
+
     const raw = rawCookies[0]!;
     const parsed = Cookie.parse(raw);
-    if (!parsed) throw new Error("Session issuance must emit a parseable cookie");
+
+    if (!parsed) {
+      throw new Error("Session issuance must emit a parseable cookie");
+    }
+
     expect(parsed.key).toBe("better-auth.session_token");
+
     const value = decodeURIComponent(parsed.value);
     const signature = createHmac("sha256", "compat-test-only-key-not-real-minimum-32chars")
       .update(body.token)
       .digest("base64");
     expect(value).toBe(`${body.token}.${signature}`);
+
     cookie = { name: parsed.key, token: body.token, attributes: raw.slice(raw.indexOf(";")) };
   }
+
   return {
     status: response.status,
     body,
@@ -49,6 +60,7 @@ compatScenario(
     const second = await signup(ctx.uniqueEmail("rate-second"));
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
+
     const owner = (first.body as { user: { id: string } }).user.id;
     const before = await readUserState(ctx, owner);
     const blockedEmail = ctx.uniqueEmail("rate-blocked");
@@ -63,9 +75,11 @@ compatScenario(
       },
     });
     expect(await readUserState(ctx, owner)).toEqual(before);
+
     const foreign = await signup(blockedEmail, "198.51.100.172");
     expect(foreign.status).toBe(200);
     expect((foreign.body as { user: { email: string } }).user.email).toBe(blockedEmail);
+
     // The different trusted client can create the blocked identity: no phantom
     // user/account/session survived the rejected request.
     const foreignState = await readUserState(
@@ -74,6 +88,7 @@ compatScenario(
     );
     expect(foreignState.accounts).toHaveLength(1);
     expect(foreignState.sessions).toHaveLength(1);
+
     const read = async (endpoint: string, bypass = false, zero = false) => {
       const wire = await ctx
         .actor("limiter")
@@ -93,29 +108,40 @@ compatScenario(
     const admitted = await read("/get-session");
     expect(admitted.status).toBe(200);
     expect(admitted.body.user.id).toBe((foreign.body as { user: { id: string } }).user.id);
+
     const rejected = await read("/get-session");
     expect(rejected.status).toBe(429);
     expect(rejected.retry).toBe("60");
+
     const bypassed = await read("/get-session", true);
     expect(bypassed).toEqual(admitted);
+
     const stillRejected = await read("/get-session");
     expect(stillRejected).toEqual(rejected);
+
     const reset = await read("/get-session", false, true);
     expect(reset).toEqual(admitted);
+
     const resumed = await read("/get-session");
     expect(resumed).toEqual(admitted);
+
     const deniedAgain = await read("/get-session");
     expect(deniedAgain).toEqual(rejected);
+
     const disabled = [];
+
     for (let index = 0; index < 3; index++) {
       const result = await read("/list-sessions");
       expect(result.status).toBe(200);
       expect(result.body).toHaveLength(1);
+
       disabled.push(result);
     }
+
     expect(await readUserState(ctx, (foreign.body as { user: { id: string } }).user.id)).toEqual(
       foreignState,
     );
+
     return {
       first,
       second,
@@ -147,8 +173,10 @@ compatScenario(
       type: "sign-in",
     });
     expect(sent.status).toBe(200);
+
     const otp = await readOtp(ctx, email, "sign-in");
     const attempts = [];
+
     for (let index = 0; index < 3; index++) {
       const failed = await request(ctx, path + "/sign-in/email-otp", "198.51.100.174", {
         email: ctx.uniqueEmail("rate-missing-" + index),
@@ -157,7 +185,9 @@ compatScenario(
       expect(failed.status).toBe(400);
       attempts.push(failed);
     }
+
     expect(await verificationCount(ctx, `sign-in-otp-${email}`)).toBe(1);
+
     const denied = await request(ctx, path + "/sign-in/email-otp", "198.51.100.174", {
       email,
       otp,
@@ -172,14 +202,17 @@ compatScenario(
       },
     });
     expect(await verificationCount(ctx, `sign-in-otp-${email}`)).toBe(1);
+
     const redeemed = await request(ctx, path + "/sign-in/email-otp", "198.51.100.175", {
       email,
       otp,
     });
     expect(redeemed.status).toBe(200);
     expect(await verificationCount(ctx, `sign-in-otp-${email}`)).toBe(0);
+
     const state = await readUserState(ctx, (redeemed.body as { user: { id: string } }).user.id);
     expect(state.sessions).toHaveLength(1);
+
     const replay = await request(ctx, path + "/sign-in/email-otp", "198.51.100.176", {
       email,
       otp,
@@ -188,6 +221,7 @@ compatScenario(
     expect(await readUserState(ctx, (redeemed.body as { user: { id: string } }).user.id)).toEqual(
       state,
     );
+
     return { sent, attempts, denied, redeemed, state, replay };
   },
   ["POST /email-otp/send-verification-otp", "POST /sign-in/email-otp"],

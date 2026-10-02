@@ -29,7 +29,12 @@ export function signature(message: string, scalar = 1, compact = false): string 
   const signed = secp256k1.sign(keccak_256(input), key, { prehash: false, format: "recovered" });
   const result = new Uint8Array(compact ? 64 : 65);
   result.set(signed.subarray(1));
-  if (compact) result[32]! |= signed[0]! << 7;
-  else result[64] = signed[0]! + 27;
+
+  if (compact) {
+    result[32]! |= signed[0]! << 7;
+  } else {
+    result[64] = signed[0]! + 27;
+  }
+
   return `0x${Buffer.from(result).toString("hex")}`;
 }

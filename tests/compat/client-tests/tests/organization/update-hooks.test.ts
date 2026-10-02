@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { createTracingFetch, type TraceEntry } from "../../support/trace";
 
@@ -66,6 +68,7 @@ async function signup(ctx: ScenarioContext, name: string) {
     password: "password123",
   });
   expect(result.error).toBeNull();
+
   return {
     ...actor,
     email,
@@ -140,10 +143,12 @@ compatScenario(
       };
       const result = await update(owner, target.id, input);
       expect(result.error).toBeNull();
+
       const parsed = organization.parse(result.data);
       const after = await state(ctx);
 
       expect(after.receipts.map((r) => r.phase)).toEqual(["before-update", "after-update"]);
+
       const beforeReceipt = after.receipts[0]!;
       const afterReceipt = after.receipts[1]!;
       expect(beforeReceipt.organization).toEqual(input);
@@ -163,6 +168,7 @@ compatScenario(
       expect(afterReceipt.snapshot).toEqual(after.snapshot);
 
       const stored = after.snapshot.organizations.find((r) => r.id === target.id)!;
+
       if (mode === "patch") {
         expect(parsed).toMatchObject({
           name: "Hooked Update",
@@ -171,24 +177,29 @@ compatScenario(
         });
         expect(stored.metadata).toBe('{"guard":"hooked-update"}');
       }
+
       if (mode === "null-metadata") {
         expect(parsed.metadata).toBeNull();
         expect(parsed.logo).toBeNull();
         expect(stored.metadata).toBe("null");
       }
+
       if (mode === "empty-metadata") {
         expect(parsed.metadata).toEqual({});
         expect(stored.metadata).toBe("{}");
       }
+
       if (mode === "absent-metadata") {
         expect(parsed.name).toBe("Patched Without Metadata");
         expect(parsed.metadata).toEqual(input.metadata);
         expect(stored.metadata).toBe(JSON.stringify(input.metadata));
       }
+
       if (mode === "empty-name") {
         expect(parsed.name).toBe("");
         expect(stored.name).toBe("");
       }
+
       unchanged(before, after, target.id);
 
       observations.push({ mode, before, result: ctx.snapshot(result), after });
@@ -212,6 +223,7 @@ compatScenario(
     ).toBeNull();
 
     const observations = [];
+
     for (const mode of ["reject-before-update", "reject-after-update"]) {
       await configure(ctx, mode);
       const before = await state(ctx);
@@ -227,6 +239,7 @@ compatScenario(
       expect(after.receipts.map((r) => r.phase)).toEqual(
         mode === "reject-before-update" ? ["before-update"] : ["before-update", "after-update"],
       );
+
       if (mode === "reject-before-update") {
         expect(after.snapshot).toEqual(before.snapshot);
       } else {
@@ -311,6 +324,7 @@ compatScenario(
 
     const after = await state(ctx);
     expect(after.receipts.map((r) => r.phase)).toEqual(["before-update", "after-update"]);
+
     const beforeReceipt = after.receipts[0]!;
     const afterReceipt = after.receipts[1]!;
     expect(afterReceipt.user).toEqual(beforeReceipt.user);
@@ -408,6 +422,7 @@ compatScenario(
 
     let paused: Awaited<ReturnType<typeof state>> | undefined;
     const releaseTrace: TraceEntry[] = [];
+
     try {
       paused = await state(ctx, "before-update");
       expect(paused.receipts.map((r) => r.phase)).toEqual(["before-update"]);
@@ -460,6 +475,7 @@ compatScenario(
         body: `{"organizationId":${JSON.stringify(target.id)},"data":{"name":"Raw Metadata","metadata":{"n":${raw}}}}`,
       });
       expect(result.error).toBeNull();
+
       const parsed = organization.parse(result.data);
       expect(parsed.name).toBe(numberClass);
       expect(parsed.metadata).toEqual({
@@ -475,6 +491,7 @@ compatScenario(
         name: numberClass,
         metadata: `{"original":${serialized},"patched":${serialized},"negativeZero":${negativeZero}}`,
       });
+
       unchanged(before, after, target.id);
 
       observations.push({ raw, before, result: ctx.snapshot(result), after });

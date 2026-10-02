@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+
 import { createAuthClient } from "better-auth/client";
 import {
   anonymousClient,
@@ -9,6 +10,7 @@ import {
 } from "better-auth/client/plugins";
 import { verifyPassword } from "better-auth/crypto";
 import { decodeJwt } from "jose";
+
 import { credential } from "../../support/id-token";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
@@ -16,6 +18,7 @@ import { EOA, message, SECOND_EOA, signature } from "../../support/siwe-wallet";
 import { oneTap } from "../one-tap/helpers";
 
 type Row = Record<string, any>;
+
 type State = {
   users: Row[];
   accounts: Row[];
@@ -24,6 +27,7 @@ type State = {
   wallets: Row[];
   events: Row[];
 };
+
 async function configure(ctx: ScenarioContext, mode: string) {
   const response = await ctx.rawRequest({
     path: "/__test/user-validation",
@@ -33,11 +37,13 @@ async function configure(ctx: ScenarioContext, mode: string) {
   expect(response.status).toBe(200);
   return response;
 }
+
 async function state(ctx: ScenarioContext) {
   const response = await ctx.rawRequest({ path: "/__test/user-validation/state" });
   expect(response.status).toBe(200);
   return response.body as State;
 }
+
 function identities(value: State) {
   return {
     users: value.users,
@@ -46,9 +52,14 @@ function identities(value: State) {
     wallets: value.wallets,
   };
 }
+
 function hash(value: unknown) {
-  if (typeof value !== "string" || value === "") return value;
+  if (typeof value !== "string" || value === "") {
+    return value;
+  }
+
   expect(value).toMatch(/^[a-f0-9]{32}:[a-f0-9]{128}$/);
+
   const [salt, derived] = value.split(":");
   return {
     token: value,
@@ -57,12 +68,13 @@ function hash(value: unknown) {
     encoding: "hex-lower",
   };
 }
+
 function observed(value: State) {
   return {
     ...value,
     accounts: value.accounts.map((row) => ({ ...row, password: hash(row.password) })),
     verifications: value.verifications.map((row) => {
-      if (typeof row.value === "string" && /^\d{6}:\d+$/.test(row.value))
+      if (typeof row.value === "string" && /^\d{6}:\d+$/.test(row.value)) {
         return {
           ...row,
           value: {
@@ -71,23 +83,30 @@ function observed(value: State) {
             separator: ":",
           },
         };
-      if (typeof row.value === "string" && row.value.startsWith('{"email":'))
+      }
+      if (typeof row.value === "string" && row.value.startsWith('{"email":')) {
         return { ...row, identifier: { token: row.identifier, length: row.identifier.length } };
+      }
       return row;
     }),
     events: value.events.map((event) => {
-      if (event.stage === "hash-result") return { ...event, hash: hash(event.hash) };
+      if (event.stage === "hash-result") {
+        return { ...event, hash: hash(event.hash) };
+      }
       if (event.stage === "validation" && event.context?.body) {
         const body = { ...event.context.body };
-        for (const field of ["otp", "code"])
-          if (typeof body[field] === "string" && /^\d{6}$/.test(body[field]))
+        for (const field of ["otp", "code"]) {
+          if (typeof body[field] === "string" && /^\d{6}$/.test(body[field])) {
             body[field] = { token: body[field], length: body[field].length, encoding: "decimal" };
+          }
+        }
         return { ...event, context: { ...event.context, body } };
       }
       return event;
     }),
   };
 }
+
 async function foreign(ctx: ScenarioContext) {
   await configure(ctx, "normal");
   const signup = await ctx.actor("foreign", "validation").client.signUp.email({
@@ -96,14 +115,18 @@ async function foreign(ctx: ScenarioContext) {
     password: "foreign-password123",
   });
   expect(signup.error).toBeNull();
+
   return { signup, state: await ctx.readUserState({ userId: signup.data!.user.id }) };
 }
+
 async function unchangedForeign(ctx: ScenarioContext, other: Awaited<ReturnType<typeof foreign>>) {
   expect(await ctx.readUserState({ userId: other.signup.data!.user.id })).toEqual(other.state);
 }
+
 function validations(value: State) {
   return value.events.filter((event) => event.stage === "validation");
 }
+
 function client(ctx: ScenarioContext, name: string, profile: FixtureProfile = "validation") {
   return createAuthClient({
     baseURL: ctx.baseURL + authProfilePath(profile),
@@ -117,14 +140,17 @@ function client(ctx: ScenarioContext, name: string, profile: FixtureProfile = "v
     fetchOptions: { customFetchImpl: ctx.actor(name, profile).fetch },
   });
 }
+
 async function delivery(ctx: ScenarioContext, key: string) {
   const response = await ctx.rawRequest({
     path: `/__test/user-validation/delivery?key=${encodeURIComponent(key)}`,
   });
   expect(response.status).toBe(200);
   expect(response.body).not.toBeNull();
+
   return response.body as Row;
 }
+
 function observedDelivery(row: Row) {
   return {
     ...row,
@@ -132,6 +158,7 @@ function observedDelivery(row: Row) {
     ...(typeof row.code === "string" ? { code: { token: row.code, length: row.code.length } } : {}),
   };
 }
+
 const proofRoutes = {
   anonymous: "POST /sign-in/anonymous",
   "magic-link": "GET /magic-link/verify",
@@ -139,14 +166,19 @@ const proofRoutes = {
   "phone-number": "POST /phone-number/verify",
   siwe: "POST /siwe/verify",
 } as const;
+
 type ProofMethod = keyof typeof proofRoutes;
+
 function proofFlow(ctx: ScenarioContext, method: ProofMethod, label: string) {
-  const actor = client(ctx, label),
-    email = ctx.uniqueEmail(label),
-    phone = "+15550001239";
+  const actor = client(ctx, label);
+  const email = ctx.uniqueEmail(label);
+  const phone = "+15550001239";
   return {
     async issue() {
-      if (method === "anonymous") return { proof: null, issued: null, delivery: null };
+      if (method === "anonymous") {
+        return { proof: null, issued: null, delivery: null };
+      }
+
       if (method === "magic-link") {
         const issued = await actor.signIn.magicLink({
           email,
@@ -154,41 +186,58 @@ function proofFlow(ctx: ScenarioContext, method: ProofMethod, label: string) {
           metadata: { gate: "identity-validation" },
         });
         expect(issued.error).toBeNull();
+
         const sent = await delivery(ctx, `magic:${email}`);
         return { proof: sent.token as string, issued, delivery: observedDelivery(sent) };
       }
+
       if (method === "email-otp") {
         const issued = await actor.emailOtp.sendVerificationOtp({ email, type: "sign-in" });
         expect(issued.error).toBeNull();
+
         const sent = await delivery(ctx, `otp:sign-in:${email}`);
         return { proof: sent.otp as string, issued, delivery: observedDelivery(sent) };
       }
+
       if (method === "phone-number") {
         const issued = await actor.phoneNumber.sendOtp({ phoneNumber: phone });
         expect(issued.error).toBeNull();
+
         const sent = await delivery(ctx, `phone:${phone}`);
         return { proof: sent.code as string, issued, delivery: observedDelivery(sent) };
       }
+
       const issued = await actor.siwe.nonce();
       expect(issued.error).toBeNull();
+
       return { proof: message((issued.data as { nonce: string }).nonce), issued, delivery: null };
     },
     async submit(proof: string | null) {
-      if (method === "anonymous") return actor.signIn.anonymous();
-      if (method === "magic-link")
+      if (method === "anonymous") {
+        return actor.signIn.anonymous();
+      }
+
+      if (method === "magic-link") {
         return ctx.rawRequest({
           actor: label,
           path: `${authProfilePath("validation")}/magic-link/verify?token=${encodeURIComponent(proof!)}`,
           redirect: "manual",
         });
-      if (method === "email-otp")
+      }
+
+      if (method === "email-otp") {
         return actor.signIn.emailOtp({ email, otp: proof!, name: "Proof Identity" });
-      if (method === "phone-number")
+      }
+
+      if (method === "phone-number") {
         return actor.phoneNumber.verify({ phoneNumber: phone, code: proof! });
+      }
+
       return actor.siwe.verify({ message: proof!, signature: signature(proof!), email });
     },
   };
 }
+
 function observedProof(
   method: ProofMethod,
   value: Awaited<ReturnType<ReturnType<typeof proofFlow>["issue"]>>,
@@ -205,8 +254,9 @@ function observedProof(
 compatScenario(
   "identity validation owns normalized signup admission, mutation, callback errors and database hook ordering",
   async (ctx) => {
-    const other = await foreign(ctx),
-      observations = [];
+    const other = await foreign(ctx);
+    const observations = [];
+
     for (const mode of [
       "deny",
       "deny-default",
@@ -216,17 +266,17 @@ compatScenario(
       "normal",
       "mutate",
     ]) {
-      const configured = await configure(ctx, mode),
-        before = await state(ctx),
-        email = ctx.uniqueEmail(`validation-${mode}`);
+      const configured = await configure(ctx, mode);
+      const before = await state(ctx);
+      const email = ctx.uniqueEmail(`validation-${mode}`);
       const signup = await ctx
         .actor(mode, "validation")
         .client.signUp.email(
           { email: email.toUpperCase(), name: "Requested Identity", password: "password123" },
           { headers: { "x-test-validation-marker": `actual-${mode}` } },
         );
-      const after = await state(ctx),
-        events = after.events;
+      const after = await state(ctx);
+      const events = after.events;
       expect(events.slice(0, 3).map((event) => event.stage)).toEqual([
         "hash-enter",
         "hash-result",
@@ -251,6 +301,7 @@ compatScenario(
       expect(events[2]!.user.updatedAt).toBeString();
       expect(events[2]!.user).not.toHaveProperty("id");
       expect(events[2]!.user).not.toHaveProperty("role");
+
       if (["deny", "deny-default", "throw", "api-error"].includes(mode)) {
         expect(signup.error).toMatchObject({
           status: 403,
@@ -267,8 +318,9 @@ compatScenario(
         expect(events).toHaveLength(3);
       } else {
         expect(signup.error).toBeNull();
-        const id = signup.data!.user.id,
-          stored = after.users.find((row) => row.id === id)!;
+
+        const id = signup.data!.user.id;
+        const stored = after.users.find((row) => row.id === id)!;
         expect(after.accounts.filter((row) => row.userId === id)).toHaveLength(1);
         expect(after.sessions.filter((row) => row.userId === id)).toHaveLength(1);
         expect(
@@ -288,6 +340,7 @@ compatScenario(
         ]);
         expect(events[3]!.user.role).toBe("user");
         expect(events[6]!.userId).toBe(id);
+
         if (mode === "mutate") {
           expect(stored).toMatchObject({
             name: "Validated Identity",
@@ -303,9 +356,11 @@ compatScenario(
             image: stored.image,
             createdAt: stored.createdAt,
           });
-        } else
+        } else {
           expect(stored).toMatchObject({ email, name: "Requested Identity", emailVerified: false });
+        }
       }
+
       await unchangedForeign(ctx, other);
       observations.push({
         mode,
@@ -315,6 +370,7 @@ compatScenario(
         after: observed(after),
       });
     }
+
     return { foreign: other, observations };
   },
   ["POST /sign-up/email"],
@@ -323,13 +379,14 @@ compatScenario(
 compatScenario(
   "enumeration-safe signup preserves validation denial synthesis and skips validation for duplicate or returning password identity",
   async (ctx) => {
-    const other = await foreign(ctx),
-      observations = [];
+    const other = await foreign(ctx);
+    const observations = [];
+
     for (const profile of ["validation-no-auto", "validation-required"] as const) {
-      const configured = await configure(ctx, "deny"),
-        before = await state(ctx),
-        actor = ctx.actor(profile, profile),
-        email = ctx.uniqueEmail(profile);
+      const configured = await configure(ctx, "deny");
+      const before = await state(ctx);
+      const actor = ctx.actor(profile, profile);
+      const email = ctx.uniqueEmail(profile);
       const denied = await actor.client.signUp.email({
         email,
         name: "Synthetic Candidate",
@@ -338,6 +395,7 @@ compatScenario(
       expect(denied.error).toBeNull();
       expect(denied.data?.token).toBeNull();
       expect(denied.data?.user).toMatchObject({ email, name: "Synthetic Candidate" });
+
       const after = await state(ctx);
       expect(identities(after)).toEqual(identities(before));
       expect(after.users.some((row) => row.id === denied.data!.user.id)).toBe(false);
@@ -346,6 +404,7 @@ compatScenario(
         "hash-result",
         "validation",
       ]);
+
       observations.push({
         profile,
         configured,
@@ -354,17 +413,19 @@ compatScenario(
         after: observed(after),
       });
     }
-    const normal = await configure(ctx, "normal"),
-      owner = ctx.actor("owner", "validation-no-auto"),
-      email = ctx.uniqueEmail("existing-validation");
+
+    const normal = await configure(ctx, "normal");
+    const owner = ctx.actor("owner", "validation-no-auto");
+    const email = ctx.uniqueEmail("existing-validation");
     const signup = await owner.client.signUp.email({
       email,
       name: "Existing Owner",
       password: "password123",
     });
     expect(signup.error).toBeNull();
-    const denied = await configure(ctx, "deny"),
-      before = await state(ctx);
+
+    const denied = await configure(ctx, "deny");
+    const before = await state(ctx);
     const duplicate = await owner.client.signUp.email({
       email,
       name: "Synthetic Duplicate",
@@ -372,21 +433,25 @@ compatScenario(
     });
     expect(duplicate.error).toBeNull();
     expect(duplicate.data?.user.id).not.toBe(signup.data!.user.id);
+
     const signed = await owner.client.signIn.email({ email, password: "password123" });
     expect(signed.error).toBeNull();
     expect(signed.data?.user.id).toBe(signup.data!.user.id);
+
     const after = await state(ctx);
     expect(validations(after)).toEqual([]);
     expect(after.users).toEqual(before.users);
     expect(after.accounts).toEqual(before.accounts);
-    const disabledConfig = await configure(ctx, "deny"),
-      disabled = await ctx.actor("disabled", "validation-disabled").client.signUp.email({
-        email: ctx.uniqueEmail("disabled-validation"),
-        name: "Disabled",
-        password: "password123",
-      });
+
+    const disabledConfig = await configure(ctx, "deny");
+    const disabled = await ctx.actor("disabled", "validation-disabled").client.signUp.email({
+      email: ctx.uniqueEmail("disabled-validation"),
+      name: "Disabled",
+      password: "password123",
+    });
     expect(disabled.error?.status).toBe(400);
     expect((await state(ctx)).events).toEqual([]);
+
     await unchangedForeign(ctx, other);
     return {
       foreign: other,
@@ -405,17 +470,21 @@ compatScenario(
   ["POST /sign-up/email", "POST /sign-in/email"],
 );
 
-for (const method of ["anonymous", "magic-link", "email-otp", "phone-number", "siwe"] as const)
+for (const method of ["anonymous", "magic-link", "email-otp", "phone-number", "siwe"] as const) {
   compatScenario(
     `identity validation ${method} creation rejects before identity writes and consumes only genuine applicable proof`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        actor = client(ctx, "identity"),
-        email = ctx.uniqueEmail(`validation-${method}`),
-        phone = "+15550001234",
-        preparation: unknown[] = [];
+      const other = await foreign(ctx);
+      const actor = client(ctx, "identity");
+      const email = ctx.uniqueEmail(`validation-${method}`);
+      const phone = "+15550001234";
+      const preparation: unknown[] = [];
+
       async function issue(second = false) {
-        if (method === "anonymous") return { proof: null, delivery: null };
+        if (method === "anonymous") {
+          return { proof: null, delivery: null };
+        }
+
         if (method === "magic-link") {
           const issued = await actor.signIn.magicLink({
             email: second ? ctx.uniqueEmail("magic-second") : email,
@@ -423,12 +492,14 @@ for (const method of ["anonymous", "magic-link", "email-otp", "phone-number", "s
             metadata: { gate: "identity-validation" },
           });
           expect(issued.error).toBeNull();
+
           const sent = await delivery(
             ctx,
             `magic:${second ? ctx.uniqueEmail("magic-second") : email}`,
           );
           return { proof: sent.token as string, delivery: sent, issued };
         }
+
         if (method === "email-otp") {
           const selected = second ? ctx.uniqueEmail("otp-second") : email;
           const issued = await actor.emailOtp.sendVerificationOtp({
@@ -436,18 +507,23 @@ for (const method of ["anonymous", "magic-link", "email-otp", "phone-number", "s
             type: "sign-in",
           });
           expect(issued.error).toBeNull();
+
           const sent = await delivery(ctx, `otp:sign-in:${selected}`);
           return { proof: sent.otp as string, delivery: sent, issued };
         }
+
         if (method === "phone-number") {
           const selected = second ? "+15550001235" : phone;
           const issued = await actor.phoneNumber.sendOtp({ phoneNumber: selected });
           expect(issued.error).toBeNull();
+
           const sent = await delivery(ctx, `phone:${selected}`);
           return { proof: sent.code as string, delivery: sent, issued };
         }
+
         const issued = await actor.siwe.nonce();
         expect(issued.error).toBeNull();
+
         return {
           proof: message((issued.data as { nonce: string }).nonce, {
             address: second ? SECOND_EOA : EOA,
@@ -456,20 +532,26 @@ for (const method of ["anonymous", "magic-link", "email-otp", "phone-number", "s
           issued,
         };
       }
+
       async function submit(
         issued: Awaited<ReturnType<typeof issue>>,
         second = false,
         wrong = false,
       ) {
-        if (method === "anonymous") return actor.signIn.anonymous();
-        if (method === "magic-link")
+        if (method === "anonymous") {
+          return actor.signIn.anonymous();
+        }
+
+        if (method === "magic-link") {
           return ctx.rawRequest({
             actor: "identity",
             path: `${authProfilePath("validation")}/magic-link/verify?token=${encodeURIComponent(wrong ? "wrong-actual-proof" : issued.proof!)}`,
             redirect: "manual",
             headers: { "x-test-validation-marker": "actual-proof" },
           });
-        if (method === "email-otp")
+        }
+
+        if (method === "email-otp") {
           return actor.signIn.emailOtp(
             {
               email: second ? ctx.uniqueEmail("otp-second") : email,
@@ -478,7 +560,9 @@ for (const method of ["anonymous", "magic-link", "email-otp", "phone-number", "s
             },
             { headers: { "x-test-validation-marker": "actual-proof" } },
           );
-        if (method === "phone-number")
+        }
+
+        if (method === "phone-number") {
           return actor.phoneNumber.verify(
             {
               phoneNumber: second ? "+15550001235" : phone,
@@ -486,6 +570,8 @@ for (const method of ["anonymous", "magic-link", "email-otp", "phone-number", "s
             },
             { headers: { "x-test-validation-marker": "actual-proof" } },
           );
+        }
+
         return actor.siwe.verify(
           {
             message: issued.proof!,
@@ -495,81 +581,112 @@ for (const method of ["anonymous", "magic-link", "email-otp", "phone-number", "s
           { headers: { "x-test-validation-marker": "actual-proof" } },
         );
       }
+
       let prepared = await issue();
-      const configured = await configure(ctx, "deny"),
-        before = await state(ctx);
+      const configured = await configure(ctx, "deny");
+      const before = await state(ctx);
+
       if (method !== "anonymous") {
-        const wrong = await submit(prepared, false, true),
-          rejected = await state(ctx);
+        const wrong = await submit(prepared, false, true);
+        const rejected = await state(ctx);
         expect(validations(rejected)).toEqual([]);
         expect(identities(rejected)).toEqual(identities(before));
+
         preparation.push({
           wrong,
           proof: method === "siwe" ? prepared.proof : null,
           rejected: observed(rejected),
         });
+
         // SIWE consumes the nonce before signature verification, including a genuine
         // rejected signature. Admission therefore requires a newly issued nonce.
-        if (method === "siwe") prepared = await issue();
+        if (method === "siwe") {
+          prepared = await issue();
+        }
       }
-      const denied = await submit(prepared),
-        after = await state(ctx);
+
+      const denied = await submit(prepared);
+      const after = await state(ctx);
       expect(validations(after)).toHaveLength(1);
       expect(validations(after)[0]).toMatchObject({ source: { method, action: "create-user" } });
-      if (method === "email-otp")
+
+      if (method === "email-otp") {
         expect(validations(after)[0]!.context.body.otp).toBe(prepared.proof);
-      if (method === "phone-number")
+      }
+
+      if (method === "phone-number") {
         expect(validations(after)[0]!.context.body.code).toBe(prepared.proof);
-      if (method === "siwe")
+      }
+
+      if (method === "siwe") {
         expect(validations(after)[0]!.context.body).toMatchObject({
           message: prepared.proof,
           signature: signature(prepared.proof!),
         });
+      }
+
       if (method === "magic-link") {
         expect((denied as any).status).toBe(302);
         expect(new URL((denied as any).location).searchParams.get("error")).toBe("identity_denied");
         expect(new URL((denied as any).location).searchParams.get("error_description")).toBe(
           "Configured identity rejected",
         );
-      } else
+      } else {
         expect((denied as any).error).toMatchObject({
           status: 403,
           code: "identity_denied",
           message: "Configured identity rejected",
         });
+      }
+
       expect(identities(after)).toEqual(identities(before));
       expect(after.events.map((event) => event.stage)).toEqual(["validation"]);
-      let replay: unknown = null,
-        replayed: State | null = null;
+
+      let replay: unknown = null;
+      let replayed: State | null = null;
+
       if (method !== "anonymous") {
         replay = await submit(prepared);
         replayed = await state(ctx);
         expect(validations(replayed)).toHaveLength(1);
         expect(identities(replayed)).toEqual(identities(before));
       }
-      const acceptedConfig = await configure(ctx, "normal"),
-        fresh = await issue(true),
-        accepted = await submit(fresh, true),
-        stored = await state(ctx);
-      if (method === "magic-link") expect((accepted as any).status).toBe(200);
-      else expect((accepted as any).error).toBeNull();
+
+      const acceptedConfig = await configure(ctx, "normal");
+      const fresh = await issue(true);
+      const accepted = await submit(fresh, true);
+      const stored = await state(ctx);
+
+      if (method === "magic-link") {
+        expect((accepted as any).status).toBe(200);
+      } else {
+        expect((accepted as any).error).toBeNull();
+      }
+
       expect(validations(stored)).toHaveLength(1);
       expect(validations(stored)[0]).toMatchObject({ source: { method, action: "create-user" } });
       expect(stored.users).toHaveLength(before.users.length + 1);
       expect(stored.sessions).toHaveLength(before.sessions.length + 1);
+
       const existingConfig = await configure(ctx, "deny");
       let returning: unknown = null;
+
       if (method === "anonymous") {
         returning = await actor.signIn.anonymous();
         expect((returning as any).error).not.toBeNull();
       } else {
         const again = await issue(true);
         returning = await submit(again, true);
-        if (method === "magic-link") expect((returning as any).status).toBe(200);
-        else expect((returning as any).error).toBeNull();
+        if (method === "magic-link") {
+          expect((returning as any).status).toBe(200);
+        } else {
+          expect((returning as any).error).toBeNull();
+        }
       }
+
       const returned = await state(ctx);
       expect(validations(returned)).toEqual([]);
+
       if (method === "phone-number") {
         expect(returned.users).toHaveLength(stored.users.length);
         for (const before of stored.users) {
@@ -579,21 +696,29 @@ for (const method of ["anonymous", "magic-link", "email-otp", "phone-number", "s
             expect(Date.parse(after.updatedAt)).toBeGreaterThanOrEqual(
               Date.parse(before.updatedAt),
             );
-          } else expect(after).toEqual(before);
+          } else {
+            expect(after).toEqual(before);
+          }
         }
-      } else expect(returned.users).toEqual(stored.users);
+      } else {
+        expect(returned.users).toEqual(stored.users);
+      }
+
       expect(returned.accounts).toEqual(stored.accounts);
       expect(returned.wallets).toEqual(stored.wallets);
-      const mutationFlow = proofFlow(ctx, method, `mutation-${method}`),
-        policyObservations = [];
+
+      const mutationFlow = proofFlow(ctx, method, `mutation-${method}`);
+      const policyObservations = [];
+
       for (const mode of ["throw", "mutate"]) {
-        const config = await configure(ctx, mode),
-          proof = await mutationFlow.issue(),
-          beforePolicy = await state(ctx),
-          result = await mutationFlow.submit(proof.proof),
-          afterPolicy = await state(ctx);
+        const config = await configure(ctx, mode);
+        const proof = await mutationFlow.issue();
+        const beforePolicy = await state(ctx);
+        const result = await mutationFlow.submit(proof.proof);
+        const afterPolicy = await state(ctx);
         expect(validations(afterPolicy)).toHaveLength(1);
         expect(validations(afterPolicy)[0]!.source).toEqual({ method, action: "create-user" });
+
         if (mode === "throw") {
           if (method === "magic-link") {
             expect((result as any).status).toBe(302);
@@ -603,17 +728,22 @@ for (const method of ["anonymous", "magic-link", "email-otp", "phone-number", "s
             expect(new URL((result as any).location).searchParams.get("error_description")).toBe(
               "User validation failed",
             );
-          } else
+          } else {
             expect((result as any).error).toMatchObject({
               status: 403,
               code: "validation_failed",
               message: "User validation failed",
             });
+          }
           expect(identities(afterPolicy)).toEqual(identities(beforePolicy));
           expect(afterPolicy.events).toHaveLength(1);
         } else {
-          if (method === "magic-link") expect((result as any).status).toBe(200);
-          else expect((result as any).error).toBeNull();
+          if (method === "magic-link") {
+            expect((result as any).status).toBe(200);
+          } else {
+            expect((result as any).error).toBeNull();
+          }
+
           const admitted = afterPolicy.users.find(
             (row) => row.email === "MUTATED@VALIDATION.FIXTURE.TEST",
           )!;
@@ -635,6 +765,7 @@ for (const method of ["anonymous", "magic-link", "email-otp", "phone-number", "s
             createdAt: admitted.createdAt,
           });
         }
+
         policyObservations.push({
           mode,
           config,
@@ -644,6 +775,7 @@ for (const method of ["anonymous", "magic-link", "email-otp", "phone-number", "s
           after: observed(afterPolicy),
         });
       }
+
       await unchangedForeign(ctx, other);
       return {
         foreign: other,
@@ -681,15 +813,16 @@ for (const method of ["anonymous", "magic-link", "email-otp", "phone-number", "s
     },
     [proofRoutes[method]],
   );
+}
 
-for (const transport of ["google-id-token", "one-tap"] as const)
+for (const transport of ["google-id-token", "one-tap"] as const) {
   compatScenario(
     `identity validation ${transport} admits actual signed provider identity and gates returning account writes`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        owner = ctx.actor("provider", "validation"),
-        email = ctx.uniqueEmail("validated-provider"),
-        subject = ctx.uniqueToken("provider-subject");
+      const other = await foreign(ctx);
+      const owner = ctx.actor("provider", "validation");
+      const email = ctx.uniqueEmail("validated-provider");
+      const subject = ctx.uniqueToken("provider-subject");
       const claims = {
         aud: transport === "one-tap" ? "one-tap-plugin-client" : "google-default-client",
         sub: subject,
@@ -699,8 +832,8 @@ for (const transport of ["google-id-token", "one-tap"] as const)
         picture: "https://images.example/provider.png",
         applicationClaim: { stage: "raw-provider" },
       };
-      const token = await credential(claims),
-        wrong = await credential(claims, {}, true);
+      const token = await credential(claims);
+      const wrong = await credential(claims, {}, true);
       const submit = (proof: string) =>
         transport === "one-tap"
           ? oneTap(ctx, proof, "validation", "provider").then((value) => value.response as any)
@@ -708,15 +841,16 @@ for (const transport of ["google-id-token", "one-tap"] as const)
               { provider: "google", idToken: { token: proof, accessToken: "fresh-access-token" } },
               { headers: { "x-test-validation-marker": "actual-provider" } },
             );
-      const deniedConfig = await configure(ctx, "deny"),
-        before = await state(ctx),
-        wrongResult = await submit(wrong),
-        wrongState = await state(ctx);
+      const deniedConfig = await configure(ctx, "deny");
+      const before = await state(ctx);
+      const wrongResult = await submit(wrong);
+      const wrongState = await state(ctx);
       expect(wrongResult.error).not.toBeNull();
       expect(validations(wrongState)).toEqual([]);
       expect(identities(wrongState)).toEqual(identities(before));
-      const denied = await submit(token),
-        after = await state(ctx);
+
+      const denied = await submit(token);
+      const after = await state(ctx);
       expect(denied.error).toMatchObject({
         status: 403,
         code: "identity_denied",
@@ -733,26 +867,29 @@ for (const transport of ["google-id-token", "one-tap"] as const)
         },
       });
       expect(validations(after)[0]!.user).not.toHaveProperty("id");
-      const normal = await configure(ctx, "normal"),
-        accepted = await submit(token);
+
+      const normal = await configure(ctx, "normal");
+      const accepted = await submit(token);
       expect(accepted.error).toBeNull();
-      const id = accepted.data!.user.id,
-        created = await state(ctx);
+
+      const id = accepted.data!.user.id;
+      const created = await state(ctx);
       expect(created.accounts.find((row) => row.userId === id)).toMatchObject({
         providerId: "google",
         accountId: subject,
         idToken: token,
       });
       expect(validations(created)).toHaveLength(1);
+
       const changed = await credential({
         ...claims,
         name: "Fresh Changed Provider",
         picture: "https://images.example/changed.png",
       });
-      const returningConfig = await configure(ctx, "deny"),
-        returningBefore = await state(ctx),
-        returning = await submit(changed),
-        returningAfter = await state(ctx);
+      const returningConfig = await configure(ctx, "deny");
+      const returningBefore = await state(ctx);
+      const returning = await submit(changed);
+      const returningAfter = await state(ctx);
       expect(returning.error).toMatchObject({ status: 403, code: "identity_denied" });
       expect(identities(returningAfter)).toEqual(identities(returningBefore));
       expect(validations(returningAfter)).toHaveLength(1);
@@ -764,30 +901,34 @@ for (const transport of ["google-id-token", "one-tap"] as const)
           oauth: { providerId: "google", profile: decodeJwt(changed) },
         },
       });
-      const mutateConfig = await configure(ctx, "mutate"),
-        mutated = await submit(changed),
-        mutatedState = await state(ctx);
+
+      const mutateConfig = await configure(ctx, "mutate");
+      const mutated = await submit(changed);
+      const mutatedState = await state(ctx);
       expect(mutated.error).toBeNull();
       expect(mutatedState.users.find((row) => row.id === id)).toMatchObject({
         email,
         name: "Fresh Provider",
       });
       expect(mutatedState.accounts.find((row) => row.userId === id)?.idToken).toBe(changed);
+
       const noNameToken = await credential({
-          aud: claims.aud,
-          sub: ctx.uniqueToken("missing-provider-name"),
-          email: ctx.uniqueEmail("missing-provider-name"),
-          email_verified: true,
-        }),
-        missingName = [];
+        aud: claims.aud,
+        sub: ctx.uniqueToken("missing-provider-name"),
+        email: ctx.uniqueEmail("missing-provider-name"),
+        email_verified: true,
+      });
+      const missingName = [];
+
       for (const mode of ["deny", "normal"]) {
-        const configured = await configure(ctx, mode),
-          before = await state(ctx),
-          result = await submit(noNameToken),
-          after = await state(ctx);
+        const configured = await configure(ctx, mode);
+        const before = await state(ctx);
+        const result = await submit(noNameToken);
+        const after = await state(ctx);
         expect(validations(after)).toHaveLength(1);
         expect(validations(after)[0]!.user.name).toBe("");
         expect(validations(after)[0]!.source.oauth.profile).toEqual(decodeJwt(noNameToken));
+
         if (mode === "deny") {
           expect(result.error).toMatchObject({ status: 403, code: "identity_denied" });
           expect(identities(after)).toEqual(identities(before));
@@ -795,6 +936,7 @@ for (const transport of ["google-id-token", "one-tap"] as const)
           expect(result.error).toBeNull();
           expect(after.users.find((row) => row.id === result.data!.user.id)?.name).toBe("");
         }
+
         missingName.push({
           mode,
           configured,
@@ -803,15 +945,16 @@ for (const transport of ["google-id-token", "one-tap"] as const)
           after: observed(after),
         });
       }
-      const noNameClaims = decodeJwt(noNameToken),
-        changedNoNameToken = await credential({
-          ...noNameClaims,
-          applicationClaim: { stage: "returning-missing-name" },
-        }),
-        namePolicy = await configure(ctx, "deny-empty-name"),
-        nameBefore = await state(ctx),
-        nameDenied = await submit(changedNoNameToken),
-        nameAfter = await state(ctx);
+
+      const noNameClaims = decodeJwt(noNameToken);
+      const changedNoNameToken = await credential({
+        ...noNameClaims,
+        applicationClaim: { stage: "returning-missing-name" },
+      });
+      const namePolicy = await configure(ctx, "deny-empty-name");
+      const nameBefore = await state(ctx);
+      const nameDenied = await submit(changedNoNameToken);
+      const nameAfter = await state(ctx);
       expect(nameDenied.error).toMatchObject({ status: 403, code: "identity_denied" });
       expect(validations(nameAfter)).toHaveLength(1);
       expect(validations(nameAfter)[0]).toMatchObject({
@@ -819,6 +962,7 @@ for (const transport of ["google-id-token", "one-tap"] as const)
         source: { action: "sign-in", oauth: { profile: decodeJwt(changedNoNameToken) } },
       });
       expect(identities(nameAfter)).toEqual(identities(nameBefore));
+
       await unchangedForeign(ctx, other);
       return {
         foreign: other,
@@ -853,14 +997,16 @@ for (const transport of ["google-id-token", "one-tap"] as const)
     },
     [transport === "one-tap" ? "POST /one-tap/callback" : "POST /sign-in/social"],
   );
+}
 
 compatScenario(
   "identity validation requires trusted source and actual endpoint context for server creation",
   async (ctx) => {
-    const other = await foreign(ctx),
-      configured = await configure(ctx, "normal"),
-      before = await state(ctx),
-      observations = [];
+    const other = await foreign(ctx);
+    const configured = await configure(ctx, "normal");
+    const before = await state(ctx);
+    const observations = [];
+
     for (const source of [
       undefined,
       { method: "" },
@@ -885,11 +1031,14 @@ compatScenario(
             ? "validation_context_missing"
             : "validation_source_missing",
       });
+
       const after = await state(ctx);
       expect(identities(after)).toEqual(identities(before));
       expect(after.events).toEqual([]);
+
       observations.push({ source: source ?? null, result, after: observed(after) });
     }
+
     await unchangedForeign(ctx, other);
     return { foreign: other, configured, before: observed(before), observations };
   },
@@ -899,37 +1048,42 @@ compatScenario(
 compatScenario(
   "expired identity proofs reject before validation and cannot be replayed into creation",
   async (ctx) => {
-    const other = await foreign(ctx),
-      observations = [];
+    const other = await foreign(ctx);
+    const observations = [];
+
     for (const method of ["magic-link", "email-otp", "phone-number", "siwe"] as const) {
-      const configured = await configure(ctx, "deny"),
-        flow = proofFlow(ctx, method, `expired-${method}`),
-        before = await state(ctx),
-        proof = await flow.issue(),
-        issued = await state(ctx);
+      const configured = await configure(ctx, "deny");
+      const flow = proofFlow(ctx, method, `expired-${method}`);
+      const before = await state(ctx);
+      const proof = await flow.issue();
+      const issued = await state(ctx);
       const rows = issued.verifications.filter(
         (row) => !before.verifications.some((previous) => previous.id === row.id),
       );
       expect(rows).toHaveLength(1);
-      const expiredAt = "2001-01-01T00:00:00.000Z",
-        expired = await ctx.rawRequest({
-          path: "/__test/user-validation",
-          method: "POST",
-          json: {
-            operation: "proof-expiry",
-            identifier: rows[0]!.identifier,
-            expiresAt: expiredAt,
-          },
-        });
+
+      const expiredAt = "2001-01-01T00:00:00.000Z";
+      const expired = await ctx.rawRequest({
+        path: "/__test/user-validation",
+        method: "POST",
+        json: {
+          operation: "proof-expiry",
+          identifier: rows[0]!.identifier,
+          expiresAt: expiredAt,
+        },
+      });
       expect(expired.status).toBe(200);
+
       const expiredState = await state(ctx);
       expect(expiredState.verifications.find((row) => row.id === rows[0]!.id)?.expiresAt).toBe(
         expiredAt,
       );
-      const result = await flow.submit(proof.proof),
-        after = await state(ctx),
-        replay = await flow.submit(proof.proof),
-        replayed = await state(ctx);
+
+      const result = await flow.submit(proof.proof);
+      const after = await state(ctx);
+      const replay = await flow.submit(proof.proof);
+      const replayed = await state(ctx);
+
       if (method === "magic-link") {
         for (const response of [result, replay]) {
           expect((response as any).status).toBe(302);
@@ -943,12 +1097,14 @@ compatScenario(
         );
         expect((replay as any).error).not.toBeNull();
       }
+
       expect(after.events).toEqual([]);
       expect(replayed.events).toEqual([]);
       expect(identities(after)).toEqual(identities(before));
       expect(identities(replayed)).toEqual(identities(before));
       expect(after.verifications.some((row) => row.id === rows[0]!.id)).toBe(false);
       expect(replayed.verifications).toEqual(after.verifications);
+
       await unchangedForeign(ctx, other);
       observations.push({
         method,
@@ -964,6 +1120,7 @@ compatScenario(
         replayed: observed(replayed),
       });
     }
+
     return { foreign: other, observations };
   },
   [
@@ -977,47 +1134,55 @@ compatScenario(
 compatScenario(
   "concurrent email OTP consumption admits only one actual validation callback and retains foreign authority",
   async (ctx) => {
-    const other = await foreign(ctx),
-      actor = client(ctx, "concurrent"),
-      second = client(ctx, "concurrent-second"),
-      email = ctx.uniqueEmail("concurrent-validation");
+    const other = await foreign(ctx);
+    const actor = client(ctx, "concurrent");
+    const second = client(ctx, "concurrent-second");
+    const email = ctx.uniqueEmail("concurrent-validation");
     const issued = await actor.emailOtp.sendVerificationOtp({ email, type: "sign-in" });
     expect(issued.error).toBeNull();
+
     const sent = await delivery(ctx, `otp:sign-in:${email}`);
-    const configured = await configure(ctx, "hold"),
-      before = await state(ctx),
-      pending = actor.signIn.emailOtp({ email, otp: sent.otp, name: "Held Identity" });
+    const configured = await configure(ctx, "hold");
+    const before = await state(ctx);
+    const pending = actor.signIn.emailOtp({ email, otp: sent.otp, name: "Held Identity" });
     const reached = await ctx.rawRequest({
       path: "/__test/user-validation",
       method: "POST",
       json: { operation: "wait-stage", stage: "validation" },
     });
     expect(reached.status).toBe(200);
+
     const rejected = await second.signIn.emailOtp({
       email,
       otp: sent.otp,
       name: "Concurrent Identity",
     });
     expect(rejected.error).toMatchObject({ status: 400, code: "INVALID_OTP" });
+
     const held = await state(ctx);
     expect(validations(held)).toHaveLength(1);
     expect(validations(held)[0]!.user.name).toBe("Held Identity");
     expect(held.verifications).toEqual([]);
     expect(identities(held)).toEqual(identities(before));
+
     const foreignSession = await ctx.actor("foreign", "validation").client.getSession();
     expect(foreignSession.data?.user.id).toBe(other.signup.data!.user.id);
+
     const released = await ctx.rawRequest({
       path: "/__test/user-validation",
       method: "POST",
       json: { operation: "release" },
     });
     expect(released.status).toBe(200);
+
     const denied = await pending;
     expect(denied.error).toMatchObject({ status: 403, code: "identity_denied" });
+
     const after = await state(ctx);
     expect(validations(after)).toHaveLength(1);
     expect(identities(after)).toEqual(identities(before));
     expect(after.verifications).toEqual([]);
+
     await unchangedForeign(ctx, other);
     return {
       foreign: other,
@@ -1043,42 +1208,46 @@ compatScenario(
 compatScenario(
   "admin identity admission uses physical authority before policy and hashes credentials only after creation",
   async (ctx) => {
-    const other = await foreign(ctx),
-      owner = ctx.actor("administrator", "validation"),
-      email = ctx.uniqueEmail("validation-administrator");
+    const other = await foreign(ctx);
+    const owner = ctx.actor("administrator", "validation");
+    const email = ctx.uniqueEmail("validation-administrator");
     const signup = await owner.client.signUp.email({
       email,
       name: "Administrator",
       password: "password123",
     });
     expect(signup.error).toBeNull();
+
     const promoted = await ctx.promoteAdmin({ email });
-    const configured = await configure(ctx, "deny"),
-      before = await state(ctx),
-      request = {
-        email: ctx.uniqueEmail("admin-validation"),
-        name: "Administrative Candidate",
-        password: "short",
-        role: "user" as const,
-      };
-    const guest = await ctx.actor("guest", "validation").client.admin.createUser(request),
-      ordinary = await ctx.actor("foreign", "validation").client.admin.createUser(request);
+    const configured = await configure(ctx, "deny");
+    const before = await state(ctx);
+    const request = {
+      email: ctx.uniqueEmail("admin-validation"),
+      name: "Administrative Candidate",
+      password: "short",
+      role: "user" as const,
+    };
+    const guest = await ctx.actor("guest", "validation").client.admin.createUser(request);
+    const ordinary = await ctx.actor("foreign", "validation").client.admin.createUser(request);
     expect(guest.error?.status).toBe(401);
     expect(ordinary.error?.status).toBe(403);
     expect((await state(ctx)).events).toEqual([]);
     expect(identities(await state(ctx))).toEqual(identities(before));
+
     const overlong = await owner.client.admin.createUser({ ...request, password: "🔒".repeat(65) });
     expect(overlong.error).toMatchObject({ status: 400, code: "PASSWORD_TOO_LONG" });
     expect((await state(ctx)).events).toEqual([]);
+
     const observations = [];
+
     for (const mode of ["deny", "throw", "normal", "mutate"]) {
-      const config = await configure(ctx, mode),
-        prior = await state(ctx),
-        body = { ...request, email: ctx.uniqueEmail(`admin-${mode}`).toUpperCase() };
+      const config = await configure(ctx, mode);
+      const prior = await state(ctx);
+      const body = { ...request, email: ctx.uniqueEmail(`admin-${mode}`).toUpperCase() };
       const result = await owner.client.admin.createUser(body, {
-          headers: { "x-test-validation-marker": "administrative-policy" },
-        }),
-        after = await state(ctx);
+        headers: { "x-test-validation-marker": "administrative-policy" },
+      });
+      const after = await state(ctx);
       expect(validations(after)).toHaveLength(1);
       expect(validations(after)[0]).toMatchObject({
         user: { email: body.email.toLowerCase(), name: body.name, role: "user" },
@@ -1092,6 +1261,7 @@ compatScenario(
       expect(validations(after)[0]!.user).not.toHaveProperty("banned");
       expect(validations(after)[0]!.user).not.toHaveProperty("isAnonymous");
       expect(validations(after)[0]!.user).not.toHaveProperty("metadata");
+
       if (mode === "deny" || mode === "throw") {
         expect(result.error).toMatchObject({
           status: 403,
@@ -1101,8 +1271,9 @@ compatScenario(
         expect(after.events).toHaveLength(1);
       } else {
         expect(result.error).toBeNull();
-        const id = result.data!.user.id,
-          row = after.users.find((user) => user.id === id)!;
+
+        const id = result.data!.user.id;
+        const row = after.users.find((user) => user.id === id)!;
         expect(after.events.map((event) => event.stage)).toEqual([
           "validation",
           "user-create-before",
@@ -1124,11 +1295,16 @@ compatScenario(
           name: mode === "mutate" ? "Validated Identity" : body.name,
           role: "user",
         });
-        if (mode === "mutate") expect(row.createdAt).toBe("2001-01-01T00:00:00.000Z");
+
+        if (mode === "mutate") {
+          expect(row.createdAt).toBe("2001-01-01T00:00:00.000Z");
+        }
       }
+
       await unchangedForeign(ctx, other);
       observations.push({ mode, config, before: observed(prior), result, after: observed(after) });
     }
+
     return {
       foreign: other,
       signup,
@@ -1153,11 +1329,13 @@ async function providerControl(ctx: ScenarioContext, profile: Row) {
   expect(response.status).toBe(200);
   return response;
 }
+
 async function providerReceipts(ctx: ScenarioContext) {
   const response = await ctx.rawRequest({ path: "/__test/social-provider/state" });
   expect(response.status).toBe(200);
   return (response.body as { receipts: Row[] }).receipts;
 }
+
 function observedReceipts(rows: Row[]) {
   return rows.map((row) => ({
     ...row,
@@ -1173,6 +1351,7 @@ function observedReceipts(rows: Row[]) {
       : row.body,
   }));
 }
+
 async function browserProvider(
   ctx: ScenarioContext,
   actor: ReturnType<ScenarioContext["actor"]>,
@@ -1190,9 +1369,11 @@ async function browserProvider(
         disableRedirect: true,
       }));
   expect(started.error).toBeNull();
-  const issued = new URL(started.data!.url!),
-    state = issued.searchParams.get("state");
+
+  const issued = new URL(started.data!.url!);
+  const state = issued.searchParams.get("state");
   expect(state).toBeString();
+
   const path = `${authProfilePath("validation")}/callback/gitlab?${new URLSearchParams({ code: "fixture-code", state: state! })}`;
   const response = await actor.fetch(path, {
     redirect: "manual",
@@ -1208,34 +1389,38 @@ async function browserProvider(
     },
   };
 }
+
 function providerError(
   result: Awaited<ReturnType<typeof browserProvider>>["result"],
   code: string,
   description?: string,
 ) {
   expect(result.status).toBe(302);
+
   const url = new URL(result.location!);
   expect(url.searchParams.get("error")).toBe(code);
   expect(url.searchParams.get("error_description")).toBe(description ?? null);
 }
+
 async function replayBrowser(
   ctx: ScenarioContext,
   actor: ReturnType<ScenarioContext["actor"]>,
   path: string,
 ) {
-  const before = await state(ctx),
-    receiptsBefore = await providerReceipts(ctx),
-    response = await actor.fetch(path, { redirect: "manual" }),
-    result = {
-      status: response.status,
-      location: response.headers.get("location"),
-      body: await response.text(),
-    };
+  const before = await state(ctx);
+  const receiptsBefore = await providerReceipts(ctx);
+  const response = await actor.fetch(path, { redirect: "manual" });
+  const result = {
+    status: response.status,
+    location: response.headers.get("location"),
+    body: await response.text(),
+  };
   providerError(result, "state_mismatch");
-  const after = await state(ctx),
-    receiptsAfter = await providerReceipts(ctx);
+  const after = await state(ctx);
+  const receiptsAfter = await providerReceipts(ctx);
   expect(after).toEqual(before);
   expect(receiptsAfter).toEqual(receiptsBefore);
+
   return {
     before: observed(before),
     receiptsBefore: observedReceipts(receiptsBefore),
@@ -1248,9 +1433,9 @@ async function replayBrowser(
 compatScenario(
   "browser OAuth creation and linking validate fresh mapped identity with complete raw provider context at the Source guards",
   async (ctx) => {
-    const other = await foreign(ctx),
-      web = ctx.actor("browser", "validation"),
-      observations = [];
+    const other = await foreign(ctx);
+    const web = ctx.actor("browser", "validation");
+    const observations = [];
     const profile = {
       id: 1831,
       email: ctx.uniqueEmail("browser-provider").toUpperCase(),
@@ -1263,13 +1448,14 @@ compatScenario(
       applicationClaim: { only: "unmapped-provider-record" },
     };
     const controlled = await providerControl(ctx, profile);
+
     for (const mode of ["deny", "throw", "mutate"]) {
-      const configured = await configure(ctx, mode),
-        before = await state(ctx),
-        receiptsBefore = await providerReceipts(ctx),
-        completed = await browserProvider(ctx, web),
-        after = await state(ctx),
-        receiptsAfter = await providerReceipts(ctx);
+      const configured = await configure(ctx, mode);
+      const before = await state(ctx);
+      const receiptsBefore = await providerReceipts(ctx);
+      const completed = await browserProvider(ctx, web);
+      const after = await state(ctx);
+      const receiptsAfter = await providerReceipts(ctx);
       expect(receiptsAfter).toHaveLength(receiptsBefore.length + 2);
       expect(validations(after)).toHaveLength(1);
       expect(validations(after)[0]).toMatchObject({
@@ -1292,6 +1478,7 @@ compatScenario(
       });
       expect(validations(after)[0]!.user).not.toHaveProperty("applicationClaim");
       expect(validations(after)[0]!.user).not.toHaveProperty("id");
+
       if (mode !== "mutate") {
         providerError(
           completed.result,
@@ -1303,6 +1490,7 @@ compatScenario(
       } else {
         expect(completed.result).toMatchObject({ status: 302, location: "/validation-complete" });
         expect(after.users).toHaveLength(before.users.length + 1);
+
         const admitted = after.users.find(
           (row) => row.email === "MUTATED@VALIDATION.FIXTURE.TEST",
         )!;
@@ -1317,6 +1505,7 @@ compatScenario(
         });
         expect(after.events.filter((event) => event.stage === "validation")).toHaveLength(1);
       }
+
       const replay = await replayBrowser(ctx, web, completed.path);
       await unchangedForeign(ctx, other);
       observations.push({
@@ -1331,47 +1520,52 @@ compatScenario(
         replay,
       });
     }
-    const normal = await configure(ctx, "normal"),
-      unverified = ctx.actor("unverified-link", "validation"),
-      unverifiedSignup = await unverified.client.signUp.email({
-        email: ctx.uniqueEmail("unverified-link"),
-        name: "Unverified Local",
-        password: "password123",
-      });
+
+    const normal = await configure(ctx, "normal");
+    const unverified = ctx.actor("unverified-link", "validation");
+    const unverifiedSignup = await unverified.client.signUp.email({
+      email: ctx.uniqueEmail("unverified-link"),
+      name: "Unverified Local",
+      password: "password123",
+    });
     expect(unverifiedSignup.error).toBeNull();
+
     const unverifiedProfile = {
-        ...profile,
-        id: 1832,
-        email: unverifiedSignup.data!.user.email.toUpperCase(),
-      },
-      unverifiedControl = await providerControl(ctx, unverifiedProfile),
-      unverifiedConfig = await configure(ctx, "deny"),
-      unverifiedBefore = await state(ctx),
-      guarded = await browserProvider(ctx, ctx.actor("implicit-guard", "validation")),
-      unverifiedAfter = await state(ctx);
+      ...profile,
+      id: 1832,
+      email: unverifiedSignup.data!.user.email.toUpperCase(),
+    };
+    const unverifiedControl = await providerControl(ctx, unverifiedProfile);
+    const unverifiedConfig = await configure(ctx, "deny");
+    const unverifiedBefore = await state(ctx);
+    const guarded = await browserProvider(ctx, ctx.actor("implicit-guard", "validation"));
+    const unverifiedAfter = await state(ctx);
     providerError(guarded.result, "account_not_linked");
     expect(validations(unverifiedAfter)).toEqual([]);
     expect(identities(unverifiedAfter)).toEqual(identities(unverifiedBefore));
+
     const guardedReplay = await replayBrowser(
       ctx,
       ctx.actor("implicit-guard", "validation"),
       guarded.path,
     );
-    const verifiedConfig = await configure(ctx, "normal"),
-      verifiedFlow = proofFlow(ctx, "email-otp", "verified-local"),
-      verifiedProof = await verifiedFlow.issue(),
-      verified = await verifiedFlow.submit(verifiedProof.proof);
+    const verifiedConfig = await configure(ctx, "normal");
+    const verifiedFlow = proofFlow(ctx, "email-otp", "verified-local");
+    const verifiedProof = await verifiedFlow.issue();
+    const verified = await verifiedFlow.submit(verifiedProof.proof);
     expect((verified as any).error).toBeNull();
-    const verifiedId = (verified as any).data.user.id,
-      verifiedEmail = ctx.uniqueEmail("verified-local");
-    const implicitProfile = { ...profile, id: 1833, email: verifiedEmail.toUpperCase() },
-      implicitControl = await providerControl(ctx, implicitProfile),
-      implicit = [];
+
+    const verifiedId = (verified as any).data.user.id;
+    const verifiedEmail = ctx.uniqueEmail("verified-local");
+    const implicitProfile = { ...profile, id: 1833, email: verifiedEmail.toUpperCase() };
+    const implicitControl = await providerControl(ctx, implicitProfile);
+    const implicit = [];
+
     for (const mode of ["deny", "mutate"]) {
-      const configured = await configure(ctx, mode),
-        before = await state(ctx),
-        completed = await browserProvider(ctx, ctx.actor(`implicit-${mode}`, "validation")),
-        after = await state(ctx);
+      const configured = await configure(ctx, mode);
+      const before = await state(ctx);
+      const completed = await browserProvider(ctx, ctx.actor(`implicit-${mode}`, "validation"));
+      const after = await state(ctx);
       expect(validations(after)).toHaveLength(1);
       expect(validations(after)[0]).toMatchObject({
         user: { id: verifiedId, email: verifiedEmail, name: profile.username },
@@ -1381,6 +1575,7 @@ compatScenario(
           oauth: { providerId: "gitlab", profile: implicitProfile },
         },
       });
+
       if (mode === "deny") {
         providerError(completed.result, "identity_denied", "Configured identity rejected");
         expect(identities(after)).toEqual(identities(before));
@@ -1392,6 +1587,7 @@ compatScenario(
         ).toEqual([expect.objectContaining({ accountId: "1833", userId: verifiedId })]);
         expect(after.sessions).toHaveLength(before.sessions.length + 1);
       }
+
       const replay = await replayBrowser(
         ctx,
         ctx.actor(`implicit-${mode}`, "validation"),
@@ -1407,18 +1603,20 @@ compatScenario(
         replay,
       });
     }
+
     const mismatchProfile = {
-        ...profile,
-        id: 1834,
-        email: ctx.uniqueEmail("explicit-mismatch").toUpperCase(),
-      },
-      mismatchControl = await providerControl(ctx, mismatchProfile),
-      explicit = [];
+      ...profile,
+      id: 1834,
+      email: ctx.uniqueEmail("explicit-mismatch").toUpperCase(),
+    };
+    const mismatchControl = await providerControl(ctx, mismatchProfile);
+    const explicit = [];
+
     for (const mode of ["deny", "normal"]) {
-      const configured = await configure(ctx, mode),
-        before = await state(ctx),
-        completed = await browserProvider(ctx, unverified, true),
-        after = await state(ctx);
+      const configured = await configure(ctx, mode);
+      const before = await state(ctx);
+      const completed = await browserProvider(ctx, unverified, true);
+      const after = await state(ctx);
       expect(validations(after)).toHaveLength(1);
       expect(validations(after)[0]).toMatchObject({
         user: { id: unverifiedSignup.data!.user.id, email: mismatchProfile.email },
@@ -1428,12 +1626,14 @@ compatScenario(
           oauth: { providerId: "gitlab", profile: mismatchProfile },
         },
       });
+
       providerError(
         completed.result,
         mode === "deny" ? "identity_denied" : "email_does_not_match",
         mode === "deny" ? "Configured identity rejected" : undefined,
       );
       expect(identities(after)).toEqual(identities(before));
+
       const replay = await replayBrowser(ctx, unverified, completed.path);
       explicit.push({
         mode,
@@ -1445,11 +1645,12 @@ compatScenario(
         replay,
       });
     }
-    const matchingControl = await providerControl(ctx, unverifiedProfile),
-      matchingConfig = await configure(ctx, "mutate"),
-      matchingBefore = await state(ctx),
-      linked = await browserProvider(ctx, unverified, true),
-      matchingAfter = await state(ctx);
+
+    const matchingControl = await providerControl(ctx, unverifiedProfile);
+    const matchingConfig = await configure(ctx, "mutate");
+    const matchingBefore = await state(ctx);
+    const linked = await browserProvider(ctx, unverified, true);
+    const matchingAfter = await state(ctx);
     expect(linked.result.location).toBe("/validation-complete");
     expect(matchingAfter.users).toEqual(matchingBefore.users);
     expect(matchingAfter.sessions).toEqual(matchingBefore.sessions);
@@ -1462,6 +1663,7 @@ compatScenario(
     ]);
     expect(validations(matchingAfter)).toHaveLength(1);
     expect(validations(matchingAfter)[0]!.user.email).toBe(unverifiedProfile.email);
+
     const linkReplay = await replayBrowser(ctx, unverified, linked.path);
     await unchangedForeign(ctx, other);
     return {

@@ -2,6 +2,7 @@
 
 import { expect } from "bun:test";
 import { connect } from "node:net";
+
 import type { FixtureProfile } from "../../support/profiles";
 import type { ScenarioContext } from "../../support/scenario";
 
@@ -29,6 +30,7 @@ export async function disconnectedRequest(
       body: JSON.stringify({ email, password: "password123" }),
     });
   expect(signin.status).toBe(200);
+
   const signinBody: unknown = await signin.json();
   const cookie = signin.headers
     .getSetCookie()
@@ -36,7 +38,9 @@ export async function disconnectedRequest(
     .join("; ");
   expect(cookie).toContain("session_token=");
 
-  if (beforeSend) await beforeSend();
+  if (beforeSend) {
+    await beforeSend();
+  }
 
   const origin = new URL(ctx.baseURL);
   const wirePath = `/__test/profiles/${profile}/api/auth${path}`;
@@ -79,6 +83,7 @@ export async function disconnectedRequest(
       });
       expect(receipt.status).toBe(200);
       expect(receipt.body).toEqual({ marker, aborted: true });
+
       return { clientClosed: socket.destroyed, responseBytes, receipt };
     },
   };

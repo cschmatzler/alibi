@@ -1,23 +1,28 @@
 import { expect } from "bun:test";
 import { createHash } from "node:crypto";
+
 import { decodeJwt, decodeProtectedHeader } from "jose";
+
 import { credential, issuedAt, signedRawToken } from "../../support/id-token";
 import type { FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { state } from "../one-tap/helpers";
 
 type Row = Record<string, unknown>;
+
 type Store = {
   users: Row[];
   accounts: Row[];
   sessions: Row[];
   receipts: Row[];
 };
+
 async function read(ctx: ScenarioContext) {
   const r = await ctx.rawRequest({ path: "/__test/social-provider/state" });
   expect(r.status).toBe(200);
   return r.body as Store;
 }
+
 function proof(token: string) {
   const [header, payload, signature] = token.split(".");
   return {
@@ -29,14 +34,16 @@ function proof(token: string) {
     signature: { token: signature },
   };
 }
+
 async function setup(ctx: ScenarioContext, profile: FixtureProfile) {
-  const foreign = ctx.actor("foreign", profile),
-    signup = await foreign.client.signUp.email({
-      email: ctx.uniqueEmail("foreign"),
-      password: "password123",
-      name: "Foreign Principal",
-    });
+  const foreign = ctx.actor("foreign", profile);
+  const signup = await foreign.client.signUp.email({
+    email: ctx.uniqueEmail("foreign"),
+    password: "password123",
+    name: "Foreign Principal",
+  });
   expect(signup.error).toBeNull();
+
   return {
     foreign,
     signup,
@@ -45,6 +52,7 @@ async function setup(ctx: ScenarioContext, profile: FixtureProfile) {
     fetches: (await state(ctx)).jwksFetches,
   };
 }
+
 async function signed(ctx: ScenarioContext, claims: Row = {}, header: Row = {}, wrong = false) {
   return credential(
     {
@@ -60,12 +68,13 @@ async function signed(ctx: ScenarioContext, claims: Row = {}, header: Row = {}, 
     wrong,
   );
 }
+
 compatScenario(
   "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
   async (ctx) => {
-    const s = await setup(ctx, "google-id-default"),
-      owner = ctx.actor("owner", "google-id-default"),
-      token = await signed(ctx, { nonce: "actual-nonce" });
+    const s = await setup(ctx, "google-id-default");
+    const owner = ctx.actor("owner", "google-id-default");
+    const token = await signed(ctx, { nonce: "actual-nonce" });
     const submitted = {
       provider: "google" as const,
       idToken: {
@@ -80,14 +89,16 @@ compatScenario(
     };
     const signin = await owner.client.signIn.social(submitted);
     expect(signin.error).toBeNull();
+
     const current = await owner.client.getSession();
     expect(current.data?.user).toMatchObject({
       email: ctx.uniqueEmail("owner"),
       name: "Signed Google Owner",
       emailVerified: true,
     });
-    const stored = await read(ctx),
-      account = stored.accounts.find((r) => r.providerId === "google")!;
+
+    const stored = await read(ctx);
+    const account = stored.accounts.find((r) => r.providerId === "google")!;
     expect(account).toMatchObject({
       userId: current.data!.user.id,
       accountId: ctx.uniqueToken("subject"),
@@ -101,6 +112,7 @@ compatScenario(
     expect(stored.users).toHaveLength(s.before.users.length + 1);
     expect(stored.accounts).toHaveLength(s.before.accounts.length + 1);
     expect(stored.sessions).toHaveLength(s.before.sessions.length + 1);
+
     const ownerBefore = await ctx.readUserState({
       userId: current.data!.user.id,
     });
@@ -109,19 +121,24 @@ compatScenario(
       idToken: { token, nonce: "actual-nonce" },
     });
     expect(replay.error).toBeNull();
+
     const replaySession = await s.foreign.client.getSession();
     expect(replaySession.data?.user.id).toBe(current.data!.user.id);
+
     const replayed = await read(ctx);
     expect(replayed.sessions).toHaveLength(stored.sessions.length + 1);
     expect(replayed.accounts.find((r) => r.id === account.id)?.userId).toBe(current.data!.user.id);
     expect(await ctx.readUserState({ userId: s.signup.data!.user.id })).toEqual(s.foreignBefore);
+
     const signout = await s.foreign.client.signOut();
     expect(signout.error).toBeNull();
-    const retired = await s.foreign.client.getSession(),
-      original = await owner.client.getSession();
+
+    const retired = await s.foreign.client.getSession();
+    const original = await owner.client.getSession();
     expect(retired.data).toBeNull();
     expect(original.data?.user.id).toBe(current.data!.user.id);
     expect((await read(ctx)).sessions).toHaveLength(stored.sessions.length);
+
     return {
       signup: ctx.snapshot(s.signup),
       before: s.before,
@@ -145,6 +162,7 @@ compatScenario(
   },
   ["POST /sign-in/social", "GET /get-session", "POST /sign-out"],
 );
+
 const policies: {
   name: string;
   profile: FixtureProfile;
@@ -221,19 +239,21 @@ const policies: {
     code: "USER_EMAIL_NOT_FOUND",
   },
 ];
-for (const p of policies)
+
+for (const p of policies) {
   compatScenario(
     `Google default ID-token policy: ${p.name}`,
     async (ctx) => {
-      const s = await setup(ctx, p.profile),
-        actor = ctx.actor("policy", p.profile),
-        token = await signed(ctx, p.claims),
-        result = await actor.client.signIn.social({
-          provider: "google",
-          idToken: { token },
-        }),
-        current = await actor.client.getSession(),
-        after = await read(ctx);
+      const s = await setup(ctx, p.profile);
+      const actor = ctx.actor("policy", p.profile);
+      const token = await signed(ctx, p.claims);
+      const result = await actor.client.signIn.social({
+        provider: "google",
+        idToken: { token },
+      });
+      const current = await actor.client.getSession();
+      const after = await read(ctx);
+
       if (p.success) {
         expect(result.error).toBeNull();
         expect(current.data?.user.email).toBe(ctx.uniqueEmail("owner"));
@@ -250,7 +270,9 @@ for (const p of policies)
         expect(current.data).toBeNull();
         expect(after).toEqual(s.before);
       }
+
       expect(await ctx.readUserState({ userId: s.signup.data!.user.id })).toEqual(s.foreignBefore);
+
       return {
         signup: ctx.snapshot(s.signup),
         before: s.before,
@@ -267,12 +289,14 @@ for (const p of policies)
     },
     ["POST /sign-in/social", "GET /get-session"],
   );
+}
+
 compatScenario(
   "Google default genuine cryptographic and claim negatives never mutate any principal",
   async (ctx) => {
-    const s = await setup(ctx, "google-id-default"),
-      actor = ctx.actor("rejected", "google-id-default"),
-      outcomes = [];
+    const s = await setup(ctx, "google-id-default");
+    const actor = ctx.actor("rejected", "google-id-default");
+    const outcomes = [];
     const cases: {
       name: string;
       claims?: Row;
@@ -305,32 +329,35 @@ compatScenario(
       { name: "wrong nonce", claims: { nonce: "other" }, nonce: "expected" },
       { name: "missing nonce", nonce: "expected" },
     ];
+
     for (const p of cases) {
       const token = p.rawAlgorithm
-          ? signedRawToken(
-              {
-                aud: "google-default-client",
-                sub: ctx.uniqueToken("subject"),
-                email: ctx.uniqueEmail("owner"),
-                ...p.claims,
-              },
-              p.header!,
-              p.rawAlgorithm,
-            )
-          : await signed(ctx, p.claims, p.header, p.wrong),
-        submitted = {
-          provider: "google" as const,
-          idToken: { token, nonce: p.nonce },
-        },
-        result = await actor.client.signIn.social(submitted);
+        ? signedRawToken(
+            {
+              aud: "google-default-client",
+              sub: ctx.uniqueToken("subject"),
+              email: ctx.uniqueEmail("owner"),
+              ...p.claims,
+            },
+            p.header!,
+            p.rawAlgorithm,
+          )
+        : await signed(ctx, p.claims, p.header, p.wrong);
+      const submitted = {
+        provider: "google" as const,
+        idToken: { token, nonce: p.nonce },
+      };
+      const result = await actor.client.signIn.social(submitted);
       expect(result.error).toMatchObject({
         status: 401,
         code: "INVALID_TOKEN",
       });
-      const current = await actor.client.getSession(),
-        after = await read(ctx);
+
+      const current = await actor.client.getSession();
+      const after = await read(ctx);
       expect(current.data).toBeNull();
       expect(after).toEqual(s.before);
+
       outcomes.push({
         name: p.name,
         submitted,
@@ -340,7 +367,9 @@ compatScenario(
         after,
       });
     }
+
     expect(await ctx.readUserState({ userId: s.signup.data!.user.id })).toEqual(s.foreignBefore);
+
     return {
       signup: ctx.snapshot(s.signup),
       before: s.before,

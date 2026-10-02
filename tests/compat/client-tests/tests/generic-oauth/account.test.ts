@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+
 import { compatScenario } from "../../support/scenario";
 
 compatScenario("account info returns provider user info for a linked account", async (ctx) => {

@@ -1,5 +1,6 @@
 import { createAuthClient } from "better-auth/client";
 import { usernameClient } from "better-auth/client/plugins";
+
 import { compatScenario } from "../../support/scenario";
 
 function usernameActor(ctx: Parameters<Parameters<typeof compatScenario>[1]>[0], name = "primary") {

@@ -5,11 +5,14 @@ import { oneTap } from "better-auth/plugins";
 const jwks: unknown = await Bun.file(
   new URL("../../../fixtures/one-tap/jwks.json", import.meta.url),
 ).json();
+
 let jwksFetches = 0;
+
 export function googleOneTapJwks(): Response {
   jwksFetches++;
   return Response.json(jwks);
 }
+
 export function createOneTapProfiles(options: BetterAuthOptions) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   for (const name of [
@@ -89,6 +92,7 @@ export function createOneTapProfiles(options: BetterAuthOptions) {
   }
   return profiles;
 }
+
 export async function oneTapState(profiles: ReturnType<typeof createOneTapProfiles>) {
   const { adapter } = await profiles.get("one-tap-default")!.$context;
   const [users, accounts, sessions] = await Promise.all([

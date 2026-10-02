@@ -1,6 +1,8 @@
 import { expect } from "bun:test";
+
 import { createAuthClient } from "better-auth/client";
 import { z } from "zod";
+
 import type { FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
@@ -34,10 +36,12 @@ async function signup(ctx: ScenarioContext, name: string) {
   const email = ctx.uniqueEmail(name);
   const created = await actor.client.signUp.email({ email, name, password: "password123" });
   expect(created.error).toBeNull();
+
   const user = row.parse(z.object({ user: row }).parse(ctx.snapshot(created.data)).user);
 
   const session = await actor.client.getSession();
   expect(session.error).toBeNull();
+
   const issued = z
     .object({ user: row, session: row.extend({ token: z.string(), userId: z.string() }) })
     .parse(ctx.snapshot(session.data));
@@ -54,6 +58,7 @@ async function signup(ctx: ScenarioContext, name: string) {
     userId: user.id,
     token: issued.session.token,
   });
+
   return { ...actor, user, email, created, session: ctx.snapshot(session) };
 }
 
@@ -96,7 +101,9 @@ async function add(
 
 async function actors(ctx: ScenarioContext, names: string[]) {
   const result = [];
-  for (const name of names) result.push(await signup(ctx, name));
+  for (const name of names) {
+    result.push(await signup(ctx, name));
+  }
   return result;
 }
 
@@ -116,6 +123,7 @@ compatScenario(
     const own = await org(ctx, owner!, "fixed-own");
     await org(ctx, foreign!, "fixed-other");
     expect((await add(ctx, "org-membership-default", own.id, existing!.user.id)).status).toBe(200);
+
     const observations = [];
 
     for (const [suffix, allowed] of [
@@ -142,6 +150,7 @@ compatScenario(
 
       if (allowed) {
         expect(response.status).toBe(200);
+
         const created = row.parse(response.body);
         expect(after.snapshot.members).toEqual([...before.snapshot.members, created]);
         expect(created).toMatchObject({
@@ -161,6 +170,7 @@ compatScenario(
       expect(after.snapshot.invitations).toEqual(before.snapshot.invitations);
       expect(after.snapshot.teams).toEqual(before.snapshot.teams);
       expect(usersAfter).toEqual(usersBefore);
+
       observations.push({
         suffix,
         candidate: candidate.created,
@@ -210,6 +220,7 @@ compatScenario(
       fractionalTarget.user.id,
     );
     expect(fractionalAllowed.status).toBe(200);
+
     const fractionalAdmitted = await state(ctx);
     expect(fractionalAdmitted.snapshot.members).toEqual([
       ...fractionalBefore.snapshot.members,
@@ -253,10 +264,12 @@ compatScenario(
     const own = await org(ctx, owner!, "resolver-own");
     await org(ctx, foreign!, "resolver-foreign");
     expect((await add(ctx, "org-membership-default", own.id, existing!.user.id)).status).toBe(200);
+
     const raw = await owner!.client.$fetch("/organization/get-organization", {
       query: { organizationId: own.id },
     });
     expect(raw.error).toBeNull();
+
     const observations = [];
 
     for (const suffix of ["zero", "fractional", "error", "nan"] as const) {
@@ -275,6 +288,7 @@ compatScenario(
         organization: ctx.snapshot(raw.data),
         snapshot: before.snapshot,
       });
+
       if (suffix === "nan") {
         expect(response.status).toBe(200);
         expect(after.snapshot.members).toEqual([
@@ -291,7 +305,9 @@ compatScenario(
         );
         expect(after.snapshot).toEqual(before.snapshot);
       }
+
       expect(await owned(ctx, [owner!, existing!, foreign!, target])).toEqual(beforeUsers);
+
       observations.push({ suffix, target: target.created, before, beforeUsers, response, after });
     }
 
@@ -302,6 +318,7 @@ compatScenario(
       query: { organizationId: fractionalOrganization.id },
     });
     expect(fractionalRaw.error).toBeNull();
+
     await reset(ctx);
     const fractionalBefore = await state(ctx);
     const fractionalAllowed = await add(
@@ -311,6 +328,7 @@ compatScenario(
       fractionalTarget.user.id,
     );
     expect(fractionalAllowed.status).toBe(200);
+
     const fractionalAfter = await state(ctx);
     expect(fractionalAfter.receipts).toEqual([
       {
@@ -356,6 +374,7 @@ compatScenario(
       body: { organizationId: own.id, name: "Policy team" },
     });
     expect(room.error).toBeNull();
+
     await reset(ctx);
     const teamBefore = await state(ctx);
     const teamDenied = await add(
@@ -366,6 +385,7 @@ compatScenario(
       { teamId: row.parse(room.data).id },
     );
     expect(teamDenied.status).toBe(403);
+
     const teamAfter = await state(ctx);
     expect(teamAfter.receipts.map((value) => value.phase)).toEqual(["membership-limit"]);
     expect(teamAfter.snapshot).toEqual(teamBefore.snapshot);
@@ -400,6 +420,7 @@ compatScenario(
     const own = await org(ctx, owner!, "invite-policy-own");
     await org(ctx, foreign!, "invite-policy-foreign");
     expect((await add(ctx, "org-membership-default", own.id, existing!.user.id)).status).toBe(200);
+
     await reset(ctx);
     const before = await state(ctx);
     const beforeUsers = await owned(ctx, [owner!, existing!, target!, foreign!]);
@@ -409,6 +430,7 @@ compatScenario(
       { method: "POST", body: { organizationId: own.id, email: target!.email, role: "member" } },
     );
     expect(invitation.error).toBeNull();
+
     const invited = row.parse(ctx.snapshot(invitation.data));
     const pending = await state(ctx);
     expect(pending.snapshot.invitations).toEqual([...before.snapshot.invitations, invited]);
@@ -439,6 +461,7 @@ compatScenario(
       status: 403,
       code: "YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION",
     });
+
     const unverified = await client(ctx, target!, "org-membership-resolver-zero").$fetch(
       "/organization/accept-invitation",
       { method: "POST", body: { invitationId: invited.id } },
@@ -449,11 +472,13 @@ compatScenario(
 
     const sent = await target!.client.sendVerificationEmail({ email: target!.email });
     expect(sent.error).toBeNull();
+
     const proof = z
       .object({ token: z.string() })
       .parse(await ctx.readVerificationEmail({ email: target!.email }));
     const verified = await target!.client.verifyEmail({ query: { token: proof.token } });
     expect(verified.error).toBeNull();
+
     const targetSession = await target!.client.getSession();
     expect(targetSession.data?.user.emailVerified).toBe(true);
 
@@ -477,6 +502,7 @@ compatScenario(
       status: 403,
       code: "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED",
     });
+
     const denied = await state(ctx);
     expect(denied.snapshot).toEqual(verifiedBefore.snapshot);
     expect(denied.receipts).toHaveLength(1);
@@ -489,6 +515,7 @@ compatScenario(
       { method: "POST", body: { invitationId: invited.id } },
     );
     expect(accepted.error).toBeNull();
+
     const after = await state(ctx);
     expect(after.snapshot.invitations.find((value) => value.id === invited.id)).toMatchObject({
       status: "accepted",
@@ -535,6 +562,7 @@ compatScenario(
     const own = await org(ctx, owner!, "page-policy-own");
     await org(ctx, foreign!, "page-policy-foreign");
     expect((await add(ctx, "org-membership-default", own.id, target!.user.id)).status).toBe(200);
+
     await reset(ctx);
     const before = await state(ctx);
     const beforeUsers = await owned(ctx, [owner!, target!, foreign!]);
@@ -546,6 +574,7 @@ compatScenario(
       },
     });
     const guestReads = [];
+
     for (const path of ["/organization/list-members", "/organization/get-full-organization"]) {
       const result = await guest.$fetch(path, { query: { organizationId: own.id } });
       expect(result.error).toMatchObject({
@@ -555,10 +584,12 @@ compatScenario(
       });
       expect(await state(ctx)).toEqual(before);
       expect(await owned(ctx, [owner!, target!, foreign!])).toEqual(beforeUsers);
+
       guestReads.push({ path, result: ctx.snapshot(result) });
     }
 
     const observations = [];
+
     for (const [suffix, expected] of [
       ["one", 1],
       ["zero", 2],
@@ -572,12 +603,15 @@ compatScenario(
         query: { organizationId: own.id },
       });
       expect(listed.error).toBeNull();
+
       const page = z.object({ members: z.array(row), total: z.number() }).parse(listed.data);
       expect(page.members).toHaveLength(expected);
       expect(page.total).toBe(2);
+
       const full = await selected.$fetch("/organization/get-full-organization", {
         query: { organizationId: own.id },
       });
+
       if (suffix === "one") {
         expect(full.error?.status).toBe(500);
       } else {
@@ -586,11 +620,13 @@ compatScenario(
           suffix === "page-one" ? 1 : suffix === "page-zero" ? 0 : 2,
         );
       }
+
       observations.push({ suffix, listed: ctx.snapshot(listed), full: ctx.snapshot(full) });
     }
 
     const selected = client(ctx, owner!, "org-membership-one");
     const queries = [];
+
     for (const limit of ["0", "not-number", "0x1", "1.5", "-1", "Infinity"]) {
       const listed = await selected.$fetch("/organization/list-members", {
         query: { organizationId: own.id, limit },
@@ -607,12 +643,14 @@ compatScenario(
     }
 
     const fullQueries = [];
+
     for (const membersLimit of ["1", "1.5", "1suffix", "0x1"]) {
       const full = await selected.$fetch("/organization/get-full-organization", {
         query: { organizationId: own.id, membersLimit },
       });
       expect(full.error).toBeNull();
       expect(z.object({ members: z.array(row) }).parse(full.data).members).toHaveLength(1);
+
       fullQueries.push({ membersLimit, full: ctx.snapshot(full) });
     }
 
@@ -635,6 +673,7 @@ compatScenario(
       body: { organizationId: own.id, memberId: originalTarget.id, role: "owner" },
     });
     expect(promoted.error).toBeNull();
+
     await reset(ctx);
     const removalBefore = await state(ctx);
     const pagedDenial = await selected.$fetch("/organization/remove-member", {
@@ -652,6 +691,7 @@ compatScenario(
       { method: "POST", body: { organizationId: own.id, memberIdOrEmail: originalTarget.id } },
     );
     expect(removed.error).toBeNull();
+
     const removalAfter = await state(ctx);
     expect(removalAfter.receipts).toEqual([]);
     expect(removalAfter.snapshot).toEqual({

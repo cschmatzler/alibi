@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { admin, anonymous, twoFactor, username } from "better-auth/plugins";
@@ -13,8 +14,10 @@ export function createAdminBannedMessageFixture(base: BetterAuthOptions, databas
   ) {
     database.exec("ALTER TABLE user ADD COLUMN metadata JSON");
   }
+
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   const events: Record<string, unknown>[] = [];
+
   for (const name of [
     "admin-banned-message",
     "admin-banned-message-error",
@@ -63,24 +66,31 @@ export function createAdminBannedMessageFixture(base: BetterAuthOptions, databas
                 banExpires: user.banExpires,
                 metadata: user.metadata,
               });
+
               if (
                 name.startsWith("admin-banned-message-error") &&
                 user.banReason === "ordinary callback failure"
-              )
+              ) {
                 throw new Error("private callback failure details");
+              }
+
               if (
                 name.startsWith("admin-banned-message-error") &&
                 user.banReason === "server application ban"
-              )
+              ) {
                 throw new APIError("INTERNAL_SERVER_ERROR", {
                   code: "APPLICATION_BAN_MESSAGE_UNAVAILABLE",
                   message: "configured message unavailable",
                 });
-              if (name.startsWith("admin-banned-message-error"))
+              }
+
+              if (name.startsWith("admin-banned-message-error")) {
                 throw new APIError("BAD_REQUEST", {
                   code: "APPLICATION_BAN_MESSAGE_REFUSED",
                   message: "configured message refused",
                 });
+              }
+
               return `${(user.metadata as { supportCode: string }).supportCode}:${user.banReason}`;
             },
           }),
@@ -88,14 +98,18 @@ export function createAdminBannedMessageFixture(base: BetterAuthOptions, databas
       }),
     );
   }
+
   return {
     profiles,
     handle(request: Request) {
       const url = new URL(request.url);
-      if (url.pathname !== "/__test/admin-banned-message-events" || request.method !== "GET")
+
+      if (url.pathname !== "/__test/admin-banned-message-events" || request.method !== "GET") {
         return;
-      const email = url.searchParams.get("email"),
-        profile = url.searchParams.get("profile");
+      }
+
+      const email = url.searchParams.get("email");
+      const profile = url.searchParams.get("profile");
       const user = database.query("SELECT id,metadata FROM user WHERE email=?").get(email) as {
         id: string;
         metadata: string;

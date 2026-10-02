@@ -16,13 +16,18 @@ test("capability gate requires every committed scenario and regeneration preserv
       mkdir(join(root, "coverage"), { recursive: true }),
       mkdir(join(root, "tests/compat/reference-server"), { recursive: true }),
     ]);
-    for (const name of ["coverage.ts", "check-coverage.ts"])
+
+    for (const name of ["coverage.ts", "check-coverage.ts"]) {
       await copyFile(new URL(`../support/${name}`, import.meta.url), join(support, name));
-    for (const project of ["client-tests", "reference-server"])
+    }
+
+    for (const project of ["client-tests", "reference-server"]) {
       await symlink(
         new URL(`../../${project}/node_modules`, import.meta.url).pathname,
         join(root, `tests/compat/${project}/node_modules`),
       );
+    }
+
     const inventoryPath = join(root, "tests/compat/capabilities.json");
     const inventory = {
       upstreamVersion: "1.7.6",
@@ -41,8 +46,11 @@ test("capability gate requires every committed scenario and regeneration preserv
       ],
     };
     await Bun.write(inventoryPath, JSON.stringify(inventory));
-    for (const name of ["upstream-routes", "runtime-routes"])
+
+    for (const name of ["upstream-routes", "runtime-routes"]) {
       await Bun.write(join(root, `coverage/${name}.json`), JSON.stringify(["GET /token"]));
+    }
+
     const observed = join(artifacts, "scenario.json");
     await Bun.write(
       observed,
@@ -65,10 +73,12 @@ test("capability gate requires every committed scenario and regeneration preserv
     const missing = await run();
     expect(missing.code).not.toBe(0);
     expect(missing.output).toContain("missing success (API key principal)");
+
     const regeneration = await run(true);
     expect(regeneration.code).not.toBe(0);
     expect(regeneration.output).toContain("missing success (API key principal)");
     expect(await Bun.file(inventoryPath).json()).toEqual(inventory);
+
     await Bun.write(
       observed,
       JSON.stringify({
@@ -81,12 +91,14 @@ test("capability gate requires every committed scenario and regeneration preserv
     );
     expect((await run()).code).toBe(0);
     expect((await run(true)).code).toBe(0);
+
     const updated = await Bun.file(inventoryPath).json();
     expect(updated.capabilities[0].evidence.success).toEqual(
       inventory.capabilities[0]!.evidence.success,
     );
     expect(updated.capabilities[0].evidence.rejection).toBe("expired session");
     expect(updated.capabilities[0].evidence.state).toBe("persisted refresh");
+
     // A misspelled or separate requirement field must never be silently stripped.
     const unknownRequirements = {
       ...updated,
@@ -95,12 +107,14 @@ test("capability gate requires every committed scenario and regeneration preserv
       ],
     };
     await Bun.write(inventoryPath, JSON.stringify(unknownRequirements));
+
     for (const update of [false, true]) {
       const unknown = await run(update);
       expect(unknown.code).not.toBe(0);
       expect(unknown.output).toContain("requiredEvidence");
       expect(await Bun.file(inventoryPath).json()).toEqual(unknownRequirements);
     }
+
     await Bun.write(inventoryPath, JSON.stringify(updated));
     const duplicated = {
       ...updated,
@@ -117,10 +131,14 @@ test("capability gate requires every committed scenario and regeneration preserv
     expect(duplicateResult.code).not.toBe(0);
     expect(duplicateResult.output).toContain("Duplicate committed capability routes");
     expect(await Bun.file(inventoryPath).json()).toEqual(duplicated);
+
     await Bun.write(inventoryPath, JSON.stringify(updated));
+
     // Updating route discovery cannot silently discard a committed route either.
-    for (const name of ["upstream-routes", "runtime-routes"])
+    for (const name of ["upstream-routes", "runtime-routes"]) {
       await Bun.write(join(root, `coverage/${name}.json`), "[]");
+    }
+
     const removed = await run(true);
     expect(removed.code).not.toBe(0);
     expect(removed.output).toContain("Committed capability route disappeared: GET /token");

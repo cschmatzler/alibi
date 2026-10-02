@@ -1,12 +1,16 @@
 import { expect } from "bun:test";
+
 import { createAuthClient } from "better-auth/client";
 import { deviceAuthorizationClient } from "better-auth/client/plugins";
 import { z } from "zod";
+
 import type { FixtureProfile } from "../../support/profiles";
 import { compatScenario } from "../../support/scenario";
 
 const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
+
 type Context = Parameters<Parameters<typeof compatScenario>[1]>[0];
+
 const deviceState = z.object({
   id: z.string(),
   deviceCode: z.string(),
@@ -34,7 +38,11 @@ async function requestCode(ctx: Context, scope?: string) {
     ...(scope === undefined ? {} : { scope }),
   });
   expect(result.error).toBeNull();
-  if (!result.data) throw new Error("device issuance must return codes");
+
+  if (!result.data) {
+    throw new Error("device issuance must return codes");
+  }
+
   return result.data;
 }
 
@@ -46,7 +54,11 @@ async function signUpOwner(ctx: Context, prefix: string) {
     name: "Device Owner",
   });
   expect(signup.error).toBeNull();
-  if (!signup.data) throw new Error("device owner must have a session");
+
+  if (!signup.data) {
+    throw new Error("device owner must have a session");
+  }
+
   return { owner, signup, userId: signup.data.user.id };
 }
 
@@ -64,6 +76,7 @@ compatScenario("device code request returns oauth device response fields", async
   expect(new URL(code.verification_uri_complete).searchParams.get("user_code")).toBe(
     code.user_code,
   );
+
   return { code: ctx.snapshot(code) };
 });
 
@@ -74,6 +87,7 @@ compatScenario(
     const token = await deviceActor(ctx, "device").device.token(tokenRequest(code.device_code));
     expect(token.data).toBeNull();
     expect(token.error).toMatchObject({ status: 400, error: "authorization_pending" });
+
     return { code: ctx.snapshot(code), token: ctx.snapshot(token) };
   },
 );
@@ -90,6 +104,7 @@ compatScenario("device verify accepts a hyphenated user code", async (ctx) => {
   const verify = await deviceActor(ctx, "device").device({ query: { user_code: formatted } });
   expect(verify.error).toBeNull();
   expect(verify.data).toEqual({ user_code: formatted, status: "pending" });
+
   return { code: ctx.snapshot(code), verify: ctx.snapshot(verify) };
 });
 
@@ -102,6 +117,7 @@ compatScenario(
       await ctx.readDeviceState({ deviceCode: code.device_code }),
     );
     expect(unclaimedState.userId).toBeNull();
+
     const verify = await owner.device({ query: { user_code: code.user_code } });
     expect(verify.data).toEqual({
       user_code: code.user_code,
@@ -109,33 +125,47 @@ compatScenario(
       client_id: "compat-device-client",
       scope: "read write",
     });
+
     const approve = await owner.device.approve({ userCode: code.user_code });
     expect(approve.data).toEqual({ success: true });
+
     const approvedState = await owner.device({ query: { user_code: code.user_code } });
     expect(approvedState.data?.status).toBe("approved");
+
     const persistedApproval = deviceState.parse(
       await ctx.readDeviceState({ deviceCode: code.device_code }),
     );
     expect(persistedApproval.userId).toBe(userId);
     expect(persistedApproval.status).toBe("approved");
+
     const device = deviceActor(ctx, "device");
     const redemptionStartedAt = Date.now();
     const token = await device.device.token(tokenRequest(code.device_code));
     const redemptionCompletedAt = Date.now();
     expect(token.error).toBeNull();
-    if (!token.data) throw new Error("approved code must issue a session token");
+
+    if (!token.data) {
+      throw new Error("approved code must issue a session token");
+    }
+
     expect(token.data.token_type).toBe("Bearer");
     expect(token.data.scope).toBe("read write");
     expect(token.data.expires_in).toBeGreaterThanOrEqual(604799);
     expect(token.data.expires_in).toBeLessThanOrEqual(604800);
+
     const sessions = await owner.listSessions();
     expect(sessions.data).toHaveLength(2);
+
     const issuedSession = sessions.data?.find(
       (session) => session.token === token.data?.access_token,
     );
     expect(issuedSession?.userId).toBe(userId);
     expect(issuedSession?.token).not.toBe(signup.data?.token);
-    if (!issuedSession) throw new Error("device token must identify its persisted session");
+
+    if (!issuedSession) {
+      throw new Error("device token must identify its persisted session");
+    }
+
     const absoluteExpiry = new Date(issuedSession.expiresAt).getTime();
     expect(token.data.expires_in).toBeGreaterThanOrEqual(
       Math.floor((absoluteExpiry - redemptionCompletedAt) / 1000),
@@ -143,13 +173,17 @@ compatScenario(
     expect(token.data.expires_in).toBeLessThanOrEqual(
       Math.floor((absoluteExpiry - redemptionStartedAt) / 1000),
     );
+
     const deviceCookieSession = await device.getSession();
     expect(deviceCookieSession.data).toBeNull();
+
     const replay = await device.device.token(tokenRequest(code.device_code));
     expect(replay.error).toMatchObject({ status: 400, error: "invalid_grant" });
+
     const consumed = await owner.device({ query: { user_code: code.user_code } });
     expect(consumed.error).toMatchObject({ status: 400, error: "invalid_request" });
     expect(await ctx.readDeviceState({ deviceCode: code.device_code })).toBeNull();
+
     return {
       signup: ctx.snapshot(signup),
       code: ctx.snapshot(code),
@@ -175,23 +209,30 @@ compatScenario(
     const code = await requestCode(ctx);
     const claim = await owner.device({ query: { user_code: code.user_code } });
     expect(claim.error).toBeNull();
+
     const deny = await owner.device.deny({ userCode: code.user_code });
     expect(deny.data).toEqual({ success: true });
+
     const repeatDeny = await owner.device.deny({ userCode: code.user_code });
     expect(repeatDeny.error).toMatchObject({
       status: 400,
       error: "invalid_request",
       error_description: "Device code already processed",
     });
+
     const deniedState = await owner.device({ query: { user_code: code.user_code } });
     expect(deniedState.data?.status).toBe("denied");
+
     const device = deviceActor(ctx, "device");
     const token = await device.device.token(tokenRequest(code.device_code));
     expect(token.error).toMatchObject({ status: 400, error: "access_denied" });
+
     const replay = await device.device.token(tokenRequest(code.device_code));
     expect(replay.error).toMatchObject({ status: 400, error: "invalid_grant" });
+
     const sessions = await owner.listSessions();
     expect(sessions.data).toHaveLength(1);
+
     return {
       signup: ctx.snapshot(signup),
       code: ctx.snapshot(code),
@@ -215,20 +256,24 @@ compatScenario(
     await owner.device({ query: { user_code: code.user_code } });
     const firstApprove = await owner.device.approve({ userCode: code.user_code });
     expect(firstApprove.data).toEqual({ success: true });
+
     const secondApprove = await owner.device.approve({ userCode: code.user_code });
     expect(secondApprove.error).toMatchObject({
       status: 400,
       error: "invalid_request",
       error_description: "Device code already processed",
     });
+
     const denyApproved = await owner.device.deny({ userCode: code.user_code });
     expect(denyApproved.error).toMatchObject({
       status: 400,
       error: "invalid_request",
       error_description: "Device code already processed",
     });
+
     const state = await owner.device({ query: { user_code: code.user_code } });
     expect(state.data?.status).toBe("approved");
+
     return {
       firstApprove: ctx.snapshot(firstApprove),
       secondApprove: ctx.snapshot(secondApprove),
@@ -249,8 +294,10 @@ compatScenario("device token rejects a mismatched client id", async (ctx) => {
     error: "invalid_grant",
     error_description: "Client ID mismatch",
   });
+
   const state = await deviceActor(ctx, "device").device({ query: { user_code: code.user_code } });
   expect(state.data?.status).toBe("pending");
+
   return { token: ctx.snapshot(token), state: ctx.snapshot(state) };
 });
 
@@ -270,23 +317,29 @@ compatScenario(
     const unauthenticatedDeny = await device.device.deny({ userCode: code.user_code });
     expect(unauthenticatedApprove.error).toMatchObject({ status: 401, error: "unauthorized" });
     expect(unauthenticatedDeny.error).toMatchObject({ status: 401, error: "unauthorized" });
+
     const unclaimedApprove = await owner.device.approve({ userCode: code.user_code });
     const unclaimedDeny = await owner.device.deny({ userCode: code.user_code });
     expect(unclaimedApprove.error).toMatchObject({ status: 400, error: "invalid_request" });
     expect(unclaimedDeny.error).toMatchObject({ status: 400, error: "invalid_request" });
+
     const claim = await owner.device({ query: { user_code: code.user_code } });
     expect(claim.data?.client_id).toBe("compat-device-client");
     expect(claim.data?.scope).toBe("private scope");
+
     const otherReview = await other.device({ query: { user_code: code.user_code } });
     const publicReview = await device.device({ query: { user_code: code.user_code } });
     expect(otherReview.data).toEqual({ user_code: code.user_code, status: "pending" });
     expect(publicReview.data).toEqual(otherReview.data);
+
     const otherApprove = await other.device.approve({ userCode: code.user_code });
     const otherDeny = await other.device.deny({ userCode: code.user_code });
     expect(otherApprove.error).toMatchObject({ status: 403, error: "access_denied" });
     expect(otherDeny.error).toMatchObject({ status: 403, error: "access_denied" });
+
     const ownerApprove = await owner.device.approve({ userCode: code.user_code });
     expect(ownerApprove.data).toEqual({ success: true });
+
     return {
       unauthenticatedApprove: ctx.snapshot(unauthenticatedApprove),
       unauthenticatedDeny: ctx.snapshot(unauthenticatedDeny),
@@ -312,8 +365,10 @@ compatScenario(
     const claim = await owner.device({ query: { user_code: formatted } });
     expect(claim.data?.user_code).toBe(formatted);
     expect(claim.data?.client_id).toBe("compat-device-client");
+
     const approve = await owner.device.approve({ userCode: formatted });
     expect(approve.data).toEqual({ success: true });
+
     return { code: ctx.snapshot(code), claim: ctx.snapshot(claim), approve: ctx.snapshot(approve) };
   },
   ["GET /device", "POST /device/approve"],
@@ -335,16 +390,24 @@ compatScenario(
       scope: "prebound scope",
     });
     expect(code.error).toBeNull();
-    if (!code.data) throw new Error("device issuance must return codes");
+
+    if (!code.data) {
+      throw new Error("device issuance must return codes");
+    }
+
     const otherReview = await other.device({ query: { user_code: code.data.user_code } });
     expect(otherReview.data).toEqual({ user_code: code.data.user_code, status: "pending" });
+
     const otherApprove = await other.device.approve({ userCode: code.data.user_code });
     expect(otherApprove.error).toMatchObject({ status: 403, error: "access_denied" });
+
     const ownerApprove = await owner.device.approve({ userCode: code.data.user_code });
     expect(ownerApprove.data).toEqual({ success: true });
+
     const state = await owner.device({ query: { user_code: code.data.user_code } });
     expect(state.data?.status).toBe("approved");
     expect(state.data?.scope).toBe("prebound scope");
+
     return {
       code: ctx.snapshot(code),
       otherReview: ctx.snapshot(otherReview),
@@ -363,19 +426,24 @@ compatScenario(
     const device = deviceActor(ctx, "device");
     const initial = deviceState.parse(await ctx.readDeviceState({ deviceCode: code.device_code }));
     expect(initial.lastPolledAt).toBeNull();
+
     const firstPoll = await device.device.token(tokenRequest(code.device_code));
     expect(firstPoll.error).toMatchObject({ status: 400, error: "authorization_pending" });
+
     const afterFirst = deviceState.parse(
       await ctx.readDeviceState({ deviceCode: code.device_code }),
     );
     expect(afterFirst.lastPolledAt).not.toBeNull();
+
     const repeatedPoll = await device.device.token(tokenRequest(code.device_code));
     expect(repeatedPoll.error).toMatchObject({ status: 400, error: "slow_down" });
+
     const afterRepeated = deviceState.parse(
       await ctx.readDeviceState({ deviceCode: code.device_code }),
     );
     expect(afterRepeated).toEqual(afterFirst);
     expect(afterRepeated.status).toBe("pending");
+
     return {
       initial,
       firstPoll: ctx.snapshot(firstPoll),
@@ -400,17 +468,22 @@ compatScenario(
     expect(approve.error).toMatchObject({ status: 400, error: "expired_token" });
     expect(deny.error).toMatchObject({ status: 400, error: "expired_token" });
     expect(review.error).toMatchObject({ status: 400, error: "expired_token" });
+
     const beforeRedemption = deviceState.parse(
       await ctx.readDeviceState({ deviceCode: code.device_code }),
     );
     expect(beforeRedemption.status).toBe("pending");
+
     const token = await deviceActor(ctx, "device").device.token(tokenRequest(code.device_code));
     expect(token.error).toMatchObject({ status: 400, error: "expired_token" });
     expect(await ctx.readDeviceState({ deviceCode: code.device_code })).toBeNull();
+
     const replay = await deviceActor(ctx, "device").device.token(tokenRequest(code.device_code));
     expect(replay.error).toMatchObject({ status: 400, error: "invalid_grant" });
+
     const sessions = await owner.listSessions();
     expect(sessions.data).toHaveLength(1);
+
     return {
       approve: ctx.snapshot(approve),
       deny: ctx.snapshot(deny),
@@ -435,40 +508,54 @@ compatScenario(
       scope: "",
     });
     expect(code.error).toBeNull();
-    if (!code.data) throw new Error("prebound device code must be issued");
+
+    if (!code.data) {
+      throw new Error("prebound device code must be issued");
+    }
+
     const persisted = deviceState.parse(
       await ctx.readDeviceState({ deviceCode: code.data.device_code }),
     );
     expect(persisted.userId).toBe(unknownUser);
     expect(persisted.scope).toBeNull();
+
     const { owner } = await signUpOwner(ctx, "device-authorization-prebound-unrelated");
     const review = await owner.device({ query: { user_code: code.data.user_code } });
     expect(review.data).toEqual({ user_code: code.data.user_code, status: "pending" });
+
     const approve = await owner.device.approve({ userCode: code.data.user_code });
     expect(approve.error).toMatchObject({ status: 403, error: "access_denied" });
+
     const afterRejection = deviceState.parse(
       await ctx.readDeviceState({ deviceCode: code.data.device_code }),
     );
     expect(afterRejection.userId).toBe(unknownUser);
     expect(afterRejection.status).toBe("pending");
+
     const emptyUser = await device.device.code({
       client_id: "compat-device-client",
       user_id: "",
       scope: "",
     });
     expect(emptyUser.error).toBeNull();
-    if (!emptyUser.data) throw new Error("empty optional parameters must be accepted");
+
+    if (!emptyUser.data) {
+      throw new Error("empty optional parameters must be accepted");
+    }
+
     const emptyPersisted = deviceState.parse(
       await ctx.readDeviceState({ deviceCode: emptyUser.data.device_code }),
     );
     expect(emptyPersisted.userId).toBeNull();
     expect(emptyPersisted.scope).toBeNull();
+
     const emptyClient = await device.device.code({ client_id: "" });
     expect(emptyClient.error).toMatchObject({
       status: 400,
       error: "invalid_request",
       error_description: "client_id is required",
     });
+
     return {
       code: ctx.snapshot(code),
       persisted,
@@ -495,6 +582,7 @@ compatScenario(
       body,
     });
     expect(issuedResponse.status).toBe(200);
+
     const issued = z
       .object({
         device_code: z.string(),
@@ -510,14 +598,21 @@ compatScenario(
       pragma: issuedResponse.headers.get("pragma"),
     };
     expect(headers).toEqual({ cacheControl: "no-store", pragma: "no-cache" });
+
     const stored = deviceState.parse(await ctx.readDeviceState({ deviceCode: issued.device_code }));
     expect(stored.clientId).toBe("form-client");
     expect(stored.scope).toBe("form scope");
     expect(stored.userId).toBeNull();
+
     const repeated = [];
+
     for (const parameter of ["client_id", "user_id", "scope"]) {
       const parameters = new URLSearchParams({ client_id: "form-client" });
-      if (parameter !== "client_id") parameters.append(parameter, "one");
+
+      if (parameter !== "client_id") {
+        parameters.append(parameter, "one");
+      }
+
       parameters.append(parameter, "two");
       const response = await ctx.rawRequest({
         actor: "device",
@@ -530,8 +625,10 @@ compatScenario(
         status: 400,
         body: { error: "invalid_request", error_description: `${parameter} must not be repeated` },
       });
+
       repeated.push(response);
     }
+
     return { issued, headers, stored, repeated };
   },
   ["POST /device/code"],
@@ -552,6 +649,7 @@ compatScenario(
         error_description: "[body.client_id] Invalid input: expected string, received undefined",
       },
     });
+
     const invalidTypes = await ctx.rawRequest({
       path: "/api/auth/device/code",
       method: "POST",
@@ -565,6 +663,7 @@ compatScenario(
           "[body.client_id] Invalid input: expected string, received number; [body.user_id] Invalid input: expected string, received null; [body.scope] Invalid input: expected string, received boolean",
       },
     });
+
     const wrongGrant = await ctx.rawRequest({
       path: "/api/auth/device/token",
       method: "POST",
@@ -577,6 +676,7 @@ compatScenario(
         message: `[body.grant_type] Invalid input: expected "${DEVICE_GRANT_TYPE}"`,
       },
     });
+
     const tokenForm = await ctx.rawRequest({
       path: "/api/auth/device/token",
       method: "POST",
@@ -591,6 +691,7 @@ compatScenario(
           'Content-Type "application/x-www-form-urlencoded" is not allowed. Allowed types: application/json',
       },
     });
+
     const codeText = await ctx.rawRequest({
       path: "/api/auth/device/code",
       method: "POST",
@@ -605,13 +706,16 @@ compatScenario(
           'Content-Type "text/plain" is not allowed. Allowed types: application/json, application/x-www-form-urlencoded',
       },
     });
+
     const signup = await ctx.actor("validation-owner").client.signUp.email({
       email: ctx.uniqueEmail("device-validation"),
       password: "password123",
       name: "Validation Owner",
     });
     expect(signup.error).toBeNull();
+
     const decisions = [];
+
     for (const route of ["approve", "deny"]) {
       const path = `/api/auth/device/${route}`;
       const malformed = await ctx.rawRequest({
@@ -622,6 +726,7 @@ compatScenario(
         actor: "validation-guest",
       });
       expect(malformed.status).toBe(400);
+
       const missing = await ctx.rawRequest({
         path,
         method: "POST",
@@ -629,6 +734,7 @@ compatScenario(
         actor: "validation-guest",
       });
       expect(missing).toMatchObject({ status: 400, body: { code: "VALIDATION_ERROR" } });
+
       const wrongType = await ctx.rawRequest({
         path,
         method: "POST",
@@ -636,6 +742,7 @@ compatScenario(
         actor: "validation-guest",
       });
       expect(wrongType).toMatchObject({ status: 400, body: { code: "VALIDATION_ERROR" } });
+
       for (const actor of ["validation-guest", "validation-owner"]) {
         const media = await ctx.rawRequest({
           path,
@@ -647,6 +754,7 @@ compatScenario(
         expect(media).toMatchObject({ status: 415, body: { code: "UNSUPPORTED_MEDIA_TYPE" } });
         decisions.push(media);
       }
+
       const missingMedia = await ctx.rawRequest({
         path,
         method: "POST",
@@ -661,8 +769,10 @@ compatScenario(
           message: "Content-Type is required. Allowed types: application/json",
         },
       });
+
       decisions.push(malformed, missing, wrongType, missingMedia);
     }
+
     return {
       missingClient,
       invalidTypes,
@@ -681,17 +791,24 @@ compatScenario(
     const client = deviceActor(ctx, "custom", "device-custom");
     const code = await client.device.code({ client_id: "custom-client" });
     expect(code.error).toBeNull();
-    if (!code.data) throw new Error("custom device issuance failed");
+
+    if (!code.data) {
+      throw new Error("custom device issuance failed");
+    }
+
     expect(code.data.device_code).toBe("custom-device-🔐");
     expect(code.data.user_code).toBe(" café-Code! ");
+
     const signup = await client.signUp.email({
       email: ctx.uniqueEmail("device-custom"),
       password: "password123",
       name: "Custom Owner",
     });
     expect(signup.error).toBeNull();
+
     const alias = await client.device({ query: { user_code: "CAFCODE" } });
     expect(alias.error).toMatchObject({ status: 400, error: "invalid_request" });
+
     const exact = await client.device({ query: { user_code: code.data.user_code } });
     expect(ctx.snapshot(exact.data)).toEqual({
       user_code: code.data.user_code,
@@ -699,19 +816,24 @@ compatScenario(
       client_id: "custom-client",
       scope: null,
     });
+
     const approved = await client.device.approve({ userCode: code.data.user_code });
     expect(approved.data).toEqual({ success: true });
+
     const consumed = await client.device.token(
       tokenRequest(code.data.device_code, "custom-client"),
     );
     expect(consumed.error).toBeNull();
+
     const sessions = await client.listSessions();
     expect(
       sessions.data?.find((session) => session.token === consumed.data?.access_token)?.userId,
     ).toBe(signup.data?.user.id);
     expect(await ctx.readDeviceState({ deviceCode: code.data.device_code })).toBeNull();
+
     const replay = await client.device.token(tokenRequest(code.data.device_code, "custom-client"));
     expect(replay.error).toMatchObject({ status: 400, error: "invalid_grant" });
+
     return {
       code: ctx.snapshot(code),
       signup: ctx.snapshot(signup),
@@ -732,30 +854,40 @@ compatScenario(
     const client = deviceActor(ctx, "configured", "device-configured");
     const rejected = await client.device.code({ client_id: "wrong-client" });
     expect(rejected.error).toMatchObject({ status: 400, error: "invalid_client" });
+
     const startedAt = Date.now();
     const issued = await client.device.code({ client_id: "allowed-client", scope: "custom scope" });
     const finishedAt = Date.now();
     expect(issued.error).toBeNull();
-    if (!issued.data) throw new Error("configured issuance failed");
+
+    if (!issued.data) {
+      throw new Error("configured issuance failed");
+    }
+
     expect(issued.data.expires_in).toBe(120);
     expect(issued.data.interval).toBe(2);
+
     const uri = new URL(issued.data.verification_uri_complete);
     expect(uri.origin).toBe("https://verification.fixture");
     expect(uri.searchParams.getAll("user_code")).toEqual([issued.data.user_code]);
     expect(uri.searchParams.getAll("keep")).toEqual(["a", "b"]);
     expect(uri.hash).toBe("#fragment");
+
     const persisted = deviceState.parse(
       await ctx.readDeviceState({ deviceCode: issued.data.device_code }),
     );
     expect(persisted.pollingInterval).toBe(2000);
     expect(new Date(persisted.expiresAt).getTime()).toBeGreaterThanOrEqual(startedAt + 120000);
     expect(new Date(persisted.expiresAt).getTime()).toBeLessThanOrEqual(finishedAt + 120000);
+
     const pending = await client.device.token(
       tokenRequest(issued.data.device_code, "allowed-client"),
     );
     expect(pending.error).toMatchObject({ status: 400, error: "authorization_pending" });
+
     const slow = await client.device.token(tokenRequest(issued.data.device_code, "allowed-client"));
     expect(slow.error).toMatchObject({ status: 400, error: "slow_down" });
+
     return {
       rejected: ctx.snapshot(rejected),
       issued: ctx.snapshot(issued),
@@ -774,12 +906,18 @@ compatScenario(
       client_id: "boundary-client",
     });
     expect(boundary.error).toBeNull();
-    if (!boundary.data) throw new Error("Unicode boundary must issue");
+
+    if (!boundary.data) {
+      throw new Error("Unicode boundary must issue");
+    }
+
     expect([...boundary.data.device_code]).toHaveLength(191);
+
     const persisted = deviceState.parse(
       await ctx.readDeviceState({ deviceCode: boundary.data.device_code }),
     );
     expect(persisted.deviceCode).toBe(boundary.data.device_code);
+
     const rejected = await deviceActor(ctx, "oversized", "device-too-long").device.code({
       client_id: "boundary-client",
     });
@@ -789,6 +927,7 @@ compatScenario(
       error_description: "Generated device code must be at most 191 characters",
     });
     expect(await ctx.readDeviceState({ deviceCode: "😀".repeat(192) })).toBeNull();
+
     return { boundary: ctx.snapshot(boundary), persisted, rejected: ctx.snapshot(rejected) };
   },
 );

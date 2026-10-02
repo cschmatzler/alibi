@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
+
 import {
   ARTIFACT_ROOT,
   activeChildren,
@@ -22,21 +23,18 @@ import {
   mutationCampaign,
   validSuite,
 } from "./mutations";
-import {
-  type ManagedFixture,
-  runSuite,
-  rustExecutable,
-  type SuiteResult,
-  startFixture,
-} from "./processes";
+import { type ManagedFixture, runSuite, rustExecutable, startFixture } from "./processes";
 import { assuranceReport, executionSchema, policySchema } from "./report";
 
-for (const signal of ["SIGINT", "SIGTERM"] as const)
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, async () => {
-    for (const child of activeChildren) child.kill("SIGKILL");
+    for (const child of activeChildren) {
+      child.kill("SIGKILL");
+    }
     await Promise.allSettled([...activeChildren].map((child) => child.exited));
     process.exit(signal === "SIGINT" ? 130 : 143);
   });
+}
 
 const { positionals, values } = parseArgs({
   args: process.argv.slice(2),
@@ -57,7 +55,9 @@ const { positionals, values } = parseArgs({
     help: { type: "boolean", short: "h" },
   },
 });
+
 const verb = positionals[0] ?? "run";
+
 if (values.help) {
   console.log(`Usage: bun run assurance [run|inventory|mutate|generate|replay|shrink|report] [options]
   --tests tests/PATH       Repeat to select scenario files/directories (default: tests)
@@ -74,23 +74,35 @@ Every run writes its inventory, scenario journal, logs, reproduction files and r
 The default strict exit is nonzero until all in-scope obligations have evidence.`);
   process.exit(0);
 }
+
 if (
   positionals.length > 1 ||
   !["run", "inventory", "mutate", "generate", "replay", "shrink", "report"].includes(verb)
-)
+) {
   throw new Error("Unknown assurance command; use --help");
+}
+
 const budget = Number(values.budget);
-if (!Number.isInteger(budget) || budget < 1 || budget > 100_000)
+
+if (!Number.isInteger(budget) || budget < 1 || budget > 100_000) {
   throw new Error("Budget must be an integer from 1 to 100000");
-if (values.directory && verb !== "report")
+}
+
+if (values.directory && verb !== "report") {
   throw new Error("Only report accepts --directory; execution always owns a fresh run");
-const runId = crypto.randomUUID(),
-  directory = values.directory
-    ? resolve(values.directory)
-    : join(ARTIFACT_ROOT, `${new Date().toISOString().replaceAll(":", "-")}-${runId}`);
+}
+
+const runId = crypto.randomUUID();
+
+const directory = values.directory
+  ? resolve(values.directory)
+  : join(ARTIFACT_ROOT, `${new Date().toISOString().replaceAll(":", "-")}-${runId}`);
+
 await mkdir(directory, { recursive: true });
 console.log(`Assurance artifacts: ${directory}`);
+
 const policy = policySchema.parse(await readJSON(join(COMPAT_ROOT, "assurance-contracts.json")));
+
 const inventoryPath = join(
   directory,
   verb === "report" ? "current-inventory.json" : "inventory.json",
@@ -107,7 +119,7 @@ if (verb === "generate") {
 } else {
   console.log("Inventorying the pinned upstream source and published runtime...");
   const inventory = await writeInventory(inventoryPath);
-  if (verb === "inventory")
+  if (verb === "inventory") {
     console.log(
       JSON.stringify(
         {
@@ -120,20 +132,28 @@ if (verb === "generate") {
         2,
       ),
     );
-  else if (verb === "report") {
-    if (!values.directory) throw new Error("report requires --directory from an existing run");
+  } else if (verb === "report") {
+    if (!values.directory) {
+      throw new Error("report requires --directory from an existing run");
+    }
+
     const execution = executionSchema.parse(await readJSON(join(directory, "execution.json")));
-    if (execution.suite.harnessDigest !== (await harnessDigest()))
+
+    if (execution.suite.harnessDigest !== (await harnessDigest())) {
       throw new Error("Harness changed since execution; collect new evidence");
+    }
+
     if (
       execution.mode === "parity" &&
       (!execution.candidate ||
         (await fileDigest(execution.candidate.executable)) !== execution.candidate.sha256 ||
         (await candidateSourceDigest()) !== execution.candidate.sourceDigest)
-    )
+    ) {
       throw new Error(
         "Rust build inputs or tested executable changed; collect new parity evidence",
       );
+    }
+
     const report = assuranceReport(
       inventory,
       policy,
@@ -149,26 +169,42 @@ if (verb === "generate") {
     const paths =
       values.tests ??
       (verb === "replay" || verb === "shrink" ? ["tests/generated/lifecycle.test.ts"] : ["tests"]);
-    for (const path of paths)
+
+    for (const path of paths) {
       if (
         relative(join(CLIENT_ROOT, "tests"), resolve(CLIENT_ROOT, path)).startsWith("..") ||
         path.startsWith("-")
-      )
+      ) {
         throw new Error("Scenario paths must be inside client-tests/tests");
+      }
+    }
+
     const owned: ManagedFixture[] = [];
     const mode = values["reference-only"] || verb === "mutate" ? "reference-only" : "parity";
     const env: Record<string, string | undefined> = {};
-    if (values.seed) env.COMPAT_ASSURANCE_SEEDS = values.seed;
-    if (values.steps) env.COMPAT_ASSURANCE_STEPS = values.steps;
-    if (values.profile)
+
+    if (values.seed) {
+      env.COMPAT_ASSURANCE_SEEDS = values.seed;
+    }
+
+    if (values.steps) {
+      env.COMPAT_ASSURANCE_STEPS = values.steps;
+    }
+
+    if (values.profile) {
       env.COMPAT_ASSURANCE_PROFILES = generatedCaseSchema.shape.profile.parse(values.profile);
+    }
+
     if (values.replay) {
       const replay = generatedCaseSchema.parse(await readJSON(resolve(values.replay)));
       await writeJSON(join(directory, "replay.json"), replay);
       env.COMPAT_ASSURANCE_REPLAY = join(directory, "replay.json");
     }
-    if ((verb === "replay" || verb === "shrink") && !env.COMPAT_ASSURANCE_REPLAY)
+
+    if ((verb === "replay" || verb === "shrink") && !env.COMPAT_ASSURANCE_REPLAY) {
       throw new Error(`${verb} requires --replay FILE`);
+    }
+
     try {
       const controlDigest = await harnessDigest();
       console.log("Checking the harness negative controls...");
@@ -186,8 +222,11 @@ if (verb === "generate") {
         timedOut: checked.timedOut,
       };
       await writeJSON(join(directory, "harness-controls.json"), controls);
-      if (checked.code !== 0 || checked.timedOut || controlDigest !== (await harnessDigest()))
+
+      if (checked.code !== 0 || checked.timedOut || controlDigest !== (await harnessDigest())) {
         throw new Error("Harness negative controls failed or changed; see harness-controls.log");
+      }
+
       const left = await startFixture({
         directory,
         runId,
@@ -222,28 +261,32 @@ if (verb === "generate") {
         paths,
         env,
       });
+
       if (verb === "shrink") {
         const failed = suite.outcomes.find(
           (outcome) =>
             outcome.status === "failed" &&
             ["comparison", "model", "assertion"].includes(outcome.failure ?? ""),
         );
+
         if (
           !failed?.signature ||
           !validSuite(suite) ||
           suite.code === 0 ||
           suite.outcomes.length !== 1
-        )
+        ) {
           throw new Error(
             "Reduction needs one reproducible behavioral failure; see parity/suite.log",
           );
+        }
+
         const original = generatedCaseSchema.parse(await readJSON(env.COMPAT_ASSURANCE_REPLAY!));
         let iteration = 0;
         const reduced = await reduceActions(
           original.actions,
           async (actions) => {
-            const trial = join(directory, `reduction-${++iteration}`),
-              path = join(trial, "replay.json");
+            const trial = join(directory, `reduction-${++iteration}`);
+            const path = join(trial, "replay.json");
             await writeJSON(path, { ...original, actions });
             const result = await runSuite({
               directory: trial,
@@ -280,7 +323,8 @@ if (verb === "generate") {
         );
       } else {
         let campaign: Campaign | undefined;
-        if ((verb === "run" || verb === "mutate") && !values["skip-mutations"])
+
+        if ((verb === "run" || verb === "mutate") && !values["skip-mutations"]) {
           campaign = await mutationCampaign({
             directory: join(directory, "campaign"),
             runId,
@@ -292,13 +336,18 @@ if (verb === "generate") {
             only: values.mutation,
             env,
           });
+        }
+
         const report = assuranceReport(inventory, policy, suite, campaign, mode, controls);
+
         if (
           candidate &&
           ((await fileDigest(candidate.executable)) !== candidate.sha256 ||
             (await candidateSourceDigest()) !== candidate.sourceDigest)
-        )
+        ) {
           throw new Error("Rust build inputs or executable changed during execution");
+        }
+
         await writeJSON(join(directory, "execution.json"), {
           suite,
           campaign,
@@ -329,7 +378,9 @@ if (verb === "generate") {
             : 1;
       }
     } finally {
-      for (const fixture of owned.reverse()) await fixture.stop();
+      for (const fixture of owned.reverse()) {
+        await fixture.stop();
+      }
     }
   }
 }

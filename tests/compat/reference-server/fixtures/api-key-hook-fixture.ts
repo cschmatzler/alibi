@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { username } from "better-auth/plugins";
@@ -24,14 +25,17 @@ export function createApiKeyHookFixture(
           customAPIKeyGetter(ctx) {
             const header = ctx.headers?.get("x-custom-api-key");
             const key = header?.startsWith("ApiKey ") ? header.slice(7) : null;
+
             // Observe actual authentication lookup; programmatic calls without key
             // credentials have no lookup side effect in this application.
-            if ((header !== null && header !== undefined) || ctx.path === "/get-session")
+            if ((header !== null && header !== undefined) || ctx.path === "/get-session") {
               events.push({
                 kind: "getter",
                 configurationId: "hooks",
                 provided: !!key,
               });
+            }
+
             return key;
           },
           async customAPIKeyValidator({ ctx, key }) {
@@ -54,11 +58,13 @@ export function createApiKeyHookFixture(
     auth,
     async control(request: Request): Promise<Response | null> {
       const url = new URL(request.url);
+
       if (url.pathname === "/__test/api-key-hook/events") {
         const captured = [...events];
         events.length = 0;
         return Response.json(captured);
       }
+
       if (url.pathname === "/__test/api-key-hook/state") {
         const userId = url.searchParams.get("userId") ?? "";
         return Response.json({
@@ -76,9 +82,11 @@ export function createApiKeyHookFixture(
             .get(userId),
         });
       }
+
       if (url.pathname === "/__test/api-key-hook/create" && request.method === "POST") {
         return Response.json(await auth.api.createApiKey({ body: await request.json() }));
       }
+
       if (url.pathname === "/__test/api-key-hook/verify" && request.method === "POST") {
         // An actual request preserves the same caller headers for the predicate.
         const response = await auth.api.verifyApiKey({
@@ -88,9 +96,11 @@ export function createApiKeyHookFixture(
         });
         return response instanceof Response ? response : Response.json(response);
       }
+
       if (url.pathname === "/__test/api-key-hook/update" && request.method === "POST") {
         return Response.json(await auth.api.updateApiKey({ body: await request.json() }));
       }
+
       return null;
     },
   };

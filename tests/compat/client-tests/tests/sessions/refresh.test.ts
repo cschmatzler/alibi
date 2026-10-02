@@ -1,8 +1,11 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 const signupToken = z.object({ token: z.string(), user: z.object({ id: z.string() }) });
+
 const state = z
   .object({
     sessions: z.array(
@@ -29,6 +32,7 @@ async function age(ctx: ScenarioContext, token: string, milliseconds = 3_600_000
   });
   expect(result.status).toBe(200);
   expect(result.body).toEqual({ updated: 1 });
+
   return expiresAt;
 }
 
@@ -45,6 +49,7 @@ compatScenario(
     const oldExpiry = await age(ctx, credentials.token);
     const before = await persisted(ctx, credentials.user.id);
     expect(before.sessions[0]?.expiresAt).toBe(oldExpiry);
+
     const read = await actor.client.getSession();
     expect(read.error).toBeNull();
     expect(read.data?.session.token).toBe(credentials.token);
@@ -52,12 +57,15 @@ compatScenario(
     expect(read.data?.session.expiresAt.getTime()).toBeGreaterThan(
       Date.parse(oldExpiry) + 6 * 86_400_000,
     );
+
     const after = await persisted(ctx, credentials.user.id);
     expect(after.sessions).toHaveLength(1);
     expect(after.sessions[0]?.expiresAt).toBe(read.data?.session.expiresAt.toISOString());
     expect(after.sessions[0]?.id).toBe(before.sessions[0]?.id);
+
     const repeated = await actor.client.getSession();
     expect(repeated.data?.session.expiresAt.toISOString()).toBe(after.sessions[0]?.expiresAt);
+
     return { issued, before, read, after, repeated };
   },
   ["GET /get-session"],
@@ -85,19 +93,23 @@ compatScenario(
       true,
     );
     expect((await persisted(ctx, credentials.user.id)).sessions).toEqual(before.sessions);
+
     const refreshed = await actor.client.getSession({ fetchOptions: { method: "POST" } });
     expect(refreshed.error).toBeNull();
     expect(refreshed.data?.session.token).toBe(credentials.token);
     expect(refreshed.data?.session.expiresAt.getTime()).toBeGreaterThan(
       Date.parse(oldExpiry) + 6 * 86_400_000,
     );
+
     const renewed = await persisted(ctx, credentials.user.id);
     expect(renewed.sessions[0]?.expiresAt).toBe(refreshed.data?.session.expiresAt.toISOString());
+
     await age(ctx, credentials.token, -10_000);
     const retained = await persisted(ctx, credentials.user.id);
     const expiredGet = await actor.client.getSession();
     expect(expiredGet.data).toBeNull();
     expect((await persisted(ctx, credentials.user.id)).sessions).toEqual(retained.sessions);
+
     const cleaner = ctx.actor("deferred-cleaner", "session-deferred");
     const signedCookie = z.string().min(1).parse(issuedCookie);
     const cleanup = await cleaner.fetch("/__test/profiles/session-deferred/api/auth/get-session", {
@@ -105,10 +117,13 @@ compatScenario(
       headers: { cookie: signedCookie },
     });
     expect(cleanup.status).toBe(200);
+
     const cleanedBody: unknown = await cleanup.json();
     expect(cleanedBody).toBeNull();
+
     const cleaned = await persisted(ctx, credentials.user.id);
     expect(cleaned.sessions).toEqual([]);
+
     return { issued, before, deferred, refreshed, renewed, expiredGet, retained, cleaned };
   },
   ["POST /get-session"],
@@ -135,12 +150,16 @@ compatScenario(
     const suppressed = await owner.client.getSession({ query: { disableRefresh: true } });
     expect(suppressed.error).toBeNull();
     expect((await persisted(ctx, credentials.user.id)).sessions).toEqual(before.sessions);
+
     const revoked = await attacker.client.revokeSession({ token: credentials.token });
     expect(revoked.data?.status).toBe(true);
+
     const untouched = await persisted(ctx, credentials.user.id);
     expect(untouched.sessions).toEqual(before.sessions);
+
     const empty = await attacker.client.revokeSession({ token: "" });
     expect(empty.data?.status).toBe(true);
+
     return { issued, before, suppressed, revoked, untouched, empty };
   },
   ["POST /revoke-session"],
@@ -162,14 +181,18 @@ compatScenario(
     const suppressed = await actor.client.getSession({ query: { disableRefresh: false } });
     expect(suppressed.error).toBeNull();
     expect((await persisted(ctx, credentials.user.id)).sessions).toEqual(before.sessions);
+
     const emptyQuery = await actor.fetch("/api/auth/get-session?disableRefresh=");
     expect(emptyQuery.status).toBe(200);
+
     const refreshed: unknown = await emptyQuery.json();
     const after = await persisted(ctx, credentials.user.id);
     expect(Date.parse(z.string().parse(after.sessions[0]?.expiresAt))).toBeGreaterThan(
       Date.parse(z.string().parse(before.sessions[0]?.expiresAt)) + 6 * 86_400_000,
     );
+
     const profiles = [];
+
     for (const profile of ["session-no-refresh", "session-deferred-no-refresh"] as const) {
       const disabled = ctx.actor(profile, profile);
       const signedUp = await disabled.client.signUp.email({
@@ -182,14 +205,20 @@ compatScenario(
       const original = await persisted(ctx, identity.user.id);
       const read = await disabled.client.getSession();
       expect(read.error).toBeNull();
+
       const returned: unknown = read.data;
-      if (profile === "session-deferred-no-refresh")
+
+      if (profile === "session-deferred-no-refresh") {
         expect(z.object({ needsRefresh: z.literal(false) }).parse(returned).needsRefresh).toBe(
           false,
         );
+      }
+
       expect((await persisted(ctx, identity.user.id)).sessions).toEqual(original.sessions);
+
       profiles.push({ profile, signedUp, original, read });
     }
+
     return { issued, before, suppressed, refreshed, after, profiles };
   },
   ["GET /get-session"],
@@ -227,8 +256,10 @@ compatScenario(
     expect(Date.parse(z.string().parse(issuedState.sessions[0]?.expiresAt))).toBeLessThan(
       Date.now() + 86_400_000,
     );
+
     const cookieName = "better-auth.dont_remember";
     const observations = [];
+
     for (const [name, header, renew] of [
       ["invalid first", `${sessionCookie}; ${cookieName}=invalid; ${preference}`, true],
       ["valid first", `${sessionCookie}; ${preference}; ${cookieName}=invalid`, false],
@@ -238,8 +269,10 @@ compatScenario(
       const reader = ctx.actor(name);
       const response = await reader.fetch("/api/auth/get-session", { headers: { cookie: header } });
       expect(response.status).toBe(200);
+
       const value: unknown = await response.json();
       const after = await persisted(ctx, credentials.user.id);
+
       if (renew) {
         expect(Date.parse(z.string().parse(after.sessions[0]?.expiresAt))).toBeGreaterThan(
           Date.parse(z.string().parse(before.sessions[0]?.expiresAt)) + 6 * 86_400_000,
@@ -251,8 +284,10 @@ compatScenario(
         expect(after.sessions).toEqual(before.sessions);
         expect(response.headers.getSetCookie()).toEqual([]);
       }
+
       observations.push({ name, before, value, after });
     }
+
     return { signedIn, issuedState, observations };
   },
   ["GET /get-session"],
@@ -269,6 +304,7 @@ compatScenario(
     });
     const credentials = signupToken.parse(signedUp.data);
     const invalid = [];
+
     for (const body of [
       {},
       { token: null },
@@ -287,17 +323,23 @@ compatScenario(
       expect(z.object({ code: z.literal("VALIDATION_ERROR") }).parse(result.body).code).toBe(
         "VALIDATION_ERROR",
       );
+
       invalid.push(result);
     }
+
     const stateBefore = await persisted(ctx, credentials.user.id);
     expect(stateBefore.sessions).toHaveLength(1);
+
     await age(ctx, credentials.token, -10_000);
     const expired = await actor.client.listSessions();
     expect(expired.error?.status).toBe(401);
+
     const after = await persisted(ctx, credentials.user.id);
     expect(after.sessions).toEqual([]);
+
     const anonymous = await actor.client.getSession();
     expect(anonymous.data).toBeNull();
+
     return { signedUp, invalid, stateBefore, expired, after, anonymous };
   },
   ["GET /list-sessions"],
@@ -325,8 +367,10 @@ compatScenario(
         },
       });
       expect(clock.body).toEqual({ updated: 1 });
+
       const before = await persisted(ctx, credentials.user.id);
       const listed = await actor.client.listSessions();
+
       if (profile === undefined) {
         expect(listed.error?.status).toBe(403);
         expect(listed.error?.code).toBe("SESSION_NOT_FRESH");
@@ -335,8 +379,10 @@ compatScenario(
         expect(listed.data).toHaveLength(1);
         expect(listed.data?.[0]?.token).toBe(credentials.token);
       }
+
       const after = await persisted(ctx, credentials.user.id);
       expect(after.sessions).toEqual(before.sessions);
+
       observations.push({ profile: profile ?? "default", issued, before, listed, after });
     }
     return { observations };
@@ -375,8 +421,10 @@ compatScenario(
       "better-auth.oauth_state",
       "better-auth.dont_remember",
     ]);
+
     const after = await persisted(ctx, credentials.user.id);
     expect(after.sessions).toEqual([]);
+
     const expiredIssued = await actor.client.signIn.email({
       email: ctx.uniqueEmail("cookie-cleanup"),
       password: "password123",
@@ -401,6 +449,7 @@ compatScenario(
       "better-auth.dont_remember",
     ]);
     expect((await persisted(ctx, credentials.user.id)).sessions).toEqual([]);
+
     return { issued, before, signedOut, after, expiredIssued, expired, clearedNames };
   },
   ["POST /sign-out", "GET /get-session"],
@@ -420,14 +469,18 @@ compatScenario(
       const credentials = signupToken.parse(issued.data);
       const before = await persisted(ctx, credentials.user.id);
       expect(before.sessions).toHaveLength(1);
+
       const read = await actor.client.getSession();
       expect(read.error).toBeNull();
+
       const lifetime =
         z.number().parse(read.data?.session.expiresAt.getTime()) -
         z.number().parse(read.data?.session.createdAt.getTime());
       expect(Math.abs(lifetime - (rememberMe ? 7 : 1) * 86_400_000)).toBeLessThan(1500);
       expect((await persisted(ctx, credentials.user.id)).sessions).toEqual(before.sessions);
+
       const invalid = [];
+
       for (const preference of [null, "false", 0, [], {}]) {
         for (const path of ["/sign-up/email", "/sign-in/email"]) {
           const result = await ctx.rawRequest({
@@ -445,11 +498,15 @@ compatScenario(
           expect(z.object({ code: z.literal("VALIDATION_ERROR") }).parse(result.body).code).toBe(
             "VALIDATION_ERROR",
           );
+
           invalid.push({ path, result });
         }
       }
+
       expect((await persisted(ctx, credentials.user.id)).sessions).toEqual(before.sessions);
+
       const invalidOrder = [];
+
       for (const json of [
         { email: "invalid", password: "password123", rememberMe: null },
         { email: "invalid", password: null },
@@ -464,9 +521,12 @@ compatScenario(
         expect(z.object({ code: z.literal("VALIDATION_ERROR") }).parse(result.body).code).toBe(
           "VALIDATION_ERROR",
         );
+
         invalidOrder.push(result);
       }
+
       expect((await persisted(ctx, credentials.user.id)).sessions).toEqual(before.sessions);
+
       observations.push({ rememberMe, issued, before, read, invalid, invalidOrder });
     }
     return { observations };

@@ -1,7 +1,9 @@
 import { expect } from "bun:test";
+
 import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { z } from "zod";
+
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { createTracingFetch, type TraceEntry } from "../../support/trace";
@@ -46,7 +48,9 @@ const stateSchema = z.object({
       .passthrough(),
   ),
 });
+
 type State = z.infer<typeof stateSchema>;
+
 async function control(ctx: ScenarioContext, json: Record<string, unknown>) {
   const response = await ctx.rawRequest({
     path: "/__test/two-factor-delivery",
@@ -56,20 +60,24 @@ async function control(ctx: ScenarioContext, json: Record<string, unknown>) {
   expect(response.status).toBe(200);
   return stateSchema.parse(response.body);
 }
+
 function observed(state: State) {
   const identifier = (raw: string) => {
-    const prefix = "2fa-otp-",
-      suffix = raw.slice(prefix.length);
+    const prefix = "2fa-otp-";
+    const suffix = raw.slice(prefix.length);
     expect(raw.startsWith(prefix)).toBe(true);
+
     if (suffix.startsWith("2fa-")) {
       const decoded = { prefix, challenge: { token: suffix } };
       expect(decoded.prefix + decoded.challenge.token).toBe(raw);
       return { token: raw, decoded };
     }
+
     const [userId, sessionId, ...extra] = suffix.split("!");
     expect(extra).toEqual([]);
     expect(userId).toBeDefined();
     expect(sessionId).toBeDefined();
+
     const decoded = {
       prefix,
       userId: { id: userId! },
@@ -77,6 +85,7 @@ function observed(state: State) {
       separator: "!",
     };
     expect(decoded.prefix + decoded.userId.id + decoded.separator + decoded.sessionId.id).toBe(raw);
+
     return { token: raw, decoded };
   };
   return {
@@ -101,13 +110,14 @@ function observed(state: State) {
     })),
   };
 }
-for (const mode of ["default", "observe", "ignore", "throw"] as const)
+
+for (const mode of ["default", "observe", "ignore", "throw"] as const) {
   compatScenario(
     `two-factor ${mode} OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors`,
     async (ctx) => {
-      const profile = `two-factor-delivery-${mode}` as const,
-        email = ctx.uniqueEmail(`delivery-${mode}`),
-        password = "password123";
+      const profile = `two-factor-delivery-${mode}` as const;
+      const email = ctx.uniqueEmail(`delivery-${mode}`);
+      const password = "password123";
       await control(ctx, { action: "reset" });
       let cookie = "";
       const cookies = new Map<string, string>();
@@ -118,14 +128,20 @@ for (const mode of ["default", "observe", "ignore", "throw"] as const)
         fetchOptions: {
           customFetchImpl: async (input, init) => {
             const response = await ctx.actor("owner", profile).fetch(input, init);
+
             for (const value of response.headers.getSetCookie()) {
-              const pair = value.split(";")[0]!,
-                index = pair.indexOf("=");
-              const key = pair.slice(0, index),
-                stored = pair.slice(index + 1);
-              if (stored) cookies.set(key, stored);
-              else cookies.delete(key);
+              const pair = value.split(";")[0]!;
+              const index = pair.indexOf("=");
+              const key = pair.slice(0, index);
+              const stored = pair.slice(index + 1);
+
+              if (stored) {
+                cookies.set(key, stored);
+              } else {
+                cookies.delete(key);
+              }
             }
+
             cookie = [...cookies].map(([key, value]) => `${key}=${value}`).join("; ");
             return response;
           },
@@ -144,22 +160,28 @@ for (const mode of ["default", "observe", "ignore", "throw"] as const)
       const denied = await guest.twoFactor.sendOtp({});
       expect(denied.error?.code).toBe("INVALID_TWO_FACTOR_COOKIE");
       expect((await control(ctx, { action: "state" })).events).toEqual([]);
-      const signup = await owner.signUp.email({ email, password, name: "Delivery Owner" }),
-        other = await foreign.signUp.email({
-          email: ctx.uniqueEmail("delivery-foreign"),
-          password,
-          name: "Delivery Foreign",
-        });
+
+      const signup = await owner.signUp.email({ email, password, name: "Delivery Owner" });
+      const other = await foreign.signUp.email({
+        email: ctx.uniqueEmail("delivery-foreign"),
+        password,
+        name: "Delivery Foreign",
+      });
       expect(signup.error).toBeNull();
       expect(other.error).toBeNull();
-      if (!signup.data || !other.data) throw new Error("real users required");
+
+      if (!signup.data || !other.data) {
+        throw new Error("real users required");
+      }
+
       const originalCookie = [...cookies]
-          .filter(([key]) => key.endsWith(".session_token"))
-          .map(([key, value]) => `${key}=${value}`)
-          .join("; "),
-        original = await owner.getSession(),
-        foreignBefore = await ctx.readUserState({ userId: other.data.user.id });
+        .filter(([key]) => key.endsWith(".session_token"))
+        .map(([key, value]) => `${key}=${value}`)
+        .join("; ");
+      const original = await owner.getSession();
+      const foreignBefore = await ctx.readUserState({ userId: other.data.user.id });
       expect(original.data?.user.twoFactorEnabled).toBe(false);
+
       async function start(serial: number) {
         const entries: TraceEntry[] = [];
         const sender = createAuthClient({
@@ -181,14 +203,24 @@ for (const mode of ["default", "observe", "ignore", "throw"] as const)
           serial,
           userId: signup.data!.user.id,
         });
-        if (mode !== "default") await control(ctx, { action: "wait", kind: "register", serial });
+
+        if (mode !== "default") {
+          await control(ctx, { action: "wait", kind: "register", serial });
+        }
+
         const entered = await control(ctx, { action: "state", userId: signup.data!.user.id });
         const delivery = entered.deliveries.find((value) => value.serial === serial)!;
         expect(delivery.userId).toBe(signup.data!.user.id);
         expect(delivery.otp).toMatch(/^\d{6}$/);
+
         const row = entered.rows.at(-1);
-        if (!row) throw new Error("genuine stored OTP required");
+
+        if (!row) {
+          throw new Error("genuine stored OTP required");
+        }
+
         expect(row.value).toBe(`${delivery.otp}:0`);
+
         if (mode === "default") {
           expect(responseFinished).toBe(false);
           expect(
@@ -202,28 +234,37 @@ for (const mode of ["default", "observe", "ignore", "throw"] as const)
             ),
           ).toBe(false);
         }
+
         return { pending, entries, entered, delivery, row };
       }
+
       async function release(job: Awaited<ReturnType<typeof start>>) {
         await control(ctx, { action: "release", serial: job.delivery.serial });
         const sent = await job.pending;
         expect(sent.error).toBeNull();
         expect(sent.data).toEqual({ status: true });
         expect(job.entries).toHaveLength(1);
+
         ctx.recordTransport(job.entries);
-        if (mode === "observe")
+
+        if (mode === "observe") {
           await control(ctx, { action: "wait", kind: "complete", serial: job.delivery.serial });
+        }
+
         return sent;
       }
+
       const first = await start(1);
       expect(first.row.identifier).toBe(
         `2fa-otp-${signup.data.user.id}!${original.data?.session.id}`,
       );
+
       const wrongOwner = await foreign.twoFactor.verifyOtp({ code: first.delivery.otp });
       expect(wrongOwner.error?.code).toBe("OTP_HAS_EXPIRED");
       expect((await control(ctx, { action: "state", userId: signup.data.user.id })).rows).toEqual(
         first.entered.rows,
       );
+
       // Configured delivery remains gated during genuine enrollment; default send
       // must finish first. Both retain the issued code after callback rejection.
       const firstSent = mode === "default" ? await release(first) : null;
@@ -232,13 +273,16 @@ for (const mode of ["default", "observe", "ignore", "throw"] as const)
       expect(
         (await control(ctx, { action: "state", userId: signup.data.user.id })).rows.at(-1)?.value,
       ).toBe(`${first.delivery.otp}:1`);
+
       const enrolled = await owner.twoFactor.verifyOtp({ code: first.delivery.otp });
       expect(enrolled.error).toBeNull();
       expect(enrolled.data?.user.twoFactorEnabled).toBe(true);
       expect(enrolled.data?.token).not.toBe(original.data?.session.token);
+
       const configuredSent = mode === "default" ? null : await release(first);
       const current = await owner.getSession();
       expect(current.data?.session.token).toBe(enrolled.data?.token);
+
       const state = await ctx.readUserState({ userId: signup.data.user.id });
       expect(
         z
@@ -251,52 +295,66 @@ for (const mode of ["default", "observe", "ignore", "throw"] as const)
         twoFactorExists: false,
         sessions: [{ token: enrolled.data?.token, userId: signup.data.user.id }],
       });
+
       const replay = await owner.twoFactor.verifyOtp({ code: first.delivery.otp });
       expect(replay.error?.code).toBe("OTP_HAS_EXPIRED");
+
       const old = await guest.getSession({ fetchOptions: { headers: { cookie: originalCookie } } });
       expect(old.data).toBeNull();
       expect((await owner.signOut()).error).toBeNull();
+
       const login = await owner.signIn.email({ email, password });
       expect(login.data).toMatchObject({ twoFactorRedirect: true });
+
       const second = await start(2);
       expect(second.entered.challenges).toHaveLength(1);
       expect(second.entered.challenges[0]?.value).toBe(signup.data.user.id);
       expect(second.row.identifier).toBe(`2fa-otp-${second.entered.challenges[0]?.identifier}`);
+
       await control(ctx, { action: "expire", identifier: second.row.identifier });
       const expired = await owner.twoFactor.verifyOtp({ code: second.delivery.otp });
       expect(expired.error?.code).toBe("OTP_HAS_EXPIRED");
+
       const expiredSent = await release(second);
       const pendingState = await ctx.readUserState({ userId: signup.data.user.id });
       expect(
         z.object({ sessions: z.array(z.unknown()) }).parse(pendingState).sessions,
       ).toHaveLength(0);
+
       const third = await start(3);
       expect(third.entered.challenges).toEqual(second.entered.challenges);
       expect(third.row.identifier).toBe(second.row.identifier);
       expect(third.row.identifier.startsWith("2fa-otp-2fa-")).toBe(true);
+
       const renewedSent = mode === "default" ? await release(third) : null;
       const completed = await owner.twoFactor.verifyOtp({ code: third.delivery.otp });
       expect(completed.error).toBeNull();
       expect(completed.data?.user.id).toBe(signup.data.user.id);
+
       const backgroundSent = mode === "default" ? null : await release(third);
       const finalSession = await owner.getSession();
       expect(finalSession.data?.session.token).toBe(completed.data?.token);
       expect(finalSession.data?.user.id).toBe(signup.data.user.id);
+
       const repeated = await owner.twoFactor.verifyOtp({ code: third.delivery.otp });
       expect(repeated.error?.code).toBe("OTP_HAS_EXPIRED");
+
       const final = await control(ctx, { action: "state", userId: signup.data.user.id });
       expect(final.rows).toEqual([]);
       expect(final.challenges).toEqual([]);
+
       for (const delivery of final.deliveries) {
         const events = final.events.filter((event) => event.serial === delivery.serial);
         expect(events.filter((event) => event.kind === "entered")).toHaveLength(1);
         expect(events.filter((event) => event.kind === "finished")).toHaveLength(1);
+
         for (const event of events.filter((event) => event.user)) {
           expect(event.otp).toBe(delivery.otp);
           expect(event.user?.id).toBe(signup.data.user.id);
           expect(event.user?.email).toBe(email);
           expect(event.user?.twoFactorEnabled).toBe(delivery.serial !== 1);
         }
+
         expect(events.map((event) => event.kind)).toEqual(
           mode === "default"
             ? ["entered", "finished"]
@@ -304,9 +362,14 @@ for (const mode of ["default", "observe", "ignore", "throw"] as const)
               ? ["entered", "register", "finished", "complete"]
               : ["entered", "register", "finished"],
         );
-        if (mode === "observe") expect(events.at(-1)?.ok).toBe(true);
+
+        if (mode === "observe") {
+          expect(events.at(-1)?.ok).toBe(true);
+        }
       }
+
       expect(await ctx.readUserState({ userId: other.data.user.id })).toEqual(foreignBefore);
+
       return ctx.snapshot({
         signup,
         other,
@@ -341,3 +404,4 @@ for (const mode of ["default", "observe", "ignore", "throw"] as const)
     },
     ["POST /two-factor/send-otp", "POST /two-factor/verify-otp"],
   );
+}

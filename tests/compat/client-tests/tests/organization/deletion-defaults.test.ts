@@ -1,7 +1,9 @@
 import { expect } from "bun:test";
+
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { createAuthClient } from "better-auth/client";
 import { z } from "zod";
+
 import type { FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { data, orgActor, state as organizationState, serverOperation, signUp } from "./helpers";
@@ -139,6 +141,7 @@ compatScenario(
       valid: true,
       key: { id: keyData.id, referenceId: org.id },
     });
+
     const deniedRead = await keys.apiKey.get({
       query: { configId: "organization", id: keyData.id },
     });
@@ -281,6 +284,7 @@ compatScenario(
         code: "VALIDATION_ERROR",
         message: "[body.organizationId] Invalid input: expected string, received number",
       });
+
       const missing = await raw({});
       expect(missing.status).toBe(400);
       expect(missing.body).toMatchObject({ code: "VALIDATION_ERROR" });
@@ -296,11 +300,13 @@ compatScenario(
 
       // A well-formed request only then reaches the disabled configuration or session check.
       const guest = await raw({ organizationId: id });
+
       if (selected === "org-deletion-disabled") {
         expect(guest.status).toBe(404);
         expect(guest.body).toMatchObject({
           code: "ORGANIZATION_DELETION_DISABLED",
         });
+
         const ownerDenied = await owner.client.organization.delete({
           organizationId: id,
         });
@@ -308,6 +314,7 @@ compatScenario(
           status: 404,
           code: "ORGANIZATION_DELETION_DISABLED",
         });
+
         observations.push({ ownerDenied });
       } else {
         expect(guest.status).toBe(401);
@@ -379,6 +386,7 @@ compatScenario(
       sessionsBefore.sessions.find((r) => r.id !== activeSessionId),
     );
     expect(await organizationState(ctx, id, profile)).toEqual(before);
+
     const selectedAfter = data(await owner.client.getSession());
     expect(selectedAfter.session.activeTeamId).toBe(active.session.activeTeamId);
 

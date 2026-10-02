@@ -1,5 +1,6 @@
 /** Real pinned IP policies; observations read persisted physical session rows. */
 import { Database } from "bun:sqlite";
+
 import { apiKey } from "@better-auth/api-key";
 import { passkey } from "@better-auth/passkey";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
@@ -82,6 +83,7 @@ export async function createClientIpFixture(base: BetterAuthOptions, database: D
     profiles,
     async handle(request: Request) {
       const url = new URL(request.url);
+
       if (url.pathname === "/__test/client-ip/sessions") {
         const rows = database
           .query(
@@ -97,11 +99,14 @@ export async function createClientIpFixture(base: BetterAuthOptions, database: D
           })),
         );
       }
+
       for (const [name, auth] of profiles) {
         const path = `/__test/profiles/${name}/api/auth`;
-        if (url.pathname === path || url.pathname.startsWith(path + "/"))
+        if (url.pathname === path || url.pathname.startsWith(path + "/")) {
           return auth.handler(request);
+        }
       }
+
       return null;
     },
   };

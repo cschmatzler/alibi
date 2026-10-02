@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { createHash, generateKeyPairSync, hkdfSync, sign } from "node:crypto";
+
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { createAuthClient } from "better-auth/client";
@@ -9,6 +10,7 @@ import { symmetricDecodeJWT, symmetricEncodeJWT } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
 import { admin } from "better-auth/plugins";
 import { decodeProtectedHeader, EncryptJWT } from "jose";
+
 import { compareValues } from "../support/compare";
 import { jsonShape, normalizeClientValue } from "../support/normalize";
 
@@ -47,6 +49,7 @@ test("multi-team invitations preserve every ordered team identity", () => {
     invitation: { teamId: "right-first,right-second" },
   };
   expect(compareValues(left, right, context)).toEqual([]);
+
   for (const teamId of [
     "right-second,right-first",
     "right-first,unrelated",
@@ -90,8 +93,8 @@ test("issued API-key entropy retains stored start, configured prefix, row scope 
     enabled: true,
     remaining: null,
   });
-  const left = issued("left-id", "test-LeftFirstRandom", "left-org"),
-    right = issued("right-id", "test-RightFirstRandm", "right-org");
+  const left = issued("left-id", "test-LeftFirstRandom", "left-org");
+  const right = issued("right-id", "test-RightFirstRandm", "right-org");
   const read = ({ key: _key, ...row }: ReturnType<typeof issued>) => row;
   const a = {
     issued: left,
@@ -104,6 +107,7 @@ test("issued API-key entropy retains stored start, configured prefix, row scope 
     next: issued("right-next", "test-RightOtherRandm", "right-org"),
   };
   expect(compareValues(a, b, context)).toEqual([]);
+
   for (const changed of [
     { ...b, read: { ...b.read, start: "test-Bad" } },
     { ...b, read: { ...b.read, start: b.read.start.slice(0, -1) } },
@@ -115,8 +119,10 @@ test("issued API-key entropy retains stored start, configured prefix, row scope 
     { ...b, next: { ...b.next, key: right.key, start: right.start } },
     { ...b, read: { ...b.read, enabled: false } },
     { ...b, read: { ...b.read, remaining: 1 } },
-  ])
+  ]) {
     expect(compareValues(a, changed, context).length).toBeGreaterThan(0);
+  }
+
   expect(compareValues({ key: "literal" }, { key: "changed" }, context).length).toBeGreaterThan(0);
   expect(
     compareValues({ issued: left, metadata: left }, { issued: right, metadata: left }, context),
@@ -176,6 +182,7 @@ test("only configured server origins and opaque URL parameters are normalized", 
       context,
     ).length,
   ).toBeGreaterThan(0);
+
   for (const changed of [
     "https://user@app.example/callback",
     "https://user:secret@app.example/callback",
@@ -188,6 +195,7 @@ test("only configured server origins and opaque URL parameters are normalized", 
       ),
     ).toContainEqual({ path: "callbackURL.username", reason: "value or type differs" });
   }
+
   expect(
     compareValues(
       { callbackURL: "https://user:first@app.example/callback" },
@@ -273,6 +281,7 @@ test("one-time-token storage preserves exact derivation session ownership and re
   const timestamp = "2026-09-30T00:00:00.000Z";
   const stored = (token: string, hashed: boolean) =>
     `one-time-token:${hashed ? createHash("sha256").update(token).digest("base64url") : token}`;
+
   for (const hashed of [false, true]) {
     const run = (side: string) => ({
       issued: { token: `${side}-ott` },
@@ -289,9 +298,10 @@ test("one-time-token storage preserves exact derivation session ownership and re
       traces: [{ responseHeaders: { "set-ott": `${side}-ott` } }],
       url: `/__test/verification-state?identifier=${encodeURIComponent(stored(`${side}-ott`, hashed))}`,
     });
-    const left = run("left"),
-      right = run("right");
+    const left = run("left");
+    const right = run("right");
     expect(compareValues(left, right, context)).toEqual([]);
+
     for (const incorrect of [
       { ...right, persisted: { ...right.persisted, identifier: stored("unrelated", hashed) } },
       { ...right, persisted: { ...right.persisted, identifier: stored("right-ott", !hashed) } },
@@ -305,9 +315,11 @@ test("one-time-token storage preserves exact derivation session ownership and re
         url: `/__test/verification-state?identifier=${encodeURIComponent(stored("unrelated", hashed))}`,
       },
       { ...right, persisted: { ...right.persisted, expiresAt: "2026-09-30T00:03:00.000Z" } },
-    ])
+    ]) {
       expect(compareValues(left, incorrect, context).length).toBeGreaterThan(0);
+    }
   }
+
   expect(
     compareValues(
       { identifier: "literal", value: "literal" },
@@ -342,8 +354,8 @@ test("JWTs and JWKS retain full claims key relationships rotation and key sizes"
     iss: context.rightBaseURL,
     aud: context.rightBaseURL,
   };
-  const leftHeader = { alg: "EdDSA", kid: "left-key" },
-    rightHeader = { alg: "EdDSA", kid: "right-key" };
+  const leftHeader = { alg: "EdDSA", kid: "left-key" };
+  const rightHeader = { alg: "EdDSA", kid: "right-key" };
   const leftKey = {
     kty: "OKP",
     alg: "EdDSA",
@@ -365,6 +377,7 @@ test("JWTs and JWKS retain full claims key relationships rotation and key sizes"
     checked: rightPayload,
   };
   expect(compareValues(left, right, clocks)).toEqual([]);
+
   for (const incorrect of [
     { ...right, token: encode({ ...rightHeader, kid: "unrelated" }, rightPayload) },
     { ...right, token: encode(rightHeader, { ...rightPayload, sub: "wrong-user" }) },
@@ -375,8 +388,10 @@ test("JWTs and JWKS retain full claims key relationships rotation and key sizes"
     { ...right, token: encode(rightHeader, rightPayload, "short") },
     { ...right, jwks: { keys: [{ ...rightKey, x: Buffer.alloc(31, 2).toString("base64url") }] } },
     { ...right, jwks: { keys: [] } },
-  ])
+  ]) {
     expect(compareValues(left, incorrect, clocks).length).toBeGreaterThan(0);
+  }
+
   expect(
     compareValues(
       { ...left, again: left.token },
@@ -384,6 +399,7 @@ test("JWTs and JWKS retain full claims key relationships rotation and key sizes"
       clocks,
     ).length,
   ).toBeGreaterThan(0);
+
   const literalLeft = encode(leftHeader, {
     sub: "service-one",
     exp: 4102444800,
@@ -399,6 +415,7 @@ test("JWTs and JWKS retain full claims key relationships rotation and key sizes"
   expect(
     compareValues({ token: literalLeft }, { token: literalRight }, clocks).length,
   ).toBeGreaterThan(0);
+
   const fixed = { sub: "service", iat: 100, exp: 4102444800, iss: "custom", aud: "custom" };
   expect(
     compareValues(
@@ -428,26 +445,31 @@ test("external JWT empty key selectors remain literal without allowing empty ide
     return `${input}.${sign("RSA-SHA256", Buffer.from(input), pair.privateKey).toString("base64url")}`;
   };
   const header = { alg: "RS256", kid: "" };
-  const leftToken = encode(leftPair, header),
-    rightToken = encode(rightPair, header);
+  const leftToken = encode(leftPair, header);
+  const rightToken = encode(rightPair, header);
   const left = { accounts: [{ idToken: leftToken }], repeated: leftToken };
   const right = { accounts: [{ idToken: rightToken }], repeated: rightToken };
   expect(compareValues(left, right, context)).toEqual([]);
+
   for (const token of [
     encode(rightPair, { ...header, kid: "nonempty" }),
     encode(rightPair, { alg: "RS256" }),
     encode(rightPair, { ...header, alg: "PS256" }),
     encode(rightPair, header, { ...claims, sub: "wrong-owner" }),
     encode(rightPair, header, { ...claims, exp: claims.exp + 1 }),
-  ])
+  ]) {
     expect(
       compareValues(left, { accounts: [{ idToken: token }], repeated: token }, context).length,
     ).toBeGreaterThan(0);
+  }
+
   const rotated = encode(rightPair, header, { ...claims, iat: claims.iat + 1 });
   expect(compareValues(left, { ...right, repeated: rotated }, context).length).toBeGreaterThan(0);
+
   for (const empty of [{ user: { id: "" } }, { session: { token: "" } }, { token: "" }]) {
     expect(compareValues(empty, empty, context).length).toBeGreaterThan(0);
   }
+
   const leftKey = { ...leftPair.publicKey.export({ format: "jwk" }), alg: "RS256", kid: "" };
   const rightKey = { ...rightPair.publicKey.export({ format: "jwk" }), alg: "RS256", kid: "" };
   expect(
@@ -470,12 +492,16 @@ test("accepted compact JWT encodings retain decoded claims key sizes and token r
     aud: "literal",
     permission: "read",
   };
-  const leftHeader = { alg: "EdDSA", kid: "left-key" },
-    rightHeader = { alg: "EdDSA", kid: "right-key" };
+  const leftHeader = { alg: "EdDSA", kid: "left-key" };
+  const rightHeader = { alg: "EdDSA", kid: "right-key" };
   const pad = (value: string) => value + "=".repeat((4 - (value.length % 4)) % 4);
   const encodeVariants = (token: string): string[] => {
     const parts = token.split(".");
-    if (!parts[0] || !parts[1] || !parts[2]) throw new Error("three JWT segments are required");
+
+    if (!parts[0] || !parts[1] || !parts[2]) {
+      throw new Error("three JWT segments are required");
+    }
+
     const [header, payload, signature] = parts;
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     const lastIndex = alphabet.indexOf(signature.at(-1) ?? "");
@@ -488,8 +514,8 @@ test("accepted compact JWT encodings retain decoded claims key sizes and token r
       `${header}.${payload.slice(0, 3)} \t\n\r\f${payload.slice(3)}.${signature}`,
     ];
   };
-  const leftToken = encode(leftHeader, claims, Buffer.alloc(64, 1)),
-    rightToken = encode(rightHeader, claims, Buffer.alloc(64, 2));
+  const leftToken = encode(leftHeader, claims, Buffer.alloc(64, 1));
+  const rightToken = encode(rightHeader, claims, Buffer.alloc(64, 2));
   const left = {
     key: {
       kid: "left-key",
@@ -503,10 +529,12 @@ test("accepted compact JWT encodings retain decoded claims key sizes and token r
     key: { ...left.key, kid: "right-key", x: Buffer.alloc(32, 2).toString("base64url") },
     token: rightToken,
   };
+
   for (let index = 0; index < encodeVariants(leftToken).length; index++) {
-    const a = { ...left, token: encodeVariants(leftToken)[index] },
-      b = { ...right, token: encodeVariants(rightToken)[index] };
+    const a = { ...left, token: encodeVariants(leftToken)[index] };
+    const b = { ...right, token: encodeVariants(rightToken)[index] };
     expect(compareValues(a, b, context)).toEqual([]);
+
     for (const wrongToken of [
       encode({ ...rightHeader, kid: "unrelated" }, claims, Buffer.alloc(64, 2)),
       encode({ ...rightHeader, typ: "JWT" }, claims, Buffer.alloc(64, 2)),
@@ -516,20 +544,22 @@ test("accepted compact JWT encodings retain decoded claims key sizes and token r
       const wrong = encodeVariants(wrongToken)[index];
       expect(compareValues(a, { ...b, token: wrong }, context).length).toBeGreaterThan(0);
     }
+
     const changedSignature = encodeVariants(encode(rightHeader, claims, Buffer.alloc(64, 3)))[
       index
     ];
     expect(
       compareValues({ ...a, again: a.token }, { ...b, again: changedSignature }, context).length,
     ).toBeGreaterThan(0);
+
     const shorter = encode(rightHeader, claims, Buffer.alloc(32, 2));
     expect(compareValues(a, { ...b, token: shorter + "=" }, context).length).toBeGreaterThan(0);
   }
 });
 
 test("nested OKP and EC shaped application claims stay literal alongside real public JWKS", () => {
-  const leftPair = generateKeyPairSync("ed25519"),
-    rightPair = generateKeyPairSync("ed25519");
+  const leftPair = generateKeyPairSync("ed25519");
+  const rightPair = generateKeyPairSync("ed25519");
   const leftKey = {
     ...leftPair.publicKey.export({ format: "jwk" }),
     alg: "EdDSA",
@@ -556,6 +586,7 @@ test("nested OKP and EC shaped application claims stay literal alongside real pu
     ].join(".");
     return `${input}.${sign(null, Buffer.from(input), pair.privateKey).toString("base64url")}`;
   };
+
   for (const metadata of [
     { kty: "OKP", crv: "Ed25519", x: Buffer.alloc(32, 9).toString("base64url") },
     {
@@ -575,6 +606,7 @@ test("nested OKP and EC shaped application claims stay literal alongside real pu
       token: encode(rightPair, rightKey.kid, { nested: [metadata] }),
     };
     expect(compareValues(left, right, context)).toEqual([]);
+
     const wrong =
       "x" in metadata
         ? { ...metadata, x: Buffer.alloc(32, 11).toString("base64url") }
@@ -796,6 +828,7 @@ test("computed device session TTL permits only the proved floor boundary", () =>
     issued: { access_token: "right", token_type: "Bearer", expires_in: 604799 },
   };
   expect(compareValues(left, right, clocks)).toEqual([]);
+
   for (const incorrect of [
     { ...right, issued: { ...right.issued, expires_in: 604798 } },
     { ...right, issued: { ...right.issued, access_token: "unrelated" } },
@@ -807,10 +840,13 @@ test("computed device session TTL permits only the proved floor boundary", () =>
       },
     },
     { ...right, issued: { ...right.issued, expires_in: 604801 } },
-  ])
+  ]) {
     expect(compareValues(left, incorrect, clocks).length).toBeGreaterThan(0);
+  }
+
   expect(compareValues({ expires_in: 10 }, { expires_in: 9 }, clocks).length).toBeGreaterThan(0);
   expect(compareValues(left, right, context).length).toBeGreaterThan(0);
+
   for (const field of ["metadata", "additionalFields"]) {
     const differences = compareValues(
       { ...left, [field]: left.issued },
@@ -819,6 +855,7 @@ test("computed device session TTL permits only the proved floor boundary", () =>
     );
     expect(differences.some((difference) => difference.path === `${field}.expires_in`)).toBe(true);
   }
+
   const shapeDiffs = compareValues(
     { ...left, traces: [{ responseBodyShape: left.issued }] },
     { ...right, traces: [{ responseBodyShape: right.issued }] },
@@ -827,6 +864,7 @@ test("computed device session TTL permits only the proved floor boundary", () =>
   expect(
     shapeDiffs.some((difference) => difference.path === "traces.0.responseBodyShape.expires_in"),
   ).toBe(true);
+
   const unproved = compareValues(
     { metadata: left.persisted, issued: left.issued },
     { metadata: right.persisted, issued: right.issued },
@@ -875,11 +913,13 @@ test("actual custom API-key generators preserve observational prefix relationshi
     expect(issued.key).toBe(secret);
     expect(issued.prefix).toBe("raw_");
     expect(issued.start).toBe(secret.substring(0, 2));
+
     database.close();
     return { issued, startedAt, finishedAt: Date.now() };
   }
-  const left = await issue(context.leftBaseURL, false),
-    right = await issue(context.rightBaseURL, false);
+
+  const left = await issue(context.leftBaseURL, false);
+  const right = await issue(context.rightBaseURL, false);
   const clocks = {
     ...context,
     leftStartedAt: left.startedAt,
@@ -888,8 +928,9 @@ test("actual custom API-key generators preserve observational prefix relationshi
     rightFinishedAt: right.finishedAt,
   };
   expect(compareValues(left.issued, right.issued, clocks)).toEqual([]);
-  const prefixedLeft = await issue(context.leftBaseURL, true),
-    prefixedRight = await issue(context.rightBaseURL, true);
+
+  const prefixedLeft = await issue(context.leftBaseURL, true);
+  const prefixedRight = await issue(context.rightBaseURL, true);
   const prefixClocks = {
     ...context,
     leftStartedAt: prefixedLeft.startedAt,
@@ -898,11 +939,13 @@ test("actual custom API-key generators preserve observational prefix relationshi
     rightFinishedAt: prefixedRight.finishedAt,
   };
   expect(compareValues(prefixedLeft.issued, prefixedRight.issued, prefixClocks)).toEqual([]);
+
   const missingPrefix = { ...prefixedRight.issued, key: "bad_abcdefghijklmnop", start: "ba" };
   expect(compareValues(prefixedLeft.issued, missingPrefix, prefixClocks)).toContainEqual({
     path: "key",
     reason: "API key prefix relationship differs",
   });
+
   const wrongPrefix = { ...right.issued, prefix: "other_" };
   expect(compareValues(left.issued, wrongPrefix, clocks)).toContainEqual({
     path: "prefix",
@@ -918,8 +961,8 @@ test("actual custom API-key generators preserve observational prefix relationshi
 });
 
 test("published encrypted account cookies retain complete claims, clocks, identity and rotation", async () => {
-  const secret = "local-harness-encryption-secret-32-bytes",
-    salt = "better-auth-account";
+  const secret = "local-harness-encryption-secret-32-bytes";
+  const salt = "better-auth-account";
   const startedAt = Date.now();
   const account = {
     id: "account",
@@ -937,14 +980,16 @@ test("published encrypted account cookies retain complete claims, clocks, identi
     const token = await symmetricEncodeJWT(account, secret, salt, lifetime);
     const payload = await symmetricDecodeJWT(token, secret, salt);
     expect(payload).not.toBeNull();
+
     return { token, header: decodeProtectedHeader(token), payload: payload! };
   };
-  const left = await issue(),
-    right = await issue(),
-    leftNext = await issue(),
-    rightNext = await issue();
+  const left = await issue();
+  const right = await issue();
+  const leftNext = await issue();
+  const rightNext = await issue();
   expect(left.payload.jti).not.toBe(right.payload.jti);
   expect(left.token).not.toBe(right.token);
+
   const execution = {
     ...context,
     leftStartedAt: startedAt,
@@ -959,14 +1004,16 @@ test("published encrypted account cookies retain complete claims, clocks, identi
     repeated: { accountCookie: first },
     next: { accountCookie: next },
   });
-  const a = view(left, leftNext),
-    b = view(right, rightNext);
+  const a = view(left, leftNext);
+  const b = view(right, rightNext);
   expect(compareValues(a, b, execution)).toEqual([]);
+
   const changedPayload = (payload: Record<string, unknown>) => ({
     ...b,
     first: { accountCookie: { ...right, payload } },
     repeated: { accountCookie: { ...right, payload } },
   });
+
   for (const changed of [
     changedPayload({ ...right.payload, userId: "foreign" }),
     changedPayload({ ...right.payload, providerId: "github" }),
@@ -1000,12 +1047,15 @@ test("published encrypted account cookies retain complete claims, clocks, identi
       first: { accountCookie: { ...right, token: right.token.split(".").slice(0, 4).join(".") } },
     },
     changedPayload({ ...right.payload, password: undefined }),
-  ])
+  ]) {
     expect(compareValues(a, changed, execution).length).toBeGreaterThan(0);
+  }
+
   const noNull = structuredClone(b);
   delete noNull.first.accountCookie.payload.refreshToken;
   delete noNull.repeated.accountCookie.payload.refreshToken;
   expect(compareValues(a, noNull, execution).length).toBeGreaterThan(0);
+
   // Actual source-readable protected extensions remain literal, even when their
   // names look like generated identities or token fields elsewhere in a trace.
   const key = new Uint8Array(
@@ -1020,8 +1070,10 @@ test("published encrypted account cookies retain complete claims, clocks, identi
       .encrypt(key);
     const payload = await symmetricDecodeJWT(token, secret, salt);
     expect(payload).not.toBeNull();
+
     return { token, header: decodeProtectedHeader(token), payload: payload! };
   };
+
   for (const headerKey of ["id", "token", "issuerURL", "createdAt"]) {
     const first = await extended({
       [headerKey]:
@@ -1041,6 +1093,7 @@ test("published encrypted account cookies retain complete claims, clocks, identi
       reason: "protected encrypted cookie header differs",
     });
   }
+
   for (const [field, value] of [
     ["providerId", "github"],
     ["userId", "foreign"],
@@ -1058,6 +1111,7 @@ test("published encrypted account cookies retain complete claims, clocks, identi
       diff.some((item) => item.reason === "the same encrypted cookie has different decoded claims"),
     ).toBe(false);
   }
+
   const differentLifetime = await issue(301);
   expect(compareValues(a, view(differentLifetime, rightNext), execution).length).toBeGreaterThan(0);
   // Claims outside the authenticated envelope retain literal application values.
@@ -1098,17 +1152,21 @@ test("actual admin URLs preserve literal empty selectors without admitting empty
       const response = await auth.handler(new Request(url));
       expect(response.status).toBe(401);
       expect(response.headers.get("content-type")).toBe("application/json");
+
       const body = await response.text();
       expect(body).toBe("");
+
       return { path: url.href, status: response.status, body };
     } finally {
       database.close();
     }
   }
+
   for (const id of ["", " "]) {
-    const left = await observe(context.leftBaseURL, id),
-      right = await observe(context.rightBaseURL, id);
+    const left = await observe(context.leftBaseURL, id);
+    const right = await observe(context.rightBaseURL, id);
     expect(compareValues(left, right, context)).toEqual([]);
+
     for (const path of [
       right.path.replace("id=" + (id ? "+" : ""), "id=different"),
       right.path.replace("id=" + (id ? "+" : ""), ""),
@@ -1118,6 +1176,7 @@ test("actual admin URLs preserve literal empty selectors without admitting empty
       expect(compareValues(left, { ...right, path }, context).length).toBeGreaterThan(0);
     }
   }
+
   for (const value of [
     { id: "" },
     { userId: " " },
@@ -1126,6 +1185,7 @@ test("actual admin URLs preserve literal empty selectors without admitting empty
   ]) {
     expect(compareValues(value, structuredClone(value), context).length).toBeGreaterThan(0);
   }
+
   // A queried observed identity still participates in the same graph.
   const left = { user: { id: "owner-left" }, path: "/admin/get-user?id=owner-left" };
   const right = { user: { id: "owner-right" }, path: "/admin/get-user?id=owner-right" };
@@ -1150,6 +1210,7 @@ test("actual admin ID filter URLs retain observed user identities and every lite
       await (await getMigrations(options)).runMigrations();
       const auth = betterAuth(options);
       const users = [];
+
       for (const name of ["First", "Second"]) {
         const created = await auth.api.signUpEmail({
           body: { name, email: `${name.toLowerCase()}@example.test`, password: "password123" },
@@ -1157,6 +1218,7 @@ test("actual admin ID filter URLs retain observed user identities and every lite
         });
         users.push(created.user);
       }
+
       let path = "";
       const client = createAuthClient({
         baseURL,
@@ -1182,19 +1244,23 @@ test("actual admin ID filter URLs retain observed user identities and every lite
         users[1]!.id,
         users[0]!.id,
       ]);
+
       return { users, path, result };
     } finally {
       database.close();
     }
   }
-  const left = await observe(context.leftBaseURL),
-    right = await observe(context.rightBaseURL);
+
+  const left = await observe(context.leftBaseURL);
+  const right = await observe(context.rightBaseURL);
   expect(compareValues(left, right, context)).toEqual([]);
+
   function changed(value: typeof right, mutate: (url: URL) => void) {
     const url = new URL(value.path);
     mutate(url);
     return { ...value, path: url.href };
   }
+
   for (const operands of [
     [right.users[1]!.id, right.users[0]!.id, right.users[0]!.id],
     [right.users[0]!.id, right.users[1]!.id],
@@ -1206,12 +1272,15 @@ test("actual admin ID filter URLs retain observed user identities and every lite
         left,
         changed(right, (url) => {
           url.searchParams.delete("filterValue");
-          for (const id of operands) url.searchParams.append("filterValue", id);
+          for (const id of operands) {
+            url.searchParams.append("filterValue", id);
+          }
         }),
         context,
       ).length,
     ).toBeGreaterThan(0);
   }
+
   for (const mutate of [
     (url: URL) => url.searchParams.set("filterField", "email"),
     (url: URL) => url.searchParams.delete("filterField"),
@@ -1223,8 +1292,10 @@ test("actual admin ID filter URLs retain observed user identities and every lite
     (url: URL) => {
       url.hash = "changed";
     },
-  ])
+  ]) {
     expect(compareValues(left, changed(right, mutate), context).length).toBeGreaterThan(0);
+  }
+
   // The same full observed ID strings are literal outside this known ID selector.
   for (const mutate of [
     (url: URL) => url.searchParams.set("filterField", "name"),
@@ -1235,10 +1306,12 @@ test("actual admin ID filter URLs retain observed user identities and every lite
     (url: URL) => {
       url.pathname = "/application/list-users";
     },
-  ])
+  ]) {
     expect(
       compareValues(changed(left, mutate), changed(right, mutate), context).length,
     ).toBeGreaterThan(0);
+  }
+
   expect(
     compareValues(
       { ...left, metadata: { filterValue: left.users[0]!.id } },

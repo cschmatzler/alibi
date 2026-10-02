@@ -1,10 +1,12 @@
 import { expect } from "bun:test";
+
 import { createAuthClient } from "better-auth/client";
 import { oneTapClient } from "better-auth/client/plugins";
 import { symmetricDecodeJWT } from "better-auth/crypto";
-import { CompactSign, decodeProtectedHeader, importPKCS8 } from "jose";
+import { decodeProtectedHeader } from "jose";
 import { Cookie } from "tough-cookie";
 import { z } from "zod";
+
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { type ScenarioContext } from "../../support/scenario";
 
@@ -31,11 +33,13 @@ export const stateSchema = z.object({
   ),
   sessions: z.array(z.object({ id: z.string(), userId: z.string(), token: z.string() })),
 });
+
 export async function state(ctx: ScenarioContext) {
   const result = await ctx.rawRequest({ path: "/__test/one-tap/state" });
   expect(result.status).toBe(200);
   return stateSchema.parse(result.body);
 }
+
 const accountPayloadSchema = z
   .object({
     id: z.string(),
@@ -48,11 +52,13 @@ const accountPayloadSchema = z
     refreshToken: z.string().nullable().optional(),
   })
   .passthrough();
+
 const accountCookieSchema = z.object({
   token: z.string(),
   header: z.record(z.string(), z.unknown()),
   payload: accountPayloadSchema,
 });
+
 const successSchema = z.object({
   token: z.string(),
   user: z
@@ -65,6 +71,7 @@ const successSchema = z.object({
     })
     .passthrough(),
 });
+
 export async function oneTap(
   ctx: ScenarioContext,
   token: string,
@@ -99,6 +106,7 @@ export async function oneTap(
     configurable: true,
     value: browser,
   });
+
   try {
     const client = createAuthClient({
       baseURL: ctx.baseURL + authProfilePath(profile),
@@ -118,6 +126,7 @@ export async function oneTap(
             .getSetCookie()
             .map((value) => Cookie.parse(value))
             .find((cookie) => cookie?.key.endsWith("account_data"));
+
           if (account) {
             const token = decodeURIComponent(account.value);
             accountCookie = accountCookieSchema.parse({
@@ -130,6 +139,7 @@ export async function oneTap(
               ),
             });
           }
+
           const cookie = context.response.headers
             .getSetCookie()
             .map((value) => Cookie.parse(value))
@@ -143,6 +153,7 @@ export async function oneTap(
       },
     });
     expect(received).toBeDefined();
+
     return {
       response: received,
       location: browser.location.href,
@@ -150,10 +161,14 @@ export async function oneTap(
       accountCookie,
     };
   } finally {
-    if (original) Object.defineProperty(globalThis, "window", original);
-    else Reflect.deleteProperty(globalThis, "window");
+    if (original) {
+      Object.defineProperty(globalThis, "window", original);
+    } else {
+      Reflect.deleteProperty(globalThis, "window");
+    }
   }
 }
+
 export const responseSchema = z.object({
   response: z.object({
     data: successSchema.nullable(),
@@ -170,6 +185,7 @@ export const responseSchema = z.object({
   sessionMaxAge: z.number().nullable(),
   accountCookie: accountCookieSchema.nullable(),
 });
+
 export async function successful(
   ctx: ScenarioContext,
   token: string,
@@ -180,5 +196,6 @@ export async function successful(
   const result = responseSchema.parse(await oneTap(ctx, token, profile, actorName, callbackURL));
   expect(result.response.error).toBeNull();
   expect(result.response.data).not.toBeNull();
+
   return result;
 }

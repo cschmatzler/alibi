@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 const sessionName = "better-auth.session_token";
@@ -36,6 +38,7 @@ compatScenario(
       password: "password123",
     });
     expect(signedUp.error).toBeNull();
+
     const signedOut = await actor.client.signOut();
     expect(signedOut.error).toBeNull();
 
@@ -51,6 +54,7 @@ compatScenario(
       },
     );
     expect(signedIn.error).toBeNull();
+
     const { token, user } = z
       .object({ token: z.string(), user: z.object({ id: z.string() }) })
       .parse(signedIn.data);
@@ -77,13 +81,16 @@ compatScenario(
       },
     });
     expect(created.error).toBeNull();
+
     const id = z.object({ id: z.string() }).parse(created.data).id;
 
     const before = await persisted(ctx, user.id);
     expect(before.sessions).toHaveLength(1);
+
     const beforeSession = before.sessions[0];
     expect(beforeSession?.token).toBe(token);
     expect(beforeSession?.activeOrganizationId).toBe(id);
+
     const issuedExpiry = Date.parse(z.string().parse(beforeSession?.expiresAt));
     expect(issuedExpiry - Date.now()).toBeGreaterThan(23 * 3_600_000);
     expect(issuedExpiry - Date.now()).toBeLessThanOrEqual(86_400_000);
@@ -98,8 +105,10 @@ compatScenario(
         body: JSON.stringify(body),
       });
       expect(response.status).toBe(200);
+
       const value: unknown = await response.json();
       const cookies = response.headers.getSetCookie();
+
       if (browserSession === null) {
         expect(cookies).toEqual([]);
       } else if (browserSession) {
@@ -118,6 +127,7 @@ compatScenario(
           expect(cookie).toMatch(/(?:^|;\s*)Max-Age=604800(?:;|$)/i);
         }
       }
+
       return { value, state: await persisted(ctx, user.id) };
     }
 
@@ -142,6 +152,7 @@ compatScenario(
     const invalidHeader = `${sessionCookie}; ${tampered}; ${preference}`;
     const invalidSelected = await set({ organizationId: id }, invalidHeader, false);
     expect(z.object({ id: z.string() }).parse(invalidSelected.value).id).toBe(id);
+
     const invalidSession = invalidSelected.state.sessions[0];
     const refreshedExpiry = Date.parse(z.string().parse(invalidSession?.expiresAt));
     expect(refreshedExpiry - issuedExpiry).toBeGreaterThan(5 * 86_400_000);

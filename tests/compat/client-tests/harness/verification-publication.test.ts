@@ -2,20 +2,24 @@ import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomInt } from "node:crypto";
+
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { createAuthClient } from "better-auth/client";
 import { emailOTPClient, magicLinkClient, oneTimeTokenClient } from "better-auth/client/plugins";
 import { verifyPassword } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
 import { emailOTP, genericOAuth, magicLink, oneTimeToken } from "better-auth/plugins";
+
 import { type ComparisonContext, compareValues } from "../support/compare";
 import { normalizeClientValue } from "../support/normalize";
 import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
 import { verificationPublicationObserver } from "../support/verification-publication";
 
 type Row = Record<string, any>;
+
 const secret = "verification-publication-application-secret32";
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+
 const profile = (mode: "cache" | "mixed") =>
   `/__test/profiles/verification-storage-${mode}-default/api/auth`;
 
@@ -43,24 +47,25 @@ async function source(
   extraEvidence = false,
   oauthEmail?: string,
 ) {
-  const db = new Database(":memory:"),
-    frames = new AsyncLocalStorage<Row>();
-  const publications: Row[] = [],
-    deliveries: Row[] = [],
-    backendEvents: Row[] = [];
+  const db = new Database(":memory:");
+  const frames = new AsyncLocalStorage<Row>();
+  const publications: Row[] = [];
+  const deliveries: Row[] = [];
+  const backendEvents: Row[] = [];
   const cache = new Map<string, { rawValue: string; expiresAt: string }>();
-  const grants = new Map<string, Row>(),
-    oauthReceipts: Row[] = [];
+  const grants = new Map<string, Row>();
+  const oauthReceipts: Row[] = [];
   let handler: (request: Request) => Promise<Response>;
   const server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
     async fetch(request) {
       const path = new URL(request.url).pathname;
+
       if (oauthEmail && path === "/oauth/authorize") {
-        const url = new URL(request.url),
-          code = generators.transfer,
-          accessToken = randomBytes(24).toString("base64url");
+        const url = new URL(request.url);
+        const code = generators.transfer;
+        const accessToken = randomBytes(24).toString("base64url");
         const grant = { code, accessToken, authorization: Object.fromEntries(url.searchParams) };
         grants.set(code, grant);
         oauthReceipts.push({ stage: "authorize", ...grant });
@@ -69,10 +74,12 @@ async function source(
         callback.searchParams.set("code", code);
         return Response.redirect(callback, 302);
       }
+
       if (oauthEmail && path === "/oauth/token") {
-        const body = Object.fromEntries(new URLSearchParams(await request.text())),
-          grant = grants.get(body.code!);
+        const body = Object.fromEntries(new URLSearchParams(await request.text()));
+        const grant = grants.get(body.code!);
         oauthReceipts.push({ stage: "grant", body });
+
         if (
           !grant ||
           body.client_id !== "publication-client" ||
@@ -81,19 +88,27 @@ async function source(
           body.redirect_uri !== grant.authorization.redirect_uri ||
           createHash("sha256").update(body.code_verifier!).digest("base64url") !==
             grant.authorization.code_challenge
-        )
+        ) {
           return Response.json({ error: "invalid_grant" }, { status: 400 });
+        }
+
         return Response.json({
           access_token: grant.accessToken,
           token_type: "Bearer",
           expires_in: 3600,
         });
       }
+
       if (oauthEmail && path === "/oauth/userinfo") {
         const authorization = request.headers.get("authorization");
         oauthReceipts.push({ stage: "userinfo", authorization });
-        if (![...grants.values()].some((grant) => authorization === `Bearer ${grant.accessToken}`))
+
+        if (
+          ![...grants.values()].some((grant) => authorization === `Bearer ${grant.accessToken}`)
+        ) {
           return new Response(null, { status: 401 });
+        }
+
         return Response.json({
           id: "actual-publication-owner",
           name: "Publication Owner",
@@ -101,9 +116,15 @@ async function source(
           email_verified: true,
         });
       }
-      if (path === "/ok") return Response.json({ completed: true });
-      if (path === verificationPublicationObserver && request.method === "GET")
+
+      if (path === "/ok") {
+        return Response.json({ completed: true });
+      }
+
+      if (path === verificationPublicationObserver && request.method === "GET") {
         return Response.json({ publications, deliveries });
+      }
+
       if (path === "/__test/verification-publication-backend" && request.method === "GET") {
         return Response.json({
           publications,
@@ -123,6 +144,7 @@ async function source(
           },
         });
       }
+
       const frame: Row = {
         request: {
           method: request.method,
@@ -132,8 +154,11 @@ async function source(
           startedAt: new Date().toISOString(),
         },
       };
-      if (extraEvidence)
+
+      if (extraEvidence) {
         frame.request.applicationReceipt = { stage: "request", nested: { kept: true } };
+      }
+
       return frames.run(frame, async () => {
         const response = await handler(request);
         frame.request.finishedAt = new Date().toISOString();
@@ -153,10 +178,13 @@ async function source(
     verification: { storeInDatabase: mode === "mixed", storeIdentifier: "hashed" },
     secondaryStorage: {
       async set(key: string, rawValue: string, ttl?: number) {
-        if (typeof ttl !== "number") throw new Error("Actual owner must supply cache TTL");
-        const executedAt = new Date().toISOString(),
-          value = JSON.parse(rawValue),
-          storedAt = Date.now();
+        if (typeof ttl !== "number") {
+          throw new Error("Actual owner must supply cache TTL");
+        }
+
+        const executedAt = new Date().toISOString();
+        const value = JSON.parse(rawValue);
+        const storedAt = Date.now();
         const storageExpiresAt = new Date(storedAt + ttl * 1000).toISOString();
         const event = {
           operation: "set",
@@ -168,10 +196,14 @@ async function source(
           storedAt: new Date(storedAt).toISOString(),
           storageExpiresAt,
         };
-        if (extraEvidence)
+
+        if (extraEvidence) {
           Object.assign(event, { applicationReceipt: { stage: "set", nested: { kept: true } } });
+        }
+
         backendEvents.push(event);
         cache.set(key, { rawValue, expiresAt: storageExpiresAt });
+
         if (key.startsWith("verification:")) {
           const frame = frames.getStore()!;
           frame.pending.set = event;
@@ -265,8 +297,8 @@ async function source(
     "CREATE TABLE IF NOT EXISTS verification (id TEXT PRIMARY KEY, identifier TEXT, value TEXT, expiresAt INTEGER, createdAt INTEGER, updatedAt INTEGER)",
   );
   handler = betterAuth(options).handler;
-  const traces: TraceEntry[] = [],
-    fetch = createTracingFetch(baseURL, "owner", traces, profile(mode));
+  const traces: TraceEntry[] = [];
+  const fetch = createTracingFetch(baseURL, "owner", traces, profile(mode));
   const client = createAuthClient({
     baseURL: `${baseURL}${profile(mode)}`,
     plugins: [emailOTPClient(), magicLinkClient(), oneTimeTokenClient()],
@@ -281,8 +313,8 @@ async function run(
   email: string,
   extraEvidence = false,
 ) {
-  const instance = await source(mode, generators, extraEvidence),
-    startedAt = Date.now();
+  const instance = await source(mode, generators, extraEvidence);
+  const startedAt = Date.now();
   try {
     const foreign = await instance.client.signUp.email({
       email: `foreign-${email}`,
@@ -290,6 +322,7 @@ async function run(
       name: "Foreign Owner",
     });
     expect(foreign.error).toBeNull();
+
     const before = (await (
       await fetch(`${instance.baseURL}/__test/verification-publication-backend`)
     ).json()) as Row;
@@ -299,19 +332,23 @@ async function run(
       name: "Publication Owner",
     });
     expect(signup.error).toBeNull();
+
     const otp = await instance.client.emailOtp.sendVerificationOtp({
       email: `otp-${email}`,
       type: "sign-in",
     });
     expect(otp.error).toBeNull();
+
     const magic = await instance.client.signIn.magicLink({
       email: `magic-${email}`,
       name: "Mailbox Owner",
       metadata: { ttl: 17, applicationData: "literal" },
     });
     expect(magic.error).toBeNull();
+
     const transfer = await instance.client.oneTimeToken.generate();
     expect(transfer.error).toBeNull();
+
     const foreignFetch = createTracingFetch(
       instance.baseURL,
       "foreign-producer",
@@ -328,13 +365,17 @@ async function run(
       type: "sign-in",
     });
     expect(foreignOtp.error).toBeNull();
+
     const observer = await instance.fetch(`${instance.baseURL}${verificationPublicationObserver}`);
     expect(observer.status).toBe(200);
+
     const body = (await observer.json()) as Row;
     expect(body.publications).toHaveLength(4);
+
     const complete = (await (
       await fetch(`${instance.baseURL}/__test/verification-publication-backend`)
     ).json()) as Row;
+
     // Check complete backend values independently of the cross-runtime comparer.
     for (const publication of body.publications) {
       expect(publication.set.rawValue).toBe(JSON.stringify(publication.snapshot));
@@ -343,25 +384,33 @@ async function run(
         Date.parse(publication.set.storedAt) + publication.set.ttl * 1000,
       );
       expect(publication.set.key).toBe(`verification:${publication.before.snapshot.identifier}`);
-      const earliest = Date.parse(publication.before.executedAt),
-        latest = Date.parse(publication.set.executedAt),
-        expiry = Date.parse(publication.snapshot.expiresAt);
+
+      const earliest = Date.parse(publication.before.executedAt);
+      const latest = Date.parse(publication.set.executedAt);
+      const expiry = Date.parse(publication.snapshot.expiresAt);
       expect(publication.set.ttl).toBeGreaterThanOrEqual(Math.floor((expiry - latest) / 1000));
       expect(publication.set.ttl).toBeLessThanOrEqual(Math.floor((expiry - earliest) / 1000));
     }
+
     expect(complete.backend.users).toHaveLength(2);
     expect(complete.backend.accounts).toHaveLength(2);
     expect(complete.backend.sessions).toHaveLength(2);
     expect(complete.backend.verificationRows).toHaveLength(mode === "mixed" ? 4 : 0);
+
     for (const field of ["users", "accounts", "sessions"]) {
       const rows = before.backend[field] as Row[];
       expect(rows).toHaveLength(1);
       expect(complete.backend[field].find((r: Row) => r.id === rows[0]!.id)).toEqual(rows[0]);
     }
-    for (const entry of before.backend.cache)
+
+    for (const entry of before.backend.cache) {
       expect(complete.backend.cache.find((r: Row) => r.key === entry.key)).toEqual(entry);
-    for (const account of complete.backend.accounts)
+    }
+
+    for (const account of complete.backend.accounts) {
       expect(await verifyPassword({ password: "password123", hash: account.password })).toBe(true);
+    }
+
     return {
       root: normalizeClientValue({
         observation: {
@@ -386,7 +435,7 @@ async function run(
   }
 }
 
-for (const mode of ["cache", "mixed"] as const)
+for (const mode of ["cache", "mixed"] as const) {
   test(`actual Source ${mode} default300/180 verification publications retain exact bounded TTLs and reject forged receipts`, async () => {
     const generators = {
       otp: String(randomInt(100000, 1000000)),
@@ -394,8 +443,8 @@ for (const mode of ["cache", "mixed"] as const)
       transfer: randomBytes(24).toString("base64url"),
     };
     const email = `${randomBytes(12).toString("hex")}@test.com`;
-    const a = await run(mode, generators, email),
-      b = await run(mode, generators, email);
+    const a = await run(mode, generators, email);
+    const b = await run(mode, generators, email);
     const context: ComparisonContext = {
       leftBaseURL: a.baseURL,
       rightBaseURL: b.baseURL,
@@ -409,6 +458,7 @@ for (const mode of ["cache", "mixed"] as const)
     };
     const differences = compareValues(a.root, b.root, context);
     expect(differences).toEqual([]);
+
     // Genuine right-side application receipts are captured before HTTP delivery,
     // so their original private observer digest is valid. They exercise field
     // presence in every admitted dictionary rather than failing digest integrity.
@@ -421,12 +471,13 @@ for (const mode of ["cache", "mixed"] as const)
       rightRequestWindows: extra.traces.map((t) => t[requestWindow]),
     };
     const fields = compareValues(a.root, extra.root, extraContext);
+
     for (const path of [
       "applicationReceipt",
       "request.applicationReceipt",
       "before.applicationReceipt",
       "set.applicationReceipt",
-    ])
+    ]) {
       expect(
         fields.some(
           (d) =>
@@ -434,6 +485,8 @@ for (const mode of ["cache", "mixed"] as const)
             d.reason === "field presence differs",
         ),
       ).toBe(true);
+    }
+
     expect(
       fields.some(
         (d) =>
@@ -441,6 +494,7 @@ for (const mode of ["cache", "mixed"] as const)
           d.reason === "field presence differs",
       ),
     ).toBe(true);
+
     const owning = "observation.verificationPublications.0.set.ttl";
     const original = b.root as Row;
     const controls: ((value: Row) => void)[] = [
@@ -475,19 +529,23 @@ for (const mode of ["cache", "mixed"] as const)
       (value) =>
         (value.observation.verificationPublications[0].set.value.identifier = "foreign-identifier"),
     ];
+
     for (const change of controls) {
       const bad = clone(original);
       change(bad);
       expect(compareValues(a.root, bad, context).some((d) => d.path === owning)).toBe(true);
     }
+
     const missing = {
       ...context,
       rightRequestWindows: context.rightRequestWindows!.map((w, i) => (i === 2 ? undefined : w)),
     };
     expect(compareValues(a.root, b.root, missing).some((d) => d.path === owning)).toBe(true);
+
     const observerIndex = original.traces.findIndex(
       (t: Row) => t.path === verificationPublicationObserver,
     );
+
     for (const digest of [undefined, "0".repeat(64), 123]) {
       const changed = {
         ...context,
@@ -497,6 +555,7 @@ for (const mode of ["cache", "mixed"] as const)
       };
       expect(compareValues(a.root, b.root, changed).some((d) => d.path === owning)).toBe(true);
     }
+
     for (const endpoints of [
       { startedAt: NaN },
       { finishedAt: Infinity },
@@ -511,6 +570,7 @@ for (const mode of ["cache", "mixed"] as const)
       };
       expect(compareValues(a.root, b.root, changed).some((d) => d.path === owning)).toBe(true);
     }
+
     // Even internally self-consistent forged observer records fail their actual
     // request/deadline floor rather than receiving a general one-second tolerance.
     for (const change of [
@@ -549,8 +609,8 @@ for (const mode of ["cache", "mixed"] as const)
         p.set.rawValue = JSON.stringify(p.snapshot);
       },
     ]) {
-      const bad = clone(original),
-        p = bad.observation.verificationPublications[0];
+      const bad = clone(original);
+      const p = bad.observation.verificationPublications[0];
       change(p);
       const observer = bad.traces.find((t: Row) => t.path === verificationPublicationObserver);
       observer.responseBody.publications[0] = clone(p);
@@ -559,6 +619,7 @@ for (const mode of ["cache", "mixed"] as const)
         compareValues(a.root, bad, observedMutation(context, bad)).some((d) => d.path === owning),
       ).toBe(true);
     }
+
     const foreign = clone(original);
     foreign.observation.verificationPublications[0] = clone(
       original.observation.verificationPublications[3],
@@ -571,11 +632,13 @@ for (const mode of ["cache", "mixed"] as const)
         (d) => d.path === owning,
       ),
     ).toBe(true);
+
     for (const key of ["metadata", "applicationData", "additionalFields", "custom"]) {
-      const left = { ...(a.root as Row), [key]: { ttl: 300 } },
-        right = { ...original, [key]: { ttl: 299 } };
+      const left = { ...(a.root as Row), [key]: { ttl: 300 } };
+      const right = { ...original, [key]: { ttl: 299 } };
       expect(compareValues(left, right, context).some((d) => d.path === `${key}.ttl`)).toBe(true);
     }
+
     const unknown = {
       ...original,
       observation: { ...original.observation, arbitrary: { ttl: 299 } },
@@ -590,6 +653,7 @@ for (const mode of ["cache", "mixed"] as const)
         context,
       ).some((d) => d.path === "observation.arbitrary.ttl"),
     ).toBe(true);
+
     const unrelated = {
       operation: "set",
       key: "verification:application",
@@ -600,12 +664,14 @@ for (const mode of ["cache", "mixed"] as const)
     expect(
       compareValues(unrelated, { ...unrelated, ttl: 299 }, context).some((d) => d.path === "ttl"),
     ).toBe(true);
+
     const alias = clone(original);
     alias.observation.aliases[0].ttl -= 2;
     expect(
       compareValues(a.root, alias, context).some((d) => d.path === "observation.aliases.0.ttl"),
     ).toBe(true);
   }, 30000);
+}
 
 async function runOAuth(
   mode: "cache" | "mixed",
@@ -614,12 +680,12 @@ async function runOAuth(
   extraEvidence = false,
 ) {
   const instance = await source(
-      mode,
-      { otp: "unused", magic: "unused", transfer: authorizationCode },
-      extraEvidence,
-      email,
-    ),
-    startedAt = Date.now();
+    mode,
+    { otp: "unused", magic: "unused", transfer: authorizationCode },
+    extraEvidence,
+    email,
+  );
+  const startedAt = Date.now();
   try {
     const foreign = await instance.client.signUp.email({
       email: `foreign-${email}`,
@@ -627,6 +693,7 @@ async function runOAuth(
       name: "Foreign Owner",
     });
     expect(foreign.error).toBeNull();
+
     const before = (await (
       await fetch(`${instance.baseURL}/__test/verification-publication-backend`)
     ).json()) as Row;
@@ -636,12 +703,14 @@ async function runOAuth(
       name: "Publication Owner",
     });
     expect(signup.error).toBeNull();
+
     const oauth = await instance.client.signIn.social({
       provider: "publication",
       callbackURL: `${instance.baseURL}/ok`,
       disableRedirect: true,
     });
     expect(oauth.error).toBeNull();
+
     const foreignFetch = createTracingFetch(
       instance.baseURL,
       "foreign-producer",
@@ -658,23 +727,29 @@ async function runOAuth(
       disableRedirect: true,
     });
     expect(foreignOauth.error).toBeNull();
+
     const observer = await instance.fetch(`${instance.baseURL}${verificationPublicationObserver}`);
     expect(observer.status).toBe(200);
+
     const body = (await observer.json()) as Row;
     expect(body.publications).toHaveLength(2);
+
     const issued = (await (
       await fetch(`${instance.baseURL}/__test/verification-publication-backend`)
     ).json()) as Row;
     expect(typeof oauth.data!.url).toBe("string");
+
     const completed = await instance.fetch(oauth.data!.url!);
     expect(completed.status).toBe(200);
     expect(await completed.json()).toEqual({ completed: true });
+
     const complete = (await (
       await fetch(`${instance.baseURL}/__test/verification-publication-backend`)
     ).json()) as Row;
+
     for (const publication of body.publications) {
-      const value = JSON.parse(publication.snapshot.value),
-        expiry = Date.parse(publication.snapshot.expiresAt);
+      const value = JSON.parse(publication.snapshot.value);
+      const expiry = Date.parse(publication.snapshot.expiresAt);
       expect(value.oauthState).toMatch(/^[a-zA-Z0-9_-]{32}$/);
       expect(value.codeVerifier).toMatch(/^[a-zA-Z0-9_-]{128}$/);
       expect(expiry).toBeGreaterThanOrEqual(Date.parse(publication.request.startedAt) + 600000);
@@ -700,20 +775,24 @@ async function runOAuth(
         Date.parse(publication.set.storedAt) + publication.set.ttl * 1000,
       );
     }
-    const primary = body.publications[0],
-      ownedForeign = body.publications[1];
+
+    const primary = body.publications[0];
+    const ownedForeign = body.publications[1];
     expect(issued.backend.verificationRows).toHaveLength(mode === "mixed" ? 2 : 0);
     expect(complete.backend.verificationRows).toHaveLength(mode === "mixed" ? 1 : 0);
     expect(complete.backend.cache.some((entry: Row) => entry.key === primary.set.key)).toBe(false);
     expect(complete.backend.cache.find((entry: Row) => entry.key === ownedForeign.set.key)).toEqual(
       issued.backend.cache.find((entry: Row) => entry.key === ownedForeign.set.key),
     );
-    if (mode === "mixed")
+
+    if (mode === "mixed") {
       expect(complete.backend.verificationRows[0]).toEqual(
         issued.backend.verificationRows.find(
           (entry: Row) => entry.identifier === ownedForeign.snapshot.identifier,
         ),
       );
+    }
+
     expect(complete.oauthReceipts.map((receipt: Row) => receipt.stage)).toEqual([
       "authorize",
       "grant",
@@ -725,16 +804,23 @@ async function runOAuth(
     expect(complete.backend.users).toHaveLength(3);
     expect(complete.backend.accounts).toHaveLength(3);
     expect(complete.backend.sessions).toHaveLength(3);
-    for (const field of ["users", "accounts", "sessions"])
+
+    for (const field of ["users", "accounts", "sessions"]) {
       expect(
         complete.backend[field].find((entry: Row) => entry.id === before.backend[field][0].id),
       ).toEqual(before.backend[field][0]);
-    for (const entry of before.backend.cache)
+    }
+
+    for (const entry of before.backend.cache) {
       expect(complete.backend.cache.find((item: Row) => item.key === entry.key)).toEqual(entry);
+    }
+
     for (const account of complete.backend.accounts.filter(
       (entry: Row) => entry.providerId === "credential",
-    ))
+    )) {
       expect(await verifyPassword({ password: "password123", hash: account.password })).toBe(true);
+    }
+
     const root = normalizeClientValue({
       observation: {
         foreign,
@@ -747,8 +833,8 @@ async function runOAuth(
       },
       traces: instance.traces,
     });
-    const finishedAt = Date.now(),
-      windows = instance.traces.map((trace) => trace[requestWindow]);
+    const finishedAt = Date.now();
+    const windows = instance.traces.map((trace) => trace[requestWindow]);
     return { root, windows, startedAt, finishedAt, baseURL: instance.baseURL };
   } finally {
     instance.server.stop(true);
@@ -756,12 +842,12 @@ async function runOAuth(
   }
 }
 
-for (const mode of ["cache", "mixed"] as const)
+for (const mode of ["cache", "mixed"] as const) {
   test(`actual Source ${mode} default600 OAuth publications bind signed state PKCE consumption and reject forged receipts`, async () => {
     const email = `${randomBytes(12).toString("hex")}@test.com`;
     const authorizationCode = randomBytes(24).toString("base64url");
-    const a = await runOAuth(mode, email, authorizationCode),
-      b = await runOAuth(mode, email, authorizationCode);
+    const a = await runOAuth(mode, email, authorizationCode);
+    const b = await runOAuth(mode, email, authorizationCode);
     const context: ComparisonContext = {
       leftBaseURL: a.baseURL,
       rightBaseURL: b.baseURL,
@@ -780,8 +866,8 @@ for (const mode of ["cache", "mixed"] as const)
       const windows = run.windows.filter((_, index) =>
         (run.root as Row).traces[index].path.endsWith("/sign-in/social"),
       );
-      const startedAt = Math.min(...windows.map((window) => window!.startedAt)),
-        finishedAt = Math.max(...windows.map((window) => window!.finishedAt));
+      const startedAt = Math.min(...windows.map((window) => window!.startedAt));
+      const finishedAt = Math.max(...windows.map((window) => window!.finishedAt));
       return run.windows.map((window, index) =>
         (run.root as Row).traces[index].path.endsWith("/sign-in/social")
           ? { ...window!, startedAt, finishedAt }
@@ -795,8 +881,9 @@ for (const mode of ["cache", "mixed"] as const)
     };
     expect(compareValues(a.root, b.root, overlapping)).toEqual([]);
     expect(compareValues(a.root, b.root, context)).toEqual([]);
-    const original = b.root as Row,
-      owning = "observation.verificationPublications.0.set.ttl";
+
+    const original = b.root as Row;
+    const owning = "observation.verificationPublications.0.set.ttl";
     const observerIndex = original.traces.findIndex(
       (trace: Row) => trace.path === verificationPublicationObserver,
     );
@@ -822,6 +909,7 @@ for (const mode of ["cache", "mixed"] as const)
     expect(
       compareValues(a.root, b.root, foreignState).some((difference) => difference.path === owning),
     ).toBe(true);
+
     for (const change of [
       (p: Row) => {
         p.set.ttl =
@@ -880,8 +968,8 @@ for (const mode of ["cache", "mixed"] as const)
         p.set.storageExpiresAt = new Date(Date.parse(p.set.storageExpiresAt) + 1000).toISOString();
       },
     ]) {
-      const bad = clone(original),
-        publication = bad.observation.verificationPublications[0];
+      const bad = clone(original);
+      const publication = bad.observation.verificationPublications[0];
       change(publication);
       bad.traces[observerIndex].responseBody.publications[0] = clone(publication);
       bad.observation.aliases[0] = clone(publication.set);
@@ -891,6 +979,7 @@ for (const mode of ["cache", "mixed"] as const)
         ),
       ).toBe(true);
     }
+
     for (const changed of [
       {
         ...context,
@@ -914,10 +1003,12 @@ for (const mode of ["cache", "mixed"] as const)
           index === observerIndex ? { ...window!, verificationObserverDigest: undefined } : window,
         ),
       },
-    ])
+    ]) {
       expect(
         compareValues(a.root, b.root, changed).some((difference) => difference.path === owning),
       ).toBe(true);
+    }
+
     const foreign = clone(original);
     foreign.observation.verificationPublications[0] = clone(
       original.observation.verificationPublications[1],
@@ -930,13 +1021,15 @@ for (const mode of ["cache", "mixed"] as const)
         (difference) => difference.path === owning,
       ),
     ).toBe(true);
-    const challenge = clone(original),
-      url = new URL(challenge.traces[producerIndex].responseBody.url);
+
+    const challenge = clone(original);
+    const url = new URL(challenge.traces[producerIndex].responseBody.url);
     url.searchParams.set("code_challenge", "x".repeat(43));
     challenge.traces[producerIndex].responseBody.url = url.href;
     expect(
       compareValues(a.root, challenge, context).some((difference) => difference.path === owning),
     ).toBe(true);
+
     const extra = await runOAuth(mode, email, authorizationCode, true);
     const extraContext = {
       ...context,
@@ -946,12 +1039,13 @@ for (const mode of ["cache", "mixed"] as const)
       rightRequestWindows: extra.windows,
     };
     const fields = compareValues(a.root, extra.root, extraContext);
+
     for (const path of [
       "applicationReceipt",
       "request.applicationReceipt",
       "before.applicationReceipt",
       "set.applicationReceipt",
-    ])
+    ]) {
       expect(
         fields.some(
           (difference) =>
@@ -959,7 +1053,9 @@ for (const mode of ["cache", "mixed"] as const)
             difference.reason === "field presence differs",
         ),
       ).toBe(true);
-    for (const key of ["metadata", "custom", "additionalFields", "applicationData"])
+    }
+
+    for (const key of ["metadata", "custom", "additionalFields", "applicationData"]) {
       expect(
         compareValues(
           { ...(a.root as Row), [key]: { expiresAt: 600000, ttl: 600 } },
@@ -967,21 +1063,27 @@ for (const mode of ["cache", "mixed"] as const)
           context,
         ).some((difference) => difference.path === `${key}.ttl`),
       ).toBe(true);
+    }
   }, 30000);
+}
 
 // Independent generated codes exercise receipt-to-delivery identity rather than
 // changing the original default lifetime owners' shared public generators.
 test("actual Source independent OTP codes bind complete publications and delivery while counters and foreign producers remain literal", async () => {
   const leftCode = String(randomInt(100000, 1000000));
   let rightCode = String(randomInt(100000, 1000000));
-  while (rightCode === leftCode) rightCode = String(randomInt(100000, 1000000));
+
+  while (rightCode === leftCode) {
+    rightCode = String(randomInt(100000, 1000000));
+  }
+
   const shared = {
     magic: randomBytes(24).toString("base64url"),
     transfer: randomBytes(24).toString("base64url"),
   };
   const email = `${randomBytes(12).toString("hex")}@test.com`;
-  const a = await run("cache", { otp: leftCode, ...shared }, email),
-    b = await run("cache", { otp: rightCode, ...shared }, email);
+  const a = await run("cache", { otp: leftCode, ...shared }, email);
+  const b = await run("cache", { otp: rightCode, ...shared }, email);
   const context: ComparisonContext = {
     leftBaseURL: a.baseURL,
     rightBaseURL: b.baseURL,
@@ -995,12 +1097,14 @@ test("actual Source independent OTP codes bind complete publications and deliver
   };
   const differences = compareValues(a.root, b.root, context);
   expect(differences).toEqual([]);
-  const original = b.root as Row,
-    observerIndex = original.traces.findIndex(
-      (t: Row) => t.path === verificationPublicationObserver,
-    );
+
+  const original = b.root as Row;
+  const observerIndex = original.traces.findIndex(
+    (t: Row) => t.path === verificationPublicationObserver,
+  );
   const owning = "observation.verificationPublications.0.set.ttl";
   const changedCode = rightCode === "999999" ? "999998" : "999999";
+
   for (const change of [
     (p: Row) => {
       p.delivery.otp = changedCode;
@@ -1015,8 +1119,8 @@ test("actual Source independent OTP codes bind complete publications and deliver
       p.request = clone(original.observation.verificationPublications[3].request);
     },
   ]) {
-    const bad = clone(original),
-      publication = bad.observation.verificationPublications[0];
+    const bad = clone(original);
+    const publication = bad.observation.verificationPublications[0];
     change(publication);
     bad.observation.aliases[0] = clone(publication.set);
     bad.traces[observerIndex].responseBody.publications[0] = clone(publication);
@@ -1025,6 +1129,7 @@ test("actual Source independent OTP codes bind complete publications and deliver
       compareValues(a.root, bad, observedMutation(context, bad)).some((d) => d.path === owning),
     ).toBe(true);
   }
+
   const delivery = clone(original);
   delivery.traces[observerIndex].responseBody.deliveries[0].otp = changedCode;
   expect(
@@ -1032,6 +1137,7 @@ test("actual Source independent OTP codes bind complete publications and deliver
       (d) => d.path === `traces.${observerIndex}.responseBody.deliveries.0.otp`,
     ),
   ).toBe(true);
+
   const counter = clone(original);
   counter.observation.aliases[0].value.value = `${rightCode}:1`;
   expect(
@@ -1039,7 +1145,8 @@ test("actual Source independent OTP codes bind complete publications and deliver
       (d) => d.path === "observation.aliases.0.value.value",
     ),
   ).toBe(true);
-  for (const key of ["metadata", "applicationData", "additionalFields", "custom"])
+
+  for (const key of ["metadata", "applicationData", "additionalFields", "custom"]) {
     expect(
       compareValues(
         { [key]: { otp: leftCode, value: `${leftCode}:0` } },
@@ -1047,4 +1154,5 @@ test("actual Source independent OTP codes bind complete publications and deliver
         context,
       ).some((d) => d.path === `${key}.otp`),
     ).toBe(true);
+  }
 }, 30000);

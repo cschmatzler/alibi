@@ -1,8 +1,10 @@
 import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
+
 import { createAuthClient } from "better-auth/client";
 import { phoneNumberClient, twoFactorClient } from "better-auth/client/plugins";
 import { z } from "zod";
+
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario } from "../../support/scenario";
 
@@ -24,16 +26,23 @@ export function phoneEnrollmentCode(uri: string) {
   const bytes: number[] = [];
   let bits = 0;
   let value = 0;
+
   for (const character of secret.toUpperCase().replace(/=+$/g, "")) {
     const digit = alphabet.indexOf(character);
-    if (digit < 0) throw new Error("Enrollment secret must use base32");
+
+    if (digit < 0) {
+      throw new Error("Enrollment secret must use base32");
+    }
+
     value = (value << 5) | digit;
     bits += 5;
+
     if (bits >= 8) {
       bits -= 8;
       bytes.push((value >>> bits) & 255);
     }
   }
+
   const period = Number(url.searchParams.get("period") ?? "30");
   const digits = Number(url.searchParams.get("digits") ?? "6");
   const counter = Buffer.alloc(8);
@@ -60,10 +69,14 @@ export async function readPhoneOtp(
   url.searchParams.set("type", type);
   const response = await fetch(url);
   expect(response.status).toBe(200);
+
   const value: unknown = await response.json();
   const parsed = z.object({ code: z.string().min(1) }).safeParse(value);
-  if (!parsed.success)
+
+  if (!parsed.success) {
     throw new Error("Phone challenge issuance must deliver a code for the intended number");
+  }
+
   return parsed.data.code;
 }
 
@@ -93,10 +106,14 @@ export async function readPhoneState(ctx: ScenarioContext, profile: PhoneProfile
   url.searchParams.set("profile", profile);
   const response = await fetch(url);
   expect(response.status).toBe(200);
+
   const value: unknown = await response.json();
   const parsed = stateSchema.safeParse(value);
-  if (!parsed.success)
+
+  if (!parsed.success) {
     throw new Error("Phone fixture must expose persisted phone ownership and verification fields");
+  }
+
   return parsed.data;
 }
 
@@ -116,6 +133,7 @@ export async function phoneRequest(
     });
   const text = await response.text();
   let value: unknown = null;
+
   if (text) {
     try {
       value = JSON.parse(text);
@@ -123,10 +141,13 @@ export async function phoneRequest(
       value = text;
     }
   }
+
   return { status: response.status, body: value };
 }
 
 export function phoneUser<T extends { id: string }>(user: T | null | undefined): T {
-  if (!user) throw new Error("Successful phone authentication must return the persisted user");
+  if (!user) {
+    throw new Error("Successful phone authentication must return the persisted user");
+  }
   return user;
 }

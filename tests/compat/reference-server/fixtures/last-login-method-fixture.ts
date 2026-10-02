@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import {
@@ -10,24 +11,34 @@ import {
   username,
 } from "better-auth/plugins";
 import { siwe } from "better-auth/plugins/siwe";
+
 import { verifyFixtureEip191 } from "./siwe-fixture";
 
 function callbackValue(value: any): any {
-  if (typeof value === "number" && (!Number.isFinite(value) || Object.is(value, -0)))
+  if (typeof value === "number" && (!Number.isFinite(value) || Object.is(value, -0))) {
     return { $number: Object.is(value, -0) ? "-0" : String(value) };
-  if (Array.isArray(value)) return value.map(callbackValue);
-  if (value && typeof value === "object")
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(callbackValue);
+  }
+
+  if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [key, callbackValue(item)]),
     );
+  }
+
   return value;
 }
+
 /** Configured application callbacks observing the actual pinned plugin boundaries. */
 export async function createLastLoginMethodFixture(base: BetterAuthOptions, database: Database) {
   const events: unknown[] = [];
   const deliveries = new Map<string, unknown>();
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   let sequence = 0;
+
   for (const mode of [
     "default",
     "database",
@@ -151,60 +162,95 @@ export async function createLastLoginMethodFixture(base: BetterAuthOptions, data
                     : {}),
           customResolveMethod(ctx) {
             observe("resolve", ctx);
+
             if (
               mode === "resolver-error" &&
               ctx.headers?.get("x-last-login-resolver-error") === "true"
-            )
+            ) {
               throw new Error("application resolver failed");
-            if (mode === "custom" && ctx.headers?.get("x-last-login-body") === "true")
+            }
+
+            if (mode === "custom" && ctx.headers?.get("x-last-login-body") === "true") {
               return `body:${String(ctx.body.extra.overflow)}:${Object.is(ctx.body.extra.zero, -0) ? "-0" : "other"}`;
-            if (mode === "custom" || mode === "update-error")
+            }
+
+            if (mode === "custom" || mode === "update-error") {
               return ctx.headers?.get("x-last-login-method") ?? null;
+            }
+
             return null;
           },
           beforeStoreCookie: async (ctx, method) => {
             await Promise.resolve();
             const event = observe("cookie", ctx, method);
-            if (ctx.headers?.get("x-last-login-body") === "true" && ctx.request)
+
+            if (ctx.headers?.get("x-last-login-body") === "true" && ctx.request) {
               Object.assign(event, {
                 requestBody: await ctx.request.clone().text(),
               });
-            if (mode === "cookie-error") throw new Error("application consent failed");
+            }
+
+            if (mode === "cookie-error") {
+              throw new Error("application consent failed");
+            }
+
             return mode !== "denied";
           },
         }),
       ],
     };
-    if (mode === "database") await (await getMigrations(options)).runMigrations();
+
+    if (mode === "database") {
+      await (await getMigrations(options)).runMigrations();
+    }
+
     profiles.set(name, betterAuth(options));
   }
+
   return {
     profiles,
     async handle(request: Request) {
       const url = new URL(request.url);
-      if (url.pathname !== "/__test/last-login-method") return null;
-      if (request.method === "GET")
+
+      if (url.pathname !== "/__test/last-login-method") {
+        return null;
+      }
+
+      if (request.method === "GET") {
         return Response.json({
           events: [...events],
           users: database
             .query("SELECT id,email,name,lastLoginMethod FROM user ORDER BY email,id")
             .all(),
         });
+      }
+
       const body = (await request.json()) as Record<string, unknown>;
-      if (body.action === "clear") events.length = 0;
+
+      if (body.action === "clear") {
+        events.length = 0;
+      }
+
       if (body.action === "reset") {
         events.length = 0;
         sequence = 0;
         deliveries.clear();
       }
-      if (body.action === "delivery")
+
+      if (body.action === "delivery") {
         return Response.json(deliveries.get(String(body.key)) ?? null);
-      if (body.action === "update-error")
+      }
+
+      if (body.action === "update-error") {
         database.exec(
           "CREATE TRIGGER last_login_update_error BEFORE UPDATE OF lastLoginMethod ON user BEGIN SELECT RAISE(ABORT,'application update rejected'); END",
         );
-      if (body.action === "restore-updates")
+      }
+
+      if (body.action === "restore-updates") {
         database.exec("DROP TRIGGER IF EXISTS last_login_update_error");
+      }
+
       return Response.json({ changed: true });
     },
   };

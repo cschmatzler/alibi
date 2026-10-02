@@ -1,18 +1,21 @@
 /** Trusted controlled interface to the actual pinned server-only operation. */
 
 import type { Database } from "bun:sqlite";
+
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { hashPassword, verifyPassword } from "better-auth/crypto";
 import { twoFactor } from "better-auth/plugins";
+
 export function createSetPasswordFixture(database: Database, options: BetterAuthOptions) {
   const events: Record<string, unknown>[] = [];
-  let mode = "normal",
-    waiters: (() => void)[] = [],
-    ordinal = 0,
-    firstHash: string | undefined,
-    watchUserId = "";
+  let mode = "normal";
+  let waiters: (() => void)[] = [];
+  let ordinal = 0;
+  let firstHash: string | undefined;
+  let watchUserId = "";
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
+
   for (const name of ["set-password-default", "set-password-policy", "set-password-cache"]) {
     profiles.set(
       name,
@@ -54,8 +57,11 @@ export function createSetPasswordFixture(database: Database, options: BetterAuth
                 ...(order !== undefined ? { order } : {}),
               });
               const hash = await hashPassword(password);
+
               if (mode === "barrier") {
-                if (order === 0) firstHash = hash;
+                if (order === 0) {
+                  firstHash = hash;
+                }
                 await new Promise<void>((resolve) => {
                   waiters.push(resolve);
                   if (waiters.length === 2) {
@@ -71,19 +77,25 @@ export function createSetPasswordFixture(database: Database, options: BetterAuth
                       .query("SELECT id FROM account WHERE userId=? AND password=?")
                       .get(watchUserId, firstHash!)
                   ) {
-                    if (Date.now() > deadline)
+                    if (Date.now() > deadline) {
                       throw new Error("Actual credential write did not complete");
+                    }
                     await new Promise((resolve) => setTimeout(resolve, 5));
                   }
                 }
               }
+
               events.push({
                 stage: "hash-result",
                 password,
                 hash,
                 ...(order !== undefined ? { order } : {}),
               });
-              if (mode === "hash-error") throw new Error("Actual configured hash callback failed");
+
+              if (mode === "hash-error") {
+                throw new Error("Actual configured hash callback failed");
+              }
+
               return hash;
             },
             verify: verifyPassword,
@@ -92,13 +104,15 @@ export function createSetPasswordFixture(database: Database, options: BetterAuth
       }),
     );
   }
+
   return {
     profiles,
     async handle(request: Request): Promise<Response | undefined> {
       const url = new URL(request.url);
+
       if (url.pathname === "/__test/set-password/state") {
-        const instance = profiles.get("set-password-default")!,
-          ctx = await instance.$context;
+        const instance = profiles.get("set-password-default")!;
+        const ctx = await instance.$context;
         const read = (model: "user" | "account" | "session") =>
           ctx.adapter.findMany<Record<string, unknown>>({
             model,
@@ -111,11 +125,14 @@ export function createSetPasswordFixture(database: Database, options: BetterAuth
           events,
         });
       }
+
       if (
         !["/__test/set-password", "/__test/server-api/set-password"].includes(url.pathname) ||
         request.method !== "POST"
-      )
+      ) {
         return;
+      }
+
       const body = (await request.json()) as {
         operation?: string;
         profile?: string;
@@ -127,8 +144,13 @@ export function createSetPasswordFixture(database: Database, options: BetterAuth
         expiresAt?: string;
       };
       const instance = profiles.get(body.profile ?? "set-password-default");
-      if (!instance) return Response.json({ message: "unknown fixture profile" }, { status: 400 });
+
+      if (!instance) {
+        return Response.json({ message: "unknown fixture profile" }, { status: 400 });
+      }
+
       const ctx = await instance.$context;
+
       if (body.operation === "mode") {
         mode = body.mode ?? "normal";
         events.length = 0;
@@ -137,6 +159,7 @@ export function createSetPasswordFixture(database: Database, options: BetterAuth
         watchUserId = body.userId ?? "";
         return Response.json({ status: true, mode });
       }
+
       if (body.operation === "misbind-credential") {
         await ctx.internalAdapter.updateAccount(body.accountId!, {
           accountId: body.userId!,
@@ -144,16 +167,19 @@ export function createSetPasswordFixture(database: Database, options: BetterAuth
         });
         return Response.json({ status: true });
       }
+
       if (body.operation === "clear-password") {
         await ctx.internalAdapter.updateAccount(body.accountId!, {
           password: null,
         });
         return Response.json({ status: true });
       }
+
       if (body.operation === "revoke") {
         await ctx.internalAdapter.deleteSession(body.token!);
         return Response.json({ status: true });
       }
+
       if (body.operation === "expire") {
         await ctx.adapter.update({
           model: "session",
@@ -165,6 +191,7 @@ export function createSetPasswordFixture(database: Database, options: BetterAuth
         });
         return Response.json({ status: true });
       }
+
       if (body.operation === "set") {
         let trigger = false;
         try {
@@ -183,9 +210,12 @@ export function createSetPasswordFixture(database: Database, options: BetterAuth
             asResponse: true,
           });
         } finally {
-          if (trigger) database.run("DROP TRIGGER set_password_store_failure");
+          if (trigger) {
+            database.run("DROP TRIGGER set_password_store_failure");
+          }
         }
       }
+
       return Response.json({ message: "unknown operation" }, { status: 400 });
     },
   };

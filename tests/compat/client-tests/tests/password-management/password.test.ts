@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario } from "../../support/scenario";
 
 const deliveredReset = z.object({
@@ -26,14 +28,17 @@ compatScenario(
     expect(signup.error).toBeNull();
     expect(signup.data?.user).toMatchObject({ username: null, displayUsername: null });
     expect(requestReset.error).toBeNull();
+
     const delivery = await ctx.rawRequest({
       path: `/__test/reset-password-token?email=${encodeURIComponent(email)}`,
     });
     expect(delivery.status).toBe(200);
+
     const { token, url } = deliveredReset.parse(delivery.body);
     const callback = await ctx.rawRequest({ path: url, redirect: "manual" });
     expect(callback.status).toBe(302);
     expect(new URL(callback.location!, ctx.baseURL).searchParams.get("token")).toBe(token);
+
     const reset = await primary.client.resetPassword({
       newPassword: "newPassword123!",
       token,
@@ -46,6 +51,7 @@ compatScenario(
     expect(signin.error).toBeNull();
     expect(signin.data?.user.id).toBe(signup.data?.user.id);
     expect(signin.data?.user).toMatchObject({ username: null, displayUsername: null });
+
     const oldPassword = await ctx
       .actor("old-password")
       .client.signIn.email({ email, password: "password123" });
@@ -126,6 +132,7 @@ compatScenario("reset password token cannot be reused", async (ctx) => {
     path: `/__test/reset-password-token?email=${encodeURIComponent(email)}`,
   });
   expect(delivery.status).toBe(200);
+
   const { token } = deliveredReset.parse(delivery.body);
 
   const first = await primary.client.resetPassword({
@@ -163,10 +170,12 @@ compatScenario(
       redirectTo: callbackURL,
     });
     expect(requested.error).toBeNull();
+
     const delivery = await ctx.rawRequest({
       path: `/__test/reset-password-token?email=${encodeURIComponent(email)}`,
     });
     expect(delivery.status).toBe(200);
+
     const { token, url } = deliveredReset.parse(delivery.body);
 
     const callback = await ctx.rawRequest({
@@ -174,6 +183,7 @@ compatScenario(
       redirect: "manual",
     });
     expect(callback.status).toBe(302);
+
     const location = new URL(callback.location!, ctx.baseURL);
     expect(location.searchParams.get("token")).toBe(token);
     expect(location.searchParams.get("foo")).toBe("bar");

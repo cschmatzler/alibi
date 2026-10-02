@@ -18,9 +18,14 @@ export const numericModes = [
   "lifetime-infinity",
   "lifetime-negative-infinity",
 ] as const;
+
 export function numericOptions(name: string) {
   const mode = name.split("-numeric-")[1];
-  if (!mode) return {};
+
+  if (!mode) {
+    return {};
+  }
+
   const [kind, ...parts] = mode.split("-");
   const values: Record<string, number> = {
     zero: 0,
@@ -31,7 +36,11 @@ export function numericOptions(name: string) {
     "negative-infinity": -Infinity,
   };
   const value = values[parts.join("-")];
-  if (value === undefined) throw new Error("Unknown numeric fixture mode");
+
+  if (value === undefined) {
+    throw new Error("Unknown numeric fixture mode");
+  }
+
   return kind === "length"
     ? { otpLength: value }
     : kind === "attempts"

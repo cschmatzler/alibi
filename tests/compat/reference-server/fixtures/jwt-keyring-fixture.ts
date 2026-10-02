@@ -1,5 +1,6 @@
 /** Application-owned SQLite keys reached by the actual published JWT plugin. */
 import { Database } from "bun:sqlite";
+
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { createJwk, jwt, resolveSigningKey, signJWT } from "better-auth/plugins/jwt";
@@ -15,6 +16,7 @@ type StoredKey = {
   alg: string | null;
   crv: string | null;
 };
+
 type Race = {
   first: Promise<void>;
   firstDone: () => void;
@@ -24,6 +26,7 @@ type Race = {
   second: Promise<void>;
   secondDone: () => void;
 };
+
 function deferred() {
   let done!: () => void;
   const promise = new Promise<void>((resolve) => {
@@ -31,16 +34,24 @@ function deferred() {
   });
   return { promise, done };
 }
+
 // The application encodes its numeric cache clock losslessly for its JWT
 // snapshot. The tag retains the callback input type as well as its full value.
 function snapshot(session: any) {
-  if (!Object.hasOwn(session, "updatedAt")) return session;
+  if (!Object.hasOwn(session, "updatedAt")) {
+    return session;
+  }
+
   const value = session.updatedAt;
   const date = new Date(value);
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || date.getTime() !== value)
+
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || date.getTime() !== value) {
     throw new Error("invalid cache clock");
+  }
+
   return { ...session, updatedAt: date.toISOString(), updatedAtType: "number" };
 }
+
 async function bounded(promise: Promise<void>) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -57,6 +68,7 @@ async function bounded(promise: Promise<void>) {
     clearTimeout(timer);
   }
 }
+
 export function createJwtKeyringFixture(base: BetterAuthOptions, database: Database) {
   database.exec(`CREATE TABLE IF NOT EXISTS fixtureJwtKeyring (
     rowId INTEGER PRIMARY KEY AUTOINCREMENT, profile TEXT NOT NULL, id TEXT,
@@ -67,11 +79,13 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
   let race: Race | null = null;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   const configurations = new Map<string, any>();
+
   function rows(profile: string) {
     return database
       .query<StoredKey, [string]>("SELECT * FROM fixtureJwtKeyring WHERE profile=? ORDER BY rowId")
       .all(profile);
   }
+
   function key(row: StoredKey) {
     return {
       id: row.id,
@@ -83,17 +97,21 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
       ...(row.crv === null ? {} : { crv: row.crv }),
     };
   }
+
   function observed(row: StoredKey) {
-    let publicKey: unknown,
-      encrypted = false;
+    let publicKey: unknown;
+    let encrypted = false;
+
     try {
       publicKey = JSON.parse(row.publicKey);
     } catch {
       publicKey = row.publicKey;
     }
+
     try {
       encrypted = typeof JSON.parse(row.privateKey) === "string";
     } catch {}
+
     return {
       id: row.id,
       publicKey,
@@ -104,6 +122,7 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
       crv: row.crv,
     };
   }
+
   function context(ctx: any) {
     return {
       path: ctx.path ?? null,
@@ -112,20 +131,29 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
       hasCookie: !!ctx.headers?.get("cookie"),
     };
   }
+
   function reject(operation: string) {
-    if (failure?.operation !== operation) return;
-    if (failure.kind === "api")
+    if (failure?.operation !== operation) {
+      return;
+    }
+
+    if (failure.kind === "api") {
       throw new APIError("FORBIDDEN", {
         code: "APPLICATION_KEYRING_DENIED",
         message: "application denied keys",
       });
-    if (failure.kind === "api500")
+    }
+
+    if (failure.kind === "api500") {
       throw new APIError("INTERNAL_SERVER_ERROR", {
         code: "APPLICATION_KEYRING_DENIED",
         message: "application denied keys",
       });
+    }
+
     throw new Error("application keyring failed");
   }
+
   for (const mode of [
     "standard",
     "plain",
@@ -139,7 +167,11 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
       getJwks: async (ctx: any) => {
         const marker = ctx.headers?.get("x-keyring-proof");
         const scheduled = race;
-        if (scheduled && marker === "race-second") await bounded(scheduled.first);
+
+        if (scheduled && marker === "race-second") {
+          await bounded(scheduled.first);
+        }
+
         const result = rows(name).map(key);
         events.push({
           operation: "read",
@@ -148,21 +180,30 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
           ids: result.map((key) => key.id),
         });
         reject("read");
+
         if (
           scheduled &&
           result.length === 0 &&
           (marker === "race-first" || marker === "race-second")
         ) {
-          if (marker === "race-first") scheduled.firstDone();
-          if (++scheduled.entered === 2) scheduled.bothDone();
+          if (marker === "race-first") {
+            scheduled.firstDone();
+          }
+          if (++scheduled.entered === 2) {
+            scheduled.bothDone();
+          }
           await bounded(scheduled.both);
         }
+
         return result;
       },
       createJwk: async (data: any, ctx: any) => {
         const scheduled = race;
-        if (scheduled && ctx.headers?.get("x-keyring-proof") === "race-second")
+
+        if (scheduled && ctx.headers?.get("x-keyring-proof") === "race-second") {
           await bounded(scheduled.second);
+        }
+
         events.push({
           operation: "create",
           profile: name,
@@ -253,27 +294,37 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
       }),
     );
   }
+
   return {
     profiles,
     async handle(request: Request) {
-      if (new URL(request.url).pathname !== "/__test/jwt-keyring") return null;
+      if (new URL(request.url).pathname !== "/__test/jwt-keyring") {
+        return null;
+      }
+
       const body = (await request.json()) as any;
       const profile = body.profile ?? "jwt-keyring-standard";
       const auth = profiles.get(profile);
       const options = configurations.get(profile);
-      if (!auth) return Response.json({ message: "unknown keyring profile" }, { status: 400 });
+
+      if (!auth) {
+        return Response.json({ message: "unknown keyring profile" }, { status: 400 });
+      }
+
       if (body.operation === "reset") {
         database.query("DELETE FROM fixtureJwtKeyring").run();
         database.query("DELETE FROM sqlite_sequence WHERE name='fixtureJwtKeyring'").run();
         events.length = 0;
         failure = null;
         race = null;
-      } else if (body.operation === "clear-events") events.length = 0;
-      else if (body.operation === "failure") failure = body.failure ?? null;
-      else if (body.operation === "race-arm") {
-        const first = deferred(),
-          both = deferred(),
-          second = deferred();
+      } else if (body.operation === "clear-events") {
+        events.length = 0;
+      } else if (body.operation === "failure") {
+        failure = body.failure ?? null;
+      } else if (body.operation === "race-arm") {
+        const first = deferred();
+        const both = deferred();
+        const second = deferred();
         race = {
           first: first.promise,
           firstDone: first.done,
@@ -287,26 +338,29 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
       } else if (body.operation === "race-release") {
         race?.secondDone();
         return Response.json({ released: true });
-      } else if (body.operation === "expire")
+      } else if (body.operation === "expire") {
         database
           .query("UPDATE fixtureJwtKeyring SET expiresAt=? WHERE profile=? AND id=?")
           .run(Date.parse(body.expiresAt), profile, body.id);
-      else if (body.operation === "corrupt") {
+      } else if (body.operation === "corrupt") {
         const column = body.field === "public" ? "publicKey" : "privateKey";
         database
           .query(`UPDATE fixtureJwtKeyring SET ${column}=? WHERE profile=? AND id=?`)
           .run(body.field === "public" ? "corrupt" : '"corrupt"', profile, body.id);
-      } else if (body.operation === "legacy")
+      } else if (body.operation === "legacy") {
         database
           .query("UPDATE fixtureJwtKeyring SET alg=NULL,crv=NULL WHERE profile=? AND id=?")
           .run(profile, body.id);
-      else if (body.operation === "delete")
+      } else if (body.operation === "delete") {
         database
           .query("DELETE FROM fixtureJwtKeyring WHERE profile=? AND id=?")
           .run(profile, body.id);
-      else if (["sign", "resolve-sign", "create", "verify", "api-sign"].includes(body.operation)) {
+      } else if (
+        ["sign", "resolve-sign", "create", "verify", "api-sign"].includes(body.operation)
+      ) {
         try {
           const transport = body.absentRequest ? {} : { request, headers: request.headers };
+
           if (body.operation === "api-sign") {
             const signed = await auth.api.signJWT({
               ...transport,
@@ -314,6 +368,7 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
             });
             return Response.json(signed instanceof Response ? await signed.json() : signed);
           }
+
           if (body.operation === "verify") {
             const verified = await auth.api.verifyJWT({
               ...transport,
@@ -324,7 +379,9 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
             });
             return Response.json(verified instanceof Response ? await verified.json() : verified);
           }
+
           let configured = options;
+
           if (body.expiration) {
             const expiration = body.expiration.nan
               ? NaN
@@ -337,16 +394,19 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
                     : (body.expiration.source ?? body.expiration.number);
             configured = { ...options, jwt: { ...options.jwt, expirationTime: expiration } };
           }
+
           const ctx = {
             context: await auth.$context,
             path: "/__test/jwt-keyring",
             request,
             headers: request.headers,
           } as any;
+
           if (body.operation === "create") {
             await createJwk(ctx, configured);
             return Response.json({ created: true });
           }
+
           const overrides = {
             signingKeyId: body.signingKeyId,
             signingAlgorithm: body.signingAlgorithm,
@@ -366,8 +426,10 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
         } catch {
           return Response.json({ message: "Internal server error" }, { status: 500 });
         }
-      } else if (body.operation !== "state")
+      } else if (body.operation !== "state") {
         return Response.json({ message: "unknown keyring operation" }, { status: 400 });
+      }
+
       return Response.json({ keys: rows(profile).map(observed), events: [...events] });
     },
   };

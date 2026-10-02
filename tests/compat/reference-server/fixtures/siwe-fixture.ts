@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
@@ -27,22 +28,40 @@ function digest(message: string): Uint8Array {
 
 function recover(hash: Uint8Array, signature: string): string | null {
   try {
-    if (!/^0x[0-9a-fA-F]+$/.test(signature)) return null;
+    if (!/^0x[0-9a-fA-F]+$/.test(signature)) {
+      return null;
+    }
+
     const bytes = Buffer.from(signature.slice(2), "hex");
     let compact: Uint8Array;
     let recovery: number;
+
     if (bytes.length === 65) {
       recovery = bytes[64]!;
-      if (recovery === 27 || recovery === 28) recovery -= 27;
-      if (recovery !== 0 && recovery !== 1) return null;
+
+      if (recovery === 27 || recovery === 28) {
+        recovery -= 27;
+      }
+
+      if (recovery !== 0 && recovery !== 1) {
+        return null;
+      }
+
       compact = bytes.subarray(0, 64);
     } else if (bytes.length === 64) {
       compact = Uint8Array.from(bytes);
       recovery = compact[32]! >> 7;
       compact[32]! &= 127;
-    } else return null;
+    } else {
+      return null;
+    }
+
     const parsed = secp256k1.Signature.fromBytes(compact);
-    if (parsed.hasHighS()) return null;
+
+    if (parsed.hasHighS()) {
+      return null;
+    }
+
     const point = parsed.addRecoveryBit(recovery).recoverPublicKey(hash).toBytes(false);
     return checksum(
       `0x${Buffer.from(keccak_256(point.subarray(1)))
@@ -75,6 +94,7 @@ export async function createSiweFixture(
   const lookups: string[] = [];
   const rpcCalls: unknown[] = [];
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
+
   for (const name of ["siwe", "siwe-email", "siwe-contract"]) {
     const path = `/__test/profiles/${name}/api/auth`;
     const options: BetterAuthOptions = {
@@ -92,7 +112,9 @@ export async function createSiweFixture(
                 emailDomainName: "Wallet.Fixture.Test",
                 ensLookup: async ({ walletAddress }) => {
                   lookups.push(walletAddress);
-                  if (ensMode === "throw") throw new Error("deterministic ENS failure");
+                  if (ensMode === "throw") {
+                    throw new Error("deterministic ENS failure");
+                  }
                   return { name: "Wallet Fixture", avatar: "https://fixture.example/avatar.png" };
                 },
               }
@@ -101,21 +123,37 @@ export async function createSiweFixture(
             nonceOverride ?? `SiweFixtureNonce${String(counter++).padStart(16, "0")}`,
           verifyMessage: async (input) => {
             inputs.push(input);
-            if (verifierMode === "hold")
+
+            if (verifierMode === "hold") {
               await new Promise<void>((resolve) => {
                 releaseVerifier = resolve;
                 enteredVerifier?.();
               });
-            if (verifierMode === "throw") throw new Error("deterministic verifier failure");
-            if (verifierMode === "api-error")
+            }
+
+            if (verifierMode === "throw") {
+              throw new Error("deterministic verifier failure");
+            }
+
+            if (verifierMode === "api-error") {
               throw new APIError("FORBIDDEN", {
                 message: "configured wallet policy rejected",
                 code: "WALLET_POLICY_REJECTED",
               });
-            if (verifierMode === "false") return false;
-            if (name !== "siwe-contract")
+            }
+
+            if (verifierMode === "false") {
+              return false;
+            }
+
+            if (name !== "siwe-contract") {
               return recover(digest(input.message), input.signature) === input.address;
-            if (input.address !== CONTRACT || input.chainId !== 31337) return false;
+            }
+
+            if (input.address !== CONTRACT || input.chainId !== 31337) {
+              return false;
+            }
+
             const response = await fetch(`${baseURL}/__test/siwe-rpc`, {
               method: "POST",
               headers: { "content-type": "application/json" },
@@ -138,9 +176,11 @@ export async function createSiweFixture(
     await (await getMigrations(options)).runMigrations();
     profiles.set(path, betterAuth(options));
   }
+
   const primary = profiles.get("/__test/profiles/siwe/api/auth")!;
   const context = await primary.$context;
   const asDate = (value: unknown) => new Date(value as string | number).toISOString();
+
   function state() {
     const users = database
       .query(
@@ -203,9 +243,14 @@ export async function createSiweFixture(
       rpcCalls,
     };
   }
+
   async function handle(request: Request): Promise<Response | null> {
     const path = new URL(request.url).pathname;
-    if (path === "/__test/siwe-state" && request.method === "GET") return Response.json(state());
+
+    if (path === "/__test/siwe-state" && request.method === "GET") {
+      return Response.json(state());
+    }
+
     if (path === "/__test/siwe-rpc" && request.method === "POST") {
       const body = (await request.json()) as {
         jsonrpc: string;
@@ -216,6 +261,7 @@ export async function createSiweFixture(
       rpcCalls.push(body);
       let valid = false;
       const call = body.params?.[0];
+
       if (
         rpcMode === "verify" &&
         body.method === "eth_call" &&
@@ -229,13 +275,18 @@ export async function createSiweFixture(
         const signature = `0x${bytes.slice(offset + 64, offset + 64 + length)}`;
         valid = hash.length === 32 && recover(hash, signature) === CONTRACT_OWNER;
       }
+
       return Response.json({
         jsonrpc: "2.0",
         id: body.id,
         result: valid ? `0x1626ba7e${"0".repeat(56)}` : `0xffffffff${"0".repeat(56)}`,
       });
     }
-    if (path !== "/__test/siwe-control" || request.method !== "POST") return null;
+
+    if (path !== "/__test/siwe-control" || request.method !== "POST") {
+      return null;
+    }
+
     const body = (await request.json()) as {
       operation: string;
       nonce?: string;
@@ -250,6 +301,7 @@ export async function createSiweFixture(
       rpc?: string;
       foreign?: boolean;
     };
+
     if (body.operation === "preference") {
       const cookie = await serializeSignedCookie(
         "better-auth.dont_remember",
@@ -259,26 +311,43 @@ export async function createSiweFixture(
       );
       return Response.json({ status: true }, { headers: { "set-cookie": cookie } });
     }
+
     if (body.operation === "wait-verifier") {
-      if (!releaseVerifier)
+      if (!releaseVerifier) {
         await new Promise<void>((resolve) => {
           enteredVerifier = resolve;
         });
+      }
       enteredVerifier = null;
       return Response.json({ status: true });
     }
+
     if (body.operation === "release-verifier") {
       releaseVerifier?.();
       releaseVerifier = null;
       return Response.json({ status: true });
     }
+
     if (body.operation === "configure") {
-      if (body.nonce !== undefined) nonceOverride = body.nonce;
-      if (body.verifier !== undefined) verifierMode = body.verifier;
-      if (body.ens !== undefined) ensMode = body.ens;
-      if (body.rpc !== undefined) rpcMode = body.rpc;
+      if (body.nonce !== undefined) {
+        nonceOverride = body.nonce;
+      }
+
+      if (body.verifier !== undefined) {
+        verifierMode = body.verifier;
+      }
+
+      if (body.ens !== undefined) {
+        ensMode = body.ens;
+      }
+
+      if (body.rpc !== undefined) {
+        rpcMode = body.rpc;
+      }
+
       return Response.json({ status: true });
     }
+
     if (body.operation === "proof") {
       await context.adapter.update({
         model: "verification",
@@ -290,6 +359,7 @@ export async function createSiweFixture(
       });
       return Response.json({ status: true });
     }
+
     if (body.operation === "create-user") {
       const user = await context.internalAdapter.createUser({
         email: body.email!,
@@ -298,6 +368,7 @@ export async function createSiweFixture(
       });
       return Response.json({ userId: user.id });
     }
+
     if (body.operation === "update-user") {
       await context.internalAdapter.updateUser(body.userId!, {
         ...(body.banned === undefined ? {} : { banned: body.banned }),
@@ -305,12 +376,15 @@ export async function createSiweFixture(
       });
       return Response.json({ status: true });
     }
+
     if (body.operation === "delete-user") {
       await context.internalAdapter.deleteUser(body.userId!);
       return Response.json({ status: true });
     }
+
     return Response.json({ message: "Unknown SIWE fixture operation" }, { status: 400 });
   }
+
   return {
     profiles,
     handle,

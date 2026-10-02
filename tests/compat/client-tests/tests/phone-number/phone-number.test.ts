@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { passwordlessNumericScenarios } from "../../support/passwordless-numeric";
 import { compatScenario } from "../../support/scenario";
 import { expireVerification, verificationCount } from "../../support/verification";
@@ -19,6 +21,7 @@ compatScenario(
     const profile = "phone-signup";
     const client = phoneClient(ctx, profile);
     const results = [];
+
     for (const [index, input] of [
       { phoneNumber: 1234 },
       { phoneNumber: true },
@@ -36,6 +39,7 @@ compatScenario(
         name: "Phone Schema",
         ...input,
       });
+
       if (index >= 5) {
         expect(response.status).toBe(index >= 7 ? 422 : 400);
         expect(response.body).toEqual(
@@ -46,10 +50,13 @@ compatScenario(
                 message: "phoneNumberVerified is not allowed to be set",
               },
         );
+
         results.push({ response });
         continue;
       }
+
       expect(response.status).toBe(200);
+
       const payload = z
         .object({
           token: z.string().min(1),
@@ -67,11 +74,14 @@ compatScenario(
       expect(state.accounts[0]?.providerId).toBe("credential");
       expect(state.sessions).toHaveLength(1);
       expect(state.sessions[0]?.token).toBe(payload.token);
+
       const current = await client.getSession();
       expect(current.data?.user.id).toBe(payload.user.id);
       expect(current.data?.session.token).toBe(payload.token);
+
       results.push({ response, state, current });
     }
+
     const existing = ctx.uniqueEmail("phone-schema-0");
     const existingWithInvalidPhone = await phoneRequest(ctx, profile, "/sign-up/email", {
       email: existing,
@@ -86,6 +96,7 @@ compatScenario(
         message: "User already exists. Use another email.",
       },
     });
+
     const existingWithSpoof = await phoneRequest(ctx, profile, "/sign-up/email", {
       email: existing,
       password: "password123",
@@ -96,6 +107,7 @@ compatScenario(
       status: 400,
       body: { code: "FIELD_NOT_ALLOWED", message: "phoneNumberVerified is not allowed to be set" },
     });
+
     const phoneNumber = uniquePhone(ctx, "phone-verification-spoof");
     await client.phoneNumber.sendOtp({ phoneNumber });
     const code = await readPhoneOtp(ctx, phoneNumber);
@@ -110,8 +122,10 @@ compatScenario(
       message: "phoneNumberVerified is not allowed to be set",
     });
     expect(await verificationCount(ctx, phoneNumber)).toBe(0);
+
     const replay = await client.phoneNumber.verify({ phoneNumber, code });
     expect(replay.error?.code).toBe("OTP_NOT_FOUND");
+
     await client.phoneNumber.sendOtp({ phoneNumber });
     const legitimate = await phoneRequest(ctx, profile, "/phone-number/verify", {
       phoneNumber,
@@ -119,11 +133,13 @@ compatScenario(
       phoneNumberVerified: false,
     });
     expect(legitimate.status).toBe(200);
+
     const owner = z.object({ user: z.object({ id: z.string() }) }).parse(legitimate.body).user;
     const stored = await readPhoneState(ctx, profile, owner.id);
     expect(stored.user?.phoneNumber).toBe(phoneNumber);
     expect(stored.user?.phoneNumberVerified).toBe(true);
     expect(stored.accounts).toHaveLength(0);
+
     return {
       results,
       existingWithInvalidPhone,
@@ -155,6 +171,7 @@ const numericPhoneValues = [
   ["1e400", "Inf"],
   ["-1e400", "-Inf"],
 ] as const;
+
 // Each group owns independent users; collisions stay with their original owner.
 // Keeping password hashing bounded lets the default test deadline remain strict.
 for (const group of [
@@ -188,8 +205,12 @@ for (const group of [
     async (ctx) => {
       const profile = "phone-signup";
       const created = [];
+
       for (const [index, [literal, expected]] of numericPhoneValues.entries()) {
-        if (index < group.start || index >= group.end) continue;
+        if (index < group.start || index >= group.end) {
+          continue;
+        }
+
         const actor = `numeric-${index}`;
         const email = ctx.uniqueEmail(actor);
         // Preserve the original number spelling: the official client uses
@@ -203,6 +224,7 @@ for (const group of [
           });
         const response = { status: raw.status, body: (await raw.json()) as unknown };
         expect(response.status).toBe(200);
+
         const payload = z
           .object({
             token: z.string().min(1),
@@ -214,6 +236,7 @@ for (const group of [
           })
           .parse(response.body);
         expect(payload.user.phoneNumber).toBe(expected);
+
         const state = await readPhoneState(ctx, profile, payload.user.id);
         expect(state.user?.phoneNumber).toBe(expected);
         expect(state.user?.phoneNumberVerified).toBeNull();
@@ -221,13 +244,17 @@ for (const group of [
         expect(state.accounts[0]?.providerId).toBe("credential");
         expect(state.sessions).toHaveLength(1);
         expect(state.sessions[0]?.token).toBe(payload.token);
+
         const current = await phoneClient(ctx, profile, actor).getSession();
         expect(current.error).toBeNull();
         expect(current.data?.session.token).toBe(payload.token);
         expect(current.data?.user.id).toBe(payload.user.id);
+
         created.push({ response, state, current });
       }
+
       const collisions = [];
+
       for (const [index, [literal, ownerIndex]] of group.collisions.entries()) {
         const actor = `rounded-collision-${index}`;
         const email = ctx.uniqueEmail(actor);
@@ -243,18 +270,30 @@ for (const group of [
           status: 422,
           body: { code: "FAILED_TO_CREATE_USER", message: "Failed to create user" },
         });
+
         // The colliding applicant must not obtain a credential account or session.
         const applicant = phoneClient(ctx, profile, actor);
         expect((await applicant.getSession()).data).toBeNull();
+
         const rejectedLogin = await applicant.signIn.email({ email, password: "password123" });
         expect(rejectedLogin.error?.code).toBe("INVALID_EMAIL_OR_PASSWORD");
+
         const owner = created[Number(ownerIndex) - group.start];
-        if (!owner) throw new Error("The rounded phone owner must exist");
+
+        if (!owner) {
+          throw new Error("The rounded phone owner must exist");
+        }
+
         const after = await readPhoneState(ctx, profile, owner.state.user!.id);
         expect(after).toEqual(owner.state);
+
         collisions.push({ collision, rejectedLogin, after });
       }
-      if (!group.extras) return { created, collisions };
+
+      if (!group.extras) {
+        return { created, collisions };
+      }
+
       // Without the phone plugin these numeric additional inputs stay ignored.
       const disabledActor = ctx.actor("numeric-phone-disabled");
       const disabledRaw = await disabledActor.fetch(
@@ -266,11 +305,13 @@ for (const group of [
         },
       );
       expect(disabledRaw.status).toBe(200);
+
       const disabled = z
         .object({ token: z.string(), user: z.object({ id: z.string() }).passthrough() })
         .parse(await disabledRaw.json());
       expect(disabled.user).not.toHaveProperty("phoneNumber");
       expect(disabled.user).not.toHaveProperty("metadata");
+
       const disabledState = z
         .object({
           user: z.object({ id: z.string() }).passthrough(),
@@ -284,12 +325,14 @@ for (const group of [
       expect(disabledState.sessions).toHaveLength(1);
       expect(disabledState.sessions[0]?.token).toBe(disabled.token);
       expect((await disabledActor.client.getSession()).data?.user.id).toBe(disabled.user.id);
+
       // Overflow is a number for schema validation, never an invalid JSON body.
       const client = phoneClient(ctx, profile, "overflow-schema");
       const pendingPhone = uniquePhone(ctx, "overflow-schema");
       await client.phoneNumber.sendOtp({ phoneNumber: pendingPhone });
       const code = await readPhoneOtp(ctx, pendingPhone);
       const invalid = [];
+
       for (const [path, extra] of [
         ["/phone-number/send-otp", ""],
         ["/phone-number/request-password-reset", ""],
@@ -313,12 +356,15 @@ for (const group of [
           },
         });
         expect(await verificationCount(ctx, pendingPhone)).toBe(1);
+
         invalid.push(rejection);
       }
+
       const valid = await client.phoneNumber.verify({ phoneNumber: pendingPhone, code });
       expect(valid.error).toBeNull();
       expect(valid.data?.user.phoneNumber).toBe(pendingPhone);
       expect(await verificationCount(ctx, pendingPhone)).toBe(0);
+
       return { created, collisions, disabled, disabledState, invalid, valid };
     },
     ["POST /sign-up/email", "GET /get-session"],
@@ -333,25 +379,31 @@ compatScenario(
     const phoneNumber = uniquePhone(ctx, "phone-signup");
     const sent = await client.phoneNumber.sendOtp({ phoneNumber });
     expect(sent.error).toBeNull();
+
     const code = await readPhoneOtp(ctx, phoneNumber);
     const verified = await client.phoneNumber.verify({ phoneNumber, code });
     expect(verified.error).toBeNull();
+
     const user = phoneUser(verified.data?.user);
     expect(user.phoneNumber).toBe(phoneNumber);
     expect(user.phoneNumberVerified).toBe(true);
     expect(user.email).toBe(`${phoneNumber}@phone.fixture.test`);
     expect(user.emailVerified).toBe(false);
     expect(user.name).toBe(phoneNumber);
+
     const token = z.string().min(1).parse(verified.data?.token);
     const current = await client.getSession();
     expect(current.data?.user.id).toBe(user.id);
     expect(current.data?.session.token).toBe(token);
+
     const before = await readPhoneState(ctx, profile, user.id);
     expect(before.sessions).toHaveLength(1);
     expect(before.accounts).toHaveLength(0);
     expect(before.user?.phoneNumberVerified).toBe(true);
+
     const replay = await client.phoneNumber.verify({ phoneNumber, code });
     expect(replay.error?.code).toBe("OTP_NOT_FOUND");
+
     await client.phoneNumber.sendOtp({ phoneNumber });
     const second = await phoneClient(ctx, profile, "second-browser").phoneNumber.verify({
       phoneNumber,
@@ -360,16 +412,19 @@ compatScenario(
     expect(second.error).toBeNull();
     expect(second.data?.user.id).toBe(user.id);
     expect(second.data?.token).not.toBe(token);
+
     const after = await readPhoneState(ctx, profile, user.id);
     expect(after.sessions).toHaveLength(2);
     expect(after.sessions.every((session) => session.userId === user.id)).toBe(true);
     expect(await verificationCount(ctx, phoneNumber)).toBe(0);
+
     const callbacks = await ctx.rawRequest({ path: "/__test/phone-callbacks", method: "GET" });
     expect(callbacks.status).toBe(200);
     expect(callbacks.body).toEqual([
       { phoneNumber, userId: user.id },
       { phoneNumber, userId: user.id },
     ]);
+
     return { sent, verified, current, before, replay, second, after, callbacks };
   },
   ["POST /phone-number/send-otp", "POST /phone-number/verify"],
@@ -388,21 +443,26 @@ compatScenario(
       code,
     });
     expect(foreign.error?.code).toBe("OTP_NOT_FOUND");
+
     const attempts = [];
+
     for (let index = 0; index < 3; index += 1) {
       const attempt = await client.phoneNumber.verify({ phoneNumber, code: "incorrect" });
       expect(attempt.error?.code).toBe("INVALID_OTP");
       attempts.push(attempt);
     }
+
     const exhausted = await client.phoneNumber.verify({ phoneNumber, code });
     expect(exhausted.error?.status).toBe(403);
     expect(exhausted.error?.code).toBe("TOO_MANY_ATTEMPTS");
     expect(await verificationCount(ctx, phoneNumber)).toBe(0);
+
     await client.phoneNumber.sendOtp({ phoneNumber });
     const expiredCode = await readPhoneOtp(ctx, phoneNumber);
     await expireVerification(ctx, phoneNumber);
     const expired = await client.phoneNumber.verify({ phoneNumber, code: expiredCode });
     expect(expired.error?.code).toBe("OTP_EXPIRED");
+
     await client.phoneNumber.sendOtp({ phoneNumber });
     const cannotCreate = await client.phoneNumber.verify({
       phoneNumber,
@@ -412,6 +472,7 @@ compatScenario(
     expect(cannotCreate.error?.code).toBe("FAILED_TO_UPDATE_USER");
     expect(await verificationCount(ctx, phoneNumber)).toBe(0);
     expect((await client.getSession()).data).toBeNull();
+
     return { foreign, attempts, exhausted, expired, cannotCreate };
   },
 );
@@ -430,6 +491,7 @@ compatScenario(
       json: { profile, phoneNumber, code: "incorrect" },
     });
     expect(wrong.status).toBe(400);
+
     const consumed = await ctx.rawRequest({
       path: "/__test/phone-consume-otp",
       method: "POST",
@@ -437,19 +499,23 @@ compatScenario(
     });
     expect(consumed.body).toEqual({ status: true });
     expect(await verificationCount(ctx, phoneNumber)).toBe(0);
+
     const replay = await ctx.rawRequest({
       path: "/__test/phone-consume-otp",
       method: "POST",
       json: { profile, phoneNumber, code },
     });
     expect(replay.status).toBe(400);
+
     const publicAttempt = await phoneRequest(ctx, profile, "/phone-number/consume-otp", {
       phoneNumber,
       code,
     });
     expect(publicAttempt.status).toBe(404);
+
     const session = await client.getSession();
     expect(session.data).toBeNull();
+
     return { wrong, consumed, replay, publicAttempt, session };
   },
 );
@@ -484,6 +550,7 @@ compatScenario(
       updatePhoneNumber: true,
     });
     expect(collision.error?.code).toBe("PHONE_NUMBER_EXIST");
+
     const target = uniquePhone(ctx, "phone-owner-target");
     await client.phoneNumber.sendOtp({ phoneNumber: target });
     const updated = await client.phoneNumber.verify({
@@ -494,15 +561,19 @@ compatScenario(
     expect(updated.error).toBeNull();
     expect(updated.data?.user.id).toBe(user.id);
     expect(updated.data?.token).toBe(before.data?.session.token);
+
     const after = await client.getSession();
     expect(after.data?.session.id).toBe(before.data?.session.id);
     expect(after.data?.user.phoneNumber).toBe(target);
+
     const state = await readPhoneState(ctx, profile, user.id);
     expect(state.user?.phoneNumber).toBe(target);
     expect(state.user?.phoneNumberVerified).toBe(true);
     expect(state.sessions).toHaveLength(1);
+
     const otherState = await readPhoneState(ctx, profile, occupiedUser.id);
     expect(otherState.user?.phoneNumber).toBe(occupied);
+
     const visitorTarget = uniquePhone(ctx, "phone-visitor-target");
     const visitor = phoneClient(ctx, profile, "visitor");
     await visitor.phoneNumber.sendOtp({ phoneNumber: visitorTarget });
@@ -514,17 +585,21 @@ compatScenario(
     expect(unauthenticated.error?.status).toBe(401);
     expect(unauthenticated.error?.code).toBe("USER_NOT_FOUND");
     expect(await verificationCount(ctx, visitorTarget)).toBe(0);
+
     const forbidden = await phoneRequest(ctx, profile, "/update-user", { phoneNumber: occupied });
     expect(forbidden.status).toBe(400);
     expect(forbidden.body).toEqual({
       code: "PHONE_NUMBER_CANNOT_BE_UPDATED",
       message: "Phone number cannot be updated",
     });
+
     const cleared = await phoneRequest(ctx, profile, "/update-user", { phoneNumber: null });
     expect(cleared.status).toBe(200);
+
     const clearedState = await readPhoneState(ctx, profile, user.id);
     expect(clearedState.user?.phoneNumber).toBeNull();
     expect(clearedState.user?.phoneNumberVerified).toBe(false);
+
     return {
       before,
       collision,
@@ -559,6 +634,7 @@ compatScenario(
       password: "wrong-password123",
     });
     expect(missingProof.error?.code).toBe("PHONE_NUMBER_NOT_VERIFIED");
+
     const verified = await client.phoneNumber.verify({
       phoneNumber,
       code: await readPhoneOtp(ctx, phoneNumber),
@@ -566,35 +642,45 @@ compatScenario(
     });
     expect(verified.error).toBeNull();
     expect(verified.data?.token).toBeNull();
+
     const before = await readPhoneState(ctx, profile, user.id);
     expect(before.sessions).toHaveLength(1);
+
     const wrong = await client.signIn.phoneNumber({ phoneNumber, password: "wrong-password123" });
     expect(wrong.error?.code).toBe("INVALID_PHONE_NUMBER_OR_PASSWORD");
+
     const signedIn = await client.signIn.phoneNumber({
       phoneNumber,
       password: "original-password123",
       rememberMe: false,
     });
     expect(signedIn.error).toBeNull();
+
     const session = await client.getSession();
     expect(session.data?.user.id).toBe(user.id);
+
     const remaining = Date.parse(String(session.data?.session.expiresAt)) - Date.now();
     expect(remaining).toBeGreaterThan(86_398_000);
     expect(remaining).toBeLessThanOrEqual(86_400_000);
+
     const state = await readPhoneState(ctx, profile, user.id);
     expect(state.sessions).toHaveLength(2);
+
     const long = await client.signIn.phoneNumber({ phoneNumber, password: "x".repeat(129) });
     expect(long.error?.code).toBe("PASSWORD_TOO_LONG");
+
     const remembered = await client.signIn.phoneNumber({
       phoneNumber,
       password: "original-password123",
       rememberMe: true,
     });
     expect(remembered.error).toBeNull();
+
     const rememberedSession = await client.getSession();
     expect(
       Date.parse(String(rememberedSession.data?.session.expiresAt)) - Date.now(),
     ).toBeGreaterThan(604_798_000);
+
     return {
       signup,
       missingProof,
@@ -634,11 +720,14 @@ compatScenario(
       disableSession: true,
     });
     expect(phoneProof.error).toBeNull();
+
     const enabled = await client.twoFactor.enable({ password });
     expect(enabled.error).toBeNull();
+
     const uri = z.object({ totpURI: z.string().min(1) }).parse(enabled.data).totpURI;
     const enrollment = await client.twoFactor.verifyTotp({ code: phoneEnrollmentCode(uri) });
     expect(enrollment.error).toBeNull();
+
     await client.signOut();
     const before = await readPhoneState(ctx, profile, user.id);
     expect(before.sessions).toHaveLength(0);
@@ -650,24 +739,31 @@ compatScenario(
         .object({ twoFactorRedirect: z.literal(true), twoFactorMethods: z.array(z.string()) })
         .parse(pending.data).twoFactorMethods,
     ).toEqual(["totp", "otp"]);
+
     const unauthenticated = await client.getSession();
     expect(unauthenticated.data).toBeNull();
+
     const pendingState = await readPhoneState(ctx, profile, user.id);
     expect(pendingState.sessions).toHaveLength(0);
+
     const sent = await client.twoFactor.sendOtp({});
     expect(sent.error).toBeNull();
+
     const code = z
       .object({ otp: z.string().min(1) })
       .parse(await ctx.readTwoFactorOtp({ email })).otp;
     const foreign = await phoneClient(ctx, profile, "wrong-browser").twoFactor.verifyOtp({ code });
     expect(foreign.error).not.toBeNull();
+
     const wrong = await client.twoFactor.verifyOtp({
       code: code === "111111" ? "222222" : "111111",
     });
     expect(wrong.error?.code).toBe("INVALID_CODE");
     expect((await readPhoneState(ctx, profile, user.id)).sessions).toHaveLength(0);
+
     const verified = await client.twoFactor.verifyOtp({ code, trustDevice: true });
     expect(verified.error).toBeNull();
+
     const session = await client.getSession();
     expect(session.data?.user.id).toBe(user.id);
     expect(session.data?.session.token).toBe(verified.data?.token);
@@ -679,17 +775,22 @@ compatScenario(
     expect(Date.parse(String(session.data?.session.expiresAt)) - Date.now()).toBeLessThanOrEqual(
       604_800_000,
     );
+
     const replay = await client.twoFactor.verifyOtp({ code });
     expect(replay.error).not.toBeNull();
+
     await client.signOut();
     const trusted = await client.signIn.phoneNumber({ phoneNumber, password });
     expect(trusted.error).toBeNull();
     expect(trusted.data?.user.id).toBe(user.id);
+
     const trustedSession = await client.getSession();
     expect(trustedSession.data?.session.token).toBe(trusted.data?.token);
+
     const state = await readPhoneState(ctx, profile, user.id);
     expect(state.sessions).toHaveLength(1);
     expect(state.sessions.at(0)?.token).toBe(trusted.data?.token);
+
     return {
       before,
       pending,
@@ -722,6 +823,7 @@ compatScenario(
     const user = phoneUser(verified.data?.user);
     const issued = await client.phoneNumber.requestPasswordReset({ phoneNumber });
     expect(issued.error).toBeNull();
+
     const otp = await readPhoneOtp(ctx, phoneNumber, "password-reset");
     const foreign = await client.phoneNumber.resetPassword({
       phoneNumber: uniquePhone(ctx, "phone-reset-foreign"),
@@ -729,18 +831,21 @@ compatScenario(
       newPassword: "new-password123",
     });
     expect(foreign.error?.code).toBe("OTP_NOT_FOUND");
+
     const tooShort = await client.phoneNumber.resetPassword({
       phoneNumber,
       otp,
       newPassword: "short",
     });
     expect(tooShort.error?.code).toBe("PASSWORD_TOO_SHORT");
+
     const burned = await client.phoneNumber.resetPassword({
       phoneNumber,
       otp,
       newPassword: "new-password123",
     });
     expect(burned.error?.code).toBe("OTP_NOT_FOUND");
+
     await client.phoneNumber.requestPasswordReset({ phoneNumber });
     const fresh = await readPhoneOtp(ctx, phoneNumber, "password-reset");
     const reset = await client.phoneNumber.resetPassword({
@@ -749,27 +854,33 @@ compatScenario(
       newPassword: "new-password123",
     });
     expect(reset.error).toBeNull();
+
     const state = await readPhoneState(ctx, profile, user.id);
     expect(state.accounts).toHaveLength(1);
     expect(state.accounts.at(0)?.providerId).toBe("credential");
     expect(state.accounts.at(0)?.userId).toBe(user.id);
     expect(state.sessions).toHaveLength(0);
     expect(state.user?.emailVerified).toBe(false);
+
     const revoked = await client.getSession();
     expect(revoked.data).toBeNull();
+
     const signedIn = await client.signIn.phoneNumber({ phoneNumber, password: "new-password123" });
     expect(signedIn.error).toBeNull();
     expect(signedIn.data?.user.id).toBe(user.id);
+
     const replay = await client.phoneNumber.resetPassword({
       phoneNumber,
       otp: fresh,
       newPassword: "replay-password123",
     });
     expect(replay.error?.code).toBe("OTP_NOT_FOUND");
+
     const absent = uniquePhone(ctx, "phone-reset-absent");
     const absentRequest = await client.phoneNumber.requestPasswordReset({ phoneNumber: absent });
     expect(absentRequest.error).toBeNull();
     expect(await verificationCount(ctx, `${absent}-request-password-reset`)).toBe(1);
+
     return {
       verified,
       issued,
@@ -795,6 +906,7 @@ compatScenario(
     const invalid = await client.phoneNumber.sendOtp({ phoneNumber: "not-a-phone" });
     expect(invalid.error?.code).toBe("INVALID_PHONE_NUMBER");
     expect(await verificationCount(ctx, "not-a-phone")).toBe(0);
+
     const phoneNumber = uniquePhone(ctx, "phone-provider");
     await client.phoneNumber.sendOtp({ phoneNumber });
     const code = await readPhoneOtp(ctx, phoneNumber);
@@ -803,19 +915,24 @@ compatScenario(
       code,
     });
     expect(foreign.error?.code).toBe("INVALID_OTP");
+
     const wrong = await client.phoneNumber.verify({ phoneNumber, code: "incorrect" });
     expect(wrong.error?.code).toBe("INVALID_OTP");
     expect(await verificationCount(ctx, phoneNumber)).toBe(1);
+
     await expireVerification(ctx, phoneNumber);
     const verified = await client.phoneNumber.verify({ phoneNumber, code });
     expect(verified.error).toBeNull();
     expect(verified.data?.user.phoneNumber).toBe(phoneNumber);
     expect(await verificationCount(ctx, phoneNumber)).toBe(0);
+
     const replay = await client.phoneNumber.verify({ phoneNumber, code });
     expect(replay.error?.code).toBe("INVALID_OTP");
+
     const user = phoneUser(verified.data?.user);
     const state = await readPhoneState(ctx, profile, user.id);
     expect(state.sessions).toHaveLength(1);
+
     return { invalid, foreign, wrong, verified, replay, state };
   },
   ["POST /phone-number/verify"],
@@ -840,6 +957,7 @@ compatScenario(
     const resetOtp = await readPhoneOtp(ctx, phoneNumber, "password-reset");
     const before = await readPhoneState(ctx, profile, user.id);
     const rejected = [];
+
     for (const [path, body] of [
       ["/phone-number/send-otp", {}],
       ["/phone-number/request-password-reset", {}],
@@ -852,33 +970,43 @@ compatScenario(
     ] satisfies ReadonlyArray<readonly [string, unknown]>) {
       const response = await phoneRequest(ctx, profile, path, body);
       expect(response.status).toBe(400);
+
       const parsed = z
         .object({ code: z.literal("VALIDATION_ERROR"), message: z.string() })
         .safeParse(response.body);
-      if (!parsed.success)
+
+      if (!parsed.success) {
         throw new Error("Malformed phone requests must return upstream schema errors");
+      }
+
       expect(await readPhoneState(ctx, profile, user.id)).toEqual(before);
       expect(await verificationCount(ctx, phoneNumber)).toBe(1);
       expect(await verificationCount(ctx, `${phoneNumber}-request-password-reset`)).toBe(1);
+
       rejected.push(response);
     }
+
     const verified = await client.phoneNumber.verify({ phoneNumber, code, disableSession: true });
     expect(verified.error).toBeNull();
+
     const reset = await client.phoneNumber.resetPassword({
       phoneNumber,
       otp: resetOtp,
       newPassword: "new-password123",
     });
     expect(reset.error).toBeNull();
+
     const state = await readPhoneState(ctx, profile, user.id);
     expect(state.user?.phoneNumberVerified).toBe(true);
     expect(state.accounts).toHaveLength(1);
     expect(state.sessions).toHaveLength(1);
+
     const signedIn = await client.signIn.phoneNumber({ phoneNumber, password: "new-password123" });
     expect(signedIn.error).toBeNull();
     expect(signedIn.data?.user.id).toBe(user.id);
     expect(await verificationCount(ctx, phoneNumber)).toBe(0);
     expect(await verificationCount(ctx, `${phoneNumber}-request-password-reset`)).toBe(0);
+
     return { before, rejected, verified, reset, state, signedIn };
   },
 );

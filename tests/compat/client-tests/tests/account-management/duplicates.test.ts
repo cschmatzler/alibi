@@ -1,18 +1,23 @@
 import { expect } from "bun:test";
+
 import { decodeJwt, decodeProtectedHeader } from "jose";
+
 import { credential } from "../../support/id-token";
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { state as googleState } from "../one-tap/helpers";
 
 type Row = Record<string, unknown>;
+
 type State = {
   users: Row[];
   accounts: Row[];
   sessions: Row[];
   receipts: Row[];
 };
+
 const fixture = "social-gitlab-issuer";
+
 async function state(ctx: ScenarioContext) {
   const response = await ctx.rawRequest({
     path: "/__test/social-provider/duplicate-state",
@@ -20,12 +25,17 @@ async function state(ctx: ScenarioContext) {
   expect(response.status).toBe(200);
   return response.body as State;
 }
+
 function observed(value: State) {
   return {
     ...value,
     accounts: value.accounts.map((row) => {
-      if (typeof row.password !== "string") return row;
+      if (typeof row.password !== "string") {
+        return row;
+      }
+
       expect(row.password).toMatch(/^[a-f0-9]{32}:[a-f0-9]{128}$/);
+
       const [salt, key] = row.password.split(":");
       return {
         ...row,
@@ -55,13 +65,16 @@ function observed(value: State) {
     }),
   };
 }
+
 function rows(value: State) {
   const { receipts, ...stored } = value;
   return stored;
 }
+
 async function complete(actor: ReturnType<ScenarioContext["actor"]>, url: string) {
   const issued = new URL(url).searchParams.get("state");
   expect(issued).toBeTruthy();
+
   const response = await actor.fetch(
     `${authProfilePath(fixture)}/callback/gitlab?${new URLSearchParams({ state: issued!, code: "fixture-code" })}`,
     { redirect: "manual" },
@@ -72,21 +85,23 @@ async function complete(actor: ReturnType<ScenarioContext["actor"]>, url: string
     body: await response.text(),
   };
 }
+
 async function setup(ctx: ScenarioContext) {
-  const owner = ctx.actor("owner", fixture),
-    foreign = ctx.actor("foreign", fixture);
+  const owner = ctx.actor("owner", fixture);
+  const foreign = ctx.actor("foreign", fixture);
   const signup = await owner.client.signUp.email({
-      email: ctx.uniqueEmail("owner"),
-      name: "Owner",
-      password: "password123",
-    }),
-    other = await foreign.client.signUp.email({
-      email: ctx.uniqueEmail("foreign"),
-      name: "Foreign",
-      password: "password123",
-    });
+    email: ctx.uniqueEmail("owner"),
+    name: "Owner",
+    password: "password123",
+  });
+  const other = await foreign.client.signUp.email({
+    email: ctx.uniqueEmail("foreign"),
+    name: "Foreign",
+    password: "password123",
+  });
   expect(signup.error).toBeNull();
   expect(other.error).toBeNull();
+
   const profile = {
     id: 912345,
     email: signup.data!.user.email,
@@ -100,19 +115,23 @@ async function setup(ctx: ScenarioContext) {
     json: profile,
   });
   expect(configured.status).toBe(200);
+
   const link = await owner.client.linkSocial({
     provider: "gitlab",
     callbackURL: "/duplicate-done",
     disableRedirect: true,
   });
   expect(link.error).toBeNull();
+
   const linked = await complete(owner, link.data!.url!);
   expect(linked).toMatchObject({ status: 302, location: "/duplicate-done" });
-  const before = await state(ctx),
-    account = before.accounts.find(
-      (row) => row.userId === signup.data!.user.id && row.providerId === "gitlab",
-    )!;
+
+  const before = await state(ctx);
+  const account = before.accounts.find(
+    (row) => row.userId === signup.data!.user.id && row.providerId === "gitlab",
+  )!;
   expect(account).toBeTruthy();
+
   return {
     owner,
     foreign,
@@ -125,7 +144,8 @@ async function setup(ctx: ScenarioContext) {
     account,
   };
 }
-for (const ownership of ["same", "foreign"] as const)
+
+for (const ownership of ["same", "foreign"] as const) {
   compatScenario(
     `duplicate OAuth ${ownership} owner keys reject global callbacks while row-id lifecycle remains scoped`,
     async (ctx) => {
@@ -150,6 +170,7 @@ for (const ownership of ["same", "foreign"] as const)
         },
       });
       expect(duplicate.status).toBe(200);
+
       const duplicateId = (duplicate.body as Row).accountId;
       const before = await state(ctx);
       expect(before.accounts).toHaveLength(s.before.accounts.length + 1);
@@ -158,6 +179,7 @@ for (const ownership of ["same", "foreign"] as const)
         accountId: s.account.accountId,
         userId: ownership === "same" ? s.signup.data!.user.id : s.other.data!.user.id,
       });
+
       const listed = await s.owner.client.listAccounts();
       expect(listed.error).toBeNull();
       expect(listed.data!.map((row) => row.id)).toEqual(
@@ -165,23 +187,27 @@ for (const ownership of ["same", "foreign"] as const)
           .filter((row) => row.userId === s.signup.data!.user.id)
           .map((row) => String(row.id)),
       );
-      const guest = ctx.actor("guest", fixture),
-        signin = await guest.client.signIn.social({
-          provider: "gitlab",
-          callbackURL: "/duplicate-done",
-          errorCallbackURL: "/caller-error",
-          disableRedirect: true,
-        });
+
+      const guest = ctx.actor("guest", fixture);
+      const signin = await guest.client.signIn.social({
+        provider: "gitlab",
+        callbackURL: "/duplicate-done",
+        errorCallbackURL: "/caller-error",
+        disableRedirect: true,
+      });
       expect(signin.error).toBeNull();
+
       const denied = await complete(guest, signin.data!.url!);
       expect(denied).toEqual({
         status: 302,
         location: `${ctx.baseURL}${authProfilePath(fixture)}/error?error=internal_server_error`,
         body: "",
       });
+
       const afterDenied = await state(ctx);
       expect(rows(afterDenied)).toEqual(rows(before));
       expect(afterDenied.receipts).toHaveLength(before.receipts.length + 2);
+
       const replay = await complete(guest, signin.data!.url!);
       expect(replay).toEqual({
         status: 302,
@@ -189,8 +215,10 @@ for (const ownership of ["same", "foreign"] as const)
         body: "",
       });
       expect(await state(ctx)).toEqual(afterDenied);
+
       const guestSession = await guest.client.getSession();
       expect(guestSession.data).toBeNull();
+
       const linking = await s.owner.client.linkSocial({
         provider: "gitlab",
         callbackURL: "/duplicate-done",
@@ -198,15 +226,19 @@ for (const ownership of ["same", "foreign"] as const)
         disableRedirect: true,
       });
       expect(linking.error).toBeNull();
+
       const deniedLink = await complete(s.owner, linking.data!.url!);
       expect(deniedLink).toEqual({ status: 500, location: null, body: "" });
+
       const afterLink = await state(ctx);
       expect(rows(afterLink)).toEqual(rows(before));
+
       const access = await s.owner.client.getAccessToken({
         accountId: String(s.account.id),
       });
       expect(access.error).toBeNull();
       expect(access.data?.accessToken).toBe("fixture-gitlab-access");
+
       const foreignRefresh = await s.foreign.client.refreshToken({
         accountId: String(s.account.id),
       });
@@ -214,6 +246,7 @@ for (const ownership of ["same", "foreign"] as const)
         status: 400,
         code: "ACCOUNT_NOT_FOUND",
       });
+
       const foreignUnlink = await s.foreign.client.unlinkAccount({
         accountId: String(s.account.id),
       });
@@ -222,10 +255,12 @@ for (const ownership of ["same", "foreign"] as const)
         code: "ACCOUNT_NOT_FOUND",
       });
       expect(rows(await state(ctx))).toEqual(rows(before));
+
       const refresh = await s.owner.client.refreshToken({
         accountId: String(s.account.id),
       });
       expect(refresh.error).toBeNull();
+
       const refreshed = await state(ctx);
       expect(refreshed.accounts.find((row) => row.id === duplicateId)).toEqual(
         before.accounts.find((row) => row.id === duplicateId),
@@ -236,16 +271,21 @@ for (const ownership of ["same", "foreign"] as const)
       });
       expect(refreshed.users).toEqual(before.users);
       expect(refreshed.sessions).toEqual(before.sessions);
+
       const unlink = await s.owner.client.unlinkAccount({
         accountId: String(s.account.id),
       });
       expect(unlink.data).toEqual({ status: true });
+
       const after = await state(ctx);
       expect(after.accounts).toEqual(refreshed.accounts.filter((row) => row.id !== s.account.id));
       expect(after.users).toEqual(before.users);
       expect(after.sessions).toEqual(before.sessions);
-      if (ownership === "same")
+
+      if (ownership === "same") {
         expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(foreignBefore);
+      }
+
       return {
         signup: ctx.snapshot(s.signup),
         other: ctx.snapshot(s.other),
@@ -286,29 +326,31 @@ for (const ownership of ["same", "foreign"] as const)
       "POST /unlink-account",
     ],
   );
+}
 
 compatScenario(
   "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
   async (ctx) => {
-    const owner = ctx.actor("owner", fixture),
-      foreign = ctx.actor("foreign", fixture),
-      signup = await owner.client.signUp.email({
-        email: ctx.uniqueEmail("owner"),
-        name: "Credential Owner",
-        password: "password123",
-      }),
-      other = await foreign.client.signUp.email({
-        email: ctx.uniqueEmail("foreign"),
-        name: "Foreign",
-        password: "foreign-password123",
-      });
+    const owner = ctx.actor("owner", fixture);
+    const foreign = ctx.actor("foreign", fixture);
+    const signup = await owner.client.signUp.email({
+      email: ctx.uniqueEmail("owner"),
+      name: "Credential Owner",
+      password: "password123",
+    });
+    const other = await foreign.client.signUp.email({
+      email: ctx.uniqueEmail("foreign"),
+      name: "Foreign",
+      password: "foreign-password123",
+    });
     expect(signup.error).toBeNull();
     expect(other.error).toBeNull();
-    const before = await state(ctx),
-      credential = before.accounts.find(
-        (row) => row.userId === signup.data!.user.id && row.providerId === "credential",
-      )!,
-      foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
+
+    const before = await state(ctx);
+    const credential = before.accounts.find(
+      (row) => row.userId === signup.data!.user.id && row.providerId === "credential",
+    )!;
+    const foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
     const duplicated = await ctx.rawRequest({
       path: "/__test/social-provider/duplicate-account",
       method: "POST",
@@ -319,21 +361,25 @@ compatScenario(
       },
     });
     expect(duplicated.status).toBe(200);
-    const duplicateId = (duplicated.body as Row).accountId,
-      cleared = await ctx.rawRequest({
-        path: "/__test/social-provider/clear-credential-password",
-        method: "POST",
-        json: { accountId: credential.id },
-      });
+
+    const duplicateId = (duplicated.body as Row).accountId;
+    const cleared = await ctx.rawRequest({
+      path: "/__test/social-provider/clear-credential-password",
+      method: "POST",
+      json: { accountId: credential.id },
+    });
     expect(cleared.status).toBe(200);
+
     const prepared = await state(ctx);
     expect(prepared.accounts.find((row) => row.id === credential.id)?.password).toBeNull();
     expect(prepared.accounts.find((row) => row.id === duplicateId)?.password).toBe(
       credential.password,
     );
+
     const listed = await owner.client.listAccounts();
     expect(listed.error).toBeNull();
     expect(listed.data!.map((row) => row.id)).toEqual([String(credential.id), String(duplicateId)]);
+
     const denied = await ctx.actor("credential-login", fixture).client.signIn.email({
       email: ctx.uniqueEmail("owner"),
       password: "password123",
@@ -342,9 +388,11 @@ compatScenario(
       status: 401,
       code: "INVALID_EMAIL_OR_PASSWORD",
     });
+
     const afterDenied = await state(ctx);
     expect(rows(afterDenied)).toEqual(rows(prepared));
     expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+
     const deleteDenied = await owner.client.deleteUser({
       password: "password123",
     });
@@ -353,6 +401,7 @@ compatScenario(
       code: "CREDENTIAL_ACCOUNT_NOT_FOUND",
     });
     expect(rows(await state(ctx))).toEqual(rows(prepared));
+
     const foreignCredential = prepared.accounts.find(
       (row) => row.userId === other.data!.user.id && row.providerId === "credential",
     )!;
@@ -362,20 +411,24 @@ compatScenario(
     expect(foreignUnlink.error).toMatchObject({ status: 400, code: "ACCOUNT_NOT_FOUND" });
     expect(rows(await state(ctx))).toEqual(rows(prepared));
     expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+
     const removed = await owner.client.unlinkAccount({
       accountId: String(credential.id),
     });
     expect(removed.data).toEqual({ status: true });
+
     const restored = await ctx.actor("restored-login", fixture).client.signIn.email({
       email: ctx.uniqueEmail("owner"),
       password: "password123",
     });
     expect(restored.error).toBeNull();
     expect(restored.data?.user.id).toBe(signup.data!.user.id);
+
     const after = await state(ctx);
     expect(after.accounts).toEqual(prepared.accounts.filter((row) => row.id !== credential.id));
     expect(after.users).toEqual(before.users);
     expect(after.sessions).toHaveLength(before.sessions.length + 1);
+
     return {
       signup: ctx.snapshot(signup),
       other: ctx.snapshot(other),
@@ -401,14 +454,15 @@ compatScenario(
 compatScenario(
   "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner",
   async (ctx) => {
-    const owner = ctx.actor("owner", "google-id-default"),
-      foreign = ctx.actor("foreign", "google-id-default");
+    const owner = ctx.actor("owner", "google-id-default");
+    const foreign = ctx.actor("foreign", "google-id-default");
     const signup = await foreign.client.signUp.email({
       email: ctx.uniqueEmail("foreign"),
       password: "foreign-password123",
       name: "Foreign",
     });
     expect(signup.error).toBeNull();
+
     const token = await credential({
       aud: "google-default-client",
       sub: ctx.uniqueToken("google-identity"),
@@ -421,42 +475,53 @@ compatScenario(
       idToken: { token },
     });
     expect(signed.error).toBeNull();
-    if (!signed.data || !("user" in signed.data))
+
+    if (!signed.data || !("user" in signed.data)) {
       throw new Error("Signed token did not return the actual owner");
-    const ownerId = signed.data.user.id,
-      before = await state(ctx),
-      account = before.accounts.find(
-        (row) => row.userId === ownerId && row.providerId === "google",
-      )!;
+    }
+
+    const ownerId = signed.data.user.id;
+    const before = await state(ctx);
+    const account = before.accounts.find(
+      (row) => row.userId === ownerId && row.providerId === "google",
+    )!;
     const duplicate = await ctx.rawRequest({
       path: "/__test/social-provider/duplicate-account",
       method: "POST",
       json: { accountId: account.id, userId: signup.data!.user.id },
     });
     expect(duplicate.status).toBe(200);
-    const prepared = await state(ctx),
-      keyFetchesBefore = await googleState(ctx);
-    const guest = ctx.actor("guest", "google-id-default"),
-      denied = await guest.client.signIn.social(
-        { provider: "google", idToken: { token } },
-        { redirect: "manual" },
-      );
+
+    const prepared = await state(ctx);
+    const keyFetchesBefore = await googleState(ctx);
+    const guest = ctx.actor("guest", "google-id-default");
+    const denied = await guest.client.signIn.social(
+      { provider: "google", idToken: { token } },
+      { redirect: "manual" },
+    );
     expect(denied.error?.status).toBe(302);
+
     const deniedLink = await foreign.client.linkSocial({
       provider: "google",
       idToken: { token },
     });
     expect(deniedLink.error?.status).toBe(500);
+
     const after = await state(ctx);
     expect(rows(after)).toEqual(rows(prepared));
+
     const original = await owner.client.getSession();
     expect(original.data?.user.id).toBe(ownerId);
+
     const foreignSession = await foreign.client.getSession();
     expect(foreignSession.data?.user.id).toBe(signup.data!.user.id);
+
     const guestSession = await guest.client.getSession();
     expect(guestSession.data).toBeNull();
+
     const keyFetchesAfter = await googleState(ctx);
     expect(keyFetchesAfter.jwksFetches).toBe(keyFetchesBefore.jwksFetches + 2);
+
     const [header, payload, signature] = token.split(".");
     return {
       signup: ctx.snapshot(signup),

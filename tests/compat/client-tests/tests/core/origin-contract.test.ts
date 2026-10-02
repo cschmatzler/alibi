@@ -1,12 +1,14 @@
 import { expect } from "bun:test";
+
 import { passkeyClient } from "@better-auth/passkey/client";
 import { createAuthClient } from "better-auth/client";
+
 import { Authenticator } from "../../support/authenticator";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 async function owners(ctx: ScenarioContext) {
-  const owner = ctx.actor("origin-owner"),
-    foreign = ctx.actor("origin-foreign");
+  const owner = ctx.actor("origin-owner");
+  const foreign = ctx.actor("origin-foreign");
   const signup = await owner.client.signUp.email({
     email: ctx.uniqueEmail("origin-owner"),
     password: "password123",
@@ -20,6 +22,7 @@ async function owners(ctx: ScenarioContext) {
   });
   expect(signup.error).toBeNull();
   expect(foreignSignup.error).toBeNull();
+
   const foreignBefore = await ctx.readUserState({ userId: foreignSignup.data!.user.id });
   return { owner, foreign, signup, foreignSignup, foreignBefore };
 }
@@ -27,10 +30,10 @@ async function owners(ctx: ScenarioContext) {
 compatScenario(
   "core cookie origin validation uses canonical HTTP origin and rejects foreign authorities before session writes",
   async (ctx) => {
-    const fixture = await owners(ctx),
-      results = [];
-    const wrong = new URL("http://localhost:49192"),
-      lookalike = new URL("http://localhost.evil.invalid:49192");
+    const fixture = await owners(ctx);
+    const results = [];
+    const wrong = new URL("http://localhost:49192");
+    const lookalike = new URL("http://localhost.evil.invalid:49192");
     const table: [string, boolean][] = [
       [ctx.baseURL, true],
       [ctx.baseURL.replace("http://localhost", "HTTP://LOCALHOST"), true],
@@ -40,6 +43,7 @@ compatScenario(
       [wrong.origin, false],
       [lookalike.origin, false],
     ];
+
     for (const [origin, allowed] of table) {
       const before = (await ctx.readUserState({ userId: fixture.signup.data!.user.id })) as {
         sessions: { token: string }[];
@@ -52,6 +56,7 @@ compatScenario(
         sessions: { token: string }[];
       };
       let current: unknown = null;
+
       if (allowed) {
         expect(result.error, origin).toBeNull();
         expect(result.data!.user.id).toBe(fixture.signup.data!.user.id);
@@ -59,16 +64,20 @@ compatScenario(
         expect(after.sessions.filter((row) => row.token !== result.data!.token)).toEqual(
           before.sessions,
         );
+
         const session = await fixture.owner.client.getSession();
         expect(session.data?.session.token).toBe(result.data!.token!);
         expect(session.data?.user.id).toBe(fixture.signup.data!.user.id);
+
         current = session;
       } else {
         expect(result.error).toMatchObject({ status: 403, code: "INVALID_ORIGIN" });
         expect(after).toEqual(before);
       }
+
       const foreignAfter = await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id });
       expect(foreignAfter).toEqual(fixture.foreignBefore);
+
       results.push({
         origin: { url: origin },
         allowed,
@@ -79,8 +88,10 @@ compatScenario(
         foreignAfter,
       });
     }
+
     const foreignCurrent = await fixture.foreign.client.getSession();
     expect(foreignCurrent.data?.session.token).toBe(fixture.foreignSignup.data!.token!);
+
     return {
       signup: fixture.signup,
       foreignSignup: fixture.foreignSignup,
@@ -98,12 +109,13 @@ const redirectScenarios = [
   "core redirect controls reject authority-shaped paths while permitting owned safe paths",
   "core redirect controls preserve whitespace absolute callbacks and explicit empty callbacks",
 ] as const;
+
 for (const [group, scenarioName] of redirectScenarios.entries()) {
   compatScenario(
     scenarioName,
     async (ctx) => {
-      const fixture = await owners(ctx),
-        results = [];
+      const fixture = await owners(ctx);
+      const results = [];
       // Keep the complete twelve-value matrix for both real login methods. Each
       // bounded owner observes fewer password hashes before comparing fresh rows.
       const table: [string, boolean][] = [
@@ -120,7 +132,8 @@ for (const [group, scenarioName] of redirectScenarios.entries()) {
         [`\t${ctx.baseURL.replace("http://localhost", "HTTP://LOCALHOST")}/done`, true],
         ["", true],
       ].slice(group * 3, group * 3 + 3) as [string, boolean][];
-      for (const method of ["email", "username"] as const)
+
+      for (const method of ["email", "username"] as const) {
         for (const [callbackURL, allowed] of table) {
           const before = (await ctx.readUserState({ userId: fixture.signup.data!.user.id })) as {
             sessions: { token: string }[];
@@ -141,6 +154,7 @@ for (const [group, scenarioName] of redirectScenarios.entries()) {
             sessions: { token: string }[];
           };
           let current: unknown = null;
+
           if (allowed) {
             expect(result.error, callbackURL).toBeNull();
             expect(result.data!.user.id).toBe(fixture.signup.data!.user.id);
@@ -148,8 +162,10 @@ for (const [group, scenarioName] of redirectScenarios.entries()) {
             expect(after.sessions.filter((row) => row.token !== result.data!.token)).toEqual(
               before.sessions,
             );
+
             const session = await fixture.owner.client.getSession();
             expect(session.data?.session.token).toBe(result.data!.token!);
+
             current = session;
           } else {
             expect(result.error, callbackURL).toMatchObject({
@@ -158,10 +174,12 @@ for (const [group, scenarioName] of redirectScenarios.entries()) {
             });
             expect(after).toEqual(before);
           }
+
           const foreignAfter = await ctx.readUserState({
             userId: fixture.foreignSignup.data!.user.id,
           });
           expect(foreignAfter).toEqual(fixture.foreignBefore);
+
           results.push({
             method,
             callbackURL,
@@ -173,8 +191,11 @@ for (const [group, scenarioName] of redirectScenarios.entries()) {
             foreignAfter,
           });
         }
+      }
+
       const foreignCurrent = await fixture.foreign.client.getSession();
       expect(foreignCurrent.data?.session.token).toBe(fixture.foreignSignup.data!.token!);
+
       return {
         signup: fixture.signup,
         foreignSignup: fixture.foreignSignup,
@@ -190,15 +211,15 @@ for (const [group, scenarioName] of redirectScenarios.entries()) {
 compatScenario(
   "core canonical origin guard preserves exact ES256 WebAuthn proof origins and consumed challenges",
   async (ctx) => {
-    const fixture = await owners(ctx),
-      uppercase = ctx.baseURL.replace("http://localhost", "HTTP://LOCALHOST");
+    const fixture = await owners(ctx);
+    const uppercase = ctx.baseURL.replace("http://localhost", "HTTP://LOCALHOST");
     const client = createAuthClient({
       baseURL: ctx.baseURL,
       plugins: [passkeyClient()],
       fetchOptions: { customFetchImpl: fixture.owner.fetch },
     });
-    const authenticator = new Authenticator(),
-      registrations = [];
+    const authenticator = new Authenticator();
+    const registrations = [];
     const rows = async () => {
       const result = await client.$fetch("/passkey/list-user-passkeys", { method: "GET" });
       expect(result.error).toBeNull();
@@ -211,20 +232,23 @@ compatScenario(
       expect(result.status).toBe(200);
       return result.body as { challenges: { count: number } };
     };
+
     for (const mode of [
       "base-proof-uppercase-header",
       "uppercase-proof-base-header",
       "uppercase-control",
     ] as const) {
-      const before = await rows(),
-        beforeState = await state(),
-        ownerBefore = await ctx.readUserState({ userId: fixture.signup.data!.user.id });
+      const before = await rows();
+      const beforeState = await state();
+      const ownerBefore = await ctx.readUserState({ userId: fixture.signup.data!.user.id });
       const options = await client.$fetch("/passkey/generate-register-options", { method: "GET" });
       expect(options.error).toBeNull();
-      const proofOrigin = mode === "base-proof-uppercase-header" ? ctx.baseURL : uppercase,
-        requestOrigin = mode === "uppercase-proof-base-header" ? ctx.baseURL : uppercase;
+
+      const proofOrigin = mode === "base-proof-uppercase-header" ? ctx.baseURL : uppercase;
+      const requestOrigin = mode === "uppercase-proof-base-header" ? ctx.baseURL : uppercase;
       const proof = authenticator.register(options.data, proofOrigin);
       let foreignOrigin: unknown = null;
+
       if (mode === "uppercase-control") {
         const issued = await state();
         const denied = await client.$fetch("/passkey/verify-registration", {
@@ -241,16 +265,19 @@ compatScenario(
         expect(await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id })).toEqual(
           fixture.foreignBefore,
         );
+
         foreignOrigin = { issued, denied, after: await state() };
       }
+
       const result = await client.$fetch("/passkey/verify-registration", {
         method: "POST",
         headers: { origin: requestOrigin },
         body: { response: proof, name: "Exact Origin Device" },
       });
-      const after = await rows(),
-        afterState = await state();
+      const after = await rows();
+      const afterState = await state();
       expect(afterState.challenges).toEqual(beforeState.challenges);
+
       if (mode === "uppercase-control") {
         expect(result.error).toBeNull();
         expect(after).toHaveLength(before.length + 1);
@@ -263,6 +290,7 @@ compatScenario(
         expect(result.error).toMatchObject({ status: 500, code: "FAILED_TO_VERIFY_REGISTRATION" });
         expect(after).toEqual(before);
       }
+
       const replay = await client.$fetch("/passkey/verify-registration", {
         method: "POST",
         headers: { origin: requestOrigin },
@@ -276,6 +304,7 @@ compatScenario(
       expect(await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id })).toEqual(
         fixture.foreignBefore,
       );
+
       registrations.push({
         mode,
         proofOrigin: { url: proofOrigin },
@@ -291,32 +320,36 @@ compatScenario(
         replay,
       });
     }
+
     const authentications = [];
+
     for (const mode of [
       "base-control",
       "base-proof-uppercase-header",
       "uppercase-proof-base-header",
       "uppercase-control",
     ] as const) {
-      const before = await rows(),
-        beforeState = await state(),
-        ownerBefore = (await ctx.readUserState({ userId: fixture.signup.data!.user.id })) as {
-          sessions: { token: string }[];
-        };
+      const before = await rows();
+      const beforeState = await state();
+      const ownerBefore = (await ctx.readUserState({ userId: fixture.signup.data!.user.id })) as {
+        sessions: { token: string }[];
+      };
       const options = await client.$fetch("/passkey/generate-authenticate-options", {
         method: "GET",
       });
       expect(options.error).toBeNull();
+
       const proofOrigin =
-          mode === "uppercase-proof-base-header" || mode === "uppercase-control"
-            ? uppercase
-            : ctx.baseURL,
-        requestOrigin =
-          mode === "base-proof-uppercase-header" || mode === "uppercase-control"
-            ? uppercase
-            : ctx.baseURL;
+        mode === "uppercase-proof-base-header" || mode === "uppercase-control"
+          ? uppercase
+          : ctx.baseURL;
+      const requestOrigin =
+        mode === "base-proof-uppercase-header" || mode === "uppercase-control"
+          ? uppercase
+          : ctx.baseURL;
       const proof = authenticator.authenticate(options.data, proofOrigin);
       let foreignOrigin: unknown = null;
+
       if (mode === "base-control") {
         const issued = await state();
         const denied = await client.$fetch("/passkey/verify-authentication", {
@@ -333,22 +366,27 @@ compatScenario(
         expect(await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id })).toEqual(
           fixture.foreignBefore,
         );
+
         foreignOrigin = { issued, denied, after: await state() };
       }
+
       const result = await client.$fetch("/passkey/verify-authentication", {
         method: "POST",
         headers: { origin: requestOrigin },
         body: { response: proof },
       });
-      const after = await rows(),
-        afterState = await state(),
-        ownerAfter = (await ctx.readUserState({ userId: fixture.signup.data!.user.id })) as {
-          sessions: { token: string }[];
-        };
+      const after = await rows();
+      const afterState = await state();
+      const ownerAfter = (await ctx.readUserState({ userId: fixture.signup.data!.user.id })) as {
+        sessions: { token: string }[];
+      };
       expect(afterState.challenges).toEqual(beforeState.challenges);
+
       let current: unknown = null;
+
       if (mode.endsWith("control")) {
         expect(result.error).toBeNull();
+
         const session = await fixture.owner.client.getSession();
         expect(session.data?.user.id).toBe(fixture.signup.data!.user.id);
         expect(ownerAfter.sessions).toHaveLength(ownerBefore.sessions.length + 1);
@@ -358,12 +396,14 @@ compatScenario(
         expect(after[0]!.counter).toBe(
           Buffer.from(proof.response.authenticatorData, "base64url").readUInt32BE(33),
         );
+
         current = session;
       } else {
         expect(result.error).toMatchObject({ status: 400, code: "AUTHENTICATION_FAILED" });
         expect(after).toEqual(before);
         expect(ownerAfter).toEqual(ownerBefore);
       }
+
       const replay = await client.$fetch("/passkey/verify-authentication", {
         method: "POST",
         headers: { origin: requestOrigin },
@@ -375,6 +415,7 @@ compatScenario(
       expect(await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id })).toEqual(
         fixture.foreignBefore,
       );
+
       authentications.push({
         mode,
         proofOrigin: { url: proofOrigin },
@@ -392,6 +433,7 @@ compatScenario(
         replay,
       });
     }
+
     return {
       signup: fixture.signup,
       foreignSignup: fixture.foreignSignup,

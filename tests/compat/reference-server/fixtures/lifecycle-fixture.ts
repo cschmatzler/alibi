@@ -41,6 +41,7 @@ export function lifecycleFixture(): BetterAuthPlugin {
             });
             ctx.setHeader("x-lifecycle-queued", "visible");
             ctx.setHeader("set-cookie", "lifecycle=value; HttpOnly; Path=/; SameSite=Lax");
+
             if (ctx.headers?.get("x-parity-lifecycle") === "reject") {
               throw ctx.error("FORBIDDEN", { message: "fixture after rejection" });
             }

@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import type { compatScenario } from "./scenario";
 
 export type ScenarioContext = Parameters<Parameters<typeof compatScenario>[1]>[0];
@@ -28,16 +30,23 @@ export async function fixtureValue(
   query: Readonly<Record<string, string>>,
 ) {
   const url = new URL(path, ctx.baseURL);
-  for (const [name, value] of Object.entries(query)) url.searchParams.set(name, value);
+
+  for (const [name, value] of Object.entries(query)) {
+    url.searchParams.set(name, value);
+  }
+
   const response = await fetch(url);
   expect(response.status).toBe(200);
+
   const value: unknown = await response.json();
   return value;
 }
 
 export async function readUserState(ctx: ScenarioContext, userId: string) {
   const parsed = userState.safeParse(await fixtureValue(ctx, "/__test/user-state", { userId }));
-  if (!parsed.success) throw new Error("Fixture must return complete persisted user state");
+  if (!parsed.success) {
+    throw new Error("Fixture must return complete persisted user state");
+  }
   return parsed.data;
 }
 
@@ -45,7 +54,9 @@ export async function verificationCount(ctx: ScenarioContext, identifier: string
   const parsed = z
     .array(z.unknown())
     .safeParse(await fixtureValue(ctx, "/__test/verification-state", { identifier }));
-  if (!parsed.success) throw new Error("Fixture must return the persisted verification rows");
+  if (!parsed.success) {
+    throw new Error("Fixture must return the persisted verification rows");
+  }
   return parsed.data.length;
 }
 
@@ -59,7 +70,9 @@ export async function expireVerification(ctx: ScenarioContext, identifier: strin
 }
 
 export function requireUser<T extends { id: string }>(user: T | null | undefined): T {
-  if (!user) throw new Error("Successful authentication must return a user");
+  if (!user) {
+    throw new Error("Successful authentication must return a user");
+  }
   return user;
 }
 
@@ -72,7 +85,10 @@ export async function storedVerification(ctx: ScenarioContext, identifier: strin
   const parsed = schema.safeParse(
     await fixtureValue(ctx, "/__test/verification-state", { identifier }),
   );
-  if (!parsed.success)
+
+  if (!parsed.success) {
     throw new Error("Verification fixture must return stored representation and expiry");
+  }
+
   return parsed.data;
 }

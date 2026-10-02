@@ -1,15 +1,21 @@
 import type { Database } from "bun:sqlite";
+
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { username } from "better-auth/plugins";
+
 import configurations from "../../api-key-options.json";
 
 type Data = Record<string, any>;
+
 function number(value: unknown, fallback: number): number {
-  if (value === undefined) return fallback;
+  if (value === undefined) {
+    return fallback;
+  }
   return typeof value === "number" ? value : Number(value);
 }
+
 function numeric(value: number) {
   return { value: Number.isFinite(value) ? value : null, text: String(value) };
 }
@@ -20,23 +26,32 @@ export function createApiKeyOptionsFixture(
 ) {
   const path = "/__test/profiles/api-key-options/api/auth";
   const events: Data[] = [];
-  let mode = "normal",
-    serial = 0,
-    getterCalls = 0;
+  let mode = "normal";
+  let serial = 0;
+  let getterCalls = 0;
+
   function failure(stage: string) {
     const selected = mode.replace("-handler-", "-");
-    if (selected === `${stage}-ordinary`) throw new Error(`Private ${stage} failure`);
-    if (selected === `${stage}-api`)
+
+    if (selected === `${stage}-ordinary`) {
+      throw new Error(`Private ${stage} failure`);
+    }
+
+    if (selected === `${stage}-api`) {
       throw new APIError("FORBIDDEN", {
         code: `APPLICATION_${stage.toUpperCase()}_DENIED`,
         message: `Application ${stage} denied`,
       });
-    if (selected === `${stage}-public-500`)
+    }
+
+    if (selected === `${stage}-public-500`) {
       throw new APIError("INTERNAL_SERVER_ERROR", {
         code: `APPLICATION_${stage.toUpperCase()}_FAILED`,
         message: `Application ${stage} failed`,
       });
+    }
   }
+
   function context(ctx: any) {
     return {
       requestPresent: !!ctx.request,
@@ -45,6 +60,7 @@ export function createApiKeyOptionsFixture(
       body: ctx.body ?? null,
     };
   }
+
   const auth = betterAuth({
     ...options,
     basePath: path,
@@ -110,7 +126,9 @@ export function createApiKeyOptionsFixture(
                   if (key !== null) {
                     events.push({ kind: "getter", configId: entry.id, key, mode, ...context(ctx) });
                     getterCalls++;
-                    if (!mode.startsWith("getter-handler-") || getterCalls === 2) failure("getter");
+                    if (!mode.startsWith("getter-handler-") || getterCalls === 2) {
+                      failure("getter");
+                    }
                   }
                   return key;
                 },
@@ -120,6 +138,7 @@ export function createApiKeyOptionsFixture(
       ),
     ],
   });
+
   async function controlled(operation: () => Promise<unknown>) {
     try {
       const value = await operation();
@@ -139,25 +158,36 @@ export function createApiKeyOptionsFixture(
       });
     }
   }
+
   return {
     path,
     auth,
     async control(request: Request): Promise<Response | null> {
-      const url = new URL(request.url),
-        action = url.pathname.replace("/__test/api-key-options/", "");
-      if (!url.pathname.startsWith("/__test/api-key-options/")) return null;
-      if (action === "events") return Response.json(events.splice(0));
+      const url = new URL(request.url);
+      const action = url.pathname.replace("/__test/api-key-options/", "");
+
+      if (!url.pathname.startsWith("/__test/api-key-options/")) {
+        return null;
+      }
+
+      if (action === "events") {
+        return Response.json(events.splice(0));
+      }
+
       if (action === "mode") {
         const input = await request.json();
         mode = input.mode;
         getterCalls = 0;
+
         if (input.reset) {
           serial = 0;
           events.length = 0;
         }
+
         return Response.json({ mode });
       }
-      if (action === "state")
+
+      if (action === "state") {
         return Response.json({
           keys: database
             .query(
@@ -176,29 +206,45 @@ export function createApiKeyOptionsFixture(
                 "expiresAt",
                 "lastRequest",
                 "lastRefillAt",
-              ])
-                if (row[field] !== null) row[field] = new Date(row[field]).toISOString();
+              ]) {
+                if (row[field] !== null) {
+                  row[field] = new Date(row[field]).toISOString();
+                }
+              }
               return row;
             }),
         });
+      }
+
       const body = await request.json();
+
       if (action === "install") {
         for (const [field, value] of Object.entries(body.patch)) {
-          if (!["permissions", "referenceId", "configId"].includes(field))
+          if (!["permissions", "referenceId", "configId"].includes(field)) {
             throw new Error("Unsupported installed field");
+          }
           database.query(`UPDATE apikey SET "${field}"=? WHERE id=?`).run(value as any, body.keyId);
         }
         return Response.json({ success: true });
       }
-      if (action === "create") return controlled(() => auth.api.createApiKey({ body }));
-      if (action === "update") return controlled(() => auth.api.updateApiKey({ body }));
-      if (action === "verify")
+
+      if (action === "create") {
+        return controlled(() => auth.api.createApiKey({ body }));
+      }
+
+      if (action === "update") {
+        return controlled(() => auth.api.updateApiKey({ body }));
+      }
+
+      if (action === "verify") {
         return controlled(() =>
           auth.api.verifyApiKey({
             body: body.input,
             ...(body.request ? { request, headers: request.headers } : {}),
           }),
         );
+      }
+
       return null;
     },
   };

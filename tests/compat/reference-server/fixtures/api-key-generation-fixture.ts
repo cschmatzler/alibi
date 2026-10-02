@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
@@ -10,8 +11,9 @@ export function createApiKeyGenerationFixture(
 ) {
   const path = "/__test/profiles/api-key-generation/api/auth";
   const events: unknown[] = [];
-  let mode = "normal",
-    serial = 0;
+  let mode = "normal";
+  let serial = 0;
+
   function configuration(configId: string, disableKeyHashing = false) {
     return {
       configId,
@@ -29,17 +31,25 @@ export function createApiKeyGenerationFixture(
           prefix: input.prefix ?? null,
           mode,
         });
-        if (mode === "generator-api")
+
+        if (mode === "generator-api") {
           throw new APIError("FORBIDDEN", {
             code: "GENERATOR_DENIED",
             message: "Application generator denied",
           });
-        if (mode === "generator-public-500")
+        }
+
+        if (mode === "generator-public-500") {
           throw new APIError("INTERNAL_SERVER_ERROR", {
             code: "APPLICATION_GENERATION_DENIED",
             message: "Application generation denied",
           });
-        if (mode === "generator-throw") throw new Error("Private generator failure");
+        }
+
+        if (mode === "generator-throw") {
+          throw new Error("Private generator failure");
+        }
+
         return mode === "unicode"
           ? "😀abcdefghijklmnop"
           : `${input.prefix ?? ""}generated-owned-secret-${String(++serial).padStart(6, "0")}`;
@@ -54,12 +64,18 @@ export function createApiKeyGenerationFixture(
             explicit: ctx.request ? (ctx.body.permissions ?? null) : null,
             mode,
           });
-          if (mode === "permissions-api")
+
+          if (mode === "permissions-api") {
             throw new APIError("FORBIDDEN", {
               code: "PERMISSIONS_DENIED",
               message: "Application permissions denied",
             });
-          if (mode === "permissions-throw") throw new Error("Private permissions failure");
+          }
+
+          if (mode === "permissions-throw") {
+            throw new Error("Private permissions failure");
+          }
+
           const owner = database.query("SELECT name FROM user WHERE id = ?").get(referenceId) as {
             name: string;
           };
@@ -74,6 +90,7 @@ export function createApiKeyGenerationFixture(
       },
     };
   }
+
   const auth = betterAuth({
     ...options,
     basePath: path,
@@ -103,17 +120,24 @@ export function createApiKeyGenerationFixture(
     auth,
     async control(request: Request): Promise<Response | null> {
       const url = new URL(request.url);
+
       if (url.pathname === "/__test/api-key-generation/events") {
         const result = events.splice(0);
         return Response.json(result);
       }
+
       if (url.pathname === "/__test/api-key-generation/mode" && request.method === "POST") {
         const input = await request.json();
         mode = input.mode;
-        if (input.reset) serial = 0;
+
+        if (input.reset) {
+          serial = 0;
+        }
+
         return Response.json({ mode });
       }
-      if (url.pathname === "/__test/api-key-generation/state")
+
+      if (url.pathname === "/__test/api-key-generation/state") {
         return Response.json(
           database
             .query(
@@ -125,6 +149,8 @@ export function createApiKeyGenerationFixture(
               expiresAt: row.expiresAt === null ? null : new Date(row.expiresAt).toISOString(),
             })),
         );
+      }
+
       if (url.pathname === "/__test/api-key-generation/expire" && request.method === "POST") {
         const { keyId } = await request.json();
         database
@@ -132,14 +158,23 @@ export function createApiKeyGenerationFixture(
           .run(new Date(0).toISOString(), keyId);
         return Response.json({ success: true });
       }
-      if (url.pathname === "/__test/api-key-generation/cleanup" && request.method === "POST")
+
+      if (url.pathname === "/__test/api-key-generation/cleanup" && request.method === "POST") {
         return Response.json(await auth.api.deleteAllExpiredApiKeys());
-      if (url.pathname === "/__test/api-key-generation/create" && request.method === "POST")
+      }
+
+      if (url.pathname === "/__test/api-key-generation/create" && request.method === "POST") {
         return Response.json(await auth.api.createApiKey({ body: await request.json() }));
-      if (url.pathname === "/__test/api-key-generation/update" && request.method === "POST")
+      }
+
+      if (url.pathname === "/__test/api-key-generation/update" && request.method === "POST") {
         return Response.json(await auth.api.updateApiKey({ body: await request.json() }));
-      if (url.pathname === "/__test/api-key-generation/verify" && request.method === "POST")
+      }
+
+      if (url.pathname === "/__test/api-key-generation/verify" && request.method === "POST") {
         return Response.json(await auth.api.verifyApiKey({ body: await request.json() }));
+      }
+
       return null;
     },
   };

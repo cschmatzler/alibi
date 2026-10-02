@@ -1,12 +1,14 @@
 /** Application-owned update callbacks; pinned HTTP guards and adapter remain active. */
 
 import type { Database } from "bun:sqlite";
+
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
 
 type Actor = { id: string; email: string; name?: string | null };
 type Member = { id: string; organizationId: string; userId: string; role: string; createdAt: Date };
+
 export function organizationMemberRoleHooksFixture(
   database: Database,
   shared: Parameters<typeof betterAuth>[0],
@@ -16,6 +18,7 @@ export function organizationMemberRoleHooksFixture(
   const receipts: unknown[] = [];
   let release: (() => void) | undefined;
   let gate = Promise.resolve();
+
   function snapshot() {
     return {
       organizations: database
@@ -34,6 +37,7 @@ export function organizationMemberRoleHooksFixture(
       users: database.query("SELECT id,email,name FROM user ORDER BY email,id").all(),
     };
   }
+
   function note(
     phase: string,
     context: {
@@ -58,12 +62,14 @@ export function organizationMemberRoleHooksFixture(
       },
       snapshot: snapshot(),
     });
-    if (mode === `reject-${phase}`)
+    if (mode === `reject-${phase}`) {
       throw new APIError("BAD_REQUEST", {
         code: "ROLE_HOOK_REJECTED",
         message: `Rejected ${phase}`,
       });
+    }
   }
+
   const hooks = {
     async beforeUpdateMemberRole(context: {
       organization: unknown;
@@ -72,13 +78,20 @@ export function organizationMemberRoleHooksFixture(
       newRole: string;
     }) {
       note("before-role", context);
-      if (mode === "pause-before") await gate;
+
+      if (mode === "pause-before") {
+        await gate;
+      }
+
       const ctx = await auth.$context;
-      if (mode === "delete-row")
+
+      if (mode === "delete-row") {
         await ctx.adapter.delete({
           model: "member",
           where: [{ field: "id", value: context.member.id }],
         });
+      }
+
       if (mode === "mutate-target") {
         await ctx.adapter.update({
           model: "user",
@@ -91,9 +104,18 @@ export function organizationMemberRoleHooksFixture(
           update: { role: "member" },
         });
       }
-      if (mode === "patch") return { data: { role: "hook-unregistered-role" } };
-      if (mode === "empty") return { data: { role: "" } };
-      if (mode === "absent") return { data: {} };
+
+      if (mode === "patch") {
+        return { data: { role: "hook-unregistered-role" } };
+      }
+
+      if (mode === "empty") {
+        return { data: { role: "" } };
+      }
+
+      if (mode === "absent") {
+        return { data: {} };
+      }
     },
     async afterUpdateMemberRole(context: {
       organization: unknown;
@@ -133,8 +155,9 @@ export function organizationMemberRoleHooksFixture(
         attempt < 100 &&
         !receipts.some((receipt) => (receipt as { phase: string }).phase === waitFor);
         attempt++
-      )
+      ) {
         await Bun.sleep(10);
+      }
       return Response.json({ receipts, snapshot: snapshot() });
     },
   };

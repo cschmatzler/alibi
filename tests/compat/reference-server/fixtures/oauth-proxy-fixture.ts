@@ -1,23 +1,26 @@
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
+
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { oAuthProxy } from "better-auth/plugins";
+
 export const OAUTH_PROXY_SECRET = "local-fixture-dedicated-oauth-proxy-secret-32";
 export const OAUTH_PROXY_PATH = "/__test/profiles/oauth-proxy/api/auth";
+
 /** Two genuine auth stores on different transport origins; no copied profile/state. */
 export async function oauthProxyFixture(base: BetterAuthOptions) {
-  const preview = String(base.baseURL),
-    production = preview.replace("localhost", "127.0.0.1");
-  const records: unknown[] = [],
-    grants = new Map<string, { challenge: string; redirect: string; used: boolean }>();
-  let count = 0,
-    failure = "none",
-    tracking = false;
+  const preview = String(base.baseURL);
+  const production = preview.replace("localhost", "127.0.0.1");
+  const records: unknown[] = [];
+  const grants = new Map<string, { challenge: string; redirect: string; used: boolean }>();
+  let count = 0;
+  let failure = "none";
+  let tracking = false;
   const afterRequests: { callbackURL: string }[] = [];
-  const sessionHooks: unknown[] = [],
-    databases = new Map<string, Database>();
+  const sessionHooks: unknown[] = [];
+  const databases = new Map<string, Database>();
   let profile: Record<string, unknown> = {
     id: 777,
     email: "proxy-owner@fixture.test",
@@ -28,6 +31,7 @@ export async function oauthProxyFixture(base: BetterAuthOptions) {
     locked: false,
   };
   const instances = new Map<string, ReturnType<typeof betterAuth>>();
+
   for (const origin of [preview, production]) {
     const database = new Database(":memory:");
     databases.set(origin, database);
@@ -49,8 +53,9 @@ export async function oauthProxyFixture(base: BetterAuthOptions) {
                   (ctx.path?.endsWith("/oauth-proxy") || ctx.path === "/oauth-proxy-callback"),
                 handler: createAuthMiddleware(async (ctx) => {
                   const callbackURL = ctx.query?.callbackURL;
-                  if (typeof callbackURL !== "string")
+                  if (typeof callbackURL !== "string") {
                     throw new Error("actual completion callback required");
+                  }
                   afterRequests.push({ callbackURL });
                 }),
               },
@@ -64,14 +69,21 @@ export async function oauthProxyFixture(base: BetterAuthOptions) {
             before: async (session, context) => {
               if (context?.path?.includes("oauth-proxy")) {
                 sessionHooks.push({ userId: session.userId, mode: failure });
-                if (failure === "cancel-session") return false;
-                if (failure === "ordinary-session-error")
+
+                if (failure === "cancel-session") {
+                  return false;
+                }
+
+                if (failure === "ordinary-session-error") {
                   throw new Error("private proxy session failure");
-                if (failure === "coded-session-error")
+                }
+
+                if (failure === "coded-session-error") {
                   throw new APIError("INTERNAL_SERVER_ERROR", {
                     code: "PROXY_SESSION_DENIED",
                     message: "Configured proxy session denied",
                   });
+                }
               }
               return { data: session };
             },
@@ -92,6 +104,7 @@ export async function oauthProxyFixture(base: BetterAuthOptions) {
     await (await getMigrations(options)).runMigrations();
     instances.set(origin, betterAuth(options));
   }
+
   async function state() {
     const output: Record<string, unknown> = {};
     for (const [label, origin] of [
@@ -151,15 +164,20 @@ export async function oauthProxyFixture(base: BetterAuthOptions) {
     }
     return Response.json({ ...output, receipts: records, sessionHooks, afterRequests });
   }
+
   return {
     async reset() {
-      for (const database of databases.values())
+      for (const database of databases.values()) {
         database.exec("DROP TRIGGER IF EXISTS proxy_delete_veto");
+      }
+
       for (const instance of instances.values()) {
         const { adapter } = await instance.$context;
-        for (const model of ["session", "account", "verification", "user"])
+        for (const model of ["session", "account", "verification", "user"]) {
           await adapter.deleteMany({ model, where: [] });
+        }
       }
+
       grants.clear();
       records.length = 0;
       sessionHooks.length = 0;
@@ -179,25 +197,36 @@ export async function oauthProxyFixture(base: BetterAuthOptions) {
     },
     async handle(request: Request): Promise<Response | null> {
       const url = new URL(request.url);
-      if (url.pathname.startsWith(`${OAUTH_PROXY_PATH}/`))
+
+      if (url.pathname.startsWith(`${OAUTH_PROXY_PATH}/`)) {
         return instances.get(url.origin)!.handler(request);
-      if (url.pathname === "/__test/oauth-proxy/state") return state();
+      }
+
+      if (url.pathname === "/__test/oauth-proxy/state") {
+        return state();
+      }
+
       if (url.pathname === "/__test/oauth-proxy/control" && request.method === "POST") {
         const input = await request.json();
         failure = input.mode;
         tracking = true;
         const database = databases.get(preview)!;
         database.exec("DROP TRIGGER IF EXISTS proxy_delete_veto");
-        if (failure === "delete-veto")
+
+        if (failure === "delete-veto") {
           database.exec(
             "CREATE TRIGGER proxy_delete_veto BEFORE DELETE ON verification BEGIN SELECT RAISE(ABORT, 'proxy delete veto'); END",
           );
+        }
+
         return Response.json({ status: true });
       }
+
       if (url.pathname === "/__test/oauth-proxy/profile" && request.method === "POST") {
         profile = await request.json();
         return Response.json({ status: true });
       }
+
       if (url.pathname === "/__test/oauth-proxy/provider/oauth/authorize") {
         records.push({ stage: "authorize", query: Object.fromEntries(url.searchParams) });
         const code = `proxy-fixture-code-${++count}`;
@@ -211,17 +240,21 @@ export async function oauthProxyFixture(base: BetterAuthOptions) {
         callback.searchParams.set("state", url.searchParams.get("state")!);
         return new Response(null, { status: 302, headers: { location: callback.href } });
       }
+
       if (url.pathname === "/__test/oauth-proxy/provider/oauth/token") {
         const body = Object.fromEntries(new URLSearchParams(await request.text()));
         records.push({ stage: "token", body });
         const grant = grants.get(body.code!);
+
         if (
           !grant ||
           grant.used ||
           grant.redirect !== body.redirect_uri ||
           grant.challenge !== createHash("sha256").update(body.code_verifier!).digest("base64url")
-        )
+        ) {
           return Response.json({ error: "invalid_grant" }, { status: 400 });
+        }
+
         grant.used = true;
         return Response.json({
           access_token: "proxy-fixture-access",
@@ -231,10 +264,12 @@ export async function oauthProxyFixture(base: BetterAuthOptions) {
           expires_in: 3600,
         });
       }
+
       if (url.pathname === "/__test/oauth-proxy/provider/api/v4/user") {
         records.push({ stage: "userinfo", authorization: request.headers.get("authorization") });
         return Response.json(profile);
       }
+
       return null;
     },
   };

@@ -1,7 +1,9 @@
 import { expect } from "bun:test";
+
 import { createAuthClient } from "better-auth/client";
 import { organizationClient } from "better-auth/client/plugins";
 import { z } from "zod";
+
 import type { FixtureProfile } from "../../support/profiles";
 import type { compatScenario } from "../../support/scenario";
 
@@ -70,7 +72,9 @@ export function orgActor(ctx: CompatContext, name: string, profile: FixtureProfi
 export function data<T>(response: { data: T | null; error: unknown }): T {
   expect(response.error).toBeNull();
 
-  if (response.data === null) throw new Error("Successful organization operation must return data");
+  if (response.data === null) {
+    throw new Error("Successful organization operation must return data");
+  }
   return response.data;
 }
 

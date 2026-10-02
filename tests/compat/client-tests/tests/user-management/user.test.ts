@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario } from "../../support/scenario";
 
 function proofLifetime(token: string): number {
@@ -113,6 +115,7 @@ compatScenario("change email for an unverified user completes after verify email
     token: string;
   };
   expect(proofLifetime(record.token)).toBe(3600);
+
   const verify = await primary.client.verifyEmail({
     query: {
       token: record.token,
@@ -158,6 +161,7 @@ compatScenario(
       token: string;
     };
     expect(proofLifetime(confirmation.token)).toBe(3600);
+
     const confirm = await primary.client.verifyEmail({
       query: {
         token: confirmation.token,
@@ -167,6 +171,7 @@ compatScenario(
       email: newEmail,
     })) as { token: string };
     expect(proofLifetime(newVerification.token)).toBe(3600);
+
     const finish = await primary.client.verifyEmail({
       query: {
         token: newVerification.token,
@@ -226,10 +231,14 @@ compatScenario(
       },
     });
     expect(signup.error).toBeNull();
-    if (!originalCookie || !signup.data)
+
+    if (!originalCookie || !signup.data) {
       throw new Error("Deletion proof requires the original signed session and user");
+    }
+
     const remove = await primary.client.deleteUser();
     expect(remove.error).toBeNull();
+
     const session = await primary.client.getSession();
     const replay = await ctx.rawRequest({
       actor: "deleted-cookie-replay",
@@ -237,8 +246,10 @@ compatScenario(
       headers: { cookie: originalCookie },
     });
     expect(replay.body).toBeNull();
+
     const persisted = await ctx.readUserState({ userId: signup.data.user.id });
     expect(persisted).toMatchObject({ user: null, accounts: [], sessions: [] });
+
     const signin = await ctx
       .actor("deleted-password-replay")
       .client.signIn.email({ email, password: "password123" });

@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+
 import { passkey } from "@better-auth/passkey";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
@@ -24,6 +25,7 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
     "empty-name",
     "methods",
   ];
+
   for (const mode of modes) {
     const path = `/__test/profiles/anonymous-${mode}/api/auth`;
     const options: BetterAuthOptions = {
@@ -60,24 +62,34 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
         user: {
           create: {
             before: async (user, context) => {
-              if (context?.path !== "/sign-in/anonymous") return;
-              if (mode === "user-cancel") return false;
-              if (mode === "user-forbidden")
+              if (context?.path !== "/sign-in/anonymous") {
+                return;
+              }
+              if (mode === "user-cancel") {
+                return false;
+              }
+              if (mode === "user-forbidden") {
                 throw new APIError("FORBIDDEN", {
                   message: "user creation cancelled by database hook",
                 });
+              }
             },
           },
         },
         session: {
           create: {
             before: async (_session, context) => {
-              if (context?.path !== "/sign-in/anonymous") return;
-              if (mode === "session-cancel") return false;
-              if (mode === "session-forbidden")
+              if (context?.path !== "/sign-in/anonymous") {
+                return;
+              }
+              if (mode === "session-cancel") {
+                return false;
+              }
+              if (mode === "session-forbidden") {
                 throw new APIError("FORBIDDEN", {
                   message: "session creation cancelled by database hook",
                 });
+              }
             },
             after: async (session, context) => {
               if (mode === "snapshot" && context?.path === "/sign-up/email") {
@@ -136,21 +148,25 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
               anonymousUser,
               newUser,
             });
-            if (mode === "link-error")
+            if (mode === "link-error") {
               throw new APIError("FORBIDDEN", {
                 code: "APPLICATION_LINK_DENIED",
                 message: "Configured anonymous transfer denied",
               });
+            }
           },
         }),
       ],
     };
+
     if (mode === "standard" || mode === "methods") {
       const { runMigrations } = await getMigrations(options);
       await runMigrations();
     }
+
     profiles.set(path, betterAuth(options));
   }
+
   return {
     profiles,
     reset() {
@@ -160,9 +176,15 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
     },
     async handle(request: Request) {
       const url = new URL(request.url);
-      if (url.pathname === "/__test/anonymous/delivery")
+
+      if (url.pathname === "/__test/anonymous/delivery") {
         return Response.json(deliveries.get(url.searchParams.get("key") ?? "") ?? null);
-      if (new URL(request.url).pathname !== "/__test/anonymous/state") return null;
+      }
+
+      if (new URL(request.url).pathname !== "/__test/anonymous/state") {
+        return null;
+      }
+
       const { adapter } = await profiles.get("/__test/profiles/anonymous-standard/api/auth")!
         .$context;
       const [users, accounts, sessions] = await Promise.all([

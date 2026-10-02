@@ -1,6 +1,8 @@
 import { expect } from "bun:test";
+
 import { Cookie } from "tough-cookie";
 import { z } from "zod";
+
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { createTracingFetch, type TraceEntry } from "../../support/trace";
 
@@ -70,6 +72,7 @@ async function signup(ctx: ScenarioContext, name: string) {
     password: "password123",
   });
   expect(result.error).toBeNull();
+
   return {
     ...actor,
     email,
@@ -105,18 +108,21 @@ async function setup(ctx: ScenarioContext, name: string) {
     body: { organizationId: org.id, email: target.email, role: "member" },
   });
   expect(invitation.error).toBeNull();
+
   const invitationId = z.object({ id: z.string() }).parse(invitation.data).id;
   const accepted = await target.client.$fetch("/organization/accept-invitation", {
     method: "POST",
     body: { invitationId },
   });
   expect(accepted.error).toBeNull();
+
   const member = memberSchema.parse(z.object({ member: memberSchema }).parse(accepted.data).member);
 
   const sibling = ctx.actor(`${name}-sibling`, "org-member-role-hooks");
   expect(
     (await sibling.client.signIn.email({ email: target.email, password: "password123" })).error,
   ).toBeNull();
+
   return { owner, target, foreign, org, other, member, sibling };
 }
 
@@ -185,6 +191,7 @@ compatScenario(
       query: { organizationId: org.id },
     });
     expect(read.error).toBeNull();
+
     const rawOrganization = organization.parse(ctx.snapshot(read.data));
 
     for (const [mode, expected] of [
@@ -201,6 +208,7 @@ compatScenario(
 
       const after = await state(ctx);
       expect(after.receipts.map((row) => row.phase)).toEqual(["before-role", "after-role"]);
+
       const first = after.receipts[0]!;
       const last = after.receipts[1]!;
       expect(first.newRole).toBe("admin,member,admin");
@@ -227,6 +235,7 @@ compatScenario(
         "role",
         expected,
       );
+
       stable(before, after, member.id);
       observations.push({ before, result: ctx.snapshot(result), after });
     }
@@ -253,8 +262,10 @@ compatScenario(
       (await ownerSibling.client.signIn.email({ email: owner.email, password: "password123" }))
         .error,
     ).toBeNull();
+
     const current = await owner.client.getSession();
     expect(current.error).toBeNull();
+
     const token = z.string().parse(current.data?.session.token);
     await configure(ctx, "record");
 
@@ -301,6 +312,7 @@ compatScenario(
         },
       );
       expect(response.status).toBe(401);
+
       const body = await response.json();
       expect(body).toEqual({ code: "UNAUTHORIZED", message: "Unauthorized" });
 
@@ -311,6 +323,7 @@ compatScenario(
       expect(sessionCookie?.maxAge).toBe(0);
       expect(sessionCookie?.path).toBe("/");
       expect(sessionCookie?.httpOnly).toBe(true);
+
       return { status: response.status, body };
     }
 
@@ -321,6 +334,7 @@ compatScenario(
     // Sign in again, then expire that session in storage.
     const signin = await owner.client.signIn.email({ email: owner.email, password: "password123" });
     expect(signin.error).toBeNull();
+
     const expiryToken = z.string().parse(signin.data?.token);
     const expiry = await ctx.rawRequest({
       path: "/__test/expire-session",
@@ -366,6 +380,7 @@ compatScenario(
       password: "password123",
     });
     expect(retrySignin.error).toBeNull();
+
     const retry = await update(owner, org.id, member.id, "admin");
     expect(retry.error).toBeNull();
 
@@ -385,6 +400,7 @@ compatScenario(
     expect(
       afterRetry.hooks.snapshot.members.filter((memberRow) => memberRow.id !== member.id),
     ).toEqual(afterExpiry.hooks.snapshot.members.filter((memberRow) => memberRow.id !== member.id));
+
     const retryToken = z.string().parse(retrySignin.data?.token);
     const retryId = z
       .string()
@@ -433,6 +449,7 @@ compatScenario(
       expect(after.receipts.map((row) => row.phase)).toEqual(
         phase === "before-role" ? ["before-role"] : ["before-role", "after-role"],
       );
+
       if (phase === "before-role") {
         expect(after.snapshot).toEqual(before.snapshot);
       } else {
@@ -442,6 +459,7 @@ compatScenario(
         );
         stable(before, after, member.id);
       }
+
       observations.push({ before, result: ctx.snapshot(result), after });
     }
 
@@ -467,6 +485,7 @@ compatScenario(
       const result = await update(actor, orgId, member.id, role);
       expect(result.error).toMatchObject({ status });
       expect(await state(ctx)).toEqual(before);
+
       observations.push(ctx.snapshot(result));
     }
 
@@ -486,6 +505,7 @@ compatScenario(
 
     const after = await state(ctx);
     expect(after.receipts.map((row) => row.phase)).toEqual(["before-role", "after-role"]);
+
     const afterReceipt = after.receipts[1]!;
     expect(afterReceipt.user).toEqual(after.receipts[0]!.user);
     expect(afterReceipt.user.name).toBe("role-snapshots-target");
@@ -511,6 +531,7 @@ compatScenario(
     await configure(ctx, "record");
     const repeat = await update(owner, org.id, member.id, "member");
     expect(repeat.error).toBeNull();
+
     const repeated = await state(ctx);
     expect(repeated.receipts[0]!.user.name).toBe("Stored Target Name");
     expect(repeated.receipts[0]!.member.role).toBe("admin");
@@ -536,6 +557,7 @@ compatScenario(
     const after = await state(ctx);
     expect(after.receipts.map((row) => row.phase)).toEqual(["before-role"]);
     expect(after.snapshot.members.find((row) => row.id === member.id)).toBeUndefined();
+
     stable(before, after, member.id);
 
     return { before, result: ctx.snapshot(result), after };
@@ -558,6 +580,7 @@ compatScenario(
 
     let paused: Awaited<ReturnType<typeof state>> | undefined;
     const trace: TraceEntry[] = [];
+
     try {
       paused = await state(ctx, "before-role");
       expect(paused.receipts.map((row) => row.phase)).toEqual(["before-role"]);
@@ -583,6 +606,7 @@ compatScenario(
       "role",
       "admin",
     );
+
     stable(before, after, member.id);
 
     return { before, paused, result: ctx.snapshot(result), after };
@@ -614,6 +638,7 @@ compatScenario(
       "role",
       "admin,member,admin",
     );
+
     stable(before.hooks, after.hooks, member.id);
     expect(after.users).toEqual(before.users);
 
@@ -656,6 +681,7 @@ compatScenario(
         body: { code: "ROLE_NOT_FOUND", message: `ROLE_NOT_FOUND: ${role}` },
       });
       expect(await fullState(ctx, actors)).toEqual(before);
+
       observations.push(result);
     }
 
@@ -668,6 +694,7 @@ compatScenario(
       "role",
       "admin,member,admin",
     );
+
     stable(before.hooks, after.hooks, member.id);
     expect(after.users).toEqual(before.users);
 
@@ -693,6 +720,7 @@ compatScenario(
       );
       expect(response).toEqual({ status: 400, empty: true, body: null });
       expect(await fullState(ctx, actors)).toEqual(before);
+
       observations.push({ role, response });
     }
 
@@ -705,6 +733,7 @@ compatScenario(
       "role",
       "admin",
     );
+
     stable(before.hooks, after.hooks, member.id);
     expect(after.users).toEqual(before.users);
 
@@ -746,6 +775,7 @@ compatScenario(
       expect(response.status).toBe(400);
       expect(response.body).toEqual({ code: "VALIDATION_ERROR", message });
       expect(await fullState(ctx, actors)).toEqual(before);
+
       observations.push(response);
     }
 
@@ -809,6 +839,7 @@ compatScenario(
       expect(response.status).toBe(status);
       expect(response.body).toEqual(error);
       expect(await fullState(ctx, actors)).toEqual(before);
+
       observations.push(response);
     }
 
@@ -823,6 +854,7 @@ compatScenario(
 
     const after = await fullState(ctx, actors);
     expect(after.hooks.receipts.map((row) => row.phase)).toEqual(["before-role", "after-role"]);
+
     stable(before.hooks, after.hooks, member.id);
     expect(after.users).toEqual(before.users);
 
@@ -875,8 +907,13 @@ compatScenario(
       );
       expect(response.status).toBe(status);
       expect(response.body).toEqual(body);
-      if (body === null) expect(response.empty).toBe(true);
+
+      if (body === null) {
+        expect(response.empty).toBe(true);
+      }
+
       expect(await fullState(ctx, actors)).toEqual(before);
+
       observations.push(response);
     }
 
@@ -891,6 +928,7 @@ compatScenario(
 
     const after = await fullState(ctx, actors);
     expect(after.hooks.receipts.map((row) => row.phase)).toEqual(["before-role", "after-role"]);
+
     stable(before.hooks, after.hooks, member.id);
     expect(after.users).toEqual(before.users);
 

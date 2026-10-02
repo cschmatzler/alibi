@@ -1,13 +1,16 @@
 import { expect } from "bun:test";
+
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 type Row = Record<string, unknown>;
+
 type Stored = {
   users: Array<Row & { id: string }>;
   accounts: Array<Row & { id: string }>;
   sessions: Array<Row & { id: string }>;
 };
+
 type Receipt = {
   path: string;
   method: string;
@@ -21,6 +24,7 @@ async function state(ctx: ScenarioContext): Promise<Stored> {
   expect(response.status).toBe(200);
   return response.body as Stored;
 }
+
 async function control(ctx: ScenarioContext, value: Row) {
   const response = await ctx.rawRequest({
     path: "/__test/huggingface/control",
@@ -29,6 +33,7 @@ async function control(ctx: ScenarioContext, value: Row) {
   });
   expect(response.status).toBe(200);
 }
+
 async function receipts(ctx: ScenarioContext) {
   const response = await ctx.rawRequest({ path: "/__test/huggingface/receipts" });
   expect(response.status).toBe(200);
@@ -43,21 +48,27 @@ async function receipts(ctx: ScenarioContext) {
         : row.body,
   }));
 }
+
 async function foreign(ctx: ScenarioContext) {
-  const actor = ctx.actor("foreign"),
-    signup = await actor.client.signUp.email({
-      email: ctx.uniqueEmail("foreign"),
-      password: "Password123!",
-      name: "Foreign",
-    });
+  const actor = ctx.actor("foreign");
+  const signup = await actor.client.signUp.email({
+    email: ctx.uniqueEmail("foreign"),
+    password: "Password123!",
+    name: "Foreign",
+  });
   expect(signup.error).toBeNull();
+
   return { actor, before: await state(ctx) };
 }
+
 function unchangedForeign(before: Stored, after: Stored) {
-  for (const table of ["users", "accounts", "sessions"] as const)
-    for (const row of before[table])
+  for (const table of ["users", "accounts", "sessions"] as const) {
+    for (const row of before[table]) {
       expect(after[table].find((candidate) => candidate.id === row.id)).toEqual(row);
+    }
+  }
 }
+
 function profile(ctx: ScenarioContext): Row {
   return {
     sub: ctx.uniqueToken("huggingface-subject"),
@@ -69,22 +80,24 @@ function profile(ctx: ScenarioContext): Row {
     originalApplicationField: { retained: true },
   };
 }
+
 async function callback(
   ctx: ScenarioContext,
   mode: FixtureProfile = "social-huggingface-default",
   requestSignUp = false,
 ) {
-  const actor = ctx.actor("huggingface", mode),
-    start = await actor.client.signIn.social({
-      provider: "huggingface",
-      callbackURL: "/dashboard",
-      requestSignUp,
-    });
+  const actor = ctx.actor("huggingface", mode);
+  const start = await actor.client.signIn.social({
+    provider: "huggingface",
+    callbackURL: "/dashboard",
+    requestSignUp,
+  });
   expect(start.error).toBeNull();
-  const url = new URL(start.data!.url!),
-    path =
-      authProfilePath(mode) +
-      `/callback/huggingface?code=fixture-code&state=${encodeURIComponent(url.searchParams.get("state")!)}`;
+
+  const url = new URL(start.data!.url!);
+  const path =
+    authProfilePath(mode) +
+    `/callback/huggingface?code=fixture-code&state=${encodeURIComponent(url.searchParams.get("state")!)}`;
   return {
     actor,
     start,
@@ -104,8 +117,8 @@ for (const mode of [
   compatScenario(
     `huggingface published ${mode} authorization retains ordered scopes and required PKCE`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        fixture: FixtureProfile = `social-huggingface-${mode}`;
+      const other = await foreign(ctx);
+      const fixture: FixtureProfile = `social-huggingface-${mode}`;
       const result = await ctx.actor("huggingface", fixture).client.signIn.social({
         provider: "huggingface",
         callbackURL: "/dashboard",
@@ -114,14 +127,16 @@ for (const mode of [
         additionalParams: { custom: "value with space" },
       });
       expect(result.error).toBeNull();
-      const url = new URL(result.data!.url!),
-        configured = ["configured", "disabled-configured"].includes(mode);
+
+      const url = new URL(result.data!.url!);
+      const configured = ["configured", "disabled-configured"].includes(mode);
       expect(url.origin).toBe(
         mode === "configured-endpoint"
           ? "https://alternate-huggingface.example.invalid"
           : "https://huggingface.co",
       );
       expect(url.pathname).toBe(mode === "configured-endpoint" ? "/authorize" : "/oauth/authorize");
+
       const scopes = [
         ...(mode.startsWith("disabled-") ? [] : ["openid", "profile", "email"]),
         ...(configured ? ["read-repos", "email", "punctuation !~*'()"] : []),
@@ -145,9 +160,14 @@ for (const mode of [
           ? "https://client.example.invalid/huggingface-return"
           : ctx.baseURL + authProfilePath(fixture) + "/callback/huggingface",
       );
-      if (mode === "configured-endpoint") expect(url.searchParams.get("retained")).toBe("value");
+
+      if (mode === "configured-endpoint") {
+        expect(url.searchParams.get("retained")).toBe("value");
+      }
+
       expect(await state(ctx)).toEqual(other.before);
       expect(await receipts(ctx)).toEqual([]);
+
       return {
         result: ctx.snapshot(result),
         before: other.before,
@@ -163,21 +183,26 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
   compatScenario(
     `huggingface ${mode} real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        original = profile(ctx);
+      const other = await foreign(ctx);
+      const original = profile(ctx);
       await control(ctx, { profile: original });
-      const fixture: FixtureProfile = `social-huggingface-${mode}`,
-        flow = await callback(ctx, fixture);
+      const fixture: FixtureProfile = `social-huggingface-${mode}`;
+      const flow = await callback(ctx, fixture);
       expect(flow.response.status).toBe(302);
       expect(flow.response.headers.get("location")).toBe("/dashboard");
-      const session = await flow.actor.client.getSession(),
-        after = await state(ctx);
+
+      const session = await flow.actor.client.getSession();
+      const after = await state(ctx);
       expect(session.error).toBeNull();
+
       unchangedForeign(other.before, after);
-      for (const table of ["users", "accounts", "sessions"] as const)
+
+      for (const table of ["users", "accounts", "sessions"] as const) {
         expect(after[table]).toHaveLength(other.before[table].length + 1);
-      const user = after.users.find((row) => !other.before.users.some((old) => old.id === row.id))!,
-        account = after.accounts.find((row) => row.userId === user.id)!;
+      }
+
+      const user = after.users.find((row) => !other.before.users.some((old) => old.id === row.id))!;
+      const account = after.accounts.find((row) => row.userId === user.id)!;
       expect(user).toMatchObject({
         name: mode === "mapped" ? "Mapped HuggingFace User" : "Hugging Face User",
         email: mode === "mapped" ? "mapped-huggingface@example.invalid" : original.email,
@@ -197,10 +222,11 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
       });
       expect(account.accessTokenExpiresAt).toBeTruthy();
       expect(session.data?.user.id).toBe(user.id);
+
       const raw = (await ctx.rawRequest({ path: "/__test/huggingface/receipts" }))
-          .body as Receipt[],
-        exchange = raw[0]!.body as Record<string, string>,
-        verifier = exchange.code_verifier!;
+        .body as Receipt[];
+      const exchange = raw[0]!.body as Record<string, string>;
+      const verifier = exchange.code_verifier!;
       expect(verifier).toHaveLength(128);
       expect(flow.url.searchParams.get("code_challenge")).toBe(
         Buffer.from(
@@ -227,8 +253,10 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
         contentType: null,
         body: "",
       });
+
       const mapper = (await ctx.rawRequest({ path: "/__test/huggingface/mapper-receipts" })).body;
       expect(mapper).toEqual(mode === "mapped" ? [original] : []);
+
       const replay = await flow.actor.fetch(ctx.baseURL + flow.path, { redirect: "manual" });
       expect(replay.status).toBe(302);
       expect(
@@ -236,6 +264,7 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
       ).toBeTruthy();
       expect(await state(ctx)).toEqual(after);
       expect(await receipts(ctx)).toHaveLength(2);
+
       await control(ctx, {
         tokenResponse: {
           access_token: "fixture-huggingface-access-rotated",
@@ -248,11 +277,14 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
       expect(denied.error).not.toBeNull();
       expect(await state(ctx)).toEqual(after);
       expect(await receipts(ctx)).toHaveLength(2);
+
       const refreshed = await flow.actor.client.refreshToken({ accountId: account.id });
       expect(refreshed.error).toBeNull();
+
       const rotated = await state(ctx);
       expect(rotated.users).toEqual(after.users);
       expect(rotated.sessions).toEqual(after.sessions);
+
       unchangedForeign(other.before, rotated);
       expect(rotated.accounts.find((row) => row.id === account.id)).toMatchObject({
         accountId: original.sub,
@@ -261,6 +293,7 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
         refreshToken: "fixture-huggingface-refresh-rotated",
         scope: account.scope,
       });
+
       const requests = await receipts(ctx);
       expect(requests[2]!.body).toEqual({
         grant_type: "refresh_token",
@@ -269,15 +302,19 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
         ...(mode === "public" ? {} : { client_secret: "fixture-social-secret" }),
       });
       expect(requests[2]!.authorization).toBeNull();
+
       const signedOut = await flow.actor.client.signOut();
       expect(signedOut.error).toBeNull();
       expect((await flow.actor.client.getSession()).data).toBeNull();
+
       const final = await state(ctx);
       expect(final.users).toEqual(rotated.users);
       expect(final.accounts).toEqual(rotated.accounts);
+
       unchangedForeign(other.before, final);
       expect(final.sessions).toEqual(other.before.sessions);
       expect(await receipts(ctx)).toEqual(requests);
+
       return {
         before: other.before,
         start: ctx.snapshot(flow.start),
@@ -371,21 +408,23 @@ const mappings: Array<{
     expectedImage: "7",
   },
 ];
-for (const mapping of mappings)
+
+for (const mapping of mappings) {
   compatScenario(
     `huggingface ${mapping.name} profile retains original raw account and typed persistence`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        original = { ...profile(ctx), ...mapping.patch };
+      const other = await foreign(ctx);
+      const original = { ...profile(ctx), ...mapping.patch };
       await control(ctx, { profile: original });
       const flow = await callback(ctx);
       expect(flow.response.headers.get("location")).toBe("/dashboard");
+
       const stored = await state(ctx);
       unchangedForeign(other.before, stored);
       const user = stored.users.find(
-          (row) => !other.before.users.some((old) => old.id === row.id),
-        )!,
-        account = stored.accounts.find((row) => row.userId === user.id)!;
+        (row) => !other.before.users.some((old) => old.id === row.id),
+      )!;
+      const account = stored.accounts.find((row) => row.userId === user.id)!;
       expect(user).toMatchObject({
         name: mapping.expectedName,
         email: original.email,
@@ -394,6 +433,7 @@ for (const mapping of mappings)
       });
       expect(account.accountId).toBe(mapping.expectedSubject ?? original.sub);
       expect((await flow.actor.client.getSession()).data?.user.id).toBe(user.id);
+
       return {
         before: other.before,
         start: ctx.snapshot(flow.start),
@@ -404,8 +444,9 @@ for (const mapping of mappings)
     },
     ["POST /sign-in/social", "GET /callback/{}"],
   );
+}
 
-for (const expiry of ["absent", "zero", "fractional"] as const)
+for (const expiry of ["absent", "zero", "fractional"] as const) {
   compatScenario(
     `huggingface ${expiry} access expiry follows actual token helper`,
     async (ctx) => {
@@ -423,11 +464,17 @@ for (const expiry of ["absent", "zero", "fractional"] as const)
       });
       const flow = await callback(ctx);
       expect(flow.response.headers.get("location")).toBe("/dashboard");
+
       const stored = await state(ctx);
       expect(stored.accounts).toHaveLength(1);
       expect(stored.accounts[0]!.scope).toBe("");
-      if (expiry === "fractional") expect(stored.accounts[0]!.accessTokenExpiresAt).toBeTruthy();
-      else expect(stored.accounts[0]!.accessTokenExpiresAt).toBeNull();
+
+      if (expiry === "fractional") {
+        expect(stored.accounts[0]!.accessTokenExpiresAt).toBeTruthy();
+      } else {
+        expect(stored.accounts[0]!.accessTokenExpiresAt).toBeNull();
+      }
+
       return {
         start: ctx.snapshot(flow.start),
         callback: { status: flow.response.status, location: flow.response.headers.get("location") },
@@ -437,6 +484,7 @@ for (const expiry of ["absent", "zero", "fractional"] as const)
     },
     ["POST /sign-in/social", "GET /callback/{}"],
   );
+}
 
 for (const variant of [
   "wrong-state",
@@ -449,49 +497,62 @@ for (const variant of [
   "missing-email",
   "signup-disabled",
   "implicit-disabled",
-] as const)
+] as const) {
   compatScenario(
     `huggingface browser ${variant} denies before any owned or foreign identity write`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        original = profile(ctx);
-      if (variant === "missing-subject") delete original.sub;
-      if (variant === "null-subject") original.sub = null;
-      if (variant === "blank-subject") original.sub = " ";
-      if (variant === "missing-email") delete original.email;
+      const other = await foreign(ctx);
+      const original = profile(ctx);
+
+      if (variant === "missing-subject") {
+        delete original.sub;
+      }
+
+      if (variant === "null-subject") {
+        original.sub = null;
+      }
+
+      if (variant === "blank-subject") {
+        original.sub = " ";
+      }
+
+      if (variant === "missing-email") {
+        delete original.email;
+      }
+
       await control(ctx, {
         profile: original,
         ...(variant === "token-http-error" ? { tokenStatus: 503 } : {}),
         ...(variant === "userinfo-http-error" ? { userInfoStatus: 503 } : {}),
       });
       const fixture: FixtureProfile =
-          variant === "signup-disabled"
-            ? "social-huggingface-signup-disabled"
-            : variant === "implicit-disabled"
-              ? "social-huggingface-implicit-disabled"
-              : "social-huggingface-default",
-        actor = ctx.actor("huggingface", fixture),
-        start = await actor.client.signIn.social({
-          provider: "huggingface",
-          callbackURL: "/dashboard",
-          requestSignUp: variant === "signup-disabled",
-        });
+        variant === "signup-disabled"
+          ? "social-huggingface-signup-disabled"
+          : variant === "implicit-disabled"
+            ? "social-huggingface-implicit-disabled"
+            : "social-huggingface-default";
+      const actor = ctx.actor("huggingface", fixture);
+      const start = await actor.client.signIn.social({
+        provider: "huggingface",
+        callbackURL: "/dashboard",
+        requestSignUp: variant === "signup-disabled",
+      });
       expect(start.error).toBeNull();
-      const url = new URL(start.data!.url!),
-        callbackState =
-          variant === "wrong-state"
-            ? ctx.uniqueToken("wrong-state")
-            : url.searchParams.get("state")!,
-        provider = variant === "wrong-provider" ? "unknown-huggingface" : "huggingface",
-        response = await actor.fetch(
-          ctx.baseURL +
-            authProfilePath(fixture) +
-            `/callback/${provider}?code=fixture-code&state=${encodeURIComponent(callbackState)}`,
-          { redirect: "manual" },
-        );
+
+      const url = new URL(start.data!.url!);
+      const callbackState =
+        variant === "wrong-state" ? ctx.uniqueToken("wrong-state") : url.searchParams.get("state")!;
+      const provider = variant === "wrong-provider" ? "unknown-huggingface" : "huggingface";
+      const response = await actor.fetch(
+        ctx.baseURL +
+          authProfilePath(fixture) +
+          `/callback/${provider}?code=fixture-code&state=${encodeURIComponent(callbackState)}`,
+        { redirect: "manual" },
+      );
       expect(response.status).toBe(302);
-      const location = response.headers.get("location")!,
-        error = new URL(location, ctx.baseURL).searchParams.get("error");
+
+      const location = response.headers.get("location")!;
+      const error = new URL(location, ctx.baseURL).searchParams.get("error");
       expect(error).toBe(
         variant === "wrong-state"
           ? "state_mismatch"
@@ -507,6 +568,7 @@ for (const variant of [
       );
       expect(await state(ctx)).toEqual(other.before);
       expect((await actor.client.getSession()).data).toBeNull();
+
       const requests = await receipts(ctx);
       expect(requests.map((row) => row.path)).toEqual(
         ["wrong-state", "wrong-provider"].includes(variant)
@@ -515,6 +577,7 @@ for (const variant of [
             ? ["/token"]
             : ["/token", "/userinfo"],
       );
+
       return {
         before: other.before,
         start: ctx.snapshot(start),
@@ -525,32 +588,40 @@ for (const variant of [
     },
     ["GET /callback/{}"],
   );
+}
 
 compatScenario(
   "huggingface disabled default scope omits an empty scope parameter",
   async (ctx) => {
-    const before = await state(ctx),
-      result = await ctx
-        .actor("huggingface", "social-huggingface-disabled-scope")
-        .client.signIn.social({ provider: "huggingface" });
+    const before = await state(ctx);
+    const result = await ctx
+      .actor("huggingface", "social-huggingface-disabled-scope")
+      .client.signIn.social({ provider: "huggingface" });
     expect(result.error).toBeNull();
     expect(new URL(result.data!.url!).searchParams.has("scope")).toBeFalse();
     expect(await state(ctx)).toEqual(before);
     expect(await receipts(ctx)).toEqual([]);
+
     return { result: ctx.snapshot(result), before, after: await state(ctx) };
   },
   ["POST /sign-in/social"],
 );
+
 compatScenario(
   "huggingface explicit signup overrides implicit signup policy",
   async (ctx) => {
     await control(ctx, { profile: profile(ctx) });
     const flow = await callback(ctx, "social-huggingface-implicit-disabled", true);
     expect(flow.response.headers.get("location")).toBe("/dashboard");
+
     const stored = await state(ctx);
-    for (const table of ["users", "accounts", "sessions"] as const)
+
+    for (const table of ["users", "accounts", "sessions"] as const) {
       expect(stored[table]).toHaveLength(1);
+    }
+
     expect((await flow.actor.client.getSession()).data?.user.id).toBe(stored.users[0]!.id);
+
     return {
       start: ctx.snapshot(flow.start),
       callback: { status: flow.response.status, location: flow.response.headers.get("location") },
@@ -560,67 +631,80 @@ compatScenario(
   },
   ["POST /sign-in/social", "GET /callback/{}"],
 );
+
 compatScenario(
   "huggingface rejects direct ID-token sign-in without remote verification or identity writes",
   async (ctx) => {
-    const other = await foreign(ctx),
-      result = await ctx
-        .actor("huggingface", "social-huggingface-default")
-        .client.signIn.social({ provider: "huggingface", idToken: { token: "unsupported-proof" } });
+    const other = await foreign(ctx);
+    const result = await ctx
+      .actor("huggingface", "social-huggingface-default")
+      .client.signIn.social({ provider: "huggingface", idToken: { token: "unsupported-proof" } });
     expect(result.error?.code).toBe("ID_TOKEN_NOT_SUPPORTED");
     expect(await state(ctx)).toEqual(other.before);
     expect(await receipts(ctx)).toEqual([]);
+
     return { result: ctx.snapshot(result), before: other.before, after: await state(ctx) };
   },
 );
-for (const mode of ["empty-clients"] as const)
+
+for (const mode of ["empty-clients"] as const) {
   compatScenario(
     `huggingface ${mode} requires a real client before identity writes`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        result = await ctx
-          .actor("huggingface", `social-huggingface-${mode}`)
-          .client.signIn.social({ provider: "huggingface" });
+      const other = await foreign(ctx);
+      const result = await ctx
+        .actor("huggingface", `social-huggingface-${mode}`)
+        .client.signIn.social({ provider: "huggingface" });
       expect(result.error?.status).toBe(500);
       expect(await state(ctx)).toEqual(other.before);
       expect(await receipts(ctx)).toEqual([]);
+
       return { result: ctx.snapshot(result), before: other.before, after: await state(ctx) };
     },
   );
+}
 
-for (const valid of [true, false])
+for (const valid of [true, false]) {
   compatScenario(
     `huggingface explicit browser link ${valid ? "admits raw account" : "rejects missing raw account"} while retaining the existing principal`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        actor = ctx.actor("huggingface", "social-huggingface-default"),
-        email = ctx.uniqueEmail("huggingface-link");
+      const other = await foreign(ctx);
+      const actor = ctx.actor("huggingface", "social-huggingface-default");
+      const email = ctx.uniqueEmail("huggingface-link");
       const signup = await actor.client.signUp.email({
         email,
         password: "Password123!",
         name: "Existing local user",
       });
       expect(signup.error).toBeNull();
-      const before = await state(ctx),
-        original: Row = { ...profile(ctx), email };
-      if (!valid) delete original.sub;
+
+      const before = await state(ctx);
+      const original: Row = { ...profile(ctx), email };
+
+      if (!valid) {
+        delete original.sub;
+      }
+
       await control(ctx, { profile: original });
       const start = await actor.client.linkSocial({
         provider: "huggingface",
         callbackURL: "/linked",
       });
       expect(start.error).toBeNull();
-      const url = new URL(start.data!.url!),
-        path =
-          authProfilePath("social-huggingface-default") +
-          `/callback/huggingface?code=fixture-code&state=${encodeURIComponent(url.searchParams.get("state")!)}`,
-        response = await actor.fetch(ctx.baseURL + path, { redirect: "manual" });
+
+      const url = new URL(start.data!.url!);
+      const path =
+        authProfilePath("social-huggingface-default") +
+        `/callback/huggingface?code=fixture-code&state=${encodeURIComponent(url.searchParams.get("state")!)}`;
+      const response = await actor.fetch(ctx.baseURL + path, { redirect: "manual" });
       expect(response.status).toBe(302);
-      const location = response.headers.get("location")!,
-        after = await state(ctx);
+
+      const location = response.headers.get("location")!;
+      const after = await state(ctx);
       unchangedForeign(other.before, after);
       expect(after.users).toEqual(before.users);
       expect(after.sessions).toEqual(before.sessions);
+
       if (valid) {
         expect(location).toBe("/linked");
         expect(after.accounts).toHaveLength(before.accounts.length + 1);
@@ -634,8 +718,10 @@ for (const valid of [true, false])
         );
         expect(after).toEqual(before);
       }
+
       expect((await actor.client.getSession()).data?.user.id).toBe(signup.data!.user.id);
       expect((await receipts(ctx)).map((row) => row.path)).toEqual(["/token", "/userinfo"]);
+
       const replay = await actor.fetch(ctx.baseURL + path, { redirect: "manual" });
       expect(replay.status).toBe(302);
       expect(
@@ -643,6 +729,7 @@ for (const valid of [true, false])
       ).toBeTruthy();
       expect(await state(ctx)).toEqual(after);
       expect(await receipts(ctx)).toHaveLength(2);
+
       return {
         before,
         start: ctx.snapshot(start),
@@ -653,18 +740,20 @@ for (const valid of [true, false])
     },
     ["POST /link-social", "GET /callback/{}"],
   );
+}
 
 compatScenario(
   "huggingface existing account info uses real GET without readmitting a changed raw account subject",
   async (ctx) => {
-    const other = await foreign(ctx),
-      original = profile(ctx);
+    const other = await foreign(ctx);
+    const original = profile(ctx);
     await control(ctx, { profile: original });
     const flow = await callback(ctx);
     expect(flow.response.headers.get("location")).toBe("/dashboard");
-    const before = await state(ctx),
-      user = before.users.find((row) => !other.before.users.some((old) => old.id === row.id))!,
-      account = before.accounts.find((row) => row.userId === user.id)!;
+
+    const before = await state(ctx);
+    const user = before.users.find((row) => !other.before.users.some((old) => old.id === row.id))!;
+    const account = before.accounts.find((row) => row.userId === user.id)!;
     delete original.sub;
     await control(ctx, { profile: original });
     const denied = await other.actor.client.$fetch("/account-info", {
@@ -673,6 +762,7 @@ compatScenario(
     expect(denied.error).not.toBeNull();
     expect(await receipts(ctx)).toHaveLength(2);
     expect(await state(ctx)).toEqual(before);
+
     const result = await flow.actor.client.$fetch("/account-info", {
       query: { accountId: account.id },
     });
@@ -695,6 +785,7 @@ compatScenario(
       contentType: null,
       body: "",
     });
+
     return {
       before,
       denied: ctx.snapshot(denied),

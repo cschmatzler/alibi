@@ -1,16 +1,19 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
+
 import { compareValues } from "../support/compare";
 import { normalizeClientValue } from "../support/normalize";
 
 type Data = Record<string, any>;
+
 async function capture(baseURL: string) {
-  const startedAt = Date.now(),
-    database = new Database(":memory:");
+  const startedAt = Date.now();
+  const database = new Database(":memory:");
   const auth = betterAuth({
     baseURL,
     secret: "sqlite-key-harness-application-secret32",
@@ -26,6 +29,7 @@ async function capture(baseURL: string) {
       }),
     ],
   });
+
   try {
     await (await getMigrations(auth.options)).runMigrations();
     const owner = await auth.api.signUpEmail({
@@ -64,10 +68,22 @@ async function capture(baseURL: string) {
         const row = { ...(raw as Data) };
         row.enabled = !!row.enabled;
         row.rateLimitEnabled = !!row.rateLimitEnabled;
-        for (const field of ["createdAt", "updatedAt", "expiresAt", "lastRequest", "lastRefillAt"])
-          if (row[field] !== null) row[field] = new Date(row[field]).toISOString();
+
+        for (const field of [
+          "createdAt",
+          "updatedAt",
+          "expiresAt",
+          "lastRequest",
+          "lastRefillAt",
+        ]) {
+          if (row[field] !== null) {
+            row[field] = new Date(row[field]).toISOString();
+          }
+        }
+
         return row;
       });
+
     for (const key of [issued, foreignIssued]) {
       const stored = rows.find((row) => row.id === key.id)!;
       expect(key.key).toMatch(/^😀[A-Za-z]{16}$/);
@@ -78,9 +94,11 @@ async function capture(baseURL: string) {
       expect(stored.start).toBe("���");
       expect(key.start).toBe(stored.start);
     }
+
     expect(publicRead.start).toBe("���");
     expect(publicRead.id).toBe(issued.id);
     expect(issued.key).not.toBe(foreignIssued.key);
+
     return {
       value: normalizeClientValue({
         owner,
@@ -99,8 +117,8 @@ async function capture(baseURL: string) {
 }
 
 test("actual Source API-key SQLite receipts derive hashes UTF16 cuts readback and foreign credential relationships", async () => {
-  const left = await capture("http://localhost:3100"),
-    right = await capture("http://localhost:3200");
+  const left = await capture("http://localhost:3100");
+  const right = await capture("http://localhost:3200");
   const context = {
     leftBaseURL: "http://localhost:3100",
     rightBaseURL: "http://localhost:3200",
@@ -110,6 +128,7 @@ test("actual Source API-key SQLite receipts derive hashes UTF16 cuts readback an
     rightFinishedAt: right.finishedAt,
   };
   expect(compareValues(left.value, right.value, context)).toEqual([]);
+
   const ownerRow = (value: Data) =>
     value.stored.keys.find((row: Data) => row.id === value.issued.id) as Data;
   const foreignRow = (value: Data) =>
@@ -228,6 +247,7 @@ test("actual Source API-key SQLite receipts derive hashes UTF16 cuts readback an
       reason: "API key stored-prefix relationship differs",
     },
   ];
+
   for (const { mutate, path, reason } of mutations) {
     const changed = structuredClone(right.value);
     mutate(changed);
@@ -236,14 +256,15 @@ test("actual Source API-key SQLite receipts derive hashes UTF16 cuts readback an
       reason,
     });
   }
+
   // Matching corruption on both sides must still fail independent derivation.
   // Plaintext storage is also a supported configuration: changing its mode on
   // just one side is rejected above, while equal valid modes remain admissible.
   for (const { mutate, path, reason } of mutations.filter(
     (control) => control.independentlyInvalid,
   )) {
-    const a = structuredClone(left.value),
-      b = structuredClone(right.value);
+    const a = structuredClone(left.value);
+    const b = structuredClone(right.value);
     mutate(a);
     mutate(b);
     expect(compareValues(a, b, context)).toContainEqual({ path: path(left.value), reason });

@@ -10,8 +10,9 @@
     "assurance:report": "bun support/assurance/cli.ts report",
     "test": "bun test tests",
     "typecheck": "tsc --noEmit",
-    "format": "biome check --write ..",
-    "format:check": "biome check ..",
+    "format": "cd .. && oxfmt client-tests reference-server",
+    "format:check": "cd .. && oxfmt --check client-tests reference-server",
+    "lint": "cd .. && oxlint client-tests reference-server",
     "test:harness": "bun test harness",
     "test:browser": "bun test browser",
     "test:environment": "./run-against-both.sh environment"
@@ -29,10 +30,11 @@
   },
   "devDependencies": {
     "@babel/parser": "7.29.9",
-    "@biomejs/biome": "2.5.15",
     "@types/bun": "1.4.2",
     "@types/istanbul-lib-instrument": "1.7.8",
     "istanbul-lib-instrument": "6.0.3",
+    "oxfmt": "0.71.0",
+    "oxlint": "1.86.0",
     "playwright": "1.63.0",
     "typescript": "7.0.2"
   }

@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import type { FixtureProfile } from "../../support/profiles";
 import { compatScenario } from "../../support/scenario";
 
@@ -21,6 +23,7 @@ const documentSchema = z
     paths: z.record(z.string(), z.record(z.string(), z.unknown())),
   })
   .passthrough();
+
 for (const profile of [
   "openapi-minimal",
   "openapi-last-login",
@@ -40,8 +43,10 @@ for (const profile of [
       const actor = ctx.actor("docs", profile);
       const sdk = await actor.client.$fetch("/open-api/generate-schema", { method: "GET" });
       expect(sdk.error).toBeNull();
+
       const schema = documentSchema.parse(sdk.data);
-      if (!profile.startsWith("openapi-plugins") && profile !== "openapi-custom-schema")
+
+      if (!profile.startsWith("openapi-plugins") && profile !== "openapi-custom-schema") {
         expect(Object.keys(schema.paths).sort()).toEqual(
           [
             ...(profile === "openapi-username"
@@ -79,6 +84,8 @@ for (const profile of [
             "/verify-password",
           ].sort(),
         );
+      }
+
       expect(schema.servers).toEqual([
         { url: `${ctx.baseURL}/__test/profiles/${profile}/api/auth` },
       ]);
@@ -87,7 +94,8 @@ for (const profile of [
       expect(schema.paths["/update-session"]).toHaveProperty("post.operationId", "updateSession");
       expect(schema.paths).not.toHaveProperty("/reference");
       expect(schema.paths).not.toHaveProperty("/open-api/generate-schema");
-      if (!profile.startsWith("openapi-plugins"))
+
+      if (!profile.startsWith("openapi-plugins")) {
         expect(Object.keys(schema.components.schemas).sort()).toEqual(
           profile === "openapi-jwt"
             ? ["Account", "Jwks", "Session", "User", "Verification"]
@@ -95,11 +103,14 @@ for (const profile of [
               ? ["Account", "Document", "Session", "User", "Verification"]
               : ["Account", "Session", "User", "Verification"],
         );
+      }
+
       expect(schema.components.schemas.User).toHaveProperty("properties.emailVerified", {
         type: "boolean",
         default: false,
         readOnly: true,
       });
+
       if (profile.startsWith("openapi-plugins")) {
         expect(schema.paths).toHaveProperty("/admin/remove-user");
         expect(schema.paths).toHaveProperty("/organization/create");
@@ -128,6 +139,7 @@ for (const profile of [
           default: false,
           readOnly: true,
         });
+
         if (profile === "openapi-plugins-teams") {
           expect(schema.paths).toHaveProperty("/organization/create-team");
           expect(schema.components.schemas).toHaveProperty("Team");
@@ -138,7 +150,10 @@ for (const profile of [
           expect(schema.components.schemas).not.toHaveProperty("OrganizationRole");
           expect(schema.components.schemas.Session).not.toHaveProperty("properties.activeTeamId");
         }
-      } else expect(schema.components.schemas.User).not.toHaveProperty("properties.banned");
+      } else {
+        expect(schema.components.schemas.User).not.toHaveProperty("properties.banned");
+      }
+
       if (profile.startsWith("openapi-last-login")) {
         const user = z
           .object({ properties: z.record(z.string(), z.unknown()) })
@@ -149,6 +164,7 @@ for (const profile of [
             : undefined,
         );
       }
+
       if (profile === "openapi-custom-schema") {
         expect(schema.components.schemas.User).toHaveProperty("properties.access", {
           type: ["reader", "editor"],
@@ -171,6 +187,7 @@ for (const profile of [
           default: null,
           readOnly: true,
         });
+
         const model = z
           .object({ required: z.array(z.string()) })
           .passthrough()
@@ -183,6 +200,7 @@ for (const profile of [
           "post.requestBody.content.application/json.schema.properties.metadata",
         );
       }
+
       if (profile === "openapi-username") {
         expect(schema.components.schemas.User).toHaveProperty("properties.username", {
           type: "string",
@@ -196,26 +214,35 @@ for (const profile of [
           { type: "string" },
         );
       }
+
       expect(schema.components.schemas.Session).not.toHaveProperty("properties.active");
+
       const raw = await actor.fetch(`${ctx.baseURL}/api/auth/open-api/generate-schema`);
       expect(raw.status).toBe(200);
       expect(raw.headers.get("content-type")?.split(";")[0]).toBe("application/json");
       expect(await raw.json()).toEqual(schema);
+
       const path = profile === "openapi-configured" ? "/docs" : "/reference";
       const html = await actor.fetch(`${ctx.baseURL}/api/auth${path}`);
       expect(html.status).toBe(200);
       expect(html.headers.get("content-type")?.split(";")[0]).toBe("text/html");
+
       const page = await html.text();
       const embedded =
         /<script\s+id="api-reference"\s+type="application\/json">\s*([^]*?)\s*<\/script>/.exec(
           page,
         );
-      if (!embedded?.[1]) throw new Error("reference must include a complete schema JSON script");
+
+      if (!embedded?.[1]) {
+        throw new Error("reference must include a complete schema JSON script");
+      }
+
       expect(JSON.parse(embedded[1])).toEqual(schema);
       expect(page.match(/nonce="fixture-reference-nonce"/g)?.length ?? 0).toBe(
         profile === "openapi-configured" ? 2 : 0,
       );
       expect(page).toContain(`theme: "${profile === "openapi-configured" ? "moon" : "default"}"`);
+
       // Compare the entire HTML frame verbatim, with the complete embedded document
       // compared structurally above and in the returned observation.
       const frame = page.replace(embedded[1], "<document>");
@@ -223,7 +250,9 @@ for (const profile of [
         `${ctx.baseURL}/api/auth${profile === "openapi-configured" ? "/reference" : "/docs"}`,
       );
       expect(wrongPath.status).toBe(404);
+
       const custom = [];
+
       if (profile === "openapi-custom-schema") {
         expect(schema.paths["/documents/{id}"]).toHaveProperty("post.operationId", "documentPost");
         expect(schema.paths).toHaveProperty("/documentation-hidden");
@@ -237,6 +266,7 @@ for (const profile of [
         expect(schema.components.schemas.Document).toHaveProperty("properties.dynamic", {
           type: "number",
         });
+
         for (const [path, method, body] of [
           ["/__test/server-document", "GET", undefined],
           ["/documents/fixture-id", "GET", undefined],
@@ -254,9 +284,12 @@ for (const profile of [
           });
           custom.push({ path, status: response.status, body: await response.text() });
         }
+
         expect(custom.map((result) => result.status)).toEqual([200, 200, 200, 200, 200, 404, 404]);
       }
+
       const minimal = [];
+
       if (profile === "openapi-minimal") {
         for (const [path, method, body] of [
           ["/get-session", "GET", undefined],
@@ -285,10 +318,12 @@ for (const profile of [
           });
           minimal.push({ path, status: response.status, body: await response.json() });
         }
+
         expect(minimal[0]).toEqual({ path: "/get-session", status: 200, body: null });
         expect(minimal[1]?.status).toBe(400);
         expect(minimal[2]?.status).toBe(400);
         expect(minimal[3]?.status).toBe(401);
+
         const signup = await actor.fetch(
           `${ctx.baseURL}/__test/profiles/openapi-default/api/auth/sign-up/email`,
           {
@@ -302,10 +337,12 @@ for (const profile of [
           },
         );
         expect(signup.status).toBe(200);
+
         const created = z
           .object({ user: z.object({ id: z.string(), email: z.string() }) })
           .passthrough()
           .parse(await signup.json());
+
         for (const [path, method, body, status] of [
           ["/change-email", "POST", { newEmail: "changed-openapi@example.test" }, 400],
           ["/delete-user", "POST", {}, 404],
@@ -318,21 +355,26 @@ for (const profile of [
               : {}),
           });
           expect(response.status).toBe(status);
+
           const text = await response.text();
           minimal.push({ path, status: response.status, body: text ? JSON.parse(text) : "" });
         }
+
         const session = await actor.fetch(`${ctx.baseURL}/api/auth/get-session`);
         const retained = z
           .object({ user: z.object({ id: z.string(), email: z.string() }) })
           .passthrough()
           .parse(await session.json());
         expect(retained.user).toEqual(created.user);
+
         minimal.push({ path: "retained-session", status: session.status, body: retained });
       }
+
       return ctx.snapshot({ schema, frame, wrongPath: wrongPath.status, minimal, custom });
     },
   );
 }
+
 compatScenario(
   "OpenAPI disabling the reference preserves the public schema endpoint",
   async (ctx) => {
@@ -340,21 +382,24 @@ compatScenario(
     const actor = ctx.actor("docs", profile);
     const schema = await actor.client.$fetch("/open-api/generate-schema", { method: "GET" });
     expect(schema.error).toBeNull();
+
     const document = documentSchema.parse(schema.data);
     const page = await actor.fetch(`${ctx.baseURL}/api/auth/reference`);
     expect(page.status).toBe(404);
     expect(await page.text()).toBe("");
+
     return ctx.snapshot({ document, status: page.status });
   },
 );
 
-for (const profile of ["session-fields", "session-fields-plugins"] as const)
+for (const profile of ["session-fields", "session-fields-plugins"] as const) {
   compatScenario(
     `OpenAPI ${profile} documents real custom session columns with source-specific config precedence`,
     async (ctx) => {
       const actor = ctx.actor("docs", profile);
       const response = await actor.client.$fetch("/open-api/generate-schema", { method: "GET" });
       expect(response.error).toBeNull();
+
       const schema = documentSchema.parse(response.data);
       const model = z
         .object({ properties: z.record(z.string(), z.unknown()), required: z.array(z.string()) })
@@ -381,9 +426,12 @@ for (const profile of ["session-fields", "session-fields-plugins"] as const)
       expect(model.required).not.toContain("activeOrganizationId");
       expect(schema.paths["/update-session"]).toHaveProperty("post.operationId", "updateSession");
       expect(schema.paths).not.toHaveProperty("/open-api/generate-schema");
+
       const raw = await actor.fetch(`${ctx.baseURL}/api/auth/open-api/generate-schema`);
       expect(raw.status).toBe(200);
       expect(await raw.json()).toEqual(schema);
+
       return ctx.snapshot({ schema });
     },
   );
+}

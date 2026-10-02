@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario } from "../../support/scenario";
 import {
   type CompatContext,
@@ -155,9 +157,11 @@ compatScenario(
       role: "member",
     });
     expect(expiredInvitation.error).toBeNull();
+
     if (!expiredInvitation.data) {
       throw new Error("an expirable invitation must be created");
     }
+
     const expiredInvitationId = expiredInvitation.data.id;
     await ctx.expireInvitation({
       invitationId: expiredInvitationId,
@@ -192,6 +196,7 @@ compatScenario(
       invitationId: expiredInvitationId,
     });
     expect(expiredAcceptance.error).not.toBeNull();
+
     const accepted = await invitee.orgClient.organization.acceptInvitation({
       invitationId: activeInvitation.data?.id ?? "",
     });
@@ -332,6 +337,7 @@ compatScenario(
     expect(unverifiedServer.body).toMatchObject([
       { id: first.id, email: invitee.email, organizationName: firstOrg.name, status: "pending" },
     ]);
+
     const unverifiedHttp = await invitee.client.organization.listUserInvitations();
     expect(unverifiedHttp.error).toMatchObject({
       status: 403,
@@ -366,6 +372,7 @@ compatScenario(
       profile,
     );
     expect(limitedServer).toEqual({ status: 200, body: [] });
+
     const normalServer = await serverOperation(
       ctx,
       { operation: "list-user-invitations", email: invitee.email },
@@ -382,6 +389,7 @@ compatScenario(
       profile,
     );
     expect(foreignServer).toEqual({ status: 200, body: [] });
+
     const missingEmail = await serverOperation(
       ctx,
       { operation: "list-user-invitations", email: "" },
@@ -406,6 +414,7 @@ compatScenario(
       password: "password123",
     });
     expect(normalSignIn.error).toBeNull();
+
     const normalHttp = await normalClient.organization.listUserInvitations();
     expect(normalHttp.error).toBeNull();
     expect(normalHttp.data).toMatchObject([

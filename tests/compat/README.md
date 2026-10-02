@@ -293,6 +293,7 @@ Run these in `devenv shell` after installing both projects with
 
 ```bash
 bun run --cwd tests/compat/client-tests format:check
+bun run --cwd tests/compat/client-tests lint
 bun run --cwd tests/compat/client-tests typecheck
 bun test --cwd tests/compat/client-tests harness
 tests/compat/client-tests/run-against-both.sh passkey

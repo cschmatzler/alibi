@@ -1,8 +1,10 @@
 import type { Database } from "bun:sqlite";
+
 /** Configured callbacks are application-owned; HTTP authentication remains pinned. */
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
+
 import type { organizationTransportProbe } from "./organization-transport-probe";
 
 export function organizationCreationHooksFixture(
@@ -15,6 +17,7 @@ export function organizationCreationHooksFixture(
   const receipts: unknown[] = [];
   let release: (() => void) | undefined;
   let gate = Promise.resolve();
+
   function snapshot() {
     return {
       organizations: database
@@ -43,7 +46,9 @@ export function organizationCreationHooksFixture(
       users: database.query("SELECT id,email,name FROM user ORDER BY email,id").all(),
     };
   }
+
   type User = { id: string; email: string; name: string };
+
   async function note(
     phase: string,
     data: { user: User; organization?: unknown; member?: unknown; team?: Record<string, unknown> },
@@ -56,16 +61,20 @@ export function organizationCreationHooksFixture(
       ...rest,
       snapshot: snapshot(),
     });
-    if (plan.mode === `reject-${phase}`)
+
+    if (plan.mode === `reject-${phase}`) {
       throw new APIError("BAD_REQUEST", {
         code: "CREATION_HOOK_REJECTED",
         message: `Rejected ${phase}`,
       });
+    }
   }
+
   const hooks = {
     async beforeCreateOrganization(data: { organization: Record<string, unknown>; user: User }) {
       await note("before-org", data);
-      if (plan.mode === "patch")
+
+      if (plan.mode === "patch") {
         return {
           data: {
             id: plan.id,
@@ -75,10 +84,23 @@ export function organizationCreationHooksFixture(
             metadata: { guard: "hooked" },
           },
         };
-      if (plan.mode === "clear-metadata") return { data: { metadata: null, logo: null } };
-      if (plan.mode === "empty-metadata") return { data: { metadata: {} } };
-      if (plan.mode === "absent-metadata") return { data: { name: "Patched Without Metadata" } };
-      if (plan.mode === "empty-name") return { data: { name: "" } };
+      }
+
+      if (plan.mode === "clear-metadata") {
+        return { data: { metadata: null, logo: null } };
+      }
+
+      if (plan.mode === "empty-metadata") {
+        return { data: { metadata: {} } };
+      }
+
+      if (plan.mode === "absent-metadata") {
+        return { data: { name: "Patched Without Metadata" } };
+      }
+
+      if (plan.mode === "empty-name") {
+        return { data: { name: "" } };
+      }
     },
     async beforeAddMember(data: {
       organization: Record<string, unknown>;
@@ -86,12 +108,20 @@ export function organizationCreationHooksFixture(
       user: User;
     }) {
       await note("before-member", data);
-      if (plan.mode === "patch") return { data: { role: "member" } };
-      if (plan.mode === "empty-member") return { data: { role: "", id: "ignored-member-id" } };
-      if (plan.mode === "member-authority")
+
+      if (plan.mode === "patch") {
+        return { data: { role: "member" } };
+      }
+
+      if (plan.mode === "empty-member") {
+        return { data: { role: "", id: "ignored-member-id" } };
+      }
+
+      if (plan.mode === "member-authority") {
         return {
           data: { userId: plan.userId, organizationId: plan.organizationId, role: "member" },
         };
+      }
     },
     async afterAddMember(data: {
       organization: Record<string, unknown>;
@@ -107,14 +137,18 @@ export function organizationCreationHooksFixture(
           update: { role: "admin" },
         });
       }
-      if (plan.mode === "pause-after-member") await gate;
+      if (plan.mode === "pause-after-member") {
+        await gate;
+      }
     },
     async beforeCreateTeam(data: {
       organization: Record<string, unknown>;
       team: Record<string, unknown>;
       user?: User;
     }) {
-      if (!data.user) throw new Error("Creation team hook needs the actual user");
+      if (!data.user) {
+        throw new Error("Creation team hook needs the actual user");
+      }
       await note("before-team", { ...data, user: data.user });
     },
     async afterCreateTeam(data: {
@@ -122,7 +156,9 @@ export function organizationCreationHooksFixture(
       team: Record<string, unknown>;
       user?: User;
     }) {
-      if (!data.user) throw new Error("Creation team hook needs the actual user");
+      if (!data.user) {
+        throw new Error("Creation team hook needs the actual user");
+      }
       await note("after-team", {
         ...data,
         user: data.user,
@@ -180,13 +216,16 @@ export function organizationCreationHooksFixture(
         attempt < 100 &&
         !receipts.some((receipt) => (receipt as { phase: string }).phase === waitFor);
         attempt++
-      )
+      ) {
         await Bun.sleep(10);
+      }
       return Response.json({ receipts, snapshot: snapshot() });
     },
     async server(body: Record<string, unknown>) {
       const profile = profiles.get(String(body.profile));
-      if (!profile) return Response.json({ message: "Unknown fixture profile" }, { status: 400 });
+      if (!profile) {
+        return Response.json({ message: "Unknown fixture profile" }, { status: 400 });
+      }
       try {
         return Response.json(
           await profile.api.createOrganization({

@@ -1,6 +1,7 @@
 /** Private configurations and persistence observations; authentication uses pinned Better Auth. */
 
 import type { Database } from "bun:sqlite";
+
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
@@ -75,12 +76,14 @@ export function createOrganizationCreationFixture(
                               email: user.email,
                               name: user.name,
                             });
+
                             if (user.name === "Paid Reject Limit") {
                               throw new APIError("FORBIDDEN", {
                                 code: "CREATION_LIMIT_REJECTED",
                                 message: "Creation limit callback rejected",
                               });
                             }
+
                             const row = database
                               .query("SELECT COUNT(*) AS count FROM member WHERE userId=?")
                               .get(user.id) as { count: number };
@@ -102,8 +105,9 @@ export function createOrganizationCreationFixture(
   return {
     profiles,
     legacyMetadata(body: Record<string, unknown>) {
-      if (typeof body.organizationId !== "string")
+      if (typeof body.organizationId !== "string") {
         return Response.json({ message: "organizationId required" }, { status: 400 });
+      }
       const result = database
         .query("UPDATE organization SET metadata=? WHERE id=?")
         .run("null", body.organizationId);
@@ -140,7 +144,9 @@ export function createOrganizationCreationFixture(
     },
     async server(body: Record<string, unknown>) {
       const profile = profiles.get(body.profile as (typeof CREATION_PROFILES)[number]);
-      if (!profile) return Response.json({ message: "Unknown fixture profile" }, { status: 400 });
+      if (!profile) {
+        return Response.json({ message: "Unknown fixture profile" }, { status: 400 });
+      }
       try {
         return Response.json(
           await profile.api.createOrganization({

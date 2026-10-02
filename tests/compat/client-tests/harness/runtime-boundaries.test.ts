@@ -37,7 +37,9 @@ test("actual pinned initialization captures telemetry gates, provider side effec
       child.exited,
     ]);
     expect({ mode, code, stderr }).toEqual({ mode, code: 0, stderr: "" });
+
     const receipt = JSON.parse(stdout.trim().split("\n").at(-1)!);
+
     if (mode === "init-failure") {
       expect(receipt.initError).toBe("synthetic initialization rejection");
       expect(receipt.providerCalls).toBe(2);
@@ -49,13 +51,16 @@ test("actual pinned initialization captures telemetry gates, provider side effec
         "test-utils",
         "reject-init",
       ]);
+
       continue;
     }
+
     const active = ["enabled", "environment", "debug", "failure"].includes(mode);
     expect(receipt.providerCalls).toBe(active ? 2 : 1);
     expect(receipt.events.length).toBe(
       ["enabled", "environment", "failure"].includes(mode) ? 2 : 0,
     );
+
     if (receipt.events.length) {
       const init = receipt.events.find((event: any) => event.type === "init");
       const ready = receipt.events.find((event: any) => event.type === "application-ready");
@@ -71,6 +76,7 @@ test("actual pinned initialization captures telemetry gates, provider side effec
       expect(JSON.stringify(receipt.events)).not.toContain("synthetic-provider-secret");
       expect(JSON.stringify(receipt.events)).not.toContain("synthetic-boundaries-secret");
     }
+
     const h = receipt.helpers;
     expect(h.factoryWrites).toBe(0);
     expect(h.missingLogin.error).toBe("User not found: nonexistent-user");

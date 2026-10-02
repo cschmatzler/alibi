@@ -23,7 +23,9 @@ export class CoverageScope {
   counters<T extends object>(value: T): T {
     return new Proxy(value, {
       set: (target, key, next) => {
-        if (this.accepts()) Reflect.set(target, key, next);
+        if (this.accepts()) {
+          Reflect.set(target, key, next);
+        }
         return true;
       },
     });

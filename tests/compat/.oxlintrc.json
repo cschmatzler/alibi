@@ -1,0 +1,28 @@
+{
+  "$schema": "./client-tests/node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "curly": [
+      "error",
+      "multi-line"
+    ],
+    "one-var": [
+      "error",
+      "never"
+    ],
+    "no-unused-vars": [
+      "error",
+      {
+        "ignoreRestSiblings": true,
+        "args": "none"
+      }
+    ]
+  },
+  "ignorePatterns": [
+    "**/node_modules",
+    "**/target",
+    "client-tests/artifacts"
+  ]
+}

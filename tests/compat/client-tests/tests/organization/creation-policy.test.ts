@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import type { FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
@@ -58,6 +60,7 @@ async function signup(
   const email = ctx.uniqueEmail(`${profile}-${actorName}`);
   const result = await actor.client.signUp.email({ email, name, password: "password123" });
   expect(result.error).toBeNull();
+
   const user = z.object({ user: z.object({ id: z.string() }) }).parse(result.data).user;
   return { ...actor, email, userId: user.id, result };
 }
@@ -121,10 +124,13 @@ compatScenario(
       expect(await state(ctx, foreign.email)).toEqual(foreignBefore);
 
       const trusted = await server(ctx, profile, foreign.userId, `trusted-${profile}`);
+
       if (profile === "org-creation-denied") {
         expect(trusted.status).toBe(200);
+
         const created = organization.parse(trusted.body);
         expect(created.members[0]).toMatchObject({ userId: foreign.userId, role: "owner" });
+
         const after = await state(ctx, foreign.email);
         expect(after.organizations).toHaveLength(1);
         expect(after.organizations[0]).toMatchObject({
@@ -175,6 +181,7 @@ compatScenario(
     const owner = await signup(ctx, profile, "owner", "Owner");
     const one = await create(ctx, owner, "fractional-one");
     expect(one.error).toBeNull();
+
     const first = organization.parse(one.data);
 
     const secondToken = ctx.actor("second-token", profile).client;
@@ -185,6 +192,7 @@ compatScenario(
     const beforeSecond = await state(ctx, owner.email);
     const two = await create(ctx, owner, "fractional-two");
     expect(two.error).toBeNull();
+
     const second = organization.parse(two.data);
 
     const ownerBefore = await state(ctx, owner.email);
@@ -205,6 +213,7 @@ compatScenario(
       body: { organizationId: first.id, email: another.email, role: "member" },
     });
     expect(invitation.error).toBeNull();
+
     const invitationId = z.object({ id: z.string() }).parse(invitation.data).id;
     const accepted = await another.client.$fetch("/organization/accept-invitation", {
       method: "POST",
@@ -220,6 +229,7 @@ compatScenario(
       userId: owner.userId,
     });
     expect(denied.error).toMatchObject(limitError);
+
     const deniedOwner = await create(ctx, owner, "third-owner");
     expect(deniedOwner.error).toMatchObject(limitError);
     expect(await state(ctx, another.email)).toEqual(anotherBefore);
@@ -284,6 +294,7 @@ compatScenario(
 
     const first = await create(ctx, paid, "paid-allowed", { userId: free.userId });
     expect(first.error).toBeNull();
+
     const created = organization.parse(first.data);
     expect(created.members[0]?.userId).toBe(paid.userId);
 
@@ -353,6 +364,7 @@ compatScenario(
       metadata: { policy: "creator-grants" },
     });
     expect(created.error).toBeNull();
+
     const org = organization.parse(created.data);
     expect(org.members[0]?.role).toBe("founder");
 
@@ -386,6 +398,7 @@ compatScenario(
     const empty = await signup(ctx, "org-creation-empty-role", "empty", "Effective Owner");
     const defaulted = await create(ctx, empty, "empty-creator");
     expect(defaulted.error).toBeNull();
+
     const ownerOrg = organization.parse(defaulted.data);
     expect(ownerOrg.members[0]?.role).toBe("owner");
 

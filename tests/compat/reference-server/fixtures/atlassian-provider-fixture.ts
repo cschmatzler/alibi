@@ -20,7 +20,8 @@ export function atlassianProviderFixture(base: BetterAuthOptions) {
         contentType: request.headers.get("content-type"),
         body,
       });
-      if (path === "/token")
+
+      if (path === "/token") {
         return Response.json(
           control.tokenResponse ?? {
             access_token: "fixture-atlassian-access",
@@ -31,7 +32,9 @@ export function atlassianProviderFixture(base: BetterAuthOptions) {
           },
           { status: Number(control.tokenStatus ?? 200) },
         );
-      if (path === "/me")
+      }
+
+      if (path === "/me") {
         return Response.json(
           control.profile ?? {
             account_id: "fixture-atlassian-subject",
@@ -41,6 +44,8 @@ export function atlassianProviderFixture(base: BetterAuthOptions) {
           },
           { status: Number(control.profileStatus ?? 200) },
         );
+      }
+
       return new Response("Unknown trusted Atlassian destination", { status: 404 });
     },
   });
@@ -48,16 +53,20 @@ export function atlassianProviderFixture(base: BetterAuthOptions) {
   globalThis.fetch = (async (input, init) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
+
     if (
       url.href === "https://auth.atlassian.com/oauth/token" ||
       url.href === "https://api.atlassian.com/me"
-    )
+    ) {
       return previousFetch(
         new Request(`${transport.url}${url.pathname.endsWith("token") ? "token" : "me"}`, request),
       );
+    }
+
     return previousFetch(input, init);
   }) as typeof fetch;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
+
   for (const mode of [
     "default",
     "configured",
@@ -113,6 +122,7 @@ export function atlassianProviderFixture(base: BetterAuthOptions) {
       }),
     );
   }
+
   return {
     profiles,
     reset() {
@@ -122,12 +132,20 @@ export function atlassianProviderFixture(base: BetterAuthOptions) {
     },
     async handle(request: Request) {
       const path = new URL(request.url).pathname;
+
       if (path === "/__test/atlassian/control" && request.method === "POST") {
         control = await request.json();
         return Response.json({ status: true });
       }
-      if (path === "/__test/atlassian/receipts") return Response.json(receipts);
-      if (path === "/__test/atlassian/mapper-receipts") return Response.json(mapperReceipts);
+
+      if (path === "/__test/atlassian/receipts") {
+        return Response.json(receipts);
+      }
+
+      if (path === "/__test/atlassian/mapper-receipts") {
+        return Response.json(mapperReceipts);
+      }
+
       return null;
     },
   };

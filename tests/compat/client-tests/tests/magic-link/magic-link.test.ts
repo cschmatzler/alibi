@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+
 import { compatScenario } from "../../support/scenario";
 import {
   expireVerification,
@@ -19,23 +20,29 @@ compatScenario(
       metadata: { campaign: "welcome" },
     });
     expect(issue.error).toBeNull();
+
     const delivery = await readMagicLink(ctx, email);
     expect(delivery.metadata).toEqual({ campaign: "welcome" });
+
     const url = new URL(delivery.url);
     expect(url.pathname).toBe("/api/auth/magic-link/verify");
     expect(url.searchParams.get("callbackURL")).toBe("/");
     expect(await verificationCount(ctx, delivery.token)).toBe(1);
+
     // Official verify client omits callbackURL so the successful JSON includes
     // the actual session. The delivered browser URL is tested separately below.
     const verify = await client.magicLink.verify({ query: { token: delivery.token } });
     expect(verify.error).toBeNull();
+
     const user = requireUser(verify.data?.user);
     const session = await client.getSession();
     expect(session.data?.user.id).toBe(user.id);
     expect(user.emailVerified).toBe(true);
+
     const state = await readUserState(ctx, user.id);
     expect(state.sessions).toHaveLength(1);
     expect(await verificationCount(ctx, delivery.token)).toBe(0);
+
     const replay = await ctx.rawRequest({
       path: `/api/auth/magic-link/verify?token=${encodeURIComponent(delivery.token)}`,
       redirect: "manual",
@@ -44,6 +51,7 @@ compatScenario(
     expect(new URL(replay.location ?? "", ctx.baseURL).searchParams.get("error")).toBe(
       "INVALID_TOKEN",
     );
+
     return {
       issue: ctx.snapshot(issue),
       verify: ctx.snapshot(verify),
@@ -67,6 +75,7 @@ compatScenario(
       errorCallbackURL: "/failure?via=magic",
     });
     expect(issue.error).toBeNull();
+
     const delivery = await readMagicLink(ctx, email);
     const forbidden = await ctx.rawRequest({
       path: `/api/auth/magic-link/verify?token=${encodeURIComponent(delivery.token)}&callbackURL=${encodeURIComponent("https://foreign.example/steal")}`,
@@ -74,6 +83,7 @@ compatScenario(
     });
     expect(forbidden.status).toBe(403);
     expect(await verificationCount(ctx, delivery.token)).toBe(1);
+
     const url = new URL(delivery.url);
     const verified = await ctx.rawRequest({
       path: `${url.pathname}${url.search}`,
@@ -81,17 +91,21 @@ compatScenario(
     });
     expect(verified.status).toBe(302);
     expect(new URL(verified.location ?? "", ctx.baseURL).pathname).toBe("/welcome");
+
     const session = await client.getSession();
     expect(session.data?.user.email).toBe(email);
+
     const replay = await ctx.rawRequest({
       path: `${url.pathname}${url.search}`,
       redirect: "manual",
     });
     expect(replay.status).toBe(302);
+
     const error = new URL(replay.location ?? "", ctx.baseURL);
     expect(error.pathname).toBe("/failure");
     expect(error.searchParams.get("via")).toBe("magic");
     expect(error.searchParams.get("error")).toBe("INVALID_TOKEN");
+
     return {
       issue: ctx.snapshot(issue),
       forbidden: ctx.snapshot(forbidden),
@@ -118,19 +132,24 @@ compatScenario(
     await ctx.seedOAuthAccount({ email, providerId: "google", accountId: "unproven-google" });
     const before = await readUserState(ctx, user.id);
     expect(before.accounts).toHaveLength(2);
+
     await owner.signIn.magicLink({ email });
     const delivery = await readMagicLink(ctx, email);
     const verify = await owner.magicLink.verify({ query: { token: delivery.token } });
     expect(verify.error).toBeNull();
     expect(verify.data?.user.id).toBe(user.id);
+
     const previousSession = await previous.getSession();
     expect(previousSession.data).toBeNull();
+
     const state = await readUserState(ctx, user.id);
     expect(state.accounts).toHaveLength(0);
     expect(state.sessions).toHaveLength(1);
     expect(state.user?.emailVerified).toBe(true);
+
     const password = await previous.signIn.email({ email, password: "unproven-password123" });
     expect(password.error).not.toBeNull();
+
     return {
       before: ctx.snapshot(before),
       verify: ctx.snapshot(verify),
@@ -159,8 +178,10 @@ compatScenario(
       "INVALID_TOKEN",
     );
     expect(await verificationCount(ctx, delivery.token)).toBe(0);
+
     const session = await client.getSession();
     expect(session.data).toBeNull();
+
     return {
       verify: ctx.snapshot(verify),
       session: ctx.snapshot(session),
@@ -176,6 +197,7 @@ compatScenario(
     const client = magicLinkClient(ctx);
     const email = ctx.uniqueEmail("magic-validation");
     const results = [];
+
     for (const json of [null, {}, { email: "a@b.c" }, { email, name: null, metadata: [] }]) {
       const response = await ctx.rawRequest({
         path: "/api/auth/sign-in/magic-link",
@@ -185,24 +207,30 @@ compatScenario(
       expect(response.status).toBe(400);
       results.push(ctx.snapshot(response));
     }
+
     const missing = await ctx.rawRequest({
       path: "/api/auth/magic-link/verify",
       redirect: "manual",
     });
     expect(missing.status).toBe(400);
+
     await client.signIn.magicLink({ email });
     const delivery = await readMagicLink(ctx, email);
+
     for (const field of ["newUserCallbackURL", "errorCallbackURL"]) {
       const response = await ctx.rawRequest({
         path: `/api/auth/magic-link/verify?token=${encodeURIComponent(delivery.token)}&${field}=${encodeURIComponent("https://foreign.example/steal")}`,
         redirect: "manual",
       });
       expect(response.status).toBe(403);
+
       results.push(ctx.snapshot(response));
       expect(await verificationCount(ctx, delivery.token)).toBe(1);
     }
+
     const verify = await client.magicLink.verify({ query: { token: delivery.token } });
     expect(verify.error).toBeNull();
+
     const replay = await ctx.rawRequest({
       path: `/api/auth/magic-link/verify?token=${encodeURIComponent(delivery.token)}&errorCallbackURL=${encodeURIComponent("/error?error=old&error_description=preserved")}`,
       redirect: "manual",
@@ -210,6 +238,7 @@ compatScenario(
     const target = new URL(replay.location ?? "", ctx.baseURL);
     expect(target.searchParams.get("error")).toBe("INVALID_TOKEN");
     expect(target.searchParams.get("error_description")).toBe("preserved");
+
     return {
       results,
       missing: ctx.snapshot(missing),

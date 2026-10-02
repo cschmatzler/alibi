@@ -1,12 +1,13 @@
 import { expect } from "bun:test";
+
 import { compatScenario } from "../../support/scenario";
 
 compatScenario(
   "admin repeated query fields retain arrays and reject before authentication without selecting a different owner",
   async (ctx) => {
-    const owner = ctx.actor("query-owner"),
-      regular = ctx.actor("query-regular"),
-      guest = ctx.actor("query-guest");
+    const owner = ctx.actor("query-owner");
+    const regular = ctx.actor("query-regular");
+    const guest = ctx.actor("query-guest");
     const signup = await owner.client.signUp.email({
       email: ctx.uniqueEmail("query-owner"),
       name: "Query Owner",
@@ -19,12 +20,17 @@ compatScenario(
     });
     expect(signup.error).toBeNull();
     expect(other.error).toBeNull();
-    if (!signup.data || !other.data) throw Error("actual query owners required");
+
+    if (!signup.data || !other.data) {
+      throw Error("actual query owners required");
+    }
+
     await ctx.promoteAdmin({ email: signup.data.user.email });
     expect(
       (await owner.client.signIn.email({ email: signup.data.user.email, password: "password123" }))
         .error,
     ).toBeNull();
+
     const before = [
       await ctx.readUserState({ userId: signup.data.user.id }),
       await ctx.readUserState({ userId: other.data.user.id }),
@@ -107,6 +113,7 @@ compatScenario(
       };
     };
     const outcomes = [];
+
     for (const actor of [guest, regular, owner]) {
       for (const [route, key, first, second, message] of cases) {
         const query = new URLSearchParams([
@@ -120,9 +127,11 @@ compatScenario(
           cookies: [],
           body: { code: "VALIDATION_ERROR", message },
         });
+
         outcomes.push(result);
       }
     }
+
     const combined = await request(
       guest,
       "list-users?sortBy=name&sortBy=email&limit=1&limit=2&searchValue=A&searchValue=B",
@@ -137,6 +146,7 @@ compatScenario(
           "[query.searchValue] Invalid input: expected string, received array; [query.limit] Invalid input; [query.sortBy] Invalid input: expected string, received array",
       },
     });
+
     const encodedNames = await request(
       owner,
       `get-user?i%64=${encodeURIComponent(signup.data.user.id)}&id=${encodeURIComponent(other.data.user.id)}`,
@@ -147,19 +157,23 @@ compatScenario(
     });
     expect(encodedNames.status).toBe(400);
     expect(encodedNames.cookies).toEqual([]);
+
     const validQuery = `get-user?id=${encodeURIComponent(other.data.user.id)}`;
-    const missing = await request(guest, validQuery),
-      denied = await request(regular, validQuery);
+    const missing = await request(guest, validQuery);
+    const denied = await request(regular, validQuery);
     expect(missing.status).toBe(401);
     expect(denied.status).toBe(403);
+
     const allowed = await request(owner, `${validQuery}&ignored=first&ignored=second`);
     expect(allowed.status).toBe(200);
     expect(allowed.body).toHaveProperty("id", other.data.user.id);
+
     const after = [
       await ctx.readUserState({ userId: signup.data.user.id }),
       await ctx.readUserState({ userId: other.data.user.id }),
     ];
     expect(after).toEqual(before);
+
     return {
       signup,
       other,

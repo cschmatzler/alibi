@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { signUpUser } from "./helpers";
 
@@ -14,7 +16,10 @@ async function removalSetup(ctx: ScenarioContext, name: string) {
   const owner = await signUpUser(ctx, `${name}-owner`, `${name}-owner`, "Owner");
   const target = await signUpUser(ctx, `${name}-target`, `${name}-target`, "Target");
   const foreign = await signUpUser(ctx, `${name}-foreign`, `${name}-foreign`, "Foreign");
-  for (const actor of [owner, target, foreign]) expect(actor.signup.error).toBeNull();
+
+  for (const actor of [owner, target, foreign]) {
+    expect(actor.signup.error).toBeNull();
+  }
 
   const created = await owner.orgClient.organization.create({
     name: "Removal",
@@ -36,18 +41,23 @@ async function removalSetup(ctx: ScenarioContext, name: string) {
     role: "member",
   });
   expect(invited.error).toBeNull();
+
   const accepted = await target.orgClient.organization.acceptInvitation({
     invitationId: z.string().parse(invited.data?.id),
   });
   expect(accepted.error).toBeNull();
+
   const memberId = z.string().parse(accepted.data?.member.id);
   expect((await target.orgClient.organization.setActive({ organizationId })).error).toBeNull();
 
   const actors = [owner, target, foreign];
+
   async function state() {
     const response = await ctx.rawRequest({ path: "/__test/organization-member-role-hooks-state" });
     expect(response.status).toBe(200);
+
     const users = [];
+
     for (const actor of actors) {
       const observed = await ctx.rawRequest({
         path: `/__test/user-state?userId=${encodeURIComponent(z.string().parse(actor.signup.data?.user.id))}`,
@@ -129,6 +139,7 @@ compatScenario(
       );
 
     const observations = [];
+
     for (const [actor, selector, status, code] of [
       [target, memberId, 401, "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER"],
       [
@@ -152,6 +163,7 @@ compatScenario(
       });
       expect(result.error).toMatchObject({ status, code });
       expect(await state()).toEqual(before);
+
       observations.push(ctx.snapshot(result));
     }
 
@@ -183,14 +195,12 @@ compatScenario(
 compatScenario(
   "organization removal validates ordered string fields and media before guest authentication",
   async (ctx) => {
-    const { owner, target, foreign, organizationId, memberId, state } = await removalSetup(
-      ctx,
-      "remove-input",
-    );
+    const { owner, organizationId, memberId, state } = await removalSetup(ctx, "remove-input");
     const before = await state();
     const guest = ctx.actor("remove-input-guest");
 
     const observations = [];
+
     for (const [body, media, status, error] of [
       [
         "{}",
@@ -242,6 +252,7 @@ compatScenario(
       expect(response.status).toBe(status);
       expect(value).toEqual(error);
       expect(await state()).toEqual(before);
+
       observations.push({ status: response.status, body: value });
     }
 
@@ -255,6 +266,7 @@ compatScenario(
       });
       expect(result.error).toMatchObject({ status: 400, code: "MEMBER_NOT_FOUND" });
       expect(await state()).toEqual(before);
+
       observations.push(ctx.snapshot(result));
     }
 
@@ -510,6 +522,7 @@ compatScenario(
       slug: ctx.uniqueToken("normalize"),
     });
     expect(created.error).toBeNull();
+
     const organizationId = z.object({ id: z.string() }).parse(created.data).id;
 
     const invited = await owner.orgClient.organization.inviteMember({
@@ -518,13 +531,16 @@ compatScenario(
       role: "member",
     });
     expect(invited.error).toBeNull();
+
     const invitationId = z.object({ id: z.string() }).parse(invited.data).id;
     const accepted = await target.orgClient.organization.acceptInvitation({ invitationId });
     expect(accepted.error).toBeNull();
+
     const memberId = z.object({ member: z.object({ id: z.string() }) }).parse(accepted.data)
       .member.id;
 
     const observations = [];
+
     for (const [role, expected] of [
       ["  admin , member, ,admin  ", "admin,member,admin"],
       [[" admin ,member ", "", " admin"], "admin,member,admin"],
@@ -550,6 +566,7 @@ compatScenario(
           .parse(stored.body)
           .organizations.find((row) => row.id === organizationId),
       ).toHaveProperty("role", expected);
+
       observations.push({ result: ctx.snapshot(result), stored });
     }
 

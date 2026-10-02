@@ -1,6 +1,7 @@
 /** Real configured mailbox and deletion callbacks on the pinned application. */
 
 import type { Database } from "bun:sqlite";
+
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { hashPassword, verifyPassword } from "better-auth/crypto";
@@ -17,6 +18,7 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
       release?: () => void;
     }
   >();
+
   for (const name of [
     "default",
     "required",
@@ -71,11 +73,12 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
         state.held = false;
         state.release = undefined;
       }
-      if (state.failure === stage)
+      if (state.failure === stage) {
         throw new APIError("BAD_REQUEST", {
           code: "LIFECYCLE_REJECTED",
           message: `Application ${stage} rejected`,
         });
+      }
     };
     const options: BetterAuthOptions = {
       ...base,
@@ -96,11 +99,12 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
                     password: input.password,
                     hash: input.hash,
                   });
-                  if (state.failure === "password-verify")
+                  if (state.failure === "password-verify") {
                     throw new APIError("BAD_REQUEST", {
                       code: "LIFECYCLE_REJECTED",
                       message: "Application password-verify rejected",
                     });
+                  }
                   return verifyPassword(input);
                 },
               },
@@ -175,11 +179,16 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
     };
     profiles.set(options.basePath!, betterAuth(options));
   }
+
   return {
     profiles,
     async handle(request: Request): Promise<Response | undefined> {
       const url = new URL(request.url);
-      if (url.pathname !== "/__test/user-lifecycle/control") return;
+
+      if (url.pathname !== "/__test/user-lifecycle/control") {
+        return;
+      }
+
       const body = (await request.json()) as {
         profile: string;
         action: string;
@@ -190,11 +199,15 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
         createdAt?: string;
         expiresAt?: string;
       };
-      const state = states.get(body.profile),
-        instance = profiles.get(`/__test/profiles/user-lifecycle-${body.profile}/api/auth`);
-      if (!state || !instance)
+      const state = states.get(body.profile);
+      const instance = profiles.get(`/__test/profiles/user-lifecycle-${body.profile}/api/auth`);
+
+      if (!state || !instance) {
         return Response.json({ error: "Unknown lifecycle profile" }, { status: 400 });
+      }
+
       const context = await instance.$context;
+
       if (body.action === "reset") {
         state.events.length = 0;
         state.failure = "";
@@ -205,20 +218,26 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
         /* Snapshot the held request before releasing it below. */
       } else if (body.action === "ready") {
         const deadline = Date.now() + 3000;
-        while (!state.held && Date.now() < deadline) await Bun.sleep(10);
-        if (!state.held)
+        while (!state.held && Date.now() < deadline) {
+          await Bun.sleep(10);
+        }
+        if (!state.held) {
           return Response.json(
             { error: "Application deletion hook did not arrive" },
             { status: 408 },
           );
-      } else if (body.action === "failure") state.failure = body.failure ?? "";
-      else if (body.action === "rename") {
-        if (!body.userId || typeof body.name !== "string")
+        }
+      } else if (body.action === "failure") {
+        state.failure = body.failure ?? "";
+      } else if (body.action === "rename") {
+        if (!body.userId || typeof body.name !== "string") {
           return Response.json({ error: "Missing rename" }, { status: 400 });
+        }
         await context.internalAdapter.updateUser(body.userId, { name: body.name });
       } else if (body.action === "session-clock") {
-        if (!body.token || !body.createdAt)
+        if (!body.token || !body.createdAt) {
           return Response.json({ error: "Missing session clock" }, { status: 400 });
+        }
         await context.adapter.update({
           model: "session",
           where: [{ field: "token", value: body.token }],
@@ -227,8 +246,10 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
             expiresAt: new Date(body.expiresAt ?? "2099-01-01T00:00:00Z"),
           },
         });
-      } else if (body.action !== "state")
+      } else if (body.action !== "state") {
         return Response.json({ error: "Unknown lifecycle action" }, { status: 400 });
+      }
+
       const read = (model: "user" | "session" | "account" | "verification") =>
         context.adapter.findMany<Record<string, unknown>>({
           model,
@@ -251,8 +272,12 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
         verifications,
         events: state.events,
       });
+
       // Serialize all rows and receipts while deletion is blocked, before any writes resume.
-      if (body.action === "release") state.release?.();
+      if (body.action === "release") {
+        state.release?.();
+      }
+
       return response;
     },
   };

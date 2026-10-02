@@ -1,6 +1,8 @@
 import { expect } from "bun:test";
+
 import { createAuthClient } from "better-auth/client";
 import { adminClient } from "better-auth/client/plugins";
+
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 const schemaPaths = [
@@ -17,7 +19,9 @@ const schemaPaths = [
   "set-user-password",
   "has-permission",
 ] as const;
+
 const requiredId = "[body.userId] Invalid input: expected nonoptional, received undefined";
+
 const emptyMessages: Record<(typeof schemaPaths)[number], string> = {
   "set-role": `${requiredId}; [body.role] Invalid input`,
   "create-user":
@@ -50,6 +54,7 @@ async function setup(ctx: ScenarioContext) {
         customFetchImpl: async (input, init) => {
           const response = await ctx.actor(name).fetch(input, init);
           const path = new URL(input instanceof Request ? input.url : input, ctx.baseURL).pathname;
+
           if (path.includes("/admin/")) {
             const text = await response.clone().text();
             wires.push({
@@ -60,17 +65,18 @@ async function setup(ctx: ScenarioContext) {
               cookies: response.headers.getSetCookie(),
             });
           }
+
           return response;
         },
       },
     });
     return result;
   };
-  const owner = client("schema-owner"),
-    target = client("schema-target"),
-    regular = client("schema-regular"),
-    retired = client("schema-retired"),
-    guest = client("schema-guest");
+  const owner = client("schema-owner");
+  const target = client("schema-target");
+  const regular = client("schema-regular");
+  const retired = client("schema-retired");
+  const guest = client("schema-guest");
   const password = "password123";
   const signup = async (actor: typeof owner, prefix: string) => {
     const result = await actor.signUp.email({
@@ -79,7 +85,11 @@ async function setup(ctx: ScenarioContext) {
       password,
     });
     expect(result.error).toBeNull();
-    if (!result.data) throw Error("actual registered user required");
+
+    if (!result.data) {
+      throw Error("actual registered user required");
+    }
+
     return result;
   };
   const signups = [
@@ -108,16 +118,20 @@ async function setup(ctx: ScenarioContext) {
   const issuedRetired = await signin("schema-retired", signups[3]!.data!.user.email);
   expect(issuedOwner.cookie).toContain("session_token=");
   expect(issuedRetired.cookie).toContain("session_token=");
+
   const signout = await retired.signOut();
   expect(signout.error).toBeNull();
+
   const ids = signups.map((result) => result.data!.user.id);
   const read = async () => {
-    const persisted = [],
-      users = [];
+    const persisted = [];
+    const users = [];
+
     for (const id of ids) {
       persisted.push(await ctx.readUserState({ userId: id }));
       users.push(await owner.admin.getUser({ query: { id } }));
     }
+
     return { persisted, users };
   };
   return {
@@ -139,6 +153,7 @@ async function setup(ctx: ScenarioContext) {
 function validation(message: string) {
   return { message, code: "VALIDATION_ERROR" };
 }
+
 function rejected(result: unknown, status: number, body: Record<string, unknown>) {
   expect(result).toEqual({
     data: null,
@@ -169,6 +184,7 @@ for (const mode of ["missing", "tampered", "revoked"] as const) {
         mode === "missing" ? undefined : { cookie: mode === "revoked" ? cookie : altered };
       const offset = fixture.wires.length;
       const outcomes = [];
+
       for (const path of schemaPaths) {
         const result = await guest.$fetch(`/admin/${path}`, { method: "POST", body: {}, headers });
         rejected(result, 400, validation(emptyMessages[path]));
@@ -184,6 +200,7 @@ for (const mode of ["missing", "tampered", "revoked"] as const) {
         );
         outcomes.push({ path, result: array });
       }
+
       const nullBody = await guest.$fetch("/admin/ban-user", {
         method: "POST",
         body: "null",
@@ -228,6 +245,7 @@ for (const mode of ["missing", "tampered", "revoked"] as const) {
         ),
       );
       const coercionFailures = [];
+
       for (const userId of [{ toString: null }, { toString: "literal" }, [{ toString: 5 }]]) {
         const result = await guest.admin.listUserSessions({ userId } as never, { headers });
         rejected(
@@ -239,15 +257,20 @@ for (const mode of ["missing", "tampered", "revoked"] as const) {
         );
         coercionFailures.push({ userId, result });
       }
+
       const schemaWires = fixture.wires.slice(offset);
+
       for (const wire of schemaWires) {
         expect(wire.status).toBe(400);
         expect(wire.contentType).toBe("application/json");
         expect(wire.cookies).toEqual([]);
       }
+
       expect(await fixture.read()).toEqual(before);
+
       // Empty strings and coercible supplied IDs are valid schema inputs, so auth owns these failures.
       const coercions = [];
+
       for (const userId of [
         "",
         null,
@@ -266,27 +289,33 @@ for (const mode of ["missing", "tampered", "revoked"] as const) {
         expect(result).toEqual({ data: null, error: { status: 401, statusText: "Unauthorized" } });
         coercions.push(result);
       }
+
       const forbidden = await target.admin.setRole({ userId: ids[0]!, role: "user" });
       expect(forbidden.error).toMatchObject({
         status: 403,
         code: "YOU_ARE_NOT_ALLOWED_TO_CHANGE_USERS_ROLE",
       });
+
       const coercedOwner = await owner.admin.listUserSessions({ userId: [[ids[1]!]] } as never);
       expect(coercedOwner.error).toBeNull();
       expect(coercedOwner.data?.sessions).toMatchObject([
         { userId: ids[1], token: fixture.signups[1]!.data!.token },
       ]);
+
       const coercedDenied = await target.admin.banUser({ userId: [ids[0]!] } as never);
       expect(coercedDenied.error).toMatchObject({
         status: 403,
         code: "YOU_ARE_NOT_ALLOWED_TO_BAN_USERS",
       });
+
       const allowed = await owner.admin.setRole({ userId: ids[1]!, role: "user" });
       expect(allowed.error).toBeNull();
+
       const current = await owner.getSession();
       expect(current.data?.user.id).toBe(ids[0]);
       expect(await ctx.readUserState({ userId: ids[0]! })).toEqual(before.persisted[0]);
       expect(await ctx.readUserState({ userId: ids[2]! })).toEqual(before.persisted[2]);
+
       return {
         signups: fixture.signups,
         signins: [fixture.issuedOwner.body, fixture.issuedRetired.body],
@@ -332,6 +361,7 @@ compatScenario(
     const fixture = await setup(ctx);
     const before = await fixture.read();
     const outcomes = [];
+
     for (const path of [...schemaPaths, "stop-impersonating"]) {
       for (const input of [
         {
@@ -370,16 +400,21 @@ compatScenario(
         outcomes.push({ path, input: { status: input.status, headers: input.headers }, result });
       }
     }
+
     expect(await fixture.read()).toEqual(before);
+
     const forbidden = await fixture.regular.admin.banUser({ userId: fixture.ids[1]! });
     expect(forbidden.error).toMatchObject({
       status: 403,
       code: "YOU_ARE_NOT_ALLOWED_TO_BAN_USERS",
     });
+
     const owner = await fixture.owner.admin.getUser({ query: { id: fixture.ids[1]! } });
     expect(owner.error).toBeNull();
+
     const current = await fixture.regular.getSession();
     expect(current.data?.user.id).toBe(fixture.ids[2]);
+
     return {
       signups: fixture.signups,
       before,
@@ -413,6 +448,7 @@ compatScenario(
     const fixture = await setup(ctx);
     const before = await fixture.read();
     const outcomes = [];
+
     for (const actor of [fixture.guest, fixture.regular]) {
       const missing = await actor.$fetch("/admin/get-user", { method: "GET" });
       rejected(
@@ -459,15 +495,19 @@ compatScenario(
       });
       outcomes.push({ missing, list, both, nested, singular });
     }
+
     const emptyGuest = await fixture.guest.admin.getUser({ query: { id: "" } });
     expect(emptyGuest.error).toEqual({ status: 401, statusText: "Unauthorized" });
+
     const emptyDenied = await fixture.regular.admin.getUser({ query: { id: "" } });
     expect(emptyDenied.error).toMatchObject({
       status: 403,
       code: "YOU_ARE_NOT_ALLOWED_TO_GET_USER",
     });
+
     const emptyOwner = await fixture.owner.admin.getUser({ query: { id: "" } });
     expect(emptyOwner.error).toMatchObject({ status: 404, code: "USER_NOT_FOUND" });
+
     const ownership = await fixture.regular.admin.hasPermission({
       userId: fixture.ids[0]!,
       role: "admin",
@@ -476,6 +516,7 @@ compatScenario(
     } as never);
     expect(ownership).toEqual({ data: { error: null, success: false }, error: null });
     expect(await fixture.read()).toEqual(before);
+
     return {
       signups: fixture.signups,
       before,
@@ -501,6 +542,7 @@ compatScenario(
       password: "password123",
     });
     expect(signup.error).toBeNull();
+
     const guest = ctx.actor("schema-role-guest", "admin-role-manager").client;
     const regularSignup = await regular.signUp.email({
       email: ctx.uniqueEmail("schema-email-regular"),
@@ -508,6 +550,7 @@ compatScenario(
       password: "password123",
     });
     expect(regularSignup.error).toBeNull();
+
     const before = [
       await ctx.readUserState({ userId: signup.data!.user.id }),
       await ctx.readUserState({ userId: regularSignup.data!.user.id }),
@@ -519,23 +562,28 @@ compatScenario(
       });
       expect(result.status).toBe(200);
       expect(result.body).toEqual({ user: null, accounts: [], sessions: [] });
+
       return result;
     };
     const bad = { email: "not-an-address", name: "", password: "" };
     const missing = await guest.admin.createUser(bad);
     expect(missing.error).toEqual({ status: 401, statusText: "Unauthorized" });
+
     const denied = await regular.admin.createUser(bad);
     expect(denied.error).toMatchObject({
       status: 403,
       code: "YOU_ARE_NOT_ALLOWED_TO_CREATE_USERS",
     });
+
     const invalidRole = await actor.admin.createUser({ ...bad, role: "unknown-role" } as never);
     expect(invalidRole.error).toMatchObject({
       status: 400,
       code: "YOU_ARE_NOT_ALLOWED_TO_SET_NON_EXISTENT_VALUE",
     });
+
     const deniedState = await absent(bad.email);
     const invalidEmails = [];
+
     for (const email of [
       bad.email,
       "ending'@example.test",
@@ -546,10 +594,12 @@ compatScenario(
       rejected(result, 400, { message: "Invalid email", code: "INVALID_EMAIL" });
       invalidEmails.push({ email, result, stored: await absent(email) });
     }
+
     expect([
       await ctx.readUserState({ userId: signup.data!.user.id }),
       await ctx.readUserState({ userId: regularSignup.data!.user.id }),
     ]).toEqual(before);
+
     const email = ctx.uniqueEmail("SCHEMA-EMPTY-NAME").toUpperCase();
     const created = await actor.admin.createUser({ email, name: "", password: "" });
     expect(created.error).toBeNull();
@@ -558,20 +608,32 @@ compatScenario(
       name: "",
       role: "manager",
     });
+
     const createdId = created.data!.user.id;
-    if (typeof createdId !== "string") throw Error("actual created owner required");
+
+    if (typeof createdId !== "string") {
+      throw Error("actual created owner required");
+    }
+
     const stored = await ctx.readUserState({ userId: createdId });
     expect(stored).toMatchObject({
       user: { id: createdId, email: email.toLowerCase() },
       accounts: [],
       sessions: [],
     });
+
     const read = await actor.admin.getUser({ query: { id: createdId } });
     expect(read.data).toMatchObject({ id: createdId, name: "", email: email.toLowerCase() });
+
     const issuedToken = signup.data!.token;
-    if (typeof issuedToken !== "string") throw Error("actual issued owner token required");
+
+    if (typeof issuedToken !== "string") {
+      throw Error("actual issued owner token required");
+    }
+
     const current = await actor.getSession();
     expect(current.data?.session.token).toBe(issuedToken);
+
     return {
       signup,
       regularSignup,

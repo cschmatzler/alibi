@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 
 /** Actual configured producers; every header comes from installed auth routes. */
@@ -59,9 +60,17 @@ export function physicalCookieProfiles(base: BetterAuthOptions, database: Databa
     profiles,
     control(request: Request): Response | null {
       const url = new URL(request.url);
-      if (url.pathname !== "/__test/physical-cookie/storage") return null;
+
+      if (url.pathname !== "/__test/physical-cookie/storage") {
+        return null;
+      }
+
       const id = url.searchParams.get("userId");
-      if (!id) return Response.json({ message: "userId required" }, { status: 400 });
+
+      if (!id) {
+        return Response.json({ message: "userId required" }, { status: 400 });
+      }
+
       // All declared core columns, physically read with an independently scoped bind.
       return Response.json({
         user: database

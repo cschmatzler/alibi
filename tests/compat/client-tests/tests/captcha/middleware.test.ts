@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
@@ -7,21 +8,27 @@ async function events(ctx: ScenarioContext) {
   expect(result.status).toBe(200);
   return result.body as Record<string, unknown>[];
 }
+
 const ip = { "x-forwarded-for": "203.0.113.7" };
+
 async function restoreAttempt(ctx: ScenarioContext, actor: string, body: unknown, userId: string) {
   const token = (body as { token?: unknown }).token;
-  if (typeof token !== "string")
+
+  if (typeof token !== "string") {
     throw new Error("Admitted sign-in must return a genuine session token");
+  }
+
   const read = await ctx.actor(actor).client.getSession();
   expect(read.error).toBeNull();
   expect(read.data!.user.id).toBe(userId);
   expect(read.data!.session.token).toBe(token);
+
   return ctx.snapshot(read);
 }
 
 async function principals(ctx: ScenarioContext) {
-  const owner = ctx.actor("owner"),
-    foreign = ctx.actor("foreign");
+  const owner = ctx.actor("owner");
+  const foreign = ctx.actor("foreign");
   const signup = await owner.client.signUp.email({
     email: ctx.uniqueEmail("owner"),
     password: "password123",
@@ -34,6 +41,7 @@ async function principals(ctx: ScenarioContext) {
   });
   expect(signup.error).toBeNull();
   expect(other.error).toBeNull();
+
   await events(ctx);
   return { signup, other, foreignBefore: await ctx.readUserState({ userId: other.data!.user.id }) };
 }
@@ -54,9 +62,10 @@ for (const profile of [
   compatScenario(
     `CAPTCHA ${profile} actual verification transport admits only provider-approved authentication`,
     async (ctx) => {
-      const s = await principals(ctx),
-        path = authProfilePath(profile),
-        observations = [];
+      const s = await principals(ctx);
+      const path = authProfilePath(profile);
+      const observations = [];
+
       for (const token of [
         "",
         "denied",
@@ -77,8 +86,8 @@ for (const profile of [
         "missing-action",
         "missing-host",
       ]) {
-        const configured = profile.endsWith("-configured"),
-          google = profile.includes("google");
+        const configured = profile.endsWith("-configured");
+        const google = profile.includes("google");
         const status = !token
           ? 400
           : ["http-failure", "null", "empty-text"].includes(token)
@@ -105,12 +114,14 @@ for (const profile of [
           headers,
         });
         expect(result.status).toBe(status);
+
         const authenticated =
           status === 200
             ? await restoreAttempt(ctx, `attempt-${token}`, result.body, s.signup.data!.user.id)
             : null;
-        const after = await ctx.readUserState({ userId: s.signup.data!.user.id }),
-          receipts = await events(ctx);
+        const after = await ctx.readUserState({ userId: s.signup.data!.user.id });
+        const receipts = await events(ctx);
+
         if (status !== 200) {
           expect(result.body).toMatchObject({
             code:
@@ -126,8 +137,10 @@ for (const profile of [
           expect(result.body).toMatchObject({ user: { id: s.signup.data!.user.id } });
           expect(receipts.at(-1)).toMatchObject({ kind: "before", path: "/sign-in/email" });
         }
+
         const provider = receipts.find((e) => e.kind === "provider");
         const providerBody = provider?.body as Record<string, unknown> | undefined;
+
         if (token) {
           expect(provider!.body).toMatchObject({
             secret: "fixture-captcha-secret",
@@ -140,9 +153,15 @@ for (const profile of [
                 ? "198.51.100.9"
                 : "203.0.113.7",
           );
-          if (profile.endsWith("-sitekey")) expect(providerBody?.sitekey).toBe("fixture-site-key");
-        } else expect(provider).toBeUndefined();
+          if (profile.endsWith("-sitekey")) {
+            expect(providerBody?.sitekey).toBe("fixture-site-key");
+          }
+        } else {
+          expect(provider).toBeUndefined();
+        }
+
         expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(s.foreignBefore);
+
         observations.push({
           captchaResponse: token,
           before,
@@ -152,21 +171,29 @@ for (const profile of [
           receipts,
         });
       }
+
       const newcomer = ctx.actor("new-owner", profile);
       const newSignup = await newcomer.client.signUp.email(
         { email: ctx.uniqueEmail("new-owner"), password: "password123", name: "Protected" },
         { headers: { ...ip, "x-fixture-ip": "198.51.100.9", "x-captcha-response": "valid" } },
       );
       expect(newSignup.error).toBeNull();
+
       const signupReceipts = await events(ctx);
       expect(signupReceipts.at(-1)).toMatchObject({ kind: "before", path: "/sign-up/email" });
+
       const authenticated = await newcomer.client.getSession();
       expect(authenticated.error).toBeNull();
       expect(authenticated.data!.user).toEqual(newSignup.data!.user);
+
       const signupToken = newSignup.data!.token;
-      if (typeof signupToken !== "string")
+
+      if (typeof signupToken !== "string") {
         throw new Error("Protected signup must issue a real session token");
+      }
+
       expect(authenticated.data!.session.token).toBe(signupToken);
+
       const authenticatedReceipts = await events(ctx);
       return {
         authenticated: ctx.snapshot(authenticated),
@@ -196,9 +223,10 @@ for (const profile of [
   compatScenario(
     `CAPTCHA ${profile} path and early rejection ordering preserve unchanged physical principals`,
     async (ctx) => {
-      const s = await principals(ctx),
-        observations = [],
-        path = authProfilePath(profile);
+      const s = await principals(ctx);
+      const observations = [];
+      const path = authProfilePath(profile);
+
       for (const route of [
         "/sign-in/email",
         "/sign-in/email/extra",
@@ -227,8 +255,9 @@ for (const profile of [
           body: route === "/ok" ? undefined : "{",
           headers: { ...ip, "content-type": "text/plain", origin: "https://foreign.fixture.test" },
         });
-        const receipts = await events(ctx),
-          after = await ctx.readUserState({ userId: s.signup.data!.user.id });
+        const receipts = await events(ctx);
+        const after = await ctx.readUserState({ userId: s.signup.data!.user.id });
+
         if (
           profile.endsWith("-disabled") &&
           ["/sign-in/email", "/sign-in/email/"].includes(route)
@@ -241,14 +270,18 @@ for (const profile of [
             code: profile.endsWith("-no-secret") ? "UNKNOWN_ERROR" : "MISSING_RESPONSE",
           });
           expect(receipts.map((e) => e.kind)).toEqual(["early-a"]);
-        } else
+        } else {
           expect(receipts.map((e) => e.kind)).toEqual(
             route === "/ok" ? ["early-a", "early-b", "before"] : ["early-a", "early-b"],
           );
+        }
+
         expect(after).toEqual(before);
         expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(s.foreignBefore);
+
         observations.push({ route, before, result, receipts, after });
       }
+
       return {
         signup: ctx.snapshot(s.signup),
         other: ctx.snapshot(s.other),
@@ -271,8 +304,9 @@ for (const profile of [
   compatScenario(
     `CAPTCHA ${profile} actual configured BotID callbacks preserve middleware and principal boundaries`,
     async (ctx) => {
-      const s = await principals(ctx),
-        observations = [];
+      const s = await principals(ctx);
+      const observations = [];
+
       for (const allow of [false, true]) {
         const before = await ctx.readUserState({ userId: s.signup.data!.user.id });
         const result = await ctx.rawRequest({
@@ -288,14 +322,16 @@ for (const profile of [
             ? 200
             : 403;
         expect(result.status).toBe(status);
+
         const authenticated =
           status === 200
             ? await restoreAttempt(ctx, `bot-${allow}`, result.body, s.signup.data!.user.id)
             : null;
-        const after = await ctx.readUserState({ userId: s.signup.data!.user.id }),
-          receipts = await events(ctx);
+        const after = await ctx.readUserState({ userId: s.signup.data!.user.id });
+        const receipts = await events(ctx);
         expect(receipts.some((e) => e.kind === "bot-check")).toBe(true);
         expect(receipts.some((e) => e.kind === "provider")).toBe(false);
+
         if (status !== 200) {
           expect(after).toEqual(before);
           expect(receipts.some((e) => e.kind === "early-b" || e.kind === "before")).toBe(false);
@@ -303,9 +339,12 @@ for (const profile of [
           expect(result.body).toMatchObject({ user: { id: s.signup.data!.user.id } });
           expect(receipts.at(-1)).toMatchObject({ kind: "before" });
         }
+
         expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(s.foreignBefore);
+
         observations.push({ allow, before, result, authenticated, after, receipts });
       }
+
       return {
         signup: ctx.snapshot(s.signup),
         other: ctx.snapshot(s.other),
@@ -321,8 +360,9 @@ for (const profile of [
 compatScenario(
   "CAPTCHA verifier deadlines reject without auth writes while BotID application callbacks finish",
   async (ctx) => {
-    const s = await principals(ctx),
-      observations = [];
+    const s = await principals(ctx);
+    const observations = [];
+
     for (const profile of ["captcha-turnstile", "captcha-botid-timeout"] as const) {
       const before = await ctx.readUserState({ userId: s.signup.data!.user.id });
       const started = Date.now();
@@ -336,21 +376,26 @@ compatScenario(
       expect(result.status).toBe(500);
       expect(result.body).toEqual({ message: "Something went wrong", code: "UNKNOWN_ERROR" });
       expect(elapsed).toBeGreaterThanOrEqual(9_000);
+
       const rejected = await events(ctx);
       expect(rejected.map((event) => event.kind)).toEqual(
         profile === "captcha-turnstile" ? ["early-a", "provider"] : ["early-a", "bot-check"],
       );
       expect(await ctx.readUserState({ userId: s.signup.data!.user.id })).toEqual(before);
+
       await Bun.sleep(1_500);
       const completed = await events(ctx);
       expect(completed).toEqual(
         profile === "captcha-turnstile" ? [] : [{ profile, kind: "bot-finished" }],
       );
+
       const after = await ctx.readUserState({ userId: s.signup.data!.user.id });
       expect(after).toEqual(before);
       expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(s.foreignBefore);
+
       observations.push({ profile, before, result, rejected, completed, after });
     }
+
     return {
       initial: ctx.snapshot(s.signup),
       foreign: ctx.snapshot(s.other),
@@ -366,8 +411,9 @@ compatScenario(
 compatScenario(
   "CAPTCHA physical method rejection precedes CORS router resolution and disabled paths suppress every hook",
   async (ctx) => {
-    const s = await principals(ctx),
-      observations = [];
+    const s = await principals(ctx);
+    const observations = [];
+
     for (const profile of ["captcha-turnstile", "captcha-turnstile-disabled"] as const) {
       for (const method of ["GET", "OPTIONS", "PUT"] as const) {
         const before = await ctx.readUserState({ userId: s.signup.data!.user.id });
@@ -381,21 +427,27 @@ compatScenario(
           },
         });
         expect(result.status).toBe(profile === "captcha-turnstile" ? 400 : 404);
-        if (profile === "captcha-turnstile")
+
+        if (profile === "captcha-turnstile") {
           expect(result.body).toEqual({
             message: "Missing CAPTCHA response",
             code: "MISSING_RESPONSE",
           });
+        }
+
         const receipts = await events(ctx);
         expect(receipts.map((event) => event.kind)).toEqual(
           profile === "captcha-turnstile" ? ["early-a"] : [],
         );
+
         const after = await ctx.readUserState({ userId: s.signup.data!.user.id });
         expect(after).toEqual(before);
         expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(s.foreignBefore);
+
         observations.push({ profile, method, before, result, receipts, after });
       }
     }
+
     return {
       initial: ctx.snapshot(s.signup),
       foreign: ctx.snapshot(s.other),
@@ -423,6 +475,7 @@ compatScenario(
     expect(result.status).toBe(200);
     expect(result.body).toMatchObject({ user: { id: s.signup.data!.user.id } });
     expect(Date.now() - started).toBeGreaterThanOrEqual(10_500);
+
     const receipts = await events(ctx);
     expect(receipts.map((event) => event.kind)).toEqual([
       "early-a",
@@ -430,22 +483,29 @@ compatScenario(
       "early-b",
       "before",
     ]);
+
     const authenticated = await ctx.actor("slow-body").client.getSession();
     expect(authenticated.error).toBeNull();
     expect(authenticated.data!.user.id).toBe(s.signup.data!.user.id);
+
     const body = result.body;
+
     if (
       body === null ||
       typeof body !== "object" ||
       !("token" in body) ||
       typeof body.token !== "string"
-    )
+    ) {
       throw new Error("Admitted sign-in must issue a real session token");
+    }
+
     expect(authenticated.data!.session.token).toBe(body.token);
+
     const authenticatedReceipts = await events(ctx);
     const after = await ctx.readUserState({ userId: s.signup.data!.user.id });
     expect(after).not.toEqual(before);
     expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(s.foreignBefore);
+
     return {
       authenticated: ctx.snapshot(authenticated),
       authenticatedReceipts,

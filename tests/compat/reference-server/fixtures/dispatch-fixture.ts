@@ -5,6 +5,7 @@ import { createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
 export function createDispatchFixture(base: BetterAuthOptions) {
   const events: { path: string; method: string }[] = [];
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
+
   for (const mode of [
     "default",
     "csrf-off",
@@ -77,10 +78,13 @@ export function createDispatchFixture(base: BetterAuthOptions) {
       }),
     );
   }
+
   return {
     profiles,
     handle(request: Request) {
-      if (new URL(request.url).pathname !== "/__test/dispatch-events") return null;
+      if (new URL(request.url).pathname !== "/__test/dispatch-events") {
+        return null;
+      }
       return Response.json(events.splice(0));
     },
   };

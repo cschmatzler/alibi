@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+
 import { collectCoverage } from "../support/coverage";
 import type { TraceEntry } from "../support/trace";
 
@@ -66,6 +67,7 @@ test("Source default OAuth error redirects record admission denial without count
   expect(collectCoverage(scenario, rejected, ["GET /callback/{}"], baseURL)).toEqual({
     "GET /callback/{}": { rejection: [scenario], authorization: [scenario], state: [scenario] },
   });
+
   const defaultCallback = {
     ...trace("/api/auth/callback/google", 302),
     responseHeaders: { location: "/api/auth/error?error=email_does_not_match" },
@@ -77,6 +79,7 @@ test("Source default OAuth error redirects record admission denial without count
   expect(collectCoverage(scenario, rejected, [])).toEqual({
     "GET /callback/{}": { success: [scenario] },
   });
+
   const nonDenials: Partial<TraceEntry>[] = [
     { responseStatus: 200 },
     { responseStatus: 301 },
@@ -125,6 +128,7 @@ test("Source default OAuth error redirects record admission denial without count
     },
     { responseHeaders: { location: `${baseURL}/gitlab-done` } },
   ];
+
   for (const changed of nonDenials) {
     const output = collectCoverage(scenario, [{ ...rejected[0]!, ...changed }], [], baseURL);
     for (const record of Object.values(output)) {
@@ -133,14 +137,15 @@ test("Source default OAuth error redirects record admission denial without count
       expect(record.success).toEqual([scenario]);
     }
   }
+
   expect(
     collectCoverage(scenario, [defaultCallback], ["state"], baseURL)["GET /callback/{}"]?.state,
   ).toBeUndefined();
 });
 
 test("real account ownership errors and request-bound reset denials retain evidence without promoting unknown failures", () => {
-  const scenario = "measured denial",
-    baseURL = "http://fixture.local:42921";
+  const scenario = "measured denial";
+  const baseURL = "http://fixture.local:42921";
   const account = {
     ...trace("/api/auth/refresh-token", 400),
     method: "POST",
@@ -163,6 +168,7 @@ test("real account ownership errors and request-bound reset denials retain evide
     "POST /refresh-token": { rejection: [scenario], authorization: [scenario] },
     "POST /unlink-account": { rejection: [scenario], authorization: [scenario] },
   });
+
   for (const changed of [
     { responseStatus: 200 },
     { responseStatus: 500 },
@@ -175,9 +181,11 @@ test("real account ownership errors and request-bound reset denials retain evide
   ]) {
     for (const record of Object.values(
       collectCoverage(scenario, [{ ...account, ...changed }], [], baseURL),
-    ))
+    )) {
       expect(record.authorization).toBeUndefined();
+    }
   }
+
   expect(collectCoverage(scenario, [{ ...account, responseStatus: 500 }], [], baseURL)).toEqual({
     "POST /refresh-token": {},
   });
@@ -192,6 +200,7 @@ test("real account ownership errors and request-bound reset denials retain evide
   expect(collectCoverage(scenario, [reset], [], baseURL)).toEqual({
     "GET /reset-password/{}": { rejection: [scenario] },
   });
+
   const profile = {
     ...reset,
     path: reset.path.replace("/api/auth/", "/__test/profiles/dispatch-default/api/auth/"),
@@ -199,6 +208,7 @@ test("real account ownership errors and request-bound reset denials retain evide
   expect(collectCoverage(scenario, [profile], [], baseURL)).toEqual({
     "GET /reset-password/{}": { rejection: [scenario] },
   });
+
   for (const changed of [
     { responseStatus: 200 },
     { responseStatus: 301 },
@@ -234,7 +244,8 @@ test("real account ownership errors and request-bound reset denials retain evide
   ]) {
     for (const record of Object.values(
       collectCoverage(scenario, [{ ...reset, ...changed }], [], baseURL),
-    ))
+    )) {
       expect(record.rejection).toBeUndefined();
+    }
   }
 });

@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import { compatScenario } from "../../support/scenario";
 import { data, orgActor, serverOperation, signUp, state } from "./helpers";
 
@@ -20,10 +22,16 @@ compatScenario(
     });
     const org = data(created);
     expect(org).not.toHaveProperty("teams");
+
     const initial = await state(ctx, org.id);
     expect(initial.parsed.teams).toHaveLength(1);
+
     const defaultTeam = initial.parsed.teams[0];
-    if (!defaultTeam) throw new Error("Organization must create its default team");
+
+    if (!defaultTeam) {
+      throw new Error("Organization must create its default team");
+    }
+
     expect(defaultTeam).toMatchObject({ name: "Team Org", updatedAt: null, memberCount: 1 });
     expect(initial.parsed.teamMembers[0]).toMatchObject({
       teamId: defaultTeam.id,
@@ -57,6 +65,7 @@ compatScenario(
       teamId: team.id,
     });
     expect(data(invitation).teamId).toBe(team.id);
+
     const accepted = await invitee.client.organization.acceptInvitation({
       invitationId: data(invitation).id,
     });
@@ -69,6 +78,7 @@ compatScenario(
     const current = await invitee.client.getSession();
     const currentSession = data(current).session;
     expect(currentSession).toMatchObject({ activeOrganizationId: org.id, activeTeamId: team.id });
+
     const members = await invitee.client.organization.listTeamMembers();
     const listedMembers = data(members);
     expect(listedMembers).toHaveLength(1);
@@ -79,6 +89,7 @@ compatScenario(
       query: { teamId: team.id },
     });
     expect(unauthenticatedMembers.error).toMatchObject({ status: 401 });
+
     const forbiddenUpdate = await invitee.client.organization.updateTeam({
       teamId: team.id,
       data: { name: "Denied update" },
@@ -93,15 +104,21 @@ compatScenario(
       userId: invitee.user.id,
     });
     const firstMember = listedMembers[0];
-    if (!firstMember) throw new Error("Accepted team invitation must persist a member");
+
+    if (!firstMember) {
+      throw new Error("Accepted team invitation must persist a member");
+    }
+
     expect(data(repeated).id).toBe(firstMember.id);
 
     const own = await invitee.client.organization.listUserTeams();
     expect(data(own).map((team) => team.id)).toEqual([team.id]);
+
     const other = await owner.client.organization.listUserTeams({
       query: { userId: invitee.user.id, organizationId: org.id },
     });
     expect(data(other).map((team) => team.id)).toEqual([team.id]);
+
     const restricted = await invitee.client.organization.listUserTeams({
       query: { userId: owner.user.id, organizationId: org.id },
     });
@@ -109,6 +126,7 @@ compatScenario(
       status: 403,
       code: "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_MEMBER",
     });
+
     const forbiddenCreate = await invitee.client.organization.createTeam({ name: "Denied" });
     expect(forbiddenCreate.error).toMatchObject({
       status: 403,
@@ -117,9 +135,11 @@ compatScenario(
 
     const clear = await invitee.client.organization.setActiveTeam({ teamId: null });
     expect(clear.error).toBeNull();
+
     const clearedSession = await invitee.client.getSession();
     expect(data(clearedSession).session.activeTeamId).toBeNull();
     expect(data(clearedSession).session.token).toBe(currentSession.token);
+
     const select = await invitee.client.organization.setActiveTeam({ teamId: team.id });
     expect(data(select).id).toBe(team.id);
 
@@ -127,6 +147,7 @@ compatScenario(
     expect(beforeRemoval.parsed.teams.find((candidate) => candidate.id === team.id)?.name).toBe(
       "Platform",
     );
+
     const removeMember = await owner.client.organization.removeTeamMember({
       teamId: team.id,
       userId: invitee.user.id,
@@ -147,6 +168,7 @@ compatScenario(
     data(removeTeam);
     const list = await owner.client.organization.listTeams();
     expect(data(list).map((team) => team.id)).toEqual([defaultTeam.id]);
+
     const cannotRemoveActive = await owner.client.organization.removeTeam({
       teamId: defaultTeam.id,
     });
@@ -229,6 +251,7 @@ compatScenario(
       teamId: [first.id, second.id],
     });
     expect(data(invitation).teamId).toBe(`${first.id},${second.id}`);
+
     const invitationId = data(invitation).id;
     const nonRecipient = await owner.client.organization.getInvitation({
       query: { id: invitationId },
@@ -237,10 +260,12 @@ compatScenario(
       status: 403,
       code: "YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION",
     });
+
     const unauthenticated = await orgActor(ctx, "invitation-guest").organization.getInvitation({
       query: { id: invitationId },
     });
     expect(unauthenticated.error).toMatchObject({ status: 401, message: "Not authenticated" });
+
     const wrongUser = await wrong.client.organization.acceptInvitation({
       invitationId,
     });
@@ -266,6 +291,7 @@ compatScenario(
     expect(acceptedTeams).toHaveLength(2);
     expect(acceptedTeams).toContain(first.id);
     expect(acceptedTeams).toContain(second.id);
+
     const current = await invitee.client.getSession();
     expect(data(current).session.activeOrganizationId).toBe(org.id);
     expect(data(current).session.activeTeamId).toBeNull();
@@ -274,6 +300,7 @@ compatScenario(
       invitationId,
     });
     expect(repeated.error).toMatchObject({ status: 400, code: "INVITATION_NOT_FOUND" });
+
     const processedLookup = await invitee.client.organization.getInvitation({
       query: { id: invitationId },
     });
@@ -292,6 +319,7 @@ compatScenario(
       query: { id: pruningId },
     });
     expect(data(pruned).teamId).toBe(second.id);
+
     const prunedState = await state(ctx, org.id);
     expect(
       prunedState.parsed.invitations.find((candidate) => candidate.id === pruningId)?.teamId,
@@ -365,6 +393,7 @@ compatScenario(
     const initial = await state(ctx, org.id, profile);
     expect(initial.parsed.teams).toEqual([]);
     expect(initial.parsed.teamMembers).toEqual([]);
+
     const current = await owner.client.getSession();
     expect(data(current).session.activeOrganizationId).toBe(org.id);
     expect(data(current).session.activeTeamId).toBeNull();
@@ -398,6 +427,7 @@ compatScenario(
     data(selected);
     const active = await owner.client.getSession();
     expect(data(active).session.activeTeamId).toBe(teamData.id);
+
     const full = await owner.client.organization.getFullOrganization();
     expect(data(full).teams.map((team) => team.id)).toEqual([teamData.id, otherData.id]);
 
@@ -438,7 +468,10 @@ compatScenario(
 
     const initial = await state(ctx, organization.id);
     const defaultTeam = initial.parsed.teams[0];
-    if (!defaultTeam) throw new Error("Server team flow requires the real default team");
+
+    if (!defaultTeam) {
+      throw new Error("Server team flow requires the real default team");
+    }
 
     const serverCreated = await serverOperation(ctx, {
       operation: "create-team",
@@ -446,6 +479,7 @@ compatScenario(
       name: "Server Created",
     });
     expect(serverCreated.status).toBe(200);
+
     const team = z
       .object({ id: z.string(), organizationId: z.string(), name: z.literal("Server Created") })
       .parse(serverCreated.body);
@@ -483,13 +517,16 @@ compatScenario(
 
     const unauthorized = await raw("server-team-guest", "add-team-member", request);
     expect(unauthorized.status).toBe(401);
+
     const forbidden = await raw("server-team-member", "add-team-member", request);
     expect(forbidden).toMatchObject({
       status: 403,
       body: { code: "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_TEAM_MEMBER" },
     });
+
     const added = await raw("server-team-owner", "add-team-member", request);
     expect(added.status).toBe(200);
+
     const membership = z
       .object({ id: z.string(), teamId: z.string(), userId: z.literal("42") })
       .parse(added.body);
@@ -501,11 +538,13 @@ compatScenario(
 
     const unauthorizedRemoval = await raw("server-team-guest", "remove-team-member", request);
     expect(unauthorizedRemoval.status).toBe(401);
+
     const forbiddenRemoval = await raw("server-team-member", "remove-team-member", request);
     expect(forbiddenRemoval).toMatchObject({
       status: 403,
       body: { code: "YOU_ARE_NOT_ALLOWED_TO_REMOVE_A_TEAM_MEMBER" },
     });
+
     const rejectedRemovalState = await state(ctx, organization.id);
     expect(
       rejectedRemovalState.parsed.teamMembers.filter((member) => member.teamId === team.id),
@@ -523,12 +562,17 @@ compatScenario(
     );
     const otherState = await state(ctx, other.id);
     const foreignTeam = otherState.parsed.teams[0];
-    if (!foreignTeam) throw new Error("Wrong-tenant control requires a persisted foreign team");
+
+    if (!foreignTeam) {
+      throw new Error("Wrong-tenant control requires a persisted foreign team");
+    }
+
     const wrongTenant = await raw("server-team-owner", "add-team-member", {
       ...request,
       teamId: foreignTeam.id,
     });
     expect(wrongTenant).toMatchObject({ status: 400, body: { code: "TEAM_NOT_FOUND" } });
+
     const wrongServerTenant = await serverOperation(ctx, {
       operation: "remove-team",
       organizationId: other.id,
@@ -538,6 +582,7 @@ compatScenario(
 
     const removedMember = await raw("server-team-owner", "remove-team-member", request);
     expect(removedMember.status).toBe(200);
+
     const afterRemove = await state(ctx, organization.id);
     expect(afterRemove.parsed.teamMembers.some((member) => member.userId === "42")).toBe(false);
 
@@ -562,19 +607,23 @@ compatScenario(
       teamId: team.id,
     });
     expect(serverRemoved).toEqual({ status: 200, body: { message: "Team removed successfully." } });
+
     const remaining = await state(ctx, organization.id);
     expect(remaining.parsed.teams.map((team) => team.id)).toEqual([defaultTeam.id]);
     expect(remaining.parsed.teamMembers.some((member) => member.teamId === team.id)).toBe(false);
 
     const afterDeletion = await owner.client.getSession();
+
     // Upstream deletion retains this historical session selection until explicit clearing.
     expect(data(afterDeletion).session.activeTeamId).toBe(team.id);
     expect(data(afterDeletion).session.token).toBe(data(active).session.token);
+
     const deletedSelection = await owner.client.organization.listTeamMembers();
     expect(deletedSelection.error).toMatchObject({ status: 400, code: "TEAM_NOT_FOUND" });
 
     const explicitClear = await owner.client.organization.setActiveTeam({ teamId: null });
     expect(explicitClear.error).toBeNull();
+
     const cleared = await owner.client.getSession();
     expect(data(cleared).session.activeTeamId).toBeNull();
     expect(data(cleared).session.token).toBe(data(active).session.token);
@@ -585,6 +634,7 @@ compatScenario(
       teamId: defaultTeam.id,
     });
     expect(lastTeam).toMatchObject({ status: 400, body: { code: "UNABLE_TO_REMOVE_LAST_TEAM" } });
+
     const final = await state(ctx, organization.id);
     expect(final.parsed.teams).toHaveLength(1);
 
@@ -683,6 +733,7 @@ compatScenario(
 
     const invitations = [];
     const acceptances = [];
+
     for (const member of [first, second]) {
       const invitation = await owner.client.organization.inviteMember({
         email: member.email,
@@ -713,6 +764,7 @@ compatScenario(
       "Allowed",
       "Allowed Second",
     ]);
+
     const members = persisted.parsed.teamMembers.filter((member) => member.teamId === team.id);
     expect(members).toHaveLength(1);
     expect(members[0]?.userId).toBe(first.user.id);
@@ -749,7 +801,11 @@ compatScenario(
 
     const initial = await state(ctx, organization.id, profile);
     const selected = initial.parsed.teams[0];
-    if (!selected) throw new Error("A created default team must have a persisted selection");
+
+    if (!selected) {
+      throw new Error("A created default team must have a persisted selection");
+    }
+
     const before = await owner.client.getSession();
     expect(data(before).session).toMatchObject({
       activeOrganizationId: organization.id,
@@ -765,6 +821,7 @@ compatScenario(
     const otherState = await state(ctx, other.id, profile);
     expect(otherState.parsed.teams).toHaveLength(1);
     expect(otherState.parsed.teamMembers[0]?.userId).toBe(owner.user.id);
+
     const preserved = await owner.client.getSession();
     expect(data(preserved).session).toMatchObject({
       activeOrganizationId: organization.id,
@@ -780,6 +837,7 @@ compatScenario(
 
     const clear = await owner.client.organization.setActiveTeam({ teamId: null });
     expect(clear.error).toBeNull();
+
     const removed = await owner.client.organization.removeTeam({ teamId: selected.id });
     data(removed);
 
@@ -790,8 +848,10 @@ compatScenario(
 
     const teams = await owner.client.organization.listTeams();
     expect(data(teams)).toEqual([]);
+
     const full = await owner.client.organization.getFullOrganization();
     expect(data(full).teams).toEqual([]);
+
     const current = await owner.client.getSession();
     expect(data(current).session).toMatchObject({
       activeOrganizationId: organization.id,

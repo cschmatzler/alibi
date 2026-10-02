@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+
 import { z } from "zod";
+
 import type { FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { createTracingFetch, type TraceEntry } from "../../support/trace";
@@ -44,6 +46,7 @@ async function signup(ctx: ScenarioContext, name: string) {
   const email = ctx.uniqueEmail(name);
   const result = await actor.client.signUp.email({ name, email, password: "password123" });
   expect(result.error).toBeNull();
+
   const user = row.parse(z.object({ user: row }).parse(ctx.snapshot(result.data)).user);
   return { ...actor, user, email };
 }
@@ -58,7 +61,10 @@ async function server(
   useHeaders = false,
 ) {
   const input = { profile, useHeaders, body };
-  if (!actor) return ctx.rawRequest({ path: `${root}/server`, method: "POST", json: input });
+
+  if (!actor) {
+    return ctx.rawRequest({ path: `${root}/server`, method: "POST", json: input });
+  }
 
   const response = await actor.fetch(`${root}/server`, {
     method: "POST",
@@ -114,6 +120,7 @@ async function setup(ctx: ScenarioContext, name: string) {
     password: "password123",
   });
   expect(siblingSignIn.error).toBeNull();
+
   const siblingActive = await siblingActor.client.$fetch("/organization/set-active", {
     method: "POST",
     body: { organizationId: organization.id },
@@ -126,6 +133,7 @@ async function setup(ctx: ScenarioContext, name: string) {
     password: "password123",
   });
   expect(targetSiblingSignIn.error).toBeNull();
+
   const targetSiblingActive = await targetSibling.client.$fetch("/organization/set-active", {
     method: "POST",
     body: { organizationId: targetOwn.id },
@@ -151,6 +159,7 @@ async function setup(ctx: ScenarioContext, name: string) {
     body: { organizationId: targetOwn.id, teamId: targetTeam.id, userId: target.user.id },
   });
   expect(targetTeamMember.error).toBeNull();
+
   for (const actor of [target, targetSibling]) {
     const activeTeam = await actor.client.$fetch("/organization/set-active-team", {
       method: "POST",
@@ -226,6 +235,7 @@ compatScenario(
       role,
     });
     expect(result.status).toBe(200);
+
     const created = row.parse(result.body);
     expect(created).toMatchObject({
       organizationId: s.organization.id,
@@ -296,6 +306,7 @@ compatScenario(
       expect(result.body).toHaveProperty("code", code);
       expect(await state(ctx)).toEqual(before);
       expect(await s.users()).toEqual(usersBefore);
+
       failures.push(result);
     }
 
@@ -312,6 +323,7 @@ compatScenario(
     expect(disabled.status).toBe(400);
     expect(disabled.body).toEqual({ message: "Teams are not enabled" });
     expect(await state(ctx)).toEqual(before);
+
     failures.push(disabled);
 
     // add-member is server-only: a public caller cannot reach it.
@@ -328,6 +340,7 @@ compatScenario(
       },
     );
     expect(attempt.status).toBe(404);
+
     const publicBody = await attempt.text();
     expect(await state(ctx)).toEqual(before);
 
@@ -383,6 +396,7 @@ compatScenario(
         actor ? "USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION" : "NO_ACTIVE_ORGANIZATION",
       );
       expect(await state(ctx)).toEqual(before);
+
       failures.push(result);
     }
 
@@ -466,8 +480,10 @@ compatScenario(
       expect(result.status).toBe(403);
       expect(result.body).toHaveProperty("code", "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED");
       expect(await state(ctx)).toEqual(full);
+
       failures.push({ profile, result });
     }
+
     expect(await s.users()).toEqual(usersBefore);
 
     return {
@@ -504,6 +520,7 @@ compatScenario(
 
     const traces: TraceEntry[] = [];
     let during: Awaited<ReturnType<typeof state>> | undefined;
+
     try {
       during = await state(ctx, "before-add");
       expect(during.receipts.map((value) => value.phase)).toEqual(["before-add"]);
@@ -593,6 +610,7 @@ compatScenario(
           "code",
           mode.startsWith("public500") ? "PUBLIC_ADDITION_500" : "ADDITION_HOOK_REJECTED",
         );
+
         const beforeOnly = mode.endsWith("before-add");
         expect(after.receipts.map((value) => value.phase)).toEqual(
           beforeOnly ? ["before-add"] : ["before-add", "after-add"],
@@ -600,7 +618,10 @@ compatScenario(
         expect(after.snapshot.members.length - before.snapshot.members.length).toBe(
           beforeOnly ? 0 : 1,
         );
-        if (beforeOnly) expect(after.snapshot).toEqual(before.snapshot);
+
+        if (beforeOnly) {
+          expect(after.snapshot).toEqual(before.snapshot);
+        }
       } else {
         expect(result.status).toBe(200);
         expect(result.body).toHaveProperty(
@@ -634,6 +655,7 @@ compatScenario(
       } else {
         expect(withoutMembers(after.snapshot)).toEqual(withoutMembers(before.snapshot));
       }
+
       expect(await s.users()).toEqual(usersBefore);
 
       observations.push({ mode, before, usersBefore, result, after, usersAfter: await s.users() });
@@ -701,14 +723,18 @@ compatScenario(
       } else {
         expect(withoutMembers(after.snapshot)).toEqual(withoutMembers(before.snapshot));
       }
+
       expect(await s.users()).toEqual(usersBefore);
 
       await configure(ctx, "record");
+
       if (mode === "sql-after-error") {
         await seed(ctx, "detach", s.organization.id, s.target.user.id);
       }
+
       const retry = await server(ctx, body);
       expect(retry.status).toBe(200);
+
       const repaired = await state(ctx);
       checkNotes(
         repaired,
@@ -754,6 +780,7 @@ compatScenario(
 
       // Give the target memberships in both teams, then detach the org membership only.
       await configure(ctx, "off");
+
       for (const teamId of [s.first.id, s.second.id]) {
         const added = await server(ctx, {
           organizationId: s.organization.id,
@@ -785,6 +812,7 @@ compatScenario(
       const after = await state(ctx);
       expect(after.receipts.map((value) => value.phase)).toEqual(["before-add"]);
       expect(after.snapshot.members).toEqual(before.snapshot.members);
+
       const removedIds = profile.endsWith("zero")
         ? []
         : profile.endsWith("one")
@@ -866,6 +894,7 @@ compatScenario(
       teamId: s.first.id,
     });
     expect(targetOriginal.status).toBe(200);
+
     await seed(ctx, "detach", s.organization.id, s.target.user.id);
 
     await configure(ctx, "patch-target-reject-team-limit", {

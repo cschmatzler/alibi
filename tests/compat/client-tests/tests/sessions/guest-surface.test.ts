@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+
 import { compatScenario } from "../../support/scenario";
 
 // Unauthenticated callers must receive identical values, statuses and cookie
@@ -15,6 +16,7 @@ compatScenario("guest session surface returns identical empty reads and sign-out
   expect(sessions.error).toMatchObject({ status: 401 });
   expect(signOut.data).toMatchObject({ success: true });
   expect(sessionAgain.data).toBeNull();
+
   return {
     session: ctx.snapshot(session),
     sessions: ctx.snapshot(sessions),
@@ -34,6 +36,7 @@ compatScenario(
       name: "Guest Surface",
     });
     expect(signup.error).toBeNull();
+
     const forged = await ctx.rawRequest({
       actor: "forger",
       path: "/api/auth/sign-out",
@@ -49,6 +52,7 @@ compatScenario(
     });
     const ownerStill = await owner.client.getSession();
     expect(ownerStill.data?.user.email).toBe(email);
+
     return {
       signup: ctx.snapshot(signup),
       forged: ctx.snapshot(forged),

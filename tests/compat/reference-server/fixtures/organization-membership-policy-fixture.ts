@@ -1,9 +1,11 @@
 /** Immutable application policies over the unchanged published server-only API. */
 
 import type { Database } from "bun:sqlite";
+
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
+
 export const MEMBERSHIP_PROFILES = [
   "org-membership-default",
   "org-membership-none",
@@ -23,6 +25,7 @@ export const MEMBERSHIP_PROFILES = [
   "org-membership-team-limit",
   "org-membership-pending-one",
 ] as const;
+
 export function organizationMembershipPolicyFixture(
   database: Database,
   shared: Parameters<typeof betterAuth>[0],
@@ -38,6 +41,7 @@ export function organizationMembershipPolicyFixture(
         ]),
       ),
     );
+
   function snapshot() {
     return {
       organizations: database
@@ -57,6 +61,7 @@ export function organizationMembershipPolicyFixture(
       ),
     };
   }
+
   const profiles = new Map(
     MEMBERSHIP_PROFILES.map((name) => {
       const fixed =
@@ -85,11 +90,14 @@ export function organizationMembershipPolicyFixture(
               organization: structuredClone(organization),
               snapshot: snapshot(),
             });
-            if (name.endsWith("error"))
+
+            if (name.endsWith("error")) {
               throw new APIError("BAD_REQUEST", {
                 code: "MEMBERSHIP_POLICY_REJECTED",
                 message: "Actual membership policy rejected",
               });
+            }
+
             return name.includes("resolver-zero") ? 0 : name.endsWith("nan") ? NaN : 1.5;
           }
         : fixed;
@@ -153,7 +161,11 @@ export function organizationMembershipPolicyFixture(
         body: Parameters<ReturnType<typeof organization>["endpoints"]["addMember"]>[0]["body"];
       };
       const auth = profiles.get(input.profile);
-      if (!auth) return new Response(null, { status: 404 });
+
+      if (!auth) {
+        return new Response(null, { status: 404 });
+      }
+
       try {
         return Response.json(
           await auth.api.addMember({
@@ -162,10 +174,11 @@ export function organizationMembershipPolicyFixture(
           }),
         );
       } catch (error) {
-        if (error instanceof APIError)
+        if (error instanceof APIError) {
           return error.body
             ? Response.json(error.body, { status: error.statusCode })
             : new Response(null, { status: error.statusCode });
+        }
         return new Response(null, { status: 500 });
       }
     },

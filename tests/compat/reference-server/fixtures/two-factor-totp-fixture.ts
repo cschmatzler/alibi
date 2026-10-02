@@ -35,19 +35,36 @@ export function createTwoFactorTotpFixture(base: Parameters<typeof betterAuth>[0
   );
   return async function handle(request: Request, url: URL): Promise<Response | undefined> {
     for (const [name, auth] of profiles) {
-      if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+      if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
         return auth.handler(request);
+      }
     }
-    if (url.pathname !== "/__test/two-factor-totp" || request.method !== "POST") return;
+
+    if (url.pathname !== "/__test/two-factor-totp" || request.method !== "POST") {
+      return;
+    }
+
     const body: unknown = await request.json();
-    if (!body || typeof body !== "object" || !("secret" in body) || typeof body.secret !== "string")
+
+    if (
+      !body ||
+      typeof body !== "object" ||
+      !("secret" in body) ||
+      typeof body.secret !== "string"
+    ) {
       return Response.json({ message: "secret required" }, { status: 400 });
+    }
+
     const name =
       "profile" in body && typeof body.profile === "string"
         ? body.profile
         : "two-factor-totp-default";
     const auth = profiles.get(name);
-    if (!auth) return Response.json({ message: "unknown fixture profile" }, { status: 400 });
+
+    if (!auth) {
+      return Response.json({ message: "unknown fixture profile" }, { status: 400 });
+    }
+
     try {
       return Response.json(await auth.api.generateTOTP({ body: { secret: body.secret } }));
     } catch (error) {
@@ -57,8 +74,9 @@ export function createTwoFactorTotpFixture(base: Parameters<typeof betterAuth>[0
         "statusCode" in error &&
         typeof error.statusCode === "number" &&
         "body" in error
-      )
+      ) {
         return Response.json(error.body, { status: error.statusCode });
+      }
       return Response.json({ message: "Internal server error" }, { status: 500 });
     }
   };

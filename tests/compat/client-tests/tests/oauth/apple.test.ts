@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+
 import { credential, issuedAt } from "../../support/id-token";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
@@ -12,9 +13,11 @@ async function state(ctx: ScenarioContext) {
     sessions: Array<Record<string, unknown>>;
   };
 }
+
 async function receipts(ctx: ScenarioContext) {
   const result = await ctx.rawRequest({ path: "/__test/apple/receipts" });
   expect(result.status).toBe(200);
+
   const rows = result.body as Array<{ body: Record<string, string> | null }>;
   return rows.map((row) => ({
     ...row,
@@ -26,6 +29,7 @@ async function receipts(ctx: ScenarioContext) {
       : row.body,
   }));
 }
+
 async function proof(ctx: ScenarioContext, claims: Record<string, unknown> = {}, wrong = false) {
   return credential(
     {
@@ -42,6 +46,7 @@ async function proof(ctx: ScenarioContext, claims: Record<string, unknown> = {},
     wrong,
   );
 }
+
 async function control(ctx: ScenarioContext, value: Record<string, unknown>) {
   const result = await ctx.rawRequest({
     path: "/__test/apple/control",
@@ -64,6 +69,7 @@ for (const mode of ["default", "configured", "disabled-scope", "disabled-configu
         loginHint: "ignored@example.invalid",
       });
       expect(result.error).toBeNull();
+
       const url = new URL(result.data!.url!);
       expect(url.origin).toBe("https://appleid.apple.com");
       expect(url.pathname).toBe("/auth/authorize");
@@ -79,8 +85,10 @@ for (const mode of ["default", "configured", "disabled-scope", "disabled-configu
           "requested-scope",
         ].join(" "),
       );
+
       const persisted = await state(ctx);
       expect(persisted).toEqual(before);
+
       return { result: ctx.snapshot(result), before, persisted };
     },
     ["POST /sign-in/social"],
@@ -112,6 +120,7 @@ for (const mapping of [
         name: "Foreign Owner",
       });
       expect(foreignSignup.error).toBeNull();
+
       const before = await state(ctx);
       const claims =
         mapping === "numeric-name"
@@ -149,6 +158,7 @@ for (const mapping of [
         },
       });
       const after = await state(ctx);
+
       if (mapping.endsWith("email")) {
         expect(result.error?.code).toBe("USER_EMAIL_NOT_FOUND");
         expect(after).toEqual(before);
@@ -164,6 +174,7 @@ for (const mapping of [
         expect(after.sessions.find((row) => row.id === before.sessions[0]!.id)).toEqual(
           before.sessions[0],
         );
+
         const owner = after.users.find((row) => row.id !== before.users[0]!.id)!;
         expect(owner.name).toBe(
           mapping === "js-trim"
@@ -180,6 +191,7 @@ for (const mapping of [
         );
         expect(owner.image).toBeNull();
         expect(owner.emailVerified).toBe(!["unverified", "false-string"].includes(mapping));
+
         const account = after.accounts.find((row) => row.userId === owner.id)!;
         expect(account.providerId).toBe("apple");
         expect(account.idToken).toBe(token);
@@ -189,6 +201,7 @@ for (const mapping of [
             : JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString()).sub,
         );
       }
+
       return {
         result: ctx.snapshot(result),
         before,
@@ -255,8 +268,10 @@ for (const variant of [
               ? "FAILED_TO_GET_USER_INFO"
               : "INVALID_TOKEN",
       );
+
       const after = await state(ctx);
       expect(after).toEqual(before);
+
       return { result: ctx.snapshot(result), before, after, receipts: await receipts(ctx) };
     },
     ["POST /sign-in/social"],
@@ -274,18 +289,22 @@ compatScenario(
       callbackURL: "/dashboard",
     });
     expect(start.error).toBeNull();
+
     const stateToken = new URL(start.data!.url!).searchParams.get("state")!;
     const path =
       authProfilePath("social-apple-default") +
       `/callback/apple?code=fixture-code&state=${encodeURIComponent(stateToken)}`;
     const callback = await actor.fetch(ctx.baseURL + path, { redirect: "manual" });
     expect(callback.status).toBe(302);
+
     const session = await actor.client.getSession();
     expect(session.data?.user).toBeTruthy();
+
     const providerRequests = await ctx.rawRequest({ path: "/__test/apple/receipts" });
     const exchange = (providerRequests.body as Array<{ body: Record<string, string> }>)[0]!;
     const verifier = exchange.body.code_verifier!;
     expect(verifier).toHaveLength(128);
+
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
     expect(new URL(start.data!.url!).searchParams.get("code_challenge")).toBe(
       Buffer.from(digest).toString("base64url"),
@@ -298,12 +317,15 @@ compatScenario(
       redirect_uri: ctx.baseURL + authProfilePath("social-apple-default") + "/callback/apple",
       code_verifier: verifier,
     });
+
     const persisted = await state(ctx);
     expect(persisted.accounts).toHaveLength(1);
     expect(persisted.accounts[0]!.idToken).toBe(token);
+
     const replay = await actor.fetch(ctx.baseURL + path, { redirect: "manual" });
     const afterReplay = await state(ctx);
     expect(afterReplay).toEqual(persisted);
+
     return {
       start: ctx.snapshot(start),
       callback: { status: callback.status, location: callback.headers.get("location") },
@@ -362,11 +384,13 @@ for (const variant of [
         idToken: { token, ...(variant.endsWith("nonce") ? { nonce } : {}) },
       });
       expect(result.error).toBeNull();
+
       const persisted = await state(ctx);
       expect(persisted.users).toHaveLength(1);
       expect(persisted.accounts).toHaveLength(1);
       expect(persisted.sessions).toHaveLength(1);
       expect(persisted.accounts[0]!.idToken).toBe(token);
+
       return { result: ctx.snapshot(result), persisted, receipts: await receipts(ctx) };
     },
     ["POST /sign-in/social"],
@@ -386,6 +410,7 @@ compatScenario(
         })
       ).error,
     ).toBeNull();
+
     const actor = ctx.actor("apple", "social-apple-default");
     const token = await proof(ctx);
     await control(ctx, { idToken: token });
@@ -394,6 +419,7 @@ compatScenario(
       callbackURL: "/dashboard",
     });
     expect(start.error).toBeNull();
+
     const stateToken = new URL(start.data!.url!).searchParams.get("state")!;
     const callback = await actor.fetch(
       authProfilePath("social-apple-default") +
@@ -401,6 +427,7 @@ compatScenario(
       { redirect: "manual" },
     );
     expect(callback.status).toBe(302);
+
     const before = await state(ctx);
     const account = before.accounts.find((row) => row.providerId === "apple")!;
     await control(ctx, {
@@ -415,8 +442,10 @@ compatScenario(
     const denied = await foreign.client.refreshToken({ accountId: String(account.id) });
     expect(denied.error).not.toBeNull();
     expect(await state(ctx)).toEqual(before);
+
     const refreshed = await actor.client.refreshToken({ accountId: String(account.id) });
     expect(refreshed.error).toBeNull();
+
     const after = await state(ctx);
     expect(after.users).toEqual(before.users);
     expect(after.sessions).toEqual(before.sessions);
@@ -430,9 +459,11 @@ compatScenario(
       refreshToken: "fixture-apple-refresh-rotated",
       idToken: token,
     });
+
     const signOut = await actor.client.signOut();
     expect(signOut.error).toBeNull();
     expect((await actor.client.getSession()).data).toBeNull();
+
     return {
       before,
       denied: ctx.snapshot(denied),
@@ -457,14 +488,17 @@ compatScenario(
     await control(ctx, { keys });
     const first = await actor.client.signIn.social({ provider: "apple", idToken: { token } });
     expect(first.error).toBeNull();
+
     const admitted = await state(ctx);
     await control(ctx, { keys: { keys: [] } });
     const retired = await actor.client.signIn.social({ provider: "apple", idToken: { token } });
     expect(retired.error?.code).toBe("INVALID_TOKEN");
     expect(await state(ctx)).toEqual(admitted);
+
     await control(ctx, { keys });
     const restored = await actor.client.signIn.social({ provider: "apple", idToken: { token } });
     expect(restored.error).toBeNull();
+
     const after = await state(ctx);
     expect(after.users).toEqual(admitted.users);
     expect(after.accounts).toHaveLength(admitted.accounts.length);
@@ -476,6 +510,7 @@ compatScenario(
       Date.parse(String(admitted.accounts[0]!.updatedAt)),
     );
     expect(after.sessions).toHaveLength(admitted.sessions.length + 1);
+
     return {
       first: ctx.snapshot(first),
       admitted,
@@ -498,6 +533,7 @@ compatScenario(
       idToken: { token, user: { name: { firstName: "Ada", lastName: "Apple" } } },
     });
     expect(result.error).toBeNull();
+
     const persisted = await state(ctx);
     expect(persisted.users[0]).toMatchObject({
       name: "Mapped Ada Apple",
@@ -508,6 +544,7 @@ compatScenario(
     expect(persisted.accounts[0]!.accountId).toBe(
       JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString()).sub,
     );
+
     return { result: ctx.snapshot(result), persisted, receipts: await receipts(ctx) };
   },
   ["POST /sign-in/social"],
@@ -540,6 +577,7 @@ for (const variant of ["absent", "zero", "fractional", "array-scope", "comma-sco
         callbackURL: "/dashboard",
       });
       expect(start.error).toBeNull();
+
       const stateToken = new URL(start.data!.url!).searchParams.get("state")!;
       const before = Date.now();
       const callback = await actor.fetch(
@@ -548,6 +586,7 @@ for (const variant of ["absent", "zero", "fractional", "array-scope", "comma-sco
         { redirect: "manual" },
       );
       expect(callback.status).toBe(302);
+
       const persisted = await state(ctx);
       const account = persisted.accounts[0]!;
       expect(account.scope).toBe(
@@ -557,6 +596,7 @@ for (const variant of ["absent", "zero", "fractional", "array-scope", "comma-sco
             ? "email,name,custom"
             : "",
       );
+
       if (variant === "fractional") {
         expect(Date.parse(String(account.accessTokenExpiresAt))).toBeGreaterThanOrEqual(
           before + 3600250,
@@ -564,7 +604,10 @@ for (const variant of ["absent", "zero", "fractional", "array-scope", "comma-sco
         expect(Date.parse(String(account.accessTokenExpiresAt))).toBeLessThanOrEqual(
           Date.now() + 3600250,
         );
-      } else expect(account.accessTokenExpiresAt).toBeNull();
+      } else {
+        expect(account.accessTokenExpiresAt).toBeNull();
+      }
+
       return {
         start: ctx.snapshot(start),
         callback: { status: callback.status, location: callback.headers.get("location") },
@@ -587,11 +630,13 @@ compatScenario(
     });
     expect(wrongProvider.error?.status).toBe(404);
     expect(wrongProvider.error?.code).toBe("PROVIDER_NOT_FOUND");
+
     const start = await actor.client.signIn.social({
       provider: "apple",
       callbackURL: "/dashboard",
     });
     expect(start.error).toBeNull();
+
     const invalid = await actor.fetch(
       authProfilePath("social-apple-default") +
         "/callback/apple?code=fixture-code&state=foreign-state",
@@ -601,6 +646,7 @@ compatScenario(
     expect(invalid.headers.get("location")).toContain("error=state_mismatch");
     expect(await state(ctx)).toEqual(before);
     expect(await receipts(ctx)).toEqual([]);
+
     return {
       wrongProvider: ctx.snapshot(wrongProvider),
       start: ctx.snapshot(start),
@@ -626,6 +672,7 @@ compatScenario(
     const result = await actor.client.signIn.social({ provider: "apple", idToken: { token } });
     expect(result.error?.code).toBe("INVALID_TOKEN");
     expect(await state(ctx)).toEqual(before);
+
     return {
       result: ctx.snapshot(result),
       before,

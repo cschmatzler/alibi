@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+
 import { compatScenario } from "../../support/scenario";
 
 compatScenario("get access token returns stored unexpired token", async (ctx) => {
@@ -134,6 +135,7 @@ compatScenario(
       name: "Other Account Owner",
     });
     const responses = [];
+
     for (const route of ["get-access-token", "refresh-token"]) {
       for (const json of [
         { accountId, useAccountCookie: true },
@@ -142,8 +144,10 @@ compatScenario(
         const response = await ctx.rawRequest({ path: `/api/auth/${route}`, method: "POST", json });
         expect(response.status).toBe(400);
         expect((response.body as { code: string }).code).toBe("VALIDATION_ERROR");
+
         responses.push(response);
       }
+
       const foreign = await ctx.rawRequest({
         actor: "other",
         path: `/api/auth/${route}`,
@@ -152,8 +156,10 @@ compatScenario(
       });
       expect(foreign.status).toBe(400);
       expect((foreign.body as { code: string }).code).toBe("ACCOUNT_NOT_FOUND");
+
       responses.push(foreign);
     }
+
     return responses;
   },
 );

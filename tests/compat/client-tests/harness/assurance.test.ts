@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { command, digest, upstreamPin, writeJSON } from "../support/assurance/common";
 import { CoverageScope } from "../support/assurance/coverage-scope";
 import { generateCase, generatedCaseSchema, reduceActions } from "../support/assurance/generated";
@@ -38,6 +39,7 @@ test("upstream inventory discovers undeclared options, test templates and unmeas
   expect(
     inventory.filter((item) => item.kind === "upstream-test").map((item) => item.name),
   ).toEqual(["fresh upstream behavior > boundary %s", "fresh upstream behavior > not ported"]);
+
   const runtime = runtimeEvidence(
     { ...source, path: "unloaded.mjs" },
     "export function decision(x) { if (x) return x?.field; return null; }",
@@ -80,6 +82,7 @@ function suite(): SuiteResult {
     errors: [],
   };
 }
+
 const mutation: Mutation = {
   id: "drop-result",
   kind: "wire",
@@ -89,9 +92,10 @@ const mutation: Mutation = {
   pointer: ["ok"],
   scenario: "owner",
 };
+
 test("mutation detection requires a reached behavioral failure and clean matching execution", () => {
-  const baseline = suite(),
-    candidate = suite();
+  const baseline = suite();
+  const candidate = suite();
   candidate.code = 1;
   candidate.outcomes[0] = {
     name: "owner",
@@ -102,6 +106,7 @@ test("mutation detection requires a reached behavioral failure and clean matchin
   };
   candidate.wireReceipts = [{ id: mutation.id, scenario: "owner", changed: true }];
   expect(classifyMutation(mutation, baseline, candidate).status).toBe("killed");
+
   for (const change of [
     (value: SuiteResult) => {
       value.timedOut = true;
@@ -135,9 +140,11 @@ test("mutation detection requires a reached behavioral failure and clean matchin
     change(invalid);
     expect(classifyMutation(mutation, baseline, invalid).status).toBe("inconclusive");
   }
+
   const survivor = suite();
   survivor.wireReceipts = candidate.wireReceipts;
   expect(classifyMutation(mutation, baseline, survivor).status).toBe("survived");
+
   survivor.wireReceipts = [{ id: mutation.id, scenario: "owner", changed: false }];
   expect(classifyMutation(mutation, baseline, survivor).status).toBe("no-change");
   expect(classifyMutation(mutation, baseline, suite()).status).toBe("not-reached");
@@ -162,6 +169,7 @@ test("mutation detection requires a reached behavioral failure and clean matchin
     mutationHits: 1,
   };
   expect(classifyMutation(sourceMutation, baseline, sourceCandidate).status).toBe("killed");
+
   for (const change of [
     (value: SuiteResult) => {
       delete value.outcomes[0]!.coverage.Rust;
@@ -313,6 +321,7 @@ test("coverage reports retain unloaded branches and new upstream obligations, an
   expect(assuranceReport(inventory, policy, passing, campaign, "parity").errors).toContain(
     controlError,
   );
+
   for (const invalid of [
     { ...controls, runId: "older-run" },
     { ...controls, harnessDigest: "edited-checker" },
@@ -350,11 +359,13 @@ test("coverage reports retain unloaded branches and new upstream obligations, an
     missing: ["never-imported#branch:0:0"],
   });
   expect(uncovered.unmapped).toEqual(["new-option"]);
+
   const staleFixture = fresh();
   staleFixture.passing.outcomes[0]!.coverage.TS!.runId = "previous-run";
   const stale = report(staleFixture);
   expect(stale.errors).toContain("owner: mismatched upstream branch evidence");
   expect(stale.summary.reachedBranchArms).toBe(0);
+
   const failed = fresh();
   failed.passing.outcomes[0]!.status = "failed";
   expect(report(failed).summary.reachedBranchArms).toBe(0);
@@ -404,6 +415,7 @@ test("generated logs replay exactly and reduction preserves the failure prerequi
     generateCase(42, 20),
   );
   expect(generateCase(43, 20).actions).not.toEqual(generated.actions);
+
   const reduced = await reduceActions(generated.actions, async (actions) => {
     const created = actions.findIndex(
       (action) => action.kind === "signup" && action.session === "s0",
@@ -431,8 +443,8 @@ test("a subprocess timeout terminates descendants that keep its output pipes ope
 });
 
 test("delayed upstream work cannot credit a later scenario's coverage", async () => {
-  const scope = new CoverageScope(),
-    counter = scope.counters({ hits: 0 });
+  const scope = new CoverageScope();
+  const counter = scope.counters({ hits: 0 });
   scope.active = "first-window";
   const pending = scope.run(async () => {
     counter.hits++;
@@ -440,12 +452,14 @@ test("delayed upstream work cannot credit a later scenario's coverage", async ()
     counter.hits++;
   });
   expect(counter.hits).toBe(1);
+
   scope.reset(() => {
     counter.hits = 0;
   });
   scope.active = "next-window";
   await pending;
   expect(counter.hits).toBe(0);
+
   scope.run(() => {
     counter.hits++;
   });
@@ -460,8 +474,8 @@ test("response mutation preserves fetch metadata independently of its changed he
     fetch: () => Response.json({ ok: true }, { headers: { "x-probe": "present" } }),
   });
   try {
-    const path = join(directory, "mutation.json"),
-      pointer = ["x-probe"];
+    const path = join(directory, "mutation.json");
+    const pointer = ["x-probe"];
     const id = `wire:${digest(JSON.stringify(["GET", "/api/auth/ok", "drop-header", pointer])).slice(0, 24)}`;
     await writeJSON(path, {
       id,
@@ -496,6 +510,7 @@ test("response mutation preserves fetch metadata independently of its changed he
       },
     );
     expect(result.code).toBe(0);
+
     const native = await fetch(url);
     expect(JSON.parse(result.stdout)).toEqual({
       url,

@@ -1,6 +1,8 @@
 import { expect } from "bun:test";
-import { decodeJwt, decodeProtectedHeader } from "jose";
+
+import { decodeJwt } from "jose";
 import { z } from "zod";
+
 import { compatScenario } from "../../support/scenario";
 import { jwtActor, verifyWithOfficialJose } from "./helpers";
 
@@ -31,11 +33,17 @@ compatScenario(
     const client = jwtActor(ctx);
     const anonymousToken = await jwtActor(ctx, "guest").token();
     expect(anonymousToken.error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
+
     const jwksBefore = await client.jwks();
     expect(jwksBefore.error).toBeNull();
-    if (!jwksBefore.data) throw new Error("public JWKS must be available without a session");
+
+    if (!jwksBefore.data) {
+      throw new Error("public JWKS must be available without a session");
+    }
+
     expect(jwksBefore.data.keys).toHaveLength(1);
     expect(jwksBefore.data.keys[0]).toMatchObject({ alg: "EdDSA", kty: "OKP", crv: "Ed25519" });
+
     const persisted = await ctx.rawRequest({ path: "/__test/jwks-state" });
     const persistedKeys = storedKeySchema.parse(persisted.body);
     expect(persistedKeys).toHaveLength(1);
@@ -43,6 +51,7 @@ compatScenario(
     expect(persistedKeys[0]?.expiresAt).toBeNull();
     expect(persistedKeys[0]?.id).toBe(jwksBefore.data.keys[0]?.kid);
     expect(persistedKeys[0]?.publicKey.x).toBe(jwksBefore.data.keys[0]?.x);
+
     const signupCookie: { value: string | null } = { value: null };
     const signup = await client.signUp.email({
       email: ctx.uniqueEmail("jwt-default"),
@@ -59,11 +68,15 @@ compatScenario(
       },
     });
     expect(signup.error).toBeNull();
-    if (!signupCookie.value || !signup.data?.token)
+
+    if (!signupCookie.value || !signup.data?.token) {
       throw new Error("signup must issue a signed persistent session cookie");
+    }
+
     const invalidCookie = "better-auth.session_token=invalid";
     const cookieAuthorizations = [];
     let cookieTokenIssuedAt: number | undefined;
+
     for (const [name, headers, successful] of [
       ["valid-first", { cookie: `${signupCookie.value}; ${invalidCookie}` }, true],
       ["invalid-first", { cookie: `${invalidCookie}; ${signupCookie.value}` }, false],
@@ -73,7 +86,11 @@ compatScenario(
       const result = await jwtActor(ctx, `cookie-${name}`).token({ fetchOptions: { headers } });
       if (successful) {
         expect(result.error).toBeNull();
-        if (!result.data) throw new Error("first valid signed cookie must authorize issuance");
+
+        if (!result.data) {
+          throw new Error("first valid signed cookie must authorize issuance");
+        }
+
         const checked = await verifyWithOfficialJose(
           result.data.token,
           jwksBefore.data.keys,
@@ -81,14 +98,18 @@ compatScenario(
           ctx.baseURL,
         );
         expect(checked.payload.sub).toBe(signup.data.user.id);
+
         cookieTokenIssuedAt = z.number().parse(checked.payload.iat);
       } else {
         expect(result.error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
       }
       cookieAuthorizations.push({ name, result });
     }
-    if (cookieTokenIssuedAt === undefined)
+
+    if (cookieTokenIssuedAt === undefined) {
       throw new Error("valid cookie must issue a timestamped JWT");
+    }
+
     await advancePastJwtSecond(cookieTokenIssuedAt);
     const responseHeaders: { token: string | null; exposed: string | null } = {
       token: null,
@@ -103,10 +124,15 @@ compatScenario(
       },
     });
     expect(session.error).toBeNull();
+
     const { token: headerToken, exposed: exposedHeaders } = responseHeaders;
-    if (!session.data || !headerToken)
+
+    if (!session.data || !headerToken) {
       throw new Error("authenticated get-session must set a JWT header");
+    }
+
     expect(exposedHeaders?.split(",").map((value) => value.trim())).toContain("set-auth-jwt");
+
     const verifiedHeader = await verifyWithOfficialJose(
       headerToken,
       jwksBefore.data.keys,
@@ -115,11 +141,16 @@ compatScenario(
     );
     const headerIssuedAt = z.number().parse(verifiedHeader.payload.iat);
     expect(headerIssuedAt).toBeGreaterThan(cookieTokenIssuedAt);
+
     await advancePastJwtSecond(headerIssuedAt);
     const issuedAt = Math.floor(Date.now() / 1000);
     const token = await client.token();
     expect(token.error).toBeNull();
-    if (!token.data) throw new Error("JWT endpoint must issue a signed token");
+
+    if (!token.data) {
+      throw new Error("JWT endpoint must issue a signed token");
+    }
+
     const verified = await verifyWithOfficialJose(
       token.data.token,
       jwksBefore.data.keys,
@@ -133,14 +164,21 @@ compatScenario(
     expect(verified.payload.iat).toBeGreaterThanOrEqual(issuedAt);
     expect(verified.payload.iat).toBeGreaterThan(headerIssuedAt);
     expect(verified.payload.exp).toBe((verified.payload.iat ?? 0) + 900);
+
     const userClaims = { ...verified.payload };
-    for (const key of ["iat", "exp", "iss", "aud", "sub"]) delete userClaims[key];
+
+    for (const key of ["iat", "exp", "iss", "aud", "sub"]) {
+      delete userClaims[key];
+    }
+
     expect(userClaims).toEqual(
       z.record(z.string(), z.unknown()).parse(ctx.snapshot(session.data.user)),
     );
     expect(verifiedHeader.payload.sub).toBe(session.data.user.id);
+
     const again = await client.jwks();
     expect(again.data).toEqual(jwksBefore.data);
+
     const serverVerified = await ctx.rawRequest({
       path: "/__test/jwt",
       method: "POST",
@@ -150,6 +188,7 @@ compatScenario(
     expect(
       z.object({ payload: z.record(z.string(), z.unknown()) }).parse(serverVerified.body).payload,
     ).toEqual(verified.payload);
+
     return {
       anonymousToken: ctx.snapshot(anonymousToken),
       jwksBefore,
@@ -181,20 +220,30 @@ for (const [profile, algorithm, keyType, curve] of [
       const client = jwtActor(ctx, "owner", profile);
       const publicKeys = await client.jwks();
       expect(publicKeys.error).toBeNull();
-      if (!publicKeys.data) throw new Error("configured JWKS must be public");
+
+      if (!publicKeys.data) {
+        throw new Error("configured JWKS must be public");
+      }
+
       expect(publicKeys.data.keys).toHaveLength(1);
       expect(publicKeys.data.keys[0]?.alg).toBe(algorithm);
       expect(publicKeys.data.keys[0]?.kty).toBe(keyType);
       expect(publicKeys.data.keys[0]?.crv).toBe(curve);
+
       const signup = await client.signUp.email({
         email: ctx.uniqueEmail(`jwt-${algorithm}`),
         password: "password123",
         name: `JWT ${algorithm} Owner`,
       });
       expect(signup.error).toBeNull();
+
       const token = await client.token();
       expect(token.error).toBeNull();
-      if (!token.data) throw new Error("configured signer must issue JWT");
+
+      if (!token.data) {
+        throw new Error("configured signer must issue JWT");
+      }
+
       const verified = await verifyWithOfficialJose(
         token.data.token,
         publicKeys.data.keys,
@@ -203,6 +252,7 @@ for (const [profile, algorithm, keyType, curve] of [
       );
       expect(verified.header.alg).toBe(algorithm);
       expect(verified.payload.sub).toBe(signup.data?.user.id);
+
       const serverVerified = await ctx.rawRequest({
         path: "/__test/jwt",
         method: "POST",
@@ -211,7 +261,9 @@ for (const [profile, algorithm, keyType, curve] of [
       expect(
         z.object({ payload: z.record(z.string(), z.unknown()) }).parse(serverVerified.body).payload,
       ).toEqual(verified.payload);
+
       const signatures = [];
+
       for (let index = 0; index < 2; index++) {
         const signed = await ctx.rawRequest({
           path: "/__test/jwt",
@@ -225,7 +277,11 @@ for (const [profile, algorithm, keyType, curve] of [
         expect(signed.status).toBe(200);
         signatures.push(z.object({ token: z.string() }).parse(signed.body));
       }
-      if (!signatures[0] || !signatures[1]) throw new Error("two signatures are required");
+
+      if (!signatures[0] || !signatures[1]) {
+        throw new Error("two signatures are required");
+      }
+
       const first = await verifyWithOfficialJose(
         signatures[0].token,
         publicKeys.data.keys,
@@ -239,8 +295,13 @@ for (const [profile, algorithm, keyType, curve] of [
         ctx.baseURL,
       );
       expect(first).toEqual(second);
-      if (algorithm === "RS256") expect(signatures[0].token).toBe(signatures[1].token);
-      else expect(signatures[0].token).not.toBe(signatures[1].token);
+
+      if (algorithm === "RS256") {
+        expect(signatures[0].token).toBe(signatures[1].token);
+      } else {
+        expect(signatures[0].token).not.toBe(signatures[1].token);
+      }
+
       return {
         publicKeys,
         signup: ctx.snapshot(signup),
@@ -297,8 +358,10 @@ compatScenario(
       iss: ctx.baseURL,
       aud: ctx.baseURL,
     });
+
     const emptyIssuer = await verify(explicit.token, "");
     expect(emptyIssuer).toEqual(checked);
+
     const nullish = await sign({
       sub: "server-subject",
       iat: 4102443800.5,
@@ -316,11 +379,13 @@ compatScenario(
       iss: ctx.baseURL,
       aud: ctx.baseURL,
     });
+
     const noIat = await sign({ sub: "server-subject" });
     const noIatChecked = await verify(noIat.token);
     expect(
       z.object({ payload: z.record(z.string(), z.unknown()) }).parse(noIatChecked.body).payload,
     ).not.toHaveProperty("iat");
+
     const falseIat = await sign({ sub: "server-subject", iat: false });
     const falseIatClaims = z.record(z.string(), z.unknown()).parse(decodeJwt(falseIat.token));
     expect(falseIatClaims).toEqual({
@@ -330,8 +395,10 @@ compatScenario(
       iss: ctx.baseURL,
       aud: ctx.baseURL,
     });
+
     const falseIatRejected = await verify(falseIat.token);
     expect(falseIatRejected).toMatchObject({ status: 200, body: { payload: null } });
+
     const relativeStartedAt = Math.floor(Date.now() / 1000);
     const relative = await sign({ sub: "server-subject", exp: "1m" });
     const relativeCompletedAt = Math.floor(Date.now() / 1000);
@@ -341,7 +408,9 @@ compatScenario(
       .parse(relativeChecked.body);
     expect(relativeClaims.payload.exp).toBeGreaterThanOrEqual(relativeStartedAt + 60);
     expect(relativeClaims.payload.exp).toBeLessThanOrEqual(relativeCompletedAt + 60);
+
     const invalidClaims = [];
+
     for (const payload of [
       { sub: "server-subject", exp: "invalid" },
       { sub: "server-subject", exp: false },
@@ -363,7 +432,9 @@ compatScenario(
       });
       invalidClaims.push(response);
     }
+
     const rejected = [];
+
     for (const claims of [
       { iss: "wrong" },
       { aud: "wrong" },
@@ -374,15 +445,21 @@ compatScenario(
       const signed = await sign({ sub: "server-subject", ...claims });
       const result = await verify(signed.token);
       expect(result).toMatchObject({ status: 200, body: { payload: null } });
+
       rejected.push({ signed, result });
     }
+
     const parts = explicit.token.split(".");
-    if (!parts[0] || !parts[1] || !parts[2])
+
+    if (!parts[0] || !parts[1] || !parts[2]) {
       throw new Error("compact JWT must contain three nonempty segments");
+    }
+
     const signature = parts[2];
     const signatureEncodings = [];
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     const lastIndex = alphabet.indexOf(signature.at(-1) ?? "");
+
     for (const [label, encoded, accepted] of [
       ["proper padding", `${signature}==`, true],
       ["wrong padding", `${signature}=`, false],
@@ -396,14 +473,19 @@ compatScenario(
       const result = await verify(token);
       expect(result.status).toBe(200);
       expect(result.body).toEqual(accepted ? checked.body : { payload: null });
+
       signatureEncodings.push({ label, token, result });
     }
+
     const badSignature = `${parts[0]}.${parts[1]}.${Buffer.from("not-a-signature").toString("base64url")}`;
     const signatureRejected = await verify(badSignature);
     expect(signatureRejected).toMatchObject({ status: 200, body: { payload: null } });
+
     const issuerRejected = await verify(explicit.token, "different-issuer");
     expect(issuerRejected).toMatchObject({ status: 200, body: { payload: null } });
+
     const notPublic = [];
+
     for (const path of ["/sign-jwt", "/verify-jwt", "/jwt/sign", "/jwt/verify"]) {
       const response = await ctx
         .actor("public", "jwt-default")
@@ -413,10 +495,12 @@ compatScenario(
           body: JSON.stringify({ payload: { sub: "server-subject" }, token: explicit.token }),
         });
       expect(response.status).toBe(404);
+
       const responseText = await response.text();
       const body: unknown = responseText.length ? JSON.parse(responseText) : null;
       notPublic.push({ status: response.status, body });
     }
+
     return {
       explicit,
       checked,
@@ -451,7 +535,11 @@ compatScenario(
     });
     const publicKeys = await claimsClient.jwks();
     const token = await claimsClient.token();
-    if (!publicKeys.data || !token.data) throw new Error("configured JWT must be issued");
+
+    if (!publicKeys.data || !token.data) {
+      throw new Error("configured JWT must be issued");
+    }
+
     const verified = await verifyWithOfficialJose(
       token.data.token,
       publicKeys.data.keys,
@@ -459,6 +547,7 @@ compatScenario(
       "fixture-audience",
     );
     expect(verified.payload.exp).toBe((verified.payload.iat ?? 0) + 60);
+
     const serverVerified = await ctx.rawRequest({
       path: "/__test/jwt",
       method: "POST",
@@ -467,13 +556,16 @@ compatScenario(
     expect(
       z.object({ payload: z.record(z.string(), z.unknown()) }).parse(serverVerified.body).payload,
     ).toEqual(verified.payload);
+
     const alternate = jwtActor(ctx, "path", "jwt-path-header", "/.well-known/jwks.json");
     const alternateKeys = await alternate.jwks();
     expect(alternateKeys.error).toBeNull();
+
     const oldPath = await ctx
       .actor("path", "jwt-path-header")
       .fetch(`${ctx.baseURL}/api/auth/jwks`);
     expect(oldPath.status).toBe(404);
+
     await alternate.signUp.email({
       email: ctx.uniqueEmail("jwt-path"),
       password: "password123",
@@ -488,6 +580,7 @@ compatScenario(
       },
     });
     expect(authHeader).toBeNull();
+
     return {
       signup: ctx.snapshot(signup),
       publicKeys,
@@ -510,23 +603,35 @@ compatScenario(
     const startedAt = Date.now();
     const originalKeys = await client.jwks();
     const completedAt = Date.now();
-    if (!originalKeys.data?.keys[0]?.kid)
+
+    if (!originalKeys.data?.keys[0]?.kid) {
       throw new Error("rotation requires a persisted signing key");
+    }
+
     const originalKid = originalKeys.data.keys[0].kid;
     const persistedBefore = await ctx.rawRequest({ path: "/__test/jwks-state" });
     const before = storedKeySchema.parse(persistedBefore.body);
     expect(before).toHaveLength(1);
     expect(before[0]?.privateKeyEncrypted).toBeFalse();
-    if (!before[0]?.expiresAt) throw new Error("rotation interval must persist a key expiry");
+
+    if (!before[0]?.expiresAt) {
+      throw new Error("rotation interval must persist a key expiry");
+    }
+
     expect(new Date(before[0].expiresAt).getTime()).toBeGreaterThanOrEqual(startedAt + 3600000);
     expect(new Date(before[0].expiresAt).getTime()).toBeLessThanOrEqual(completedAt + 3600000);
+
     const signup = await client.signUp.email({
       email: ctx.uniqueEmail("jwt-rotation"),
       password: "password123",
       name: "Rotation Owner",
     });
     const originalToken = await client.token();
-    if (!originalToken.data) throw new Error("rotation requires an issued original token");
+
+    if (!originalToken.data) {
+      throw new Error("rotation requires an issued original token");
+    }
+
     const originalVerified = await verifyWithOfficialJose(
       originalToken.data.token,
       originalKeys.data.keys,
@@ -534,18 +639,29 @@ compatScenario(
       ctx.baseURL,
     );
     expect(originalVerified.header.kid).toBe(originalKid);
+
     const expire = await ctx.rawRequest({
       path: "/__test/expire-jwk",
       method: "POST",
       json: { id: originalKid, expiresAt: new Date(Date.now() - 1000).toISOString() },
     });
     expect(expire.status).toBe(200);
+
     const replacementToken = await client.token();
-    if (!replacementToken.data) throw new Error("expired unpinned key must be replaced");
+
+    if (!replacementToken.data) {
+      throw new Error("expired unpinned key must be replaced");
+    }
+
     const replacementKeys = await client.jwks();
-    if (!replacementKeys.data) throw new Error("replacement JWKS must be available");
+
+    if (!replacementKeys.data) {
+      throw new Error("replacement JWKS must be available");
+    }
+
     expect(replacementKeys.data.keys).toHaveLength(2);
     expect(replacementKeys.data.keys[0]?.kid).toBe(originalKid);
+
     const replacementVerified = await verifyWithOfficialJose(
       replacementToken.data.token,
       replacementKeys.data.keys,
@@ -553,12 +669,14 @@ compatScenario(
       ctx.baseURL,
     );
     expect(replacementVerified.header.kid).not.toBe(originalKid);
+
     const persistedAfter = await ctx.rawRequest({ path: "/__test/jwks-state" });
     const after = storedKeySchema.parse(persistedAfter.body);
     expect(after).toHaveLength(2);
     expect(after.map((key) => key.privateKeyEncrypted)).toEqual([false, false]);
     expect(after[0]?.publicKey).toEqual(before[0]?.publicKey);
     expect(after[1]?.id).toBe(replacementVerified.header.kid);
+
     const oldStillVerifies = await ctx.rawRequest({
       path: "/__test/jwt",
       method: "POST",
@@ -568,15 +686,18 @@ compatScenario(
       z.object({ payload: z.record(z.string(), z.unknown()) }).parse(oldStillVerifies.body).payload
         .sub,
     ).toBe(signup.data?.user.id);
+
     const removeFromPublic = await ctx.rawRequest({
       path: "/__test/expire-jwk",
       method: "POST",
       json: { id: originalKid, expiresAt: new Date(Date.now() - 7200000).toISOString() },
     });
     expect(removeFromPublic.status).toBe(200);
+
     const afterGrace = await client.jwks();
     expect(afterGrace.data?.keys).toHaveLength(1);
     expect(afterGrace.data?.keys[0]?.kid).toBe(replacementVerified.header.kid);
+
     // Public retention and server verification intentionally have separate
     // lifecycles: the pinned verifier reads all persisted keys.
     const oldAfterGrace = await ctx.rawRequest({
@@ -588,6 +709,7 @@ compatScenario(
       z.object({ payload: z.record(z.string(), z.unknown()) }).parse(oldAfterGrace.body).payload
         .sub,
     ).toBe(signup.data?.user.id);
+
     return {
       originalKeys,
       persistedBefore,

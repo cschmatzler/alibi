@@ -3,27 +3,37 @@
 import { createServer } from "node:http";
 
 const mode = process.argv[2];
-const events = [],
-  errors = [],
-  logs = [];
+const events = [];
+const errors = [];
+const logs = [];
+
 const server = createServer(async (req, res) => {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+
+  for await (const chunk of req) {
+    chunks.push(chunk);
+  }
+
   events.push(JSON.parse(Buffer.concat(chunks).toString()));
   res.writeHead(mode === "failure" ? 500 : 200, { "content-type": "application/json" });
   res.end("{}");
 });
+
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+
 const endpoint = `http://127.0.0.1:${server.address().port}`;
+
 process.env.BETTER_AUTH_TELEMETRY_ENDPOINT = mode === "no-endpoint" ? "" : endpoint;
 process.env.BETTER_AUTH_TELEMETRY = mode === "environment" ? "true" : "false";
 process.env.BETTER_AUTH_TELEMETRY_DEBUG = "false";
 process.env.NODE_ENV = mode === "test" ? "test" : "production";
 process.env.BUN_ENV = process.env.NODE_ENV;
+
 const { betterAuth } = await import("better-auth");
 const { memoryAdapter } = await import("better-auth/adapters/memory");
 const { emailOTP, organization, testUtils } = await import("better-auth/plugins");
 const { createAccessControl } = await import("better-auth/plugins/access");
+
 const rows = {
   user: [],
   session: [],
@@ -33,8 +43,10 @@ const rows = {
   member: [],
   invitation: [],
 };
+
 let providerCalls = 0;
 const enabled = !["default", "disabled", "environment"].includes(mode);
+
 const auth = betterAuth({
   baseURL: "http://runtime-boundaries.example.com",
   secret: "synthetic-boundaries-secret-at-least-32-characters",
@@ -69,39 +81,52 @@ const auth = betterAuth({
       : []),
   ],
 });
+
 try {
   let ctx;
   try {
     ctx = await auth.$context;
   } catch (error) {
-    if (mode !== "init-failure") throw error;
+    if (mode !== "init-failure") {
+      throw error;
+    }
+
     const deadline = Date.now() + 2000;
-    while (events.length < 1 && Date.now() < deadline)
+
+    while (events.length < 1 && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
     console.log(JSON.stringify({ mode, events, providerCalls, initError: error.message }));
     process.exitCode = 0;
   }
   if (ctx) {
     await ctx.publishTelemetry({ type: "application-ready", payload: { ready: true } });
+
     // Initialization's track is deliberately unawaited upstream. Wait for its real
     // local HTTP receipt rather than assuming $context means delivery completed.
     if (["enabled", "environment", "failure"].includes(mode)) {
       const deadline = Date.now() + 2000;
-      while (events.length < 2 && Date.now() < deadline)
+      while (events.length < 2 && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 5));
-      if (events.length < 2)
+      }
+      if (events.length < 2) {
         throw new Error("Actual initialization telemetry did not reach local capture");
+      }
     }
+
     const helpers = ctx.test;
     const draft = helpers.createUser({ email: "helper@example.com", name: "Helper" });
     const factoryWrites = (rows.user ?? []).length;
     const user = await helpers.saveUser(draft);
     const missingLogin = { before: structuredClone(rows) };
+
     try {
       await helpers.login({ userId: "nonexistent-user" });
     } catch (error) {
       missingLogin.error = error.message;
     }
+
     missingLogin.after = structuredClone(rows);
     const login = await helpers.login({ userId: user.id });
     const read = await auth.api.getSession({ headers: login.headers });

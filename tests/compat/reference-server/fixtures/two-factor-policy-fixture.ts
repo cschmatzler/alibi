@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { twoFactor } from "better-auth/plugins";
@@ -92,11 +93,12 @@ export function createTwoFactorPolicyFixture(
                       update: {
                         ...base.databaseHooks?.user?.update,
                         before: async (data) => {
-                          if (data.twoFactorEnabled === true)
+                          if (data.twoFactorEnabled === true) {
                             throw new APIError("BAD_REQUEST", {
                               message: "Configured user update denied",
                               code: "USER_UPDATE_DENIED",
                             });
+                          }
                         },
                       },
                     },
@@ -117,7 +119,9 @@ export function createTwoFactorPolicyFixture(
                               ? context?.path.startsWith("/two-factor/verify-")
                               : context?.path.endsWith("/two-factor/enable")
                           ) {
-                            if (name.endsWith("-cancel")) return false;
+                            if (name.endsWith("-cancel")) {
+                              return false;
+                            }
                             throw new APIError("FORBIDDEN", {
                               message: "session creation cancelled by database hook",
                             });
@@ -181,7 +185,9 @@ export function createTwoFactorPolicyFixture(
                         : {},
                 otpOptions: {
                   sendOTP: async ({ user, otp }) => {
-                    if (user.email) deliveries.set(user.email, { otp });
+                    if (user.email) {
+                      deliveries.set(user.email, { otp });
+                    }
                   },
                 },
               }),
@@ -192,10 +198,15 @@ export function createTwoFactorPolicyFixture(
   );
   const handle = async function handle(request: Request, url: URL): Promise<Response | undefined> {
     for (const [name, auth] of profiles) {
-      if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`))
+      if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
         return auth.handler(request);
+      }
     }
-    if (url.pathname !== "/__test/two-factor-policy" || request.method !== "POST") return;
+
+    if (url.pathname !== "/__test/two-factor-policy" || request.method !== "POST") {
+      return;
+    }
+
     const body = (await request.json()) as {
       userId?: unknown;
       count?: unknown;
@@ -211,13 +222,22 @@ export function createTwoFactorPolicyFixture(
       viewBackupCodes?: unknown;
       trustIdentifier?: unknown;
     };
-    if (typeof body.deliveryEmail === "string")
+
+    if (typeof body.deliveryEmail === "string") {
       return Response.json(deliveries.get(body.deliveryEmail) ?? null);
-    if (typeof body.userId !== "string")
+    }
+
+    if (typeof body.userId !== "string") {
       return Response.json({ message: "userId required" }, { status: 400 });
+    }
+
     if (typeof body.backupProfile === "string" && body.viewBackupCodes === true) {
       const selected = profiles.get(body.backupProfile);
-      if (!selected) return Response.json({ message: "unknown backup profile" }, { status: 400 });
+
+      if (!selected) {
+        return Response.json({ message: "unknown backup profile" }, { status: 400 });
+      }
+
       const result = await selected.api.viewBackupCodes({
         body: { userId: body.userId },
       });
@@ -226,6 +246,7 @@ export function createTwoFactorPolicyFixture(
         receipts: backupReceipts.get(body.backupProfile) ?? [],
       });
     }
+
     if (body.pendingState === true) {
       const key =
         typeof body.pendingKey === "string"
@@ -255,17 +276,21 @@ export function createTwoFactorPolicyFixture(
         ).n,
       });
     }
+
     if (typeof body.trustIdentifier === "string") {
       database
         .query("UPDATE verification SET value=? WHERE identifier=?")
         .run(body.userId, body.trustIdentifier);
       return Response.json({ status: true });
     }
-    if (body.emptyCredentialPassword === true)
+
+    if (body.emptyCredentialPassword === true) {
       database
         .query("UPDATE account SET password='' WHERE userId=? AND providerId='credential'")
         .run(body.userId);
-    if (body.credentialState === true)
+    }
+
+    if (body.credentialState === true) {
       return Response.json(
         database
           .query(
@@ -281,32 +306,46 @@ export function createTwoFactorPolicyFixture(
             };
           }),
       );
+    }
+
     if (body.importFactor && typeof body.importFactor === "object") {
       const factor = body.importFactor as { secret?: unknown; backupCodes?: unknown };
-      if (typeof factor.secret !== "string" || typeof factor.backupCodes !== "string")
+      if (typeof factor.secret !== "string" || typeof factor.backupCodes !== "string") {
         return Response.json({ message: "invalid factor import" }, { status: 400 });
+      }
       database
         .query("UPDATE twoFactor SET secret=?,backupCodes=? WHERE userId=?")
         .run(factor.secret, factor.backupCodes, body.userId);
     }
-    if (Object.hasOwn(body, "count"))
+
+    if (Object.hasOwn(body, "count")) {
       database
         .query("UPDATE twoFactor SET failedVerificationCount=? WHERE userId=?")
         .run(body.count as number | null, body.userId);
-    if (typeof body.verified === "boolean")
+    }
+
+    if (typeof body.verified === "boolean") {
       database
         .query("UPDATE twoFactor SET verified=? WHERE userId=?")
         .run(body.verified ? 1 : 0, body.userId);
-    if (body.expireLock === true)
+    }
+
+    if (body.expireLock === true) {
       database
         .query("UPDATE twoFactor SET lockedUntil=? WHERE userId=?")
         .run(new Date(Date.now() - 1000).toISOString(), body.userId);
+    }
+
     const row = database
       .query(
         "SELECT id,userId,secret,backupCodes,verified,failedVerificationCount,lockedUntil FROM twoFactor WHERE userId=?",
       )
       .get(body.userId) as Record<string, unknown> | null;
-    if (row && row.verified !== null) row.verified = Boolean(row.verified);
+
+    if (row && row.verified !== null) {
+      row.verified = Boolean(row.verified);
+    }
+
     return Response.json(row);
   };
   return Object.assign(handle, { reset: () => backupReceipts.clear() });

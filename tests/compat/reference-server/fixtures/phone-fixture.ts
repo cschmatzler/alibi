@@ -2,6 +2,7 @@ import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { phoneNumber, twoFactor } from "better-auth/plugins";
+
 import { callbackSnapshot } from "./passwordless-context";
 import { numericModes, numericOptions } from "./passwordless-numeric";
 
@@ -18,6 +19,7 @@ export async function createPhoneFixture(
     context?: unknown;
     verifiedOwner?: boolean;
   }[] = [];
+
   function options(name: string) {
     return {
       ...base,
@@ -41,7 +43,9 @@ export async function createPhoneFixture(
           async sendOTP({ phoneNumber, code }, ctx) {
             const context = await callbackSnapshot(ctx, phoneNumber);
             outbox.set(`verification:${phoneNumber}`, { code, ...(context ? { context } : {}) });
-            if (name === "phone-custom") challenges.set(phoneNumber, code);
+            if (name === "phone-custom") {
+              challenges.set(phoneNumber, code);
+            }
           },
           async sendPasswordResetOTP({ phoneNumber, code }, ctx) {
             const context = await callbackSnapshot(ctx, `${phoneNumber}-request-password-reset`);
@@ -64,8 +68,15 @@ export async function createPhoneFixture(
                   ctx: Parameters<typeof callbackSnapshot>[0],
                 ) {
                   const context = await callbackSnapshot(ctx, phoneNumber);
-                  if (context) outbox.set(`verifier:${phoneNumber}`, { context });
-                  if (challenges.get(phoneNumber) !== code) return false;
+
+                  if (context) {
+                    outbox.set(`verifier:${phoneNumber}`, { context });
+                  }
+
+                  if (challenges.get(phoneNumber) !== code) {
+                    return false;
+                  }
+
                   challenges.delete(phoneNumber);
                   return true;
                 },
@@ -86,7 +97,9 @@ export async function createPhoneFixture(
       ],
     };
   }
+
   const profiles = new Map<string, ReturnType<typeof betterAuth<ReturnType<typeof options>>>>();
+
   for (const name of [
     "phone-default",
     "phone-signup",
@@ -98,6 +111,7 @@ export async function createPhoneFixture(
     await (await getMigrations(config)).runMigrations();
     profiles.set(name, betterAuth(config));
   }
+
   return {
     profiles,
     outbox,
@@ -108,13 +122,18 @@ export async function createPhoneFixture(
       callbacks.length = 0;
     },
     async consume(body: unknown) {
-      if (!body || typeof body !== "object" || Array.isArray(body))
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
         return Response.json({ message: "invalid server operation" }, { status: 400 });
+      }
+
       const record = body as Record<string, unknown>;
       const selected =
         typeof record.profile === "string" ? profiles.get(record.profile) : undefined;
-      if (!selected || typeof record.phoneNumber !== "string" || typeof record.code !== "string")
+
+      if (!selected || typeof record.phoneNumber !== "string" || typeof record.code !== "string") {
         return Response.json({ message: "invalid server operation" }, { status: 400 });
+      }
+
       try {
         return Response.json(
           await selected.api.consumePhoneNumberOTP({
@@ -122,7 +141,7 @@ export async function createPhoneFixture(
           }),
         );
       } catch (error) {
-        if (error instanceof APIError)
+        if (error instanceof APIError) {
           return Response.json(error.body, {
             status:
               typeof error.status === "number"
@@ -133,6 +152,7 @@ export async function createPhoneFixture(
                     ? 403
                     : 500,
           });
+        }
         throw error;
       }
     },

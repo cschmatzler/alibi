@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+
 import { compatScenario } from "../../support/scenario";
 
 compatScenario(
@@ -12,10 +13,16 @@ compatScenario(
       name: "Verification Schema",
     });
     const user = signup.data?.user;
-    if (!user) throw new Error("Schema checks require an existing unverified authenticated user");
+
+    if (!user) {
+      throw new Error("Schema checks require an existing unverified authenticated user");
+    }
+
     const before = await ctx.readUserState({ userId: user.id });
     expect(await ctx.readVerificationEmail({ email })).toBeNull();
+
     const rejected = [];
+
     for (const { json, error } of [
       {
         json: { email: null, callbackURL: 5 },
@@ -33,18 +40,24 @@ compatScenario(
       });
       expect(response.status).toBe(400);
       expect(response.body).toMatchObject(error);
+
       rejected.push(response);
     }
+
     expect(await ctx.readVerificationEmail({ email })).toBeNull();
+
     const after = await ctx.readUserState({ userId: user.id });
     expect(after).toEqual(before);
+
     const valid = await actor.client.sendVerificationEmail({
       email,
       callbackURL: "/verified?case=schema",
     });
     expect(valid.error).toBeNull();
+
     const delivery = await ctx.readVerificationEmail({ email });
     expect(delivery).toMatchObject({ token: expect.any(String), url: expect.any(String) });
+
     return { signup, before, rejected, after, valid, delivery };
   },
 );
