@@ -590,6 +590,14 @@ impl SessionAdapterFields {
         };
         additional.extend(canonical);
         for name in self.0.keys() {
+            // Typed DTOs omit optional core fields during serialization. The
+            // actual initialized projection still distinguishes a stored null
+            // from an absent property; retain it before applying output policy.
+            if !additional.contains_key(name)
+                && let Some(value) = base.get(name)
+            {
+                drop(additional.insert(name.clone(), value.clone()));
+            }
             drop(base.remove(name));
         }
         let mut output = crate::AdapterOutput::from_values(base);
