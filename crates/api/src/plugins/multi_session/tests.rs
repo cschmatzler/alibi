@@ -6,8 +6,7 @@
 
 use super::*;
 use crate::plugins::test_helpers::{
-    create_auth_json_request_no_query, create_auth_request_no_query, create_test_context,
-    create_user_and_session,
+    create_auth_json_request_no_query, create_test_context, create_user_and_session,
 };
 use better_auth_core::utils::cookie_utils::create_session_cookie;
 use better_auth_core::{CreateSession, CreateUser};
