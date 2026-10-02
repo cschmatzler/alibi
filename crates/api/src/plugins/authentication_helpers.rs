@@ -318,7 +318,7 @@ pub(in crate::plugins) fn validation_response(message: &str) -> AuthResponse {
     .unwrap_or_else(|_| AuthResponse::text(400, "Validation failed"))
 }
 
-/// Default username create-hook behavior for auth methods whose additional
+/// Configured username create-hook behavior for auth methods whose additional
 /// inputs have already passed through the username input transform.
 ///
 /// # Errors
@@ -328,9 +328,6 @@ pub(in crate::plugins) async fn prepare_additional_user_fields(
     data: &mut CreateUser,
 ) -> AuthResult<()> {
     apply_creation_input_defaults(ctx, data);
-    use better_auth_core::utils::username::{
-        UsernameValidationError, normalize_username, validate_username,
-    };
     if !ctx
         .get_metadata("username.enabled")
         .and_then(Value::as_bool)
@@ -347,19 +344,13 @@ pub(in crate::plugins) async fn prepare_additional_user_fields(
     else {
         return Ok(());
     };
-    let username = normalize_username(username);
-    if let Err(error) = validate_username(&username) {
-        let (code, message) = match error {
-            UsernameValidationError::TooShort => ("USERNAME_TOO_SHORT", "Username is too short"),
-            UsernameValidationError::TooLong => ("USERNAME_TOO_LONG", "Username is too long"),
-            UsernameValidationError::Invalid => ("INVALID_USERNAME", "Username is invalid"),
-        };
-        return Err(AuthError::Upstream {
-            status: 400,
-            code,
-            message,
-        });
-    }
+    let policy = ctx
+        .extensions
+        .get::<better_auth_core::utils::username::UsernameConfig>()
+        .map(|policy| (*policy).clone())
+        .unwrap_or_default();
+    policy.validate_hook_value(username).await?;
+    let username = policy.normalize(username)?;
     if ctx
         .database
         .get_user_by_username(&username)
@@ -372,10 +363,13 @@ pub(in crate::plugins) async fn prepare_additional_user_fields(
             message: "Username is already taken. Please try another.",
         });
     }
-    if data.display_username.as_deref().is_none_or(str::is_empty) {
-        data.display_username = Some(username.clone());
+    if let Some(display) = data
+        .display_username
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
+        policy.validate_display(display).await?;
     }
-    data.username = Some(username);
     Ok(())
 }
 

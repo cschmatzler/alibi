@@ -1,6 +1,4 @@
-use better_auth_core::utils::username::{
-    UsernameValidationError, normalize_username_fields, validate_username,
-};
+use better_auth_core::utils::username::UsernameConfig;
 use better_auth_core::{
     AuthConfig, AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse,
     AuthResult, AuthRoute, AuthSchema, AuthStore, BeforeRequestAction, EmailProvider,
@@ -774,14 +772,53 @@ impl<S: AuthSchema> BetterAuth<S> {
         let update_req: UpdateUserRequest =
             serde_json::from_value(serde_json::Value::Object(body.clone()))
                 .map_err(|e| AuthError::bad_request(format!("Invalid JSON: {e}")))?;
+        let policy = self.context.extensions.get::<UsernameConfig>();
+        if let Some(policy) = &policy {
+            if let Some(value) = &update_req.username {
+                policy.validate_hook_value(value).await?;
+                let normalized = policy.normalize(value)?;
+                let current_username = current_user.username();
+                if policy.immutable_username
+                    && current_username
+                        .as_ref()
+                        .is_some_and(|value| !value.is_empty() && *value != normalized)
+                {
+                    return Err(AuthError::Upstream {
+                        status: 400,
+                        code: "USERNAME_IS_IMMUTABLE",
+                        message: "Username cannot be updated",
+                    });
+                }
+                if let Some(existing_user) = self.store.get_user_by_username(&normalized).await?
+                    && existing_user.id() != current_user.id()
+                {
+                    return Err(AuthError::Upstream {
+                        status: 400,
+                        code: "USERNAME_IS_ALREADY_TAKEN",
+                        message: "Username is already taken. Please try another.",
+                    });
+                }
+            }
+            if let Some(value) = &update_req.display_username {
+                policy.validate_display(value).await?;
+            }
+        }
+        let mut input_fields = raw_body
+            .as_object()
+            .ok_or_else(|| AuthError::bad_request("Invalid JSON object"))?
+            .clone();
+        if policy.is_none() {
+            drop(input_fields.shift_remove("username"));
+        }
+        if policy
+            .as_ref()
+            .is_none_or(|policy| !policy.include_display_username)
+        {
+            drop(input_fields.shift_remove("displayUsername"));
+        }
         let additional_fields = self
             .context
-            .parse_user_fields(
-                raw_body
-                    .as_object()
-                    .ok_or_else(|| AuthError::bad_request("Invalid JSON object"))?,
-                false,
-            )
+            .parse_user_fields(&input_fields, false)
             .map_err(|error| match error {
                 better_auth_core::field_policy::FieldInputError::Validation { code, message } => {
                     AuthError::Api {
@@ -792,41 +829,14 @@ impl<S: AuthSchema> BetterAuth<S> {
                 }
                 better_auth_core::field_policy::FieldInputError::Transform(error) => error,
             })?;
-        let (username, display_username) =
-            normalize_username_fields(update_req.username, update_req.display_username);
-
-        if let Some(username) = username.as_deref() {
-            match validate_username(username) {
-                Ok(()) => {}
-                Err(UsernameValidationError::TooShort) => {
-                    return username_error_response(
-                        400,
-                        "USERNAME_TOO_SHORT",
-                        "Username is too short",
-                    );
-                }
-                Err(UsernameValidationError::TooLong) => {
-                    return username_error_response(
-                        400,
-                        "USERNAME_TOO_LONG",
-                        "Username is too long",
-                    );
-                }
-                Err(UsernameValidationError::Invalid) => {
-                    return username_error_response(400, "INVALID_USERNAME", "Username is invalid");
-                }
-            }
-
-            if let Some(existing_user) = self.store.get_user_by_username(username).await?
-                && existing_user.id() != current_user.id()
-            {
-                return username_error_response(
-                    400,
-                    "USERNAME_IS_ALREADY_TAKEN",
-                    "Username is already taken. Please try another.",
-                );
-            }
-        }
+        let username = additional_fields
+            .get("username")
+            .and_then(better_auth_core::utils::json::JsValue::as_str)
+            .map(str::to_owned);
+        let display_username = additional_fields
+            .get("displayUsername")
+            .and_then(better_auth_core::utils::json::JsValue::as_str)
+            .map(str::to_owned);
 
         let clear_phone = self
             .context
@@ -932,17 +942,6 @@ impl<S: AuthSchema> BetterAuth<S> {
 
         Ok(response)
     }
-}
-
-fn username_error_response(status: u16, code: &str, message: &str) -> AuthResult<AuthResponse> {
-    AuthResponse::json(
-        status,
-        &ErrorCodeMessageResponse {
-            code: Some(code.to_owned()),
-            message: message.to_owned(),
-        },
-    )
-    .map_err(AuthError::from)
 }
 
 async fn parse_dispatch_body(req: &AuthRequest, allowed: &[&str]) -> AuthResult<()> {

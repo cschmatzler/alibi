@@ -14,8 +14,9 @@ use better_auth_core::utils::cookie_utils::{
     related_cookie_name, sign_cookie_value,
 };
 use better_auth_core::utils::password::{self as password_utils, PasswordHasher};
-use better_auth_core::utils::username::{
-    UsernameValidationError, normalize_username, normalize_username_fields, validate_username,
+pub use better_auth_core::utils::username::{
+    UsernameConfig, UsernameNormalization, UsernameNormalizer, UsernameValidationOrder,
+    UsernameValidator,
 };
 use better_auth_core::wire::UserView;
 use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
@@ -33,12 +34,6 @@ use validator::Validate;
 const MESSAGE_INVALID_USERNAME_OR_PASSWORD: &str = "Invalid username or password";
 
 const MESSAGE_EMAIL_NOT_VERIFIED: &str = "Email not verified";
-
-const MESSAGE_USERNAME_TOO_SHORT: &str = "Username is too short";
-
-const MESSAGE_USERNAME_TOO_LONG: &str = "Username is too long";
-
-const MESSAGE_INVALID_USERNAME: &str = "Username is invalid";
 
 const MESSAGE_USERNAME_IS_ALREADY_TAKEN: &str = "Username is already taken. Please try another.";
 
@@ -61,6 +56,7 @@ pub struct EmailPasswordConfig {
     pub enable_signup: bool,
     /// Whether to enable the username schema, signup hooks, and endpoints.
     pub enable_username: bool,
+    pub username: UsernameConfig,
     pub require_email_verification: bool,
     /// Minimum UTF-16 password length. Zero uses the default of 8.
     pub password_min_length: usize,
@@ -99,6 +95,7 @@ impl std::fmt::Debug for EmailPasswordConfig {
             .field("enabled", &self.enabled)
             .field("enable_signup", &self.enable_signup)
             .field("enable_username", &self.enable_username)
+            .field("username", &self.username)
             .field(
                 "require_email_verification",
                 &self.require_email_verification,
@@ -313,6 +310,13 @@ impl EmailPasswordPlugin {
         self
     }
 
+    /// Configure the installed username plugin's validation and normalization.
+    #[must_use]
+    pub fn username_config(mut self, policy: UsernameConfig) -> Self {
+        self.config.username = policy;
+        self
+    }
+
     #[must_use]
     pub const fn require_email_verification(mut self, require: bool) -> Self {
         self.config.require_email_verification = require;
@@ -359,80 +363,68 @@ impl EmailPasswordPlugin {
                 Err(response) => return Ok(response),
             };
 
-        if self.config.enable_username {
-            let mut callback_body = req.body_as_json::<better_auth_core::utils::json::JsValue>()?;
-            if let better_auth_core::utils::json::JsValue::Object(body) = &mut callback_body
-                && body
-                    .get("username")
-                    .is_some_and(|value| value.as_str().is_some_and(|value| !value.is_empty()))
-                && !body
-                    .get("displayUsername")
-                    .is_some_and(|value| value.as_str().is_some_and(|value| !value.is_empty()))
-                && let Some(username) = body.get("username").cloned()
-            {
-                drop(body.insert("displayUsername".into(), username));
-            }
-            req.extensions()
-                .insert(better_auth_core::hooks::TransformedRequestBody(
-                    callback_body,
-                ));
-        }
         better_auth_core::middleware::CsrfMiddleware::new(
             better_auth_core::middleware::CsrfConfig::new(),
             Arc::clone(&ctx.config),
         )
         .check_form_origin(req)?;
-
         signup_req.email = signup_req.email.to_lowercase();
-
-        let (username, display_username) = normalize_username_fields(
-            signup_req.username.take(),
-            signup_req.display_username.take(),
-        );
-        signup_req.username = username;
-        signup_req.display_username = display_username;
-
-        if let Some(username_2) = signup_req.username.as_deref() {
-            match validate_username(username_2) {
-                Ok(()) => {}
-                Err(UsernameValidationError::TooShort) => {
-                    return username_error_response(
-                        400,
-                        "USERNAME_TOO_SHORT",
-                        MESSAGE_USERNAME_TOO_SHORT,
-                    );
-                }
-                Err(UsernameValidationError::TooLong) => {
-                    return username_error_response(
-                        400,
-                        "USERNAME_TOO_LONG",
-                        MESSAGE_USERNAME_TOO_LONG,
-                    );
-                }
-                Err(UsernameValidationError::Invalid) => {
-                    return username_error_response(
-                        400,
-                        "INVALID_USERNAME",
-                        MESSAGE_INVALID_USERNAME,
-                    );
-                }
-            }
-
-            // Upstream's username hook rejects a taken username before the user
-            // is created, so the client sees USERNAME_IS_ALREADY_TAKEN rather
-            // than a failed insert.
-            if ctx
-                .database
-                .get_user_by_username(username_2)
-                .await?
-                .is_some()
+        if self.config.enable_username {
+            let policy = &self.config.username;
+            if signup_req.username.is_none()
+                && let Some(display) = &signup_req.display_username
+                && policy.value_error(display).await?.is_none()
             {
-                return username_error_response(
-                    400,
-                    "USERNAME_IS_ALREADY_TAKEN",
-                    MESSAGE_USERNAME_IS_ALREADY_TAKEN,
-                );
+                signup_req.username = Some(display.clone());
             }
+            if let Some(username) = &signup_req.username {
+                policy.validate_hook_value(username).await?;
+                if ctx
+                    .database
+                    .get_user_by_username(&policy.normalize(username)?)
+                    .await?
+                    .is_some()
+                {
+                    return username_error_response(
+                        400,
+                        "USERNAME_IS_ALREADY_TAKEN",
+                        MESSAGE_USERNAME_IS_ALREADY_TAKEN,
+                    );
+                }
+            }
+            if let Some(display) = &signup_req.display_username {
+                policy.validate_display(display).await?;
+            }
+            if policy.include_display_username
+                && signup_req
+                    .display_username
+                    .as_ref()
+                    .is_none_or(String::is_empty)
+            {
+                signup_req.display_username.clone_from(&signup_req.username);
+            }
+            if !policy.include_display_username {
+                signup_req.display_username = None;
+            }
+            let mut callback_body = req.body_as_json::<better_auth_core::utils::json::JsValue>()?;
+            if let better_auth_core::utils::json::JsValue::Object(body) = &mut callback_body {
+                if let Some(value) = &signup_req.username {
+                    drop(body.insert(
+                        "username".into(),
+                        better_auth_core::utils::json::JsValue::String(value.clone()),
+                    ));
+                }
+                if let Some(value) = &signup_req.display_username {
+                    drop(body.insert(
+                        "displayUsername".into(),
+                        better_auth_core::utils::json::JsValue::String(value.clone()),
+                    ));
+                }
+            }
+            req.extensions()
+                .insert(better_auth_core::hooks::TransformedRequestBody(
+                    callback_body,
+                ));
         }
 
         better_auth_core::cache::runtime::set_issuance_preference(
@@ -537,10 +529,6 @@ impl EmailPasswordPlugin {
         }
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Keep credential validation and sign-in response finalization in request order"
-    )]
     async fn handle_sign_in_username(
         &self,
         req: &AuthRequest,
@@ -559,28 +547,17 @@ impl EmailPasswordPlugin {
             );
         }
 
-        let username = normalize_username(&signin_req.username);
-
-        match validate_username(&username) {
-            Ok(()) => {}
-            Err(UsernameValidationError::TooShort) => {
-                return username_error_response(
-                    422,
-                    "USERNAME_TOO_SHORT",
-                    MESSAGE_USERNAME_TOO_SHORT,
-                );
-            }
-            Err(UsernameValidationError::TooLong) => {
-                return username_error_response(
-                    422,
-                    "USERNAME_TOO_LONG",
-                    MESSAGE_USERNAME_TOO_LONG,
-                );
-            }
-            Err(UsernameValidationError::Invalid) => {
-                return username_error_response(422, "INVALID_USERNAME", MESSAGE_INVALID_USERNAME);
-            }
+        let policy = &self.config.username;
+        let validation_input =
+            if policy.validation_order == Some(UsernameValidationOrder::PreNormalization) {
+                policy.normalize(&signin_req.username)?
+            } else {
+                signin_req.username.clone()
+            };
+        if let Err(error) = policy.validate_value(&validation_input, 422).await {
+            return Ok(error.to_auth_response());
         }
+        let username = policy.normalize(&validation_input)?;
 
         let meta = RequestMeta::from_request(req);
         match sign_in_username_core(
@@ -663,31 +640,18 @@ impl EmailPasswordPlugin {
         };
 
         if body.username.is_empty() {
-            return username_error_response(422, "INVALID_USERNAME", MESSAGE_INVALID_USERNAME);
+            return username_error_response(422, "INVALID_USERNAME", "Username is invalid");
         }
 
-        match validate_username(&body.username) {
-            Ok(()) => {}
-            Err(UsernameValidationError::TooShort) => {
-                return username_error_response(
-                    422,
-                    "USERNAME_TOO_SHORT",
-                    MESSAGE_USERNAME_TOO_SHORT,
-                );
-            }
-            Err(UsernameValidationError::TooLong) => {
-                return username_error_response(
-                    422,
-                    "USERNAME_TOO_LONG",
-                    MESSAGE_USERNAME_TOO_LONG,
-                );
-            }
-            Err(UsernameValidationError::Invalid) => {
-                return username_error_response(422, "INVALID_USERNAME", MESSAGE_INVALID_USERNAME);
-            }
+        if let Err(error) = self
+            .config
+            .username
+            .validate_value(&body.username, 422)
+            .await
+        {
+            return Ok(error.to_auth_response());
         }
-
-        let normalized = normalize_username(&body.username);
+        let normalized = self.config.username.normalize(&body.username)?;
         let user = ctx.database.get_user_by_username(&normalized).await?;
         let available = user.is_none();
 
@@ -710,6 +674,7 @@ impl Default for EmailPasswordConfig {
             enabled: true,
             enable_signup: true,
             enable_username: true,
+            username: UsernameConfig::default(),
             require_email_verification: false,
             password_min_length: 8,
             password_max_length: 128,
@@ -733,12 +698,43 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
         config.password_max_length = config.effective_max_length();
         ctx.extensions.insert(config);
         if self.config.enable_username {
+            ctx.extensions.insert(self.config.username.clone());
+            let policy = self.config.username.clone();
+            ctx.register_user_create_transform(move |mut data| {
+                policy.normalize_fields(
+                    &mut data.username,
+                    &mut data.display_username,
+                    &mut data.additional_fields,
+                    true,
+                )?;
+                Ok(data)
+            });
+            let policy = self.config.username.clone();
+            ctx.register_user_update_transform(move |_, mut data| {
+                policy.normalize_fields(
+                    &mut data.username,
+                    &mut data.display_username,
+                    &mut data.additional_fields,
+                    false,
+                )?;
+                Ok(data)
+            });
+        }
+        if self.config.enable_username {
             drop(
                 ctx.metadata
                     .insert("username.enabled".into(), serde_json::Value::Bool(true)),
             );
         }
         Ok(())
+    }
+
+    fn user_fields(&self) -> better_auth_core::field_policy::FieldConfigs {
+        if self.config.enable_username {
+            self.config.username.fields()
+        } else {
+            Default::default()
+        }
     }
 
     fn routes(&self) -> Vec<AuthRoute> {
@@ -882,18 +878,35 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
         ctx,
     )?;
 
-    let additional_fields = ctx
-        .parse_user_fields(&body.additional_fields, true)
-        .map_err(|error| match error {
-            better_auth_core::field_policy::FieldInputError::Validation { code, message } => {
-                AuthError::Api {
-                    status: 400,
-                    code: Some(code.into()),
-                    message,
+    let mut input_fields = body.additional_fields.clone();
+    if config.enable_username {
+        if let Some(value) = &body.username {
+            drop(input_fields.insert(
+                "username".into(),
+                better_auth_core::utils::json::JsValue::String(value.clone()),
+            ));
+        }
+        if config.username.include_display_username
+            && let Some(value) = &body.display_username
+        {
+            drop(input_fields.insert(
+                "displayUsername".into(),
+                better_auth_core::utils::json::JsValue::String(value.clone()),
+            ));
+        }
+    }
+    let additional_fields =
+        ctx.parse_user_fields(&input_fields, true)
+            .map_err(|error| match error {
+                better_auth_core::field_policy::FieldInputError::Validation { code, message } => {
+                    AuthError::Api {
+                        status: 400,
+                        code: Some(code.into()),
+                        message,
+                    }
                 }
-            }
-            better_auth_core::field_policy::FieldInputError::Transform(error) => error,
-        })?;
+                better_auth_core::field_policy::FieldInputError::Transform(error) => error,
+            })?;
 
     super::last_login_method::reject_last_login_method_input(ctx, body.last_login_method.as_ref())?;
 
@@ -939,13 +952,23 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
     }
     apply_default_role(ctx, &mut create_user);
     if config.enable_username {
-        if let Some(ref username) = body.username {
-            create_user = create_user.with_username(normalize_username(username));
+        create_user.username = create_user
+            .additional_fields
+            .get("username")
+            .and_then(better_auth_core::utils::json::JsValue::as_str)
+            .map(str::to_owned);
+        if create_user.username.is_none()
+            && let Some(value) = &body.username
+        {
+            create_user.username = Some(config.username.normalize(value)?);
         }
-        if let Some(ref display_username) = body.display_username {
-            create_user.display_username = Some(display_username.clone());
-        } else if let Some(ref username) = body.username {
-            create_user.display_username = Some(username.clone());
+        if config.username.include_display_username {
+            create_user.display_username = create_user
+                .additional_fields
+                .get("displayUsername")
+                .and_then(better_auth_core::utils::json::JsValue::as_str)
+                .map(str::to_owned)
+                .or_else(|| body.display_username.clone());
         }
     }
     let auto_sign_in = config.auto_sign_in && !config.require_email_verification;
