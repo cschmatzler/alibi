@@ -147,3 +147,44 @@ The foreign actor now also restores its own real token in every profile; owner
 and foreign reads and physical rows remain separate. Fourteen observed cells
 are appended for the two legacy owners, preserving all existing parent cells.
 Final composed-program proof is pending; no final green claim yet.
+
+
+## Composed legacy repair checkpoint
+
+Candidate 9d66dff3 is based on actual merged CAPTCHA main afb5184f. Its additive
+ledger preserves all 5,433 actual parent cells plus 49 observed cookie cells
+(5,482 total). The composed seven SDK owners pass 7/7 (2,450 assertions), with
+actual capability capture enabled: `/tmp/issue301-composed-cookie-owner14.log`.
+Independent full raw captures retain 14 Source/native SDK lifecycles and 98
+complete headers, all responses/requests and SQLite rows in
+`/tmp/issue301-raw-cookie-captures-9d66dff3.json`, SHA256
+`454e85a6749bc8bf50bb1643a9ec44bf2929e24ec073395fdaa7fd9a11489e14`.
+Docs and the actual Chromium wrapper pass in
+`/tmp/issue301-docs-browser-9d66dff3.log` (wrapper 1/1).
+
+The first extra fixture strict gate found an inherited CAPTCHA fixture
+`unnecessary_lazy_evaluations` warning (`.then(|| application as Arc<dyn
+ValidateBotIdRequest>)`) before canonical started. The correction is exactly
+Clippy's `.then_some(...)` recommendation; it changes neither native CAPTCHA
+production nor installed Source or the actual cookie observations.
+The actual canonical independently passed all workspace strict checks, default
+793, optional 845 and fixture 2, then stopped on the added foreign SDK token's
+static `string | null` expectation type. Its actual runtime token was already
+restored and verified; the test now explicitly asserts a string and uses that
+nonnull type for the expectation. Both setup/strict failures are retained in
+`/tmp/issue301-canonical-9d66dff3.log` and
+`/tmp/issue301-actual-canonical-9d66dff3.log`; neither is presented as a passing
+whole canonical or a native production regression.
+
+Two real fresh coverage attempts on frozen 9d66dff3 passed Native 845 and
+account/CAPTCHA wrappers, then stopped at JWT. Attempt1 retained only the known
+remote configured-default expiry aliases
+`finalReceipts.events.1/2/3.payload.exp`. Attempt2 retained only the keyring
+manual key's `createdAt`/`expiresAt` on `manualState.events.0.key` and
+`manualState.keys.1`, with literal Source 08:55:43.472 and Native 08:55:46.636
+UTC issuance times. Full logs are `/tmp/issue301-clean-coverage-9d66dff3.log`
+and `/tmp/issue301-clean-coverage-9d66dff3-attempt2.log`; OAuth/sessions/user
+management were unreached and no floor was produced. No timestamp rule changed.
+Final strict, canonical and fresh coverage remain pending on the fixture-only
+corrected checkpoint; the reviewed three-line legacy token production repair
+is unchanged.
