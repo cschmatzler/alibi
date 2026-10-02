@@ -8,12 +8,17 @@
       "evidence": {
         "success": [
           "account info returns provider user info for a linked account",
-          "cognito existing account info reads original profile without applying new identity admission"
+          "cognito existing account info reads original profile without applying new identity admission",
+          "dropbox existing account info uses real POST without readmitting a changed raw account subject"
         ],
-        "rejection": "account info requires an explicit account selector",
+        "rejection": [
+          "account info requires an explicit account selector",
+          "dropbox existing account info uses real POST without readmitting a changed raw account subject"
+        ],
         "authorization": null,
         "state": [
-          "cognito existing account info reads original profile without applying new identity admission"
+          "cognito existing account info reads original profile without applying new identity admission",
+          "dropbox existing account info uses real POST without readmitting a changed raw account subject"
         ]
       }
     },
@@ -214,7 +219,30 @@
           "cognito number-idtoken code exchange uses original ID profile or actual access-token fallback",
           "cognito array-idtoken code exchange uses original ID profile or actual access-token fallback",
           "cognito null-idtoken code exchange uses original ID profile or actual access-token fallback",
-          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority",
+          "dropbox numeric image profile retains original raw account and typed persistence",
+          "dropbox numeric name profile retains original raw account and typed persistence",
+          "dropbox null verified profile retains original raw account and typed persistence",
+          "dropbox fractional access expiry follows actual token helper",
+          "dropbox missing image profile retains original raw account and typed persistence",
+          "dropbox numeric subject profile retains original raw account and typed persistence",
+          "dropbox existing account info uses real POST without readmitting a changed raw account subject",
+          "dropbox client-key real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox missing verified profile retains original raw account and typed persistence",
+          "dropbox explicit browser link admits raw account while retaining the existing principal",
+          "dropbox false verified profile retains original raw account and typed persistence",
+          "dropbox mapped real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox explicit signup overrides implicit signup policy",
+          "dropbox empty image profile retains original raw account and typed persistence",
+          "dropbox absent access expiry follows actual token helper",
+          "dropbox null image profile retains original raw account and typed persistence",
+          "dropbox default real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox zero access expiry follows actual token helper",
+          "dropbox public real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox empty name profile retains original raw account and typed persistence",
+          "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox missing name profile retains original raw account and typed persistence",
+          "dropbox null display name profile retains original raw account and typed persistence"
         ],
         "rejection": [
           "social callback rejects consumed database state while retaining the issued session and foreign state",
@@ -268,7 +296,19 @@
           "cognito browser blank-subject denies without changing owned or foreign identity",
           "cognito browser null-subject denies without changing owned or foreign identity",
           "cognito browser wrong-state denies without changing owned or foreign identity",
-          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority",
+          "dropbox browser missing-subject denies before any owned or foreign identity write",
+          "dropbox browser wrong-state denies before any owned or foreign identity write",
+          "dropbox browser null-subject denies before any owned or foreign identity write",
+          "dropbox explicit browser link rejects missing raw account while retaining the existing principal",
+          "dropbox browser userinfo-http-error denies before any owned or foreign identity write",
+          "dropbox client-key real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox explicit browser link admits raw account while retaining the existing principal",
+          "dropbox mapped real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox browser blank-subject denies before any owned or foreign identity write",
+          "dropbox default real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox public real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority"
         ],
         "authorization": [
           "social linking rejects missing tampered and revoked sessions without changing any principal",
@@ -320,7 +360,19 @@
           "cognito browser blank-subject denies without changing owned or foreign identity",
           "cognito browser null-subject denies without changing owned or foreign identity",
           "cognito browser wrong-state denies without changing owned or foreign identity",
-          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority",
+          "dropbox browser missing-subject denies before any owned or foreign identity write",
+          "dropbox browser wrong-state denies before any owned or foreign identity write",
+          "dropbox browser null-subject denies before any owned or foreign identity write",
+          "dropbox explicit browser link rejects missing raw account while retaining the existing principal",
+          "dropbox browser userinfo-http-error denies before any owned or foreign identity write",
+          "dropbox client-key real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox explicit browser link admits raw account while retaining the existing principal",
+          "dropbox mapped real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox browser blank-subject denies before any owned or foreign identity write",
+          "dropbox default real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox public real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority"
         ],
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -417,7 +469,40 @@
           "cognito number-idtoken code exchange uses original ID profile or actual access-token fallback",
           "cognito array-idtoken code exchange uses original ID profile or actual access-token fallback",
           "cognito null-idtoken code exchange uses original ID profile or actual access-token fallback",
-          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority",
+          "dropbox browser missing-subject denies before any owned or foreign identity write",
+          "dropbox browser wrong-state denies before any owned or foreign identity write",
+          "dropbox numeric image profile retains original raw account and typed persistence",
+          "dropbox numeric name profile retains original raw account and typed persistence",
+          "dropbox null verified profile retains original raw account and typed persistence",
+          "dropbox fractional access expiry follows actual token helper",
+          "dropbox browser null-subject denies before any owned or foreign identity write",
+          "dropbox missing image profile retains original raw account and typed persistence",
+          "dropbox explicit browser link rejects missing raw account while retaining the existing principal",
+          "dropbox numeric subject profile retains original raw account and typed persistence",
+          "dropbox browser signup-disabled denies before any owned or foreign identity write",
+          "dropbox browser userinfo-http-error denies before any owned or foreign identity write",
+          "dropbox client-key real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox missing verified profile retains original raw account and typed persistence",
+          "dropbox explicit browser link admits raw account while retaining the existing principal",
+          "dropbox false verified profile retains original raw account and typed persistence",
+          "dropbox mapped real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox explicit signup overrides implicit signup policy",
+          "dropbox browser missing-email denies before any owned or foreign identity write",
+          "dropbox empty image profile retains original raw account and typed persistence",
+          "dropbox absent access expiry follows actual token helper",
+          "dropbox browser blank-subject denies before any owned or foreign identity write",
+          "dropbox null image profile retains original raw account and typed persistence",
+          "dropbox browser wrong-provider denies before any owned or foreign identity write",
+          "dropbox browser token-http-error denies before any owned or foreign identity write",
+          "dropbox default real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox zero access expiry follows actual token helper",
+          "dropbox browser implicit-disabled denies before any owned or foreign identity write",
+          "dropbox public real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox empty name profile retains original raw account and typed persistence",
+          "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox missing name profile retains original raw account and typed persistence",
+          "dropbox null display name profile retains original raw account and typed persistence"
         ]
       }
     },
@@ -2360,7 +2445,9 @@
           "builtin social link authorization requires a session and retains configured scope additions",
           "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
-          "OAuth proxy linking follows the saved authenticated owner without creating any session"
+          "OAuth proxy linking follows the saved authenticated owner without creating any session",
+          "dropbox explicit browser link rejects missing raw account while retaining the existing principal",
+          "dropbox explicit browser link admits raw account while retaining the existing principal"
         ],
         "rejection": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -2387,7 +2474,9 @@
           "OAuth proxy linking follows the saved authenticated owner without creating any session",
           "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
           "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner"
+          "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner",
+          "dropbox explicit browser link rejects missing raw account while retaining the existing principal",
+          "dropbox explicit browser link admits raw account while retaining the existing principal"
         ]
       }
     },
@@ -3482,7 +3571,12 @@
           "cognito configured-endpoint real exchange refresh replay and logout retain account and foreign authority",
           "cognito public real exchange refresh replay and logout retain account and foreign authority",
           "cognito default real exchange refresh replay and logout retain account and foreign authority",
-          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority",
+          "dropbox client-key real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox mapped real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox default real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox public real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority"
         ],
         "rejection": [
           "account token routes reject conflicting and foreign account selectors",
@@ -3502,7 +3596,12 @@
           "cognito configured-endpoint real exchange refresh replay and logout retain account and foreign authority",
           "cognito public real exchange refresh replay and logout retain account and foreign authority",
           "cognito default real exchange refresh replay and logout retain account and foreign authority",
-          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority",
+          "dropbox client-key real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox mapped real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox default real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox public real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority"
         ],
         "authorization": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
@@ -3528,7 +3627,12 @@
           "cognito configured-endpoint real exchange refresh replay and logout retain account and foreign authority",
           "cognito public real exchange refresh replay and logout retain account and foreign authority",
           "cognito default real exchange refresh replay and logout retain account and foreign authority",
-          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority",
+          "dropbox client-key real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox mapped real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox default real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox public real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority"
         ]
       }
     },
@@ -4106,7 +4210,49 @@
           "cognito number-idtoken code exchange uses original ID profile or actual access-token fallback",
           "cognito array-idtoken code exchange uses original ID profile or actual access-token fallback",
           "cognito null-idtoken code exchange uses original ID profile or actual access-token fallback",
-          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority",
+          "dropbox browser missing-subject denies before any owned or foreign identity write",
+          "dropbox browser wrong-state denies before any owned or foreign identity write",
+          "dropbox numeric image profile retains original raw account and typed persistence",
+          "dropbox numeric name profile retains original raw account and typed persistence",
+          "dropbox null verified profile retains original raw account and typed persistence",
+          "dropbox fractional access expiry follows actual token helper",
+          "dropbox published default authorization retains scopes PKCE and access type",
+          "dropbox browser null-subject denies before any owned or foreign identity write",
+          "dropbox missing image profile retains original raw account and typed persistence",
+          "dropbox numeric subject profile retains original raw account and typed persistence",
+          "dropbox existing account info uses real POST without readmitting a changed raw account subject",
+          "dropbox browser signup-disabled denies before any owned or foreign identity write",
+          "dropbox published configured authorization retains scopes PKCE and access type",
+          "dropbox browser userinfo-http-error denies before any owned or foreign identity write",
+          "dropbox client-key real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox missing verified profile retains original raw account and typed persistence",
+          "dropbox false verified profile retains original raw account and typed persistence",
+          "dropbox mapped real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox explicit signup overrides implicit signup policy",
+          "dropbox published disabled-configured authorization retains scopes PKCE and access type",
+          "dropbox browser missing-email denies before any owned or foreign identity write",
+          "dropbox empty image profile retains original raw account and typed persistence",
+          "dropbox absent access expiry follows actual token helper",
+          "dropbox browser blank-subject denies before any owned or foreign identity write",
+          "dropbox null image profile retains original raw account and typed persistence",
+          "dropbox browser wrong-provider denies before any owned or foreign identity write",
+          "dropbox published configured-endpoint authorization retains scopes PKCE and access type",
+          "dropbox published legacy authorization retains scopes PKCE and access type",
+          "dropbox published disabled-scope authorization retains scopes PKCE and access type",
+          "dropbox browser token-http-error denies before any owned or foreign identity write",
+          "dropbox default real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox zero access expiry follows actual token helper",
+          "dropbox configured access type can be replaced by a nonreserved request parameter",
+          "dropbox browser implicit-disabled denies before any owned or foreign identity write",
+          "dropbox public real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox published online authorization retains scopes PKCE and access type",
+          "dropbox published offline authorization retains scopes PKCE and access type",
+          "dropbox empty name profile retains original raw account and typed persistence",
+          "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox disabled default scope omits an empty scope parameter",
+          "dropbox missing name profile retains original raw account and typed persistence",
+          "dropbox null display name profile retains original raw account and typed persistence"
         ],
         "rejection": [
           "social sign-in rejects invalid callbackURL",
@@ -4161,7 +4307,8 @@
           "cognito signed admission rejects missing-email without user account or session writes",
           "cognito signed admission rejects hashed-nonce without user account or session writes",
           "cognito rejects caller override of reserved code_challenge_method before any credential exchange",
-          "cognito rejects caller override of reserved code_challenge before any credential exchange"
+          "cognito rejects caller override of reserved code_challenge before any credential exchange",
+          "dropbox rejects direct ID-token sign-in without remote verification or identity writes"
         ],
         "authorization": [
           "social sign-in rejects invalid callbackURL",
@@ -4356,7 +4503,38 @@
           "cognito number-idtoken code exchange uses original ID profile or actual access-token fallback",
           "cognito array-idtoken code exchange uses original ID profile or actual access-token fallback",
           "cognito null-idtoken code exchange uses original ID profile or actual access-token fallback",
-          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority",
+          "dropbox numeric image profile retains original raw account and typed persistence",
+          "dropbox numeric name profile retains original raw account and typed persistence",
+          "dropbox null verified profile retains original raw account and typed persistence",
+          "dropbox fractional access expiry follows actual token helper",
+          "dropbox published default authorization retains scopes PKCE and access type",
+          "dropbox missing image profile retains original raw account and typed persistence",
+          "dropbox numeric subject profile retains original raw account and typed persistence",
+          "dropbox published configured authorization retains scopes PKCE and access type",
+          "dropbox client-key real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox missing verified profile retains original raw account and typed persistence",
+          "dropbox false verified profile retains original raw account and typed persistence",
+          "dropbox mapped real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox explicit signup overrides implicit signup policy",
+          "dropbox published disabled-configured authorization retains scopes PKCE and access type",
+          "dropbox empty image profile retains original raw account and typed persistence",
+          "dropbox absent access expiry follows actual token helper",
+          "dropbox null image profile retains original raw account and typed persistence",
+          "dropbox published configured-endpoint authorization retains scopes PKCE and access type",
+          "dropbox published legacy authorization retains scopes PKCE and access type",
+          "dropbox published disabled-scope authorization retains scopes PKCE and access type",
+          "dropbox default real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox zero access expiry follows actual token helper",
+          "dropbox configured access type can be replaced by a nonreserved request parameter",
+          "dropbox public real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox published online authorization retains scopes PKCE and access type",
+          "dropbox published offline authorization retains scopes PKCE and access type",
+          "dropbox empty name profile retains original raw account and typed persistence",
+          "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox disabled default scope omits an empty scope parameter",
+          "dropbox missing name profile retains original raw account and typed persistence",
+          "dropbox null display name profile retains original raw account and typed persistence"
         ]
       }
     },
@@ -4452,7 +4630,12 @@
           "cognito configured-endpoint real exchange refresh replay and logout retain account and foreign authority",
           "cognito public real exchange refresh replay and logout retain account and foreign authority",
           "cognito default real exchange refresh replay and logout retain account and foreign authority",
-          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority",
+          "dropbox client-key real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox mapped real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox default real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox public real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority"
         ],
         "rejection": null,
         "authorization": "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
@@ -4503,7 +4686,12 @@
           "cognito configured-endpoint real exchange refresh replay and logout retain account and foreign authority",
           "cognito public real exchange refresh replay and logout retain account and foreign authority",
           "cognito default real exchange refresh replay and logout retain account and foreign authority",
-          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority",
+          "dropbox client-key real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox mapped real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox default real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox public real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority"
         ]
       }
     },

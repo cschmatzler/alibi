@@ -10,6 +10,7 @@ function variants<P extends string, S extends string>(prefix: P, suffixes: reado
  * profile parity scenario proves that both fixture servers serve each entry.
  */
 export const FIXTURE_PROFILES = [
+  ...variants("social-dropbox-",["default","public","configured","disabled-scope","disabled-configured","offline","online","legacy","mapped","implicit-disabled","signup-disabled","configured-endpoint","empty-clients","client-key"] as const),
   ...variants("user-lifecycle-", ["default", "required", "delivery", "auto", "change", "promotion", "promotion-no-mail", "verification-expired", "no-mail", "delete", "delete-mail", "delete-zero", "delete-expired", "delete-policy", "delete-no-freshness"] as const),
   "validation", "validation-no-auto", "validation-required", "validation-disabled", "validation-no-policy",
   ...variants("social-cognito-",["default","configured","disabled-scope","disabled-configured","public","required","client-array","empty-clients","mapped","disabled-idtoken","implicit-disabled","signup-disabled","configured-endpoint","http-domain","encrypted","userinfo-override","query-overrides","client-key"] as const),
