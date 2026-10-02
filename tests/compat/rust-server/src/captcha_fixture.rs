@@ -213,7 +213,7 @@ pub(super) async fn router(
                     check_bot_id: application.clone(),
                     validate_request: (name.contains("custom")
                         || name.ends_with("validator-throw"))
-                    .then(|| application as Arc<dyn ValidateBotIdRequest>),
+                    .then_some(application as Arc<dyn ValidateBotIdRequest>),
                 })
             }
         };

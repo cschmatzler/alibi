@@ -138,11 +138,28 @@ impl<S: AuthSchema> AuthBuilder<S> {
     /// # Errors
     ///
     /// Returns an error if configuration validation or plugin initialization fails.
-    pub async fn build(self) -> AuthResult<BetterAuth<S>> {
+    pub async fn build(mut self) -> AuthResult<BetterAuth<S>> {
         // Validate configuration
         self.config.validate()?;
         if let Some(cache) = &self.config.session.cookie_cache {
             better_auth_core::cache::validate_config(cache)?;
+        }
+
+        // Authentication and every producer use the same initialized token
+        // name; related-cookie overrides remain independently configured.
+        if self.config.advanced.cookies.contains_key("session_token")
+            || self
+                .config
+                .advanced
+                .cookie_prefix
+                .as_ref()
+                .is_some_and(|prefix| !prefix.is_empty())
+        {
+            self.config.session.cookie_name =
+                better_auth_core::utils::cookie_utils::related_cookie_name(
+                    &self.config,
+                    "session_token",
+                );
         }
 
         let config = Arc::new(self.config);
