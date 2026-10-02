@@ -380,3 +380,34 @@ remain discovery evidence rather than native ten-table differential proof.
 The separate direct cached getSession numeric metadata and additional-field
 projection scope remain explicitly unclaimed. Whole canonical, independent
 docs/browser and fresh clean coverage are pending on this final checkpoint.
+
+## Normal-stack HTTP dispatch regression
+
+The first complete gate on frozen `7ba00493ef6afe1dfc90dd14adefe3560874d9da`
+found a genuine native regression. The additional logical context scope made
+the public HTTP request future too large for ordinary test-thread stacks. The
+canonical gate stopped at 28 pass/17 stack-overflow aborts of 45/794 default
+tests (`/tmp/issue205-canonical-7ba00493.log`, terminal 100). Its later matrices,
+SDK, docs and coverage stages were not reached. Independently fresh coverage
+stopped at 48 pass/4 anonymous stack-overflow aborts of 52/846 native tests
+(`/tmp/issue205-clean-coverage-7ba00493.log`, terminal 100); no SDK family or
+coverage floor was reached. These failures remain rather than being classified
+as baseline clock differences.
+
+Independent strict rustdoc and the actual Chromium wrapper passed on that
+same frozen head: 1/1 browser test, terminal 0
+(`/tmp/issue205-docs-browser-7ba00493.log`). That earlier result does not prove
+the repaired final program.
+
+The bounded production repair heap-pins the existing borrowed
+`handle_request_inner` future at the real HTTP dispatch boundary. Request
+ownership, task-local isolation, cancellation and completion/error handling
+stay identical. The same idiomatic boundary was independently measured and
+reviewed in the separate retained-output lane. No test-thread stack setting,
+compiler workaround, comparison or new test-only production seam is used.
+The unchanged normal-stack full native suites then pass 794/794 default and
+846/846 optional tests, followed by locked optional workspace and fixture
+all-targets strict Clippy (`/tmp/issue205-stack-bounded-native14.log`, terminal
+0). Existing stronger native owners detect this regression without adding a
+duplicate test. Final composed canonical, docs/browser and fresh seven-family
+coverage remain to be measured on the next frozen head.

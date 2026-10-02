@@ -318,18 +318,19 @@ impl<S: AuthSchema> BetterAuth<S> {
             request_context,
             async {
                 let mut run_after_hooks = false;
-                let mut response = match self
-                    .handle_request_inner(&mut req, &mut run_after_hooks)
-                    .await
-                {
-                    Ok(response) => response,
-                    Err(err) => {
-                        if matches!(err, AuthError::CallbackFailure(_)) {
-                            run_after_hooks = false;
+                // Keep the public request future bounded while scoped context
+                // and route-specific authentication retain their actual state.
+                let mut response =
+                    match Box::pin(self.handle_request_inner(&mut req, &mut run_after_hooks)).await
+                    {
+                        Ok(response) => response,
+                        Err(err) => {
+                            if matches!(err, AuthError::CallbackFailure(_)) {
+                                run_after_hooks = false;
+                            }
+                            err.to_auth_response()
                         }
-                        err.to_auth_response()
-                    }
-                };
+                    };
                 let (cache_headers, ordinary_cache_error) =
                     better_auth_core::cache::runtime::take_issuance(req.extensions());
                 if ordinary_cache_error {
