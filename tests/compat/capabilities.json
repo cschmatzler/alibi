@@ -1364,7 +1364,9 @@
           "CAPTCHA captcha-google-zero actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-google-configured actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication",
-          "CAPTCHA verifier timeout ends at response headers and slow successful bodies still admit the real principal"
+          "CAPTCHA verifier timeout ends at response headers and slow successful bodies still admit the real principal",
+          "CAPTCHA captcha-botid actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-botid-custom actual configured BotID callbacks preserve middleware and principal boundaries"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
