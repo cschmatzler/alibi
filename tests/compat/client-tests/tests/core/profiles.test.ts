@@ -10,7 +10,7 @@ compatScenario("every declared fixture profile is served by both runtimes", asyn
   const statuses: Record<string, number> = {};
   const missing: string[] = [];
   for (const profile of FIXTURE_PROFILES) {
-    const response = await ctx.rawRequest({ actor: "probe", path: `${authProfilePath(profile)}/ok`, method: "GET" });
+    const response = await ctx.rawRequest({ actor: "probe", path: `${authProfilePath(profile)}/ok`, method: "GET", ...(profile === "captcha-turnstile-custom" ? { headers: { "x-captcha-response": "valid" } } : {}) });
     statuses[profile] = response.status;
     if (response.status !== 200) missing.push(`${profile} -> ${response.status}`);
   }

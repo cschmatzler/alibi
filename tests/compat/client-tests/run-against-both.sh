@@ -8,7 +8,7 @@ capability="all"
 for arg in "$@"; do
   case "$arg" in
     all|browser) capability="$arg" ;;
-    account-management|admin|api-key|core|device-authorization|email-verification|generic-oauth|oauth|organization|passkey|password-management|sessions|siwe|two-factor|user-management|one-time-token|jwt|phone-number|multiple-sessions) capability="$arg" ;;
+    account-management|admin|api-key|captcha|core|device-authorization|email-verification|generic-oauth|oauth|organization|passkey|password-management|sessions|siwe|two-factor|user-management|one-time-token|jwt|phone-number|multiple-sessions) capability="$arg" ;;
     organization-teams|organization-dynamic-roles|organization-hooks|json-numbers|two-factor-trust|username-availability|two-factor-totp|two-factor-lockout|two-factor-skip-order|two-factor-pending-cancel|two-factor-passwordless|two-factor-otp-config) capability="$arg" ;;
     --skip-build) ;;
     *)

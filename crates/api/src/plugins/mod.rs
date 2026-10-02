@@ -5,6 +5,7 @@ pub mod admin;
 pub mod anonymous;
 
 pub mod bearer;
+pub mod captcha;
 
 pub mod api_key;
 

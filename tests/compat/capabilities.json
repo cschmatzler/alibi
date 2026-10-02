@@ -1352,7 +1352,21 @@
           "kick numeric image first envelope profile retains original raw account and typed persistence",
           "kick numeric name first envelope profile retains original raw account and typed persistence",
           "kick numeric subject first envelope profile retains original raw account and typed persistence",
-          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "CAPTCHA captcha-captchafox actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-ip-disabled actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-captchafox-sitekey actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-configured actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-ip-custom actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-hcaptcha actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google-zero actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google-configured actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication",
+          "CAPTCHA verifier timeout ends at response headers and slow successful bodies still admit the real principal",
+          "CAPTCHA captcha-botid actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-botid-custom actual configured BotID callbacks preserve middleware and principal boundaries"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -1634,9 +1648,16 @@
           "client IP configured header controls admission selects real HTTP rate buckets",
           "client IP unresolved shared bucket resists forged chains selects real HTTP rate buckets",
           "client IP concurrent equivalent addresses atomically share a bucket",
-          "client IP disabled tracking disables IP rate limiting selects real HTTP rate buckets"
+          "client IP disabled tracking disables IP rate limiting selects real HTTP rate buckets",
+          "CAPTCHA captcha-turnstile-wildcard path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-no-secret path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-empty path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-globstar path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-disabled path and early rejection ordering preserve unchanged physical principals"
         ],
-        "rejection": null,
+        "rejection": [
+          "CAPTCHA captcha-turnstile-custom path and early rejection ordering preserve unchanged physical principals"
+        ],
         "authorization": null,
         "state": [
           "client IP full IPv6 prefix separates interface addresses selects real HTTP rate buckets",
@@ -4522,12 +4543,24 @@
           "password reset malformed burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
           "password reset provider-error burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation"
         ],
-        "rejection": null,
+        "rejection": [
+          "CAPTCHA captcha-turnstile-wildcard path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-empty path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-globstar path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-disabled path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-custom path and early rejection ordering preserve unchanged physical principals"
+        ],
         "authorization": null,
         "state": [
           "password reset compromised burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
           "password reset malformed burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
-          "password reset provider-error burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation"
+          "password reset provider-error burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
+          "CAPTCHA captcha-turnstile-wildcard path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-no-secret path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-empty path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-globstar path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-disabled path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-custom path and early rejection ordering preserve unchanged physical principals"
         ]
       }
     },
@@ -4709,7 +4742,21 @@
           "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
           "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals",
           "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP",
-          "compromised custom signin path checks actual missing-user timing hash but stored password verification never checks"
+          "compromised custom signin path checks actual missing-user timing hash but stored password verification never checks",
+          "CAPTCHA captcha-captchafox actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-botid-custom actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-turnstile-ip-disabled actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-captchafox-sitekey actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-configured actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-botid actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-google actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-ip-custom actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-hcaptcha actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google-zero actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google-configured actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication",
+          "CAPTCHA verifier timeout ends at response headers and slow successful bodies still admit the real principal"
         ],
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -4768,7 +4815,25 @@
           "client IP empty configured headers persists authoritative session context",
           "client IP zero IPv6 prefix persists authoritative session context",
           "configured verification delivery protects signup and sign-in delivery defaults and original request receipts",
-          "compromised custom signin path checks actual missing-user timing hash but stored password verification never checks"
+          "compromised custom signin path checks actual missing-user timing hash but stored password verification never checks",
+          "CAPTCHA captcha-captchafox actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-wildcard path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-botid-custom actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-turnstile-ip-disabled actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-captchafox-sitekey actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-botid-denied actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-turnstile-configured actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-empty path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-globstar path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-google actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-disabled path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-ip-custom actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-custom path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-hcaptcha actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google-zero actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google-configured actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication"
         ],
         "authorization": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -4823,7 +4888,20 @@
           "client IP IPv4-mapped client normalizes to IPv4 persists authoritative session context",
           "client IP rightmost untrusted hop persists authoritative session context",
           "client IP empty configured headers persists authoritative session context",
-          "client IP zero IPv6 prefix persists authoritative session context"
+          "client IP zero IPv6 prefix persists authoritative session context",
+          "CAPTCHA captcha-captchafox actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-botid-custom actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-turnstile-ip-disabled actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-captchafox-sitekey actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-botid-denied actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-turnstile-configured actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-ip-custom actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-hcaptcha actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google-zero actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google-configured actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication"
         ],
         "state": [
           "official client signs in with imported TypeScript scrypt credentials",
@@ -4902,7 +4980,31 @@
           "client IP zero IPv6 prefix persists authoritative session context",
           "configured verification delivery protects signup and sign-in delivery defaults and original request receipts",
           "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP",
-          "compromised custom signin path checks actual missing-user timing hash but stored password verification never checks"
+          "compromised custom signin path checks actual missing-user timing hash but stored password verification never checks",
+          "CAPTCHA captcha-botid-throw actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-captchafox actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-wildcard path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-botid-custom actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-turnstile-ip-disabled actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-captchafox-sitekey actual verification transport admits only provider-approved authentication",
+          "CAPTCHA verifier deadlines reject without auth writes while BotID application callbacks finish",
+          "CAPTCHA captcha-botid-denied actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-turnstile-no-secret path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-configured actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-botid actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-turnstile-empty path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-globstar path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-google actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-disabled path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-botid-validator-throw actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-turnstile-ip-custom actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-custom path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-hcaptcha actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google-zero actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google-configured actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication",
+          "CAPTCHA verifier timeout ends at response headers and slow successful bodies still admit the real principal"
         ]
       }
     },
@@ -6194,7 +6296,32 @@
           "client IP disabled tracking disables IP rate limiting selects real HTTP rate buckets",
           "configured verification required protects signup and sign-in delivery defaults and original request receipts",
           "compact interaction anonymous linking retains the original cached projection while later hooks publish the genuine completed owner",
-          "compromised password signup denies before real hashing and user creation with prefix-only HTTP"
+          "compromised password signup denies before real hashing and user creation with prefix-only HTTP",
+          "CAPTCHA captcha-botid-throw actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-captchafox actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-wildcard path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-botid-custom actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-turnstile-ip-disabled actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-captchafox-sitekey actual verification transport admits only provider-approved authentication",
+          "CAPTCHA verifier deadlines reject without auth writes while BotID application callbacks finish",
+          "CAPTCHA captcha-botid-denied actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-turnstile-no-secret path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-configured actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-botid actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-turnstile-empty path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-turnstile-globstar path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA physical method rejection precedes CORS router resolution and disabled paths suppress every hook",
+          "CAPTCHA captcha-google actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-disabled path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-botid-validator-throw actual configured BotID callbacks preserve middleware and principal boundaries",
+          "CAPTCHA captcha-turnstile-ip-custom actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-custom path and early rejection ordering preserve unchanged physical principals",
+          "CAPTCHA captcha-hcaptcha actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google-zero actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google-configured actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication",
+          "CAPTCHA verifier timeout ends at response headers and slow successful bodies still admit the real principal"
         ],
         "rejection": [
           "sign up with duplicate email returns error",
@@ -6289,7 +6416,18 @@
           "configured verification default protects signup and sign-in delivery defaults and original request receipts",
           "configured verification required protects signup and sign-in delivery defaults and original request receipts",
           "compact interaction anonymous linking retains the original cached projection while later hooks publish the genuine completed owner",
-          "compromised password signup denies before real hashing and user creation with prefix-only HTTP"
+          "compromised password signup denies before real hashing and user creation with prefix-only HTTP",
+          "CAPTCHA captcha-captchafox actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-ip-disabled actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-captchafox-sitekey actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-configured actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-turnstile-ip-custom actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-hcaptcha actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google-zero actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-google-configured actual verification transport admits only provider-approved authentication",
+          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication"
         ]
       }
     },

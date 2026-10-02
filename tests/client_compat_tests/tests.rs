@@ -201,3 +201,9 @@ async fn organization_hooks_client_compat() {
     ])
     .await;
 }
+
+#[tokio::test]
+#[ignore = "requires the pinned Bun and Rust compatibility servers"]
+async fn captcha_client_compat() {
+    run_client_compat(&["tests/captcha"]).await;
+}

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { createCaptchaFixture } from "./captcha-fixture";
 import { createJwtKeyringFixture } from "./jwt-keyring-fixture";
 import { createRemoteJwtFixture } from "./jwt-remote-fixture";
 import { createLastLoginMethodFixture } from "./last-login-method-fixture";
@@ -450,6 +451,7 @@ const adminPermissionFixture = createAdminPermissionFixture(authOptions, databas
 const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 const bearerFixture = createBearerFixture(authOptions);
 const dispatchFixture = createDispatchFixture(authOptions);
+const captchaFixture = createCaptchaFixture(authOptions, PORT);
 const organizationCreationFixture = createOrganizationCreationFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationTransport = organizationTransportProbe();
 const organizationHooksFixture = organizationCreationHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
@@ -1025,6 +1027,11 @@ const server = Bun.serve({
       for (const [name, profile] of signupPolicyFixture.profiles) {
         const path = `/__test/profiles/${name}/api/auth`;
         if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return profile.handler(request);
+      }
+      const captchaControl = await captchaFixture.handle(request);
+      if (captchaControl) return captchaControl;
+      for (const [path, auth] of captchaFixture.profiles) {
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return auth.handler(request);
       }
       for(const [name,auth] of lastLoginMethodFixture.profiles){
         const path=`/__test/profiles/${name}/api/auth`;
