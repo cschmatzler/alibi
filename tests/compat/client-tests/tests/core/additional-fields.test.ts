@@ -215,7 +215,7 @@ compatScenario("additional cached output keeps raw creation and completed callba
   const envelope = JSON.parse(Buffer.from(token,"base64url").toString());
   const signature = createHmac("sha256","compat-test-only-key-not-real-minimum-32chars").update(JSON.stringify({...envelope.session,expiresAt:envelope.expiresAt})).digest("base64url");
   expect(envelope.signature).toBe(signature);
-  const decoded = await getCookieCache(new Headers({cookie:pair}),{secret:"compat-test-only-key-not-real-minimum-32chars",strategy:"compact"}); expect(decoded).not.toBeNull();
+  const decoded = await getCookieCache(new Headers({cookie:pair}),{secret:"compat-test-only-key-not-real-minimum-32chars",strategy:"compact",isSecure:false}); expect(decoded).not.toBeNull();
   expect(decoded!.user.id).toBe(userId); expect(decoded!.session.token).toBe(z.string().parse(signup.data!.token));
   for (const output of [decoded!.user,decoded!.session]) for (const field of ["hidden","omitted","private_column"]) expect(output).not.toHaveProperty(field);
   const created = await ctx.rawRequest({path:"/__test/additional-fields/state?profile=cached"}); expect(created.status).toBe(200);

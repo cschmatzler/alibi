@@ -1,6 +1,5 @@
 import { parse } from "@babel/parser";
 import { createInstrumenter } from "istanbul-lib-instrument";
-import type { FileCoverageData } from "istanbul-lib-coverage";
 import { readFile, readdir, rm } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { digest, filesUnder, upstreamPin, writeJSON } from "./common";
@@ -58,7 +57,6 @@ export type Inventory = {
   digest: string;
   sources: Source[];
   surfaces: Surface[];
-  coverage: Record<string, FileCoverageData>;
   mutations: SourceMutation[];
 };
 
@@ -70,7 +68,7 @@ function node(value: unknown): value is Node {
     typeof value.type === "string"
   );
 }
-export function children(value: Node): Node[] {
+function children(value: Node): Node[] {
   return Object.entries(value)
     .filter(
       ([key]) =>
@@ -413,16 +411,13 @@ export function runtimeEvidence(source: Source, text: string) {
     for (const child of children(value)) visit(child);
   }
   visit(ast(text, false));
-  return { coverage, surfaces, mutations };
+  return { surfaces, mutations };
 }
 
-export async function buildInventory(
-  repositoryRoot?: string,
-): Promise<Inventory> {
+async function buildInventory(): Promise<Inventory> {
   const sources: Source[] = [],
     surfaces: Surface[] = [],
     mutations: SourceMutation[] = [];
-  const coverage: Record<string, FileCoverageData> = {};
   for (const { name, root } of await verifiedPublishedRoots()) {
     const text = await readFile(join(root, "package.json"), "utf8");
     const manifest: Source = {
@@ -459,13 +454,12 @@ export async function buildInventory(
       surfaces.push(...sourceSurfaces(source, text));
       if (path.endsWith(".mjs")) {
         const evidence = runtimeEvidence(source, text);
-        coverage[source.id] = evidence.coverage;
         surfaces.push(...evidence.surfaces);
         mutations.push(...evidence.mutations);
       }
     }
   }
-  const repository = repositoryRoot ?? (await upstreamSource());
+  const repository = await upstreamSource();
   try {
     for (const entry of (
       await readdir(join(repository, "packages"), { withFileTypes: true })
@@ -521,7 +515,7 @@ export async function buildInventory(
       }
     }
   } finally {
-    if (!repositoryRoot) await rm(repository, { recursive: true, force: true });
+    await rm(repository, { recursive: true, force: true });
   }
   sources.sort((a, b) => a.id.localeCompare(b.id));
   surfaces.sort((a, b) => a.id.localeCompare(b.id));
@@ -549,7 +543,6 @@ export async function buildInventory(
     digest: digest(JSON.stringify(identity)),
     sources,
     surfaces,
-    coverage,
     mutations,
   };
 }

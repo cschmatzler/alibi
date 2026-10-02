@@ -1,3 +1,4 @@
+// LCOV_EXCL_START
 #[cfg(test)]
 mod factor_extension_contract_tests {
     use super::*;
@@ -1347,3 +1348,4 @@ pub fn test_config() -> Arc<AuthConfig> {
 pub async fn test_database() -> Arc<dyn AuthStore<BundledSchema>> {
     Arc::new(MemoryStore::new(test_config()))
 }
+// LCOV_EXCL_STOP

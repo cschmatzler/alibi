@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test:harness": "bun test harness",
     "test:browser": "bun test browser",
+    "test:environment": "./run-against-both.sh environment",
     "test:account-management": "bun test tests/account-management",
     "test:admin": "bun test tests/admin",
     "test:api-key": "bun test tests/api-key",

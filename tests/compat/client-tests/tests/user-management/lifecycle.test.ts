@@ -50,7 +50,7 @@ async function cacheEvidence(cookies: readonly string[]) {
   const rawCookies = cookies.filter(cookie => cookie.startsWith("better-auth.session_data="));
   return Promise.all(rawCookies.map(async rawCookie => {
     const pair = rawCookie.split(";")[0]!, token = decodeURIComponent(pair.slice(pair.indexOf("=") + 1)), observedAt = Date.now();
-    const decoded = await getCookieCache(new Headers({ cookie: pair }), { secret: "compat-test-only-key-not-real-minimum-32chars", strategy: "compact" });
+    const decoded = await getCookieCache(new Headers({ cookie: pair }), { secret: "compat-test-only-key-not-real-minimum-32chars", strategy: "compact", isSecure: false });
     expect(decoded).not.toBeNull();
     return { compactSessionCache: { token, envelope: JSON.parse(Buffer.from(token, "base64url").toString()), decoded, observedAt, effectiveMaxAgeSeconds: 300, rawCookies: [rawCookie] } };
   }));

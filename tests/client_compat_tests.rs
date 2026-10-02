@@ -4,10 +4,6 @@
     reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
 )]
 
-#[cfg(test)]
-#[path = "client_compat_tests/tests.rs"]
-mod tests;
-
 use std::io::Write;
 use std::net::TcpListener;
 use std::path::PathBuf;
@@ -99,11 +95,14 @@ async fn wait_for_health(port: u16, child: &mut ManagedChild, timeout: Duration)
     );
 }
 
-fn start_reference_server(port: u16) -> ManagedChild {
+fn start_reference_server(port: u16, node_env: &str, test_flag: &str) -> ManagedChild {
     let child = Command::new("bun")
         .args(["run", "server.ts"])
         .current_dir(project_root().join("tests/compat/reference-server"))
         .env("PORT", port.to_string())
+        .env("NODE_ENV", node_env)
+        .env("BUN_ENV", node_env)
+        .env("TEST", test_flag)
         .env("NO_PROXY", "localhost,127.0.0.1")
         .env("no_proxy", "localhost,127.0.0.1")
         .stdout(Stdio::inherit())
@@ -151,11 +150,19 @@ fn build_rust_compat_server() -> PathBuf {
         .unwrap_or_else(|| panic!("cargo did not report the compatibility server executable"))
 }
 
-fn start_rust_compat_server(port: u16, executable: &std::path::Path) -> ManagedChild {
+fn start_rust_compat_server(
+    port: u16,
+    executable: &std::path::Path,
+    node_env: &str,
+    test_flag: &str,
+) -> ManagedChild {
     // Own the server process directly, so Drop cannot leave a cargo child behind.
     let child = Command::new(executable)
         .current_dir(project_root())
         .env("PORT", port.to_string())
+        .env("NODE_ENV", node_env)
+        .env("BUN_ENV", node_env)
+        .env("TEST", test_flag)
         .env("NO_PROXY", "localhost,127.0.0.1")
         .env("no_proxy", "localhost,127.0.0.1")
         .stdout(Stdio::inherit())
@@ -218,14 +225,267 @@ fn run_bun_suite(paths: &[&str], ts_port: u16, rust_port: u16) {
 
 async fn run_client_compat(paths: &[&str]) {
     let executable = build_rust_compat_server();
+    if paths != ["environment"] {
+        run_client_compat_in_environment(paths, &executable, "production", "false").await;
+    }
+    if paths == ["tests"] || paths == ["environment"] {
+        // The published runtime caches NODE_ENV on import. Each mode needs
+        // fresh fixture processes; mutating this test process cannot prove it.
+        for (node_env, test_flag) in [
+            ("dev", "false"),
+            ("development", "false"),
+            ("test", "false"),
+            ("production", "0"),
+        ] {
+            run_client_compat_in_environment(&["environment"], &executable, node_env, test_flag)
+                .await;
+        }
+    }
+}
+
+async fn run_client_compat_in_environment(
+    paths: &[&str],
+    executable: &std::path::Path,
+    node_env: &str,
+    test_flag: &str,
+) {
+    drop(writeln!(
+        std::io::stderr().lock(),
+        "Compatibility {paths:?}: NODE_ENV={node_env}, TEST={test_flag}"
+    ));
     let ts_port = allocate_port();
     let rust_port = allocate_port();
 
-    let mut ts_server = start_reference_server(ts_port);
-    let mut rust_server = start_rust_compat_server(rust_port, &executable);
+    let mut ts_server = start_reference_server(ts_port, node_env, test_flag);
+    let mut rust_server = start_rust_compat_server(rust_port, executable, node_env, test_flag);
 
     wait_for_health(ts_port, &mut ts_server, Duration::from_secs(20)).await;
     wait_for_health(rust_port, &mut rust_server, Duration::from_secs(90)).await;
 
     run_bun_suite(paths, ts_port, rust_port);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn account_management_client_compat() {
+        run_client_compat(&["tests/account-management"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn admin_client_compat() {
+        run_client_compat(&["tests/admin"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn api_key_client_compat() {
+        run_client_compat(&["tests/api-key"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn core_client_compat() {
+        run_client_compat(&["tests/core"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn device_authorization_client_compat() {
+        run_client_compat(&["tests/device-authorization"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn email_verification_client_compat() {
+        run_client_compat(&["tests/email-verification"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn generic_oauth_client_compat() {
+        run_client_compat(&["tests/generic-oauth"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn oauth_client_compat() {
+        run_client_compat(&["tests/oauth"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn organization_client_compat() {
+        run_client_compat(&["tests/organization"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn passkey_client_compat() {
+        run_client_compat(&["tests/passkey"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn password_management_client_compat() {
+        run_client_compat(&["tests/password-management"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn sessions_client_compat() {
+        run_client_compat(&["tests/sessions"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the pinned Bun and Rust compatibility servers"]
+    async fn siwe_client_compat() {
+        run_client_compat(&["tests/siwe"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn two_factor_client_compat() {
+        run_client_compat(&["tests/two-factor"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn user_management_client_compat() {
+        run_client_compat(&["tests/user-management"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn full_client_compat() {
+        run_client_compat(&["tests"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts fresh TS and Rust servers for each process environment"]
+    async fn environment_client_compat() {
+        run_client_compat(&["environment"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers and Chromium"]
+    async fn browser_client_compat() {
+        run_client_compat(&["browser"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn one_time_token_client_compat() {
+        run_client_compat(&["tests/one-time-token"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires local TypeScript/Rust fixture servers"]
+    async fn jwt_client_compat() {
+        run_client_compat(&["tests/jwt"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn server_endpoints_client_compat() {
+        run_client_compat(&["tests/server-endpoints"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn organization_teams_client_compat() {
+        run_client_compat(&["tests/organization-extensions/teams.test.ts"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn organization_dynamic_roles_client_compat() {
+        run_client_compat(&["tests/organization-extensions/dynamic-roles.test.ts"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn json_numbers_client_compat() {
+        run_client_compat(&["tests/core/json-numbers.test.ts"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn phone_number_client_compat() {
+        run_client_compat(&["tests/phone-number"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn two_factor_trust_client_compat() {
+        run_client_compat(&["tests/two-factor/trust-ttl.test.ts"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn username_availability_client_compat() {
+        run_client_compat(&["tests/username"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn multiple_sessions_client_compat() {
+        run_client_compat(&["tests/multiple-sessions"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn two_factor_totp_client_compat() {
+        run_client_compat(&["tests/two-factor/totp-config.test.ts"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Bun and the compatibility fixtures"]
+    async fn two_factor_lockout_client_compat() {
+        run_client_compat(&["tests/two-factor/lockout.test.ts"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the pinned Bun and Rust compatibility servers"]
+    async fn two_factor_skip_order_client_compat() {
+        run_client_compat(&["tests/two-factor/skip-order.test.ts"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the pinned Bun and Rust compatibility servers"]
+    async fn two_factor_pending_cancel_client_compat() {
+        run_client_compat(&["tests/two-factor/pending-cancel.test.ts"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the pinned Bun and Rust compatibility servers"]
+    async fn two_factor_passwordless_client_compat() {
+        run_client_compat(&["tests/two-factor/passwordless.test.ts"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the pinned Bun and Rust compatibility servers"]
+    async fn two_factor_otp_config_client_compat() {
+        run_client_compat(&["tests/two-factor/otp-config.test.ts"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn organization_hooks_client_compat() {
+        run_client_compat(&[
+            "tests/organization-extensions/creation-hooks.test.ts",
+            "tests/organization-extensions/deletion-hooks.test.ts",
+        ])
+        .await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the pinned Bun and Rust compatibility servers"]
+    async fn captcha_client_compat() {
+        run_client_compat(&["tests/captcha"]).await;
+    }
 }

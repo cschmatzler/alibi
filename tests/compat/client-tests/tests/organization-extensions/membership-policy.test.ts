@@ -26,6 +26,7 @@ async function add(ctx:ScenarioContext,profile:FixtureProfile,organizationId:str
 async function actors(ctx:ScenarioContext,names:string[]){const result=[];for(const name of names)result.push(await signup(ctx,name));return result;}
 async function owned(ctx:ScenarioContext,values:Actor[]){return Promise.all(values.map(actor=>ctx.readUserState({userId:actor.user.id})));}
 
+// Eleven real password signups per runtime exceed Bun's default five-second budget.
 compatScenario("organization fixed membership policies retain falsy defaults and raw Number admission without read callbacks",async ctx=>{
  const [owner,existing,foreign]=await actors(ctx,["fixed-owner","fixed-existing","fixed-foreign"]);const own=await org(ctx,owner!,"fixed-own");await org(ctx,foreign!,"fixed-other");expect((await add(ctx,"org-membership-default",own.id,existing!.user.id)).status).toBe(200);
  const observations=[];
@@ -34,11 +35,12 @@ compatScenario("organization fixed membership policies retain falsy defaults and
   const response=await add(ctx,`org-membership-${suffix}` as FixtureProfile,own.id,candidate.user.id),after=await state(ctx);
   if(allowed){expect(response.status).toBe(200);const created=row.parse(response.body);expect(after.snapshot.members).toEqual([...before.snapshot.members,created]);expect(created).toMatchObject({organizationId:own.id,userId:candidate.user.id,role:"member"});}
   else{expect(response.status).toBe(403);expect(response.body).toHaveProperty("code","ORGANIZATION_MEMBERSHIP_LIMIT_REACHED");expect(after.snapshot).toEqual(before.snapshot);}
-  expect(after.receipts).toEqual([]);expect(after.snapshot.organizations).toEqual(before.snapshot.organizations);expect(after.snapshot.invitations).toEqual(before.snapshot.invitations);expect(after.snapshot.teams).toEqual(before.snapshot.teams);expect(await owned(ctx,[owner!,existing!,foreign!,candidate])).toEqual(usersBefore);
-  observations.push({suffix,candidate:candidate.created,candidateSession:candidate.session,before,response,after,usersBefore,usersAfter:await owned(ctx,[owner!,existing!,foreign!,candidate])});
+  const usersAfter=await owned(ctx,[owner!,existing!,foreign!,candidate]);
+  expect(after.receipts).toEqual([]);expect(after.snapshot.organizations).toEqual(before.snapshot.organizations);expect(after.snapshot.invitations).toEqual(before.snapshot.invitations);expect(after.snapshot.teams).toEqual(before.snapshot.teams);expect(usersAfter).toEqual(usersBefore);
+  observations.push({suffix,candidate:candidate.created,candidateSession:candidate.session,before,response,after,usersBefore,usersAfter});
  }
  return {owner:owner!.created,ownerSession:owner!.session,existing:existing!.created,existingSession:existing!.session,foreign:foreign!.created,foreignSession:foreign!.session,observations};
-},["POST /organization/create"]);
+},["POST /organization/create"],15000);
 
 compatScenario("organization fixed fractional membership admits one physical row then rejects capacity without principal writes",async ctx=>{
  const [owner,foreign]=await actors(ctx,["fractional-owner","fractional-foreign"]);await org(ctx,foreign!,"fractional-foreign");

@@ -7,7 +7,7 @@ import {compareValues,type ComparisonContext} from "../support/compare";
 const secret="compact-chunk-source-fixture-secret-32";
 async function observed(baseURL:string,uuid:boolean){
   const database=new Database(":memory:"),version={current:"1"};
-  const options={baseURL,secret,database,emailAndPassword:{enabled:true},session:{cookieCache:{enabled:true,strategy:"compact" as const,maxAge:300,version:()=>version.current}},...(uuid?{advanced:{database:{generateId:()=>crypto.randomUUID()}}}:{})};
+  const options={baseURL,secret,database,rateLimit:{enabled:false},emailAndPassword:{enabled:true},session:{cookieCache:{enabled:true,strategy:"compact" as const,maxAge:300,version:()=>version.current}},...(uuid?{advanced:{database:{generateId:()=>crypto.randomUUID()}}}:{})};
   await(await getMigrations(options)).runMigrations();const auth=betterAuth(options),start=Date.now();
   const response=await auth.handler(new Request(baseURL+"/api/auth/sign-up/email",{method:"POST",headers:{origin:baseURL,"content-type":"application/json"},body:JSON.stringify({email:"chunk-owner@fixture.test",name:"x".repeat(6000),password:"password123"})}));
   expect(response.status).toBe(200);const signup=await response.json();
@@ -15,7 +15,7 @@ async function observed(baseURL:string,uuid:boolean){
     const rawCookies=headers.getSetCookie().filter(value=>value.startsWith("better-auth.session_data"));
     const token=rawCookies.filter(value=>value.split(";")[0]!.split("=")[1]).map(value=>decodeURIComponent(value.split(";")[0]!.slice(value.indexOf("=")+1))).join("");
     const envelope=JSON.parse(Buffer.from(token,"base64url").toString()),observedAt=Date.now();
-    const decoded=await getCookieCache(new Headers({cookie:rawCookies.map(value=>value.split(";")[0]).join("; ")}),{secret,strategy:"compact"});expect(decoded).not.toBeNull();
+    const decoded=await getCookieCache(new Headers({cookie:rawCookies.map(value=>value.split(";")[0]).join("; ")}),{secret,strategy:"compact",isSecure:false});expect(decoded).not.toBeNull();
     return {token,envelope,decoded,observedAt,effectiveMaxAgeSeconds:300,rawCookies};
   };
   const compactSessionCache=await observe(response.headers);expect(compactSessionCache.rawCookies.length).toBeGreaterThan(1);

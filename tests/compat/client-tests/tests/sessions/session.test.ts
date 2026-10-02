@@ -120,8 +120,8 @@ compatScenario("revoke other sessions keeps the caller alive", async (ctx) => {
   };
 });
 
-const listModes = ["reject", "success", "coordinated", ...(process.env.BETTER_AUTH_LIST_SCHEDULING_DIAGNOSTIC === "1" ? ["fast-diagnostic"] : [])] as const;
-for (const mode of listModes) compatScenario(`list sessions ${mode === "coordinated" ? "coordinates ready callbacks before rejection and retains pending siblings" : mode === "fast-diagnostic" ? "diagnoses uncoordinated callback scheduler ordering" : mode === "reject" ? "rejects configured output while started callbacks continue" : "publishes ordered configured output without changing physical authority"}`, async (ctx) => {
+const listModes = ["reject", "success", "coordinated"] as const;
+for (const mode of listModes) compatScenario(`list sessions ${mode === "coordinated" ? "coordinates ready callbacks before rejection and retains pending siblings" : mode === "reject" ? "rejects configured output while started callbacks continue" : "publishes ordered configured output without changing physical authority"}`, async (ctx) => {
   const rejection = mode !== "success";
   const profile = "additional-cached-fields";
   const owner = ctx.actor("list-owner", profile);

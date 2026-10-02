@@ -10,7 +10,7 @@ const secret='compact-cache-independent-fixture-secret-32';
 type Atom={token:string;envelope:any;decoded:any;observedAt:number;effectiveMaxAgeSeconds:number};
 async function observe(baseURL:string,maxAge=300.25,version?:string){
  const database=new Database(':memory:');
- const options={baseURL,secret,database,emailAndPassword:{enabled:true},session:{cookieCache:{enabled:true,strategy:'compact' as const,maxAge,...(version?{version}:{})}}};
+ const options={baseURL,secret,database,rateLimit:{enabled:false},emailAndPassword:{enabled:true},session:{cookieCache:{enabled:true,strategy:'compact' as const,maxAge,...(version?{version}:{})}}};
  const {runMigrations}=await getMigrations(options);await runMigrations();
  const auth=betterAuth(options),start=Date.now();
  const response=await auth.handler(new Request(baseURL+'/api/auth/sign-up/email',{method:'POST',headers:{'content-type':'application/json',origin:baseURL},body:JSON.stringify({email:'real-cache-owner@fixture.test',name:'Actual Owner',password:'password123'})}));
@@ -18,7 +18,7 @@ async function observe(baseURL:string,maxAge=300.25,version?:string){
  const values=response.headers.getSetCookie().filter(value=>value.startsWith('better-auth.session_data')).map(value=>value.split(';')[0]!);expect(values.length).toBeGreaterThan(0);
  const token=decodeURIComponent(values.map(value=>value.slice(value.indexOf('=')+1)).join(''));
  const envelope=JSON.parse(Buffer.from(token,'base64url').toString()),observedAt=Date.now();
- const decoded=await getCookieCache(new Headers({cookie:values.join('; ')}),{secret,strategy:'compact'});
+ const decoded=await getCookieCache(new Headers({cookie:values.join('; ')}),{secret,strategy:'compact',isSecure:false});
  if(Number.isFinite(maxAge) && maxAge>=0 && !version){expect(decoded).not.toBeNull();expect(decoded!.user.id).toBe(signup.user.id);expect(decoded!.session.token).toBe(signup.token);}else expect(decoded).toBeNull();
  const atom={token,envelope,decoded,observedAt,effectiveMaxAgeSeconds:maxAge},end=Date.now();database.close();return {signup,compactSessionCache:atom,start,end};
 }
@@ -35,7 +35,7 @@ test('real published compact cache cookies compare complete authenticated claims
 test('compact cache atom catches authentic ownership token lifetime rotation and full-copy corruption',async()=>{
  const left=await observe('http://localhost:3100'),right=await observe('http://localhost:3200'),ctx=context(left,right),a=values(left),b=values(right),original=right.compactSessionCache;
  const arrayLeft=signed(left.compactSessionCache,v=>{v.session.extra=['first','second'];}),arrayRight=signed(original,v=>{v.session.extra=['first','second'];});
- for(const atom of [arrayLeft,arrayRight]) atom.decoded=await getCookieCache(new Headers({cookie:`better-auth.session_data=${atom.token}`}),{secret,strategy:'compact'});
+ for(const atom of [arrayLeft,arrayRight]) atom.decoded=await getCookieCache(new Headers({cookie:`better-auth.session_data=${atom.token}`}),{secret,strategy:'compact',isSecure:false});
  expect(arrayRight.decoded.extra).toEqual(['first','second']);
  expect(compareValues({...a,compactSessionCache:arrayLeft},{...b,compactSessionCache:arrayRight},ctx)).toEqual([]);
  for(const extra of [['second','first'],['first'],['first','second','extra']]) expect(compareValues({...a,compactSessionCache:arrayLeft},{...b,compactSessionCache:signed(original,v=>{v.session.extra=extra;})},ctx).length).toBeGreaterThan(0);
@@ -48,7 +48,7 @@ test('compact cache atom catches authentic ownership token lifetime rotation and
 test('valid retained compact cache observation stays valid after scenario end while actual expired decoder remains literal',async()=>{
  const left=await observe('http://localhost:3100'),right=await observe('http://localhost:3200');
  const ctx={...context(left,right),leftFinishedAt:left.compactSessionCache.envelope.expiresAt+1,rightFinishedAt:right.compactSessionCache.envelope.expiresAt+1};expect(compareValues(values(left),values(right),ctx)).toEqual([]);
- const expired=signed(right.compactSessionCache,v=>{v.expiresAt=right.compactSessionCache.observedAt-1;});const decoder=await getCookieCache(new Headers({cookie:`better-auth.session_data=${expired.token}`}),{secret,strategy:'compact'});expect(decoder).toBeNull();expect(compareValues(values(left),{...values(right),compactSessionCache:{...expired,decoded:decoder}},ctx).length).toBeGreaterThan(0);
+ const expired=signed(right.compactSessionCache,v=>{v.expiresAt=right.compactSessionCache.observedAt-1;});const decoder=await getCookieCache(new Headers({cookie:`better-auth.session_data=${expired.token}`}),{secret,strategy:'compact',isSecure:false});expect(decoder).toBeNull();expect(compareValues(values(left),{...values(right),compactSessionCache:{...expired,decoded:decoder}},ctx).length).toBeGreaterThan(0);
 });
 
 

@@ -229,7 +229,7 @@ async function atom(headers:Headers,effectiveMaxAgeSeconds=300,expectDecoded=tru
   expect(token.length).toBeGreaterThan(0);
   const envelope=JSON.parse(Buffer.from(token,"base64url").toString());
   const observedAt=Date.now();
-  const decoded=await getCookieCache(new Headers({cookie}),{secret,strategy:"compact"});
+  const decoded=await getCookieCache(new Headers({cookie}),{secret,strategy:"compact",isSecure:false});
   if(expectDecoded)expect(decoded).not.toBeNull();else expect(decoded).toBeNull();
   const rawCookies=headers.getSetCookie().filter(header=>header.startsWith(cookieName+"=")||header.startsWith(cookieName+"."));
   return {compactSessionCache:{token,envelope,decoded,observedAt,effectiveMaxAgeSeconds,rawCookies}};

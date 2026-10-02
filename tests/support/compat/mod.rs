@@ -10,7 +10,7 @@
 //! |--------------|----------------|
 //! | `schema`     | OpenAPI spec loading, `$ref` resolution, `SchemaExpectation` types |
 //! | `validation` | Response validation against schemas (`ShapeDiff`, `validate_response`) |
-//! | `shapes`     | JSON shape comparison, camelCase checks, type-signature extraction |
+//! | `shapes`     | camelCase field-naming checks |
 //! | `helpers`    | Auth setup, HTTP request builders, signup/signin helpers |
 //! | `validator`  | `SpecValidator` framework for batch endpoint validation + reporting |
 

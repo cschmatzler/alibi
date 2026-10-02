@@ -112,8 +112,8 @@ owners described in [user-lifecycle.md](user-lifecycle.md) and
 suites, runs caller migrations in beforeAll, deletes test rows in afterAll,
 refreshes adapters and invokes configured cleanup/statistics callbacks. These
 are real test-harness effects when invoked, not authentication startup effects.
-Native store owners (`crates/seaorm/src/store/sessions/tests.rs`), migration
-owner (`crates/seaorm/src/store/migrator/tests.rs`) and
+Native store owners (`crates/seaorm/src/store/sessions/mod.rs`), migration
+owner (`crates/seaorm/src/store/migrator/mod.rs`) and
 `tests/oauth_account_transaction_tests.rs` own their Rust counterparts;
 TS/Vitest suite registration, JS ID generators and cleanup embedding are not
 native library APIs. Custom adapter backend semantics remain #192. SCIM is an

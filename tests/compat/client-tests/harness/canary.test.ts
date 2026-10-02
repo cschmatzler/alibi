@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { createAuthClient } from "better-auth/client";
 import { SignJWT } from "jose";
 import { compareValues } from "../support/compare";
-import { createTracingFetch, type TraceEntry } from "../support/trace";
+import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
 
 // Negative controls go through HTTP, the real SDK, tracing and the production comparator.
 // They must fail comparison even though both HTTP responses report success.
@@ -90,7 +90,7 @@ test("independently signed JWTs keep application id, token and state claims lite
     aud: "client",
     custom: { id: "literal-owner", token: "literal-value", state: "approved" },
   };
-  const sign = (payload: typeof claims, key: string) =>
+  const sign = (payload: Record<string, unknown>, key: string) =>
     new SignJWT(payload)
       .setProtectedHeader({ alg: "HS256" })
       .sign(new TextEncoder().encode(key.repeat(32)));
@@ -114,6 +114,59 @@ test("independently signed JWTs keep application id, token and state claims lite
         (diff) => diff.path === `token.payload.custom.${field}`,
       ),
     ).toBe(true);
+  }
+  // Application claims need no reserved wrapper name. Include decoded copies
+  // so a payload cannot supply its own supposedly independent identity proof.
+  for (const field of ["id", "userId", "token", "sessionToken", "state", "createdAt", "callbackURL"]) {
+    const original = field === "createdAt" ? "2026-01-01T00:00:00.000Z" : field === "callbackURL" ? context.leftBaseURL : "literal-value";
+    const changed = field === "createdAt" ? "2026-01-01T00:00:00.001Z" : field === "callbackURL" ? context.rightBaseURL : "changed-literal";
+    for (const nested of [false, true]) {
+      const first = { ...claims, ...(nested ? { details: { [field]: original } } : { [field]: original }) };
+      const second = { ...claims, ...(nested ? { details: { [field]: changed } } : { [field]: changed }) };
+      expect(compareValues({ token: await sign(first, "a"), decoded: first }, { token: await sign(second, "b"), decoded: second }, context))
+        .toContainEqual({ path: `token.payload.${nested ? "details." : ""}${field}`, reason: "value or type differs" });
+    }
+  }
+  const observed = async (side: string) => {
+    const user = { id: `${side}-user`, createdAt: side === "a" ? "2026-01-01T00:00:00.000Z" : "2026-01-01T00:00:00.001Z" };
+    const session = { userId: user.id, token: `${side}-session` };
+    const payload = { ...claims, ...user, sub: user.id, session };
+    return { user, session, token: await sign(payload, side), decoded: payload };
+  };
+  expect(compareValues(await observed("a"), await observed("b"), context)).toEqual([]);
+
+  // API-key sessions are freshly constructed for each request. Their JWT dates
+  // need the real signing request and independently observed key/session owner.
+  const virtual = async (side: string, at: number) => {
+    const key = { id: `${side}-key`, key: side.repeat(64), referenceId: `${side}-user`, expiresAt: null, configId: "default", enabled: true, remaining: null };
+    const session = (time: number) => ({ id: key.id, token: key.key, userId: key.referenceId,
+      createdAt: new Date(time).toISOString(), updatedAt: new Date(time).toISOString(), expiresAt: new Date(time + 604800).toISOString() });
+    const payload = { ...claims, snapshot: { session: session(at), user: { id: key.referenceId } } };
+    const token = await sign(payload, side);
+    return { observation: { checked: payload }, traces: [
+      { method: "POST", path: "/api/auth/api-key/create", responseStatus: 200, responseBody: key },
+      { method: "GET", path: "/api/auth/token", responseStatus: 200, responseBody: { token } },
+      { method: "GET", path: "/api/auth/get-session", responseStatus: 200, responseBody: { session: session(at + 1000), user: { id: key.referenceId } } },
+    ] };
+  };
+  const first = await virtual("a", 10100), second = await virtual("b", 30100);
+  const clocks = { ...context, leftStartedAt: 10000, rightStartedAt: 20000,
+    leftRequestWindows: [9900, 10000, 11000].map(startedAt => ({ startedAt, finishedAt: startedAt + 200, inputDates: {} })),
+    rightRequestWindows: [29900, 30000, 31000].map(startedAt => ({ startedAt, finishedAt: startedAt + 200, inputDates: {} })) };
+  expect(compareValues(first, second, clocks)).toEqual([]);
+  for (const mutation of ["missing-key", "foreign-key", "missing-session", "failed-issuer", "wrong-lifetime", "outside-window"]) {
+    const altered = structuredClone(second);
+    if (mutation === "missing-key") altered.traces[0]!.path = "/api/auth/unrelated";
+    if (mutation === "foreign-key") (altered.traces[0]!.responseBody as typeof second.traces[0]["responseBody"] & { referenceId: string }).referenceId = "foreign";
+    if (mutation === "missing-session") altered.traces[2]!.path = "/api/auth/unrelated";
+    if (mutation === "failed-issuer") altered.traces[1]!.responseStatus = 500;
+    if (["wrong-lifetime", "outside-window"].includes(mutation)) {
+      const payload = altered.observation.checked;
+      const field = mutation === "wrong-lifetime" ? "expiresAt" : "createdAt";
+      payload.snapshot.session[field] = new Date(Date.parse(payload.snapshot.session[field]) + 10000).toISOString();
+      (altered.traces[1]!.responseBody as { token: string }).token = await sign(payload, "b");
+    }
+    expect(compareValues(first, altered, clocks).some(diff => diff.path === "observation.checked.snapshot.session.createdAt" || diff.path === "observation.checked.snapshot.session.expiresAt")).toBe(true);
   }
 });
 
@@ -163,7 +216,7 @@ test("complete enrollment responses retain credential formats, relationships and
   expect(compareValues(left, duplicate, context).length).toBeGreaterThan(0);
 });
 
-test("request clocks tolerate slower execution while preserving session lifetime and issuance bounds", () => {
+test("request clocks tolerate slower execution while preserving session lifetime and issuance bounds", async () => {
   const row = (created: number, token: string) => ({
     id: token,
     token,
@@ -217,6 +270,60 @@ test("request clocks tolerate slower execution while preserving session lifetime
       context,
     ).some((diff) => diff.path.endsWith("expiresAt")),
   ).toBe(true);
+
+  const secret = "producer-clock-secret";
+  async function capture(side: string) {
+    let member: Record<string, unknown>, social: Record<string, unknown>;
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+      const path = new URL(request.url).pathname, now = Date.now(), iso = (offset = 0) => new Date(now + offset).toISOString();
+      if (path.endsWith("/server")) {
+        member = { id: `${side}-member`, organizationId: `${side}-org`, userId: `${side}-user`, role: "member", createdAt: iso() };
+        return Response.json({ code: "AFTER_HOOK_REJECTED" }, { status: 500 });
+      }
+      if (path.endsWith("/callback/gitlab")) {
+        const token = `${side}-session`, user = { id: `${side}-user`, createdAt: iso(), updatedAt: iso() };
+        social = { users: [user], accounts: [{ id: `${side}-account`, userId: user.id, providerId: "gitlab", createdAt: iso(), updatedAt: iso(), accessTokenExpiresAt: iso(3600000) }],
+          sessions: [{ id: `${side}-session-id`, userId: user.id, token, createdAt: iso(), updatedAt: iso(), expiresAt: iso(604800000) }] };
+        const cookie = encodeURIComponent(`${token}.${createHmac("sha256", secret).update(token).digest("base64")}`);
+        return new Response(null, { status: 302, headers: { location: "/done", "set-cookie": `better-auth.session_token=${cookie}; Path=/; HttpOnly` } });
+      }
+      if (path.includes("organization-member-addition")) {
+        const {createdAt: _, ...stored} = member!;
+        return Response.json({ receipts: [{phase: "after-add", member, user: {id: `${side}-user`}, organization: {id: `${side}-org`}}], snapshot: {members: [stored]} });
+      }
+      return Response.json(social!);
+    } });
+    const traces: TraceEntry[] = [], traced = createTracingFetch(server.url.origin, "producer", traces);
+    try {
+      await traced("/__test/organization-member-addition/server", { method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({body: {organizationId: `${side}-org`, userId: `${side}-user`}}) });
+      const addition: unknown = await (await traced("/__test/organization-member-addition/state")).json();
+      await traced("/__test/profiles/social-gitlab-issuer-slashes/api/auth/callback/gitlab", {redirect: "manual"});
+      const oauth: unknown = await (await traced("/__test/social-provider/state")).json();
+      return { value: {observation: {addition, oauth}, traces}, windows: traces.map(trace => trace[requestWindow]!), baseURL: server.url.origin };
+    } finally { server.stop(true); }
+  }
+  const first = await capture("left");
+  await Bun.sleep(10);
+  const second = await capture("right");
+  const producerClocks = { leftBaseURL: first.baseURL, rightBaseURL: second.baseURL, sessionCookieSecret: secret,
+    leftStartedAt: first.windows[0]!.startedAt, rightStartedAt: second.windows[0]!.startedAt - 10000,
+    leftRequestWindows: first.windows, rightRequestWindows: second.windows };
+  expect(compareValues(first.value, second.value, producerClocks)).toEqual([]);
+  for (const mutation of ["member-owner", "missing-member", "member-digest", "callback-signature", "callback-status", "session-owner", "oauth-digest", "session-lifetime"]) {
+    const value = structuredClone(second.value), clocks = structuredClone(producerClocks);
+    const memberControl = clocks.rightRequestWindows[1]!.controlObservation!, oauthControl = clocks.rightRequestWindows[3]!.controlObservation!;
+    if (mutation === "member-owner") clocks.rightRequestWindows[0]!.memberAdditionOwner!.userId = "foreign";
+    if (mutation === "missing-member") (memberControl.body as {snapshot: {members: unknown[]}}).snapshot.members = [];
+    if (mutation === "member-digest") memberControl.digest = "invalid";
+    if (mutation === "callback-signature") clocks.rightRequestWindows[2]!.issuedSessionCookie += "invalid";
+    if (mutation === "callback-status") value.traces[2]!.responseStatus = 400;
+    if (mutation === "session-owner") (oauthControl.body as {sessions: {userId: string}[]}).sessions[0]!.userId = "foreign";
+    if (mutation === "oauth-digest") oauthControl.digest = "invalid";
+    if (mutation === "session-lifetime") (value.observation.oauth as {sessions: {expiresAt: string}[]}).sessions[0]!.expiresAt = new Date(Date.now() + 123456789).toISOString();
+    for (const control of [memberControl, oauthControl]) if (control.digest !== "invalid") control.digest = createHash("sha256").update(JSON.stringify(control.body)).digest("hex");
+    const prefix = mutation.startsWith("member") || mutation === "missing-member" ? "observation.addition.receipts.0.member.createdAt" : "observation.oauth.sessions.0.";
+    expect(compareValues(first.value, value, clocks).some(diff => diff.path.startsWith(prefix))).toBe(true);
+  }
 });
 
 test("later session and user clocks require their actual issuance and update receipts", () => {

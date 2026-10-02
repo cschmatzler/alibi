@@ -629,6 +629,11 @@ const twoFactorDeliveryFixture = createTwoFactorDeliveryFixture(authOptions, dat
 const physicalCookies=physicalCookieProfiles(authOptions,database);
 for(const [path,auth] of physicalCookies.profiles)verificationProfiles.set(path,auth);
 const auth = betterAuth(authOptions);
+const errorPageAuth = betterAuth({
+  ...authOptions,
+  basePath: "/__test/profiles/error-page/api/auth",
+  onAPIError: { customizeDefaultErrorPage: {} },
+});
 const authContext = await auth.$context;
 const oneTapProfiles = createOneTapProfiles(authOptions);
 const googleIdProfiles = googleIdTokenProfiles(authOptions);
@@ -898,6 +903,9 @@ const server = Bun.serve({
     await capturePasswordlessRequest(request);
     try {
       const url = new URL(request.url);
+      if (url.pathname.startsWith("/__test/profiles/error-page/api/auth/")) {
+        return errorPageAuth.handler(request);
+      }
       organizationTransport.observe(request);
       const clientIpResponse = await clientIpFixture.handle(request);
       if (clientIpResponse) return clientIpResponse;

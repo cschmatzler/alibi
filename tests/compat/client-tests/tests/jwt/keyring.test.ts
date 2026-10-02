@@ -209,7 +209,7 @@ compatScenario("application JWT keyring compact cached principal owns get-sessio
   const signup=await owner.signUp.email({email:ctx.uniqueEmail("keyring-cache-owner"),password:"password123",name:"Original Cached JWT Owner"},{onSuccess({response}){receipts.push(new Headers(response.headers));}});expect(signup.error).toBeNull();
   const other=await foreign.signUp.email({email:ctx.uniqueEmail("keyring-cache-foreign"),password:"password123",name:"Foreign Cached JWT Owner"});expect(other.error).toBeNull();const foreignBefore=await ctx.readUserState({userId:other.data!.user.id});
   const cookie=receipts[0]!.getSetCookie().map(value=>value.split(";")[0]!).join("; ");
-  const cache=await getCookieCache(new Headers({cookie}),{secret:"compat-test-only-key-not-real-minimum-32chars",strategy:"compact"});expect(cache!.session.token).toBe(signup.data!.token!);expect(cache!.user.name).toBe("Original Cached JWT Owner");
+  const cache=await getCookieCache(new Headers({cookie}),{secret:"compat-test-only-key-not-real-minimum-32chars",strategy:"compact",isSecure:false});expect(cache!.session.token).toBe(signup.data!.token!);expect(cache!.user.name).toBe("Original Cached JWT Owner");
   const cacheToken=decodeURIComponent(cookie.split("; ").find(value=>value.startsWith("better-auth.session_data="))!.split("=").slice(1).join("="));
   const compactSessionCache={token:cacheToken,envelope:JSON.parse(Buffer.from(cacheToken,"base64url").toString()),decoded:cache,observedAt:Date.now(),effectiveMaxAgeSeconds:300,rawCookies:receipts[0]!.getSetCookie().filter(value=>value.startsWith("better-auth.session_data="))};
   const jwks=await guest.jwks();expect(jwks.error).toBeNull();const created=await state(ctx,mode);
@@ -256,7 +256,7 @@ compatScenario("application JWT keyring custom cached callbacks retain the compl
   const other=await foreign.signUp.email({email:ctx.uniqueEmail("keyring-custom-cache-foreign"),password:"password123",name:"Custom Cached Foreign"});expect(other.error).toBeNull();
   const foreignBefore=await ctx.readUserState({userId:other.data!.user.id});
   const cookie=receipts[0]!.getSetCookie().map(value=>value.split(";")[0]!).join("; ");
-  const cache=await getCookieCache(new Headers({cookie}),{secret:"compat-test-only-key-not-real-minimum-32chars",strategy:"compact"});expect(cache).not.toBeNull();
+  const cache=await getCookieCache(new Headers({cookie}),{secret:"compat-test-only-key-not-real-minimum-32chars",strategy:"compact",isSecure:false});expect(cache).not.toBeNull();
   const cacheToken=decodeURIComponent(cookie.split("; ").find(value=>value.startsWith("better-auth.session_data="))!.split("=").slice(1).join("="));
   const compactSessionCache={token:cacheToken,envelope:JSON.parse(Buffer.from(cacheToken,"base64url").toString()),decoded:cache,observedAt:Date.now(),effectiveMaxAgeSeconds:300,rawCookies:receipts[0]!.getSetCookie().filter(value=>value.startsWith("better-auth.session_data="))};
   const jwks=await guest.jwks();expect(jwks.error).toBeNull();const original=await state(ctx,mode);
@@ -284,7 +284,7 @@ compatScenario("application JWT keyring custom cached callbacks retain the compl
   legacyEnvelope.signature=createHmac("sha256","compat-test-only-key-not-real-minimum-32chars").update(JSON.stringify({...legacyEnvelope.session,expiresAt:legacyEnvelope.expiresAt})).digest("base64url");
   const legacyToken=Buffer.from(JSON.stringify(legacyEnvelope)).toString("base64url");
   const legacyCookie=cookie.split("; ").map(value=>value.startsWith("better-auth.session_data=")?`better-auth.session_data=${legacyToken}`:value).join("; ");
-  const legacyDecoded=await getCookieCache(new Headers({cookie:legacyCookie}),{secret:"compat-test-only-key-not-real-minimum-32chars",strategy:"compact"});expect(legacyDecoded).not.toBeNull();expect(Object.hasOwn(legacyDecoded!,"version")).toBe(false);
+  const legacyDecoded=await getCookieCache(new Headers({cookie:legacyCookie}),{secret:"compat-test-only-key-not-real-minimum-32chars",strategy:"compact",isSecure:false});expect(legacyDecoded).not.toBeNull();expect(Object.hasOwn(legacyDecoded!,"version")).toBe(false);
   const legacyCache={compactSessionCache:{token:legacyToken,envelope:legacyEnvelope,decoded:legacyDecoded,observedAt:Date.now(),effectiveMaxAgeSeconds:300}};
   await control(ctx,{operation:"clear-events"},mode);
   const legacyHeaders:Headers[]=[];const legacy=await owner.getSession({fetchOptions:{headers:{cookie:legacyCookie,"x-keyring-proof":"legacy-marker"},onSuccess({response}){legacyHeaders.push(new Headers(response.headers));}}});expect(legacy.error).toBeNull();

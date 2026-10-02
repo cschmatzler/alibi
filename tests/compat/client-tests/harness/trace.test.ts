@@ -21,17 +21,27 @@ test("expired, cleared, wrong-domain and wrong-path cookies are never sent", asy
   } finally { await server.stop(true); }
 });
 
-test("redirects capture intermediate cookies and preserve Request bodies", async () => {
+test("redirects capture intermediate cookies and preserve Fetch method and body semantics", async () => {
+  const received: { method: string; body: string; cookie: string | null }[] = [];
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
-    if (new URL(request.url).pathname === "/start") return new Response(null, { status: 303, headers: { location: "/end", "set-cookie": "redirect=ok; Path=/" } });
-    return Response.json({ cookie: request.headers.get("cookie"), body: await request.text(), method: request.method });
+    const url = new URL(request.url);
+    if (url.pathname === "/start") return new Response(null, { status: Number(url.searchParams.get("status")), headers: { location: "/end", "set-cookie": "redirect=ok; Path=/" } });
+    const receipt = { cookie: request.headers.get("cookie"), body: await request.text(), method: request.method };
+    received.push(receipt);
+    return Response.json(receipt);
   } });
   try {
-    const traces: TraceEntry[] = [];
-    const traced = createTracingFetch(server.url.origin, "actor", traces);
-    expect(await (await traced("/start", { method: "POST", body: "hello" })).json()).toEqual({ cookie: "redirect=ok", body: "", method: "GET" });
-    expect(traces.map(entry => entry.responseStatus)).toEqual([303, 200]);
-    expect(await (await traced(new Request(new URL("/end", server.url), { method: "POST", body: "payload" }))).json()).toEqual({ cookie: "redirect=ok", body: "payload", method: "POST" });
+    for (const [status, method] of [[303, "GET"], [303, "HEAD"], [303, "POST"], [307, "POST"], [308, "PUT"]] as const) {
+      const init = { method, ...["GET", "HEAD"].includes(method) ? {} : { body: "payload" } };
+      await (await fetch(new URL(`/start?status=${status}`, server.url), init)).arrayBuffer();
+      const reference = received.at(-1)!;
+      const traces: TraceEntry[] = [];
+      const traced = createTracingFetch(server.url.origin, "actor", traces);
+      await (await traced(`/start?status=${status}`, init)).arrayBuffer();
+      expect(received.at(-1)).toEqual({ ...reference, cookie: "redirect=ok" });
+      expect(traces.map(entry => entry.responseStatus)).toEqual([status, 200]);
+      expect(await (await traced(new Request(new URL("/end", server.url), { method: "POST", body: "direct payload" }))).json()).toEqual({ cookie: "redirect=ok", body: "direct payload", method: "POST" });
+    }
   } finally { await server.stop(true); }
 });
 

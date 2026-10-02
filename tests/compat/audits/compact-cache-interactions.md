@@ -147,7 +147,7 @@ exclusions, Source package and shared comparator remain unchanged.
 ## Bounded native test audit and reader isolation
 
 Candidate: `new_session_hook_replaces_same_user_cookie_and_respects_browser_limit`
-(`crates/api/src/plugins/multi_session/tests.rs`, previously line 336). It could
+(`crates/api/src/plugins/multi_session/mod.rs`, previously line 336). It could
 check direct hook deletion, selector publication and counting invalid names, but
 manufactured a successful response/cookie after direct session creation without
 the completed session publication that the real public dispatch owns. The

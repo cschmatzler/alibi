@@ -57,7 +57,7 @@ async function capture(compact = false) {
     const token=decodeURIComponent(rawCookies[0]!.split(";")[0]!.slice("better-auth.session_data=".length));
     const envelope=JSON.parse(Buffer.from(token,"base64url").toString()),observedAt=Date.now();
     expect(envelope.signature).toBe(createHmac("sha256",secret).update(JSON.stringify({...envelope.session,expiresAt:envelope.expiresAt})).digest("base64url"));
-    const decoded=await getCookieCache(new Headers({cookie:rawCookies[0]!.split(";")[0]!}),{secret,strategy:"compact"});
+    const decoded=await getCookieCache(new Headers({cookie:rawCookies[0]!.split(";")[0]!}),{secret,strategy:"compact",isSecure:false});
     expect(decoded).not.toBeNull();
     return {compactSessionCache:{token,envelope,decoded,observedAt,effectiveMaxAgeSeconds:300,rawCookies}};
   }
@@ -89,7 +89,7 @@ async function capture(compact = false) {
     expect(observed.events.length).toBeGreaterThan(0);
     for (const event of observed.events.filter((event: Data) => event.headers?.cookie)) {
       if(compact){
-        const decoded=await getCookieCache(new Headers({cookie:event.headers.cookie}),{secret,strategy:"compact"});
+        const decoded=await getCookieCache(new Headers({cookie:event.headers.cookie}),{secret,strategy:"compact",isSecure:false});
         expect(decoded).not.toBeNull();expect(decoded!.user.id).toBe(owner.result!.user.id);expect(decoded!.session.token).toBe(owner.result!.token!);
       }else expect(event.headers.cookie).toBe(owner.headers.cookie);
     }
@@ -142,8 +142,6 @@ test("actual Source signed session headers retain HMAC issuance physical and log
     rightStartedAt: right.startedAt, rightFinishedAt: right.finishedAt,
     leftRequestWindows: left.windows, rightRequestWindows: right.windows,
   };
-  if (Bun.env.COMPAT_SIGNED_HEADER_CAPTURE)
-    await Bun.write(Bun.env.COMPAT_SIGNED_HEADER_CAPTURE, JSON.stringify({ left: left.value, right: right.value, context }, null, 2));
   // These are complete real Source captures. The comparator must reconcile the
   // independently random credentials without editing any header observation.
   expect(compareValues(left.value, right.value, context)).toEqual([]);
@@ -210,7 +208,6 @@ test("actual Source signed session headers retain HMAC issuance physical and log
 test("actual Source co-present compact cookie headers bind authenticated cache to signed issuance and complete persisted owners",async()=>{
   const left=await capture(true),right=await capture(true);
   const context:ComparisonContext={leftBaseURL:left.baseURL,rightBaseURL:right.baseURL,sessionCookieSecret:secret,compactSessionCacheSecret:secret,leftStartedAt:left.startedAt,leftFinishedAt:left.finishedAt,rightStartedAt:right.startedAt,rightFinishedAt:right.finishedAt,leftRequestWindows:left.windows,rightRequestWindows:right.windows};
-  if(Bun.env.COMPAT_COMPACT_HEADER_CAPTURE)await Bun.write(Bun.env.COMPAT_COMPACT_HEADER_CAPTURE,JSON.stringify({left:left.value,right:right.value,context},null,2));
   expect(compareValues(left.value,right.value,context)).toEqual([]);
   const cookiePath="observation.owner.headers.cookie",setCookiePath="observation.observed.verified.headers.set-cookie";
   const cacheMismatch="compact cookie does not match authenticated corresponding session issuance";

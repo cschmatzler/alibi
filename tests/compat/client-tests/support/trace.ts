@@ -19,6 +19,9 @@ export type RequestWindow = {
   verificationInput?: unknown;
   /** Integrity of the original complete parsed observer response, separate from compared output. */
   verificationObserverDigest?: string;
+  /** Original narrow physical controls; their values are not transport output. */
+  controlObservation?: { kind: "member-addition" | "social-provider"; body: unknown; digest: string };
+  memberAdditionOwner?: { organizationId: string; userId: string };
 };
 
 /** Complete response observations, kept in memory; reports contain paths rather than secrets. */
@@ -223,11 +226,24 @@ export function createTracingFetch(
         try { verificationObserverDigest = createHash("sha256").update(JSON.stringify(JSON.parse(responseText))).digest("hex"); }
         catch { /* A non-JSON response remains literal and has no publication admission. */ }
       }
+      let controlObservation: RequestWindow["controlObservation"];
+      if (request.method === "GET" && ["/__test/organization-member-addition/state", "/__test/social-provider/state"].includes(url.pathname)) {
+        try {
+          const body: unknown = JSON.parse(responseText);
+          controlObservation = { kind: url.pathname.includes("organization-member-addition") ? "member-addition" : "social-provider", body,
+            digest: createHash("sha256").update(JSON.stringify(body)).digest("hex") };
+        } catch { /* Non-JSON control responses cannot authorize dates. */ }
+      }
+      const memberInput = verificationInput as {body?: {organizationId?: unknown; userId?: unknown}} | undefined;
       const entry: TraceEntry = {
         [requestWindow]: {
           startedAt,
           finishedAt: Date.now(),
           inputDates,
+          ...(controlObservation ? {controlObservation} : {}),
+          ...(request.method === "POST" && url.pathname === "/__test/organization-member-addition/server"
+            && typeof memberInput?.body?.organizationId === "string" && typeof memberInput.body.userId === "string"
+            ? {memberAdditionOwner: {organizationId: memberInput.body.organizationId, userId: memberInput.body.userId}} : {}),
           ...(/\/(?:email-otp\/send-verification-otp|sign-in\/(?:magic-link|social)|one-time-token\/generate)$/.test(url.pathname)
             ? { verificationInput: requestText ? verificationInput : null } : {}),
           ...(/\/sign-in\/social$/.test(url.pathname) ? (() => {
@@ -286,7 +302,7 @@ export function createTracingFetch(
       nextHeaders.delete("cookie");
       if (next.origin !== url.origin) nextHeaders.delete("authorization");
       const becomesGet =
-        response.status === 303 ||
+        (response.status === 303 && !["GET", "HEAD"].includes(request.method)) ||
         ([301, 302].includes(response.status) && request.method === "POST");
       if (becomesGet) nextHeaders.delete("content-type");
       request = new Request(next, {

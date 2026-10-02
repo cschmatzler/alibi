@@ -5,13 +5,8 @@
 )]
 #![allow(
     clippy::expect_used,
-    clippy::indexing_slicing,
     reason = "architecture guard tests intentionally fail fast on fixture traversal and string-scan assumptions"
 )]
-
-#[cfg(test)]
-#[path = "architecture_guard_tests/tests.rs"]
-mod tests;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,55 +30,79 @@ fn collect_files(root: &Path, files: &mut Vec<PathBuf>) {
     }
 }
 
-fn collect_rust_files(root: &Path, files: &mut Vec<PathBuf>) {
-    for entry in fs::read_dir(root).expect("directory should be readable") {
-        let entry = entry.expect("directory entry should be readable");
-        let path = entry.path();
-        if path.is_dir() {
-            if is_skipped_directory(&path) {
-                continue;
-            }
-            collect_rust_files(&path, files);
-            continue;
-        }
-
-        if path.extension().and_then(std::ffi::OsStr::to_str) == Some("rs") {
-            files.push(path);
-        }
-    }
-}
-
-fn is_behavior_marker_exempt(path: &Path) -> bool {
-    let text = path.to_string_lossy();
-    text.ends_with("tests/architecture_guard_tests.rs")
-        || text.contains("/tests/architecture_guard_tests/")
-        || text.ends_with("tests/client_compat_tests.rs")
-        || text.contains("/tests/client_compat_tests/")
-        || text.contains("/tests/compat")
-        || text.contains("/tests/compat/")
-        || text.ends_with("tests/compatibility_tests.rs")
-        || text.contains("/tests/compatibility_tests/")
-}
-
-fn requires_strict_behavior_markers(path: &Path) -> bool {
-    let text = path.to_string_lossy();
-    text.ends_with("tests/integration_tests.rs")
-        || text.contains("/tests/integration_tests/")
-        || text.ends_with("tests/axum_integration_tests.rs")
-        || text.contains("/tests/axum_integration_tests/")
-        || text.contains("/crates/api/src/plugins/email_password/")
-        || text.ends_with("tests/account_oauth_tests.rs")
-        || text.contains("/tests/account_oauth_tests/")
-}
-
-fn has_test_attribute(line: &str) -> bool {
-    matches!(line.trim(), "#[test]" | "#[tokio::test]")
-}
-
 /// Vendored and generated trees are not repository sources.
 fn is_skipped_directory(path: &Path) -> bool {
     matches!(
         path.file_name().and_then(std::ffi::OsStr::to_str),
         Some("target" | "node_modules" | "artifacts" | ".devenv")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_persistence_symbols_are_gone_from_tracked_sources() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let guard_file = root.join(file!());
+        let banned = [
+            "DatabaseAdapter",
+            "AuthDatabase",
+            "UserOps",
+            "SessionOps",
+            "AccountOps",
+            "VerificationOps",
+            "OrganizationOps",
+            "MemberOps",
+            "InvitationOps",
+            "TwoFactorOps",
+            "ApiKeyOps",
+            "PasskeyOps",
+        ];
+        let mut files = Vec::new();
+
+        for relative in ["crates", "src", "tests"] {
+            collect_files(&root.join(relative), &mut files);
+        }
+
+        let mut violations = Vec::new();
+        for path in files {
+            if path == guard_file {
+                continue;
+            }
+            let content = fs::read_to_string(&path).expect("source file should be readable");
+            for symbol in &banned {
+                if content.contains(symbol) {
+                    violations.push(format!("{} -> {}", path.display(), symbol));
+                }
+            }
+        }
+
+        assert!(
+            violations.is_empty(),
+            "legacy persistence symbols remain:\n{}",
+            violations.join("\n")
+        );
+    }
+
+    #[test]
+    fn readme_must_not_use_hidden_auth_apis() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let readme = fs::read_to_string(root.join("README.md")).expect("README should be readable");
+
+        let banned_fragments = [
+            "__private",
+            "__private_core",
+            "__private_test_support",
+            "better_auth::run_migrations",
+        ];
+
+        for fragment in &banned_fragments {
+            assert!(
+                !readme.contains(fragment),
+                "README must not use hidden auth APIs: {fragment}",
+            );
+        }
+    }
 }

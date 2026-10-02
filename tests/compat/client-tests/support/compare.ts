@@ -59,6 +59,39 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   const reverseIdentities = new Map<string, string>();
   const fail = (path: string, reason: string) => { differences.push({ path, reason }); };
   const normalizedLeft=normalizeClientValue(left),normalizedRight=normalizeClientValue(right);
+  // Decoded payload copies cannot authorize their own generated identities.
+  // Keep independently observed user/session fields available for default JWTs.
+  const payloads: Record<string, unknown>[] = [];
+  function collectPayloads(value: unknown) {
+    if (typeof value === "string") {
+      const token = jwt(value);
+      if (token) payloads.push(token.payload);
+    } else if (Array.isArray(value)) value.forEach(collectPayloads);
+    else if (record(value)) Object.values(value).forEach(collectPayloads);
+  }
+  collectPayloads(normalizedLeft);
+  collectPayloads(normalizedRight);
+  const claimObject = (value: Record<string, unknown>) =>
+    (typeof value.exp === "number" && ("iss" in value || "aud" in value || "sub" in value))
+    || payloads.some(payload => samePublication(payload, value));
+  const applicationField = (key: string) => ["metadata", "custom", "additionalFields", "applicationData"].includes(key);
+  const claimNamespace = (key: string) => entityKeys.has(key) ? "entity"
+    : key === "sessionToken" ? "token" : opaqueAliases[key] ?? key;
+  const claimEvidence = new Set<string>();
+  const claimPair = (key: string, a: string, b: string) => JSON.stringify([claimNamespace(key), a, b]);
+  function collectClaimEvidence(a: unknown, b: unknown) {
+    if (Array.isArray(a) && Array.isArray(b)) {
+      a.forEach((child, index) => collectClaimEvidence(child, b[index]));
+    } else if (record(a) && record(b) && !claimObject(a) && !claimObject(b)) {
+      for (const [key, value] of Object.entries(a)) {
+        if (applicationField(key) || ["requestBodyShape", "responseBodyShape", "accountCookie"].includes(key)) continue;
+        const other = b[key];
+        if (typeof value === "string" && typeof other === "string") claimEvidence.add(claimPair(key, value, other));
+        else collectClaimEvidence(value, other);
+      }
+    }
+  }
+  collectClaimEvidence(normalizedLeft, normalizedRight);
   const pairedDates = new Set<string>();
   const invalidLifetimes = new Set<string>();
   const invalidPhysicalDates = new Set<string>();
@@ -106,7 +139,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   const inWindows = (a: number, b: number, left: RequestWindow, right: RequestWindow) => a >= left.startedAt - 5 && a <= left.finishedAt && b >= right.startedAt - 5 && b <= right.finishedAt;
   function collectResponseDates(a: unknown, b: unknown, left: RequestWindow, right: RequestWindow) {
     if (Array.isArray(a) && Array.isArray(b)) { a.forEach((value, index) => collectResponseDates(value, b[index], left, right)); return; }
-    if (!record(a) || !record(b)) return;
+    if (!record(a) || !record(b) || claimObject(a) || claimObject(b)) return;
     const owners = dateOwners(a, b);
     const issuance = typeof a.token === "string" && typeof b.token === "string" ? issuances.get(JSON.stringify([a.token, b.token])) : undefined;
     const issuedSession = issuance && issuance.leftUser === a.userId && issuance.rightUser === b.userId ? issuance : undefined;
@@ -174,6 +207,100 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       }
       collectResponseDates(trace.responseBody, other.responseBody, left, right);
     });
+  }
+
+  const tracePairs = record(normalizedLeft) && record(normalizedRight) && Array.isArray(normalizedLeft.traces) && Array.isArray(normalizedRight.traces)
+    ? normalizedLeft.traces.flatMap((a, index) => {
+      const b = (normalizedRight.traces as unknown[])[index], left = context.leftRequestWindows?.[index], right = context.rightRequestWindows?.[index];
+      if (!record(a) || !record(b) || !left || !right || a.method !== b.method || typeof a.path !== "string" || typeof b.path !== "string" || a.path.split("?")[0] !== b.path.split("?")[0]) return [];
+      return [{a, b, left, right, path: a.path.split("?")[0]!}];
+    }) : [];
+  function controlBody(window: RequestWindow, kind: "member-addition" | "social-provider") {
+    const observation = window.controlObservation;
+    return observation?.kind === kind && record(observation.body)
+      && observation.digest === createHash("sha256").update(JSON.stringify(observation.body)).digest("hex") ? observation.body : undefined;
+  }
+  for (const [index, observer] of tracePairs.entries()) {
+    if (observer.a.method !== "GET" || observer.a.responseStatus !== 200 || observer.b.responseStatus !== 200) continue;
+    const previous = tracePairs.slice(0, index).reverse();
+    if (observer.path === "/__test/organization-member-addition/state") {
+      const a = controlBody(observer.left, "member-addition"), b = controlBody(observer.right, "member-addition");
+      if (!a || !b || !Array.isArray(a.receipts) || !Array.isArray(b.receipts) || !record(a.snapshot) || !record(b.snapshot)
+        || !Array.isArray(a.snapshot.members) || !Array.isArray(b.snapshot.members)) continue;
+      const leftMembers = a.snapshot.members, rightMembers = b.snapshot.members;
+      a.receipts.forEach((receipt, receiptIndex) => {
+        const other = (b.receipts as unknown[])[receiptIndex];
+        if (!record(receipt) || !record(other) || receipt.phase !== "after-add" || other.phase !== "after-add" || !record(receipt.member) || !record(other.member)) return;
+        const am = receipt.member, bm = other.member;
+        const backed = (member: Record<string, unknown>, rows: unknown[], note: Record<string, unknown>) => typeof member.id === "string"
+          && record(note.user) && note.user.id === member.userId && record(note.organization) && note.organization.id === member.organizationId
+          && rows.some(row => record(row) && ["id", "organizationId", "userId", "role"].every(field => row[field] === member[field]));
+        if (!backed(am, leftMembers, receipt) || !backed(bm, rightMembers, other)) return;
+        const producer = previous.find(pair => pair.path === "/__test/organization-member-addition/server" && pair.a.method === "POST"
+          && pair.left.memberAdditionOwner?.organizationId === am.organizationId && pair.right.memberAdditionOwner?.organizationId === bm.organizationId
+          && pair.left.memberAdditionOwner?.userId === am.userId && pair.right.memberAdditionOwner?.userId === bm.userId);
+        if (producer && isDate(am.createdAt) && isDate(bm.createdAt) && inWindows(Date.parse(am.createdAt), Date.parse(bm.createdAt), producer.left, producer.right))
+          approveDate(dateOwners(am, bm), "createdAt", am.createdAt, bm.createdAt);
+      });
+    }
+    if (observer.path === "/__test/social-provider/state" && context.sessionCookieSecret) {
+      const a = controlBody(observer.left, "social-provider"), b = controlBody(observer.right, "social-provider");
+      if (!a || !b || !Array.isArray(a.sessions) || !Array.isArray(b.sessions) || !Array.isArray(a.users) || !Array.isArray(b.users) || !Array.isArray(a.accounts) || !Array.isArray(b.accounts)) continue;
+      for (const producer of previous) {
+        // The local GitLab fixture issues a one-hour provider token and the
+        // default seven-day session. Its actual signed redirect owns these rows.
+        if (!/^\/__test\/profiles\/social-gitlab-(?:issuer|issuer-slashes)\/api\/auth\/callback\/gitlab$/.test(producer.path)
+          || producer.a.method !== "GET" || producer.a.responseStatus !== 302 || producer.b.responseStatus !== 302) continue;
+        const token = (window: RequestWindow) => {
+          const cookie = window.issuedSessionCookie;
+          return cookie && sessionCookieName.test(cookie.slice(0, cookie.indexOf("="))) ? signedCookie(cookie.slice(cookie.indexOf("=") + 1)).token : undefined;
+        };
+        const at = token(producer.left), bt = token(producer.right);
+        if (!at || !bt) continue;
+        const session = (body: Record<string, unknown>, token: string) => (body.sessions as unknown[]).find(row => record(row) && row.token === token);
+        const am = session(a, at), bm = session(b, bt);
+        if (!record(am) || !record(bm) || typeof am.userId !== "string" || typeof bm.userId !== "string") continue;
+        const user = (body: Record<string, unknown>, id: string) => (body.users as unknown[]).find(row => record(row) && row.id === id);
+        const account = (body: Record<string, unknown>, id: string) => (body.accounts as unknown[]).find(row => record(row) && row.userId === id && row.providerId === "gitlab");
+        const au = user(a, am.userId), bu = user(b, bm.userId), aa = account(a, am.userId), ba = account(b, bm.userId);
+        if (!record(au) || !record(bu) || !record(aa) || !record(ba)) continue;
+        collectResponseDates({session: am, user: au, account: aa}, {session: bm, user: bu, account: ba}, producer.left, producer.right);
+        for (const [left, right, field, lifetime] of [[am, bm, "expiresAt", 604800000], [aa, ba, "accessTokenExpiresAt", 3600000]] as const) {
+          if (isDate(left[field]) && isDate(right[field]) && inWindows(Date.parse(left[field]) - lifetime, Date.parse(right[field]) - lifetime, producer.left, producer.right))
+            approveDate(dateOwners(left, right), field, left[field], right[field]);
+        }
+      }
+    }
+  }
+  // API-key middleware constructs a new virtual session on every request. Bind
+  // signed snapshot dates to the signing request, actual key issuance and a
+  // separately returned virtual session with the same owner and lifetime.
+  for (const producer of tracePairs) {
+    if (producer.a.method !== "GET" || !producer.path.endsWith("/api/auth/token") || producer.a.responseStatus !== 200 || producer.b.responseStatus !== 200) continue;
+    const a = record(producer.a.responseBody) && typeof producer.a.responseBody.token === "string" ? jwt(producer.a.responseBody.token)?.payload : undefined;
+    const b = record(producer.b.responseBody) && typeof producer.b.responseBody.token === "string" ? jwt(producer.b.responseBody.token)?.payload : undefined;
+    if (!a || !b || !record(a.snapshot) || !record(b.snapshot) || !record(a.snapshot.session) || !record(b.snapshot.session)) continue;
+    const leftSession = a.snapshot.session, rightSession = b.snapshot.session, base = producer.path.slice(0, -6);
+    const sameOwner = (row: Record<string, unknown>, session: Record<string, unknown>) => row.id === session.id && row.token === session.token && row.userId === session.userId;
+    const issued = tracePairs.some(pair => pair.path === `${base}/api-key/create` && pair.a.method === "POST" && pair.a.responseStatus === 200 && pair.b.responseStatus === 200
+      && record(pair.a.responseBody) && record(pair.b.responseBody)
+      && [pair.a.responseBody, pair.b.responseBody].every((key, index) => {
+        const session = index === 0 ? leftSession : rightSession;
+        return typeof key.id === "string" && typeof key.key === "string" && typeof key.referenceId === "string"
+          && key.id === session.id && key.key === session.token && key.referenceId === session.userId && key.expiresAt === null;
+      }));
+    if (!issued) continue;
+    const independent = tracePairs.find(pair => pair.path === `${base}/get-session` && pair.a.method === "GET" && pair.a.responseStatus === 200 && pair.b.responseStatus === 200
+      && record(pair.a.responseBody) && record(pair.b.responseBody) && record(pair.a.responseBody.session) && record(pair.b.responseBody.session)
+      && sameOwner(pair.a.responseBody.session, leftSession) && sameOwner(pair.b.responseBody.session, rightSession));
+    if (!independent) continue;
+    const leftObserved = (independent.a.responseBody as {session: Record<string, unknown>}).session, rightObserved = (independent.b.responseBody as {session: Record<string, unknown>}).session;
+    if (![leftObserved, rightObserved, leftSession, rightSession].every(row => ["createdAt", "updatedAt", "expiresAt"].every(field => isDate(row[field])))) continue;
+    const lifetime = (row: Record<string, unknown>) => Date.parse(String(row.expiresAt)) - Date.parse(String(row.createdAt));
+    if (Math.abs(lifetime(leftObserved) - lifetime(rightObserved)) > 5 || !approvedDate(dateOwners(leftObserved, rightObserved), "createdAt", String(leftObserved.createdAt), String(rightObserved.createdAt))) continue;
+    const valid = ["createdAt", "updatedAt"].every(field => inWindows(Date.parse(String(leftSession[field])), Date.parse(String(rightSession[field])), producer.left, producer.right))
+      && inWindows(Date.parse(String(leftSession.expiresAt)) - lifetime(leftObserved), Date.parse(String(rightSession.expiresAt)) - lifetime(rightObserved), producer.left, producer.right);
+    if (valid) for (const field of ["createdAt", "updatedAt", "expiresAt"]) approveDate(dateOwners(leftSession, rightSession), field, String(leftSession[field]), String(rightSession[field]));
   }
 
   function observedPhysical(value: Record<string, unknown>, observations: readonly PhysicalObservation[] | undefined, kind: PhysicalObservation["kind"]): boolean {
@@ -285,7 +412,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
 
   function sessions(value:unknown,result=new Map<string,number>()):Map<string,number> {
     if (Array.isArray(value)) for (const child of value) sessions(child,result);
-    else if (record(value)) {
+    else if (record(value) && !claimObject(value)) {
       if (typeof value.token==="string" && typeof value.expiresAt==="string" && Number.isFinite(Date.parse(value.expiresAt))) result.set(value.token,Date.parse(value.expiresAt));
       for (const child of Object.values(value)) sessions(child,result);
     }
@@ -295,9 +422,9 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
 
   function deviceSessions(value: unknown, path = "", result = new Map<string, number>()): Map<string, number> {
     if (Array.isArray(value)) value.forEach((child, index) => deviceSessions(child, path ? `${path}.${index}` : `${index}`, result));
-    else if (record(value) && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path) && !traceShape(path)) {
+    else if (record(value) && !claimObject(value) && !/(?:^|\.)(?:metadata|additionalFields|custom|applicationData)(?:\.|$)/.test(path) && !traceShape(path)) {
       if (typeof value.id === "string" && typeof value.userId === "string" && typeof value.token === "string" && typeof value.expiresAt === "string" && Number.isFinite(Date.parse(value.expiresAt))) result.set(value.token, Date.parse(value.expiresAt));
-      if (!("exp" in value && "iss" in value && "aud" in value)) for (const [key, child] of Object.entries(value)) deviceSessions(child, path ? `${path}.${key}` : key, result);
+      for (const [key, child] of Object.entries(value)) deviceSessions(child, path ? `${path}.${key}` : key, result);
     }
     return result;
   }
@@ -306,7 +433,8 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
 
   function issuedTokens(value: unknown, result = new Set<string>()): Set<string> {
     if (Array.isArray(value)) for (const child of value) issuedTokens(child, result);
-    else if (record(value)) for (const [key, child] of Object.entries(value)) {
+    else if (record(value) && !claimObject(value)) for (const [key, child] of Object.entries(value)) {
+      if (applicationField(key)) continue;
       if ((key === "token" || key === "set-ott") && typeof child === "string") result.add(child);
       issuedTokens(child, result);
     }
@@ -338,7 +466,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
 
   function issuedApiKeys(value: unknown, path = "", result = new Map<string, string>()): Map<string, string> {
     if (Array.isArray(value)) value.forEach((child, index) => issuedApiKeys(child, path ? `${path}.${index}` : `${index}`, result));
-    else if (record(value) && !/(?:^|\.)(?:metadata|additionalFields)(?:\.|$)/.test(path) && !traceShape(path)) {
+    else if (record(value) && !claimObject(value) && !/(?:^|\.)(?:metadata|additionalFields|custom|applicationData)(?:\.|$)/.test(path) && !traceShape(path)) {
       if (apiKeyRow(value) && !sqliteApiKeyReceipt(value) && typeof value.id === "string" && typeof value.key === "string") {
         const previous = result.get(value.id);
         if (previous !== undefined && previous !== value.key) fail(path, "API key changed for a persisted row");
@@ -415,8 +543,8 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
 
   function entityValues(value:unknown,result=new Set<string>()):Set<string> {
     if (Array.isArray(value)) for (const child of value) entityValues(child,result);
-    else if (record(value)) for (const [key,child] of Object.entries(value)) {
-      if (["metadata", "custom", "additionalFields", "applicationData"].includes(key)) continue;
+    else if (record(value) && !claimObject(value)) for (const [key,child] of Object.entries(value)) {
+      if (applicationField(key)) continue;
       if (entityKeys.has(key) && typeof child==="string") result.add(child);
       entityValues(child,result);
     }
@@ -434,7 +562,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     if (Array.isArray(a) && Array.isArray(b)) {
       a.forEach((child, index) => observedSelectors(child, b[index], path ? `${path}.${index}` : `${index}`));
     } else if (record(a) && record(b)) {
-      if ("exp" in a && "iss" in a && "aud" in a) return;
+      if (claimObject(a) || claimObject(b)) return;
       const leftMember = memberReceipt(a), rightMember = memberReceipt(b);
       if (leftMember) leftMemberIds.add(String(a.id));
       if (rightMember) rightMemberIds.add(String(b.id));
@@ -576,7 +704,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     if (Array.isArray(a) && Array.isArray(b)) {
       a.forEach((child,index) => observedCompactHeaders(child,b[index],`${path}.${index}`));
     } else if (record(a) && record(b)) {
-      if ("exp" in a && "iss" in a && "aud" in a) return;
+      if (claimObject(a) || claimObject(b)) return;
       for (const [key,child] of Object.entries(a)) {
         if (key === "compactSessionCache" && record(child) && record(b[key])) {
           const other = b[key];
@@ -725,6 +853,8 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       const pathname = resetToken ? resetToken[1] : url.pathname;
       return {
         origin: oauthBase && url.origin === new URL(oauthBase).origin && url.pathname.startsWith("/oauth/") ? "<oauth-server>" : isOwn ? "<server>" : url.origin,
+        username: url.username,
+        password: url.password,
         pathname,
         ...(resetToken ? { token: decodeURIComponent(resetToken[2] ?? "") } : {}),
         hash: url.hash,
@@ -733,7 +863,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     } catch { return undefined; }
   }
 
-  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false, urlQueryContext: "url" | "query" | undefined = undefined, adminFilterUrl = false, compactCache = false, proxyProviders: readonly [string | undefined, string | undefined] | undefined = undefined, proxyPayload = false, owners: readonly string[] = []) {
+  function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false, urlQueryContext: "url" | "query" | undefined = undefined, adminFilterUrl = false, compactCache = false, proxyProviders: readonly [string | undefined, string | undefined] | undefined = undefined, proxyPayload = false, owners: readonly string[] = [], literalClaims = false) {
     if (!applicationData && !jwtPayload && !traceShape(path)
       && !/(?:^|\.)(?:metadata|custom|additionalFields|applicationData)(?:\.|$)/.test(path)
       && record(a) && record(b)) {
@@ -821,6 +951,11 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
         }
       }
     }
+    if (literalClaims && typeof a === "string" && typeof b === "string"
+      && !claimEvidence.has(claimPair(key, a, b)) && !(isDate(a) && isDate(b) && approvedDate(owners, key, a, b))) {
+      if (a !== b) fail(path, "value or type differs");
+      return;
+    }
     const leftEndpoint = traceEndpoint(normalizedLeft, path), rightEndpoint = traceEndpoint(normalizedRight, path);
     if (leftEndpoint && leftEndpoint === rightEndpoint && typeof a === "string" && typeof b === "string") {
       if (key === "totpURI" && /^traces\.\d+\.responseBody\.totpURI$/.test(path) && /\/two-factor\/(?:enable|get-totp-uri)$/.test(leftEndpoint)) {
@@ -895,7 +1030,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
         if (!leftJwt || !rightJwt) {fail(path,"JWT structure differs");return;}
         identity(a,b,path,"jwt");
         visit(leftJwt.header,rightJwt.header,`${path}.header`,"",false,false,true);
-        visit(leftJwt.payload,rightJwt.payload,`${path}.payload`,"",true);
+        visit(leftJwt.payload,rightJwt.payload,`${path}.payload`,"",true,false,false,false,undefined,false,false,undefined,false,[],true);
         if (leftJwt.signature.length!==rightJwt.signature.length) fail(path,"JWT signature length differs");
         return;
       }
@@ -941,16 +1076,12 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
         const leftLegacy = ap.origin === "<server>" && typeof ap.pathname === "string" && legacyPath.test(ap.pathname);
         const rightLegacy = bp.origin === "<server>" && typeof bp.pathname === "string" && legacyPath.test(bp.pathname);
         const providers = (leftProvider || leftLegacy) && (rightProvider || rightLegacy) ? [leftProvider,rightProvider] as const : undefined;
-        if (providers) {
-          const leftURL = new URL(a,context.leftBaseURL), rightURL = new URL(b,context.rightBaseURL);
-          if (leftURL.username !== rightURL.username || leftURL.password !== rightURL.password) fail(path,"OAuth proxy callback URL credentials differ");
-        }
         visit(ap, bp, path, "", false, false, false, false, "url", observedAdminUrl, false, providers); return;
       }
     }
     if (Array.isArray(a) && Array.isArray(b)) {
       if (a.length !== b.length) fail(path, "array length differs");
-      a.forEach((child, index) => visit(child, b[index], `${path ? `${path}.` : ""}${index}`, key, false, applicationData || jwtPayload, false, false, urlQueryContext, adminFilterUrl, compactCache, proxyProviders, false));
+      a.forEach((child, index) => visit(child, b[index], `${path ? `${path}.` : ""}${index}`, key, false, applicationData || jwtPayload, false, false, urlQueryContext, adminFilterUrl, compactCache, proxyProviders, false, [], literalClaims));
       return;
     }
     if (record(a) && record(b)) {
@@ -1009,6 +1140,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
         && ["id", "expiresAt", "createdAt", "updatedAt"].every(field => Object.hasOwn(a, field) && Object.hasOwn(b, field));
       const jwtClaims=!applicationData && typeof a.exp==="number" && typeof b.exp==="number" && (jwtPayload || ("iss" in a && "iss" in b && "aud" in a && "aud" in b));
       const inApplicationData=applicationData || jwtPayload || jwtClaims || key === "metadata" || key === "additionalFields";
+      const childClaims = literalClaims || (!encryptedClaims && (jwtPayload || jwtClaims || claimObject(a) || claimObject(b)));
       const computedLifetime = !inApplicationData && !traceShape(path) && sessionLifetime(a,b,path);
       const apiKey = !inApplicationData && !traceShape(path) && apiKeyRow(a) && apiKeyRow(b);
       const sqliteApiKey = apiKey && (sqliteApiKeyReceipt(a) || sqliteApiKeyReceipt(b));
@@ -1087,7 +1219,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           // use the existing graph. Arity, order, duplicates and URL fields stay.
           visit(a.filterValue, b.filterValue, childPath, "id", false, false, false, false, "query");
         }
-        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData, false, false, urlQueryContext === "query" || (urlQueryContext === "url" && childKey === "query") ? "query" : undefined, adminFilterUrl, compactCache, proxyProviders, proxyPayload && childKey === "timestamp", dateOwners(a, b));
+        else visit(a[childKey], b[childKey], childPath, childKey === "accountId" && typeof a.providerId === "string" && a.providerId !== "credential" && !("accessToken" in a) && !("refreshToken" in a) ? "providerAccount" : childKey, false, inApplicationData, false, false, urlQueryContext === "query" || (urlQueryContext === "url" && childKey === "query") ? "query" : undefined, adminFilterUrl, compactCache, proxyProviders, proxyPayload && childKey === "timestamp", dateOwners(a, b), childClaims);
       }
       return;
     }

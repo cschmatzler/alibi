@@ -1037,6 +1037,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     let otp_outbox_for_reset = otp_outbox.clone();
     let auth_router = auth.clone().axum_router();
+    let error_page_path = "/__test/profiles/error-page/api/auth";
+    let mut error_page_config = config.clone().base_path(error_page_path);
+    error_page_config.render_error_page = true;
+    let error_page_auth = Arc::new(
+        AuthBuilder::<TestSchema>::new(error_page_config.clone())
+            .store(SeaOrmStore::<TestSchema>::new(
+                error_page_config,
+                reset_database.clone(),
+            ))
+            .rate_limit(RateLimitConfig::new().enabled(false))
+            .build()
+            .await?,
+    );
+    let error_page_router = Router::new().nest(
+        error_page_path,
+        error_page_auth
+            .clone()
+            .axum_router()
+            .with_state(error_page_auth),
+    );
     let jwt_router = jwt_fixture::router(&config, reset_database.clone()).await?;
     let jwt_keyring_router = jwt_keyring_fixture::router(&config, reset_database.clone()).await?;
     let jwt_remote_router = jwt_remote_fixture::router(&config, reset_database.clone()).await?;
@@ -1974,6 +1994,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(deletion_hooks_router)
         .nest("/api/auth", auth_router)
         .with_state(auth)
+        .merge(error_page_router)
         .merge(cloudflare_router)
         .merge(cognito_router)
         .merge(additional_fields_router)

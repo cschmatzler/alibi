@@ -177,6 +177,55 @@ test("mutation detection requires a reached behavioral failure and clean matchin
   expect(classifyMutation(mutation, baseline, suite()).status).toBe(
     "not-reached",
   );
+
+  const sourceMutation: Mutation = {
+    id: "loaded#omit-effect:1:2",
+    kind: "source",
+    source: "loaded",
+    sourceHash: digest("loaded"),
+    start: 1,
+    end: 2,
+    original: "x",
+    replacement: "undefined",
+    operator: "omit-effect",
+    line: 1,
+  };
+  const sourceCandidate = structuredClone(candidate);
+  sourceCandidate.wireReceipts = [];
+  sourceCandidate.outcomes[0]!.coverage.Rust = {
+    ...baseline.outcomes[0]!.coverage.TS!,
+    mutation: sourceMutation.id,
+    mutationHits: 1,
+  };
+  expect(
+    classifyMutation(sourceMutation, baseline, sourceCandidate).status,
+  ).toBe("killed");
+  for (const change of [
+    (value: SuiteResult) => {
+      delete value.outcomes[0]!.coverage.Rust;
+    },
+    (value: SuiteResult) => {
+      value.outcomes[0]!.coverage.Rust!.mutation = "another-mutation";
+    },
+    (value: SuiteResult) => {
+      value.outcomes[0]!.coverage.Rust!.runId = "another-run";
+    },
+    (value: SuiteResult) => {
+      value.outcomes[0]!.coverage.Rust!.inventoryDigest = "older-source";
+    },
+    (value: SuiteResult) => {
+      value.outcomes[0]!.coverage.Rust!.scenario = "unrelated";
+    },
+    (value: SuiteResult) => {
+      value.outcomes[0]!.coverage.Rust!.mutationHits = 0;
+    },
+  ]) {
+    const invalid = structuredClone(sourceCandidate);
+    change(invalid);
+    expect(classifyMutation(sourceMutation, baseline, invalid).status).toBe(
+      "inconclusive",
+    );
+  }
 });
 
 test("coverage reports retain unloaded branches and new upstream obligations, and reject stale acknowledgements", () => {
@@ -192,7 +241,7 @@ test("coverage reports retain unloaded branches and new upstream obligations, an
     version: upstreamPin.version,
     commit: upstreamPin.commit,
     digest: "inventory",
-    sources: [source("loaded"), source("never-imported")],
+    sources: [source("loaded")],
     surfaces: [
       {
         id: "loaded#branch:0:0",
@@ -202,23 +251,28 @@ test("coverage reports retain unloaded branches and new upstream obligations, an
         line: 1,
       },
       {
-        id: "never-imported#branch:0:0",
-        source: "never-imported",
-        kind: "branch",
-        name: "arm 0",
-        line: 1,
-      },
-      {
-        id: "new-option",
-        source: "never-imported",
+        id: "existing-option",
+        source: "loaded",
         kind: "option",
-        name: "NewOptions.revoke",
+        name: "ExistingOptions.revoke",
         line: 1,
       },
     ],
-    coverage: {},
-    mutations: [],
+    mutations: [
+      {
+        id: "loaded#omit-effect:1:2",
+        source: "loaded",
+        sourceHash: digest("loaded"),
+        start: 1,
+        end: 2,
+        original: "x",
+        replacement: "undefined",
+        operator: "omit-effect",
+        line: 1,
+      },
+    ],
   };
+  const sourceMutation = inventory.mutations[0]!;
   const policy = {
     schemaVersion: 1,
     upstreamVersion: upstreamPin.version,
@@ -226,29 +280,82 @@ test("coverage reports retain unloaded branches and new upstream obligations, an
     excludedPackages: [],
     excludedSurfaces: [],
     equivalentMutations: [],
-    contracts: [],
+    contracts: [
+      {
+        id: "revocation",
+        claim: "Revocation removes the persisted session.",
+        upstream: [
+          { source: "loaded", kind: "option", name: "ExistingOptions.revoke" },
+        ],
+        scenarios: ["owner"],
+        mutations: [sourceMutation.id],
+      },
+    ],
   };
   const passing = suite();
-  const report = assuranceReport(
-    inventory,
-    policy,
-    passing,
-    undefined,
-    "parity",
-  );
-  expect(report.status).toBe("incomplete");
-  const controlError = "Missing, stale or failing harness negative controls";
-  expect(report.errors).toContain(controlError);
   const controls = {
     runId: passing.runId,
     harnessDigest: passing.harnessDigest,
     code: 0,
     timedOut: false,
   };
+  const execution = suite();
+  execution.code = 1;
+  execution.outcomes[0] = {
+    name: "owner",
+    status: "failed",
+    phase: "Rust",
+    failure: "comparison",
+    coverage: {
+      Rust: {
+        ...passing.outcomes[0]!.coverage.TS!,
+        mutation: sourceMutation.id,
+        mutationHits: 1,
+      },
+    },
+  };
+  const campaign: Campaign = {
+    schemaVersion: 1,
+    runId: "run",
+    inventoryDigest: "inventory",
+    baseline: suite(),
+    confirmation: suite(),
+    universe: [sourceMutation.id],
+    selected: [sourceMutation.id],
+    results: [
+      {
+        id: sourceMutation.id,
+        kind: "source",
+        status: "killed",
+        killingScenarios: ["owner"],
+        execution,
+      },
+    ],
+    notRun: [],
+    errors: [],
+  };
+  const fresh = () =>
+    structuredClone({ inventory, policy, passing, campaign, controls });
+  const report = (fixture = fresh()) =>
+    assuranceReport(
+      fixture.inventory,
+      fixture.policy,
+      fixture.passing,
+      fixture.campaign,
+      "parity",
+      fixture.controls,
+    );
+  const complete = report();
+  expect(complete.status).toBe("complete-within-declared-scope");
+  expect(complete.errors).toEqual([]);
+  expect(complete.summary.provenContracts).toBe(1);
+  expect(complete.summary.mutationDetections).toBe(1);
+  expect(complete.branches).toEqual({ total: 1, reached: 1, missing: [] });
+
+  const controlError = "Missing, stale or failing harness negative controls";
   expect(
-    assuranceReport(inventory, policy, passing, undefined, "parity", controls)
-      .errors,
-  ).not.toContain(controlError);
+    assuranceReport(inventory, policy, passing, campaign, "parity").errors,
+  ).toContain(controlError);
   for (const invalid of [
     { ...controls, runId: "older-run" },
     { ...controls, harnessDigest: "edited-checker" },
@@ -256,67 +363,83 @@ test("coverage reports retain unloaded branches and new upstream obligations, an
     { ...controls, timedOut: true },
   ]) {
     expect(
-      assuranceReport(inventory, policy, passing, undefined, "parity", invalid)
+      assuranceReport(inventory, policy, passing, campaign, "parity", invalid)
         .errors,
     ).toContain(controlError);
   }
-  expect(report.branches).toEqual({
+
+  const expanded = fresh();
+  expanded.inventory.sources.push(source("never-imported"));
+  expanded.inventory.surfaces.push(
+    {
+      id: "never-imported#branch:0:0",
+      source: "never-imported",
+      kind: "branch",
+      name: "arm 0",
+      line: 1,
+    },
+    {
+      id: "new-option",
+      source: "never-imported",
+      kind: "option",
+      name: "NewOptions.revoke",
+      line: 1,
+    },
+  );
+  const uncovered = report(expanded);
+  expect(uncovered.status).toBe("incomplete");
+  expect(uncovered.branches).toEqual({
     total: 2,
     reached: 1,
     missing: ["never-imported#branch:0:0"],
   });
-  expect(report.unmapped).toEqual(["new-option"]);
-  passing.outcomes[0]!.coverage.TS!.runId = "previous-run";
-  const stale = assuranceReport(
-    inventory,
-    policy,
-    passing,
-    undefined,
-    "parity",
-  );
+  expect(uncovered.unmapped).toEqual(["new-option"]);
+  const staleFixture = fresh();
+  staleFixture.passing.outcomes[0]!.coverage.TS!.runId = "previous-run";
+  const stale = report(staleFixture);
   expect(stale.errors).toContain("owner: mismatched upstream branch evidence");
   expect(stale.summary.reachedBranchArms).toBe(0);
-  passing.outcomes[0]!.status = "failed";
-  expect(
-    assuranceReport(inventory, policy, passing, undefined, "parity").summary
-      .reachedBranchArms,
-  ).toBe(0);
-  const sourceMutation = {
-    id: "never-imported#omit-effect:1:2",
-    source: "never-imported",
-    sourceHash: digest("never-imported"),
-    start: 1,
-    end: 2,
-    original: "x",
-    replacement: "undefined",
-    operator: "omit-effect" as const,
-    line: 1,
-  };
-  const truncated: Campaign = {
-    schemaVersion: 1,
-    runId: "run",
-    inventoryDigest: "inventory",
-    baseline: suite(),
-    confirmation: suite(),
-    universe: [],
-    selected: [],
-    results: [],
-    notRun: [],
-    errors: [],
-  };
-  truncated.baseline.runId = "old-run";
-  truncated.confirmation!.harnessDigest = "old-harness";
-  const omitted = assuranceReport(
-    { ...inventory, mutations: [sourceMutation] },
-    policy,
-    suite(),
-    truncated,
-    "parity",
-  );
-  expect(omitted.errors).toContain(
-    "Mutation campaign did not have matching provenance and clean baseline/confirmation",
-  );
-  expect(omitted.unresolvedMutations).toContain(sourceMutation.id);
+  const failed = fresh();
+  failed.passing.outcomes[0]!.status = "failed";
+  expect(report(failed).summary.reachedBranchArms).toBe(0);
+
+  for (const change of [
+    (value: Campaign) => {
+      value.baseline.runId = "old-run";
+    },
+    (value: Campaign) => {
+      value.confirmation!.harnessDigest = "old-harness";
+    },
+    (value: Campaign) => {
+      value.universe = [];
+    },
+    (value: Campaign) => {
+      value.results[0]!.status = "survived";
+    },
+    (value: Campaign) => {
+      delete value.results[0]!.execution;
+    },
+  ]) {
+    const invalid = fresh();
+    change(invalid.campaign);
+    const rejected = report(invalid);
+    expect(rejected.status).toBe("incomplete");
+    expect(rejected.errors).toContain(
+      "Mutation campaign did not have matching provenance and clean baseline/confirmation",
+    );
+    expect(rejected.unresolvedMutations).toContain(sourceMutation.id);
+    expect(rejected.summary.mutationDetections).toBe(0);
+  }
+
+  const unrun = fresh();
+  unrun.campaign.selected = [];
+  unrun.campaign.results = [];
+  unrun.campaign.notRun = [sourceMutation.id];
+  const incomplete = report(unrun);
+  expect(incomplete.errors).toEqual([]);
+  expect(incomplete.status).toBe("incomplete");
+  expect(incomplete.unresolvedMutations).toEqual([sourceMutation.id]);
+  expect(incomplete.summary.provenContracts).toBe(0);
 });
 
 test("generated logs replay exactly and reduction preserves the failure prerequisites", async () => {

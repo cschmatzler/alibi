@@ -30,7 +30,6 @@ function configuredClient(
     fetchOptions: { customFetchImpl: fetchImpl },
   });
 }
-import { RAW_DIFF_ALLOWLIST } from "./allowlist";
 import { RUST_BASE_URL, TS_BASE_URL, requireHealthy } from "./config";
 import {
   type GitHubEmailRecord,
@@ -343,34 +342,17 @@ function formatDiffs(title: string, differences: Difference[]) {
 
 /** Split comparator output into client-visible and raw-transport drift. Every difference must land in exactly one bucket. */
 export function classifyDifferences(
-  scenarioName: string,
   differences: readonly Difference[],
 ) {
   const clientDiffs = differences.filter(
     (entry) =>
       entry.path === "observation" || entry.path.startsWith("observation."),
   );
-  const rawDiffs = differences
-    .filter(
-      (entry) => entry.path === "traces" || entry.path.startsWith("traces."),
-    )
-    .filter(
-      (entry) =>
-        !RAW_DIFF_ALLOWLIST.some(
-          (allowance) =>
-            allowance.scenario.test(scenarioName) &&
-            allowance.path.test(entry.path),
-        ),
-    );
+  const rawDiffs = differences.filter(
+    (entry) => entry.path === "traces" || entry.path.startsWith("traces."),
+  );
   const unclassified = differences.filter(
-    (entry) =>
-      !clientDiffs.includes(entry) &&
-      !rawDiffs.includes(entry) &&
-      !RAW_DIFF_ALLOWLIST.some(
-        (allowance) =>
-          allowance.scenario.test(scenarioName) &&
-          allowance.path.test(entry.path),
-      ),
+    (entry) => !clientDiffs.includes(entry) && !rawDiffs.includes(entry),
   );
   return { clientDiffs, rawDiffs, unclassified };
 }
@@ -444,10 +426,7 @@ export function compatScenario(
           { observation: rust.observation, traces: rust.traces },
           comparison,
         );
-        const { clientDiffs, rawDiffs, unclassified } = classifyDifferences(
-          scenarioName,
-          differences,
-        );
+        const { clientDiffs, rawDiffs, unclassified } = classifyDifferences(differences);
         outcome.paths = differences.map((difference) => difference.path);
         failure = "comparison";
         if (unclassified.length)

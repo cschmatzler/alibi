@@ -765,7 +765,17 @@ impl<S: AuthSchema> BetterAuth<S> {
                     .get("error")
                     .cloned()
                     .unwrap_or_else(|| "UNKNOWN".to_owned());
-                let error_description = req.query.get("error_description").map(String::as_str);
+                let error_description = req
+                    .query
+                    .get("error_description")
+                    .map(String::as_str)
+                    .filter(|description| !description.is_empty());
+                if !self.config.render_error_page {
+                    return Ok(Some(AuthResponse::new(302).with_header(
+                        "location",
+                        core_paths::error_page_redirect_location(&error_code, error_description),
+                    )));
+                }
                 let html =
                     core_paths::error_page_html_with_description(&error_code, error_description);
                 Ok(Some(

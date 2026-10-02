@@ -3,9 +3,6 @@
 //! This is the **canonical** location for all shared test utilities.
 //! All integration test files should use `use compat::helpers::*;`.
 
-#[cfg(test)]
-mod tests;
-
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::magic_link::MagicLinkConfig;
 use better_auth::plugins::multi_session::MultiSessionPlugin;
@@ -35,17 +32,14 @@ use better_auth::{
     prelude::{AuthRequest, HttpMethod},
 };
 use better_auth_seaorm::{Database, DatabaseConnection, SeaOrmStore};
-use reqwest::Url;
 use serde_json::Value;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, Once, OnceLock};
+use std::sync::{Mutex, OnceLock};
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 type TestAuth = BetterAuth<TestSchema>;
-
-static MOCK_OAUTH_SERVER: Once = Once::new();
 
 const MOCK_OAUTH_BASE_URL: &str = "http://127.0.0.1:3110";
 
@@ -108,38 +102,12 @@ static EMAIL_COUNTER: AtomicU64 = AtomicU64::new(0);
 // TestHarness
 // ---------------------------------------------------------------------------
 
-/// Unified test harness wrapping `BetterAuth` with ergonomic helpers.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// let h = TestHarness::new().await;
-/// let (token, _) = h.signup("alice@test.com", "password123", "Alice").await;
-/// let (status, body) = h.send(h.authed_get("/get-session", &token)).await;
-/// assert_eq!(status, 200);
-/// ```
+/// Minimal authentication application shared by integration tests.
 pub struct TestHarness {
     auth: Arc<TestAuth>,
 }
 
 impl TestHarness {
-    /// Create a harness with **all** plugins enabled (suitable for compat and
-    /// comprehensive integration tests).
-    pub async fn new() -> Self {
-        let auth = create_test_auth().await;
-        Self {
-            auth: Arc::new(auth),
-        }
-    }
-
-    /// Create a harness with configurable test auth behavior.
-    pub async fn with_options(options: TestAuthOptions) -> Self {
-        let auth = create_test_auth_with_options(options).await;
-        Self {
-            auth: Arc::new(auth),
-        }
-    }
-
     /// Create a harness with a **minimal** plugin set matching
     /// `integration_tests.rs` conventions (`EmailPassword`, `SessionManagement`,
     /// `PasswordManagement`, `AccountManagement`, `ApiKey`).
@@ -181,11 +149,6 @@ impl TestHarness {
         }
     }
 
-    /// Wrap an existing `Arc<BetterAuth>` in a harness.
-    pub const fn from_arc(auth: Arc<TestAuth>) -> Self {
-        Self { auth }
-    }
-
     /// Access the inner `BetterAuth` reference.
     pub fn auth(&self) -> &TestAuth {
         &self.auth
@@ -195,195 +158,6 @@ impl TestHarness {
     pub fn into_arc(self) -> Arc<TestAuth> {
         self.auth
     }
-
-    // -------------------------------------------------------------------
-    // Request builders (instance methods delegate to helpers that include
-    // `origin` header for CSRF by default)
-    // -------------------------------------------------------------------
-
-    /// Build a GET request (with `origin` header).
-    #[expect(
-        clippy::unused_self,
-        reason = "Request builders share the fixture instance interface used by compatibility scenarios"
-    )]
-    pub fn get(&self, path: &str) -> AuthRequest {
-        get_request(path)
-    }
-
-    /// Build an authenticated GET request (with `origin` header).
-    #[expect(
-        clippy::unused_self,
-        reason = "Request builders share the fixture instance interface used by compatibility scenarios"
-    )]
-    pub fn authed_get(&self, path: &str, token: &str) -> AuthRequest {
-        get_with_auth(path, token)
-    }
-
-    /// Build a POST request with a JSON body (with `origin` header).
-    #[expect(
-        clippy::unused_self,
-        reason = "Request builders share the fixture instance interface used by compatibility scenarios"
-    )]
-    pub fn post(&self, path: &str, body: Value) -> AuthRequest {
-        post_json(path, body)
-    }
-
-    /// Build an authenticated POST request with a JSON body (with `origin`
-    /// header).
-    #[expect(
-        clippy::unused_self,
-        reason = "Request builders share the fixture instance interface used by compatibility scenarios"
-    )]
-    pub fn authed_post(&self, path: &str, body: Value, token: &str) -> AuthRequest {
-        post_json_with_auth(path, body, token)
-    }
-
-    // -------------------------------------------------------------------
-    // Send
-    // -------------------------------------------------------------------
-
-    /// Send a request and return `(status_code, parsed_json_body)`.
-    pub async fn send(&self, req: AuthRequest) -> (u16, Value) {
-        send_request(&self.auth, req).await
-    }
-
-    // -------------------------------------------------------------------
-    // User lifecycle
-    // -------------------------------------------------------------------
-
-    /// Sign up a new user. Returns `(token, response_json)`.
-    pub async fn signup(&self, email: &str, password: &str, name: &str) -> (String, Value) {
-        let req = self.post(
-            "/sign-up/email",
-            serde_json::json!({ "name": name, "email": email, "password": password }),
-        );
-        let (status, json) = self.send(req).await;
-        assert_eq!(
-            status, 200,
-            "signup should succeed, got status {status}: {json}"
-        );
-        let token = json
-            .get("token")
-            .and_then(|v| v.as_str())
-            .unwrap_or_else(|| panic!("signup response missing token"))
-            .to_owned();
-        (token, json)
-    }
-
-    /// Sign in an existing user. Returns `(token, response_json)`.
-    pub async fn signin(&self, email: &str, password: &str) -> (String, Value) {
-        let req = self.post(
-            "/sign-in/email",
-            serde_json::json!({ "email": email, "password": password }),
-        );
-        let (status, json) = self.send(req).await;
-        assert_eq!(
-            status, 200,
-            "signin should succeed, got status {status}: {json}"
-        );
-        let token = json
-            .get("token")
-            .and_then(|v| v.as_str())
-            .unwrap_or_else(|| panic!("signin response missing token"))
-            .to_owned();
-        (token, json)
-    }
-
-    /// Create a test user with a unique email and return `(user_id, session_token)`.
-    pub async fn create_user_with_session(&self) -> (String, String) {
-        let email = unique_email("harness");
-        let (token, json) = self.signup(&email, "password123", "Test User").await;
-        let user_id = json
-            .get("user")
-            .and_then(|u| u.get("id"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_else(|| panic!("missing user id"))
-            .to_owned();
-        (user_id, token)
-    }
-}
-
-fn ensure_mock_oauth_server() {
-    MOCK_OAUTH_SERVER.call_once(|| {
-        tokio::spawn(async move {
-            use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:3110")
-                .await
-                .expect("mock OAuth server should bind to 127.0.0.1:3110");
-
-            loop {
-                let (mut stream, _) = listener
-                    .accept()
-                    .await
-                    .expect("mock OAuth server should accept connections");
-                tokio::spawn(async move {
-                    let mut buf = vec![0u8; 4096];
-                    let read_len = stream.read(&mut buf).await.unwrap_or(0);
-                    let request = String::from_utf8_lossy(&buf[..read_len]);
-
-                    let response = if request.starts_with("GET /__test/oauth/authorize") {
-                        let path = request
-                            .lines()
-                            .next()
-                            .and_then(|line| line.split_whitespace().nth(1))
-                            .unwrap_or("/");
-                        let url = Url::parse(&format!("{MOCK_OAUTH_BASE_URL}{path}"))
-                            .expect("mock OAuth authorize URL should parse");
-                        let redirect_uri = url
-                            .query_pairs()
-                            .find(|(key, _)| key == "redirect_uri").map_or_else(|| "http://localhost:3000/callback".to_owned(), |(_, value)| value.into_owned());
-                        let state = url
-                            .query_pairs()
-                            .find(|(key, _)| key == "state").map_or_else(|| "missing-state".to_owned(), |(_, value)| value.into_owned());
-                        let location =
-                            format!("{redirect_uri}?code=compat-code&state={state}");
-                        format!(
-                            "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                        )
-                    } else if request.starts_with("POST /__test/oauth/token") {
-                        let body = serde_json::json!({
-                            "access_token": "mock-access-token",
-                            "refresh_token": "mock-refresh-token",
-                            "token_type": "Bearer",
-                            "expires_in": 3600,
-                            "scope": "openid email profile"
-                        })
-                        .to_string();
-                        format!(
-                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                            body.len(),
-                            body
-                        )
-                    } else if request.starts_with("GET /__test/oauth/userinfo") {
-                        let body = serde_json::json!({
-                            "sub": "mock-user-id-123",
-                            "email": "mock@example.com",
-                            "name": "Mock OAuth User",
-                            "email_verified": true
-                        })
-                        .to_string();
-                        format!(
-                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                            body.len(),
-                            body
-                        )
-                    } else {
-                        let body = serde_json::json!({"error": "not found"}).to_string();
-                        format!(
-                            "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                            body.len(),
-                            body
-                        )
-                    };
-
-                    drop(stream.write_all(response.as_bytes()).await);
-                    drop(stream.flush().await);
-                });
-            }
-        });
-    });
-    std::thread::sleep(std::time::Duration::from_millis(25));
 }
 
 fn reset_password_outbox() -> &'static Mutex<std::collections::HashMap<String, String>> {

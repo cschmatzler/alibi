@@ -10,7 +10,7 @@ on `/__health`, which every scenario run verifies before comparing anything.
 
 ## Layout
 
-All tests live under the repository `tests/` directory:
+Integration tests, fixtures and the compatibility harness live under `tests/`:
 
 | Path | Contents |
 | --- | --- |
@@ -22,24 +22,40 @@ All tests live under the repository `tests/` directory:
 | `tests/compat/client-tests/` | Official-client scenarios, the trace comparator, harness negative controls and Chromium checks |
 | `tests/compat/audits/` | Per-capability implementation audits |
 
-Unit tests that need crate-private items stay next to their modules under
-`crates/*/src` as Rust convention requires; fixture files they consume are
-referenced from `tests/fixtures/` with `include_str!`.
+Unit tests live in inline `#[cfg(test)] mod tests { ... }` blocks at the end of
+their owning Rust modules. Integration test files keep their test modules inline
+too, without separate `tests.rs` companions. Shared fixture data stays under
+`tests/fixtures/` and is loaded with `include_str!`.
+
+Keep inline unit modules inside `LCOV_EXCL_START` / `LCOV_EXCL_STOP` comments.
+LCOV uses these exact source boundaries to exclude test bodies from the
+production line-coverage floor; the tests still execute normally.
+
+Keep tests focused on observable behavior and independent contracts. Comparator
+negative controls belong in the harness because they catch false passing results;
+one-off diagnostics of dependency internals and checks of comment wording do not.
 
 ## Full gate
 
 ```bash
 devenv shell -- ./scripts/check.sh
+# The repository package script runs the same gate:
+bun run test
 # Equivalent inside the development shell, and in CI:
 ./scripts/check.sh
 ```
 
 This runs formatting, strict Clippy, all workspace unit/integration tests,
 feature builds, TypeScript type checking, harness negative controls, the
-complete SDK scenario directory, Chromium tests, docs, and LLVM line coverage.
+complete SDK scenario directory, process-environment cases, Chromium tests,
+doctests, docs, and LLVM line coverage.
+The 75% production line-coverage floor retains execution from unit, integration
+and SDK tests while excluding their own source. The filtered LCOV artifact
+reports lines only, because LLVM does not supply function-end ranges in LCOV.
 Rust unit and integration tests run with `cargo nextest run`, including the
-compatibility server and LLVM coverage (`cargo llvm-cov nextest`). Doctests
-are excluded from the test gate.
+compatibility server and LLVM coverage (`cargo llvm-cov nextest`). Executable
+doctests run separately with `cargo test --doc`; illustrative `ignore` examples
+remain excluded.
 Every dual-server comparison runs through the official client against both
 fixture servers on allocated ports started and stopped by the Rust orchestrator;
 there is no in-process shape-only comparison layer with tolerated differences. Default and `axum,seaorm2,redis-cache` configurations are tested;
@@ -48,6 +64,11 @@ The excluded Rust compatibility server is built, formatted, and tested. Its
 SQLite regression verifies that connection maintenance retains migrated tables
 and persisted user identity throughout the fixture lifetime.
 Missing reference dependencies or an unavailable server fail this gate.
+Normal fixture processes explicitly use production mode. The `environment/`
+suite starts fresh pairs for `NODE_ENV=dev`, `development`, `test`, and production
+with `TEST=0`, checking the dependency's process-initialization behavior. Run it
+alone with `tests/compat/client-tests/run-against-both.sh environment` inside the
+development shell.
 
 The shared Rust style supplies nextest, Clippy, rustfmt, and Mr. Boxington.
 The style input is private and requires GitHub SSH access. `scripts/check.sh`
@@ -70,7 +91,7 @@ Outside devenv, run `bunx playwright install --with-deps chromium` in
   and lifetimes must agree within a 1.5-second execution tolerance. Only the
   configured local server origins and known URL entropy are normalized.
 - `tough-cookie` handles expiry, deletion, domains and paths. Cookie security
-  attributes are compared; the raw exception list is empty. Chromium separately
+  attributes are compared without exceptions. Chromium separately
   checks real browser session persistence, HttpOnly behavior and logout.
 - Password scenarios import actual hashes produced by each runtime into both
   fixture stores, then exercise official-client sign-in, Unicode normalization,
@@ -100,9 +121,10 @@ Outside devenv, run `bunx playwright install --with-deps chromium` in
   (`observation…`) or raw transport (`traces…`) drift and fails on anything
   outside those roots, so a comparator helper cannot report a finding under a
   path the gate would discard. `harness/classification.test.ts` reproduces the
-  former API-key-row regression through the real classifier. The allowlist
-  guard tests the comparator's actual trace paths, including cookie scopes,
-  status codes and redirect locations.
+  former API-key-row regression through the real classifier. Every difference
+  fails the scenario; there is no exception filter. Negative controls use the
+  comparator's actual trace paths, including cookie scopes, status codes and
+  redirect locations.
 - `support/profiles.ts` is the runtime registry of configuration profiles. The
   `core/profiles` scenario requests `/ok` under every registered profile on both
   servers, so a profile served by one runtime only, or a typo in a profile name,
@@ -253,9 +275,10 @@ BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo nextest run --test client_compat_tests f
 Review the resulting `capabilities.json` diff, especially removed requirements.
 The full gate clears the update flag and always enforces the committed inventory.
 Reports are written to `client-tests/artifacts/` and `coverage/lcov.info` and
-uploaded by CI. LLVM coverage measures workspace source executed by Rust tests,
-with a 75% line floor. External Bun/browser traffic is tracked by capability
-evidence, not counted in that source coverage percentage.
+uploaded by CI. LLVM coverage measures production Rust source executed by native
+tests and the instrumented SDK fixture, with a 75% line floor. TypeScript source
+and browser behavior are tracked separately through capability evidence and
+their own assertions.
 
 ## Focused checks
 

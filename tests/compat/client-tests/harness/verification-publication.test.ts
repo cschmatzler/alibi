@@ -18,6 +18,16 @@ const secret = "verification-publication-application-secret32";
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const profile = (mode: "cache" | "mixed") => `/__test/profiles/verification-storage-${mode}-default/api/auth`;
 
+// For semantic controls, represent an observer that actually returned the
+// invalid record. Its integrity receipt stays valid, so the claimed admission
+// rule must detect the change rather than the unrelated tamper guard.
+function observedMutation(context: ComparisonContext, root: Row): ComparisonContext {
+  const index = root.traces.findIndex((trace: Row) => trace.path === verificationPublicationObserver);
+  const digest = createHash("sha256").update(JSON.stringify(root.traces[index].responseBody)).digest("hex");
+  return { ...context, rightRequestWindows: context.rightRequestWindows!.map((window, i) =>
+    i === index ? { ...window!, verificationObserverDigest: digest } : window) };
+}
+
 async function source(mode: "cache" | "mixed", generators: {otp: string; magic: string; transfer: string}, extraEvidence = false, oauthEmail?: string) {
   const db = new Database(":memory:"), frames = new AsyncLocalStorage<Row>();
   const publications: Row[] = [], deliveries: Row[] = [], backendEvents: Row[] = [];
@@ -135,10 +145,7 @@ async function run(mode: "cache" | "mixed", generators: {otp: string; magic: str
     const body = await observer.json() as Row;
     expect(body.publications).toHaveLength(4);
     const complete = await (await fetch(`${instance.baseURL}/__test/verification-publication-backend`)).json() as Row;
-    // Retain every backend key, raw serialized value, actual cache deadline, and
-    // physical row outside the comparer as well as in the complete trace.
-    const artifact = `/tmp/issue302-source-${mode}-${instance.server.port}-${Date.now()}.json`;
-    await Bun.write(artifact, JSON.stringify({body, before, complete, traces: instance.traces, windows: instance.traces.map(t => t[requestWindow])}, null, 2));
+    // Check complete backend values independently of the cross-runtime comparer.
     for (const publication of body.publications) {
       expect(publication.set.rawValue).toBe(JSON.stringify(publication.snapshot));
       expect(publication.set.value).toEqual(publication.snapshot);
@@ -159,7 +166,7 @@ async function run(mode: "cache" | "mixed", generators: {otp: string; magic: str
     }
     for (const entry of before.backend.cache) expect(complete.backend.cache.find((r: Row) => r.key === entry.key)).toEqual(entry);
     for (const account of complete.backend.accounts) expect(await verifyPassword({password: "password123", hash: account.password})).toBe(true);
-    return {root: normalizeClientValue({observation: {foreign, signup, otp, magic, transfer, verificationPublications: body.publications, aliases: body.publications.map((p: Row) => p.set)}, traces: instance.traces}), traces: instance.traces, startedAt, finishedAt: Date.now(), baseURL: instance.baseURL, artifact};
+    return {root: normalizeClientValue({observation: {foreign, signup, otp, magic, transfer, verificationPublications: body.publications, aliases: body.publications.map((p: Row) => p.set)}, traces: instance.traces}), traces: instance.traces, startedAt, finishedAt: Date.now(), baseURL: instance.baseURL};
   } finally {instance.server.stop(true); instance.db.close();}
 }
 
@@ -214,8 +221,7 @@ for (const mode of ["cache", "mixed"] as const) test(`actual Source ${mode} defa
   // Even internally self-consistent forged observer records fail their actual
   // request/deadline floor rather than receiving a general one-second tolerance.
   for (const change of [
-    (p: Row) => { p.set.ttl -= 2; },
-    (p: Row) => { p.before.executedAt = p.request.startedAt; p.set.ttl = Math.floor((Date.parse(p.snapshot.expiresAt) - Date.parse(p.before.executedAt)) / 1000); p.set.storageExpiresAt = new Date(Date.parse(p.set.storedAt) + p.set.ttl * 1000).toISOString(); p.applicationReceipt = "consistently changed hook interval"; },
+    (p: Row) => { p.set.ttl -= 2; p.set.storageExpiresAt = new Date(Date.parse(p.set.storedAt) + p.set.ttl * 1000).toISOString(); },
     (p: Row) => { p.set.storageExpiresAt = new Date(Date.parse(p.set.storageExpiresAt) + 1000).toISOString(); },
     (p: Row) => { p.before.executedAt = new Date(Date.parse(p.request.startedAt) - 1).toISOString(); },
     (p: Row) => { delete p.before.executedAt; },
@@ -227,12 +233,13 @@ for (const mode of ["cache", "mixed"] as const) test(`actual Source ${mode} defa
     const bad = clone(original), p = bad.observation.verificationPublications[0]; change(p);
     const observer = bad.traces.find((t: Row) => t.path === verificationPublicationObserver);
     observer.responseBody.publications[0] = clone(p);
-    expect(compareValues(a.root, bad, context).some(d => d.path === owning)).toBe(true);
+    bad.observation.aliases[0] = clone(p.set);
+    expect(compareValues(a.root, bad, observedMutation(context, bad)).some(d => d.path === owning)).toBe(true);
   }
   const foreign = clone(original);
   foreign.observation.verificationPublications[0] = clone(original.observation.verificationPublications[3]);
   foreign.traces.find((t: Row) => t.path === verificationPublicationObserver).responseBody.publications[0] = clone(foreign.observation.verificationPublications[0]);
-  expect(compareValues(a.root, foreign, context).some(d => d.path === owning)).toBe(true);
+  expect(compareValues(a.root, foreign, observedMutation(context, foreign)).some(d => d.path === owning)).toBe(true);
   for (const key of ["metadata", "applicationData", "additionalFields", "custom"]) {
     const left = {...a.root as Row, [key]: {ttl: 300}}, right = {...original, [key]: {ttl: 299}};
     expect(compareValues(left, right, context).some(d => d.path === `${key}.ttl`)).toBe(true);
@@ -301,9 +308,7 @@ async function runOAuth(mode: "cache" | "mixed", email: string, authorizationCod
     for (const account of complete.backend.accounts.filter((entry: Row) => entry.providerId === "credential")) expect(await verifyPassword({password: "password123", hash: account.password})).toBe(true);
     const root = normalizeClientValue({observation: {foreign, signup, oauth, foreignOauth, completed: {status: completed.status}, verificationPublications: body.publications, aliases: body.publications.map((publication: Row) => publication.set)}, traces: instance.traces});
     const finishedAt = Date.now(), windows = instance.traces.map(trace => trace[requestWindow]);
-    const artifact = `/tmp/issue302-oauth600-source-${mode}-${instance.server.port}-${finishedAt}.json`;
-    await Bun.write(artifact, JSON.stringify({root, windows, startedAt, finishedAt, baseURL: instance.baseURL, before, issued, complete}, null, 2));
-    return {root, windows, startedAt, finishedAt, baseURL: instance.baseURL, artifact};
+    return {root, windows, startedAt, finishedAt, baseURL: instance.baseURL};
   } finally {instance.server.stop(true); instance.db.close();}
 }
 
@@ -313,15 +318,13 @@ for (const mode of ["cache", "mixed"] as const) test(`actual Source ${mode} defa
   const a = await runOAuth(mode, email, authorizationCode), b = await runOAuth(mode, email, authorizationCode);
   const context: ComparisonContext = {leftBaseURL: a.baseURL, rightBaseURL: b.baseURL, leftStartedAt: a.startedAt, rightStartedAt: b.startedAt,
     leftFinishedAt: a.finishedAt, rightFinishedAt: b.finishedAt, sessionCookieSecret: secret, leftRequestWindows: a.windows, rightRequestWindows: b.windows};
-  const pairArtifact = `/tmp/issue302-oauth600-pair-${mode}-${Date.now()}.json`;
-  await Bun.write(pairArtifact, JSON.stringify({leftArtifact: a.artifact, rightArtifact: b.artifact, left: a.root, right: b.root, context}, null, 2));
   expect(compareValues(a.root, b.root, context)).toEqual([]);
   const original = b.root as Row, owning = "observation.verificationPublications.0.set.ttl";
   const observerIndex = original.traces.findIndex((trace: Row) => trace.path === verificationPublicationObserver);
   const producerIndex = original.traces.findIndex((trace: Row) => trace.path.endsWith("/sign-in/social"));
   for (const change of [
-    (p: Row) => {p.set.ttl += 1;},
-    (p: Row) => {p.set.ttl -= 2;},
+    (p: Row) => {p.set.ttl = Math.floor((Date.parse(p.snapshot.expiresAt) - Date.parse(p.before.executedAt)) / 1000) + 1; p.set.storageExpiresAt = new Date(Date.parse(p.set.storedAt) + p.set.ttl * 1000).toISOString();},
+    (p: Row) => {p.set.ttl -= 2; p.set.storageExpiresAt = new Date(Date.parse(p.set.storedAt) + p.set.ttl * 1000).toISOString();},
     (p: Row) => {p.set.ttl = String(p.set.ttl);},
     (p: Row) => {delete p.before.executedAt;},
     (p: Row) => {p.before.executedAt = new Date(Date.parse(p.request.startedAt) - 1).toISOString();},
@@ -333,7 +336,8 @@ for (const mode of ["cache", "mixed"] as const) test(`actual Source ${mode} defa
   ]) {
     const bad = clone(original), publication = bad.observation.verificationPublications[0]; change(publication);
     bad.traces[observerIndex].responseBody.publications[0] = clone(publication);
-    expect(compareValues(a.root, bad, context).some(difference => difference.path === owning)).toBe(true);
+    bad.observation.aliases[0] = clone(publication.set);
+    expect(compareValues(a.root, bad, observedMutation(context, bad)).some(difference => difference.path === owning)).toBe(true);
   }
   for (const changed of [
     {...context, rightRequestWindows: context.rightRequestWindows!.map((window, index) => index === producerIndex ? {...window!, issuedVerificationStateCookie: undefined} : window)},
@@ -343,7 +347,7 @@ for (const mode of ["cache", "mixed"] as const) test(`actual Source ${mode} defa
   const foreign = clone(original);
   foreign.observation.verificationPublications[0] = clone(original.observation.verificationPublications[1]);
   foreign.traces[observerIndex].responseBody.publications[0] = clone(foreign.observation.verificationPublications[0]);
-  expect(compareValues(a.root, foreign, context).some(difference => difference.path === owning)).toBe(true);
+  expect(compareValues(a.root, foreign, observedMutation(context, foreign)).some(difference => difference.path === owning)).toBe(true);
   const challenge = clone(original), url = new URL(challenge.traces[producerIndex].responseBody.url);
   url.searchParams.set("code_challenge", "x".repeat(43)); challenge.traces[producerIndex].responseBody.url = url.href;
   expect(compareValues(a.root, challenge, context).some(difference => difference.path === owning)).toBe(true);
@@ -368,7 +372,6 @@ test("actual Source independent OTP codes bind complete publications and deliver
   const context: ComparisonContext = {leftBaseURL: a.baseURL, rightBaseURL: b.baseURL, leftStartedAt: a.startedAt, rightStartedAt: b.startedAt, leftFinishedAt: a.finishedAt, rightFinishedAt: b.finishedAt, sessionCookieSecret: secret,
     leftRequestWindows: a.traces.map(t => t[requestWindow]), rightRequestWindows: b.traces.map(t => t[requestWindow])};
   const differences = compareValues(a.root, b.root, context);
-  await Bun.write("/tmp/issue302-independent-otp-pair.json", JSON.stringify({left: a, right: b, context, differences}, null, 2));
   expect(differences).toEqual([]);
   const original = b.root as Row, observerIndex = original.traces.findIndex((t: Row) => t.path === verificationPublicationObserver);
   const owning = "observation.verificationPublications.0.set.ttl";
@@ -382,7 +385,7 @@ test("actual Source independent OTP codes bind complete publications and deliver
     bad.observation.aliases[0] = clone(publication.set);
     bad.traces[observerIndex].responseBody.publications[0] = clone(publication);
     bad.traces[observerIndex].responseBody.deliveries[0] = clone(publication.delivery);
-    expect(compareValues(a.root, bad, context).some(d => d.path === owning)).toBe(true);
+    expect(compareValues(a.root, bad, observedMutation(context, bad)).some(d => d.path === owning)).toBe(true);
   }
   const delivery = clone(original); delivery.traces[observerIndex].responseBody.deliveries[0].otp = changedCode;
   expect(compareValues(a.root, delivery, context).some(d => d.path === `traces.${observerIndex}.responseBody.deliveries.0.otp`)).toBe(true);
