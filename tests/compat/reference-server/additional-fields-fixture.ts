@@ -10,11 +10,18 @@ import { Database } from "bun:sqlite";
 export async function additionalFieldsFixture(base: BetterAuthOptions) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   const mapperReceipts: unknown[] = [];
-  const applications = new Map<string, { database: Database; events: Record<string, unknown>[] }>();
+  const applications = new Map<string, { database: Database; events: Record<string, unknown>[]; releasePending: () => Promise<void>; resetCollection: () => void }>();
   for (const mode of ["normal", "output", "policy", "async-validation", "cached", "plugin", "provider", "issuer"] as const) {
     const transformed = mode === "output" || mode === "cached" || mode === "provider" || mode === "issuer";
     const database = new Database(":memory:");
     const events: Record<string, unknown>[] = [];
+    const gates = () => {
+      const ready = Promise.withResolvers<void>();
+      const pending = Promise.withResolvers<void>();
+      const drained = Promise.withResolvers<void>();
+      return { ready, pending, drained };
+    };
+    let collection = gates();
     const path = `/__test/profiles/${mode === "normal" ? "additional-fields" : `additional-${mode}-fields`}/api/auth`;
     const output = (entity: string, field: string) => async (value: unknown) => {
       events.push({ phase: "output", entity, field, value });
@@ -25,6 +32,17 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
         events.push({ phase: "settled", entity, field, value,
           requestScoped: requestPath === "/change-password",
           ...(requestPath === "/list-sessions" ? { requestPath } : {}) });
+      }
+      if (entity === "session" && field === "label" && value === "collection-coordinated-slow") {
+        await collection.pending.promise;
+        const requestPath = tryGetCurrentAuthEndpointContext()?.path;
+        events.push({ phase: "settled", entity, field, value, requestScoped: requestPath === "/change-password", requestPath });
+      }
+      if (entity === "session" && field === "omitted" && value === "collection-coordinated-slow") collection.drained.resolve();
+      if (entity === "session" && field === "omitted" && value === "collection-ready") collection.ready.resolve();
+      if (entity === "session" && field === "label" && value === "collection-coordinated-reject") {
+        await collection.ready.promise;
+        throw new Error("application output failed");
       }
       if (field === "label" && (value === "throw" || value === "collection-reject")) throw new Error("application output failed");
       return field === "hidden" ? String(value).toUpperCase() : field === "omitted" ? undefined : { stored: value };
@@ -105,11 +123,12 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
     if (mode !== "plugin") database.run("ALTER TABLE app_user ADD COLUMN role TEXT");
     database.run("ALTER TABLE app_user ADD COLUMN private_column TEXT NOT NULL DEFAULT 'physical-private'");
     profiles.set(path, auth);
-    applications.set(mode, { database, events });
+    applications.set(mode, { database, events, releasePending: async () => { collection.pending.resolve(); await collection.drained.promise; }, resetCollection: () => { collection = gates(); } });
   }
   return { profiles, reset() {
     mapperReceipts.length=0;
-    for (const { database, events } of applications.values()) {
+    for (const { database, events, resetCollection } of applications.values()) {
+      resetCollection();
       events.length = 0;
       for (const table of ["app_session", "app_account", "app_verification", "app_user"]) database.run(`DELETE FROM ${table}`);
     }
@@ -120,10 +139,12 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
     if (!application) return Response.json({ message: "Unknown application" }, { status: 404 });
     const { database, events } = application;
     if(url.pathname === "/__test/additional-fields/rewind-session") {
-      const {token,expiresAt,hidden,label}=await request.json() as {token:string;expiresAt:string;hidden?:string;label?:string};
+      const {token,expiresAt,hidden,label,omitted,releaseCollection}=await request.json() as {token:string;expiresAt:string;hidden?:string;label?:string;omitted?:string;releaseCollection?:boolean};
       if(request.method!=="POST" || typeof token!=="string" || !Number.isFinite(new Date(expiresAt).getTime())) return Response.json({message:"Invalid operator input"},{status:400});
+      if(releaseCollection)await application.releasePending();
       database.run("UPDATE app_session SET expiresAt=? WHERE token=?",[new Date(expiresAt).toISOString(),token]);
       if(label!==undefined)database.run("UPDATE app_session SET label=? WHERE token=?",[label,token]);
+      if(omitted!==undefined)database.run("UPDATE app_session SET omitted=? WHERE token=?",[omitted,token]);
       if(hidden!==undefined)database.run("UPDATE app_session SET hidden=? WHERE token=?",[hidden,token]);
     }
     const rows = (table: string) => database.query(`SELECT * FROM ${table}`).all().map(value => {
