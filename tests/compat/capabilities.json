@@ -2134,14 +2134,16 @@
           "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
           "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
           "admin JSON and media rejection precedes authenticated permissions and retains session state",
-          "admin creation validates email only after permission and literal role validation without inserting invalid owners"
+          "admin creation validates email only after permission and literal role validation without inserting invalid owners",
+          "compromised admin create preserves actual pre-hash user creation and set-password keeps configured original hashing"
         ],
         "authorization": [
           "admin create-only grant cannot select explicit or nested roles and retains default creation",
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
-          "admin creation validates email only after permission and literal role validation without inserting invalid owners"
+          "admin creation validates email only after permission and literal role validation without inserting invalid owners",
+          "compromised admin create preserves actual pre-hash user creation and set-password keeps configured original hashing"
         ],
         "state": [
           "admin create validates explicit and nested roles before lookup and persists legitimate array ownership",
@@ -2153,7 +2155,8 @@
           "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
           "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
           "admin JSON and media rejection precedes authenticated permissions and retains session state",
-          "admin creation validates email only after permission and literal role validation without inserting invalid owners"
+          "admin creation validates email only after permission and literal role validation without inserting invalid owners",
+          "compromised admin create preserves actual pre-hash user creation and set-password keeps configured original hashing"
         ]
       }
     },
@@ -2456,7 +2459,10 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "admin create-user, set-role, set-user-password, and remove-user match TS",
+        "success": [
+          "admin create-user, set-role, set-user-password, and remove-user match TS",
+          "compromised admin create preserves actual pre-hash user creation and set-password keeps configured original hashing"
+        ],
         "rejection": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
@@ -2464,7 +2470,8 @@
           "admin missing malformed schemas reject before session cleanup and preserve every owned row",
           "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
           "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
-          "admin JSON and media rejection precedes authenticated permissions and retains session state"
+          "admin JSON and media rejection precedes authenticated permissions and retains session state",
+          "compromised admin create preserves actual pre-hash user creation and set-password keeps configured original hashing"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -2478,7 +2485,8 @@
           "admin missing malformed schemas reject before session cleanup and preserve every owned row",
           "admin tampered malformed schemas reject before session cleanup and preserve every owned row",
           "admin revoked malformed schemas reject before session cleanup and preserve every owned row",
-          "admin JSON and media rejection precedes authenticated permissions and retains session state"
+          "admin JSON and media rejection precedes authenticated permissions and retains session state",
+          "compromised admin create preserves actual pre-hash user creation and set-password keeps configured original hashing"
         ]
       }
     },
@@ -2945,10 +2953,19 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "email OTP password reset and deprecated request alias update credentials and verification",
-        "rejection": "email OTP password reset and deprecated request alias update credentials and verification",
+        "success": [
+          "email OTP password reset and deprecated request alias update credentials and verification",
+          "compromised email-otp reset consumes actual delivered proof before checking and retains foreign credentials"
+        ],
+        "rejection": [
+          "email OTP password reset and deprecated request alias update credentials and verification",
+          "compromised email-otp reset consumes actual delivered proof before checking and retains foreign credentials"
+        ],
         "authorization": null,
-        "state": "email OTP password reset and deprecated request alias update credentials and verification"
+        "state": [
+          "email OTP password reset and deprecated request alias update credentials and verification",
+          "compromised email-otp reset consumes actual delivered proof before checking and retains foreign credentials"
+        ]
       }
     },
     {
@@ -4157,13 +4174,20 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
+        "success": [
+          "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
+          "compromised phone-number reset consumes actual delivered proof before checking and retains foreign credentials"
+        ],
         "rejection": [
           "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
-          "phone endpoint schemas reject every malformed field before any state transition"
+          "phone endpoint schemas reject every malformed field before any state transition",
+          "compromised phone-number reset consumes actual delivered proof before checking and retains foreign credentials"
         ],
         "authorization": null,
-        "state": "phone password reset consumes rejected proofs creates credentials and revokes configured sessions"
+        "state": [
+          "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
+          "compromised phone-number reset consumes actual delivered proof before checking and retains foreign credentials"
+        ]
       }
     },
     {
@@ -4369,11 +4393,18 @@
       "evidence": {
         "success": [
           "request password reset then reset password updates credentials",
-          "request password reset masks nonexistent email"
+          "request password reset masks nonexistent email",
+          "password reset compromised burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
+          "password reset malformed burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
+          "password reset provider-error burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation"
         ],
         "rejection": null,
         "authorization": null,
-        "state": null
+        "state": [
+          "password reset compromised burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
+          "password reset malformed burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
+          "password reset provider-error burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation"
+        ]
       }
     },
     {
@@ -4381,10 +4412,25 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "request password reset then reset password updates credentials",
-        "rejection": "reset password rejects invalid token",
+        "success": [
+          "request password reset then reset password updates credentials",
+          "password reset compromised burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
+          "password reset malformed burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
+          "password reset provider-error burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation"
+        ],
+        "rejection": [
+          "reset password rejects invalid token",
+          "password reset compromised burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
+          "password reset malformed burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
+          "password reset provider-error burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation"
+        ],
         "authorization": null,
-        "state": "request password reset then reset password updates credentials"
+        "state": [
+          "request password reset then reset password updates credentials",
+          "password reset compromised burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
+          "password reset malformed burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
+          "password reset provider-error burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation"
+        ]
       }
     },
     {
@@ -4538,7 +4584,8 @@
           "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
           "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals",
-          "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP"
+          "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP",
+          "compromised custom signin path checks actual missing-user timing hash but stored password verification never checks"
         ],
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -4598,7 +4645,8 @@
           "client IP rightmost untrusted hop persists authoritative session context",
           "client IP empty configured headers persists authoritative session context",
           "client IP zero IPv6 prefix persists authoritative session context",
-          "configured verification delivery protects signup and sign-in delivery defaults and original request receipts"
+          "configured verification delivery protects signup and sign-in delivery defaults and original request receipts",
+          "compromised custom signin path checks actual missing-user timing hash but stored password verification never checks"
         ],
         "authorization": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -4732,7 +4780,8 @@
           "client IP empty configured headers persists authoritative session context",
           "client IP zero IPv6 prefix persists authoritative session context",
           "configured verification delivery protects signup and sign-in delivery defaults and original request receipts",
-          "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP"
+          "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP",
+          "compromised custom signin path checks actual missing-user timing hash but stored password verification never checks"
         ]
       }
     },
@@ -5975,7 +6024,8 @@
           "client IP zero IPv6 prefix persists authoritative session context",
           "client IP disabled tracking disables IP rate limiting selects real HTTP rate buckets",
           "configured verification required protects signup and sign-in delivery defaults and original request receipts",
-          "compact interaction anonymous linking retains the original cached projection while later hooks publish the genuine completed owner"
+          "compact interaction anonymous linking retains the original cached projection while later hooks publish the genuine completed owner",
+          "compromised password signup denies before real hashing and user creation with prefix-only HTTP"
         ],
         "rejection": [
           "sign up with duplicate email returns error",
@@ -5996,7 +6046,8 @@
           "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
-          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
+          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals",
+          "compromised password signup denies before real hashing and user creation with prefix-only HTTP"
         ],
         "authorization": [
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
@@ -6080,7 +6131,8 @@
           "client IP zero IPv6 prefix persists authoritative session context",
           "configured verification default protects signup and sign-in delivery defaults and original request receipts",
           "configured verification required protects signup and sign-in delivery defaults and original request receipts",
-          "compact interaction anonymous linking retains the original cached projection while later hooks publish the genuine completed owner"
+          "compact interaction anonymous linking retains the original cached projection while later hooks publish the genuine completed owner",
+          "compromised password signup denies before real hashing and user creation with prefix-only HTTP"
         ]
       }
     },
