@@ -49,6 +49,28 @@ blocker for declared profile fields and options. Non-null malformed non-boolean
 email_verified values are outside the declared boolean contract and are not
 claimed by the47 owners. The immutable program preserves all4,472 parent cells
 and adds measured Hugging Face cells only from passing real Source/native traces;
-final canonical evidence verification and broad strict/docs/browser/coverage gates
-remain pending. No Source/comparer edit,
+all232 additions verified in the final canonical evidence directory, with no
+lost cells or changed parent ordering.
+
+Immutable program3077a96ed376d9a48d4e20f683178cd579e6d9ce is composed on actual
+mainff2cfec8. The final audit-only commit changes no executable input.
+`devenv shell -- bash scripts/check.sh` exits100 at its full SDK run
+(/tmp/issue146-final-canonical.log): strict default/optional Clippy, Rustls, both
+format checks,794default/845optional native tests, fixture tests, TypeScript and
+71harness tests pass. Full actual SDK passes1,292/1,296owners and83,984assertions,
+including all47 Hugging Face owners. The remaining four failures are the fixed
+membership-policy clock owner and three generated seed12648430snapshot22 guard
+code/message comparisons tracked by #221. The clock failure has exactly four
+observation7 aliases: snapshot.members7.createdAt, response.body.createdAt and
+usersBefore/usersAfter session3.expiresAt. The exact membership aliases reproduce
+on the independently run unchangedFacebook parent for #221; no broad claim is
+made for every other organization timestamp path. Full canonical is not green.
+
+Warning-free docs and both real Chromium browser owners pass,22assertions
+(/tmp/issue146-docs-browser.log,exit0). Clean scoped instrumentation with supported
+MBX_DISABLE=1, fresh isolated coverage targets and unchanged75%floor passes all
+845native and allfive SDK groups (/tmp/issue146-clean-coverage.log,exit0). The
+complete report contains211source records and no duplicate logical workspace
+paths, and measures31,380/40,653native lines (77.189875%). All measured capability
+cells are backed by this program's actual successful Source/native traces. No Source/comparer edit,
 dependency patch or hook bypass is authorized.
