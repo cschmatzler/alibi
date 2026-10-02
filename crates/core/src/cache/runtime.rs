@@ -4,7 +4,7 @@ use crate::types::RequestExtensions;
 use crate::utils::cookie_utils::{related_cookie_name, sign_cookie_value, verify_cookie_value};
 use crate::{AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, AuthSession};
 use indexmap::IndexMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug)]
 struct IssuancePreference(bool);
@@ -79,34 +79,39 @@ pub struct AuthenticatedRead<S: AuthSchema> {
     pub needs_refresh: Option<bool>,
 }
 
-struct EstablishedSession<S: AuthSchema> {
-    read: Option<AuthenticatedRead<S>>,
+struct EstablishedSession<S: AuthSchema>(Option<EstablishedRead<S>>);
+
+struct EstablishedRead<S: AuthSchema> {
+    read: AuthenticatedRead<S>,
     headers: std::collections::HashMap<String, String>,
     virtual_session: Option<crate::SessionView>,
+    config: Arc<crate::AuthConfig>,
+    database: Arc<dyn crate::AuthStore<S>>,
 }
 
 /// Retire the ordinary middleware result before a sensitive physical read.
 pub fn clear_established_session<S: AuthSchema>(request: &AuthRequest) {
-    request.extensions().insert(EstablishedSession::<S> {
-        read: None,
-        headers: std::collections::HashMap::new(),
-        virtual_session: None,
-    });
+    request.extensions().insert(EstablishedSession::<S>(None));
 }
 
 fn establish<S: AuthSchema>(
+    ctx: &AuthContext<S>,
     request: &AuthRequest,
     read: AuthenticatedRead<S>,
 ) -> AuthenticatedRead<S> {
-    request.extensions().insert(EstablishedSession::<S> {
-        read: Some(AuthenticatedRead {
-            user: read.user.clone(),
-            session: read.session.clone(),
-            needs_refresh: read.needs_refresh,
-        }),
-        headers: request.headers.clone(),
-        virtual_session: request.virtual_session().cloned(),
-    });
+    request
+        .extensions()
+        .insert(EstablishedSession::<S>(Some(EstablishedRead {
+            read: AuthenticatedRead {
+                user: read.user.clone(),
+                session: read.session.clone(),
+                needs_refresh: read.needs_refresh,
+            },
+            headers: request.headers.clone(),
+            virtual_session: request.virtual_session().cloned(),
+            config: Arc::clone(&ctx.config),
+            database: Arc::clone(&ctx.database),
+        })));
     read
 }
 
@@ -501,10 +506,13 @@ pub async fn authenticated<S: AuthSchema>(
     direct: bool,
 ) -> AuthResult<Option<AuthenticatedRead<S>>> {
     if let Some(established) = request.extensions().get::<EstablishedSession<S>>()
+        && let Some(established) = &established.0
+        && Arc::ptr_eq(&established.config, &ctx.config)
+        && Arc::ptr_eq(&established.database, &ctx.database)
         && established.headers == request.headers
         && established.virtual_session.as_ref() == request.virtual_session()
-        && let Some(read) = &established.read
     {
+        let read = &established.read;
         return Ok(Some(AuthenticatedRead {
             user: read.user.clone(),
             session: read.session.clone(),
@@ -518,6 +526,7 @@ pub async fn authenticated<S: AuthSchema>(
         };
         request.set_session_hook_snapshot(ctx.user_view(&user), ctx.session_view(session));
         return Ok(Some(establish(
+            ctx,
             request,
             AuthenticatedRead {
                 user: crate::AuthenticatedUser::Stored(user),
@@ -535,6 +544,7 @@ pub async fn authenticated<S: AuthSchema>(
             })));
         request.set_session_hook_snapshot(cache.user.clone(), cache.session.clone());
         return Ok(Some(establish(
+            ctx,
             request,
             AuthenticatedRead {
                 user: crate::AuthenticatedUser::Cached(Box::new(cache.user)),
@@ -604,6 +614,7 @@ pub async fn authenticated<S: AuthSchema>(
         }
     }
     Ok(Some(establish(
+        ctx,
         request,
         AuthenticatedRead {
             user: crate::AuthenticatedUser::Stored(user),

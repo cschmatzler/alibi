@@ -1,6 +1,88 @@
 use super::*;
 
 #[tokio::test]
+async fn successful_cached_reader_does_not_cross_auth_configuration_or_database() {
+    type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    let db = Database::connect("sqlite::memory:").await.unwrap();
+    run_migrations(&db).await.unwrap();
+    let config = AuthConfig::new("cache-owner-instance-secret-at-least-32")
+        .base_url("http://localhost:42594")
+        .session_cookie_cache(CookieCacheConfig {
+            enabled: true,
+            ..Default::default()
+        });
+    let auth = AuthBuilder::<Schema>::new(config.clone())
+        .store(SeaOrmStore::<Schema>::new(config, db))
+        .plugin(EmailPasswordPlugin::new())
+        .plugin(SessionManagementPlugin::new())
+        .build()
+        .await
+        .unwrap();
+    let signup = auth.handle_request(request(
+        HttpMethod::Post,
+        "/api/auth/sign-up/email",
+        Some(json!({"name":"Instance Owner","email":"cache-instance@example.test","password":"password123"})),
+        None,
+    )).await.unwrap();
+    assert_eq!(signup.status, 200);
+    let body: Value = serde_json::from_slice(&signup.body).unwrap();
+    let cookies = signup
+        .headers
+        .get_all("set-cookie")
+        .map(|value| value.split(';').next().unwrap())
+        .collect::<Vec<_>>()
+        .join("; ");
+    assert!(cookies.contains("session_data="));
+    let empty = Database::connect("sqlite::memory:").await.unwrap();
+    run_migrations(&empty).await.unwrap();
+    let empty_store: Arc<dyn better_auth_core::AuthStore<Schema>> =
+        Arc::new(SeaOrmStore::<Schema>::new(auth.config().clone(), empty));
+    let mut wrong_secret = auth.config().clone();
+    wrong_secret.secret = "another-cache-instance-secret-at-least-32".into();
+    let contexts = [
+        better_auth_core::AuthContext::new(Arc::new(wrong_secret), Arc::clone(auth.store())),
+        better_auth_core::AuthContext::new(Arc::clone(&auth.context().config), empty_store),
+    ];
+    let mut denied = Vec::new();
+    for (index, other) in contexts.iter().enumerate() {
+        let mut read = request(
+            HttpMethod::Get,
+            "/api/auth/get-session",
+            None,
+            Some(cookies.clone()),
+        );
+        if index == 1 {
+            drop(
+                read.query
+                    .insert("disableCookieCache".into(), "true".into()),
+            );
+        }
+        let (_, first) = auth.context().require_cached_session(&read).await.unwrap();
+        assert_eq!(first.token, body["token"].as_str().unwrap());
+        let (_, repeated) = auth.context().require_cached_session(&read).await.unwrap();
+        assert_eq!(repeated, first);
+        denied.push(matches!(
+            other.require_cached_session(&read).await,
+            Err(better_auth_core::AuthError::Unauthenticated)
+        ));
+        let (_, retained) = auth.context().require_cached_session(&read).await.unwrap();
+        assert_eq!(retained, first);
+    }
+    assert_eq!(
+        denied,
+        [true, true],
+        "changed secret and changed physical store must reject"
+    );
+    assert!(
+        auth.store()
+            .get_session(body["token"].as_str().unwrap())
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test]
 #[expect(
     clippy::too_many_lines,
     reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"

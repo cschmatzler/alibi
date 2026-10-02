@@ -101,7 +101,21 @@ compatScenario("multiple sessions rotate same-user login and honor configured br
   }
   expect((await client.multiSession.listDeviceSessions()).data).toEqual([]);
   expect((await client.getSession()).data).toBeNull();
-  return {first,second,third,list,active,missingCookie,rotated,state,replay,refreshed,signout,after};
+  const foreignBefore=await ctx.readUserState({userId:third.data.user.id});
+  const invalidSignin=await ctx.actor("invalid-capacity","multi-session-limited").fetch(
+    `${ctx.baseURL}${authProfilePath("multi-session-limited")}/sign-in/email`,
+    {method:"POST",credentials:"omit",headers:{"content-type":"application/json",cookie:"other_multi-invalid=bad; another_multi-invalid=bad"},body:JSON.stringify({email,password:"password123"})});
+  expect(invalidSignin.status).toBe(200);
+  const invalidBody=await invalidSignin.json();
+  const invalidCookies=invalidSignin.headers.getSetCookie();
+  expect(invalidCookies.some(value=>value.includes("_multi-"))).toBeFalse();
+  expect(invalidCookies.some(value=>value.startsWith("better-auth.session_token="))).toBeTrue();
+  const capacityState=stateSchema.parse(await ctx.readUserState({userId:first.data.user.id}));
+  expect(capacityState.sessions).toHaveLength(1);
+  expect(capacityState.sessions[0]?.token).toBe(invalidBody.token);
+  const foreignAfter=await ctx.readUserState({userId:third.data.user.id});
+  expect(foreignAfter).toEqual(foreignBefore);
+  return {first,second,third,list,active,missingCookie,rotated,state,replay,refreshed,signout,after,invalidSignin:{status:invalidSignin.status,body:invalidBody,cookies:invalidCookies},capacityState,foreignBefore,foreignAfter};
 },["POST /sign-in/email"]);
 
 compatScenario("multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",async ctx=>{

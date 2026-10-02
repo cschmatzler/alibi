@@ -73,7 +73,8 @@ configuration with unchanged pre-fix production before repairing owners.
 ## Implemented boundaries and focused proof
 
 Successful ordinary reads are retained only within the genuine dispatch, bound
-to its complete headers and virtual-session snapshot. Changed credentials cause
+to its actual configuration and database instances, complete headers and
+virtual-session snapshot. Changed credentials cause
 a fresh read. Sensitive authoritative reads clear this ordinary result before
 reading physical storage. Public dispatch still scrubs caller extensions; a
 completed cookie-publication snapshot is separate from this authenticated read.
@@ -141,3 +142,40 @@ Retained intended wrong-implementation evidence:
 The broader canonical, strict, docs/browser and clean coverage results will be
 recorded on the final composed immutable head. The 75% floor, production
 exclusions, Source package and shared comparator remain unchanged.
+
+
+## Bounded native test audit and reader isolation
+
+Candidate: `new_session_hook_replaces_same_user_cookie_and_respects_browser_limit`
+(`crates/api/src/plugins/multi_session/tests.rs`, previously line 336). It could
+check direct hook deletion, selector publication and counting invalid names, but
+manufactured a successful response/cookie after direct session creation without
+the completed session publication that the real public dispatch owns. The
+production hook remains called by BetterAuth's completed-response pipeline;
+there is no support seam or production code to delete. History: 38abf5c3 added
+signed multiple sessions, 9e9bfcac added application field policies, f20fb531
+applied strict tooling. The stronger remaining primary is the real SDK owner
+`multiple sessions rotate same-user login and honor configured browser account
+limit`, which retains same-user rotation, replay denial, real SQL rows, foreign
+accounts and sign-out. Its invalid named-cookie capacity control is extended at
+the genuine sign-in HTTP boundary before retiring the obsolete direct-hook unit.
+Risk: accidentally dropping invalid-signature cookie capacity counting; focused
+validation is that SDK owner plus all multiple-session/compact siblings and the
+native matrices. The first immutable canonical run is retained at
+`/tmp/issue221-canonical-first.log`: both strict matrices and optional build
+passed; native stopped with 434 passes/1 obsolete-unit failure (435/794 run,
+33 skipped,359 unrun), terminal exit100.
+
+The public native reader owner
+`successful_cached_reader_does_not_cross_auth_configuration_or_database` protects
+nested trusted application contexts reusing the real request/extensions. It uses
+genuine HTTP signup cookies, first and repeated successful public reads, then
+checks a different secret with the same store and a different SQLite store with
+the same configuration. The store case forces the actual physical lookup; no
+pointer equality is asserted by the test. Existing SDK owners cannot reach this
+native host API boundary. No production-only-for-test seam is added. On unchanged
+bd503 production both second readers wrongly succeeded:
+`/tmp/issue221-context-before.log`, terminal101, denial results `[false,false]`.
+The repaired owner passed `/tmp/issue221-context-after.log`, terminal0. Successful
+reads retain actual configuration/database Arcs and require both instance
+identities before reuse; sensitive clearing still leaves no retained read.
