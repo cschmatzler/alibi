@@ -153,7 +153,7 @@ fn parse_legacy(value: &str) -> Option<i64> {
         return time_clip(date.timestamp_millis());
     }
     let value = value.replace(',', " ");
-    let value = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    let value = normalize_legacy(&value);
     let without_gmt = value.replace("GMT+", "+").replace("GMT-", "-");
     // Chrono needs an explicit offset; literal GMT/UTC format tokens do not
     // supply one. JavaScript accepts these names as zero-offset bounds.
@@ -234,6 +234,55 @@ fn strip_weekday(value: &str) -> &str {
             .trim_start_matches([',', ' ']);
     }
     value
+}
+
+fn normalize_legacy(value: &str) -> String {
+    let months = [
+        ("January", "Jan"),
+        ("February", "Feb"),
+        ("March", "Mar"),
+        ("April", "Apr"),
+        ("May", "May"),
+        ("June", "Jun"),
+        ("July", "Jul"),
+        ("August", "Aug"),
+        ("September", "Sep"),
+        ("October", "Oct"),
+        ("November", "Nov"),
+        ("December", "Dec"),
+    ];
+    let mut parts = value
+        .split_whitespace()
+        .map(|part| {
+            months
+                .iter()
+                .find(|(name, _)| part.eq_ignore_ascii_case(name))
+                .map_or(part, |(_, abbreviation)| *abbreviation)
+        })
+        .collect::<Vec<_>>();
+    // These named North American offsets are accepted by Date.parse. Match a
+    // whole final token so an arbitrary suffix cannot become a valid timezone.
+    let zones = [
+        ("UT", "+0000"),
+        ("UTC", "+0000"),
+        ("GMT", "+0000"),
+        ("EST", "-0500"),
+        ("EDT", "-0400"),
+        ("CST", "-0600"),
+        ("CDT", "-0500"),
+        ("MST", "-0700"),
+        ("MDT", "-0600"),
+        ("PST", "-0800"),
+        ("PDT", "-0700"),
+    ];
+    if let Some(last) = parts.last_mut()
+        && let Some((_, offset)) = zones
+            .iter()
+            .find(|(name, _)| last.eq_ignore_ascii_case(name))
+    {
+        *last = offset;
+    }
+    parts.join(" ")
 }
 
 fn remove_comments(value: &str) -> Option<String> {

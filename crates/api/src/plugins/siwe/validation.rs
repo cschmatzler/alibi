@@ -1,5 +1,5 @@
 use crate::plugins::authentication_helpers::is_valid_email;
-use better_auth_core::{AuthRequest, AuthResponse};
+use better_auth_core::{AuthRequest, AuthResponse, types::ParsedRequestBody};
 use serde_json::{Map, Value, json};
 
 #[derive(Debug)]
@@ -51,10 +51,24 @@ fn body(request: &AuthRequest, optional: bool) -> Result<Map<String, Value>, Aut
             .unwrap_or_else(|_| AuthResponse::text(415, "Unsupported media type")));
         }
     }
+    // Use the transport's decoded value rather than interpreting every admitted
+    // media type as JSON bytes. ArrayBuffer exposes no schema fields. Other
+    // opaque transport bodies are rejected without synthesizing runtime objects.
+    if let Some(decoded) = request.extensions().get::<ParsedRequestBody>()
+        && let ParsedRequestBody::Opaque(kind) = &*decoded
+    {
+        return if *kind == "ArrayBuffer" {
+            Ok(Map::new())
+        } else {
+            Err(error(&format!(
+                "[body] Invalid input: expected object, received {kind}"
+            )))
+        };
+    }
     let parsed = request
         .body
-        .as_deref()
-        .map(serde_json::from_slice::<Value>)
+        .as_ref()
+        .map(|_| request.body_as_json::<Value>())
         .transpose()
         .map_err(|_error| {
             AuthResponse::json(
