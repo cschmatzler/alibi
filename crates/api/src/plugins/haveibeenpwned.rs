@@ -89,9 +89,6 @@ impl PwnedPasswordClient {
             .headers()
             .get(reqwest::header::CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
-            .unwrap_or_default()
-            .split(';')
-            .next()
             .unwrap_or_default();
         // betterFetch reads JSON and text media through its JSON-or-text
         // parser. Other media becomes a blob and cannot supply suffix lines.
@@ -165,20 +162,26 @@ pub async fn is_password_compromised(password: &str) -> AuthResult<bool> {
 }
 
 fn text_response_type(content_type: &str) -> bool {
-    let json = content_type
-        .split_once('/')
-        .filter(|(media, _)| media.eq_ignore_ascii_case("application"))
-        .is_some_and(|(_, subtype)| {
-            subtype.eq_ignore_ascii_case("json")
-                || subtype
-                    .to_ascii_lowercase()
-                    .strip_suffix("+json")
-                    .is_some_and(|prefix| {
-                        prefix.bytes().all(|byte| {
-                            byte.is_ascii_alphanumeric() || b"_!#$%&*.^`~-".contains(&byte)
-                        })
-                    })
+    let (media_type, valid_parameters) = content_type
+        .split_once(';')
+        .map_or((content_type, true), |(media, parameters)| {
+            (media, !parameters.is_empty())
         });
+    let json = valid_parameters
+        && media_type
+            .split_once('/')
+            .filter(|(media, _)| media.eq_ignore_ascii_case("application"))
+            .is_some_and(|(_, subtype)| {
+                subtype.eq_ignore_ascii_case("json")
+                    || subtype
+                        .to_ascii_lowercase()
+                        .strip_suffix("+json")
+                        .is_some_and(|prefix| {
+                            prefix.bytes().all(|byte| {
+                                byte.is_ascii_alphanumeric() || b"_!#$%&*.^`~-".contains(&byte)
+                            })
+                        })
+            });
     content_type.is_empty()
         || json
         || content_type.starts_with("text/")

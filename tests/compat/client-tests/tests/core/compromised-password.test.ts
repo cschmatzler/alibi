@@ -79,6 +79,11 @@ compatScenario("published compromised password helper retains exact first-match 
     ["JSON-unrelated-surrogate",`"${s}:1\\n\\ud800"`,true,200,"application/json"],
     ["JSON-object",'{"matching":"ignored"}',null,200,"application/json"],
     ["JSON-number","1e500",null],["JSON-null","null",null],["binary",`${s}:1`,null,200,"application/octet-stream"],
+    ["JSON-parameters",`${s}:1`,true,200,"application/json;charset=utf-8"],
+    ["JSON-empty-parameters",`${s}:1`,null,200,"application/json;"],
+    ["XML",`${s}:1`,true,200,"application/xml"],
+    ["XML-parameters",`${s}:1`,null,200,"application/xml;charset=utf-8"],
+    ["text-case",`${s}:1`,null,200,"Text/plain"],
     ["provider-status",'{"service":"unavailable"}',null,503,"application/json"],
   ];
   for(const [kind,body,compromised,status=200,media="text/plain"] of cases) {
