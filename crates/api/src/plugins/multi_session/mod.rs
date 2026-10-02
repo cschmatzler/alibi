@@ -148,13 +148,10 @@ impl MultiSessionPlugin {
             .into_iter()
             .map(|(_, token)| token)
             .collect::<Vec<_>>();
-        for session in ctx.database.get_sessions_by_tokens(&tokens).await? {
+        for session in ctx.database.get_sessions_by_tokens_record(&tokens).await? {
             if session.expires_at() > Utc::now()
                 && session.active()
-                && let Some(user) = ctx
-                    .database
-                    .get_user_by_id(session.user_id().as_ref())
-                    .await?
+                && let Some(user) = ctx.session_user(&session).await?
             {
                 sessions.push((session, user));
             }
@@ -200,13 +197,9 @@ impl MultiSessionPlugin {
                     .into_iter()
                     .map(|(_, token_2)| token_2)
                     .collect::<Vec<_>>();
-                for session in ctx.database.get_sessions_by_tokens(&tokens).await? {
+                for session in ctx.database.get_sessions_by_tokens_record(&tokens).await? {
                     if session.expires_at() > Utc::now()
-                        && ctx
-                            .database
-                            .get_user_by_id(session.user_id().as_ref())
-                            .await?
-                            .is_some()
+                        && ctx.session_user(&session).await?.is_some()
                     {
                         next = Some(session);
                         break;
@@ -215,8 +208,7 @@ impl MultiSessionPlugin {
                 match next {
                     Some(session) => {
                         let user = ctx
-                            .database
-                            .get_user_by_id(session.user_id().as_ref())
+                            .session_user(&session)
                             .await?
                             .ok_or(AuthError::UserNotFound)?;
                         let user_view = ctx.user_view(&user);
@@ -242,7 +234,7 @@ impl MultiSessionPlugin {
             }
             return Ok(response);
         }
-        let session = ctx.database.get_session(&token).await?;
+        let session = ctx.database.get_session_record(&token).await?;
         let session = session.filter(|session| session.expires_at() > Utc::now());
         let Some(session) = session else {
             let mut response = invalid_token().to_auth_response();
@@ -252,8 +244,7 @@ impl MultiSessionPlugin {
             return Ok(response);
         };
         let user = ctx
-            .database
-            .get_user_by_id(session.user_id().as_ref())
+            .session_user(&session)
             .await?
             .ok_or_else(invalid_token)?;
         let mut response = AuthResponse::json(
@@ -273,7 +264,7 @@ impl MultiSessionPlugin {
         )
         .await?;
         Self::set_active_cookie(req, ctx, session.token(), &mut response);
-        super::helpers::record_completed_session::<S>(&user, &session);
+        super::helpers::record_completed_session::<S>(&user, session.stored());
         Ok(response)
     }
 }
@@ -360,7 +351,7 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
             if token.is_empty() {
                 continue;
             }
-            if let Some(old) = ctx.database.get_session(token).await?
+            if let Some(old) = ctx.database.get_session_record(token).await?
                 && old.user_id() == user.id()
             {
                 ctx.database.delete_session(token).await?;

@@ -257,12 +257,18 @@ pub enum OAuthStateStrategy {
 }
 
 /// Session-specific configuration
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
 )]
 pub struct SessionConfig {
+    /// Shared secondary session backend. Without one, sessions always use the database.
+    pub secondary_storage: Option<Arc<dyn crate::store::CacheAdapter>>,
+    /// Also persist session rows when a secondary backend is configured.
+    pub store_in_database: bool,
+    /// Retain ended database sessions for auditing; cache misses never fall back to them.
+    pub preserve_in_database: bool,
     /// Additional fields accepted by session input and output policies.
     pub additional_fields: indexmap::IndexMap<String, crate::field_policy::FieldConfig>,
     /// Session expiration duration
@@ -301,6 +307,17 @@ pub struct SessionConfig {
     /// When enabled, session data is cached in a signed/encrypted cookie.
     /// `SessionManager` checks the cookie cache before hitting the database.
     pub cookie_cache: Option<CookieCacheConfig>,
+}
+
+impl std::fmt::Debug for SessionConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionConfig")
+            .field("secondary_storage", &self.secondary_storage.is_some())
+            .field("store_in_database", &self.store_in_database)
+            .field("preserve_in_database", &self.preserve_in_database)
+            .field("expires_in", &self.expires_in)
+            .finish_non_exhaustive()
+    }
 }
 
 /// JWT configuration
@@ -611,6 +628,9 @@ impl Default for AuthConfig {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
+            secondary_storage: None,
+            store_in_database: false,
+            preserve_in_database: false,
             additional_fields: indexmap::IndexMap::default(),
             expires_in: Duration::hours(24 * 7),   // 7 days
             update_age: Some(Duration::hours(24)), // refresh once per day

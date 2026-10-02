@@ -47,7 +47,7 @@ fn resolve_roots() -> (TokenStream, TokenStream) {
 
 fn generate_auth_entity(input: &DeriveInput) -> TokenStream {
     let (seaorm_root, core_root) = resolve_roots();
-    let role = match parse_role(input) {
+    let (role, secondary) = match parse_role(input) {
         Ok(role) => role,
         Err(err) => return err.to_compile_error(),
     };
@@ -115,7 +115,7 @@ fn generate_auth_entity(input: &DeriveInput) -> TokenStream {
             ident,
             &has,
             &optional,
-            fields,
+            (fields, secondary),
             &extra_not_set,
             &seaorm_root,
             &core_root,
@@ -123,7 +123,7 @@ fn generate_auth_entity(input: &DeriveInput) -> TokenStream {
         EntityRole::Session => gen_session(
             ident,
             &has,
-            fields,
+            (fields, secondary),
             &extra_not_set,
             &seaorm_root,
             &core_root,
@@ -143,11 +143,17 @@ fn gen_user(
     ident: &Ident,
     has: &dyn Fn(&str) -> bool,
     optional: &dyn Fn(&str) -> bool,
-    fields: &syn::FieldsNamed,
+    fields: (&syn::FieldsNamed, bool),
     extras: &[TokenStream],
     seaorm_root: &TokenStream,
     core_root: &TokenStream,
 ) -> TokenStream {
+    let (fields, secondary) = fields;
+    let secondary_codec = if secondary {
+        secondary_model_codec(fields, core_root)
+    } else {
+        quote! {}
+    };
     let (additional_output, additional_bindings) =
         match additional_model_fields(EntityRole::User, fields, seaorm_root, core_root) {
             Ok(fields) => fields,
@@ -314,6 +320,7 @@ fn gen_user(
 
     quote! {
         impl #core_root::entity::AuthUser for #ident {
+            #secondary_codec
             #additional_output
             fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
             fn email(&self) -> Option<&str> { self.email.as_deref() }
@@ -640,6 +647,31 @@ fn additional_model_fields(
     Ok((output, bindings))
 }
 
+fn secondary_model_codec(fields: &syn::FieldsNamed, core_root: &TokenStream) -> TokenStream {
+    let names: Vec<_> = fields
+        .named
+        .iter()
+        .filter_map(|field| field.ident.as_ref())
+        .collect();
+    let keys: Vec<_> = names.iter().map(|name| name.to_string()).collect();
+    quote! {
+        fn secondary_snapshot(&self) -> #core_root::AuthResult<::serde_json::Value> {
+            let mut snapshot = ::serde_json::Map::new();
+            #(drop(snapshot.insert(#keys.to_owned(), ::serde_json::to_value(&self.#names)?));)*
+            Ok(::serde_json::Value::Object(snapshot))
+        }
+        fn from_secondary_snapshot(snapshot: ::serde_json::Value) -> #core_root::AuthResult<Self> {
+            let ::serde_json::Value::Object(mut fields) = snapshot else {
+                return Err(#core_root::AuthError::internal("Invalid secondary model snapshot"));
+            };
+            Ok(Self {
+                #(#names: ::serde_json::from_value(fields.remove(#keys).ok_or_else(||
+                    #core_root::AuthError::internal("Incomplete secondary model snapshot"))?)?,)*
+            })
+        }
+    }
+}
+
 fn additional_field_names(field: &syn::Field) -> syn::Result<(String, Ident, Option<String>)> {
     let name = field
         .ident
@@ -696,11 +728,28 @@ fn additional_field_names(field: &syn::Field) -> syn::Result<(String, Ident, Opt
 fn gen_session(
     ident: &Ident,
     has: &dyn Fn(&str) -> bool,
-    fields: &syn::FieldsNamed,
+    fields: (&syn::FieldsNamed, bool),
     extras: &[TokenStream],
     seaorm_root: &TokenStream,
     core_root: &TokenStream,
 ) -> TokenStream {
+    let (fields, secondary) = fields;
+    let secondary_codec = if secondary {
+        secondary_model_codec(fields, core_root)
+    } else {
+        quote! {}
+    };
+    let nullable_defaults: Vec<_> = fields.named.iter().filter_map(|field| {
+        if matches!(&field.ty, Type::Path(path) if path.path.segments.last().is_some_and(|segment| segment.ident == "Option")) {
+            field.ident.as_ref().map(|name| quote! {
+                if active.#name.is_not_set() {
+                    active.#name = #seaorm_root::sea_orm::ActiveValue::Set(None);
+                }
+            })
+        } else {
+            None
+        }
+    }).collect();
     let (additional_output, additional_bindings) =
         match additional_model_fields(EntityRole::Session, fields, seaorm_root, core_root) {
             Ok(fields) => fields,
@@ -768,6 +817,7 @@ fn gen_session(
 
     quote! {
         impl #core_root::entity::AuthSession for #ident {
+            #secondary_codec
             #additional_output
             fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
             fn expires_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.expires_at }
@@ -784,6 +834,11 @@ fn gen_session(
         }
 
         impl #seaorm_root::SeaOrmSessionModel for #ident {
+            fn materialize_secondary(mut active: Self::ActiveModel) -> #core_root::AuthResult<Self> {
+                #(#nullable_defaults)*
+                #seaorm_root::sea_orm::TryIntoModel::try_into_model(active)
+                    .map_err(|error| #core_root::AuthError::internal(error.to_string()))
+            }
             #additional_bindings
             type Id = ::std::string::String;
             type UserId = ::std::string::String;
@@ -1009,8 +1064,9 @@ fn gen_verification(
     }
 }
 
-fn parse_role(input: &DeriveInput) -> Result<EntityRole, syn::Error> {
+fn parse_role(input: &DeriveInput) -> Result<(EntityRole, bool), syn::Error> {
     let mut parsed = None;
+    let mut secondary = false;
     for attr in &input.attrs {
         if !attr.path().is_ident("auth") {
             continue;
@@ -1032,13 +1088,16 @@ fn parse_role(input: &DeriveInput) -> Result<EntityRole, syn::Error> {
                     }
                 });
                 Ok(())
+            } else if meta.path.is_ident("secondary_storage") {
+                secondary = true;
+                Ok(())
             } else {
-                Err(meta.error("expected `role = \"...\"`"))
+                Err(meta.error("expected `role = \"...\"` or `secondary_storage`"))
             }
         })?;
     }
 
-    parsed.ok_or_else(|| {
+    parsed.map(|role| (role, secondary)).ok_or_else(|| {
         syn::Error::new_spanned(
             input,
             "missing #[auth(role = \"...\")] attribute for AuthEntity",

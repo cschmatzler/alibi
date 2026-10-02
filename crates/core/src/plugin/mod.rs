@@ -517,7 +517,8 @@ impl<S: AuthSchema> AuthInitContext<S> {
             .map(|value| (*value).clone())
             .unwrap_or_default();
         let fields = self.extensions.get::<crate::field_policy::SessionFields>();
-        if transforms.creates.is_empty()
+        if self.config.session.secondary_storage.is_none()
+            && transforms.creates.is_empty()
             && transforms.updates.is_empty()
             && session_callbacks.callbacks.is_empty()
             && fields.is_none()
@@ -1138,6 +1139,32 @@ impl<S: AuthSchema> AuthContext<S> {
         }
     }
 
+    /// Resolve the actual owner snapshot belonging to a stored session credential.
+    /// Secondary-backed sessions retain their cached user; combined fallback uses SQL.
+    ///
+    /// # Errors
+    /// Propagates backend failures and rejects mismatched cached ownership.
+    pub async fn session_user(
+        &self,
+        session: &impl crate::AuthSession,
+    ) -> AuthResult<Option<S::User>> {
+        use crate::AuthUser;
+        if let Some(user) = self.database.get_session_user(session.token()).await? {
+            if user.id() != session.user_id() {
+                return Err(AuthError::Unauthenticated);
+            }
+            return Ok(Some(user));
+        }
+        if self.config.session.secondary_storage.is_some()
+            && (!self.config.session.store_in_database || self.config.session.preserve_in_database)
+        {
+            return Ok(None);
+        }
+        self.database
+            .get_user_by_id(session.user_id().as_ref())
+            .await
+    }
+
     async fn authenticated_session(
         &self,
         req: &impl crate::session::SessionRequest,
@@ -1172,12 +1199,11 @@ impl<S: AuthSchema> AuthContext<S> {
             self.queue_session_cleanup(req);
             return Err(AuthError::Unauthenticated);
         };
-        let Some(user) = self
-            .database
-            .get_user_by_id(&session.user_id())
+        let user = self
+            .session_user(&session)
             .await
-            .map_err(|_error| AuthError::Unauthenticated)?
-        else {
+            .map_err(|_error| AuthError::Unauthenticated)?;
+        let Some(user) = user else {
             self.queue_session_cleanup(req);
             return Err(AuthError::Unauthenticated);
         };
@@ -1243,11 +1269,8 @@ impl<S: AuthSchema> AuthContext<S> {
         if !session.active() || session.expires_at() <= chrono::Utc::now() {
             return Ok(None);
         }
-        let Some(user) = self
-            .database
-            .get_user_by_id(session.user_id().as_ref())
-            .await?
-        else {
+        let user = self.session_user(&session).await?;
+        let Some(user) = user else {
             return Ok(None);
         };
         Ok(Some((user, self.session_view(&session))))

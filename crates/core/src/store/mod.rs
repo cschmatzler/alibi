@@ -1,6 +1,7 @@
 pub mod cache;
 
 mod org_extensions;
+mod secondary_sessions;
 
 mod jwks;
 
@@ -195,13 +196,23 @@ impl<S: AuthSchema> PluginStore<S> {
         session: S::Session,
     ) -> AuthResult<crate::AdapterRecord<S::Session>> {
         use crate::AuthSession;
+        let absent = self.secondary_absent_fields(session.token()).await?;
+        let mut public = serde_json::to_value(crate::SessionView::from(&session))?;
+        let mut physical =
+            serde_json::to_value(self.projection_context.trusted_session_view(&session))?;
+        let mut additional = session.additional_fields();
+        for name in absent {
+            if let Some(object) = public.as_object_mut() {
+                drop(object.remove(&name));
+            }
+            if let Some(object) = physical.as_object_mut() {
+                drop(object.remove(&name));
+            }
+            drop(additional.remove(&name));
+        }
         let output = self
             .adapter_fields
-            .record_output(
-                serde_json::to_value(crate::SessionView::from(&session))?,
-                session.additional_fields(),
-                serde_json::to_value(self.projection_context.trusted_session_view(&session))?,
-            )
+            .record_output(public, additional, physical)
             .await?;
         Ok(crate::AdapterRecord::with_output(session, output))
     }
@@ -495,10 +506,17 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
         for transform in &self.transforms.updates {
             update = transform(id, update)?;
         }
-        self.inner.update_user(id, update).await
+        let user = self.inner.update_user(id, update).await?;
+        if self.refresh_cached_user(&user).await.is_err() {
+            tracing::error!("Failed to refresh committed user sessions in secondary storage");
+        }
+        Ok(user)
     }
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
-        self.inner.delete_user(id).await
+        let tokens = self.cached_user_tokens(id).await?;
+        self.inner.delete_user(id).await?;
+        self.remove_cached_user_sessions(id, tokens).await?;
+        Ok(())
     }
     async fn list_users(&self, params: ListUsersParams) -> AuthResult<(Vec<S::User>, usize)> {
         self.inner.list_users(params).await
@@ -507,6 +525,15 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
+    async fn get_session_user_record(
+        &self,
+        token: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+        let Some(user) = self.get_session_user(token).await? else {
+            return Ok(None);
+        };
+        Ok(Some(self.user_record(user).await?))
+    }
     async fn create_session_record(
         &self,
         create_session: CreateSession,
@@ -627,6 +654,9 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         mut fields: crate::field_policy::FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         self.adapter_fields.attach(&mut fields, false);
+        if self.secondary().is_some() {
+            return self.update_secondary_session(token, None, fields).await;
+        }
         self.inner.update_session_fields(token, fields).await
     }
     async fn create_session(&self, mut create_session: CreateSession) -> AuthResult<S::Session> {
@@ -634,19 +664,61 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             .defaults(&mut create_session.additional_fields);
         self.adapter_fields
             .attach(&mut create_session.additional_fields, true);
-        let session = self.inner.create_session(create_session).await?;
+        let session = if self.secondary().is_some() {
+            self.inner
+                .prepare_secondary_session_creation(create_session, self.session_uses_database())
+                .await?
+        } else {
+            self.inner.create_session(create_session).await?
+        };
+        self.mirror_created_session(&session).await?;
+        if self.secondary().is_some() {
+            self.inner
+                .complete_secondary_session_creation(&session)
+                .await?;
+        }
         for callback in &self.session_callbacks.callbacks {
             callback.after_create(&session, self).await?;
         }
         Ok(session)
     }
     async fn get_session(&self, token: &str) -> AuthResult<Option<S::Session>> {
+        if self.secondary().is_some() {
+            if let Some((session, _)) = self.cached_session(token).await? {
+                return Ok(Some(session));
+            }
+            if !self.config.session.store_in_database || self.config.session.preserve_in_database {
+                return Ok(None);
+            }
+            // An absent cache entry allows combined-mode fallback; malformed
+            // present data never silently acquires database authority.
+            if let Some(cache) = self.secondary()
+                && cache.get(token).await?.is_some()
+            {
+                return Ok(None);
+            }
+        }
         self.inner.get_session(token).await
     }
+    async fn get_session_user(&self, token: &str) -> AuthResult<Option<S::User>> {
+        Ok(self.cached_session(token).await?.map(|(_, user)| user))
+    }
     async fn get_sessions_by_tokens(&self, tokens: &[String]) -> AuthResult<Vec<S::Session>> {
+        if self.secondary().is_some() {
+            let mut sessions = Vec::new();
+            for token in tokens {
+                if let Some((session, _)) = self.cached_session(token).await? {
+                    sessions.push(session);
+                }
+            }
+            return Ok(sessions);
+        }
         self.inner.get_sessions_by_tokens(tokens).await
     }
     async fn get_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
+        if self.secondary().is_some() {
+            return self.cached_user_sessions(user_id).await;
+        }
         self.inner.get_user_sessions(user_id).await
     }
     async fn refresh_session(
@@ -668,6 +740,11 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         mut fields: crate::field_policy::FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         self.adapter_fields.attach(&mut fields, false);
+        if self.secondary().is_some() {
+            return self
+                .update_secondary_session(token, Some(expires_at), fields)
+                .await;
+        }
         self.inner
             .refresh_session_with_fields(token, expires_at, fields)
             .await
@@ -677,18 +754,40 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         token: &str,
         expires_at: chrono::DateTime<chrono::Utc>,
     ) -> AuthResult<()> {
-        self.inner.update_session_expiry(token, expires_at).await
+        self.refresh_session(token, expires_at)
+            .await?
+            .map(|_| ())
+            .ok_or(AuthError::SessionNotFound)
     }
     async fn delete_session(&self, token: &str) -> AuthResult<()> {
+        self.remove_cached_session(token).await?;
+        if !self.session_uses_database() {
+            return Ok(());
+        }
+        if self.secondary().is_some() && self.config.session.preserve_in_database {
+            return self.inner.end_session_preserving(token).await;
+        }
         self.inner.delete_session(token).await
     }
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
-        // Source deleteManyWithHooks observes actual adapter outputs before
-        // deletion and ignores lookup/output failures in that observation phase.
         drop(self.get_user_sessions_record(user_id).await);
-        self.inner.delete_user_sessions(user_id).await
+        let tokens = self.cached_user_tokens(user_id).await?;
+        if self.session_uses_database() {
+            if self.secondary().is_some() && self.config.session.preserve_in_database {
+                self.inner.end_user_sessions_preserving(user_id).await?;
+            } else {
+                self.inner.delete_user_sessions(user_id).await?;
+            }
+        }
+        self.remove_cached_user_sessions(user_id, tokens).await
     }
     async fn delete_expired_sessions(&self) -> AuthResult<usize> {
+        if self.secondary().is_some()
+            && (!self.config.session.store_in_database || self.config.session.preserve_in_database)
+        {
+            // Secondary TTLs own liveness; preserved SQL rows are audit history.
+            return Ok(0);
+        }
         self.inner.delete_expired_sessions().await
     }
     async fn update_session_active_organization(
@@ -696,6 +795,19 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         token: &str,
         organization_id: Option<&str>,
     ) -> AuthResult<S::Session> {
+        if self.secondary().is_some() {
+            let mut fields = crate::field_policy::FieldValues::new();
+            drop(fields.insert(
+                "activeOrganizationId".into(),
+                organization_id.map_or(crate::utils::json::JsValue::Null, |value| {
+                    crate::utils::json::JsValue::String(value.to_owned())
+                }),
+            ));
+            return self
+                .update_secondary_session(token, None, fields)
+                .await?
+                .ok_or(AuthError::SessionNotFound);
+        }
         self.inner
             .update_session_active_organization(token, organization_id)
             .await
@@ -705,6 +817,19 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         token: &str,
         team_id: Option<&str>,
     ) -> AuthResult<S::Session> {
+        if self.secondary().is_some() {
+            let mut fields = crate::field_policy::FieldValues::new();
+            drop(fields.insert(
+                "activeTeamId".into(),
+                team_id.map_or(crate::utils::json::JsValue::Null, |value| {
+                    crate::utils::json::JsValue::String(value.to_owned())
+                }),
+            ));
+            return self
+                .update_secondary_session(token, None, fields)
+                .await?
+                .ok_or(AuthError::SessionNotFound);
+        }
         self.inner.update_session_active_team(token, team_id).await
     }
 }
@@ -1407,6 +1532,35 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
             .push(event);
         Ok(())
     }
+    async fn update_secondary_scope(
+        &self,
+        token: &str,
+        mut fields: crate::field_policy::FieldValues,
+    ) -> AuthResult<S::Session> {
+        self.adapter_fields.attach(&mut fields, false);
+        let (session, user) = self
+            .record_store
+            .cached_session(token)
+            .await?
+            .ok_or(AuthError::SessionNotFound)?;
+        let (updated, fields) = self
+            .inner
+            .prepare_secondary_session_update(session, None, fields)
+            .await?
+            .ok_or(AuthError::SessionNotFound)?;
+        self.record_store
+            .mirror_session_fields(&updated, &user, Some(&fields))
+            .await?;
+        self.inner
+            .complete_secondary_session_update(
+                updated,
+                None,
+                fields,
+                self.record_store.session_uses_database(),
+            )
+            .await?
+            .ok_or(AuthError::SessionNotFound)
+    }
 }
 
 #[async_trait]
@@ -1519,6 +1673,19 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         token: &str,
         team_id: Option<&str>,
     ) -> AuthResult<S::Session> {
+        if self.record_store.secondary().is_some()
+            && (!self.record_store.session_uses_database()
+                || self.record_store.cached_session(token).await?.is_some())
+        {
+            let mut fields = crate::field_policy::FieldValues::new();
+            drop(fields.insert(
+                "activeTeamId".into(),
+                team_id.map_or(crate::utils::json::JsValue::Null, |value| {
+                    crate::utils::json::JsValue::String(value.to_owned())
+                }),
+            ));
+            return self.update_secondary_scope(token, fields).await;
+        }
         self.inner.update_session_active_team(token, team_id).await
     }
 
@@ -1527,6 +1694,19 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         token: &str,
         organization_id: Option<&str>,
     ) -> AuthResult<S::Session> {
+        if self.record_store.secondary().is_some()
+            && (!self.record_store.session_uses_database()
+                || self.record_store.cached_session(token).await?.is_some())
+        {
+            let mut fields = crate::field_policy::FieldValues::new();
+            drop(fields.insert(
+                "activeOrganizationId".into(),
+                organization_id.map_or(crate::utils::json::JsValue::Null, |value| {
+                    crate::utils::json::JsValue::String(value.to_owned())
+                }),
+            ));
+            return self.update_secondary_scope(token, fields).await;
+        }
         self.inner
             .update_session_active_organization(token, organization_id)
             .await
@@ -1590,7 +1770,25 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .defaults(&mut create_session.additional_fields);
         self.adapter_fields
             .attach(&mut create_session.additional_fields, true);
-        let session = self.inner.create_session(create_session).await?;
+        let session = if self.record_store.secondary().is_some() {
+            let model = self
+                .inner
+                .prepare_secondary_session_creation(
+                    create_session,
+                    self.record_store.session_uses_database(),
+                )
+                .await?;
+            use crate::AuthSession;
+            let user = self
+                .inner
+                .get_user_by_id(model.user_id().as_ref())
+                .await?
+                .ok_or_else(|| AuthError::internal("Secondary session owner not found"))?;
+            self.record_store.mirror_session(&model, &user).await?;
+            model
+        } else {
+            self.inner.create_session(create_session).await?
+        };
         self.pending_sessions
             .lock()
             .map_err(|_| AuthError::internal("Session callback queue poisoned"))?
@@ -1710,6 +1908,41 @@ pub type TransactionWork<S> =
 
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
+    /// Stage a session using the actual transaction-local model and creation hooks.
+    async fn prepare_secondary_session_creation(
+        &self,
+        _input: CreateSession,
+        _persist: bool,
+    ) -> AuthResult<S::Session> {
+        Err(AuthError::NotImplemented(
+            "Transactional secondary session creation is unsupported".into(),
+        ))
+    }
+
+    /// Stage an update against a trusted cached model using this transaction's hooks.
+    async fn prepare_secondary_session_update(
+        &self,
+        _session: S::Session,
+        _expires_at: Option<chrono::DateTime<chrono::Utc>>,
+        _fields: crate::field_policy::FieldValues,
+    ) -> AuthResult<Option<(S::Session, crate::field_policy::FieldValues)>> {
+        Err(AuthError::NotImplemented(
+            "Transactional secondary session updates are unsupported".into(),
+        ))
+    }
+    /// Persist a staged update on the current connection; after hooks belong to commit.
+    async fn complete_secondary_session_update(
+        &self,
+        _session: S::Session,
+        _expires_at: Option<chrono::DateTime<chrono::Utc>>,
+        _fields: crate::field_policy::FieldValues,
+        _persist: bool,
+    ) -> AuthResult<Option<S::Session>> {
+        Err(AuthError::NotImplemented(
+            "Transactional secondary session updates are unsupported".into(),
+        ))
+    }
+
     /// Return a retained adapter record. The default is the physical model's
     /// serialized snapshot; initialized stores apply their declared output policy.
     async fn create_user_record(
@@ -2078,6 +2311,75 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
 
 #[async_trait]
 pub trait SessionStore<S: AuthSchema>: Send + Sync {
+    /// Stage a secondary session through creation hooks and optional physical persistence.
+    /// The caller publishes the cache before completing its after hooks.
+    async fn prepare_secondary_session_creation(
+        &self,
+        _input: CreateSession,
+        _persist: bool,
+    ) -> AuthResult<S::Session> {
+        Err(AuthError::NotImplemented(
+            "Secondary session creation is unsupported".into(),
+        ))
+    }
+    /// Complete creation hooks after the actual secondary writes succeed.
+    async fn complete_secondary_session_creation(&self, _session: &S::Session) -> AuthResult<()> {
+        Err(AuthError::NotImplemented(
+            "Secondary session creation is unsupported".into(),
+        ))
+    }
+    /// Bind a trusted secondary update once, retaining hook-mutated fields for physical publication.
+    async fn prepare_secondary_session_update(
+        &self,
+        _session: S::Session,
+        _expires_at: Option<chrono::DateTime<chrono::Utc>>,
+        _fields: crate::field_policy::FieldValues,
+    ) -> AuthResult<Option<(S::Session, crate::field_policy::FieldValues)>> {
+        Err(AuthError::NotImplemented(
+            "Secondary session updates are unsupported".into(),
+        ))
+    }
+    /// Publish the staged physical update and run after hooks exactly once.
+    async fn complete_secondary_session_update(
+        &self,
+        _session: S::Session,
+        _expires_at: Option<chrono::DateTime<chrono::Utc>>,
+        _fields: crate::field_policy::FieldValues,
+        _persist: bool,
+    ) -> AuthResult<Option<S::Session>> {
+        Err(AuthError::NotImplemented(
+            "Secondary session updates are unsupported".into(),
+        ))
+    }
+    /// End a still-live physical session without deleting its audit row.
+    async fn end_session_preserving(&self, _token: &str) -> AuthResult<()> {
+        Err(AuthError::NotImplemented(
+            "Preserving ended session rows is unsupported".into(),
+        ))
+    }
+    /// End all live session rows for one owner while retaining audit history.
+    async fn end_user_sessions_preserving(&self, _user_id: &str) -> AuthResult<()> {
+        Err(AuthError::NotImplemented(
+            "Preserving ended session rows is unsupported".into(),
+        ))
+    }
+    /// A typed user snapshot belonging to an authenticated session. The default
+    /// signals that the caller must use its physical user store.
+    async fn get_session_user(&self, _token: &str) -> AuthResult<Option<S::User>> {
+        Ok(None)
+    }
+
+    /// Retain declared adapter output for a secondary-backed session owner.
+    async fn get_session_user_record(
+        &self,
+        token: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+        self.get_session_user(token)
+            .await?
+            .map(crate::AdapterRecord::physical)
+            .transpose()
+    }
+
     /// Return a retained adapter record. The default is the physical model's
     /// serialized snapshot; initialized stores apply their declared output policy.
     async fn create_session_record(

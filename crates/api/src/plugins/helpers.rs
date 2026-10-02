@@ -360,7 +360,6 @@ pub async fn response_session<S: better_auth_core::AuthSchema>(
     ctx: &AuthContext<S>,
     response: &better_auth_core::AuthResponse,
 ) -> AuthResult<Option<IssuedSession<S>>> {
-    use better_auth_core::entity::AuthSession;
     let token = response
         .headers
         .get_all("set-cookie")
@@ -382,11 +381,7 @@ pub async fn response_session<S: better_auth_core::AuthSchema>(
     let Some(session) = ctx.database.get_session(&token).await? else {
         return Ok(None);
     };
-    let Some(user) = ctx
-        .database
-        .get_user_by_id(session.user_id().as_ref())
-        .await?
-    else {
+    let Some(user) = ctx.session_user(&session).await? else {
         return Ok(None);
     };
     Ok(Some(IssuedSession { user, session }))

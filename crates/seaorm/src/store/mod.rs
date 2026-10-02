@@ -167,6 +167,8 @@ enum AfterCreate<S: AuthSchema> {
     User(S::User),
     Account(S::Account),
     Session(S::Session),
+    SessionUpdated(S::Session),
+    SessionUpdateMissing(String),
     Verification(S::Verification),
     VerificationRecord(better_auth_core::verification::VerificationSnapshot),
 }
@@ -289,6 +291,64 @@ where
         Ok(account)
     }
 
+    async fn prepare_secondary_session_update(
+        &self,
+        session: S::Session,
+        expires_at: Option<DateTime<Utc>>,
+        fields: better_auth_core::field_policy::FieldValues,
+    ) -> AuthResult<Option<(S::Session, better_auth_core::field_policy::FieldValues)>> {
+        self.store
+            .prepare_secondary_update_with_connection(
+                self.tx,
+                Some(self.tx),
+                session,
+                expires_at,
+                fields,
+            )
+            .await
+    }
+    async fn complete_secondary_session_update(
+        &self,
+        session: S::Session,
+        expires_at: Option<DateTime<Utc>>,
+        fields: better_auth_core::field_policy::FieldValues,
+        persist: bool,
+    ) -> AuthResult<Option<S::Session>> {
+        use better_auth_core::AuthSession;
+        let token = session.token().to_owned();
+        let result = self
+            .store
+            .complete_secondary_update_with_connection(
+                self.tx,
+                Some(self.tx),
+                session,
+                expires_at,
+                fields,
+                persist,
+            )
+            .await?;
+        let event = result.as_ref().map_or_else(
+            || AfterCreate::SessionUpdateMissing(token),
+            |model| AfterCreate::SessionUpdated(model.clone()),
+        );
+        self.pending_after.lock().await.push(event);
+        Ok(result)
+    }
+    async fn prepare_secondary_session_creation(
+        &self,
+        input: better_auth_core::CreateSession,
+        persist: bool,
+    ) -> AuthResult<S::Session> {
+        let session = self
+            .store
+            .prepare_secondary_session_in_tx(self.tx, input, persist)
+            .await?;
+        self.pending_after
+            .lock()
+            .await
+            .push(AfterCreate::Session(session.clone()));
+        Ok(session)
+    }
     async fn create_session(
         &self,
         create_session: better_auth_core::CreateSession,
@@ -376,6 +436,13 @@ where
                             }
                             AfterCreate::Session(session) => {
                                 hook.after_create_session(session, &hook_context).await?;
+                            }
+                            AfterCreate::SessionUpdated(session) => {
+                                hook.after_update_session(session, &hook_context).await?;
+                            }
+                            AfterCreate::SessionUpdateMissing(token) => {
+                                hook.after_update_session_missing(token, &hook_context)
+                                    .await?;
                             }
                             AfterCreate::VerificationRecord(snapshot) => {
                                 hook.after_create_verification_record(snapshot, &hook_context)

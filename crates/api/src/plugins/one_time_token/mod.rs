@@ -16,7 +16,7 @@ use better_auth_core::utils::cookie_utils::{
 use better_auth_core::wire::{SessionView, UserView};
 use better_auth_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
-    AuthSchema, AuthSession, CreateVerification, HttpMethod,
+    AuthSchema, CreateVerification, HttpMethod,
 };
 use chrono::{Duration, Utc};
 pub use endpoint::OneTimeTokenOutput;
@@ -48,7 +48,10 @@ impl TokenSessionAbsence {
 }
 
 enum TokenSessionLookup<S: AuthSchema> {
-    Found { user: S::User, session: S::Session },
+    Found {
+        user: S::User,
+        session: better_auth_core::AdapterRecord<S::Session>,
+    },
     Missing(TokenSessionAbsence),
 }
 
@@ -226,16 +229,16 @@ impl OneTimeTokenPlugin {
                 TokenSessionAbsence::InvalidToken,
             ));
         };
-        let Some(session) = ctx.database.get_session(verification.value()?).await? else {
+        let Some(session) = ctx
+            .database
+            .get_session_record(verification.value()?)
+            .await?
+        else {
             return Ok(TokenSessionLookup::Missing(
                 TokenSessionAbsence::SessionNotFound,
             ));
         };
-        let Some(user) = ctx
-            .database
-            .get_user_by_id(session.user_id().as_ref())
-            .await?
-        else {
+        let Some(user) = ctx.session_user(&session).await? else {
             return Ok(TokenSessionLookup::Missing(
                 TokenSessionAbsence::SessionNotFound,
             ));
