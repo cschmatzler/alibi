@@ -1,6 +1,8 @@
 import { expect } from "bun:test";
 import { z } from "zod";
 import { compatScenario } from "../../support/scenario";
+import { getCookieCache } from "better-auth/cookies";
+import { createHmac } from "node:crypto";
 import { verifyPassword } from "better-auth/crypto";
 
 async function observedCredential(account: Record<string, unknown>) {
@@ -169,3 +171,64 @@ compatScenario("additional async input validation is invoked and rejected before
   ]);
   return { foreignSignup: ctx.snapshot(foreignSignup), before: await observedState(before.body), signup: ctx.snapshot(signup), update: ctx.snapshot(update), read: ctx.snapshot(read), after: await observedState(after.body) };
 }, ["POST /sign-up/email", "POST /update-user", "GET /get-session"]);
+
+
+compatScenario("additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots", async ctx => {
+  const foreign = ctx.actor("cached-foreign", "additional-cached-fields");
+  const foreignSignup = await foreign.client.signUp.email({ email:ctx.uniqueEmail("cached-foreign"),name:"Cached foreign",password:"Password123!" }); expect(foreignSignup.error).toBeNull();
+  const foreignId = z.object({user:z.object({id:z.string()})}).parse(foreignSignup.data).user.id;
+  const before = await ctx.rawRequest({path:"/__test/additional-fields/state?profile=cached"}); expect(before.status).toBe(200);
+  const owner = ctx.actor("cached-owner", "additional-cached-fields");
+  let issuedCookies: string[] = [];
+  const signup = await owner.client.signUp.email({email:ctx.uniqueEmail("cached-owner"),name:"Cached owner",password:"Password123!",fetchOptions:{onResponse({response}){ issuedCookies=response.headers.getSetCookie(); }}}); expect(signup.error).toBeNull();
+  const userId = z.object({user:z.object({id:z.string()})}).parse(signup.data).user.id;
+  const cacheCookie = issuedCookies.find(cookie=>cookie.startsWith("better-auth.session_data=")); expect(cacheCookie).toBeDefined();
+  const pair = cacheCookie!.split(";")[0]!, token=decodeURIComponent(pair.slice(pair.indexOf("=")+1)),observedAt=Date.now();
+  const envelope = JSON.parse(Buffer.from(token,"base64url").toString());
+  const signature = createHmac("sha256","compat-test-only-key-not-real-minimum-32chars").update(JSON.stringify({...envelope.session,expiresAt:envelope.expiresAt})).digest("base64url");
+  expect(envelope.signature).toBe(signature);
+  const decoded = await getCookieCache(new Headers({cookie:pair}),{secret:"compat-test-only-key-not-real-minimum-32chars",strategy:"compact"}); expect(decoded).not.toBeNull();
+  expect(decoded!.user.id).toBe(userId); expect(decoded!.session.token).toBe(z.string().parse(signup.data!.token));
+  for (const output of [decoded!.user,decoded!.session]) for (const field of ["hidden","omitted","private_column"]) expect(output).not.toHaveProperty(field);
+  const created = await ctx.rawRequest({path:"/__test/additional-fields/state?profile=cached"}); expect(created.status).toBe(200);
+  const createdState=stateSchema.parse(created.body);
+  const completed=createdState.events.findLast(event=>event.phase==="completed"&&event.path==="/sign-up/email");
+  expect(completed).toMatchObject({userOmittedPresent:true,userOmittedUndefined:true,sessionOmittedPresent:true,sessionOmittedUndefined:true,record:{user:{id:userId,label:{stored:"user-initial"},hidden:"USER-SECRET"},session:{label:{stored:"session-initial"},hidden:"SESSION-SECRET"}}});
+  const creationVersion=createdState.events.findLast(event=>event.phase==="version"); expect(creationVersion).toMatchObject({userOmittedPresent:true,sessionOmittedPresent:true,user:{hidden:"USER-SECRET"},session:{hidden:"SESSION-SECRET"}});
+  const cached=await owner.client.getSession(); expect(cached.error).toBeNull();
+  expect(cached.data?.user).toMatchObject({id:userId,label:{stored:"user-initial"}}); expect(cached.data?.session).toMatchObject({label:{stored:"session-initial"}});
+  const cacheRead=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=cached"}); expect(cacheRead.status).toBe(200); const cachedState=stateSchema.parse(cacheRead.body);
+  expect(cachedState.events.filter(event=>event.phase==="output")).toEqual(createdState.events.filter(event=>event.phase==="output"));
+  const cacheVersion=cachedState.events.findLast(event=>event.phase==="version"); expect(cacheVersion).toMatchObject({userOmittedPresent:false,sessionOmittedPresent:false,userOmittedUndefined:true,sessionOmittedUndefined:true});
+  for(const output of [z.record(z.string(),z.unknown()).parse(cacheVersion?.user),z.record(z.string(),z.unknown()).parse(cacheVersion?.session)]) expect(output).not.toHaveProperty("hidden");
+  const physical=await owner.client.getSession({query:{disableCookieCache:true}}); expect(physical.error).toBeNull(); expect(physical.data?.user).toMatchObject({id:userId,label:{stored:"user-initial"}});
+  const after=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=cached"}); expect(after.status).toBe(200); const actual=stateSchema.parse(after.body);
+  const physicalVersion=actual.events.findLast(event=>event.phase==="version"); expect(physicalVersion).toMatchObject({userOmittedPresent:true,sessionOmittedPresent:true,userOmittedUndefined:true,sessionOmittedUndefined:true});
+  for(const output of [z.record(z.string(),z.unknown()).parse(physicalVersion?.user),z.record(z.string(),z.unknown()).parse(physicalVersion?.session)]) expect(output).not.toHaveProperty("hidden");
+  expect(actual.events.filter(event=>event.phase==="output").length).toBeGreaterThan(cachedState.events.filter(event=>event.phase==="output").length);
+  expect(actual.events.filter(event=>event.phase==="completed"&&event.path==="/get-session").map(event=>event.record)).toEqual([null,null]);
+  const original=stateSchema.parse(before.body);
+  for(const key of ["users","accounts","sessions"] as const) expect(actual[key].filter(row=>row[key==="users"?"id":"userId"]===foreignId)).toEqual(original[key]);
+  for(const key of ["users","accounts","sessions","verifications"] as const) expect(actual[key]).toEqual(createdState[key]);
+  return {foreignSignup:ctx.snapshot(foreignSignup),before:await observedState(before.body),signup:ctx.snapshot(signup),signed:{compactSessionCache:{token,envelope,decoded,observedAt,effectiveMaxAgeSeconds:300,rawCookies:[cacheCookie]}},created:await observedState(created.body),cached:ctx.snapshot(cached),cacheRead:await observedState(cacheRead.body),physical:ctx.snapshot(physical),after:await observedState(after.body)};
+},["POST /sign-up/email","GET /get-session"]);
+
+
+compatScenario("additional plugin input and public policy retain distinct configured adapter precedence and canonical plugin columns",async ctx=>{
+  const foreign=ctx.actor("plugin-foreign","additional-plugin-fields"),owner=ctx.actor("plugin-owner","additional-plugin-fields");
+  const foreignSignup=await foreign.client.signUp.email({email:ctx.uniqueEmail("plugin-foreign"),name:"Plugin foreign",password:"Password123!"}); expect(foreignSignup.error).toBeNull();
+  const foreignId=z.object({user:z.object({id:z.string()})}).parse(foreignSignup.data).user.id;
+  const before=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=plugin"}); expect(before.status).toBe(200); const original=stateSchema.parse(before.body);
+  const input={email:ctx.uniqueEmail("plugin-owner"),name:"Plugin owner",password:"Password123!",role:"untrusted-overwrite"};
+  const signup=await owner.client.signUp.email(input); expect(signup.error).toBeNull();
+  const user=z.object({user:z.object({id:z.string(),role:z.literal("observed:plugin-role")}).passthrough()}).parse(signup.data).user; expect(user).not.toHaveProperty("label");
+  const read=await owner.client.getSession(); expect(read.error).toBeNull(); expect(read.data?.user).toMatchObject({id:user.id,role:"observed:plugin-role"}); expect(read.data?.user).not.toHaveProperty("label"); expect(read.data?.session).not.toHaveProperty("label");
+  const rejectedInput={name:"Plugin owner",role:"cannot-update-role"}; const rejected=await owner.client.updateUser(rejectedInput); expect(rejected.error).toMatchObject({status:400,code:"FIELD_NOT_ALLOWED"});
+  const after=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=plugin"}); expect(after.status).toBe(200); const actual=stateSchema.parse(after.body);
+  expect(actual.users.find(row=>row.id===user.id)).toMatchObject({label:"plugin-user",role:"plugin-role"}); expect(actual.sessions.find(row=>row.userId===user.id)).toMatchObject({label:"plugin-session"}); expect(actual.accounts.find(row=>row.userId===user.id)).toMatchObject({label:"account-initial"});
+  const hooks=actual.events.filter(event=>event.phase==="after"&&z.record(z.string(),z.unknown()).parse(event.record)[event.entity==="user"?"id":"userId"]===user.id);
+  for(const hook of hooks) expect(hook.record).toMatchObject({label:{configured:hook.entity==="account"?"account-initial":`plugin-${hook.entity}`}});
+  expect(hooks.find(hook=>hook.entity==="user")?.record).toMatchObject({role:"observed:plugin-role"});
+  for(const key of ["users","accounts","sessions"] as const) expect(actual[key].filter(row=>row[key==="users"?"id":"userId"]===foreignId)).toEqual(original[key]);
+  return {foreignSignup:ctx.snapshot(foreignSignup),before:await observedState(before.body),signup:ctx.snapshot(signup),read:ctx.snapshot(read),rejected:ctx.snapshot(rejected),after:await observedState(after.body)};
+},["POST /sign-up/email","GET /get-session","POST /update-user"]);

@@ -22,6 +22,8 @@ export const FIXTURE_PROFILES = [
   "session-cache-guards", "session-cache-interactions",
   "additional-fields",
   "additional-output-fields",
+  "additional-cached-fields",
+  "additional-plugin-fields",
   "additional-policy-fields",
   "additional-async-validation-fields",
   ...variants("pwned-", ["default", "disabled", "empty", "custom", "message", "empty-message", "no-auto", "virtual", "wildcard"] as const),

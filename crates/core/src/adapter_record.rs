@@ -62,6 +62,17 @@ impl AdapterOutput {
     pub const fn values(&self) -> &FieldOutput {
         &self.values
     }
+
+    pub(crate) fn filter_returned(&self, fields: &crate::field_policy::FieldConfigs) -> Self {
+        let mut output = self.clone();
+        for (name, field) in fields {
+            if !field.returned {
+                drop(output.values.remove(name));
+                let _removed = output.undefined_fields.remove(name);
+            }
+        }
+        output
+    }
 }
 
 /// One actual adapter result. Output transforms may change additional values or
@@ -130,6 +141,9 @@ macro_rules! delegate {
 }
 
 impl<M: AuthUser> AuthUser for AdapterRecord<M> {
+    fn adapter_snapshot(&self) -> Option<&AdapterOutput> {
+        Some(&self.output)
+    }
     fn adapter_output(&self) -> Option<&FieldOutput> {
         Some(&self.output.values)
     }
@@ -158,6 +172,9 @@ impl<M: AuthUser> AuthUser for AdapterRecord<M> {
 }
 
 impl<M: AuthSession> AuthSession for AdapterRecord<M> {
+    fn adapter_snapshot(&self) -> Option<&AdapterOutput> {
+        Some(&self.output)
+    }
     fn adapter_output(&self) -> Option<&FieldOutput> {
         Some(&self.output.values)
     }
@@ -177,6 +194,9 @@ impl<M: AuthSession> AuthSession for AdapterRecord<M> {
 }
 
 impl<M: AuthAccount> AuthAccount for AdapterRecord<M> {
+    fn adapter_snapshot(&self) -> Option<&AdapterOutput> {
+        Some(&self.output)
+    }
     fn adapter_output(&self) -> Option<&FieldOutput> {
         Some(&self.output.values)
     }

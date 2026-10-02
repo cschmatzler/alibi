@@ -143,3 +143,50 @@ optional native tests and strict optional workspace lint. Full canonical,
 browser/docs, unchanged75% coverage, cached/completed SDK owners, plugin policies,
 refresh/replacement/account projections and schema publication remain pending.
 This checkpoint does not complete or close issue184.
+
+
+The cached/completed owner protects actual raw creation/newSession values versus
+filtered signed-cache and physical findSession callback stages, own undefined,
+changed types, no adapter callback rerun on a cache hit, actual HMAC/owner-token
+relationships and unchanged complete foreign rows. Existing codec/native model
+owners cannot observe arbitrary application output or completed callback inputs.
+It extends the same real application fixture and official SDK. New immutable
+snapshot accessors are justified only by actual trusted application callbacks;
+no fabricated model or receipt is admissible.
+
+
+The plugin table owns distinct application/plugin adapter versus endpoint/public
+precedence, actual canonical plugin columns, hidden transformed output retained
+by after callbacks, read-only role input and complete foreign rows. A plugin
+field whose physical getter is known to the framework must not be lost by an
+additional-fields-only projector. Existing custom-column owners cannot detect
+that known-column loss or the two distinct precedence registries. All fields use
+ordinary public application/plugin schema registration and actual model columns.
+
+The cached snapshot regression was reproduced on the rebased foundation with
+Source completing the real SDK lifecycle and Native failing the completed
+callback's own-undefined observation: `/tmp/issue184-cache-before-ready-owner.log`
+(terminal 1, 98 assertions). The additive immutable snapshot accessors retain the
+actual adapter output for trusted version/completed observers; Created retains
+raw hidden fields, Stored retains its public filtering and own-undefined
+presence, and Cached retains the actual decoded wire snapshot. The existing
+published tuple accessor remains available. Optional strict checks, fixture and
+client type checking, and all five owners then completed with terminal 0 and
+624 assertions in `/tmp/issue184-cache-output-complete-ready-owner.log`.
+
+The plugin-column owner first failed after Source completed its full lifecycle:
+Native's user.role response did not equal the actual transformed physical
+plugin-role. `/tmp/issue184-plugin-before-owner.log` and the unchanged phase
+control `/tmp/issue184-plugin-before-phase-owner.log` both exited 1 with 41
+assertions; `/tmp/issue184-plugin-before-events.jsonl` records the failure phase
+as Rust. The initialized record projector previously read only custom-column
+accessors, which deliberately exclude canonical plugin getters. The shared
+record output helper now resolves declared fields from physical canonical
+getters plus custom columns before awaiting their configured transforms. Its
+base projection still controls undeclared fields, and physical getters retain
+identity/ownership authority. The complete six-owner set passed 700 assertions,
+with optional strict, fixture build and client type checking all terminal 0 in
+`/tmp/issue184-plugin-output-ready-owner.log`. These are partial acceptance
+results on the CAPTCHA-composed parent; replacement, refresh, account output,
+schema metadata and complete canonical/coverage gates remain required before
+this draft can close the issue.

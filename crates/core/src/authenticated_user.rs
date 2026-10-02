@@ -58,6 +58,7 @@ macro_rules! delegate {
 }
 
 impl<S: AuthSchema> AuthUser for AuthenticatedUser<S> {
+    delegate!(adapter_snapshot, Option<&crate::AdapterOutput>);
     delegate!(retained_user_view, Option<&crate::UserView>);
     delegate!(adapter_output, Option<&crate::field_policy::FieldOutput>);
     delegate!(additional_fields, crate::field_policy::FieldOutput);

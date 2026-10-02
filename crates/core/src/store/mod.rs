@@ -180,17 +180,15 @@ impl<S: AuthSchema> PluginStore<S> {
 
     async fn user_record(&self, user: S::User) -> AuthResult<crate::AdapterRecord<S::User>> {
         use crate::AuthUser;
-        let serde_json::Value::Object(mut output) =
-            serde_json::to_value(self.projection_context.user_view(&user))?
-        else {
-            return Err(AuthError::internal("User output must be an object"));
-        };
-        let fields = self.field_policies().user;
-        for name in fields.0.keys() {
-            drop(output.remove(name));
-        }
-        let mut output = crate::AdapterOutput::from_values(output);
-        output.extend(fields.output(user.additional_fields()).await?);
+        let output = self
+            .field_policies()
+            .user
+            .record_output(
+                serde_json::to_value(crate::UserView::from(&user))?,
+                user.additional_fields(),
+                serde_json::to_value(self.projection_context.trusted_user_view(&user))?,
+            )
+            .await?;
         Ok(crate::AdapterRecord::with_output(user, output))
     }
 
@@ -199,20 +197,14 @@ impl<S: AuthSchema> PluginStore<S> {
         session: S::Session,
     ) -> AuthResult<crate::AdapterRecord<S::Session>> {
         use crate::AuthSession;
-        let serde_json::Value::Object(mut output) =
-            serde_json::to_value(self.projection_context.session_view(&session))?
-        else {
-            return Err(AuthError::internal("Session output must be an object"));
-        };
-        for name in self.adapter_fields.0.keys() {
-            drop(output.remove(name));
-        }
-        let mut output = crate::AdapterOutput::from_values(output);
-        output.extend(
-            self.adapter_fields
-                .output(session.additional_fields())
-                .await?,
-        );
+        let output = self
+            .adapter_fields
+            .record_output(
+                serde_json::to_value(crate::SessionView::from(&session))?,
+                session.additional_fields(),
+                serde_json::to_value(self.projection_context.trusted_session_view(&session))?,
+            )
+            .await?;
         Ok(crate::AdapterRecord::with_output(session, output))
     }
 
@@ -221,24 +213,26 @@ impl<S: AuthSchema> PluginStore<S> {
         account: S::Account,
     ) -> AuthResult<crate::AdapterRecord<S::Account>> {
         use crate::AuthAccount;
-        let serde_json::Value::Object(mut output) =
+        let serde_json::Value::Object(mut canonical) =
             serde_json::to_value(crate::AccountView::from(&account))?
         else {
             return Err(AuthError::internal("Account output must be an object"));
         };
-        drop(output.insert(
+        drop(canonical.insert(
             "password".into(),
             account.password().map_or(serde_json::Value::Null, |value| {
                 serde_json::Value::String(value.into())
             }),
         ));
-        let mut output = crate::AdapterOutput::from_values(output);
-        output.extend(
-            self.field_policies()
-                .account
-                .output(account.additional_fields())
-                .await?,
-        );
+        let output = self
+            .field_policies()
+            .account
+            .record_output(
+                serde_json::Value::Object(canonical.clone()),
+                account.additional_fields(),
+                serde_json::Value::Object(canonical),
+            )
+            .await?;
         Ok(crate::AdapterRecord::with_output(account, output))
     }
 

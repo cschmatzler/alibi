@@ -21,12 +21,46 @@ pub struct SessionHookCacheMetadata {
 struct SessionHookCache(Option<SessionHookCacheMetadata>);
 
 #[derive(Debug)]
-struct PublishedSession(Option<(crate::UserView, crate::SessionView)>);
+struct PublishedSession(Option<PublishedSessionSnapshot>);
+
+/// One completed issuance with actual retained callback-stage output.
+/// Trusted hooks may observe it; it never establishes authentication.
+#[derive(Clone, Debug)]
+pub struct PublishedSessionSnapshot {
+    user: crate::UserView,
+    session: crate::SessionView,
+    user_output: Option<crate::AdapterOutput>,
+    session_output: Option<crate::AdapterOutput>,
+}
+impl PublishedSessionSnapshot {
+    #[must_use]
+    pub const fn user(&self) -> &crate::UserView {
+        &self.user
+    }
+    #[must_use]
+    pub const fn session(&self) -> &crate::SessionView {
+        &self.session
+    }
+    #[must_use]
+    pub const fn user_output(&self) -> Option<&crate::AdapterOutput> {
+        self.user_output.as_ref()
+    }
+    #[must_use]
+    pub const fn session_output(&self) -> Option<&crate::AdapterOutput> {
+        self.session_output.as_ref()
+    }
+}
 
 /// The snapshot whose session cookies completed successfully in this dispatch.
 /// Response hooks may observe it; it never establishes authentication.
 #[must_use]
 pub fn published_session(request: &AuthRequest) -> Option<(crate::UserView, crate::SessionView)> {
+    published_session_snapshot(request).map(|snapshot| (snapshot.user, snapshot.session))
+}
+
+/// Observe immutable retained output without reconstructing a storage model.
+#[must_use]
+pub fn published_session_snapshot(request: &AuthRequest) -> Option<PublishedSessionSnapshot> {
     request
         .extensions()
         .get::<PublishedSession>()
@@ -44,11 +78,9 @@ pub fn discard_issuance(request: &AuthRequest) {
     }
 }
 
-fn record_publication(user: crate::UserView, session: crate::SessionView) {
+fn record_publication(snapshot: PublishedSessionSnapshot) {
     if let Some(request) = crate::hooks::current_request_hook_context() {
-        request
-            .extensions
-            .insert(PublishedSession(Some((user, session))));
+        request.extensions.insert(PublishedSession(Some(snapshot)));
     }
 }
 
@@ -214,8 +246,24 @@ async fn stored_read_headers<S: AuthSchema>(
     session: &impl AuthSession,
     headers: &std::collections::HashMap<String, String>,
 ) -> AuthResult<Vec<String>> {
-    let context = CacheVersionContext::stored(ctx.user_view(user), ctx.session_view(session))
-        .with_public_projection(ctx.user_view(user), ctx.session_view(session));
+    let user_fields = ctx.extensions.get::<crate::field_policy::UserFields>();
+    let user_fields = user_fields
+        .as_ref()
+        .map_or(&ctx.config.user.additional_fields, |fields| &fields.0.0);
+    let session_fields = ctx.extensions.get::<crate::field_policy::SessionFields>();
+    let session_fields = session_fields
+        .as_ref()
+        .map_or(&ctx.config.session.additional_fields, |fields| &fields.0);
+    let context = CacheVersionContext::stored(
+        ctx.user_view(user),
+        ctx.session_view(session),
+        user.adapter_snapshot()
+            .map(|output| output.filter_returned(user_fields)),
+        session
+            .adapter_snapshot()
+            .map(|output| output.filter_returned(session_fields)),
+    )
+    .with_public_projection(ctx.user_view(user), ctx.session_view(session));
     build_headers(ctx, context, headers, false).await
 }
 
@@ -327,7 +375,12 @@ pub async fn emit_issuance_snapshot<S: AuthSchema>(
     let public_user = ctx.user_view(context.user());
     let public_session = ctx.session_view(context.session());
     let context = context.with_public_projection(public_user, public_session);
-    let published = (context.user().clone(), context.session().clone());
+    let published = PublishedSessionSnapshot {
+        user: context.user().clone(),
+        session: context.session().clone(),
+        user_output: context.user_output().cloned(),
+        session_output: context.session_output().cloned(),
+    };
     if !ctx
         .config
         .session
@@ -335,7 +388,7 @@ pub async fn emit_issuance_snapshot<S: AuthSchema>(
         .as_ref()
         .is_some_and(|config| config.enabled)
     {
-        record_publication(published.0, published.1);
+        record_publication(published);
         return Ok(());
     }
     let request = crate::hooks::current_request_hook_context();
@@ -395,7 +448,7 @@ pub async fn emit_issuance_snapshot<S: AuthSchema>(
                 data.prior_headers.clear();
                 data.cache_headers.extend(cache_headers);
             }
-            record_publication(published.0, published.1);
+            record_publication(published);
             Ok(())
         }
         Err(error) => {

@@ -31,9 +31,9 @@ pub enum CacheVersionSource {
 
 /// Immutable inputs to the cache version policy.
 ///
-/// Creation and physical reads expose trusted adapter output. Only the public
-/// projection enters signed cookie data. Cached inputs contain that exact
-/// authenticated public snapshot, without invented original models.
+/// Creation exposes raw trusted adapter output. Physical findSession reads and
+/// cache hits expose their already-filtered snapshots. Only the public projection
+/// enters signed cookie data; cached inputs have no original database models.
 #[derive(Clone)]
 pub struct CacheVersionContext {
     user: UserView,
@@ -41,6 +41,8 @@ pub struct CacheVersionContext {
     originals: Option<(Arc<dyn Any + Send + Sync>, Arc<dyn Any + Send + Sync>)>,
     source: CacheVersionSource,
     public_projection: Option<(UserView, SessionView)>,
+    user_output: Option<crate::AdapterOutput>,
+    session_output: Option<crate::AdapterOutput>,
 }
 
 impl fmt::Debug for CacheVersionContext {
@@ -62,6 +64,8 @@ impl CacheVersionContext {
         session_view: SessionView,
     ) -> Self {
         Self {
+            user_output: user.adapter_snapshot().cloned(),
+            session_output: session.adapter_snapshot().cloned(),
             user: user_view,
             session: session_view,
             originals: Some((Arc::new(user), Arc::new(session))),
@@ -78,15 +82,24 @@ impl CacheVersionContext {
             originals: None,
             source: CacheVersionSource::Cached,
             public_projection: None,
+            user_output: None,
+            session_output: None,
         }
     }
-    pub(crate) fn stored(user: UserView, session: SessionView) -> Self {
+    pub(crate) fn stored(
+        user: UserView,
+        session: SessionView,
+        user_output: Option<crate::AdapterOutput>,
+        session_output: Option<crate::AdapterOutput>,
+    ) -> Self {
         Self {
             user,
             session,
             originals: None,
             source: CacheVersionSource::Stored,
             public_projection: None,
+            user_output,
+            session_output,
         }
     }
     pub(crate) fn with_public_projection(mut self, user: UserView, session: SessionView) -> Self {
@@ -114,6 +127,16 @@ impl CacheVersionContext {
     #[must_use]
     pub const fn session(&self) -> &SessionView {
         &self.session
+    }
+    /// Actual callback-stage adapter values. Cache hits have no retained record;
+    /// their exact values remain available through `user()` and `session()`.
+    #[must_use]
+    pub const fn user_output(&self) -> Option<&crate::AdapterOutput> {
+        self.user_output.as_ref()
+    }
+    #[must_use]
+    pub const fn session_output(&self) -> Option<&crate::AdapterOutput> {
+        self.session_output.as_ref()
     }
     #[must_use]
     pub fn stored_user<T: AuthUser>(&self) -> Option<&T> {

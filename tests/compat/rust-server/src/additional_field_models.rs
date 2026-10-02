@@ -22,6 +22,7 @@ pub(super) mod application_user {
         pub hidden: Option<String>,
         pub omitted: Option<String>,
         pub readonly: Option<String>,
+        pub role: Option<String>,
         #[sea_orm(default_value = "physical-private")]
         #[serde(rename = "private_column")]
         pub private_column: String,

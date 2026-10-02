@@ -574,6 +574,29 @@ impl SessionAdapterFields {
             .collect();
     }
 
+    /// Resolve declared fields from physical canonical getters and custom columns
+    /// before applying their output policies. The base projection alone controls
+    /// undeclared fields, so unrelated physical columns never become observable.
+    pub(crate) async fn record_output(
+        &self,
+        canonical: Value,
+        mut additional: FieldOutput,
+        base: Value,
+    ) -> crate::AuthResult<crate::AdapterOutput> {
+        let (Value::Object(canonical), Value::Object(mut base)) = (canonical, base) else {
+            return Err(crate::AuthError::internal(
+                "Adapter output must be an object",
+            ));
+        };
+        additional.extend(canonical);
+        for name in self.0.keys() {
+            drop(base.remove(name));
+        }
+        let mut output = crate::AdapterOutput::from_values(base);
+        output.extend(self.output(additional).await?);
+        Ok(output)
+    }
+
     /// Transform only declared additional fields, retaining their omission.
     pub(crate) async fn output(
         &self,

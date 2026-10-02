@@ -7,8 +7,8 @@ use better_auth::field_policy::{FieldConfig, FieldConfigs};
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::{
-    AccountManagementPlugin, EmailPasswordPlugin, OpenApiPlugin, SessionManagementPlugin,
-    UserManagementPlugin,
+    AccountManagementPlugin, EmailPasswordPlugin, OpenApiPlugin, PasswordManagementPlugin,
+    SessionManagementPlugin, UserManagementPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use better_auth_core::{
@@ -28,6 +28,7 @@ use std::sync::{Arc, Mutex};
 type Events = Arc<Mutex<Vec<Value>>>;
 #[derive(Clone)]
 struct Application {
+    mode: &'static str,
     database: DatabaseConnection,
     events: Events,
 }
@@ -68,7 +69,7 @@ fn db_error(error: better_auth_seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 fn fields(entity: &'static str, mode: &'static str, events: &Events) -> FieldConfigs {
-    let output = mode == "output";
+    let output = matches!(mode, "output" | "cached");
     let mut fields = FieldConfigs::new();
     for name in ["label", "hidden", "omitted"] {
         let mut field = FieldConfig::new(json!({"type":"string"}));
@@ -114,6 +115,17 @@ fn fields(entity: &'static str, mode: &'static str, events: &Events) -> FieldCon
                         "omitted" => None,
                         _ => Some(JsValue::from(json!({"stored":value}))),
                     })
+                }
+            });
+        }
+        if mode == "plugin" && name == "label" {
+            let events = events.clone();
+            field = field.transform_output(move |value| {
+                let events = events.clone();
+                async move {
+                    let value = value.map(|value| value.to_json_value()).transpose()?;
+                    events.lock().expect("application receipts").push(json!({"phase":"configured-output","entity":entity,"field":"label","value":value}));
+                    Ok(Some(JsValue::from(json!({"configured":value}))))
                 }
             });
         }
@@ -201,10 +213,45 @@ fn fields(entity: &'static str, mode: &'static str, events: &Events) -> FieldCon
     }
     fields
 }
+fn plugin_fields(entity: &'static str, application: &Application) -> FieldConfigs {
+    if application.mode != "plugin" {
+        return FieldConfigs::new();
+    }
+    let mut fields = FieldConfigs::new();
+    drop(
+        fields.insert(
+            "label".into(),
+            FieldConfig::new(json!({"type":"string"}))
+                .default_value(json!(format!("plugin-{entity}")))
+                .hidden(),
+        ),
+    );
+    if entity == "user" {
+        let events = application.events.clone();
+        drop(fields.insert("role".into(),FieldConfig::new(json!({"type":"string"})).read_only().default_value(json!("plugin-role")).transform_output(move |value| {
+            let events = events.clone();
+            async move {
+                let value = value.map(|value| value.to_json_value()).transpose()?;
+                events.lock().expect("application receipts").push(json!({"phase":"plugin-output","entity":"user","field":"role","value":value}));
+                Ok(Some(JsValue::from(json!(format!("observed:{}",value.as_ref().and_then(Value::as_str).unwrap_or("undefined"))))))
+            }
+        })));
+    }
+    fields
+}
 #[async_trait::async_trait]
 impl AuthPlugin<ApplicationSchema> for Application {
     fn name(&self) -> &'static str {
         "application-adapter-observer"
+    }
+    fn user_fields(&self) -> FieldConfigs {
+        plugin_fields("user", self)
+    }
+    fn account_fields(&self) -> FieldConfigs {
+        plugin_fields("account", self)
+    }
+    fn session_fields(&self) -> FieldConfigs {
+        plugin_fields("session", self)
     }
     fn routes(&self) -> Vec<AuthRoute> {
         Vec::new()
@@ -216,9 +263,58 @@ impl AuthPlugin<ApplicationSchema> for Application {
     ) -> AuthResult<Option<better_auth_core::AuthResponse>> {
         Ok(None)
     }
+    async fn after_request(
+        &self,
+        request: &better_auth_core::AuthRequest,
+        _: &better_auth_core::AuthContext<ApplicationSchema>,
+        response: better_auth_core::AuthResponse,
+    ) -> AuthResult<better_auth_core::AuthResponse> {
+        if self.mode == "cached" {
+            let snapshot = better_auth_core::cache::runtime::published_session_snapshot(request);
+            let record = snapshot
+                .as_ref()
+                .map(|snapshot| json!({"user":snapshot.user(),"session":snapshot.session()}));
+            let user_output = snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.user_output());
+            let session_output = snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.session_output());
+            self.events.lock().expect("application receipts").push(json!({
+                "phase":"completed", "path":request.path(), "record":record,
+                "userOmittedPresent":snapshot.as_ref().map(|_| user_output.is_some_and(|output| output.contains_field("omitted"))),
+                "userOmittedUndefined":snapshot.as_ref().map(|_| user_output.is_some_and(|output| output.field_is_undefined("omitted"))),
+                "sessionOmittedPresent":snapshot.as_ref().map(|_| session_output.is_some_and(|output| output.contains_field("omitted"))),
+                "sessionOmittedUndefined":snapshot.as_ref().map(|_| session_output.is_some_and(|output| output.field_is_undefined("omitted")))
+            }));
+        }
+        Ok(response)
+    }
     async fn on_init(&self, context: &mut AuthInitContext<ApplicationSchema>) -> AuthResult<()> {
         context.register_adapter_after_hook(Arc::new(self.clone()));
         Ok(())
+    }
+}
+#[async_trait::async_trait]
+impl better_auth_core::CookieCacheVersionResolver for Application {
+    async fn resolve(&self, context: &better_auth_core::CacheVersionContext) -> AuthResult<String> {
+        let user_output = context.user_output();
+        let session_output = context.session_output();
+        let user = serde_json::to_value(context.user())?;
+        let session = serde_json::to_value(context.session())?;
+        self.events.lock().expect("application receipts").push(json!({
+            "phase":"version", "user":user,"session":session,
+            "userOmittedPresent":user_output.is_some_and(|output| output.contains_field("omitted")),
+            "userOmittedUndefined":user.get("omitted").is_none(),
+            "sessionOmittedPresent":session_output.is_some_and(|output| output.contains_field("omitted")),
+            "sessionOmittedUndefined":session.get("omitted").is_none()
+        }));
+        tokio::task::yield_now().await;
+        Ok(format!(
+            "fields:{}:{}",
+            user["label"]["stored"].as_str().unwrap_or_default(),
+            session["label"]["stored"].as_str().unwrap_or_default()
+        ))
     }
 }
 #[async_trait::async_trait]
@@ -291,6 +387,7 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
             .map_err(db_error)?;
     }
     let application = Application {
+        mode,
         database: database.clone(),
         events: Events::default(),
     };
@@ -303,12 +400,22 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
     settings.user.additional_fields = fields("user", mode, &application.events);
     settings.account.additional_fields = fields("account", mode, &application.events);
     settings.session.additional_fields = fields("session", mode, &application.events);
+    if mode == "cached" {
+        settings.session.cookie_cache = Some(better_auth_core::CookieCacheConfig {
+            enabled: true,
+            version: Some(better_auth_core::CookieCacheVersion::Resolver(Arc::new(
+                application.clone(),
+            ))),
+            ..Default::default()
+        });
+    }
     let mut builder = AuthBuilder::<ApplicationSchema>::new(settings.clone())
         .store(SeaOrmStore::<ApplicationSchema>::new(settings, database))
         .rate_limit(RateLimitConfig::new().enabled(false))
         .plugin(EmailPasswordPlugin::new().enable_username(false))
         .plugin(SessionManagementPlugin::new())
         .plugin(AccountManagementPlugin::new())
+        .plugin(PasswordManagementPlugin::new())
         .plugin(UserManagementPlugin::new())
         .plugin(OpenApiPlugin::new());
     if mode != "normal" {
@@ -352,7 +459,14 @@ pub(super) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
     let mut router = Router::new();
     let mut applications = Vec::new();
     let mut states = std::collections::HashMap::new();
-    for mode in ["normal", "output", "policy", "async-validation"] {
+    for mode in [
+        "normal",
+        "output",
+        "policy",
+        "async-validation",
+        "cached",
+        "plugin",
+    ] {
         let (application_router, application) = application(config, mode).await?;
         router = router.merge(application_router);
         drop(states.insert(mode, application.clone()));

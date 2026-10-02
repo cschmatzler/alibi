@@ -1,4 +1,5 @@
 import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { createAuthMiddleware } from "better-auth/api";
 import { openAPI } from "better-auth/plugins";
 import { getMigrations } from "better-auth/db/migration";
 import { Database } from "bun:sqlite";
@@ -7,7 +8,8 @@ import { Database } from "bun:sqlite";
 export async function additionalFieldsFixture(base: BetterAuthOptions) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   const applications = new Map<string, { database: Database; events: Record<string, unknown>[] }>();
-  for (const mode of ["normal", "output", "policy", "async-validation"] as const) {
+  for (const mode of ["normal", "output", "policy", "async-validation", "cached", "plugin"] as const) {
+    const transformed = mode === "output" || mode === "cached";
     const database = new Database(":memory:");
     const events: Record<string, unknown>[] = [];
     const path = `/__test/profiles/${mode === "normal" ? "additional-fields" : `additional-${mode}-fields`}/api/auth`;
@@ -37,10 +39,10 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
       return `bound:${value}`;
     };
     const fields = (entity: string) => ({
-      label: { type: "string" as const, required: false, defaultValue: `${entity}-initial`, ...(entity === "user" ? { fieldName: "user_label" } : {}), ...(mode === "output" ? { transform: { output: output(entity, "label") } } : {}) },
-      hidden: { type: "string" as const, required: false, returned: false, defaultValue: `${entity}-secret`, ...(mode === "output" ? { transform: { output: output(entity, "hidden") } } : {}) },
-      omitted: { type: "string" as const, required: false, ...(mode === "output" ? { defaultValue: "drop", transform: { output: output(entity, "omitted") } } : {}) },
-      ...(entity === "user" ? { readonly: { type: "string" as const, required: false, ...(mode === "policy" ? { input: false } : {}), ...(mode === "output" ? { input: false, defaultValue: "initial", onUpdate: () => "updated", transform: { input: (value: unknown) => { events.push({ phase: "input", entity, field: "readonly", value }); return `${value}:bound`; } } } : {}) } } : {}),
+      label: { type: "string" as const, required: false, defaultValue: `${entity}-initial`, ...(entity === "user" ? { fieldName: "user_label" } : {}), ...(transformed ? { transform: { output: output(entity, "label") } } : mode === "plugin" ? { transform: { output: async (value: unknown) => { events.push({phase:"configured-output",entity,field:"label",value}); return {configured:value}; } } } : {}) },
+      hidden: { type: "string" as const, required: false, returned: false, defaultValue: `${entity}-secret`, ...(transformed ? { transform: { output: output(entity, "hidden") } } : {}) },
+      omitted: { type: "string" as const, required: false, ...(transformed ? { defaultValue: "drop", transform: { output: output(entity, "omitted") } } : {}) },
+      ...(entity === "user" ? { readonly: { type: "string" as const, required: false, ...(mode === "policy" ? { input: false } : {}), ...(transformed ? { input: false, defaultValue: "initial", onUpdate: () => "updated", transform: { input: (value: unknown) => { events.push({ phase: "input", entity, field: "readonly", value }); return `${value}:bound`; } } } : {}) } } : {}),
       ...((mode === "policy" || mode === "async-validation") && entity === "user" ? {
         label: { type: "string" as const, required: mode === "policy", fieldName: "user_label",
           validator: { input: { "~standard": { version: 1 as const, vendor: "application", validate: validateLabel } } },
@@ -48,11 +50,24 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
         hidden: { type: "string" as const, required: false, returned: false, input: false, defaultValue: "user-secret" },
       } : {}),
     });
-    const auth = betterAuth({ ...base, database, basePath: path, plugins: [openAPI()],
+    const auth = betterAuth({ ...base, database, basePath: path, plugins: [openAPI(), ...(mode === "plugin" ? [{ id:"application-fields", schema: {
+        user: {fields:{label:{type:"string" as const,required:false,defaultValue:"plugin-user",returned:false},role:{type:"string" as const,required:false,input:false,defaultValue:"plugin-role",transform:{output:async (value:unknown)=>{events.push({phase:"plugin-output",entity:"user",field:"role",value});return `observed:${value}`;}}}}},
+        session: {fields:{label:{type:"string" as const,required:false,defaultValue:"plugin-session",returned:false}}},
+        account: {fields:{label:{type:"string" as const,required:false,defaultValue:"plugin-account",returned:false}}},
+      } }] : [])],
       user: { modelName: "app_user", fields: { name: "display_name" }, additionalFields: fields("user") },
-      session: { modelName: "app_session", additionalFields: fields("session") },
+      session: { modelName: "app_session", additionalFields: fields("session"), ...(mode === "cached" ? { cookieCache: { enabled: true, version: async (session: Record<string, unknown>, user: Record<string, unknown>) => {
+        events.push({ phase: "version", user, session, userOmittedPresent: Object.hasOwn(user,"omitted"), userOmittedUndefined: user.omitted === undefined, sessionOmittedPresent: Object.hasOwn(session,"omitted"), sessionOmittedUndefined: session.omitted === undefined });
+        await Promise.resolve(); return `fields:${(user.label as {stored:string}).stored}:${(session.label as {stored:string}).stored}`;
+      } } } : {}) },
       account: { ...base.account, modelName: "app_account", additionalFields: fields("account") },
       verification: { modelName: "app_verification" },
+      ...(mode === "cached" ? { hooks: { after: createAuthMiddleware(async ctx => {
+        const record = ctx.context.newSession;
+        events.push({ phase: "completed", path: ctx.path, record: record ?? null,
+          userOmittedPresent: record ? Object.hasOwn(record.user,"omitted") : null, userOmittedUndefined: record ? record.user.omitted === undefined : null,
+          sessionOmittedPresent: record ? Object.hasOwn(record.session,"omitted") : null, sessionOmittedUndefined: record ? record.session.omitted === undefined : null });
+      }) } } : {}),
       ...(mode !== "normal" ? { databaseHooks: {
         user: { create: { after: after("user", "create") }, update: { after: after("user", "update") } },
         account: { create: { after: after("account", "create") }, update: { after: after("account", "update") } },
@@ -60,6 +75,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
       } } : {}),
     });
     await (await getMigrations(auth.options)).runMigrations();
+    if (mode !== "plugin") database.run("ALTER TABLE app_user ADD COLUMN role TEXT");
     database.run("ALTER TABLE app_user ADD COLUMN private_column TEXT NOT NULL DEFAULT 'physical-private'");
     profiles.set(path, auth);
     applications.set(mode, { database, events });

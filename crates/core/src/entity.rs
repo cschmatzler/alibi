@@ -19,6 +19,10 @@ use std::borrow::Cow;
 /// The framework reads user fields through these getters. Custom types
 /// must provide all framework fields and may have additional fields.
 pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
+    /// A genuine retained adapter result, including declared undefined values.
+    fn adapter_snapshot(&self) -> Option<&crate::AdapterOutput> {
+        None
+    }
     /// A chosen authenticated view is already projected and must remain exact.
     fn retained_user_view(&self) -> Option<&crate::UserView> {
         None
@@ -71,6 +75,9 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
 
 /// Trait representing a session entity.
 pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
+    fn adapter_snapshot(&self) -> Option<&crate::AdapterOutput> {
+        None
+    }
     fn retained_session_view(&self) -> Option<&crate::SessionView> {
         None
     }
@@ -98,6 +105,9 @@ pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
 
 /// Trait representing an account entity (OAuth provider linking).
 pub trait AuthAccount: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
+    fn adapter_snapshot(&self) -> Option<&crate::AdapterOutput> {
+        None
+    }
     fn adapter_output(&self) -> Option<&crate::field_policy::FieldOutput> {
         None
     }
