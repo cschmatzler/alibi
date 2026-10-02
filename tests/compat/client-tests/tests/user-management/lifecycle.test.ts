@@ -451,13 +451,14 @@ compatScenario("configured deletion consumes its real proof before the applicati
   expect(issued.verifications).toHaveLength(1);
   const endpoint = path(name, `delete-user/callback?token=${encodeURIComponent(mail.token)}`);
   const first = owner.fetch(endpoint, { redirect: "manual", headers: { "x-lifecycle-marker": "first-deletion" } });
-  let held: LifecycleState, replay: { status: number; body: unknown };
+  let held: LifecycleState, released: LifecycleState, replay: { status: number; body: unknown };
   try {
     held = await control(ctx, name, "ready");
     expect(held.verifications).toEqual([]); expect(held.users).toEqual(issued.users); expect(held.accounts).toEqual(issued.accounts); expect(held.sessions).toEqual(issued.sessions);
     const response = await owner.fetch(endpoint, { redirect: "manual", headers: { "x-lifecycle-marker": "concurrent-replay" } });
     replay = { status: response.status, body: await responseBody(response) }; expect(replay.status).toBe(404); expect(replay.body).toEqual({ code: "INVALID_TOKEN", message: "Invalid token" });
-  } finally { await control(ctx, name, "release"); }
+  } finally { released = await control(ctx, name, "release"); }
+  expect(released).toEqual(held!);
   const response = await first, completed = { status: response.status, body: await responseBody(response) }; expect(completed.status).toBe(200);
   const after = await control(ctx, name);
   expect(foreignRows(after, signup.data.user.id)).toEqual({ users: [], accounts: [], sessions: [] }); expect(foreignRows(after, other.data.user.id)).toEqual(foreignRows(issued, other.data.user.id)); expect(after.verifications).toEqual([]);

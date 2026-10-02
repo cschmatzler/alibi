@@ -74,7 +74,7 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
     const context = await instance.$context;
     if (body.action === "reset") { state.events.length = 0; state.failure = ""; }
     else if (body.action === "hold") { state.holdNext = true; state.held = false; }
-    else if (body.action === "release") state.release?.();
+    else if (body.action === "release") { /* Snapshot the held request before releasing it below. */ }
     else if (body.action === "ready") {
       const deadline = Date.now() + 3000;
       while (!state.held && Date.now() < deadline) await Bun.sleep(10);
@@ -90,6 +90,9 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
     } else if (body.action !== "state") return Response.json({ error: "Unknown lifecycle action" }, { status: 400 });
     const read = (model: "user" | "session" | "account" | "verification") => context.adapter.findMany<Record<string, unknown>>({ model, sortBy: { field: "createdAt", direction: "asc" } });
     const verifications = (await read("verification")).map(({ identifier, value, ...row }) => typeof identifier === "string" && identifier.startsWith("delete-account-") ? { ...row, identifierPrefix: "delete-account-", token: identifier.slice("delete-account-".length), userId: value } : { ...row, identifier, value });
-    return Response.json({ users: await read("user"), accounts: await read("account"), sessions: await read("session"), verifications, events: state.events });
+    const response = Response.json({ users: await read("user"), accounts: await read("account"), sessions: await read("session"), verifications, events: state.events });
+    // Serialize all rows and receipts while deletion is blocked, before any writes resume.
+    if (body.action === "release") state.release?.();
+    return response;
   } };
 }

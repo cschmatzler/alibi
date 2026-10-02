@@ -45,6 +45,9 @@ They do not supply authentication, callback receipt/order or deletion admission.
   admission and before the application hook. Wrong owners and failed before-hooks
   consume the proof without deleting rows. A held before-hook leaves no reusable
   proof; concurrent replay rejects while the first request completes once.
+  The fixture release response captures every row and callback receipt while the
+  hook is still held, then resumes deletion. Its snapshot equals the held state;
+  the completed request supplies the boundary for the final physical snapshot.
   Success removes only the owner's user, accounts and every session. After-hook
   errors propagate after those writes. Direct deletion and GET callback responses
   clear browser cookies, including after-hook failures.
