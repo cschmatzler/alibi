@@ -13,6 +13,7 @@ mod organization_member_role_hooks_fixture;
 mod organization_membership_policy_fixture;
 mod organization_transport_probe;
 mod organization_update_hooks_fixture;
+mod passwordless_context;
 mod physical_cookie_fixture;
 mod server_endpoint_fixture;
 mod session_cookie_cache_fixture;

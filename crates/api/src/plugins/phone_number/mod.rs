@@ -19,7 +19,11 @@ pub(in crate::plugins) use types::{parse_signup_phone, reject_verified_input};
 
 #[async_trait]
 pub trait SendPhoneOtp: Send + Sync {
-    async fn send(&self, delivery: &PhoneOtpDelivery) -> AuthResult<()>;
+    async fn send(
+        &self,
+        delivery: &PhoneOtpDelivery,
+        context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()>;
 }
 
 #[async_trait]
@@ -31,7 +35,11 @@ pub trait PhoneNumberValidator: Send + Sync {
 /// replaces local verification, including expiry, replay and attempt policy.
 #[async_trait]
 pub trait PhoneOtpVerifier: Send + Sync {
-    async fn verify(&self, delivery: &PhoneOtpDelivery) -> AuthResult<bool>;
+    async fn verify(
+        &self,
+        delivery: &PhoneOtpDelivery,
+        context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<bool>;
 }
 
 pub trait PhoneSignupIdentity: Send + Sync {
@@ -43,7 +51,11 @@ pub trait PhoneSignupIdentity: Send + Sync {
 
 #[async_trait]
 pub trait PhoneVerificationHook: Send + Sync {
-    async fn verified(&self, result: &PhoneNumberVerification) -> AuthResult<()>;
+    async fn verified(
+        &self,
+        result: &PhoneNumberVerification,
+        context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()>;
 }
 
 #[derive(Clone)]
@@ -111,7 +123,7 @@ impl PhoneNumberPlugin {
         phone_number: &str,
         code: &str,
     ) -> AuthResult<()> {
-        self.verify_and_consume(ctx, phone_number, code).await
+        self.verify_and_consume(ctx, None, phone_number, code).await
     }
 }
 

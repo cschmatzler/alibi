@@ -25,12 +25,21 @@ impl EmailOtpPlugin {
     pub(super) async fn prepare_code(
         &self,
         ctx: &AuthContext<impl AuthSchema>,
+        request: Option<&AuthRequest>,
         email: &str,
         otp_type: EmailOtpType,
         identifier_override: Option<String>,
     ) -> AuthResult<(String, CreateVerification)> {
         let generated = match &self.config.generate_otp {
-            Some(generator) => generator.generate(email, otp_type).await?,
+            Some(generator) => {
+                generator
+                    .generate(
+                        email,
+                        otp_type,
+                        &better_auth_core::CallbackContext::new(ctx, request),
+                    )
+                    .await?
+            }
             None => None,
         };
         let otp = generated
@@ -56,12 +65,13 @@ impl EmailOtpPlugin {
     pub(super) async fn issue_code(
         &self,
         ctx: &AuthContext<impl AuthSchema>,
+        request: Option<&AuthRequest>,
         email: &str,
         otp_type: EmailOtpType,
         identifier_override: Option<String>,
     ) -> AuthResult<String> {
         let (otp, value) = self
-            .prepare_code(ctx, email, otp_type, identifier_override)
+            .prepare_code(ctx, request, email, otp_type, identifier_override)
             .await?;
         drop(ctx.verifications().create(value).await?);
         Ok(otp)
@@ -70,6 +80,7 @@ impl EmailOtpPlugin {
     async fn resolve_code(
         &self,
         ctx: &AuthContext<impl AuthSchema>,
+        request: Option<&AuthRequest>,
         email: &str,
         otp_type: EmailOtpType,
     ) -> AuthResult<String> {
@@ -101,7 +112,9 @@ impl EmailOtpPlugin {
                 return Ok(otp);
             }
         }
-        let (otp, mut data) = self.prepare_code(ctx, email, otp_type, None).await?;
+        let (otp, mut data) = self
+            .prepare_code(ctx, request, email, otp_type, None)
+            .await?;
         // The published delivery resolver retries a failed creation after
         // invalidating this logical identifier, retaining the same generated
         // OTP and selecting a fresh expiry for the retry. Server-only direct
@@ -119,6 +132,8 @@ impl EmailOtpPlugin {
     /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn deliver(
         &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        request: Option<&AuthRequest>,
         email: &str,
         otp: String,
         otp_type: EmailOtpType,
@@ -127,13 +142,19 @@ impl EmailOtpPlugin {
             self.config.send_verification_otp.as_ref().ok_or_else(|| {
                 AuthError::bad_request("send email verification is not implemented")
             })?;
-        crate::plugins::authentication_helpers::run_notification(sender.send(&EmailOtpDelivery {
+        let sender = sender.clone();
+        let context = better_auth_core::CallbackContext::new(ctx, request);
+        let delivery = EmailOtpDelivery {
             email: email.to_owned(),
             otp,
             otp_type,
-        }))
-        .await;
-        Ok(())
+        };
+        crate::plugins::authentication_helpers::run_owned_notification(
+            ctx,
+            async move { sender.send(&delivery, &context).await },
+            ctx.config.awaited_notification_errors,
+        )
+        .await
     }
 
     const fn allowed_attempts(&self) -> usize {
@@ -195,6 +216,16 @@ impl EmailOtpPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
+        self.send_verification_with_request(req, Some(req), ctx)
+            .await
+    }
+
+    pub(super) async fn send_verification_with_request(
+        &self,
+        req: &AuthRequest,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
         let body: SendRequest = match parse_body(req) {
             Ok(value) => value,
             Err(response) => return Ok(response),
@@ -208,7 +239,7 @@ impl EmailOtpPlugin {
         if body.otp_type == EmailOtpType::ChangeEmail {
             return Err(AuthError::bad_request("Invalid OTP type"));
         }
-        let otp = match self.resolve_code(ctx, &email, body.otp_type).await {
+        let otp = match self.resolve_code(ctx, request, &email, body.otp_type).await {
             Ok(otp) => otp,
             Err(AuthError::Internal(_)) => return Ok(AuthResponse::new(500)),
             Err(error) => return Err(error),
@@ -226,7 +257,8 @@ impl EmailOtpPlugin {
                 .await?;
             return AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from);
         }
-        self.deliver(&email, otp, body.otp_type).await?;
+        self.deliver(ctx, request, &email, otp, body.otp_type)
+            .await?;
         AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
     }
 
@@ -416,7 +448,7 @@ impl EmailOtpPlugin {
         };
         let email = body.email.to_lowercase();
         let otp = self
-            .resolve_code(ctx, &email, EmailOtpType::ForgetPassword)
+            .resolve_code(ctx, Some(req), &email, EmailOtpType::ForgetPassword)
             .await?;
         if ctx
             .database
@@ -428,7 +460,7 @@ impl EmailOtpPlugin {
                 .delete(&identifier(EmailOtpType::ForgetPassword, &email))
                 .await?;
         } else {
-            self.deliver(&email, otp, EmailOtpType::ForgetPassword)
+            self.deliver(ctx, Some(req), &email, otp, EmailOtpType::ForgetPassword)
                 .await?;
         }
         AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
@@ -560,6 +592,7 @@ impl EmailOtpPlugin {
         let otp = self
             .issue_code(
                 ctx,
+                Some(req),
                 &new_email,
                 EmailOtpType::ChangeEmail,
                 Some(key.clone()),
@@ -573,7 +606,7 @@ impl EmailOtpPlugin {
         {
             ctx.verifications().delete(&key).await?;
         } else {
-            self.deliver(&new_email, otp, EmailOtpType::ChangeEmail)
+            self.deliver(ctx, Some(req), &new_email, otp, EmailOtpType::ChangeEmail)
                 .await?;
         }
         AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)

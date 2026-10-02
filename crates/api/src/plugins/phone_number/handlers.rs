@@ -30,6 +30,23 @@ struct PasswordSettings {
 }
 
 impl PhoneNumberPlugin {
+    async fn deliver(
+        &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        req: &AuthRequest,
+        sender: Arc<dyn super::SendPhoneOtp>,
+        delivery: PhoneOtpDelivery,
+        policy: better_auth_core::AwaitedNotificationErrorPolicy,
+    ) -> AuthResult<()> {
+        let context = better_auth_core::CallbackContext::new(ctx, Some(req));
+        crate::plugins::authentication_helpers::run_owned_notification(
+            ctx,
+            async move { sender.send(&delivery, &context).await },
+            policy,
+        )
+        .await
+    }
+
     fn generate_code(&self) -> String {
         let mut rng = OsRng;
         (0..self.config.otp_length)
@@ -73,15 +90,19 @@ impl PhoneNumberPlugin {
     async fn callback(
         &self,
         ctx: &AuthContext<impl AuthSchema>,
+        req: &AuthRequest,
         phone_number: &str,
         user: &impl AuthUser,
     ) -> AuthResult<()> {
         if let Some(callback) = &self.config.callback_on_verification {
             callback
-                .verified(&PhoneNumberVerification {
-                    phone_number: phone_number.into(),
-                    user: ctx.user_view(user),
-                })
+                .verified(
+                    &PhoneNumberVerification {
+                        phone_number: phone_number.into(),
+                        user: ctx.user_view(user),
+                    },
+                    &better_auth_core::CallbackContext::new(ctx, Some(req)),
+                )
                 .await?;
         }
         Ok(())
@@ -92,15 +113,19 @@ impl PhoneNumberPlugin {
     pub(super) async fn verify_and_consume(
         &self,
         ctx: &AuthContext<impl AuthSchema>,
+        request: Option<&AuthRequest>,
         phone_number: &str,
         code: &str,
     ) -> AuthResult<()> {
         if let Some(verifier) = &self.config.verify_otp {
             if !verifier
-                .verify(&PhoneOtpDelivery {
-                    phone_number: phone_number.into(),
-                    code: code.into(),
-                })
+                .verify(
+                    &PhoneOtpDelivery {
+                        phone_number: phone_number.into(),
+                        code: code.into(),
+                    },
+                    &better_auth_core::CallbackContext::new(ctx, request),
+                )
                 .await?
             {
                 return Err(invalid_otp());
@@ -168,12 +193,17 @@ impl PhoneNumberPlugin {
         })?;
         self.validate_phone(&body.phone_number).await?;
         let code = self.issue(ctx, &body.phone_number, true).await?;
-        sender
-            .send(&PhoneOtpDelivery {
+        self.deliver(
+            ctx,
+            req,
+            sender.clone(),
+            PhoneOtpDelivery {
                 phone_number: body.phone_number,
                 code,
-            })
-            .await?;
+            },
+            better_auth_core::AwaitedNotificationErrorPolicy::Propagate,
+        )
+        .await?;
         AuthResponse::json(200, &json!({"message":"code sent"})).map_err(AuthError::from)
     }
     #[expect(
@@ -208,13 +238,17 @@ impl PhoneNumberPlugin {
         if self.config.require_verification && user.phone_number_verified() != Some(true) {
             let code = self.issue(ctx, &body.phone_number, false).await?;
             if let Some(sender) = &self.config.send_otp {
-                crate::plugins::authentication_helpers::run_notification(sender.send(
-                    &PhoneOtpDelivery {
+                self.deliver(
+                    ctx,
+                    req,
+                    sender.clone(),
+                    PhoneOtpDelivery {
                         phone_number: body.phone_number,
                         code,
                     },
-                ))
-                .await;
+                    ctx.config.awaited_notification_errors,
+                )
+                .await?;
             }
             return Err(phone_error(
                 401,
@@ -322,7 +356,7 @@ impl PhoneNumberPlugin {
             Ok(body) => body,
             Err(response) => return Ok(response),
         };
-        self.verify_and_consume(ctx, &body.phone_number, &body.code)
+        self.verify_and_consume(ctx, Some(req), &body.phone_number, &body.code)
             .await?;
         if body.update_phone_number == Some(true) {
             let (user, session) =
@@ -384,7 +418,8 @@ impl PhoneNumberPlugin {
                     },
                 )
                 .await?;
-            self.callback(ctx, &body.phone_number, &updated).await?;
+            self.callback(ctx, req, &body.phone_number, &updated)
+                .await?;
             return AuthResponse::json(
                 200,
                 &json!({"status":true,"token":session.token,"user":ctx.user_view(&updated)}),
@@ -437,7 +472,7 @@ impl PhoneNumberPlugin {
                 )
                 .await?
         };
-        self.callback(ctx, &body.phone_number, &user).await?;
+        self.callback(ctx, req, &body.phone_number, &user).await?;
         if body.disable_session == Some(true) {
             return AuthResponse::json(
                 200,
@@ -479,13 +514,17 @@ impl PhoneNumberPlugin {
         if user.is_some()
             && let Some(sender) = &self.config.send_password_reset_otp
         {
-            crate::plugins::authentication_helpers::run_notification(sender.send(
-                &PhoneOtpDelivery {
+            self.deliver(
+                ctx,
+                req,
+                sender.clone(),
+                PhoneOtpDelivery {
                     phone_number: body.phone_number,
                     code,
                 },
-            ))
-            .await;
+                ctx.config.awaited_notification_errors,
+            )
+            .await?;
         }
         AuthResponse::json(200, &json!({"status":true})).map_err(AuthError::from)
     }

@@ -476,7 +476,11 @@ impl SendTwoFactorOtp for Application {
 }
 #[async_trait]
 impl SendEmailOtp for Application {
-    async fn send(&self, data: &EmailOtpDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        data: &EmailOtpDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         if let Some(pending) = self.pending_publication() {
             pending.lock().unwrap()["delivery"] =
                 json!({"email":data.email,"otp":data.otp,"type":data.otp_type.as_str()});
@@ -489,7 +493,11 @@ impl SendEmailOtp for Application {
 }
 #[async_trait]
 impl SendMagicLink for Application {
-    async fn send(&self, data: &MagicLinkDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        data: &MagicLinkDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         if let Some(pending) = self.pending_publication() {
             pending.lock().unwrap()["delivery"] = json!(data);
         }

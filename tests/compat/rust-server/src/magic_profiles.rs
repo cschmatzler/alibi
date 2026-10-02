@@ -21,14 +21,27 @@ pub(super) type Outbox = Arc<Mutex<HashMap<String, Value>>>;
 struct Sender(Outbox);
 #[async_trait]
 impl SendMagicLink for Sender {
-    async fn send(&self, delivery: &MagicLinkDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &MagicLinkDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
+        let auth = _context.context::<TestSchema>().unwrap();
+        let identifier = if auth.config.base_path.contains("magic-link-hashed") {
+            use base64::Engine as _;
+            use sha2::Digest as _;
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(sha2::Sha256::digest(delivery.token.as_bytes()))
+        } else {
+            delivery.token.clone()
+        };
+        let context = crate::passwordless_context::snapshot(_context, &identifier).await?;
         let serialized = serde_json::to_value(delivery)?;
-        _ = self.0.lock().await.insert(
-            delivery.email.clone(),
-            json!({
-                "url": serialized["url"], "token": serialized["token"], "metadata": serialized["metadata"],
-            }),
-        );
+        let mut value = json!({"url": serialized["url"], "token": serialized["token"], "metadata": serialized["metadata"]});
+        if let Some(context) = context {
+            value["context"] = context;
+        }
+        _ = self.0.lock().await.insert(delivery.email.clone(), value);
         Ok(())
     }
 }

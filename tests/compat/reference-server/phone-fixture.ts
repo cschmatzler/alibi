@@ -1,3 +1,4 @@
+import { callbackSnapshot } from "./passwordless-context";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { phoneNumber, twoFactor } from "better-auth/plugins";
@@ -5,9 +6,9 @@ import { APIError } from "better-auth/api";
 
 /** Real delivery callbacks and independently configured pinned phone runtimes. */
 export async function createPhoneFixture(base: BetterAuthOptions, twoFactorOutbox: Map<string, { otp: string }>) {
-  const outbox = new Map<string, { code: string }>();
+  const outbox = new Map<string, { code?: string; context?: unknown }>();
   const challenges = new Map<string, string>();
-  const callbacks: { phoneNumber: string; userId: string }[] = [];
+  const callbacks: { phoneNumber: string; userId: string; context?: unknown; verifiedOwner?: boolean }[] = [];
   function options(name: string) {
     return {
       ...base,
@@ -17,22 +18,25 @@ export async function createPhoneFixture(base: BetterAuthOptions, twoFactorOutbo
       plugins: [
         twoFactor({ otpOptions: { async sendOTP({ user, otp }) { twoFactorOutbox.set(user.email, { otp }); } } }),
         phoneNumber({
-          async sendOTP({ phoneNumber, code }) {
-            outbox.set(`verification:${phoneNumber}`, { code });
+          async sendOTP({ phoneNumber, code },ctx) {
+            const context=await callbackSnapshot(ctx,phoneNumber);
+            outbox.set(`verification:${phoneNumber}`, { code, ...(context ? {context} : {}) });
             if (name === "phone-custom") challenges.set(phoneNumber, code);
           },
-          async sendPasswordResetOTP({ phoneNumber, code }) { outbox.set(`password-reset:${phoneNumber}`, { code }); },
+          async sendPasswordResetOTP({ phoneNumber, code },ctx) { const context=await callbackSnapshot(ctx,`${phoneNumber}-request-password-reset`);outbox.set(`password-reset:${phoneNumber}`, { code,...(context ? {context} : {}) }); },
           requireVerification: name === "phone-proof",
           ...(name !== "phone-default" ? { signUpOnVerification: { getTempEmail: (phone: string) => `${phone}@phone.fixture.test`, getTempName: (phone: string) => phone } } : {}),
           ...(name === "phone-custom" ? {
             phoneNumberValidator: (phone: string) => /^\+[0-9]{8,15}$/.test(phone),
-            async verifyOTP({ phoneNumber, code }: { phoneNumber: string; code: string }) {
+            async verifyOTP({ phoneNumber, code }: { phoneNumber: string; code: string },ctx: Parameters<typeof callbackSnapshot>[0]) {
+              const context=await callbackSnapshot(ctx,phoneNumber);
+              if(context) outbox.set(`verifier:${phoneNumber}`, {context});
               if (challenges.get(phoneNumber) !== code) return false;
               challenges.delete(phoneNumber);
               return true;
             },
           } : {}),
-          async callbackOnVerification({ phoneNumber, user }) { callbacks.push({ phoneNumber, userId: user.id }); },
+          async callbackOnVerification({ phoneNumber, user },ctx) { const context=await callbackSnapshot(ctx,phoneNumber); const owner=context ? await ctx.context.internalAdapter.findUserById(user.id) : undefined; callbacks.push({ phoneNumber, userId: user.id,...(context ? {context,verifiedOwner:owner?.phoneNumberVerified===true} : {}) }); },
         }),
       ],
     };

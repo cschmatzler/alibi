@@ -129,6 +129,19 @@ running delivery as background work. Already-issued reset proofs or committed
 email-change state remain stored after a delivery failure; uncommitted signup
 writes roll back when the default propagation policy fails the request.
 
+Passwordless `SendEmailOtp::send`, `EmailOtpGenerator::generate`,
+`SendMagicLink::send`, `SendPhoneOtp::send`, `PhoneOtpVerifier::verify`, and
+`PhoneVerificationHook::verified` receive a final `&CallbackContext` argument.
+Update application implementations to accept that argument. Its `request` and
+`request_hook.request` retain the actual native request and original transport
+input; `endpoint` separately exposes the admitted logical input, including hook
+transformations. `context::<YourAuthSchema>()` returns the initialized native
+context and real store, or `None` for a different schema. Trusted calls without
+HTTP input have no fabricated request. Background email/phone delivery owns this
+context until completion, even when its completion observer is dropped. Magic
+link delivery awaits directly; its token generator and the phone validator keep
+their existing scalar inputs.
+
 The in-memory rate limiter defaults to 100 requests per 10 seconds, with tighter
 built-in rules for sign-in, sign-up, identity changes and email delivery.
 `RateLimitConfig::endpoint` supports exact paths and glob overrides; exact paths

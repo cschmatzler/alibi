@@ -24,18 +24,28 @@ use std::sync::Arc;
 pub use storage::{EmailOtpCodec, EmailOtpStorage};
 pub use types::{EmailOtpDelivery, EmailOtpType, OtpResendStrategy};
 
-/// Delivers a code to its intended mailbox. The default notification policy
-/// awaits and logs callback errors while retaining the issued verification.
+/// Delivers a code to its intended mailbox with the real native callback context.
+/// Delivery awaits and propagates errors by default; configured background work
+/// owns its context and logs failures while retaining the issued verification.
 #[async_trait]
 pub trait SendEmailOtp: Send + Sync {
-    async fn send(&self, delivery: &EmailOtpDelivery) -> AuthResult<()>;
+    async fn send(
+        &self,
+        delivery: &EmailOtpDelivery,
+        context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()>;
 }
 
 /// Optional application code generator. Returning `None` selects the default
 /// cryptographically random numeric generator.
 #[async_trait]
 pub trait EmailOtpGenerator: Send + Sync {
-    async fn generate(&self, email: &str, otp_type: EmailOtpType) -> AuthResult<Option<String>>;
+    async fn generate(
+        &self,
+        email: &str,
+        otp_type: EmailOtpType,
+        context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<Option<String>>;
 }
 
 /// Configuration for email OTP verification, login, password reset and email change.
@@ -190,7 +200,7 @@ impl EmailOtpPlugin {
         email: &str,
         otp_type: EmailOtpType,
     ) -> AuthResult<String> {
-        self.issue_code(ctx, &email.to_lowercase(), otp_type, None)
+        self.issue_code(ctx, None, &email.to_lowercase(), otp_type, None)
             .await
     }
 
@@ -277,8 +287,8 @@ better_auth_core::impl_auth_plugin! {
             {
                 let value: serde_json::Value = serde_json::from_slice(&response.body)?;
                 if let Some(email) = value.get("user").and_then(|user| user.get("email")).and_then(serde_json::Value::as_str) {
-                    let otp = self.issue_code(ctx, email, EmailOtpType::EmailVerification, None).await?;
-                    self.deliver(email, otp, EmailOtpType::EmailVerification).await?;
+                    let otp = self.issue_code(ctx, Some(req), email, EmailOtpType::EmailVerification, None).await?;
+                    self.deliver(ctx, Some(req), email, otp, EmailOtpType::EmailVerification).await?;
                 }
             }
             Ok(response)
@@ -293,7 +303,7 @@ impl<S: better_auth_core::AuthSchema> better_auth_core::VerificationEmailOverrid
     async fn send(
         &self,
         user: &better_auth_core::wire::UserView,
-        _request: Option<&AuthRequest>,
+        request: Option<&AuthRequest>,
         ctx: &AuthContext<S>,
     ) -> AuthResult<()> {
         let Some(email) = user.email.as_deref() else {
@@ -305,14 +315,17 @@ impl<S: better_auth_core::AuthSchema> better_auth_core::VerificationEmailOverrid
             "/email-otp/send-verification-otp",
         );
         req.body = Some(serde_json::to_vec(&body)?);
-        drop(self.send_verification(&req, ctx).await?);
+        drop(
+            self.send_verification_with_request(&req, request, ctx)
+                .await?,
+        );
         Ok(())
     }
 
     async fn send_in_transaction(
         &self,
         user: &better_auth_core::wire::UserView,
-        _request: Option<&AuthRequest>,
+        request: Option<&AuthRequest>,
         ctx: &AuthContext<S>,
         tx: &dyn better_auth_core::store::AuthTransaction<S>,
     ) -> AuthResult<()> {
@@ -321,10 +334,10 @@ impl<S: better_auth_core::AuthSchema> better_auth_core::VerificationEmailOverrid
         };
         let email = crate::plugins::authentication_helpers::parse_email(email)?;
         let (otp, value) = self
-            .prepare_code(ctx, &email, EmailOtpType::EmailVerification, None)
+            .prepare_code(ctx, request, &email, EmailOtpType::EmailVerification, None)
             .await?;
         drop(ctx.verifications().create_in_transaction(tx, value).await?);
-        self.deliver(&email, otp, EmailOtpType::EmailVerification)
+        self.deliver(ctx, request, &email, otp, EmailOtpType::EmailVerification)
             .await
     }
 }

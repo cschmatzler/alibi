@@ -37,7 +37,11 @@ struct Sender(Mutex<Vec<MagicLinkDelivery>>);
 
 #[async_trait]
 impl SendMagicLink for Sender {
-    async fn send(&self, delivery: &MagicLinkDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &MagicLinkDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.0.lock().unwrap().push(delivery.clone());
         Ok(())
     }

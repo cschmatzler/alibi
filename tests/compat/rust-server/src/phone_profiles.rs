@@ -24,7 +24,7 @@ use tokio::sync::Mutex;
 
 #[derive(Clone, Default)]
 pub(super) struct Controls {
-    outbox: Arc<Mutex<HashMap<String, String>>>,
+    outbox: Arc<Mutex<HashMap<String, Value>>>,
     challenges: Arc<Mutex<HashMap<String, String>>>,
     callbacks: Arc<Mutex<Vec<Value>>>,
 }
@@ -42,11 +42,27 @@ struct Sender {
 }
 #[async_trait]
 impl SendPhoneOtp for Sender {
-    async fn send(&self, delivery: &PhoneOtpDelivery) -> AuthResult<()> {
-        _ = self.controls.outbox.lock().await.insert(
-            format!("{}:{}", self.purpose, delivery.phone_number),
-            delivery.code.clone(),
-        );
+    async fn send(
+        &self,
+        delivery: &PhoneOtpDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
+        let identifier = if self.purpose == "password-reset" {
+            format!("{}-request-password-reset", delivery.phone_number)
+        } else {
+            delivery.phone_number.clone()
+        };
+        let context = crate::passwordless_context::snapshot(_context, &identifier).await?;
+        let mut value = json!({"code":delivery.code});
+        if let Some(context) = context {
+            value["context"] = context;
+        }
+        _ = self
+            .controls
+            .outbox
+            .lock()
+            .await
+            .insert(format!("{}:{}", self.purpose, delivery.phone_number), value);
         if self.custom {
             _ = self
                 .controls
@@ -79,7 +95,19 @@ impl PhoneNumberValidator for Validator {
 struct Verifier(Controls);
 #[async_trait]
 impl PhoneOtpVerifier for Verifier {
-    async fn verify(&self, delivery: &PhoneOtpDelivery) -> AuthResult<bool> {
+    async fn verify(
+        &self,
+        delivery: &PhoneOtpDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<bool> {
+        if let Some(snapshot) =
+            crate::passwordless_context::snapshot(_context, &delivery.phone_number).await?
+        {
+            _ = self.0.outbox.lock().await.insert(
+                format!("verifier:{}", delivery.phone_number),
+                json!({"context":snapshot}),
+            );
+        }
         let mut challenges = self.0.challenges.lock().await;
         if challenges.get(&delivery.phone_number) != Some(&delivery.code) {
             return Ok(false);
@@ -91,12 +119,28 @@ impl PhoneOtpVerifier for Verifier {
 struct Callback(Controls);
 #[async_trait]
 impl PhoneVerificationHook for Callback {
-    async fn verified(&self, result: &PhoneNumberVerification) -> AuthResult<()> {
-        self.0
-            .callbacks
-            .lock()
-            .await
-            .push(json!({"phoneNumber":result.phone_number,"userId":result.user.id}));
+    async fn verified(
+        &self,
+        result: &PhoneNumberVerification,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
+        let mut event = json!({"phoneNumber":result.phone_number,"userId":result.user.id});
+        if let Some(snapshot) =
+            crate::passwordless_context::snapshot(_context, &result.phone_number).await?
+        {
+            event["context"] = snapshot;
+            let auth = _context.context::<TestSchema>().unwrap();
+            event["verifiedOwner"] = json!(
+                auth.database
+                    .get_user_by_id_record(&result.user.id)
+                    .await?
+                    .is_some_and(
+                        |owner| better_auth_core::AuthUser::phone_number_verified(&owner)
+                            == Some(true)
+                    )
+            );
+        }
+        self.0.callbacks.lock().await.push(event);
         Ok(())
     }
 }
@@ -245,7 +289,7 @@ pub(super) async fn build(
                             query.purpose.as_deref().unwrap_or("verification"),
                             query.phone_number
                         ))
-                        .map(|code| json!({"code":code}))
+                        .cloned()
                         .unwrap_or(Value::Null),
                 )
             }

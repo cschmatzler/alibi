@@ -13,19 +13,35 @@ struct Outbox(Mutex<Vec<EmailOtpDelivery>>);
 
 #[async_trait]
 impl SendEmailOtp for Outbox {
-    async fn send(&self, delivery: &EmailOtpDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &EmailOtpDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.0.lock().unwrap().push(delivery.clone());
         Ok(())
     }
 }
 
-struct RejectingSender(Arc<Outbox>);
+struct RejectingSender(Arc<Outbox>, bool);
 
 #[async_trait]
 impl SendEmailOtp for RejectingSender {
-    async fn send(&self, delivery: &EmailOtpDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &EmailOtpDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.0.0.lock().unwrap().push(delivery.clone());
-        Err(AuthError::bad_request("fixture delivery failed"))
+        if self.1 {
+            Err(AuthError::Upstream {
+                status: 409,
+                code: "DELIVERY_REJECTED",
+                message: "fixture delivery failed",
+            })
+        } else {
+            Err(AuthError::bad_request("fixture delivery failed"))
+        }
     }
 }
 
@@ -33,7 +49,12 @@ struct CounterGenerator(AtomicUsize);
 
 #[async_trait]
 impl EmailOtpGenerator for CounterGenerator {
-    async fn generate(&self, _: &str, _: EmailOtpType) -> AuthResult<Option<String>> {
+    async fn generate(
+        &self,
+        _: &str,
+        _: EmailOtpType,
+        _: &better_auth_core::CallbackContext,
+    ) -> AuthResult<Option<String>> {
         Ok(Some(format!(
             "{:06}",
             self.0.fetch_add(1, Ordering::SeqCst) + 100_000
@@ -90,82 +111,118 @@ async fn post(
 // leaves its real proof available and does not replace the successful response.
 #[tokio::test]
 async fn notification_failure_retains_the_issued_otp_for_single_use_signin() {
-    let ctx = test_helpers::create_test_context().await;
-    let (mut config, outbox) = configured();
-    config.send_verification_otp = Some(Arc::new(RejectingSender(Arc::<Outbox>::clone(&outbox))));
-    let plugin = EmailOtpPlugin::new(config);
-    let email = "delivery-failure@fixture.test";
-    let issued = post(
-        &plugin,
-        &ctx,
-        "/email-otp/send-verification-otp",
-        json!({"email":email,"type":"sign-in"}),
-    )
-    .await;
-    assert_eq!(issued.status, 200);
-    assert_eq!(
-        serde_json::from_slice::<Value>(&issued.body).unwrap(),
-        json!({"success":true})
-    );
-    let delivery = outbox.0.lock().unwrap().first().unwrap().clone();
-    assert_eq!(delivery.email, email);
-    let identifier = format!("sign-in-otp-{email}");
-    let proof = ctx
-        .database
-        .get_latest_verification_by_identifier(&identifier)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(proof.value(), format!("{}:0", delivery.otp));
-    assert!(
-        ctx.database
-            .get_user_by_email(email)
-            .await
-            .unwrap()
-            .is_none()
-    );
-    let received = post(
-        &plugin,
-        &ctx,
-        "/sign-in/email-otp",
-        json!({"email":email,"otp":delivery.otp}),
-    )
-    .await;
-    assert_eq!(received.status, 200);
-    let user = ctx
-        .database
-        .get_user_by_email(email)
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(user.email_verified());
-    assert_eq!(
-        ctx.database
-            .get_user_sessions(&user.id())
-            .await
-            .unwrap()
-            .len(),
-        1
-    );
-    assert!(
-        ctx.database
+    for (policy, coded) in [
+        (
+            better_auth_core::AwaitedNotificationErrorPolicy::Propagate,
+            false,
+        ),
+        (
+            better_auth_core::AwaitedNotificationErrorPolicy::Propagate,
+            true,
+        ),
+        (
+            better_auth_core::AwaitedNotificationErrorPolicy::LogAndContinue,
+            false,
+        ),
+        (
+            better_auth_core::AwaitedNotificationErrorPolicy::LogAndContinue,
+            true,
+        ),
+    ] {
+        let mut ctx = test_helpers::create_test_context().await;
+        ctx.config = Arc::new((*ctx.config).clone().awaited_notification_errors(policy));
+        let (mut config, outbox) = configured();
+        config.send_verification_otp = Some(Arc::new(RejectingSender(
+            Arc::<Outbox>::clone(&outbox),
+            coded,
+        )));
+        let plugin = EmailOtpPlugin::new(config);
+        let email = "delivery-failure@fixture.test";
+        let issued = post(
+            &plugin,
+            &ctx,
+            "/email-otp/send-verification-otp",
+            json!({"email":email,"type":"sign-in"}),
+        )
+        .await;
+        if policy == better_auth_core::AwaitedNotificationErrorPolicy::Propagate {
+            assert_eq!(issued.status, if coded { 409 } else { 400 });
+            if coded {
+                assert_eq!(
+                    serde_json::from_slice::<Value>(&issued.body)
+                        .unwrap()
+                        .get("code")
+                        .and_then(Value::as_str),
+                    Some("DELIVERY_REJECTED")
+                );
+            }
+        } else {
+            assert_eq!(issued.status, 200);
+            assert_eq!(
+                serde_json::from_slice::<Value>(&issued.body).unwrap(),
+                json!({"success":true})
+            );
+        }
+        let delivery = outbox.0.lock().unwrap().first().unwrap().clone();
+        assert_eq!(delivery.email, email);
+        let identifier = format!("sign-in-otp-{email}");
+        let proof = ctx
+            .database
             .get_latest_verification_by_identifier(&identifier)
             .await
             .unwrap()
-            .is_none()
-    );
-    assert_eq!(
-        post(
+            .unwrap();
+        assert_eq!(proof.value(), format!("{}:0", delivery.otp));
+        assert!(
+            ctx.database
+                .get_user_by_email(email)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let received = post(
             &plugin,
             &ctx,
             "/sign-in/email-otp",
-            json!({"email":email,"otp":delivery.otp})
+            json!({"email":email,"otp":delivery.otp}),
         )
-        .await
-        .status,
-        400
-    );
-    assert_eq!(outbox.0.lock().unwrap().len(), 1);
+        .await;
+        assert_eq!(received.status, 200);
+        let user = ctx
+            .database
+            .get_user_by_email(email)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(user.email_verified());
+        assert_eq!(
+            ctx.database
+                .get_user_sessions(&user.id())
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            ctx.database
+                .get_latest_verification_by_identifier(&identifier)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            post(
+                &plugin,
+                &ctx,
+                "/sign-in/email-otp",
+                json!({"email":email,"otp":delivery.otp})
+            )
+            .await
+            .status,
+            400
+        );
+        assert_eq!(outbox.0.lock().unwrap().len(), 1);
+    }
 }
 
 // Upstream checkVerificationOTP rejects once when a database update hook
@@ -1606,5 +1663,122 @@ async fn signup_hook_and_disabled_signup_preserve_delivery_and_state_contracts()
             .await
             .unwrap()
             .is_none()
+    );
+}
+
+/// Distinct delivery lifecycle contract: an abandoned completion observation
+/// still owns the real request/context and can read the issued proof after the
+/// request returns. No fixture supplies the proof or completes delivery.
+#[tokio::test]
+async fn background_delivery_retains_request_store_and_proof_after_observer_rejection() {
+    type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    struct RejectObservation;
+    impl better_auth_core::BackgroundTaskHandler for RejectObservation {
+        fn handle(&self, completion: better_auth_core::BackgroundTaskCompletion) -> AuthResult<()> {
+            drop(completion);
+            Err(AuthError::internal("observer rejected"))
+        }
+    }
+    struct Deferred {
+        resume: tokio::sync::Notify,
+        result: tokio::sync::Mutex<Option<(EmailOtpDelivery, String, bool)>>,
+        done: tokio::sync::Notify,
+    }
+    #[async_trait]
+    impl SendEmailOtp for Deferred {
+        async fn send(
+            &self,
+            delivery: &EmailOtpDelivery,
+            callback: &better_auth_core::CallbackContext,
+        ) -> AuthResult<()> {
+            self.resume.notified().await;
+            let ctx = callback.context::<Schema>().unwrap();
+            let proof = ctx
+                .database
+                .get_verification_by_identifier(&format!("sign-in-otp-{}", delivery.email))
+                .await?;
+            let marker = callback
+                .request
+                .as_ref()
+                .unwrap()
+                .headers
+                .get("x-callback-marker")
+                .unwrap()
+                .clone();
+            *self.result.lock().await = Some((delivery.clone(), marker, proof.is_some()));
+            self.done.notify_one();
+            Err(AuthError::Upstream {
+                status: 409,
+                code: "DELIVERY_REJECTED",
+                message: "delivery rejected",
+            })
+        }
+    }
+    let mut ctx = test_helpers::create_test_context().await;
+    ctx.config = Arc::new(
+        (*ctx.config)
+            .clone()
+            .background_tasks(Arc::new(RejectObservation)),
+    );
+    let sender = Arc::new(Deferred {
+        resume: tokio::sync::Notify::new(),
+        result: tokio::sync::Mutex::new(None),
+        done: tokio::sync::Notify::new(),
+    });
+    let plugin = EmailOtpPlugin::new(EmailOtpConfig {
+        send_verification_otp: Some(sender.clone()),
+        ..Default::default()
+    });
+    let email = "background-context@fixture.test";
+    let mut request = create_auth_json_request_no_query(
+        HttpMethod::Post,
+        "/email-otp/send-verification-otp",
+        None,
+        Some(json!({"email":email,"type":"sign-in"})),
+    );
+    request
+        .headers
+        .insert("x-callback-marker".into(), "real-request".into());
+    let response = plugin.on_request(&request, &ctx).await.unwrap().unwrap();
+    assert_eq!(response.status, 200);
+    assert!(sender.result.lock().await.is_none());
+    drop(request);
+    sender.resume.notify_one();
+    tokio::time::timeout(std::time::Duration::from_secs(5), sender.done.notified())
+        .await
+        .unwrap();
+    let (delivery, marker, proof_exists) = sender.result.lock().await.clone().unwrap();
+    assert_eq!(marker, "real-request");
+    assert!(proof_exists);
+    let consumed = post(
+        &plugin,
+        &ctx,
+        "/sign-in/email-otp",
+        json!({"email":email,"otp":delivery.otp}),
+    )
+    .await;
+    assert_eq!(consumed.status, 200);
+    let replay = post(
+        &plugin,
+        &ctx,
+        "/sign-in/email-otp",
+        json!({"email":email,"otp":delivery.otp}),
+    )
+    .await;
+    assert_eq!(replay.status, 400);
+    assert_eq!(
+        ctx.database
+            .get_user_sessions(
+                serde_json::from_slice::<Value>(&consumed.body)
+                    .unwrap()
+                    .get("user")
+                    .and_then(|user| user.get("id"))
+                    .and_then(Value::as_str)
+                    .unwrap()
+            )
+            .await
+            .unwrap()
+            .len(),
+        1
     );
 }

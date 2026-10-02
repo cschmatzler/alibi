@@ -100,7 +100,11 @@ impl SendResetPassword for Application {
 }
 #[async_trait]
 impl SendEmailOtp for Application {
-    async fn send(&self, delivery: &EmailOtpDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &EmailOtpDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.event(json!({"stage":"email-otp","email":delivery.email,"otp":delivery.otp,"type":delivery.otp_type.as_str()}));
         Ok(())
     }
@@ -111,7 +115,11 @@ struct PhoneSender {
 }
 #[async_trait]
 impl SendPhoneOtp for PhoneSender {
-    async fn send(&self, delivery: &PhoneOtpDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &PhoneOtpDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.app.event(json!({"stage":if self.reset {"phone-reset-otp"} else {"phone-otp"},"phoneNumber":delivery.phone_number,"code":delivery.code}));
         Ok(())
     }

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { callbackSnapshot, capturePasswordlessRequest } from "./passwordless-context";
 import { createCaptchaFixture } from "./captcha-fixture";
 import {physicalCookieProfiles} from "./physical-cookie-fixture";
 import { createServerEndpointFixture } from "./server-endpoint-fixture";
@@ -281,10 +282,26 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   return originalFetch(request);
 };
 
-const magicLinkOutbox=new Map<string,{url:string;token:string;metadata:unknown}>();
-const magicPlugin=()=>magicLink({async sendMagicLink({email,url,token,metadata}) {magicLinkOutbox.set(email,{url,token,metadata:metadata ?? null});}});
-const emailOtpOutbox=new Map<string,{otp:string}>();
-const emailOtp=()=>emailOTP({changeEmail:{enabled:true},async sendVerificationOTP({email,otp,type}) {emailOtpOutbox.set(`${type}:${email}`,{otp});}});
+const magicLinkOutbox=new Map<string,{url:string;token:string;metadata:unknown;context?:unknown}>();
+const magicPlugin=()=>magicLink({async sendMagicLink({email,url,token,metadata},ctx) {const identifier=ctx.context.options.basePath?.includes("magic-link-hashed") ? new Bun.CryptoHasher("sha256").update(token).digest("base64url") : token;const context=await callbackSnapshot(ctx,identifier);magicLinkOutbox.set(email,{url,token,metadata:metadata ?? null,...(context ? {context} : {})});}});
+const emailOtpOutbox=new Map<string,{otp?:string;context?:unknown;generator?:unknown}>();
+const captureOtpGenerator: NonNullable<Parameters<typeof emailOTP>[0]["generateOTP"]> = ({email,type},ctx) => {
+  if (ctx?.request?.headers.get("x-callback-probe") === "issue207") {
+    emailOtpOutbox.set(`${type}:${email}`, { generator: {
+      method: ctx.request.method, path: new URL(ctx.request.url).pathname,
+      marker: ctx.request.headers.get("x-callback-probe"), body: ctx.body,
+      basePath: ctx.context.options.basePath,
+    } });
+  }
+  return undefined;
+};
+const captureOtpSender: Parameters<typeof emailOTP>[0]["sendVerificationOTP"] = async ({email,otp,type},ctx) => {
+  const identifier = type === "change-email" ? `${type}-otp-${ctx?.context.session?.user.email.toLowerCase()}-${email}` : `${type}-otp-${email}`;
+  const context = await callbackSnapshot(ctx,identifier);
+  emailOtpOutbox.set(`${type}:${email}`, { ...emailOtpOutbox.get(`${type}:${email}`), otp, ...(context ? {context} : {}) });
+};
+
+const emailOtp=()=>emailOTP({changeEmail:{enabled:true},generateOTP: captureOtpGenerator, sendVerificationOTP: captureOtpSender});
 
 const authOptions = {
   baseURL: `http://localhost:${PORT}`,
@@ -575,7 +592,7 @@ function createOtpProfile(name:string) {
       resendStrategy:name==="passwordless-encrypted-reuse" ? "reuse" : "rotate",
       disableSignUp:name==="passwordless-disabled",overrideDefaultEmailVerification:proof,
       changeEmail:{enabled:true,verifyCurrentEmail:proof},
-      async sendVerificationOTP({email,otp,type}) {emailOtpOutbox.set(`${type}:${email}`,{otp});}
+      generateOTP: captureOtpGenerator, sendVerificationOTP: captureOtpSender
     })]
   });
 }
@@ -593,7 +610,7 @@ for (const name of ["magic-link-hashed", "magic-link-disabled"]) {
     plugins: [magicLink({
       storeToken: name === "magic-link-hashed" ? "hashed" : "plain",
       disableSignUp: name === "magic-link-disabled",
-      async sendMagicLink({email,url,token,metadata}) {magicLinkOutbox.set(email,{url,token,metadata:metadata ?? null});}
+      async sendMagicLink({email,url,token,metadata},ctx) {const identifier=ctx.context.options.basePath?.includes("magic-link-hashed") ? new Bun.CryptoHasher("sha256").update(token).digest("base64url") : token;const context=await callbackSnapshot(ctx,identifier);magicLinkOutbox.set(email,{url,token,metadata:metadata ?? null,...(context ? {context} : {})});}
     })],
   }));
 }
@@ -872,6 +889,7 @@ const passkeyControls = passkeyFixture(database);
 const server = Bun.serve({
   port: PORT,
   async fetch(request) {
+    await capturePasswordlessRequest(request);
     try {
       const url = new URL(request.url);
       organizationTransport.observe(request);
