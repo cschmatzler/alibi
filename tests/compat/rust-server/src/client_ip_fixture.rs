@@ -108,6 +108,8 @@ pub(super) async fn router(
                 .rate_limit(
                     RateLimitConfig::new()
                         .default_limit(Duration::from_secs(60), 10000)
+                        .endpoint("/sign-up/email", Duration::from_secs(60), 10000)
+                        .endpoint("/sign-in/email", Duration::from_secs(60), 10000)
                         .endpoint("/client-ip-rate-check", Duration::from_secs(60), 2)
                         .endpoint("/client-ip-rate-empty", Duration::from_secs(60), 2)
                         .endpoint("/client-ip-rate-duplicate", Duration::from_secs(60), 2),
