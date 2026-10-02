@@ -10,7 +10,17 @@ compatScenario("every declared fixture profile is served by both runtimes", asyn
   const statuses: Record<string, number> = {};
   const missing: string[] = [];
   for (const profile of FIXTURE_PROFILES) {
-    const response = await ctx.rawRequest({ actor: "probe", path: `${authProfilePath(profile)}/ok`, method: "GET", ...(profile === "captcha-turnstile-custom" ? { headers: { "x-captcha-response": "valid" } } : {}) });
+    // The installed runtime shares memory rate buckets across auth instances.
+    // Give availability probes their own client, separate from scenario traffic.
+    const response = await ctx.rawRequest({
+      actor: "probe",
+      path: `${authProfilePath(profile)}/ok`,
+      method: "GET",
+      headers: {
+        "x-forwarded-for": "192.0.2.254",
+        ...(profile === "captcha-turnstile-custom" ? { "x-captcha-response": "valid" } : {}),
+      },
+    });
     statuses[profile] = response.status;
     if (response.status !== 200) missing.push(`${profile} -> ${response.status}`);
   }
