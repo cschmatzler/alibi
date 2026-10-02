@@ -717,3 +717,6 @@ fn discord_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
             .unwrap_or(false),
     })
 }
+
+mod huggingface;
+pub use huggingface::HuggingFaceOptions;
