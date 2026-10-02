@@ -39,6 +39,9 @@ struct Application {
     mode: &'static str,
     database: DatabaseConnection,
     events: Events,
+    ready: Arc<tokio::sync::Notify>,
+    pending: Arc<tokio::sync::Notify>,
+    drained: Arc<tokio::sync::Notify>,
 }
 #[async_trait::async_trait]
 impl SendMagicLink for Application {
@@ -93,7 +96,14 @@ impl Fixture {
 fn db_error(error: better_auth_seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
-fn fields(entity: &'static str, mode: &'static str, events: &Events) -> FieldConfigs {
+fn fields(
+    entity: &'static str,
+    mode: &'static str,
+    events: &Events,
+    ready: &Arc<tokio::sync::Notify>,
+    pending: &Arc<tokio::sync::Notify>,
+    drained: &Arc<tokio::sync::Notify>,
+) -> FieldConfigs {
     let output = matches!(mode, "output" | "cached" | "provider" | "issuer");
     let mut fields = FieldConfigs::new();
     for name in ["label", "hidden", "omitted"] {
@@ -141,8 +151,14 @@ fn fields(entity: &'static str, mode: &'static str, events: &Events) -> FieldCon
             field = field.field_name("user_label");
         }
         if output {
+            let ready = ready.clone();
+            let pending = pending.clone();
+            let drained = drained.clone();
             let events = events.clone();
             field = field.transform_output(move |value| {
+                let ready = ready.clone();
+                let pending = pending.clone();
+                let drained = drained.clone();
                 let events = events.clone();
                 async move {
                     let value = value.map(|value| value.to_json_value()).transpose()?;
@@ -160,6 +176,37 @@ fn fields(entity: &'static str, mode: &'static str, events: &Events) -> FieldCon
                             receipt["requestPath"] = json!(request.as_ref().map(|context| context.path.rsplit("/api/auth").next().unwrap_or(&context.path)));
                         }
                         events.lock().expect("application receipts").push(receipt);
+                    }
+                    if entity == "session"
+                        && name == "label"
+                        && value.as_ref().and_then(Value::as_str) == Some("collection-coordinated-slow")
+                    {
+                        pending.notified().await;
+                        let request = better_auth_core::hooks::current_request_hook_context();
+                        events.lock().expect("application receipts").push(json!({
+                            "phase": "settled", "entity": entity, "field": name, "value": value,
+                            "requestScoped": request.as_ref().is_some_and(|context| context.path.ends_with("/change-password")),
+                            "requestPath": request.map(|context| context.path),
+                        }));
+                    }
+                    if entity == "session"
+                        && name == "omitted"
+                        && value.as_ref().and_then(Value::as_str) == Some("collection-coordinated-slow")
+                    {
+                        drained.notify_one();
+                    }
+                    if entity == "session"
+                        && name == "omitted"
+                        && value.as_ref().and_then(Value::as_str) == Some("collection-ready")
+                    {
+                        ready.notify_one();
+                    }
+                    if entity == "session"
+                        && name == "label"
+                        && value.as_ref().and_then(Value::as_str) == Some("collection-coordinated-reject")
+                    {
+                        ready.notified().await;
+                        return Err(AuthError::internal("application output failed"));
                     }
                     if name == "label" && matches!(value.as_ref().and_then(Value::as_str),Some("throw"|"collection-reject")) {
                         return Err(AuthError::internal("application output failed"));
@@ -540,6 +587,9 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
         mode,
         database: database.clone(),
         events: Events::default(),
+        ready: Arc::default(),
+        pending: Arc::default(),
+        drained: Arc::default(),
     };
     let path = if mode == "normal" {
         "/__test/profiles/additional-fields/api/auth".to_owned()
@@ -547,8 +597,22 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
         format!("/__test/profiles/additional-{mode}-fields/api/auth")
     };
     let mut settings = config.clone().base_path(&path);
-    settings.user.additional_fields = fields("user", mode, &application.events);
-    settings.account.additional_fields = fields("account", mode, &application.events);
+    settings.user.additional_fields = fields(
+        "user",
+        mode,
+        &application.events,
+        &application.ready,
+        &application.pending,
+        &application.drained,
+    );
+    settings.account.additional_fields = fields(
+        "account",
+        mode,
+        &application.events,
+        &application.ready,
+        &application.pending,
+        &application.drained,
+    );
     for name in ["password", "accessToken"] {
         drop(
             settings
@@ -557,7 +621,14 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
                 .insert(name.into(), FieldConfig::new(json!({"type":"string"}))),
         );
     }
-    settings.session.additional_fields = fields("session", mode, &application.events);
+    settings.session.additional_fields = fields(
+        "session",
+        mode,
+        &application.events,
+        &application.ready,
+        &application.pending,
+        &application.drained,
+    );
     if mode == "cached" {
         settings.session.cookie_cache = Some(better_auth_core::CookieCacheConfig {
             enabled: true,
@@ -638,6 +709,9 @@ struct RewindInput {
     expires_at: chrono::DateTime<chrono::Utc>,
     hidden: Option<String>,
     label: Option<String>,
+    omitted: Option<String>,
+    #[serde(default)]
+    release_collection: bool,
 }
 #[derive(Deserialize)]
 struct StateQuery {
@@ -720,6 +794,21 @@ pub(super) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
                                 .col_expr(
                                     application_session::Column::Label,
                                     better_auth_seaorm::sea_orm::sea_query::Expr::value(label),
+                                )
+                                .filter(application_session::Column::Token.eq(&input.token))
+                                .exec(&application.database)
+                                .await
+                                .map_err(db_error)?;
+                        }
+                        if input.release_collection {
+                            application.pending.notify_one();
+                            application.drained.notified().await;
+                        }
+                        if let Some(omitted) = input.omitted {
+                            application_session::Entity::update_many()
+                                .col_expr(
+                                    application_session::Column::Omitted,
+                                    better_auth_seaorm::sea_orm::sea_query::Expr::value(omitted),
                                 )
                                 .filter(application_session::Column::Token.eq(&input.token))
                                 .exec(&application.database)

@@ -120,7 +120,9 @@ compatScenario("revoke other sessions keeps the caller alive", async (ctx) => {
   };
 });
 
-for (const rejection of [true, false]) compatScenario(`list sessions ${rejection ? "rejects configured output while started callbacks continue" : "publishes ordered configured output without changing physical authority"}`, async (ctx) => {
+const listModes = ["reject", "success", "coordinated", ...(process.env.BETTER_AUTH_LIST_SCHEDULING_DIAGNOSTIC === "1" ? ["fast-diagnostic"] : [])] as const;
+for (const mode of listModes) compatScenario(`list sessions ${mode === "coordinated" ? "coordinates ready callbacks before rejection and retains pending siblings" : mode === "fast-diagnostic" ? "diagnoses uncoordinated callback scheduler ordering" : mode === "reject" ? "rejects configured output while started callbacks continue" : "publishes ordered configured output without changing physical authority"}`, async (ctx) => {
+  const rejection = mode !== "success";
   const profile = "additional-cached-fields";
   const owner = ctx.actor("list-owner", profile);
   const sibling = ctx.actor("list-sibling", profile);
@@ -139,25 +141,26 @@ for (const rejection of [true, false]) compatScenario(`list sessions ${rejection
   const foreignToken = z.string().parse((await foreign.client.getSession()).data?.session.token);
   const expiresAt = new Date(Date.now() + 86_400_000 * 6).toISOString();
   // Operator setup writes real application columns, preserving genuine issued credentials.
-  for (const [target, label] of [[siblingToken, rejection ? "collection-reject" : "listed-sibling"], [slowToken, "collection-slow"]]) {
-    expect((await ctx.rawRequest({ path: "/__test/additional-fields/rewind-session?profile=cached", method: "POST", json: { token: target, label, expiresAt } })).status).toBe(200);
+  for (const [target, label] of [[siblingToken, mode === "coordinated" ? "collection-coordinated-reject" : rejection ? "collection-reject" : "listed-sibling"], [slowToken, mode === "coordinated" ? "collection-coordinated-slow" : "collection-slow"]]) {
+    expect((await ctx.rawRequest({ path: "/__test/additional-fields/rewind-session?profile=cached", method: "POST", json: { token: target, label, expiresAt, ...(mode === "coordinated" && target === slowToken ? { omitted: "collection-coordinated-slow" } : {}) } })).status).toBe(200);
   }
   expect((await ctx.rawRequest({ path: "/__test/additional-fields/rewind-session?profile=cached", method: "POST", json: { token: expiredToken, label: "throw", expiresAt: new Date(Date.now() - 86_400_000).toISOString() } })).status).toBe(200);
-  if (rejection) expect((await ctx.rawRequest({ path: "/__test/additional-fields/rewind-session?profile=cached", method: "POST", json: { token, label: "collection-slower", expiresAt } })).status).toBe(200);
+  if (mode === "reject") expect((await ctx.rawRequest({ path: "/__test/additional-fields/rewind-session?profile=cached", method: "POST", json: { token, label: "collection-slower", expiresAt } })).status).toBe(200);
+  if (mode === "coordinated") expect((await ctx.rawRequest({ path: "/__test/additional-fields/rewind-session?profile=cached", method: "POST", json: { token, omitted: "collection-ready", expiresAt } })).status).toBe(200);
   const read = async () => {
     const result = await ctx.rawRequest({ path: "/__test/additional-fields/state?profile=cached" });
     expect(result.status).toBe(200);
-    const state = z.object({ sessions: z.array(z.record(z.string(), z.unknown())), events: z.array(z.record(z.string(), z.unknown())) }).parse(result.body);
-    return { sessions: state.sessions, events: state.events.filter(event => event.entity !== "account") };
+    const state = z.object({ users: z.array(z.record(z.string(), z.unknown())), accounts: z.array(z.record(z.string(), z.unknown())), verifications: z.array(z.record(z.string(), z.unknown())), sessions: z.array(z.record(z.string(), z.unknown())), events: z.array(z.record(z.string(), z.unknown())) }).parse(result.body);
+    return { physical: { users: state.users, accounts: state.accounts, verifications: state.verifications, sessions: state.sessions }, sessions: state.sessions, events: state.events.filter(event => event.entity !== "account") };
   };
   const before = await read();
   const result = await owner.client.listSessions();
   if (rejection) expect(result.error?.status).toBe(500);
   const pending = await read();
-  expect(pending.sessions).toEqual(before.sessions);
+  expect(pending.physical).toEqual(before.physical);
   const callbacks = pending.events.slice(before.events.length);
-  expect(callbacks.filter(event => event.phase === "output" && event.entity === "session" && event.value === "collection-slow")).toHaveLength(1);
-  if (rejection) expect(callbacks.filter(event => event.phase === "output" && event.value === "collection-slower")).toHaveLength(1);
+  expect(callbacks.filter(event => event.phase === "output" && event.entity === "session" && event.value === (mode === "coordinated" ? "collection-coordinated-slow" : "collection-slow"))).toHaveLength(1);
+  if (mode === "reject") expect(callbacks.filter(event => event.phase === "output" && event.value === "collection-slower")).toHaveLength(1);
   expect(callbacks.filter(event => event.phase === "output" && event.value === "throw")).toEqual([]);
   if (rejection) {
     expect(result.error?.status).toBe(500);
@@ -174,10 +177,17 @@ for (const rejection of [true, false]) compatScenario(`list sessions ${rejection
     }
     expect(sessions.some(row => row.token === foreignToken)).toBe(false);
   }
-  await new Promise(resolve => setTimeout(resolve, 550));
+  if (mode === "coordinated") {
+    const ready = callbacks.findIndex(event => event.phase === "output" && event.field === "omitted" && event.value === "collection-ready");
+    const completed = callbacks.findIndex(event => event.phase === "completed" && event.path === "/list-sessions");
+    expect(ready).toBeGreaterThanOrEqual(0);
+    expect(completed).toBeGreaterThan(ready);
+    expect((await ctx.rawRequest({ path: "/__test/additional-fields/rewind-session?profile=cached", method: "POST", json: { token: slowToken, expiresAt, releaseCollection: true } })).status).toBe(200);
+  }
+  if (mode !== "coordinated") await new Promise(resolve => setTimeout(resolve, 550));
   const after = await read();
-  expect(after.sessions).toEqual(before.sessions);
-  expect(after.events.slice(before.events.length).filter(event => event.phase === "settled")).toEqual((rejection ? ["collection-slow", "collection-slower"] : ["collection-slow"]).map(value => ({ phase: "settled", entity: "session", field: "label", value, requestScoped: false, requestPath: "/list-sessions" })));
+  expect(after.physical).toEqual(before.physical);
+  expect(after.events.slice(before.events.length).filter(event => event.phase === "settled")).toEqual((mode === "reject" ? ["collection-slow", "collection-slower"] : [mode === "coordinated" ? "collection-coordinated-slow" : "collection-slow"]).map(value => ({ phase: "settled", entity: "session", field: "label", value, requestScoped: false, requestPath: "/list-sessions" })));
   // The authenticated foreign caller can list only its own physical session.
   const cached = await owner.client.getSession();
   expect(cached.error).toBeNull();

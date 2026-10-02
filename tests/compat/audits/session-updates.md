@@ -202,3 +202,8 @@ checking, changed Rust formatting and `git diff --check` pass. A sibling session
 directory run passed 75 cases and exposed the empty500 content-type difference;
 the final focused run verifies that repaired transport detail. No full repository
 or coverage gate was run for this issue.
+
+The follow-up [collection scheduling investigation](collection-output-scheduling.md)
+for #332 records the exact uncoordinated diagnostic and the installed Source
+factory's finite promise-reaction prefix. Causally coordinated callbacks now
+extend this same list owner; native production collection ownership is unchanged.
