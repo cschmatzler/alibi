@@ -88,3 +88,9 @@ versions or change database schemas. Local fixtures disable rate limiting to
 exercise lifecycle cases; this evidence does not claim production SMS transport
 or a distinct phone rate-limit policy. Applications supply their real delivery
 provider and, when configured, external verifier policy.
+
+## Raw numeric configuration
+
+The [passwordless numeric audit](passwordless-numeric.md) records native `f64`
+configuration, real delivery/persistence/consumption evidence, plugin-specific
+zero/NaN policies, checked millisecond expiry and excluded unsafe probes.

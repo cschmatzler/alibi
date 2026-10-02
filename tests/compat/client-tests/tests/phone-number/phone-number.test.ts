@@ -1,3 +1,4 @@
+import { passwordlessNumericScenarios } from "../../support/passwordless-numeric";
 import { expect } from "bun:test";
 import { z } from "zod";
 import { compatScenario } from "../../support/scenario";
@@ -522,3 +523,5 @@ compatScenario("phone endpoint schemas reject every malformed field before any s
   expect(await verificationCount(ctx, `${phoneNumber}-request-password-reset`)).toBe(0);
   return {before, rejected, verified, reset, state, signedIn};
 });
+
+passwordlessNumericScenarios("phone");

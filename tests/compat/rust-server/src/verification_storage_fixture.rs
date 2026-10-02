@@ -674,20 +674,20 @@ pub(super) async fn router(
                     },
                 ))
                 .plugin(EmailOtpPlugin::new(EmailOtpConfig {
-                    expires_in: Duration::milliseconds(if mode.ends_with("-default") {
-                        300000
+                    expires_in: if mode.ends_with("-default") {
+                        300.0
                     } else {
-                        300500
-                    }),
+                        300.5
+                    },
                     send_verification_otp: Some(app.clone()),
                     ..Default::default()
                 }))
                 .plugin(MagicLinkPlugin::new(MagicLinkConfig {
-                    expires_in: Duration::milliseconds(if mode.ends_with("-default") {
-                        300000
+                    expires_in: if mode.ends_with("-default") {
+                        300.0
                     } else {
-                        300500
-                    }),
+                        300.5
+                    },
                     send_magic_link: Some(app.clone()),
                     generate_token: Some(app.clone()),
                     ..Default::default()

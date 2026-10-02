@@ -1,4 +1,5 @@
 //! Local SMS delivery and actual configured phone runtimes.
+use crate::passwordless_numeric_fixture::numeric_setting;
 use crate::{CompatTwoFactorOtpSender, TestSchema};
 use async_trait::async_trait;
 use axum::{
@@ -179,6 +180,23 @@ pub(super) async fn build(
         "phone-signup",
         "phone-proof",
         "phone-custom",
+        "phone-numeric-length-zero",
+        "phone-numeric-length-fraction",
+        "phone-numeric-length-negative",
+        "phone-numeric-length-nan",
+        "phone-numeric-length-negative-infinity",
+        "phone-numeric-attempts-zero",
+        "phone-numeric-attempts-fraction",
+        "phone-numeric-attempts-negative",
+        "phone-numeric-attempts-nan",
+        "phone-numeric-attempts-infinity",
+        "phone-numeric-attempts-negative-infinity",
+        "phone-numeric-lifetime-zero",
+        "phone-numeric-lifetime-fraction",
+        "phone-numeric-lifetime-negative",
+        "phone-numeric-lifetime-nan",
+        "phone-numeric-lifetime-infinity",
+        "phone-numeric-lifetime-negative-infinity",
     ] {
         let custom = name == "phone-custom";
         let config = config
@@ -203,6 +221,9 @@ pub(super) async fn build(
             verify_otp: custom
                 .then(|| Arc::new(Verifier(controls.clone())) as Arc<dyn PhoneOtpVerifier>),
             callback_on_verification: Some(Arc::new(Callback(controls.clone()))),
+            otp_length: numeric_setting(name, "length", 6.0),
+            allowed_attempts: numeric_setting(name, "attempts", 3.0),
+            expires_in: numeric_setting(name, "lifetime", 300.0),
             ..Default::default()
         });
         let auth = Arc::new(

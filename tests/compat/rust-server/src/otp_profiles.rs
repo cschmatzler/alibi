@@ -1,4 +1,5 @@
 //! Local delivery, configuration and server-only OTP fixture interfaces.
+use crate::passwordless_numeric_fixture::numeric_setting;
 use crate::{CompatVerificationSender, EmailOutboxRecord, TestSchema};
 use async_trait::async_trait;
 use axum::{
@@ -189,6 +190,23 @@ pub(super) async fn router(
         "passwordless-disabled",
         "verification-cleanup",
         "verification-no-cleanup",
+        "passwordless-numeric-length-zero",
+        "passwordless-numeric-length-fraction",
+        "passwordless-numeric-length-negative",
+        "passwordless-numeric-length-nan",
+        "passwordless-numeric-length-negative-infinity",
+        "passwordless-numeric-attempts-zero",
+        "passwordless-numeric-attempts-fraction",
+        "passwordless-numeric-attempts-negative",
+        "passwordless-numeric-attempts-nan",
+        "passwordless-numeric-attempts-infinity",
+        "passwordless-numeric-attempts-negative-infinity",
+        "passwordless-numeric-lifetime-zero",
+        "passwordless-numeric-lifetime-fraction",
+        "passwordless-numeric-lifetime-negative",
+        "passwordless-numeric-lifetime-nan",
+        "passwordless-numeric-lifetime-infinity",
+        "passwordless-numeric-lifetime-negative-infinity",
     ] {
         let proof = name.starts_with("passwordless-proof");
         let mut config = config
@@ -212,6 +230,9 @@ pub(super) async fn router(
             override_default_email_verification: proof,
             verify_current_email: proof,
             disable_sign_up: name == "passwordless-disabled",
+            otp_length: numeric_setting(name, "length", 6.0),
+            allowed_attempts: numeric_setting(name, "attempts", 3.0),
+            expires_in: numeric_setting(name, "lifetime", 300.0),
             ..Default::default()
         });
         let verification = EmailVerificationPlugin::new()

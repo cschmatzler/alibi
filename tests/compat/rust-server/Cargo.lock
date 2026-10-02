@@ -544,6 +544,7 @@ dependencies = [
  "indexmap 2.13.0",
  "jsonwebtoken",
  "k256",
+ "num-traits",
  "p256",
  "p521",
  "rand 0.8.5",

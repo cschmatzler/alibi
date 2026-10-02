@@ -1,5 +1,6 @@
 //! Local magic-link delivery and explicit configuration fixtures.
 use crate::TestSchema;
+use crate::passwordless_numeric_fixture::numeric_setting;
 use async_trait::async_trait;
 use axum::{Json, Router, extract::Query, routing::get};
 use better_auth::integrations::axum::AxumIntegration;
@@ -59,7 +60,16 @@ pub(super) async fn router(
     outbox: Outbox,
 ) -> AuthResult<Router> {
     let mut router = Router::new();
-    for name in ["magic-link-hashed", "magic-link-disabled"] {
+    for name in [
+        "magic-link-hashed",
+        "magic-link-disabled",
+        "magic-link-numeric-lifetime-zero",
+        "magic-link-numeric-lifetime-fraction",
+        "magic-link-numeric-lifetime-negative",
+        "magic-link-numeric-lifetime-nan",
+        "magic-link-numeric-lifetime-infinity",
+        "magic-link-numeric-lifetime-negative-infinity",
+    ] {
         let config = config
             .clone()
             .base_path(format!("/__test/profiles/{name}/api/auth"));
@@ -82,6 +92,7 @@ pub(super) async fn router(
                         MagicLinkTokenStorage::Plain
                     },
                     disable_sign_up: name == "magic-link-disabled",
+                    expires_in: numeric_setting(name, "lifetime", 300.0),
                     ..Default::default()
                 }))
                 .build()

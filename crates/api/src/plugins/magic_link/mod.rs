@@ -13,7 +13,6 @@ use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthUser,
     CreateUser, CreateVerification,
 };
-use chrono::{Duration, Utc};
 use rand::{Rng, rngs::OsRng};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -77,7 +76,9 @@ pub struct MagicLinkConfig {
     pub send_magic_link: Option<Arc<dyn SendMagicLink>>,
     pub generate_token: Option<Arc<dyn MagicLinkTokenGenerator>>,
     pub storage: MagicLinkTokenStorage,
-    pub expires_in: Duration,
+    /// Lifetime in seconds. Zero and NaN use 300 seconds. Fractions retain
+    /// JavaScript millisecond rounding; invalid dates fail before persistence.
+    pub expires_in: f64,
     pub disable_sign_up: bool,
 }
 
@@ -93,7 +94,7 @@ impl Default for MagicLinkConfig {
             send_magic_link: None,
             generate_token: None,
             storage: MagicLinkTokenStorage::Plain,
-            expires_in: Duration::seconds(300),
+            expires_in: 300.0,
             disable_sign_up: false,
         }
     }
@@ -148,17 +149,17 @@ impl MagicLinkPlugin {
             email: body.email.clone(),
             name: body.name,
         };
-        let expires_in = if self.config.expires_in.is_zero() {
-            Duration::seconds(300)
-        } else {
-            self.config.expires_in
+        let expires_at = match super::passwordless_numeric::expires_at(self.config.expires_in, true)
+        {
+            Some(value) => value,
+            None => return Ok(AuthResponse::new(500)),
         };
         drop(
             ctx.verifications()
                 .create(CreateVerification {
                     identifier: stored,
                     value: serde_json::to_string(&data)?,
-                    expires_at: Utc::now() + expires_in,
+                    expires_at,
                 })
                 .await?,
         );

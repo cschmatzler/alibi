@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { numericModes, numericOptions } from "./passwordless-numeric";
 import { callbackSnapshot, capturePasswordlessRequest } from "./passwordless-context";
 import { createCaptchaFixture } from "./captcha-fixture";
 import {physicalCookieProfiles} from "./physical-cookie-fixture";
@@ -588,6 +589,7 @@ function createOtpProfile(name:string) {
     verification:{disableCleanup:name==="verification-no-cleanup"},
     emailVerification: name==="passwordless-proof" ? {sendOnSignUp:false,autoSignInAfterVerification:true} : {...authOptions.emailVerification,sendOnSignUp:false,autoSignInAfterVerification:proof},
     plugins:[emailOTP({
+      ...numericOptions(name),
       storeOTP:name==="passwordless-hashed" ? "hashed" : name==="passwordless-encrypted-reuse" ? "encrypted" : "plain",
       resendStrategy:name==="passwordless-encrypted-reuse" ? "reuse" : "rotate",
       disableSignUp:name==="passwordless-disabled",overrideDefaultEmailVerification:proof,
@@ -597,17 +599,18 @@ function createOtpProfile(name:string) {
   });
 }
 const otpProfiles=new Map<string,ReturnType<typeof createOtpProfile>>();
-for (const name of ["passwordless-hashed","passwordless-encrypted-reuse","passwordless-proof","passwordless-proof-explicit","passwordless-disabled","verification-cleanup","verification-no-cleanup"]) {
+for (const name of ["passwordless-hashed","passwordless-encrypted-reuse","passwordless-proof","passwordless-proof-explicit","passwordless-disabled","verification-cleanup","verification-no-cleanup", ...numericModes.map(mode=>`passwordless-numeric-${mode}`)]) {
   otpProfiles.set(name,createOtpProfile(name));
 }
 
 const magicProfiles = new Map<string, ReturnType<typeof betterAuth>>();
-for (const name of ["magic-link-hashed", "magic-link-disabled"]) {
+for (const name of ["magic-link-hashed", "magic-link-disabled", ...numericModes.filter(mode=>mode.startsWith("lifetime-")).map(mode=>`magic-link-numeric-${mode}`)]) {
   magicProfiles.set(name, betterAuth({
     ...authOptions,
     basePath: `/__test/profiles/${name}/api/auth`,
     emailVerification: {...authOptions.emailVerification, sendOnSignUp:false},
     plugins: [magicLink({
+      ...numericOptions(name),
       storeToken: name === "magic-link-hashed" ? "hashed" : "plain",
       disableSignUp: name === "magic-link-disabled",
       async sendMagicLink({email,url,token,metadata},ctx) {const identifier=ctx.context.options.basePath?.includes("magic-link-hashed") ? new Bun.CryptoHasher("sha256").update(token).digest("base64url") : token;const context=await callbackSnapshot(ctx,identifier);magicLinkOutbox.set(email,{url,token,metadata:metadata ?? null,...(context ? {context} : {})});}

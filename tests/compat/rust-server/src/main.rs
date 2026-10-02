@@ -135,6 +135,7 @@ mod parity_controls;
 mod passkey_authentication_fixture;
 mod passkey_fixture;
 mod passkey_registration_fixture;
+mod passwordless_numeric_fixture;
 mod phone_profiles;
 mod session_field_model;
 mod session_fields_fixture;

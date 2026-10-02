@@ -1,3 +1,4 @@
+import { passwordlessNumericScenarios } from "../../support/passwordless-numeric";
 import { expect } from "bun:test";
 import { compatScenario } from "../../support/scenario";
 import { authProfilePath } from "../../support/profiles";
@@ -53,3 +54,5 @@ compatScenario("disabled magic-link signup consumes unknown-user links and authe
   expect(state.sessions).toHaveLength(1);
   return { issue, redirect: { status: response.status, location }, empty, existing, state };
 }, ["POST /sign-in/magic-link", "GET /magic-link/verify"]);
+
+passwordlessNumericScenarios("magic-link");

@@ -47,6 +47,7 @@ pub mod passkey;
 
 pub mod password_management;
 
+mod passwordless_numeric;
 pub mod phone_number;
 
 pub mod session_management;

@@ -3,6 +3,7 @@ use crate::plugins::test_helpers;
 use better_auth_core::{
     AuthPlugin, AuthSession, AuthUser, AuthVerification, CreateUser, HttpMethod,
 };
+use chrono::{Duration, Utc};
 use serde_json::Value;
 use std::sync::Mutex;
 
@@ -251,7 +252,7 @@ async fn hashed_expired_token_is_removed_and_cannot_create_session() {
     let ctx = test_helpers::create_test_context().await;
     let (mut plugin, outbox) = configured();
     plugin.config.storage = MagicLinkTokenStorage::Hashed;
-    plugin.config.expires_in = Duration::seconds(-1);
+    plugin.config.expires_in = -1.0;
     let req = test_helpers::create_auth_json_request_no_query(
         HttpMethod::Post,
         "/sign-in/magic-link",

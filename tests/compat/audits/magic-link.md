@@ -67,3 +67,9 @@ additional-field transforms, actual sender/generator request-context exposure,
 versioned secret envelopes and dynamic base URL/origin configuration remain
 explicit broader audit gaps. This bounded change does not claim complete
 Better Auth parity.
+
+## Raw numeric configuration
+
+The [passwordless numeric audit](passwordless-numeric.md) records native `f64`
+configuration, real delivery/persistence/consumption evidence, plugin-specific
+zero/NaN policies, checked millisecond expiry and excluded unsafe probes.

@@ -16,8 +16,6 @@ use better_auth_core::{
     AuthAccount, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema,
     AuthUser, CreateAccount, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
 };
-use chrono::Utc;
-use rand::{Rng, rngs::OsRng};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -47,11 +45,8 @@ impl PhoneNumberPlugin {
         .await
     }
 
-    fn generate_code(&self) -> String {
-        let mut rng = OsRng;
-        (0..self.config.otp_length)
-            .map(|_| char::from(b'0' + rng.gen_range(0..10)))
-            .collect()
+    fn generate_code(&self) -> AuthResult<String> {
+        super::super::passwordless_numeric::generate_code(self.config.otp_length)
     }
     async fn validate_phone(&self, phone_number: &str) -> AuthResult<()> {
         if let Some(validator) = &self.config.phone_number_validator
@@ -71,7 +66,7 @@ impl PhoneNumberPlugin {
         identifier: &str,
         count_attempts: bool,
     ) -> AuthResult<String> {
-        let code = self.generate_code();
+        let code = self.generate_code()?;
         drop(
             ctx.verifications()
                 .create(CreateVerification {
@@ -81,7 +76,11 @@ impl PhoneNumberPlugin {
                     } else {
                         code.clone()
                     },
-                    expires_at: Utc::now() + self.config.expires_in,
+                    expires_at: super::super::passwordless_numeric::expires_at(
+                        self.config.expires_in,
+                        false,
+                    )
+                    .ok_or_else(|| AuthError::internal("Invalid Date"))?,
                 })
                 .await?,
         );
@@ -149,7 +148,9 @@ impl PhoneNumberPlugin {
             return Err(phone_error(400, "OTP_EXPIRED", "OTP expired"));
         }
         let (_, attempts) = split_code(existing.value()?);
-        if attempts >= self.config.allowed_attempts {
+        if super::super::passwordless_numeric::attempts_number(attempts)
+            >= self.config.allowed_attempts
+        {
             ctx.verifications().delete(identifier).await?;
             return Err(phone_error(403, "TOO_MANY_ATTEMPTS", "Too many attempts"));
         }
@@ -159,7 +160,9 @@ impl PhoneNumberPlugin {
             .await?
             .ok_or_else(invalid_otp)?;
         let (code, attempts_2) = split_code(consumed.value()?);
-        if attempts_2 >= self.config.allowed_attempts {
+        if super::super::passwordless_numeric::attempts_number(attempts_2)
+            >= self.config.allowed_attempts
+        {
             return Err(phone_error(403, "TOO_MANY_ATTEMPTS", "Too many attempts"));
         }
         if code != provided_code {
@@ -192,7 +195,11 @@ impl PhoneNumberPlugin {
             phone_error(501, "SEND_OTP_NOT_IMPLEMENTED", "sendOTP not implemented")
         })?;
         self.validate_phone(&body.phone_number).await?;
-        let code = self.issue(ctx, &body.phone_number, true).await?;
+        let code = match self.issue(ctx, &body.phone_number, true).await {
+            Ok(code) => code,
+            Err(AuthError::Internal(_)) => return Ok(AuthResponse::new(500)),
+            Err(error) => return Err(error),
+        };
         self.deliver(
             ctx,
             req,
@@ -236,7 +243,11 @@ impl PhoneNumberPlugin {
             .await?
             .ok_or_else(invalid_credentials)?;
         if self.config.require_verification && user.phone_number_verified() != Some(true) {
-            let code = self.issue(ctx, &body.phone_number, false).await?;
+            let code = match self.issue(ctx, &body.phone_number, false).await {
+                Ok(code) => code,
+                Err(AuthError::Internal(_)) => return Ok(AuthResponse::new(500)),
+                Err(error) => return Err(error),
+            };
             if let Some(sender) = &self.config.send_otp {
                 self.deliver(
                     ctx,
@@ -504,13 +515,18 @@ impl PhoneNumberPlugin {
             .await?;
         // Unlike email OTP anti-enumeration, upstream retains the issued reset
         // verification even when the phone has no registered user.
-        let code = self
+        let code = match self
             .issue(
                 ctx,
                 &format!("{}-request-password-reset", body.phone_number),
                 true,
             )
-            .await?;
+            .await
+        {
+            Ok(code) => code,
+            Err(AuthError::Internal(_)) => return Ok(AuthResponse::new(500)),
+            Err(error) => return Err(error),
+        };
         if user.is_some()
             && let Some(sender) = &self.config.send_password_reset_otp
         {

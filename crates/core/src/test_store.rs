@@ -955,9 +955,9 @@ impl VerificationStore<BundledSchema> for MemoryStore {
         let now = Utc::now();
         let mut state = self.lock();
         let before = state.verifications.len();
-        state
-            .verifications
-            .retain(|_, verification| verification.expires_at > now);
+        state.verifications.retain(|_, verification| {
+            verification.expires_at.timestamp_millis() >= now.timestamp_millis()
+        });
         Ok(before - state.verifications.len())
     }
 }
