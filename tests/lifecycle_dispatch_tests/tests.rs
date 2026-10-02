@@ -317,3 +317,168 @@ async fn axum_core_routes_share_hooks_and_unregistered_methods_are_empty() {
     }
     assert_eq!(calls.load(Ordering::SeqCst), 2);
 }
+
+#[derive(Clone, Default)]
+struct CapturedTelemetry {
+    events: Arc<std::sync::Mutex<Vec<better_auth::telemetry::TelemetryEvent>>>,
+    reject: bool,
+}
+
+#[async_trait]
+impl better_auth::telemetry::TelemetrySink for CapturedTelemetry {
+    async fn track(&self, event: better_auth::telemetry::TelemetryEvent) -> AuthResult<()> {
+        self.events.lock().unwrap().push(event);
+        if self.reject {
+            Err(better_auth::AuthError::internal("synthetic sink failure"))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[tokio::test]
+async fn initialization_telemetry_is_opt_in_bounded_and_nonfatal() {
+    use better_auth::telemetry::{TelemetryConfig, TelemetryEvent};
+
+    for (enabled, reject) in [(false, false), (true, false), (true, true)] {
+        let capture = CapturedTelemetry {
+            reject,
+            ..CapturedTelemetry::default()
+        };
+        let config = AuthConfig::new("telemetry-secret-must-never-be-captured-32-characters");
+        let db = Database::connect("sqlite::memory:").await.unwrap();
+        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+            .await
+            .unwrap();
+        use better_auth_core::store::UserStore;
+        let store = SeaOrmStore::<Schema>::new(config.clone(), db);
+        let seeded = store
+            .create_user(
+                serde_json::from_value(json!({
+                    "email":"telemetry@example.com", "name":"Synthetic telemetry owner"
+                }))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        let original_user = serde_json::to_value(&seeded).unwrap();
+        let configured = AuthBuilder::new(config.clone())
+            .store(store)
+            .plugin(Probe {
+                session: None,
+                after_calls: Arc::new(AtomicUsize::new(0)),
+                reject_after: false,
+            })
+            .telemetry(TelemetryConfig::new(capture.clone()).enabled(enabled))
+            .build()
+            .await
+            .unwrap();
+        configured
+            .publish_telemetry(TelemetryEvent::new(
+                "application-ready",
+                json!({"ready":true}),
+            ))
+            .await;
+        let events = capture.events.lock().unwrap().clone();
+        if enabled {
+            assert_eq!(events.len(), 2);
+            let init = events.first().unwrap();
+            assert_eq!(init.event_type, "init");
+            assert_eq!(
+                init.payload,
+                json!({
+                    "libraryVersion":env!("CARGO_PKG_VERSION"),
+                    "runtime":"rust",
+                    "platform":std::env::consts::OS,
+                    "architecture":std::env::consts::ARCH,
+                    "plugins":["lifecycle-probe"]
+                })
+            );
+            assert_eq!(
+                events.get(1).unwrap(),
+                &TelemetryEvent::new("application-ready", json!({"ready":true}))
+            );
+        } else {
+            assert!(events.is_empty());
+        }
+        let response = configured
+            .handle_request(AuthRequest::new(HttpMethod::Get, "/api/auth/inspect"))
+            .await
+            .unwrap();
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&response.body)
+                .unwrap()
+                .get("setting"),
+            Some(&json!("registered"))
+        );
+        let persisted = configured
+            .store()
+            .get_user_by_email("telemetry@example.com")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(serde_json::to_value(persisted).unwrap(), original_user);
+        assert_eq!(capture.events.lock().unwrap().len(), events.len());
+    }
+}
+
+#[tokio::test]
+async fn rejected_initialization_does_not_emit_telemetry() {
+    let capture = CapturedTelemetry::default();
+    let result = AuthBuilder::<Schema>::new(AuthConfig::new("short"))
+        .telemetry(better_auth::telemetry::TelemetryConfig::new(
+            capture.clone(),
+        ))
+        .build()
+        .await;
+    assert!(result.is_err());
+    assert!(capture.events.lock().unwrap().is_empty());
+}
+
+struct RejectInitialization;
+
+#[async_trait]
+impl AuthPlugin<Schema> for RejectInitialization {
+    fn name(&self) -> &'static str {
+        "reject-initialization"
+    }
+
+    fn routes(&self) -> Vec<AuthRoute> {
+        Vec::new()
+    }
+
+    async fn on_request(
+        &self,
+        _req: &AuthRequest,
+        _ctx: &AuthContext<Schema>,
+    ) -> AuthResult<Option<AuthResponse>> {
+        Ok(None)
+    }
+
+    async fn on_init(&self, _ctx: &mut AuthInitContext<Schema>) -> AuthResult<()> {
+        Err(better_auth::AuthError::config(
+            "synthetic initialization rejection",
+        ))
+    }
+}
+
+#[tokio::test]
+async fn failed_plugin_initialization_does_not_emit_telemetry() {
+    let capture = CapturedTelemetry::default();
+    let config = AuthConfig::new("telemetry-failed-init-secret-at-least-32-characters");
+    let db = Database::connect("sqlite::memory:").await.unwrap();
+    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+        .await
+        .unwrap();
+    let result = AuthBuilder::<Schema>::new(config.clone())
+        .store(SeaOrmStore::<Schema>::new(config, db))
+        .plugin(RejectInitialization)
+        .telemetry(better_auth::telemetry::TelemetryConfig::new(
+            capture.clone(),
+        ))
+        .build()
+        .await;
+    assert!(result.is_err());
+    assert!(capture.events.lock().unwrap().is_empty());
+}

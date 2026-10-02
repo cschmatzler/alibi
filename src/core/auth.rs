@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 pub struct BetterAuth<S: AuthSchema> {
     config: Arc<AuthConfig>,
+    telemetry: crate::telemetry::TelemetryConfig,
     pub(super) plugins: Vec<Box<dyn AuthPlugin<S>>>,
     transport_middlewares: Vec<Box<dyn Middleware>>,
     middlewares: Vec<Box<dyn Middleware>>,
@@ -36,6 +37,7 @@ impl<S: AuthSchema> std::fmt::Debug for BetterAuth<S> {
 /// Initial builder for configuring `BetterAuth`.
 pub struct AuthBuilder<S: AuthSchema> {
     config: AuthConfig,
+    telemetry: crate::telemetry::TelemetryConfig,
     store: Option<Arc<dyn AuthStore<S>>>,
     plugins: Vec<Box<dyn AuthPlugin<S>>>,
     csrf_config: Option<CsrfConfig>,
@@ -57,6 +59,7 @@ impl<S: AuthSchema> AuthBuilder<S> {
     pub fn new(config: AuthConfig) -> Self {
         Self {
             config,
+            telemetry: crate::telemetry::TelemetryConfig::default(),
             store: None,
             plugins: Vec::new(),
             csrf_config: None,
@@ -66,6 +69,13 @@ impl<S: AuthSchema> AuthBuilder<S> {
             custom_middlewares: Vec::new(),
             endpoint_hooks: Vec::new(),
         }
+    }
+
+    /// Configure opt-in application-owned telemetry.
+    #[must_use]
+    pub fn telemetry(mut self, telemetry: crate::telemetry::TelemetryConfig) -> Self {
+        self.telemetry = telemetry;
+        self
     }
 
     /// Set the shared auth store implementation.
@@ -286,7 +296,23 @@ impl<S: AuthSchema> AuthBuilder<S> {
 
         middlewares.extend(self.custom_middlewares);
 
+        if self.telemetry.is_enabled() {
+            self.telemetry
+            .publish(crate::telemetry::TelemetryEvent::new(
+                "init",
+                serde_json::json!({
+                    "libraryVersion": env!("CARGO_PKG_VERSION"),
+                    "runtime": "rust",
+                    "platform": std::env::consts::OS,
+                    "architecture": std::env::consts::ARCH,
+                    "plugins": self.plugins.iter().map(|plugin| plugin.name()).collect::<Vec<_>>(),
+                }),
+            ))
+            .await;
+        }
+
         Ok(BetterAuth {
+            telemetry: self.telemetry,
             config,
             plugins: self.plugins,
             transport_middlewares,
@@ -315,6 +341,13 @@ impl<S: AuthSchema> BetterAuth<S> {
 }
 
 impl<S: AuthSchema> BetterAuth<S> {
+    /// Publish an application-owned event to the configured telemetry sink.
+    /// Delivery is awaited; a sink failure is logged and does not fail authentication.
+    /// The host is responsible for excluding secrets and personal data from its payload.
+    pub async fn publish_telemetry(&self, event: crate::telemetry::TelemetryEvent) {
+        self.telemetry.publish(event).await;
+    }
+
     /// Handle an authentication request.
     ///
     /// Errors from plugins and core handlers are automatically converted
