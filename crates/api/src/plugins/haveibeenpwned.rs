@@ -1,8 +1,8 @@
 //! Compromised-password policy at initialized password hashing.
 use async_trait::async_trait;
 use better_auth_core::{
-    AuthError, AuthInitContext, AuthPlugin, AuthResult, AuthRoute, AuthSchema, PasswordHashContext,
-    PasswordHashHook,
+    AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
+    AuthRoute, AuthSchema, PasswordHashContext, PasswordHashHook,
 };
 use sha1::{Digest, Sha1};
 use std::sync::Arc;
@@ -313,5 +313,13 @@ impl<S: AuthSchema> AuthPlugin<S> for HaveIBeenPwnedPlugin {
     async fn on_init(&self, ctx: &mut AuthInitContext<S>) -> AuthResult<()> {
         ctx.register_password_hash_hook(Arc::new(self.clone()));
         Ok(())
+    }
+
+    async fn on_request(
+        &self,
+        _request: &AuthRequest,
+        _context: &AuthContext<S>,
+    ) -> AuthResult<Option<AuthResponse>> {
+        Ok(None)
     }
 }
