@@ -548,7 +548,7 @@ pub async fn handle_list_invitations(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
-    let (user, session) = require_session(req, ctx).await?;
+    let (user, session) = super::extension_common::session(req, ctx).await?;
     let query = parse_query::<ListInvitationsQuery>(&req.query);
     let invitations = list_invitations_core(&query, &user, &session, ctx).await?;
     Ok(AuthResponse::json(200, &invitations)?)
@@ -630,7 +630,7 @@ pub async fn handle_reject_invitation(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
-    let (user, _session) = require_session(req, ctx).await?;
+    let (user, _session) = super::extension_common::session(req, ctx).await?;
     let body: RejectInvitationRequest = match better_auth_core::validate_request_body(req) {
         Ok(value) => value,
         Err(response) => return Ok(response),
@@ -648,7 +648,7 @@ pub async fn handle_cancel_invitation(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
-    let (user, _session) = require_session(req, ctx).await?;
+    let (user, _session) = super::extension_common::session(req, ctx).await?;
     let body: CancelInvitationRequest = match better_auth_core::validate_request_body(req) {
         Ok(value) => value,
         Err(response) => return Ok(response),

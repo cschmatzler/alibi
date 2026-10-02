@@ -1,67 +1,61 @@
 import { test } from "bun:test";
-import { ZodError } from "zod";
-import { authProfilePath, type FixtureProfile } from "./profiles";
-import { recordCoverage } from "./coverage";
 import { createHash } from "node:crypto";
-import { compareValues, type PhysicalObservation, type Difference } from "./compare";
+
 import { createAuthClient } from "better-auth/client";
 import {
-  usernameClient,
   adminClient,
   emailOTPClient,
   magicLinkClient,
+  usernameClient,
 } from "better-auth/client/plugins";
+import { ZodError } from "zod";
+
+import { compareValues, type Difference, type PhysicalObservation } from "./compare";
+import { recordCoverage } from "./coverage";
+import { authProfilePath, type FixtureProfile } from "./profiles";
 
 function configuredClient(
   baseURL: string,
-  fetchImpl: (
-    input: string | URL | Request,
-    init?: RequestInit,
-  ) => Promise<Response>,
+  fetchImpl: (input: string | URL | Request, init?: RequestInit) => Promise<Response>,
 ) {
   return createAuthClient({
     baseURL,
-    plugins: [
-      usernameClient(),
-      adminClient(),
-      emailOTPClient(),
-      magicLinkClient(),
-    ],
+    plugins: [usernameClient(), adminClient(), emailOTPClient(), magicLinkClient()],
     fetchOptions: { customFetchImpl: fetchImpl },
   });
 }
-import { RAW_DIFF_ALLOWLIST } from "./allowlist";
-import { RUST_BASE_URL, TS_BASE_URL, requireHealthy } from "./config";
+
 import {
+  assuranceEvent,
+  type ScenarioCoverage,
+  type ScenarioOutcome,
+  scenarioCoverage,
+  setAssurancePhase,
+} from "./assurance/evidence";
+import { RUST_BASE_URL, requireHealthy, TS_BASE_URL } from "./config";
+import {
+  expireDevice,
+  expireInvitation,
   type GitHubEmailRecord,
-  readChangeEmailConfirmation,
   promoteAdmin,
+  readChangeEmailConfirmation,
+  readDeviceState,
   readTwoFactorOtp,
+  readUserState,
   readVerificationEmail,
+  readVerificationState,
   removeCredentialAccount,
   resetServerState,
-  readDeviceState,
-  expireDevice,
-  readUserState,
-  expireInvitation,
-  readVerificationState,
   seedDeleteUserToken,
   seedOAuthAccount,
-  setGitHubProfile,
   seedResetPasswordToken,
+  setGitHubProfile,
   setOAuthRefreshMode,
   setResetPasswordMode,
   setSocialProfile,
 } from "./controls";
 import { normalizeClientValue } from "./normalize";
 import { createTracingFetch, requestWindow, type TraceEntry } from "./trace";
-import {
-  assuranceEvent,
-  scenarioCoverage,
-  setAssurancePhase,
-  type ScenarioCoverage,
-  type ScenarioOutcome,
-} from "./assurance/evidence";
 
 type ScenarioServerContext = {
   baseURL: string;
@@ -90,16 +84,10 @@ type ScenarioServerContext = {
     location: string | null;
     body: unknown;
   }>;
-  expireInvitation(args: {
-    invitationId: string;
-    expiresAt: string;
-  }): Promise<unknown>;
+  expireInvitation(args: { invitationId: string; expiresAt: string }): Promise<unknown>;
   readUserState(args: { userId: string }): Promise<unknown>;
   readDeviceState(args: { deviceCode: string }): Promise<unknown>;
-  expireDevice(args: {
-    deviceCode: string;
-    expiresAt: string;
-  }): Promise<unknown>;
+  expireDevice(args: { deviceCode: string; expiresAt: string }): Promise<unknown>;
   readVerificationState(args: { identifier: string }): Promise<unknown>;
   resetServerState(): Promise<unknown>;
   setResetPasswordMode(mode: "capture" | "throw"): Promise<unknown>;
@@ -140,11 +128,7 @@ type ScenarioServerContext = {
   readVerificationEmail(args: { email: string }): Promise<unknown>;
   readTwoFactorOtp(args: { email: string }): Promise<unknown>;
   readChangeEmailConfirmation(args: { email: string }): Promise<unknown>;
-  seedDeleteUserToken(args: {
-    email: string;
-    token: string;
-    expiresAt: string;
-  }): Promise<unknown>;
+  seedDeleteUserToken(args: { email: string; token: string; expiresAt: string }): Promise<unknown>;
   removeCredentialAccount(args: { email: string }): Promise<unknown>;
   promoteAdmin(args: { email: string }): Promise<unknown>;
 };
@@ -175,19 +159,28 @@ async function runScenario(
   const startedAt = Date.now();
   const traces: TraceEntry[] = [];
   const physicalObservations: PhysicalObservation[] = [];
-  async function physical(kind: PhysicalObservation["kind"], owner: string, read: Promise<unknown>) {
-    const value = await read, body = structuredClone(value);
-    physicalObservations.push({kind, owner, body, digest: createHash("sha256").update(JSON.stringify(body)).digest("hex")});
+
+  async function physical(
+    kind: PhysicalObservation["kind"],
+    owner: string,
+    read: Promise<unknown>,
+  ) {
+    const value = await read;
+    const body = structuredClone(value);
+    physicalObservations.push({
+      kind,
+      owner,
+      body,
+      digest: createHash("sha256").update(JSON.stringify(body)).digest("hex"),
+    });
     return value;
   }
+
   const actors = new Map<
     string,
     {
       client: ReturnType<typeof configuredClient>;
-      fetch(
-        input: string | URL | Request,
-        init?: RequestInit,
-      ): Promise<Response>;
+      fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
     }
   >();
   const shortSeed = seed.replace(/-/g, "").slice(0, 12);
@@ -197,6 +190,7 @@ async function runScenario(
     actor(name = "primary", profile) {
       const actorKey = `${profile ?? "default"}:${name}`;
       const existing = actors.get(actorKey);
+
       if (existing) {
         return existing;
       }
@@ -221,17 +215,10 @@ async function runScenario(
     snapshot(value) {
       return normalizeClientValue(value);
     },
-    async rawRequest({
-      actor = "primary",
-      path,
-      method = "GET",
-      body,
-      headers,
-      json,
-      redirect,
-    }) {
+    async rawRequest({ actor = "primary", path, method = "GET", body, headers, json, redirect }) {
       const requestHeaders = new Headers(headers);
       let requestBody = body;
+
       if (json !== undefined) {
         requestHeaders.set("content-type", "application/json");
         requestBody = JSON.stringify(json);
@@ -245,6 +232,7 @@ async function runScenario(
       });
       const text = await response.text();
       let parsed: unknown = null;
+
       if (text) {
         try {
           parsed = JSON.parse(text);
@@ -252,6 +240,7 @@ async function runScenario(
           parsed = text;
         }
       }
+
       return {
         status: response.status,
         location: response.headers.get("location"),
@@ -318,10 +307,10 @@ async function runScenario(
   };
 
   await scenarioCoverage("begin", label, scenarioName);
+
   try {
     return {
-      oauthURL:
-        health.oauthBaseURL ?? baseURL.replace("localhost", "127.0.0.1"),
+      oauthURL: health.oauthBaseURL ?? baseURL.replace("localhost", "127.0.0.1"),
       startedAt,
       observation: normalizeClientValue(await scenario(context)),
       finishedAt: Date.now(),
@@ -330,47 +319,26 @@ async function runScenario(
     };
   } finally {
     const coverage = await scenarioCoverage("end", label, scenarioName);
-    if (coverage) onCoverage(coverage);
+    if (coverage) {
+      onCoverage(coverage);
+    }
   }
 }
 
 function formatDiffs(title: string, differences: Difference[]) {
-  return [
-    title,
-    ...differences.map((entry) => `- ${entry.path}: ${entry.reason}`),
-  ].join("\n");
+  return [title, ...differences.map((entry) => `- ${entry.path}: ${entry.reason}`)].join("\n");
 }
 
 /** Split comparator output into client-visible and raw-transport drift. Every difference must land in exactly one bucket. */
-export function classifyDifferences(
-  scenarioName: string,
-  differences: readonly Difference[],
-) {
+export function classifyDifferences(differences: readonly Difference[]) {
   const clientDiffs = differences.filter(
-    (entry) =>
-      entry.path === "observation" || entry.path.startsWith("observation."),
+    (entry) => entry.path === "observation" || entry.path.startsWith("observation."),
   );
-  const rawDiffs = differences
-    .filter(
-      (entry) => entry.path === "traces" || entry.path.startsWith("traces."),
-    )
-    .filter(
-      (entry) =>
-        !RAW_DIFF_ALLOWLIST.some(
-          (allowance) =>
-            allowance.scenario.test(scenarioName) &&
-            allowance.path.test(entry.path),
-        ),
-    );
+  const rawDiffs = differences.filter(
+    (entry) => entry.path === "traces" || entry.path.startsWith("traces."),
+  );
   const unclassified = differences.filter(
-    (entry) =>
-      !clientDiffs.includes(entry) &&
-      !rawDiffs.includes(entry) &&
-      !RAW_DIFF_ALLOWLIST.some(
-        (allowance) =>
-          allowance.scenario.test(scenarioName) &&
-          allowance.path.test(entry.path),
-      ),
+    (entry) => !clientDiffs.includes(entry) && !rawDiffs.includes(entry),
   );
   return { clientDiffs, rawDiffs, unclassified };
 }
@@ -379,7 +347,7 @@ export function compatScenario(
   scenarioName: string,
   scenario: (ctx: ScenarioServerContext) => Promise<unknown>,
   stateTransitions: readonly string[] = [],
-  timeoutMs?: number,
+  timeoutMs = 30_000,
   comparisonOptions: { readonly oauthProxyProfileSecret?: string } = {},
   reproduction?: unknown,
 ) {
@@ -396,6 +364,7 @@ export function compatScenario(
       let phase: "TS" | "Rust" = "TS";
       let failure: ScenarioOutcome["failure"] = "scenario";
       assuranceEvent({ event: "started", name: scenarioName });
+
       try {
         const ts = await runScenario(
           "TS",
@@ -419,10 +388,8 @@ export function compatScenario(
           },
         );
         const comparison = {
-          sessionCookieSecret:
-            "compat-test-only-key-not-real-minimum-32chars",
-          compactSessionCacheSecret:
-            "compat-test-only-key-not-real-minimum-32chars",
+          sessionCookieSecret: "compat-test-only-key-not-real-minimum-32chars",
+          compactSessionCacheSecret: "compat-test-only-key-not-real-minimum-32chars",
           ...comparisonOptions,
           leftBaseURL: TS_BASE_URL,
           rightBaseURL: RUST_BASE_URL,
@@ -444,34 +411,29 @@ export function compatScenario(
           { observation: rust.observation, traces: rust.traces },
           comparison,
         );
-        const { clientDiffs, rawDiffs, unclassified } = classifyDifferences(
-          scenarioName,
-          differences,
-        );
+        const { clientDiffs, rawDiffs, unclassified } = classifyDifferences(differences);
         outcome.paths = differences.map((difference) => difference.path);
         failure = "comparison";
-        if (unclassified.length)
+
+        if (unclassified.length) {
           throw new Error(
             formatDiffs(
               `Comparator reported drift outside the observation and trace roots: ${scenarioName}`,
               unclassified,
             ),
           );
-        if (clientDiffs.length)
-          throw new Error(
-            formatDiffs(`Client-visible drift: ${scenarioName}`, clientDiffs),
-          );
-        if (rawDiffs.length)
-          throw new Error(
-            formatDiffs(`Raw trace drift: ${scenarioName}`, rawDiffs),
-          );
+        }
+
+        if (clientDiffs.length) {
+          throw new Error(formatDiffs(`Client-visible drift: ${scenarioName}`, clientDiffs));
+        }
+
+        if (rawDiffs.length) {
+          throw new Error(formatDiffs(`Raw trace drift: ${scenarioName}`, rawDiffs));
+        }
+
         failure = "infrastructure";
-        await recordCoverage(
-          scenarioName,
-          ts.traces,
-          stateTransitions,
-          TS_BASE_URL,
-        );
+        await recordCoverage(scenarioName, ts.traces, stateTransitions, TS_BASE_URL);
         outcome.status = "passed";
       } catch (error) {
         outcome.failure =
@@ -482,8 +444,7 @@ export function compatScenario(
               : error instanceof Error && error.name === "ModelViolation"
                 ? "model"
                 : error instanceof Error &&
-                    (/^expect\(/.test(error.message) ||
-                      error.name === "ZodError")
+                    (error.message.startsWith("expect(") || error.name === "ZodError")
                   ? "assertion"
                   : "scenario";
         outcome.phase = phase;
@@ -497,10 +458,15 @@ export function compatScenario(
               ? error.message.split("\n")[0]
               : String(error)
         }`;
-        if (outcome.failure === "assertion" && error instanceof Error)
+
+        if (outcome.failure === "assertion" && error instanceof Error) {
           outcome.signature += `:${error.stack?.split("\n").find((line) => line.includes("/tests/") && !line.includes("/support/")) ?? "unknown-assertion-site"}`;
-        if (error instanceof ZodError)
+        }
+
+        if (error instanceof ZodError) {
           outcome.signature = `${phase}:assertion:validation:${JSON.stringify(error.issues.map((issue) => ({ code: issue.code, path: issue.path })))}`;
+        }
+
         outcome.reproduction = reproduction;
         throw error;
       } finally {

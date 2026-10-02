@@ -10,10 +10,7 @@ export class CoverageScope {
     return this.context.run(this.active, work);
   }
   accepts(): boolean {
-    return (
-      this.resetting ||
-      (this.active !== null && this.context.getStore() === this.active)
-    );
+    return this.resetting || (this.active !== null && this.context.getStore() === this.active);
   }
   reset(work: () => void) {
     this.resetting = true;
@@ -26,7 +23,9 @@ export class CoverageScope {
   counters<T extends object>(value: T): T {
     return new Proxy(value, {
       set: (target, key, next) => {
-        if (this.accepts()) Reflect.set(target, key, next);
+        if (this.accepts()) {
+          Reflect.set(target, key, next);
+        }
         return true;
       },
     });

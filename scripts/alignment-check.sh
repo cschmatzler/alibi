@@ -35,7 +35,7 @@ if [[ "$skip_build" != "true" ]]; then
 fi
 
 cargo nextest run --features axum --test axum_integration_tests
-cargo nextest run --test compat_endpoint_tests --no-capture
-cargo nextest run --test compat_coverage_tests --no-capture
+cargo nextest run --test openapi_contract_tests --no-capture
+cargo nextest run --test route_inventory_tests --no-capture
 cargo nextest run --test client_compat_tests --run-ignored only --no-capture full_client_compat
 cargo nextest run --test client_compat_tests --run-ignored only --no-capture browser_client_compat

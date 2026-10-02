@@ -1,5 +1,5 @@
 //! Local SMS delivery and actual configured phone runtimes.
-use crate::passwordless_numeric_fixture::numeric_setting;
+use crate::fixtures::passwordless_numeric_fixture::numeric_setting;
 use crate::{CompatTwoFactorOtpSender, TestSchema};
 use async_trait::async_trait;
 use axum::{
@@ -53,7 +53,8 @@ impl SendPhoneOtp for Sender {
         } else {
             delivery.phone_number.clone()
         };
-        let context = crate::passwordless_context::snapshot(_context, &identifier).await?;
+        let context =
+            crate::fixtures::passwordless_context::snapshot(_context, &identifier).await?;
         let mut value = json!({"code":delivery.code});
         if let Some(context) = context {
             value["context"] = context;
@@ -102,7 +103,8 @@ impl PhoneOtpVerifier for Verifier {
         _context: &better_auth_core::CallbackContext,
     ) -> AuthResult<bool> {
         if let Some(snapshot) =
-            crate::passwordless_context::snapshot(_context, &delivery.phone_number).await?
+            crate::fixtures::passwordless_context::snapshot(_context, &delivery.phone_number)
+                .await?
         {
             _ = self.0.outbox.lock().await.insert(
                 format!("verifier:{}", delivery.phone_number),
@@ -127,7 +129,7 @@ impl PhoneVerificationHook for Callback {
     ) -> AuthResult<()> {
         let mut event = json!({"phoneNumber":result.phone_number,"userId":result.user.id});
         if let Some(snapshot) =
-            crate::passwordless_context::snapshot(_context, &result.phone_number).await?
+            crate::fixtures::passwordless_context::snapshot(_context, &result.phone_number).await?
         {
             event["context"] = snapshot;
             let auth = _context.context::<TestSchema>().unwrap();

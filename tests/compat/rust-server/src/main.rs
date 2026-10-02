@@ -1,25 +1,38 @@
 mod additional_field_models;
-mod additional_fields_fixture;
-mod bearer_fixture;
-mod captcha_fixture;
-mod dispatch_fixture;
-mod organization_creation_fixture;
-mod organization_creation_hooks_fixture;
-mod organization_deletion_hooks_fixture;
-mod organization_invitation_acceptance_fixture;
-mod organization_member_addition_fixture;
-mod organization_member_removal_hooks_fixture;
-mod organization_member_role_hooks_fixture;
-mod organization_membership_policy_fixture;
-mod organization_transport_probe;
-mod organization_update_hooks_fixture;
-mod passwordless_context;
-mod physical_cookie_fixture;
-mod server_endpoint_fixture;
-mod session_cookie_cache_fixture;
-mod team_fixture;
-mod two_factor_pending_lookup_fixture;
-mod user_lifecycle_fixture;
+mod fixtures;
+mod magic_profiles;
+mod otp_profiles;
+mod parity_controls;
+mod phone_profiles;
+mod session_field_model;
+mod session_profiles;
+mod sqlite_fixture;
+mod verification_profiles;
+use fixtures::{
+    additional_fields_fixture, admin_banned_message_fixture, admin_permission_fixture,
+    anonymous_fixture, api_key_background_fixture, api_key_generation_fixture,
+    api_key_hook_fixture, api_key_options_fixture, apple_provider_fixture,
+    atlassian_provider_fixture, bearer_fixture, captcha_fixture, client_ip_fixture,
+    cloudflare_provider_fixture, cognito_provider_fixture, compromised_password_fixture,
+    custom_session_fixture, device_fixture, dispatch_fixture, dropbox_provider_fixture,
+    facebook_provider_fixture, figma_provider_fixture, google_id_token_fixture,
+    huggingface_provider_fixture, invitation_fixture, jwt_fixture, jwt_keyring_fixture,
+    jwt_remote_fixture, kakao_provider_fixture, kick_provider_fixture, last_login_method_fixture,
+    lifecycle_fixture, multiple_session_fixture, oauth_proxy_fixture, one_tap_fixture,
+    one_time_token_fixture, open_api_fixture, organization_creation_fixture,
+    organization_creation_hooks_fixture, organization_deletion_hooks_fixture,
+    organization_invitation_acceptance_fixture, organization_member_addition_fixture,
+    organization_member_removal_hooks_fixture, organization_member_role_hooks_fixture,
+    organization_membership_policy_fixture, organization_timestamp_fixture,
+    organization_transport_probe, organization_update_hooks_fixture,
+    passkey_authentication_fixture, passkey_fixture, passkey_registration_fixture,
+    physical_cookie_fixture, rate_limit_fixture, server_endpoint_fixture,
+    session_cookie_cache_fixture, session_fields_fixture, set_password_fixture,
+    signup_policy_fixture, siwe_fixture, social_provider_fixture, team_fixture,
+    two_factor_delivery_fixture, two_factor_otp_fixture, two_factor_pending_lookup_fixture,
+    two_factor_policy_fixture, two_factor_totp_fixture, user_lifecycle_fixture,
+    user_validation_fixture, verification_storage_fixture,
+};
 
 // Bun's Response.json adds UTF-8 to private control responses. Public auth
 // responses are owned by the pinned runtime and must retain their own headers.
@@ -95,65 +108,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
-
-mod admin_banned_message_fixture;
-mod admin_permission_fixture;
-mod anonymous_fixture;
-mod api_key_background_fixture;
-mod api_key_generation_fixture;
-mod api_key_hook_fixture;
-mod api_key_options_fixture;
-mod apple_provider_fixture;
-mod atlassian_provider_fixture;
-mod client_ip_fixture;
-mod rate_limit_fixture;
-mod cloudflare_provider_fixture;
-mod cognito_provider_fixture;
-mod compromised_password_fixture;
-mod custom_session_fixture;
-mod device_fixture;
-mod dropbox_provider_fixture;
-mod facebook_provider_fixture;
-mod figma_provider_fixture;
-mod google_id_token_fixture;
-mod huggingface_provider_fixture;
-mod invitation_fixture;
-mod jwt_fixture;
-mod jwt_keyring_fixture;
-mod jwt_remote_fixture;
-mod kakao_provider_fixture;
-mod kick_provider_fixture;
-mod last_login_method_fixture;
-mod lifecycle_fixture;
-mod magic_profiles;
-mod multiple_session_fixture;
-mod oauth_proxy_fixture;
-mod one_tap_fixture;
-mod one_time_token_fixture;
-mod open_api_fixture;
-mod organization_timestamp_fixture;
-mod otp_profiles;
-mod parity_controls;
-mod passkey_authentication_fixture;
-mod passkey_fixture;
-mod passkey_registration_fixture;
-mod passwordless_numeric_fixture;
-mod phone_profiles;
-mod session_field_model;
-mod session_fields_fixture;
-mod session_profiles;
-mod set_password_fixture;
-mod signup_policy_fixture;
-mod siwe_fixture;
-mod social_provider_fixture;
-mod sqlite_fixture;
-mod two_factor_delivery_fixture;
-mod two_factor_otp_fixture;
-mod two_factor_policy_fixture;
-mod two_factor_totp_fixture;
-mod user_validation_fixture;
-mod verification_profiles;
-mod verification_storage_fixture;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
@@ -1038,11 +992,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     let otp_outbox_for_reset = otp_outbox.clone();
     let auth_router = auth.clone().axum_router();
+    let error_page_path = "/__test/profiles/error-page/api/auth";
+    let mut error_page_config = config.clone().base_path(error_page_path);
+    error_page_config.render_error_page = true;
+    let error_page_auth = Arc::new(
+        AuthBuilder::<TestSchema>::new(error_page_config.clone())
+            .store(SeaOrmStore::<TestSchema>::new(
+                error_page_config,
+                reset_database.clone(),
+            ))
+            .rate_limit(RateLimitConfig::new().enabled(false))
+            .build()
+            .await?,
+    );
+    let error_page_router = Router::new().nest(
+        error_page_path,
+        error_page_auth
+            .clone()
+            .axum_router()
+            .with_state(error_page_auth),
+    );
     let jwt_router = jwt_fixture::router(&config, reset_database.clone()).await?;
     let jwt_keyring_router = jwt_keyring_fixture::router(&config, reset_database.clone()).await?;
     let jwt_remote_router = jwt_remote_fixture::router(&config, reset_database.clone()).await?;
     let device_profiles = device_fixture::profiles(&config, reset_database.clone()).await?;
-    let rate_limit_router = rate_limit_fixture::router(&config, reset_database.clone(), otp_outbox.clone()).await?;
+    let rate_limit_router =
+        rate_limit_fixture::router(&config, reset_database.clone(), otp_outbox.clone()).await?;
     let client_ip_router = client_ip_fixture::router(
         &config,
         reset_database.clone(),
@@ -1977,6 +1952,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(deletion_hooks_router)
         .nest("/api/auth", auth_router)
         .with_state(auth)
+        .merge(error_page_router)
         .merge(cloudflare_router)
         .merge(cognito_router)
         .merge(additional_fields_router)

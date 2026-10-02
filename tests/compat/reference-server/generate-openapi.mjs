@@ -7,14 +7,18 @@ const parseArgs = (argv) => {
   const result = {};
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
+
     if (!token.startsWith("--")) {
       throw new Error(`Unknown argument: ${token}`);
     }
+
     const key = token.slice(2);
     const value = argv[i + 1];
+
     if (!value || value.startsWith("--")) {
       throw new Error(`Missing value for --${key}`);
     }
+
     result[key] = value;
     i += 1;
   }
@@ -24,9 +28,11 @@ const parseArgs = (argv) => {
 const args = parseArgs(process.argv.slice(2));
 const profile = args.profile;
 const outputPath = args.output ? resolve(args.output) : null;
+
 if (!profile) {
   throw new Error("Missing --profile");
 }
+
 if (!outputPath) {
   throw new Error("Missing --output");
 }
@@ -36,10 +42,12 @@ const barrel = await import("better-auth/plugins");
 
 // apiKey left the `better-auth/plugins` barrel in better-auth 1.5.0.
 const plugins = { ...barrel };
+
 if (typeof plugins.apiKey !== "function") {
   const { apiKey } = await import("@better-auth/api-key");
   plugins.apiKey = apiKey;
 }
+
 const { passkey } = await import("@better-auth/passkey");
 
 const requiredPlugin = (name, ...factoryArgs) => {
@@ -96,10 +104,7 @@ const profiles = {
     );
     pushIf(
       selected,
-      optionalPlugin(
-        "customSession",
-        async ({ user, session }) => ({ user, session }),
-      ),
+      optionalPlugin("customSession", async ({ user, session }) => ({ user, session })),
     );
     pushIf(selected, optionalPlugin("deviceAuthorization"));
     pushIf(
@@ -138,6 +143,7 @@ const profiles = {
     const oidcProviderPlugin = optionalPlugin("oidcProvider", {
       loginPage: "/login",
     });
+
     if (oidcProviderPlugin) {
       pushIf(selected, oidcProviderPlugin);
     } else {
@@ -148,6 +154,7 @@ const profiles = {
         }),
       );
     }
+
     pushIf(
       selected,
       optionalPlugin("oneTap", {
@@ -155,7 +162,13 @@ const profiles = {
       }),
     );
     pushIf(selected, optionalPlugin("oneTimeToken"));
-    pushIf(selected, optionalPlugin("organization", { teams: { enabled: true }, dynamicAccessControl: { enabled: true } }));
+    pushIf(
+      selected,
+      optionalPlugin("organization", {
+        teams: { enabled: true },
+        dynamicAccessControl: { enabled: true },
+      }),
+    );
     pushIf(selected, optionalPlugin("phoneNumber"));
     pushIf(
       selected,
@@ -174,22 +187,22 @@ const profiles = {
 };
 
 const buildPlugins = profiles[profile];
+
 if (typeof buildPlugins !== "function") {
-  throw new Error(
-    `Unsupported profile '${profile}'. Allowed: ${Object.keys(profiles).join(", ")}`,
-  );
+  throw new Error(`Unsupported profile '${profile}'. Allowed: ${Object.keys(profiles).join(", ")}`);
 }
 
-const makeAuth = (selectPlugins) => betterAuth({
-  secret: "better-auth-rs-openapi-alignment-script-secret-32-bytes",
-  baseURL: "http://localhost:3000",
-  trustedOrigins: ["http://localhost:3000"],
-  emailAndPassword: {
-    enabled: true,
-  },
-  socialProviders: {},
-  plugins: selectPlugins(),
-});
+const makeAuth = (selectPlugins) =>
+  betterAuth({
+    secret: "better-auth-rs-openapi-alignment-script-secret-32-bytes",
+    baseURL: "http://localhost:3000",
+    trustedOrigins: ["http://localhost:3000"],
+    emailAndPassword: {
+      enabled: true,
+    },
+    socialProviders: {},
+    plugins: selectPlugins(),
+  });
 
 const auth = makeAuth(buildPlugins);
 
@@ -197,14 +210,31 @@ if (!auth.api || typeof auth.api.generateOpenAPISchema !== "function") {
   throw new Error("generateOpenAPISchema is not available. Ensure openAPI() is enabled.");
 }
 
-const schema = args.format === "routes"
-  ? // Plugins can replace endpoint metadata (for example customSession narrows
-  // get-session to GET). Union profiles so overrides cannot hide core methods.
-  [...new Set([auth, ...(profile === "all-in" ? [makeAuth(profiles.core), makeAuth(profiles["aligned-rs"])] : [])].flatMap(instance => Object.values(instance.api).flatMap(endpoint => {
-      if (!endpoint.path || endpoint.options?.metadata?.SERVER_ONLY) return [];
-      const methods = endpoint.options?.method ?? "GET";
-      return (Array.isArray(methods) ? methods : [methods]).map(method => `${method} ${endpoint.path.replace(/:[^/]+|\{[^}]+\}/g, "{}")}`);
-    })))].sort()
-  : await auth.api.generateOpenAPISchema();
+const schema =
+  args.format === "routes"
+    ? // Plugins can replace endpoint metadata (for example customSession narrows
+      // get-session to GET). Union profiles so overrides cannot hide core methods.
+      [
+        ...new Set(
+          [
+            auth,
+            ...(profile === "all-in"
+              ? [makeAuth(profiles.core), makeAuth(profiles["aligned-rs"])]
+              : []),
+          ].flatMap((instance) =>
+            Object.values(instance.api).flatMap((endpoint) => {
+              if (!endpoint.path || endpoint.options?.metadata?.SERVER_ONLY) {
+                return [];
+              }
+              const methods = endpoint.options?.method ?? "GET";
+              return (Array.isArray(methods) ? methods : [methods]).map(
+                (method) => `${method} ${endpoint.path.replace(/:[^/]+|\{[^}]+\}/g, "{}")}`,
+              );
+            }),
+          ),
+        ),
+      ].sort()
+    : await auth.api.generateOpenAPISchema();
+
 await writeFile(outputPath, JSON.stringify(schema, null, 2), "utf8");
 console.log(`[ok] ${profile} -> ${outputPath}`);

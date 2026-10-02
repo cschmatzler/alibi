@@ -12,11 +12,16 @@ cargo llvm-cov clean --workspace
 cargo llvm-cov nextest --workspace --locked --features axum,seaorm2,redis-cache --no-report
 cargo llvm-cov nextest --workspace --locked --features axum,seaorm2,redis-cache \
   --no-report --test client_compat_tests --run-ignored only --test-threads 1 \
-  -E 'test(=tests::oauth_client_compat) | test(=tests::account_management_client_compat) | test(=tests::jwt_client_compat) | test(=tests::sessions_client_compat) | test(=tests::user_management_client_compat) | test(=tests::captcha_client_compat) | test(=tests::server_endpoints_client_compat) | test(=tests::core_client_compat)'
+  -E 'test(=tests::core_client_compat) | test(=tests::plugins_jwt_client_compat) | test(=tests::plugins_captcha_client_compat) | test(=tests::plugins_anonymous_client_compat) | test(=tests::plugins_bearer_client_compat) | test(=tests::plugins_oauth_proxy_client_compat) | test(=tests::plugins_have_i_been_pwned_client_compat)'
 export LLVM_COV_FLAGS="${LLVM_COV_FLAGS:+$LLVM_COV_FLAGS }-object=coverage/target/debug/compat-rust-server"
 cargo llvm-cov report --locked --package '*' \
   --ignore-filename-regex '(tests/|scripts/|target/)' \
-  --lcov --output-path coverage/lcov.info
+  --lcov --output-path coverage/lcov.raw.info
+# Exclude marked test modules while preserving their production execution.
+# Report lines only: LLVM's LCOV output has no function-end ranges.
+lcov --add-tracefile coverage/lcov.raw.info --filter region \
+  --rc c_file_extensions=rs --rc function_coverage=0 \
+  --rc derive_function_end_line=0 --output-file coverage/lcov.info
 # cargo-llvm-cov 0.9's built-in floor check omits LLVM_COV_FLAGS (and therefore
 # the fixture object). Enforce the same floor on the complete LLVM report.
 awk -F: '

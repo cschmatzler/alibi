@@ -12,6 +12,7 @@
     pkgs.pkg-config
     pkgs.openssl
     pkgs.cargo-llvm-cov
+    pkgs.lcov
     pkgs.chromium
   ];
   env.LD_LIBRARY_PATH = lib.makeLibraryPath [ pkgs.openssl ];

@@ -10,36 +10,61 @@ on `/__health`, which every scenario run verifies before comparing anything.
 
 ## Layout
 
-All tests live under the repository `tests/` directory:
+Parity with upstream is established by one mechanism: the differential SDK
+suite under `tests/compat`, which runs the official client against both servers
+and compares everything they return and store. The Rust crates under `tests/`
+check the Rust implementation on its own terms and do not claim parity.
 
 | Path | Contents |
 | --- | --- |
-| `tests/*.rs` | Cargo integration tests for the `better-auth` crate, including `account_oauth_tests` |
-| `tests/support/compat/` | Shared Rust helpers: OpenAPI schema loading, shape validation, in-process fixtures |
+| `tests/*.rs` | Cargo integration tests, one crate per feature (`session_refresh_tests`, `phone_number_tests`, ...) |
+| `tests/openapi_contract_tests.rs` | In-process response-shape checks against upstream's generated OpenAPI contract; fast drift detection, not parity |
+| `tests/route_inventory_tests.rs` | Fails when the Rust router's routes differ from `capabilities.json` |
+| `tests/client_compat_tests.rs` | Starts both fixture servers and runs the SDK suite; one runner per scenario directory |
+| `tests/support/openapi_contract/` | Shared Rust helpers: OpenAPI schema loading, shape validation, in-process auth setup |
 | `tests/fixtures/` | Pinned vectors consumed by Rust unit tests and both fixture servers: SIWE EIP-191 signature, encrypted upstream JWK, encrypted account-cookie vectors, One Tap keys |
-| `tests/compat/reference-server/` | The pinned TypeScript runtime with test-only control routes and configuration profiles |
-| `tests/compat/rust-server/` | The excluded Rust fixture package exposing the same control routes and profiles |
-| `tests/compat/client-tests/` | Official-client scenarios, the trace comparator, harness negative controls and Chromium checks |
-| `tests/compat/audits/` | Per-capability implementation audits |
+| `tests/compat/client-tests/tests/core/<area>/` | SDK scenarios for upstream's core API routes (session, user, account, password, social, ...) |
+| `tests/compat/client-tests/tests/plugins/<plugin>/` | SDK scenarios per upstream plugin, named as upstream names it |
+| `tests/compat/client-tests/{support,harness}/` | The trace comparator and scenario runtime, and their negative controls |
+| `tests/compat/reference-server/` | The pinned TypeScript runtime; `fixtures/` holds one configuration module per capability |
+| `tests/compat/rust-server/` | The Rust fixture package; `src/fixtures/` mirrors the reference server's fixtures |
+| `tests/compat/audits/{core,plugins}/` | Implementation audits under the same keys as the scenarios; `harness/` audits the comparator itself |
+| `tests/compat/capabilities.json` | Every upstream route with the scenarios that prove each evidence category, or why there are none |
 
-Unit tests that need crate-private items stay next to their modules under
-`crates/*/src` as Rust convention requires; fixture files they consume are
-referenced from `tests/fixtures/` with `include_str!`.
+Unit tests live in inline `#[cfg(test)] mod tests { ... }` blocks at the end of
+their owning Rust modules. Integration test files keep their test modules inline
+too, without separate `tests.rs` companions. Shared fixture data stays under
+`tests/fixtures/` and is loaded with `include_str!`.
+
+Keep inline unit modules inside `LCOV_EXCL_START` / `LCOV_EXCL_STOP` comments.
+LCOV uses these exact source boundaries to exclude test bodies from the
+production line-coverage floor; the tests still execute normally.
+
+Keep tests focused on observable behavior and independent contracts. Comparator
+negative controls belong in the harness because they catch false passing results;
+one-off diagnostics of dependency internals and checks of comment wording do not.
 
 ## Full gate
 
 ```bash
 devenv shell -- ./scripts/check.sh
+# The repository package script runs the same gate:
+bun run test
 # Equivalent inside the development shell, and in CI:
 ./scripts/check.sh
 ```
 
 This runs formatting, strict Clippy, all workspace unit/integration tests,
 feature builds, TypeScript type checking, harness negative controls, the
-complete SDK scenario directory, Chromium tests, docs, and LLVM line coverage.
+complete SDK scenario directory, process-environment cases, Chromium tests,
+doctests, docs, and LLVM line coverage.
+The 75% production line-coverage floor retains execution from unit, integration
+and SDK tests while excluding their own source. The filtered LCOV artifact
+reports lines only, because LLVM does not supply function-end ranges in LCOV.
 Rust unit and integration tests run with `cargo nextest run`, including the
-compatibility server and LLVM coverage (`cargo llvm-cov nextest`). Doctests
-are excluded from the test gate.
+compatibility server and LLVM coverage (`cargo llvm-cov nextest`). Executable
+doctests run separately with `cargo test --doc`; illustrative `ignore` examples
+remain excluded.
 Every dual-server comparison runs through the official client against both
 fixture servers on allocated ports started and stopped by the Rust orchestrator;
 there is no in-process shape-only comparison layer with tolerated differences. Default and `axum,seaorm2,redis-cache` configurations are tested;
@@ -48,6 +73,17 @@ The excluded Rust compatibility server is built, formatted, and tested. Its
 SQLite regression verifies that connection maintenance retains migrated tables
 and persisted user identity throughout the fixture lifetime.
 Missing reference dependencies or an unavailable server fail this gate.
+Normal fixture processes explicitly use production mode. The `environment/`
+suite starts fresh pairs for `NODE_ENV=dev`, `development`, `test`, and production
+with `TEST=0`, checking the dependency's process-initialization behavior. Run it
+alone with `tests/compat/client-tests/run-against-both.sh environment` inside the
+development shell.
+
+SDK scenarios run against both servers sequentially and default to a 30-second
+test deadline, including real password hashing and multi-step tables. Scenarios
+can override that deadline; assertions about protocol timeouts and lifetimes
+remain independent. CI allows two hours for cold builds, the full SDK suite,
+browser checks, and the instrumented coverage pass.
 
 The shared Rust style supplies nextest, Clippy, rustfmt, and Mr. Boxington.
 The style input is private and requires GitHub SSH access. `scripts/check.sh`
@@ -70,7 +106,7 @@ Outside devenv, run `bunx playwright install --with-deps chromium` in
   and lifetimes must agree within a 1.5-second execution tolerance. Only the
   configured local server origins and known URL entropy are normalized.
 - `tough-cookie` handles expiry, deletion, domains and paths. Cookie security
-  attributes are compared; the raw exception list is empty. Chromium separately
+  attributes are compared without exceptions. Chromium separately
   checks real browser session persistence, HttpOnly behavior and logout.
 - Password scenarios import actual hashes produced by each runtime into both
   fixture stores, then exercise official-client sign-in, Unicode normalization,
@@ -83,16 +119,16 @@ Outside devenv, run `bunx playwright install --with-deps chromium` in
   published decoder and retain their complete protected headers and payloads.
   The explicit evidence container tracks random JWT IDs, token rotation and
   repeated claims without normalizing application JWT-shaped data. See the
-  [comparison regression audit](audits/encrypted-cookie-comparison.md).
+  [comparison regression audit](audits/harness/encrypted-cookie-comparison.md).
 - Compact session-cache evidence authenticates complete cookies with the
   published decoder, retains raw ordered chunk cookies and attributes, and
   compares the full user/session projection, version and effective lifetime.
   Cached endpoint reads and physical session storage are separate contracts.
-  See the [cache audit](audits/session-cookie-cache-compact.md).
+  See the [cache audit](audits/core/session/cookie-cache-compact.md).
 - OAuth proxy evidence uses two real local auth instances and a deterministic
   provider that verifies the actual PKCE exchange. It decrypts and retains the
   complete original package, state and profile, including all relationships and
-  callback URL components. See the [proxy audit](audits/oauth-proxy.md).
+  callback URL components. See the [proxy audit](audits/plugins/oauth-proxy/README.md).
 - Harness negative controls deliberately corrupt identity relationships,
   lifetimes, redirects, array structure and cookies. A live HTTP/SDK canary
   confirms wrong session ownership and removed cookie protection are detected.
@@ -100,9 +136,10 @@ Outside devenv, run `bunx playwright install --with-deps chromium` in
   (`observation…`) or raw transport (`traces…`) drift and fails on anything
   outside those roots, so a comparator helper cannot report a finding under a
   path the gate would discard. `harness/classification.test.ts` reproduces the
-  former API-key-row regression through the real classifier. The allowlist
-  guard tests the comparator's actual trace paths, including cookie scopes,
-  status codes and redirect locations.
+  former API-key-row regression through the real classifier. Every difference
+  fails the scenario; there is no exception filter. Negative controls use the
+  comparator's actual trace paths, including cookie scopes, status codes and
+  redirect locations.
 - `support/profiles.ts` is the runtime registry of configuration profiles. The
   `core/profiles` scenario requests `/ok` under every registered profile on both
   servers, so a profile served by one runtime only, or a typo in a profile name,
@@ -154,9 +191,9 @@ is a bounded sample, and every unrun mutation stays unresolved. Use repeated
 
 ```bash
 bun run assurance run --report-only --budget 5 \
-  --tests tests/password-management/password.test.ts \
-  --tests tests/user-management/user.test.ts
-bun run assurance:mutate --tests tests/password-management/password.test.ts \
+  --tests tests/core/password/password.test.ts \
+  --tests tests/core/user/user.test.ts
+bun run assurance:mutate --tests tests/core/password/password.test.ts \
   --mutation 'npm:better-auth/dist/api/routes/password.mjs#omit-effect:6479:6541' \
   --report-only
 ```
@@ -234,28 +271,44 @@ normalized to `{}`. Device authorization is included in the Rust fixture.
 Server-only functions and plugins outside that profile are not HTTP inventory
 entries. The file explicitly marks routes absent from Rust and missing evidence.
 
-Evidence is recorded only after a dual-server scenario passes. A category accepts a scenario name or a nonempty array of names; every named scenario is required. Regeneration preserves existing requirements and refuses missing scenarios, removed routes, and duplicate route declarations. New configuration evidence is added explicitly without replacing earlier flows. Each route can
-require named scenarios for successful responses, rejection, authorization and
-state transitions. A state entry requires an explicit scenario declaration and
-assertions of the resulting state. CI fails if a declared route or existing
-required evidence disappears. A successful HTTP response alone proves neither
-all edge cases nor complete parity.
+Each route has four evidence categories: success, rejection, authorization
+(a 401/403 or ownership denial) and state (a scenario that declares the
+transition and asserts the stored result). Every category holds one of:
+
+- scenario names, all of which must pass against both servers and produce that
+  evidence;
+- `{ "notApplicable": "<reason>" }`, when the route cannot exhibit it, such as
+  authorization on a public route;
+- `{ "knownGap": "<reason>" }`, when evidence is missing. The gate prints every
+  known gap, and regeneration replaces a gap once a scenario produces the evidence.
+
+An empty category fails the gate, so absence is always either explained or
+listed. Regeneration preserves existing requirements and refuses missing
+scenarios, removed routes and duplicate declarations.
+
+What this proves: every upstream HTTP route exists in Rust and has passing
+differential evidence for each applicable category. What it does not prove:
+configuration options, server-only APIs, hooks and plugin combinations are not
+in this denominator. They are covered only where a scenario exercises them,
+and by the assurance runner below, which is not part of the gate. The open
+work is tracked in [PARITY-BACKLOG.md](PARITY-BACKLOG.md).
 
 To update the inventory deliberately after adding routes or tests:
 
 ```bash
 mkdir -p coverage
 bun tests/compat/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json
-BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo nextest run --test compat_coverage_tests
+BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo nextest run --test route_inventory_tests
 BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo nextest run --test client_compat_tests full_client_compat --run-ignored only --no-capture
 ```
 
 Review the resulting `capabilities.json` diff, especially removed requirements.
 The full gate clears the update flag and always enforces the committed inventory.
 Reports are written to `client-tests/artifacts/` and `coverage/lcov.info` and
-uploaded by CI. LLVM coverage measures workspace source executed by Rust tests,
-with a 75% line floor. External Bun/browser traffic is tracked by capability
-evidence, not counted in that source coverage percentage.
+uploaded by CI. LLVM coverage measures production Rust source executed by native
+tests and the instrumented SDK fixture, with a 75% line floor. TypeScript source
+and browser behavior are tracked separately through capability evidence and
+their own assertions.
 
 ## Focused checks
 
@@ -263,14 +316,20 @@ Run these in `devenv shell` after installing both projects with
 `bun install --frozen-lockfile`:
 
 ```bash
+bun run --cwd tests/compat/client-tests format:check
+bun run --cwd tests/compat/client-tests lint
 bun run --cwd tests/compat/client-tests typecheck
 bun test --cwd tests/compat/client-tests harness
-cargo nextest run --test client_compat_tests passkey_client_compat --run-ignored only --no-capture
-cargo nextest run --test client_compat_tests browser_client_compat --run-ignored only --no-capture
-cargo nextest run --test client_compat_tests organization_teams_client_compat --run-ignored only --no-capture
-cargo nextest run --test client_compat_tests organization_dynamic_roles_client_compat --run-ignored only --no-capture
+tests/compat/client-tests/run-against-both.sh plugins/passkey
+tests/compat/client-tests/run-against-both.sh browser
+tests/compat/client-tests/run-against-both.sh tests/plugins/organization/teams.test.ts
 ./scripts/alignment-check.sh
 ```
+
+Every scenario directory (`core/<area>`, `plugins/<plugin>`, `generated`) has a `<group>_<area>_client_compat`
+runner in `tests/client_compat_tests.rs`, and a guard test keeps that list in
+sync. File-level runs go through `selected_client_compat`, which reads the
+space-separated paths in `BETTER_AUTH_COMPAT_PATHS`.
 
 The Rust orchestrator starts and checks both servers on allocated ports and
 stops them on completion. Direct Bun scenario runs require running reference
@@ -278,13 +337,13 @@ and Rust servers; configure `AUTH_BASE_URL_TS` and `AUTH_BASE_URL_RUST`.
 
 ## One-time tokens
 
-`devenv shell -- cargo nextest run --test client_compat_tests one_time_token_client_compat --run-ignored only --no-capture` runs the official client against the pinned TypeScript and Rust fixtures. Four explicit profiles exercise plain and hashed storage, no-cookie consumption, server-only issuance and response headers. The scenarios assert stored session ownership, expiry, revocation, replay and newest-generation invalidation.
+`devenv shell -- cargo nextest run --test client_compat_tests plugins_one_time_token_client_compat --run-ignored only --no-capture` runs the official client against the pinned TypeScript and Rust fixtures. Four explicit profiles exercise plain and hashed storage, no-cookie consumption, server-only issuance and response headers. The scenarios assert stored session ownership, expiry, revocation, replay and newest-generation invalidation.
 
 This database-backed integration uses persisted sessions and verification records. Secondary-storage-only sessions remain a separate integration boundary.
 
 ## Managed JWT capability
 
-`tests/jwt` uses the official `jwtClient` and pinned JOSE 6.2.12 to check public
+`tests/plugins/jwt` uses the official `jwtClient` and pinned JOSE 6.2.12 to check public
 JWKS, all five asymmetric signing algorithms, complete authenticated user claims,
 get-session response headers, configured claims/path/header settings, encrypted
 and plain private-key persistence, signing-key rotation and public grace periods.
@@ -299,20 +358,20 @@ and deferred reads, original completed-handler snapshots, API-key session
 ownership and exact exposed-header ordering. Payload callbacks receive the
 complete nested session response, including deferred `needsRefresh`; direct
 get-session hooks observe the original stored snapshot. See the
-[interaction audit](audits/jwt-session-interactions.md) for configuration evidence
+[interaction audit](audits/plugins/jwt/session-interactions.md) for configuration evidence
 and the pinned expiry-cleanup behavior.
 
 Organization-team checks use dedicated teams, no-default-team, request-dependent
 limit, and removable-final-team configurations under `/__test/profiles/`. Private
 fixture controls inspect persisted organization state and invoke typed server-only
 team APIs; public flows use the official client and its cookie jar. See the
-[organization-team implementation audit](audits/organization-teams.md) for the
+[organization-team implementation audit](audits/plugins/organization/teams.md) for the
 supported branches, lifecycle evidence, and remaining integration boundaries.
 
 Dynamic-role checks add disabled, quota, missing-access-control, delegated-role,
 and asynchronous-policy profiles. They inspect stored permission JSON, tenant
 scopes, member assignments, API-key authority, and controlled overlapping
-permission-cache reloads. See the [dynamic-role implementation audit](audits/organization-dynamic-roles.md)
+permission-cache reloads. See the [dynamic-role implementation audit](audits/plugins/organization/dynamic-roles.md)
 for the configuration contracts, source quirks, review evidence, and remaining
 schema and integration boundaries.
 
@@ -320,10 +379,10 @@ SIWE checks use the official `siweClient`, independent signed EIP-191 messages,
 and a local ERC-1271 JSON-RPC provider. They compare wallet/account/session
 ownership, nonce expiry and single use, email reservation, callback context,
 ENS behavior, bans, and overlapping verification. Run
-`devenv shell -- cargo nextest run --test client_compat_tests siwe_client_compat --run-ignored only --no-capture`.
-The [SIWE implementation audit](audits/siwe.md) records the pinned runtime's
+`devenv shell -- cargo nextest run --test client_compat_tests plugins_siwe_client_compat --run-ignored only --no-capture`.
+The [SIWE implementation audit](audits/plugins/siwe/README.md) records the pinned runtime's
 global nonce contract and remaining storage/schema/provider boundaries.
-OpenAPI/reference whole-document proof and remaining configuration branches are tracked in [the OpenAPI audit](audits/open-api.md).
+OpenAPI/reference whole-document proof and remaining configuration branches are tracked in [the OpenAPI audit](audits/plugins/open-api/README.md).
 
 Native user-list filters accept `UserFilterValue::Scalar(String)` or
 `UserFilterValue::Multiple(Vec<String>)`; existing scalar native callers can use
@@ -331,7 +390,7 @@ Native user-list filters accept `UserFilterValue::Scalar(String)` or
 columns. `AuthEntity` derives bindings for declared application fields, including
 physical column renames. Manual `SeaOrmUserModel` implementations can override
 `list_users_column` to add typed plugin/application columns. See the
-[admin array-filter audit](audits/admin-array-filters.md) for actual SQL, SDK,
+[admin array-filter audit](audits/plugins/admin/array-filters.md) for actual SQL, SDK,
 custom-model and authorization evidence and the remaining adapter boundaries.
 
 ## Why upstream's own test suite is not run against the Rust server

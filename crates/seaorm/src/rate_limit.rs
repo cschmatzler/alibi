@@ -170,6 +170,7 @@ impl RateLimitStorage for SeaOrmRateLimitStorage {
     }
 }
 
+// LCOV_EXCL_START
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,6 +389,7 @@ mod tests {
         shared_database_contract(&std::env::var("TEST_RATE_LIMIT_POSTGRES_URL").unwrap()).await;
     }
 }
+// LCOV_EXCL_STOP
 
 /// Opt-in migrations, recorded separately from application authentication tables.
 #[derive(Debug)]

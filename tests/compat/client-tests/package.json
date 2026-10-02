@@ -10,25 +10,12 @@
     "assurance:report": "bun support/assurance/cli.ts report",
     "test": "bun test tests",
     "typecheck": "tsc --noEmit",
+    "format": "cd .. && oxfmt client-tests reference-server",
+    "format:check": "cd .. && oxfmt --check client-tests reference-server",
+    "lint": "cd .. && oxlint client-tests reference-server",
     "test:harness": "bun test harness",
     "test:browser": "bun test browser",
-    "test:account-management": "bun test tests/account-management",
-    "test:admin": "bun test tests/admin",
-    "test:api-key": "bun test tests/api-key",
-    "test:core": "bun test tests/core",
-    "test:device-authorization": "bun test tests/device-authorization",
-    "test:email-verification": "bun test tests/email-verification",
-    "test:generic-oauth": "bun test tests/generic-oauth",
-    "test:oauth": "bun test tests/oauth",
-    "test:organization-teams": "bun test tests/organization-extensions/teams.test.ts",
-    "test:organization": "bun test tests/organization",
-    "test:passkey": "bun test tests/passkey",
-    "test:password-management": "bun test tests/password-management",
-    "test:sessions": "bun test tests/sessions",
-    "test:two-factor": "bun test tests/two-factor",
-    "test:user-management": "bun test tests/user-management",
-    "test:one-time-token": "bun test tests/one-time-token",
-    "test:jwt": "bun test tests/jwt"
+    "test:environment": "./run-against-both.sh environment"
   },
   "dependencies": {
     "@better-auth/api-key": "1.7.6",
@@ -46,6 +33,8 @@
     "@types/bun": "1.4.2",
     "@types/istanbul-lib-instrument": "1.7.8",
     "istanbul-lib-instrument": "6.0.3",
+    "oxfmt": "0.71.0",
+    "oxlint": "1.86.0",
     "playwright": "1.63.0",
     "typescript": "7.0.2"
   }

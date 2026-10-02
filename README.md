@@ -147,7 +147,7 @@ server; a server-only operation does not become an HTTP route. JavaScript
 framework cookie stores, server-component refresh suppression, reactive client
 stores and TypeScript inference helpers are explicit embedding boundaries.
 Shared HTTP semantics are checked with the pinned official Better Auth client;
-see the [native integration audit](tests/compat/audits/native-integrations.md).
+see the [native integration audit](tests/compat/audits/core/integration/native-integrations.md).
 
 Configure application fields through `config.user.additional_fields`,
 `config.session.additional_fields` and `config.account.additional_fields`.
@@ -182,7 +182,7 @@ Passwordless numeric configuration uses `f64`: `EmailOtpConfig` and
 replace `Duration::seconds(300)` with `300.0`, and integer lengths/budgets with
 floating-point literals such as `6.0` and `3.0`. This preserves fractional and
 nonfinite policies without converting them to unsigned integers. See the
-[passwordless numeric audit](tests/compat/audits/passwordless-numeric.md) for
+[passwordless numeric audit](tests/compat/audits/plugins/email-otp/passwordless-numeric.md) for
 plugin-specific zero/NaN defaults and safe generation limits.
 
 Passwordless `SendEmailOtp::send`, `EmailOtpGenerator::generate`,

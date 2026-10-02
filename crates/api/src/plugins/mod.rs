@@ -62,6 +62,7 @@ pub mod two_factor;
 
 pub mod user_management;
 
+// LCOV_EXCL_START
 #[cfg(test)]
 pub(in crate::plugins) mod test_helpers {
 
@@ -218,6 +219,7 @@ pub(in crate::plugins) mod test_helpers {
         req
     }
 }
+// LCOV_EXCL_STOP
 
 pub use account_management::AccountManagementPlugin;
 pub use admin::{

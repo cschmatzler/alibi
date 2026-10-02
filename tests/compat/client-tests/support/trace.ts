@@ -1,8 +1,12 @@
-import { Cookie, CookieJar } from "tough-cookie";
 import { createHash } from "node:crypto";
-import { jsonShape } from "./normalize";
+
+import { Cookie, CookieJar } from "tough-cookie";
+
 import { mutateTransport } from "./assurance/wire";
+import { jsonShape } from "./normalize";
+
 export const requestWindow = Symbol("compat-request-window");
+
 export type RequestWindow = {
   startedAt: number;
   finishedAt: number;
@@ -15,12 +19,21 @@ export type RequestWindow = {
   /** Exact email and signed challenge returned by the real password sign-in. */
   signInEmail?: string;
   issuedTwoFactorCookie?: string;
+  /** Actual outer-signed, user-bound trust proof returned by factor verification. */
+  issuedTrustCookie?: string;
   /** Actual signed database-state cookie from the default OAuth issuing response. */
   issuedVerificationStateCookie?: string;
-  /** Exact input of the admitted default verification-publication owners. */
+  /** Exact input of admitted verification producers and explicit expiry controls. */
   verificationInput?: unknown;
   /** Integrity of the original complete parsed observer response, separate from compared output. */
   verificationObserverDigest?: string;
+  /** Original narrow physical controls; their values are not transport output. */
+  controlObservation?: {
+    kind: "member-addition" | "social-provider" | "user-validation";
+    body: unknown;
+    digest: string;
+  };
+  memberAdditionOwner?: { organizationId: string; userId: string };
 };
 
 /** Complete response observations, kept in memory; reports contain paths rather than secrets. */
@@ -41,7 +54,9 @@ export type TraceEntry = {
 };
 
 function bodyShape(text: string) {
-  if (!text) return null;
+  if (!text) {
+    return null;
+  }
   try {
     return jsonShape(JSON.parse(text));
   } catch {
@@ -51,8 +66,12 @@ function bodyShape(text: string) {
 
 /** Every 4xx/5xx body is compared literally through the identity bijection, not as a shape. */
 function errorBody(status: number, text: string): unknown {
-  if (status < 400) return undefined;
-  if (!text) return null;
+  if (status < 400) {
+    return undefined;
+  }
+  if (!text) {
+    return null;
+  }
   try {
     return JSON.parse(text);
   } catch {
@@ -64,7 +83,9 @@ function responseCookies(response: Response) {
   const result: Record<string, unknown> = {};
   for (const raw of response.headers.getSetCookie()) {
     const cookie = Cookie.parse(raw);
-    if (!cookie) throw new Error("Unparseable Set-Cookie header");
+    if (!cookie) {
+      throw new Error("Unparseable Set-Cookie header");
+    }
     // Last Set-Cookie for an identical scope wins, just as it does in the jar.
     result[`${cookie.key};${cookie.domain ?? ""};${cookie.path ?? "/"}`] = {
       path: cookie.path ?? null,
@@ -94,17 +115,24 @@ function sessionReceipt(request: Headers, response: Headers) {
           cookie.value &&
           cookie.maxAge !== 0,
       );
-    return cookies.length === 1
-      ? `${cookies[0]!.key}=${cookies[0]!.value}`
-      : undefined;
+    return cookies.length === 1 ? `${cookies[0]!.key}=${cookies[0]!.value}` : undefined;
   };
-  const sessionCookie = select((request.get("cookie") ?? "").split(";")),
-    issuedSessionCookie = select(response.getSetCookie());
+  const sessionCookie = select((request.get("cookie") ?? "").split(";"));
+  const issuedSessionCookie = select(response.getSetCookie());
+  const trust = response
+    .getSetCookie()
+    .map((raw) => Cookie.parse(raw))
+    .filter(
+      (cookie) =>
+        cookie && /^(?:__Secure-)?better-auth\.trust_device$/.test(cookie.key) && cookie.value,
+    );
   return {
     ...(sessionCookie ? { sessionCookie } : {}),
     ...(issuedSessionCookie ? { issuedSessionCookie } : {}),
-    issuedMultiSessionCookies: response.getSetCookie().filter(raw =>
-      /^(?:__Secure-)?better-auth\.session_token_multi-/.test(raw)),
+    ...(trust.length === 1 ? { issuedTrustCookie: `${trust[0]!.key}=${trust[0]!.value}` } : {}),
+    issuedMultiSessionCookies: response
+      .getSetCookie()
+      .filter((raw) => /^(?:__Secure-)?better-auth\.session_token_multi-/.test(raw)),
   };
 }
 
@@ -117,14 +145,9 @@ export function createTracingFetch(
 ) {
   const jar = new CookieJar();
   const origin = new URL(baseURL);
-  return async (
-    input: string | URL | Request,
-    init?: RequestInit,
-  ): Promise<Response> => {
-    const target = new URL(
-      input instanceof Request ? input.url : input,
-      baseURL,
-    );
+  return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const target = new URL(input instanceof Request ? input.url : input, baseURL);
+
     if (
       authPath !== "/api/auth" &&
       target.origin === origin.origin &&
@@ -132,39 +155,48 @@ export function createTracingFetch(
     ) {
       target.pathname = `${authPath}${target.pathname.slice("/api/auth".length)}`;
     }
-    const supplied =
-      input instanceof Request ? new Request(input, init) : undefined;
-    let request = supplied
-      ? new Request(target, supplied)
-      : new Request(target, init);
+
+    const supplied = input instanceof Request ? new Request(input, init) : undefined;
+    let request = supplied ? new Request(target, supplied) : new Request(target, init);
     const redirectMode = init?.redirect ?? request.redirect;
     const requestCredentials =
       init?.credentials ??
       (input instanceof Request ? input.credentials : undefined) ??
       "same-origin";
+
     for (let redirects = 0; redirects <= 10; redirects++) {
       const url = new URL(request.url);
       const headers = new Headers(request.headers);
       const credentials =
         requestCredentials !== "omit" &&
         (requestCredentials === "include" || url.origin === origin.origin);
+
       if (credentials && !headers.has("cookie")) {
         const cookies = await jar.getCookieString(url.href, {
           sameSiteContext: url.hostname === origin.hostname ? "strict" : "none",
         });
-        if (cookies) headers.set("cookie", cookies);
+        if (cookies) {
+          headers.set("cookie", cookies);
+        }
       }
-      if (!headers.has("origin")) headers.set("origin", origin.origin);
+
+      if (!headers.has("origin")) {
+        headers.set("origin", origin.origin);
+      }
+
       const outbound = new Request(request, { headers, redirect: "manual" });
-      const requestText = await request.clone().text(),
-        startedAt = Date.now();
+      const requestText = await request.clone().text();
+      const startedAt = Date.now();
       const response = await mutateTransport(outbound, await fetch(outbound));
+
       if (credentials) {
         for (const cookie of response.headers.getSetCookie()) {
           await jar.setCookie(cookie, url.href, { ignoreError: true });
         }
       }
+
       const selectedHeaders: Record<string, string> = {};
+
       for (const [header, value] of response.headers) {
         // Transport framing, server identity and wall-clock Date are supplied by
         // different HTTP engines. Cookies have their own structured observation.
@@ -178,75 +210,153 @@ export function createTracingFetch(
             "transfer-encoding",
             "set-cookie",
           ].includes(header)
-        )
+        ) {
           continue;
+        }
         selectedHeaders[header] = value;
       }
+
       const responseText = await response.clone().text();
       const inputDates: Record<string, string> = {};
       let inputOwner: RequestWindow["inputOwner"];
       let verificationInput: unknown;
+
       function dates(value: unknown, path = "") {
-        if (!value || typeof value !== "object") return;
+        if (!value || typeof value !== "object") {
+          return;
+        }
         for (const [key, child] of Object.entries(value)) {
-          if (
-            [
-              "metadata",
-              "custom",
-              "additionalFields",
-              "applicationData",
-            ].includes(key)
-          )
+          if (["metadata", "custom", "additionalFields", "applicationData"].includes(key)) {
             continue;
+          }
           const next = `${path}.${key}`;
           if (
             key.endsWith("At") &&
             typeof child === "string" &&
             /^\d{4}-\d\d-\d\dT/.test(child) &&
             Number.isFinite(Date.parse(child))
-          )
+          ) {
             inputDates[next] = child;
-          else dates(child, next);
+          } else {
+            dates(child, next);
+          }
         }
       }
+
       try {
         const input = JSON.parse(requestText);
         verificationInput = input;
         dates(input);
+
         // Only this fixture operation explicitly supplies a session deadline.
-        if (
-          url.pathname === "/__test/expire-session" &&
-          typeof input?.token === "string"
-        )
+        if (url.pathname === "/__test/expire-session" && typeof input?.token === "string") {
           inputOwner = { field: "token", value: input.token };
+        }
       } catch {
         /* A non-JSON body has no declared clock inputs. */
       }
+
       let verificationObserverDigest: string | undefined;
+
       if (request.method === "GET" && url.pathname === "/__test/verification-publications") {
-        try { verificationObserverDigest = createHash("sha256").update(JSON.stringify(JSON.parse(responseText))).digest("hex"); }
-        catch { /* A non-JSON response remains literal and has no publication admission. */ }
+        try {
+          verificationObserverDigest = createHash("sha256")
+            .update(JSON.stringify(JSON.parse(responseText)))
+            .digest("hex");
+        } catch {
+          /* A non-JSON response remains literal and has no publication admission. */
+        }
       }
+
+      let controlObservation: RequestWindow["controlObservation"];
+
+      if (
+        request.method === "GET" &&
+        [
+          "/__test/organization-member-addition/state",
+          "/__test/social-provider/state",
+          "/__test/user-validation/state",
+        ].includes(url.pathname)
+      ) {
+        try {
+          const body: unknown = JSON.parse(responseText);
+          controlObservation = {
+            kind: url.pathname.includes("organization-member-addition")
+              ? "member-addition"
+              : url.pathname.includes("user-validation")
+                ? "user-validation"
+                : "social-provider",
+            body,
+            digest: createHash("sha256").update(JSON.stringify(body)).digest("hex"),
+          };
+        } catch {
+          /* Non-JSON control responses cannot authorize dates. */
+        }
+      }
+
+      const memberInput = verificationInput as
+        | { body?: { organizationId?: unknown; userId?: unknown } }
+        | undefined;
       const entry: TraceEntry = {
         [requestWindow]: {
           startedAt,
           finishedAt: Date.now(),
           inputDates,
-          ...(/\/(?:email-otp\/send-verification-otp|sign-in\/(?:magic-link|social)|one-time-token\/generate)$/.test(url.pathname)
-            ? { verificationInput: requestText ? verificationInput : null } : {}),
-          ...(/\/sign-in\/social$/.test(url.pathname) ? (() => {
-            const cookies = response.headers.getSetCookie().map(value => Cookie.parse(value)).filter(value => value && /^(?:__Secure-)?better-auth\.state$/.test(value.key) && value.maxAge === 300);
-            return cookies.length === 1 ? {issuedVerificationStateCookie: `${cookies[0]!.key}=${cookies[0]!.value}`} : {};
-          })() : {}),
+          ...(controlObservation ? { controlObservation } : {}),
+          ...(request.method === "POST" &&
+          url.pathname === "/__test/organization-member-addition/server" &&
+          typeof memberInput?.body?.organizationId === "string" &&
+          typeof memberInput.body.userId === "string"
+            ? {
+                memberAdditionOwner: {
+                  organizationId: memberInput.body.organizationId,
+                  userId: memberInput.body.userId,
+                },
+              }
+            : {}),
+          ...(url.pathname === "/__test/verification-state" ||
+          /\/(?:email-otp\/send-verification-otp|sign-in\/(?:magic-link|social)|one-time-token\/generate)$/.test(
+            url.pathname,
+          )
+            ? { verificationInput: requestText ? verificationInput : null }
+            : {}),
+          ...(url.pathname.endsWith("/sign-in/social")
+            ? (() => {
+                const cookies = response.headers
+                  .getSetCookie()
+                  .map((value) => Cookie.parse(value))
+                  .filter(
+                    (value) =>
+                      value &&
+                      /^(?:__Secure-)?better-auth\.state$/.test(value.key) &&
+                      value.maxAge === 300,
+                  );
+                return cookies.length === 1
+                  ? { issuedVerificationStateCookie: `${cookies[0]!.key}=${cookies[0]!.value}` }
+                  : {};
+              })()
+            : {}),
           ...(verificationObserverDigest ? { verificationObserverDigest } : {}),
           ...(inputOwner ? { inputOwner } : {}),
-          ...(/\/sign-in\/email$/.test(url.pathname) ? (() => {
-            const cookies = response.headers.getSetCookie().map(value => Cookie.parse(value)).filter(cookie => cookie && /^(?:__Secure-)?better-auth\.two_factor$/.test(cookie.key));
-            return {
-              ...(typeof (verificationInput as {email?: unknown})?.email === "string" ? { signInEmail: (verificationInput as {email: string}).email } : {}),
-              ...(cookies.length === 1 ? {issuedTwoFactorCookie: `${cookies[0]!.key}=${cookies[0]!.value}`} : {}),
-            };
-          })() : {}),
+          ...(url.pathname.endsWith("/sign-in/email")
+            ? (() => {
+                const cookies = response.headers
+                  .getSetCookie()
+                  .map((value) => Cookie.parse(value))
+                  .filter(
+                    (cookie) =>
+                      cookie && /^(?:__Secure-)?better-auth\.two_factor$/.test(cookie.key),
+                  );
+                return {
+                  ...(typeof (verificationInput as { email?: unknown })?.email === "string"
+                    ? { signInEmail: (verificationInput as { email: string }).email }
+                    : {}),
+                  ...(cookies.length === 1
+                    ? { issuedTwoFactorCookie: `${cookies[0]!.key}=${cookies[0]!.value}` }
+                    : {}),
+                };
+              })()
+            : {}),
           ...sessionReceipt(headers, response.headers),
         },
         actor,
@@ -260,11 +370,16 @@ export function createTracingFetch(
         ...(url.pathname === "/__test/api-key/create" ||
         (request.method === "GET" && url.pathname === "/__test/verification-publications") ||
         (request.method === "POST" &&
-          ["/__test/organization-membership-policy/server", "/__test/organization-member-addition/server"].includes(url.pathname)) ||
+          [
+            "/__test/organization-membership-policy/server",
+            "/__test/organization-member-addition/server",
+          ].includes(url.pathname)) ||
         /^\/(?:__test\/profiles\/[^/]+\/)?api\/auth(?:\/|$)/.test(url.pathname)
           ? {
               responseBody: (() => {
-                if (!responseText) return null;
+                if (!responseText) {
+                  return null;
+                }
                 try {
                   return JSON.parse(responseText);
                 } catch {
@@ -275,24 +390,42 @@ export function createTracingFetch(
           : {}),
       };
       const rejected = errorBody(response.status, responseText);
-      if (rejected !== undefined) entry.responseErrorBody = rejected;
+
+      if (rejected !== undefined) {
+        entry.responseErrorBody = rejected;
+      }
+
       traces.push(entry);
       const location = response.headers.get("location");
+
       if (
         ![301, 302, 303, 307, 308].includes(response.status) ||
         !location ||
         redirectMode === "manual"
-      )
+      ) {
         return response;
-      if (redirectMode === "error") throw new Error("Unexpected redirect");
+      }
+
+      if (redirectMode === "error") {
+        throw new Error("Unexpected redirect");
+      }
+
       const next = new URL(location, url);
       const nextHeaders = new Headers(request.headers);
       nextHeaders.delete("cookie");
-      if (next.origin !== url.origin) nextHeaders.delete("authorization");
+
+      if (next.origin !== url.origin) {
+        nextHeaders.delete("authorization");
+      }
+
       const becomesGet =
-        response.status === 303 ||
+        (response.status === 303 && !["GET", "HEAD"].includes(request.method)) ||
         ([301, 302].includes(response.status) && request.method === "POST");
-      if (becomesGet) nextHeaders.delete("content-type");
+
+      if (becomesGet) {
+        nextHeaders.delete("content-type");
+      }
+
       request = new Request(next, {
         method: becomesGet ? "GET" : request.method,
         headers: nextHeaders,
@@ -303,6 +436,7 @@ export function createTracingFetch(
         credentials: requestCredentials,
       });
     }
+
     throw new Error("Too many redirects");
   };
 }
