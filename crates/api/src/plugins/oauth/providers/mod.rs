@@ -4,6 +4,9 @@ pub use cloudflare::CloudflareOptions;
 mod cognito;
 pub use cognito::CognitoOptions;
 
+mod dropbox;
+pub use dropbox::{DropboxAccessType, DropboxOptions};
+
 mod atlassian;
 pub use atlassian::AtlassianOptions;
 
