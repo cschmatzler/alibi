@@ -10,8 +10,17 @@ import { verificationPublicationPairs, samePublication } from "./verification-pu
 
 /** A safe diagnostic without response secrets. */
 export type Difference = { readonly path: string; readonly reason: string };
+/** Original complete responses from the existing read-only physical controls. */
+export type PhysicalObservation = {
+  readonly kind: "session" | "verification";
+  readonly owner: string;
+  readonly body: unknown;
+  readonly digest: string;
+};
 /** Explicit fixture origins and scenario clocks used to compare runtime output. */
 export type ComparisonContext = {
+  readonly leftPhysicalObservations?: readonly PhysicalObservation[];
+  readonly rightPhysicalObservations?: readonly PhysicalObservation[];
   readonly sessionCookieSecret?: string;
   readonly compactSessionCacheSecret?: string;
   readonly oauthProxyProfileSecret?: string;
@@ -52,14 +61,18 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   const normalizedLeft=normalizeClientValue(left),normalizedRight=normalizeClientValue(right);
   const pairedDates = new Set<string>();
   const invalidLifetimes = new Set<string>();
+  const invalidPhysicalDates = new Set<string>();
   const dateKey = (owner: string, field: string, a: string, b: string) => JSON.stringify([owner, field, Date.parse(a), Date.parse(b)]);
-  const dateOwners = (a: Record<string, unknown>, b: Record<string, unknown>) => ["id", "token"].flatMap(key => typeof a[key] === "string" && typeof b[key] === "string" ? [JSON.stringify([key, a[key], b[key]])] : []);
+  const physicalOwner = (a: Record<string, unknown>, b: Record<string, unknown>) => JSON.stringify(["physical", a, b]);
+  const dateOwners = (a: Record<string, unknown>, b: Record<string, unknown>) => [...["id", "token"].flatMap(key => typeof a[key] === "string" && typeof b[key] === "string" ? [JSON.stringify([key, a[key], b[key]])] : []), physicalOwner(a, b)];
   const approvedDate = (owners: readonly string[], field: string, a: string, b: string) => owners.some(owner => pairedDates.has(dateKey(owner, field, a, b)));
   const approveDate = (owners: readonly string[], field: string, a: string, b: string) => { for (const owner of owners) pairedDates.add(dateKey(owner, field, a, b)); };
   const isDate = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d\d-\d\dT/.test(value) && Number.isFinite(Date.parse(value));
   type ClockReceipt = { left: RequestWindow; right: RequestWindow; leftUser: string; rightUser: string; authPath: string };
   const issuances = new Map<string, ClockReceipt>(), cookieOwners = new Map<string, ClockReceipt>();
   const signedCookieIssuances = new Set<string>();
+  const emailOwners = new Map<string, {leftUser: string; rightUser: string}>();
+  const challenges = new Map<string, ClockReceipt & {lifetime: number}>();
   const sessionCookieName = /^(?:__Secure-)?better-auth\.session_token$/;
   function signedCookie(value: string): { token: string; error?: never } | { error: string; token?: never } {
     try {
@@ -123,10 +136,23 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           if (context.sessionCookieSecret && issuedCookie(left.issuedSessionCookie, a.token)
             && issuedCookie(right.issuedSessionCookie, b.token)) {
             signedCookieIssuances.add(JSON.stringify([a.token, b.token]));
+            if (typeof a.user.email === "string" && typeof b.user.email === "string") emailOwners.set(JSON.stringify([receipt.authPath, a.user.email, b.user.email]), {leftUser: a.user.id, rightUser: b.user.id});
             identity(a.token, b.token, `traces.${index}.responseBody.token`, "token");
           }
           const containsToken = (cookie: string | undefined, token: string) => { try { return !!cookie && decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1)).startsWith(`${token}.`); } catch { return false; } };
           if (containsToken(left.issuedSessionCookie, a.token) && containsToken(right.issuedSessionCookie, b.token)) cookieOwners.set(JSON.stringify([left.issuedSessionCookie, right.issuedSessionCookie]), receipt);
+        }
+        if (issuancePath && record(a) && record(b) && a.twoFactorRedirect === true && b.twoFactorRedirect === true
+          && context.sessionCookieSecret && left.issuedTwoFactorCookie && right.issuedTwoFactorCookie) {
+          const owner = emailOwners.get(JSON.stringify([issuancePath[1], left.signInEmail, right.signInEmail]));
+          const decode = (cookie: string) => /^(?:__Secure-)?better-auth\.two_factor=/.test(cookie) ? signedCookie(cookie.slice(cookie.indexOf("=") + 1)).token : undefined;
+          const at = decode(left.issuedTwoFactorCookie), bt = decode(right.issuedTwoFactorCookie);
+          const profile = /^\/__test\/profiles\/(two-factor-(?:skip-verification|trust-(?:fractional|zero-challenge|negative-challenge|zero|negative|cleanup-disabled)))\/api\/auth$/.exec(issuancePath[1]!);
+          if (owner && at && bt && /^2fa-(?:[a-zA-Z0-9_-]{20}|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/.test(at) && /^2fa-(?:[a-zA-Z0-9_-]{20}|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/.test(bt) && profile) {
+            const lifetime = profile[1]!.endsWith("zero-challenge") ? 0 : profile[1]!.endsWith("negative-challenge") ? -250 : profile[1]!.startsWith("two-factor-trust-") ? 600750 : 600000;
+            challenges.set(JSON.stringify([at, bt]), {...owner, left, right, authPath: issuancePath[1]!, lifetime});
+            identity(at, bt, `traces.${index}.responseBody.twoFactorRedirect`, "token");
+          }
         }
         const owner = left.sessionCookie && right.sessionCookie ? cookieOwners.get(JSON.stringify([left.sessionCookie, right.sessionCookie])) : undefined;
         if (owner && trace.path === `${owner.authPath}/update-user`) {
@@ -140,6 +166,97 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       }
       collectResponseDates(trace.responseBody, other.responseBody, left, right);
     });
+  }
+
+  function observedPhysical(value: Record<string, unknown>, observations: readonly PhysicalObservation[] | undefined, kind: PhysicalObservation["kind"]): boolean {
+    const raw = {...value};
+    if (kind === "verification") {
+      if (record(raw.identifier) && Object.keys(raw.identifier).join() === "token") raw.identifier = raw.identifier.token;
+      if (record(raw.value) && Object.keys(raw.value).join() === "userId") raw.value = raw.value.userId;
+    }
+    return !!observations?.some(observation => {
+      if (observation.kind !== kind || observation.digest !== createHash("sha256").update(JSON.stringify(observation.body)).digest("hex")) return false;
+      if (kind === "verification") return raw.identifier === observation.owner && Array.isArray(observation.body) && observation.body.some(row => samePublication(raw, row));
+      return raw.userId === observation.owner && record(observation.body) && record(observation.body.user) && observation.body.user.id === observation.owner
+        && Array.isArray(observation.body.sessions) && observation.body.sessions.some(row => samePublication(raw, row));
+    });
+  }
+  function physicalShape(a: Record<string, unknown>, b: Record<string, unknown>) {
+    for (const field of ["createdAt", "updatedAt", "expiresAt"]) {
+      const av = a[field], bv = b[field];
+      if (isDate(av) && isDate(bv) && (new Date(Date.parse(av)).toISOString() !== av || new Date(Date.parse(bv)).toISOString() !== bv)) invalidPhysicalDates.add(dateKey(physicalOwner(a, b), field, av, bv));
+    }
+  }
+  // Physical observer rows need their producer's clock, not the scenario clock.
+  // Only a verified issued cookie and its exact token/user pair may supply it.
+  function physicalSessions(a: unknown, b: unknown) {
+    if (Array.isArray(a) && Array.isArray(b)) { a.forEach((child, i) => physicalSessions(child, b[i])); return; }
+    if (!record(a) || !record(b)) return;
+    if (typeof a.id === "string" && typeof b.id === "string" && typeof a.token === "string" && typeof b.token === "string"
+      && typeof a.userId === "string" && typeof b.userId === "string" && isDate(a.expiresAt) && isDate(b.expiresAt)) {
+      const pair = JSON.stringify([a.token, b.token]), receipt = issuances.get(pair);
+      const observedLeft = observedPhysical(a, context.leftPhysicalObservations, "session"), observedRight = observedPhysical(b, context.rightPhysicalObservations, "session");
+      if (receipt && signedCookieIssuances.has(pair) && (observedLeft || observedRight) && !(observedLeft && observedRight && a.userId === receipt.leftUser && b.userId === receipt.rightUser)) {
+        for (const field of ["createdAt", "updatedAt", "expiresAt"]) if (isDate(a[field]) && isDate(b[field])) invalidPhysicalDates.add(dateKey(physicalOwner(a, b), field, a[field], b[field]));
+      }
+      if (receipt && signedCookieIssuances.has(pair) && a.userId === receipt.leftUser && b.userId === receipt.rightUser
+        && observedLeft && observedRight) {
+        physicalShape(a, b);
+        const owners = [physicalOwner(a, b)];
+        for (const field of ["createdAt", "updatedAt"]) {
+          const av = a[field], bv = b[field];
+          if (isDate(av) && isDate(bv) && inWindows(Date.parse(av), Date.parse(bv), receipt.left, receipt.right)) approveDate(owners, field, av, bv);
+        }
+        // This fixture uses the real default seven-day session policy. Its
+        // narrow observer omits creation dates; subtract the configured lifetime
+        // and require the independent issuance windows on both runtimes.
+        if (receipt.authPath === "/__test/profiles/org-member-addition/api/auth") {
+          if (inWindows(Date.parse(a.expiresAt) - 604800000, Date.parse(b.expiresAt) - 604800000, receipt.left, receipt.right)) approveDate(owners, "expiresAt", a.expiresAt, b.expiresAt);
+          else for (const owner of owners) invalidLifetimes.add(dateKey(owner, "expiresAt", a.expiresAt, b.expiresAt));
+        } else if (isDate(a.createdAt) && isDate(b.createdAt) && approvedDate(owners, "createdAt", a.createdAt, b.createdAt)) {
+          if (Math.abs((Date.parse(a.expiresAt) - Date.parse(a.createdAt)) - (Date.parse(b.expiresAt) - Date.parse(b.createdAt))) <= 5) approveDate(owners, "expiresAt", a.expiresAt, b.expiresAt);
+          else for (const owner of owners) invalidLifetimes.add(dateKey(owner, "expiresAt", a.expiresAt, b.expiresAt));
+        }
+      }
+    }
+    for (const [key, child] of Object.entries(a)) {
+      if (!["metadata", "custom", "additionalFields", "applicationData", "requestBodyShape", "responseBodyShape", "compactSessionCache", "traces"].includes(key)) physicalSessions(child, b[key]);
+    }
+  }
+  physicalSessions(normalizedLeft, normalizedRight);
+
+  // Challenge and counter rows are physical records projected through the
+  // existing identity wrappers. The cookie authenticates the identifier; the
+  // observed signup and exact sign-in email authenticate its original owner.
+  const challengeRows = new Map<string, {a: Record<string, unknown>; b: Record<string, unknown>; receipt: ClockReceipt & {lifetime: number}}>();
+  const verificationRows: {a: Record<string, unknown>; b: Record<string, unknown>}[] = [];
+  function collectVerificationRows(a: unknown, b: unknown) {
+    if (Array.isArray(a) && Array.isArray(b)) { a.forEach((child, i) => collectVerificationRows(child, b[i])); return; }
+    if (!record(a) || !record(b)) return;
+    if (typeof a.id === "string" && typeof b.id === "string" && record(a.identifier) && record(b.identifier)
+      && typeof a.identifier.token === "string" && typeof b.identifier.token === "string") {
+      if (observedPhysical(a, context.leftPhysicalObservations, "verification") && observedPhysical(b, context.rightPhysicalObservations, "verification")) verificationRows.push({a, b});
+      const receipt = challenges.get(JSON.stringify([a.identifier.token, b.identifier.token]));
+      if (receipt && observedPhysical(a, context.leftPhysicalObservations, "verification") && observedPhysical(b, context.rightPhysicalObservations, "verification") && record(a.value) && record(b.value) && a.value.userId === receipt.leftUser && b.value.userId === receipt.rightUser) challengeRows.set(JSON.stringify([a.identifier.token, b.identifier.token]), {a, b, receipt});
+    }
+    for (const [key, child] of Object.entries(a)) if (!["metadata", "custom", "additionalFields", "applicationData", "requestBodyShape", "responseBodyShape"].includes(key)) collectVerificationRows(child, b[key]);
+  }
+  collectVerificationRows(normalizedLeft, normalizedRight);
+  for (const {a, b} of verificationRows) {
+    const at = (a.identifier as {token: string}).token, bt = (b.identifier as {token: string}).token;
+    const attempt = at.startsWith("2fa-attempts-") && bt.startsWith("2fa-attempts-");
+    const challenge = challengeRows.get(JSON.stringify(attempt ? [at.slice(13), bt.slice(13)] : [at, bt]));
+    if (!challenge || (attempt ? a.value !== "0" || b.value !== "0" || a.expiresAt !== challenge.a.expiresAt || b.expiresAt !== challenge.b.expiresAt : a !== challenge.a || b !== challenge.b)) continue;
+    physicalShape(a, b);
+    const {receipt} = challenge, owners = [physicalOwner(a, b)];
+    for (const field of ["createdAt", "updatedAt"]) {
+      const av = a[field], bv = b[field];
+      if (isDate(av) && isDate(bv) && inWindows(Date.parse(av), Date.parse(bv), receipt.left, receipt.right)) approveDate(owners, field, av, bv);
+    }
+    if (isDate(a.expiresAt) && isDate(b.expiresAt)) {
+      if (inWindows(Date.parse(a.expiresAt) - receipt.lifetime, Date.parse(b.expiresAt) - receipt.lifetime, receipt.left, receipt.right)) approveDate(owners, "expiresAt", a.expiresAt, b.expiresAt);
+      else for (const owner of owners) invalidLifetimes.add(dateKey(owner, "expiresAt", a.expiresAt, b.expiresAt));
+    }
   }
 
   const verificationPublications = verificationPublicationPairs(normalizedLeft, normalizedRight,
@@ -791,6 +908,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       const opaqueKey = (key === "deviceCode" || key === "userCode") && (applicationData || jwtPayload) ? key : opaqueAliases[key] ?? key;
       if (opaqueKeys.has(opaqueKey)) { identity(a, b, path, opaqueKey); return; }
       if (key.endsWith("At") || key === "lastRequest" || key === "banExpires") {
+        if (owners.some(owner => invalidPhysicalDates.has(dateKey(owner, key, a, b)))) { fail(path, "physical row timestamp shape or provenance differs"); return; }
         if (approvedDate(owners, key, a, b)) return;
         if (owners.some(owner => invalidLifetimes.has(dateKey(owner, key, a, b)))) { fail(path, "session lifetime differs from its observed issuance clock"); return; }
         const at = Date.parse(a), bt = Date.parse(b);

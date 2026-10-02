@@ -10,6 +10,9 @@ export type RequestWindow = {
   inputOwner?: { field: "id" | "token"; value: string };
   sessionCookie?: string;
   issuedSessionCookie?: string;
+  /** Exact email and signed challenge returned by the real password sign-in. */
+  signInEmail?: string;
+  issuedTwoFactorCookie?: string;
   /** Actual signed database-state cookie from the default OAuth issuing response. */
   issuedVerificationStateCookie?: string;
   /** Exact input of the admitted default verification-publication owners. */
@@ -233,6 +236,13 @@ export function createTracingFetch(
           })() : {}),
           ...(verificationObserverDigest ? { verificationObserverDigest } : {}),
           ...(inputOwner ? { inputOwner } : {}),
+          ...(/\/sign-in\/email$/.test(url.pathname) ? (() => {
+            const cookies = response.headers.getSetCookie().map(value => Cookie.parse(value)).filter(cookie => cookie && /^(?:__Secure-)?better-auth\.two_factor$/.test(cookie.key));
+            return {
+              ...(typeof (verificationInput as {email?: unknown})?.email === "string" ? { signInEmail: (verificationInput as {email: string}).email } : {}),
+              ...(cookies.length === 1 ? {issuedTwoFactorCookie: `${cookies[0]!.key}=${cookies[0]!.value}`} : {}),
+            };
+          })() : {}),
           ...sessionReceipt(headers, response.headers),
         },
         actor,
