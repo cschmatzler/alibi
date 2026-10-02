@@ -9,6 +9,45 @@ use chacha20poly1305::{
 use sha2::{Digest, Sha256};
 use std::fmt::Write;
 
+/// Encrypt persistence data with the configured current version.
+pub(in crate::plugins) fn encrypt_with_config(
+    plain: &str,
+    config: &better_auth_core::AuthConfig,
+) -> AuthResult<String> {
+    let encrypted = encrypt(plain, config.current_secret())?;
+    match &config.managed_secrets {
+        Some(keys) => Ok(format!("$ba${}${encrypted}", keys.current_version())),
+        None => Ok(encrypted),
+    }
+}
+
+/// Resolve a versioned reader without trying unrelated keys. Bare persistence
+/// data requires an explicit legacy key in managed mode.
+pub(in crate::plugins) fn decrypt_with_config(
+    stored: &str,
+    config: &better_auth_core::AuthConfig,
+) -> AuthResult<String> {
+    let Some(keys) = &config.managed_secrets else {
+        return decrypt(stored, config.current_secret());
+    };
+    if let Some((version, ciphertext)) = parse_envelope(stored) {
+        let key = keys.key(version).ok_or_else(|| AuthError::internal("Encrypted secret version has been retired"))?;
+        return decrypt(ciphertext, key);
+    }
+    let legacy = keys.legacy_secret().ok_or_else(|| AuthError::internal("Legacy encrypted data requires an explicit legacy secret"))?;
+    decrypt(stored, legacy)
+}
+
+fn parse_envelope(stored: &str) -> Option<(u64, &str)> {
+    let (version, ciphertext) = stored.strip_prefix("$ba$")?.split_once('$')?;
+    // The installed runtime uses parseInt(version, 10): leading whitespace,
+    // a plus sign and a numeric prefix are accepted; a negative value is not.
+    let version = version.trim_start().strip_prefix('+').unwrap_or(version.trim_start());
+    let length = version.bytes().take_while(u8::is_ascii_digit).count();
+    let version = version.get(..length)?.parse().ok()?;
+    Some((version, ciphertext))
+}
+
 pub(in crate::plugins) fn hash_token(token: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(token.as_bytes()))
 }
