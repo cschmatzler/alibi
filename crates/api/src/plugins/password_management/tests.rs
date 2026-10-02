@@ -884,56 +884,76 @@ async fn test_configuration() {
 // Upstream reference: packages/better-auth/src/api/routes/password.test.ts :: describe("forget password") and packages/better-auth/src/api/routes/password.ts; adapted to the Rust password-management plugin.
 #[tokio::test]
 async fn test_send_reset_password_custom_sender() {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use better_auth_core::{BackgroundTaskCompletion, BackgroundTaskHandler};
+    use std::sync::{
+        Mutex,
+        atomic::{AtomicU32, Ordering},
+    };
 
-    /// A test sender that records whether it was called.
-    struct TestSender {
-        called: Arc<AtomicBool>,
+    struct Sender {
+        calls: Arc<AtomicU32>,
+        fail: bool,
+        token: Arc<Mutex<Option<String>>>,
     }
-
     #[async_trait::async_trait]
-    impl SendResetPassword for TestSender {
-        async fn send(
-            &self,
-            _user: &serde_json::Value,
-            _url: &str,
-            _token: &str,
-        ) -> AuthResult<()> {
-            self.called.store(true, Ordering::SeqCst);
+    impl SendResetPassword for Sender {
+        async fn send(&self, _: &serde_json::Value, _: &str, token: &str) -> AuthResult<()> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            *self.token.lock().unwrap() = Some(token.to_owned());
+            if self.fail {
+                Err(AuthError::internal("Email queue unavailable"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+    #[derive(Default)]
+    struct Observer(Mutex<Option<BackgroundTaskCompletion>>);
+    impl BackgroundTaskHandler for Observer {
+        fn handle(&self, completion: BackgroundTaskCompletion) -> AuthResult<()> {
+            *self.0.lock().unwrap() = Some(completion);
             Ok(())
         }
     }
-
-    let called = Arc::new(AtomicBool::new(false));
-    let sender: Arc<dyn SendResetPassword> = Arc::new(TestSender {
-        called: std::sync::Arc::clone(&called),
-    });
-
-    let plugin = PasswordManagementPlugin::new().send_reset_password(sender);
-    let (ctx, _user, _session) = create_test_context_with_user().await;
-
-    let body = serde_json::json!({
-        "email": "test@example.com",
-        "redirectTo": "http://localhost:3000/reset"
-    });
-    let req = test_helpers::create_auth_request_no_query(
-        HttpMethod::Post,
-        "/request-password-reset",
-        None,
-        Some(body.to_string().into_bytes()),
-    );
-
-    let response = plugin
-        .handle_request_password_reset(&req, &ctx)
-        .await
-        .unwrap();
-    assert_eq!(response.status, 200);
-
-    // The custom sender should have been called
-    assert!(
-        called.load(Ordering::SeqCst),
-        "Custom send_reset_password should be invoked"
-    );
+    for (fail, background) in [(false, false), (true, false), (true, true)] {
+        let calls = Arc::new(AtomicU32::new(0));
+        let token = Arc::new(Mutex::new(None));
+        let plugin = PasswordManagementPlugin::new().send_reset_password(Arc::new(Sender {
+            calls: Arc::clone(&calls),
+            fail,
+            token: Arc::clone(&token),
+        }));
+        let (mut ctx, user, _) = create_test_context_with_user().await;
+        let observer = Arc::new(Observer::default());
+        if background {
+            Arc::make_mut(&mut ctx.config).background_tasks = Some(observer.clone());
+        }
+        let req = test_helpers::create_auth_json_request_no_query(
+            HttpMethod::Post,
+            "/request-password-reset",
+            None,
+            Some(serde_json::json!({"email":"test@example.com"})),
+        );
+        let result = plugin.handle_request_password_reset(&req, &ctx).await;
+        if fail && !background {
+            assert_eq!(result.unwrap_err().status_code(), 500);
+        } else {
+            assert_eq!(result.unwrap().status, 200);
+        }
+        if background {
+            let completion = observer.0.lock().unwrap().take().unwrap();
+            completion.await.unwrap();
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        let token = token.lock().unwrap().take().unwrap();
+        let proof = ctx
+            .database
+            .get_verification_by_identifier(&format!("reset-password:{token}"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(proof.value, user.id);
+    }
 }
 
 // Upstream reference: packages/better-auth/src/api/routes/password.test.ts :: describe("forget password") and packages/better-auth/src/api/routes/password.ts; adapted to the Rust password-management plugin.

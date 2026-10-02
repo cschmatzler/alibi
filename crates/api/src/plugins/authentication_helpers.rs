@@ -39,9 +39,8 @@ pub(in crate::plugins) trait RequestBody: DeserializeOwned + 'static {
     const FIELDS: &'static [JsonField];
 }
 
-/// The default upstream background-task policy awaits notifications, logs a
-/// rejected callback, and retains the endpoint's already issued state. Direct
-/// delivery endpoints deliberately do not use this policy.
+/// Observe a noncritical callback or an opted-in background notification.
+/// Delivery awaited by a request must instead propagate its error.
 pub(in crate::plugins) async fn run_notification(
     notification: impl Future<Output = AuthResult<()>>,
 ) {
@@ -57,17 +56,17 @@ pub(in crate::plugins) async fn run_owned_notification(
     context: &AuthContext<impl AuthSchema>,
     notification: impl Future<Output = AuthResult<()>> + Send + 'static,
 ) -> AuthResult<()> {
-    let operation = async move {
-        run_notification(notification).await;
-        Ok(())
-    };
     if let Some(handler) = &context.config.background_tasks {
-        let completion = better_auth_core::start_background_task(operation).await?;
+        let completion = better_auth_core::start_background_task(async move {
+            run_notification(notification).await;
+            Ok(())
+        })
+        .await?;
         if let Err(error) = handler.handle(completion) {
             tracing::error!(%error, "Failed to observe background task");
         }
     } else {
-        operation.await?;
+        notification.await?;
     }
     Ok(())
 }

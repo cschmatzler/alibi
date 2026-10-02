@@ -126,14 +126,9 @@ better_auth_core::impl_auth_plugin! {
             if (self.config.send_email_notifications || self.config.send_verification_email.is_some())
                 && !user.email_verified()
                 && let Some(email) = user.email()
-                && let Err(e) = self
-                    .send_verification_email_for_user(user, email, None, ctx)
-                    .await
             {
-                tracing::warn!(
-                    error = %e,
-                    "Failed to send verification email"
-                );
+                self.send_verification_email_for_user(user, email, None, ctx)
+                    .await?;
             }
             Ok(())
         }
@@ -265,15 +260,17 @@ impl EmailVerificationPlugin {
         // Use custom sender if configured, otherwise fall back to EmailProvider
         if let Some(ref custom_sender) = self.config.send_verification_email {
             let user = ctx.trusted_user_view(user);
-            super::authentication_helpers::run_notification(custom_sender.send(
-                &user,
-                &verification_url,
-                &verification_token,
-            ))
-            .await;
+            send_custom_verification_email(
+                ctx,
+                custom_sender,
+                user,
+                verification_url,
+                verification_token,
+            )
+            .await?;
         } else if self.config.send_email_notifications {
             // Gracefully skip if no email provider is configured
-            if ctx.email_provider.is_some() {
+            if let Some(provider) = ctx.email_provider.clone() {
                 let subject = "Verify your email address";
                 let html = format!(
                     "<p>Click the link below to verify your email address:</p>\
@@ -281,10 +278,11 @@ impl EmailVerificationPlugin {
                 );
                 let text = format!("Verify your email address: {verification_url}");
 
-                super::authentication_helpers::run_notification(
-                    ctx.email_provider()?.send(email, subject, &html, &text),
-                )
-                .await;
+                let email = email.to_owned();
+                super::authentication_helpers::run_owned_notification(ctx, async move {
+                    provider.send(&email, subject, &html, &text).await
+                })
+                .await?;
             } else {
                 tracing::warn!("No email provider configured, skipping verification email");
             }
@@ -342,6 +340,21 @@ impl EmailVerificationPlugin {
     }
 }
 
+/// Apply the configured delivery policy to an owned verification email.
+pub(in crate::plugins) async fn send_custom_verification_email(
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    sender: &Arc<dyn SendVerificationEmail>,
+    user: better_auth_core::wire::UserView,
+    url: String,
+    token: String,
+) -> AuthResult<()> {
+    let sender = Arc::clone(sender);
+    super::authentication_helpers::run_owned_notification(ctx, async move {
+        sender.send(&user, &url, &token).await
+    })
+    .await
+}
+
 /// Password registration emits verification before creating its session. The
 /// transaction handle keeps OTP challenges in the same transaction as the user.
 ///
@@ -387,8 +400,7 @@ pub(in crate::plugins) async fn send_signup_verification<S: better_auth_core::Au
         None,
     )?;
     let url = verification_url(&ctx.config, &token, callback_url);
-    super::authentication_helpers::run_notification(sender.send(&user, &url, &token)).await;
-    Ok(())
+    send_custom_verification_email(ctx, sender, user, url, token).await
 }
 
 // ---------------------------------------------------------------------------
