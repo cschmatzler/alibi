@@ -178,3 +178,59 @@ existing parent declaration remains required; auxiliary foreign signup,
 credential setup and trusted fixture operations add no capability cells.
 Full immutable canonical, strict documentation/browser and clean complete
 production coverage results will be recorded after their terminal outcomes.
+
+## Final composition and terminal verification
+
+The original frozen head5f0 completed the full SDK phase with1,511/1,513
+owners and106,354 assertions. All issue174 owners passed. Two retained
+failures compare wall-clock timestamps: organization trusted-role diagnostics
+contain ten session expiry values (including the foreign session), and factor
+skip-verification diagnostics contain six challenge timestamps. The respective
+Source/native requests occurred several seconds apart; durations agree.
+This is not a full canonical pass or an independently reproduced unchanged
+parent pair. Later canonical documentation and coverage phases were not reached.
+`/tmp/issue174-5f0-final-canonical.log` retains the complete diagnostics.
+
+The original six-family collection passed four families and failed two:
+JWT captured an undefined expiry observation, and user-management's Source
+server failed startup with EADDRINUSE before its owners ran. Its SDK collection
+exit was100, despite the independently measured33,198/43,172 (76.897063%) line
+coverage clearing75%. This is not successful complete SDK coverage. Its log
+is `/tmp/issue174-5f0-final-coverage.log`. Separate strict docs and actual
+Chromium completed successfully in `/tmp/issue174-5f0-docs-browser.log`.
+
+Root composed the implementation with merged dispatcher main
+`d9497b908329d5af2b6927328e326967b4e616ae`, producing frozen code/support head
+`edda005a4dc780ded0e8293de9f9f35e70e15540`. Both profile registries remain.
+The dispatcher's shared one-time-token consumption now uses the initialized
+verification service and its retained value, so both physical HTTP and server
+API callers honor these storage policies. Durable coverage selects the existing
+core SDK family alongside all seven prerequisite families. The75% floor and
+exclusions remain unchanged. No Source or comparer changes were introduced.
+
+At edda, default794/794 and optional846/846 native tests pass, as do both strict
+all-target Clippy matrices, rustls checking, fixture strict lint/build, both
+format checks and client TypeScript. Actual core SDK owners pass207/207 with
+16,430 assertions; dispatcher owners pass27/27 with3,966 assertions. Separate
+strict workspace documentation and actual Chromium pass. Logs are
+`/tmp/issue174-root-compose-checks.log`,
+`/tmp/issue174-root-default-clippy.log`,
+`/tmp/issue174-root-composed-sdk.log` and
+`/tmp/issue174-root-docs-browser.log`. These are composed gates, not a claim
+that the entire composed canonical SDK suite was rerun or passed.
+
+Fresh instrumented collection at edda passes846/846 native tests and all eight
+actual SDK families, terminal exit0. Complete production line coverage is
+35,909/44,690 (80.351309%), exceeding the unchanged75% requirement. LCOV has228
+source paths and zero duplicate paths. Its preserved file is
+`/tmp/issue174-root-complete.lcov.info`, SHA256
+`6c8ef95a954a4216506bb21bee3a0beef4456b6a6cd648a1e23d6f521ecea50c`;
+`/tmp/issue174-root-complete-coverage.log` records every family and floor result.
+The collector retains SDK status independently of coverage reporting, rather
+than concealing a failed collection behind a successful floor.
+
+Independent composed capability inventory confirms5,519 parent cells retained,
+138 measured additions,5,657 total, zero removals and zero duplicate cells.
+Only this audit changes after frozen edda verification. Original wrong-wire,
+setup and timestamp failures remain recorded; no broad timing normalization,
+stack override, dependency patch or hook bypass was used.
