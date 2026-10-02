@@ -49,7 +49,7 @@ pub(in crate::plugins) async fn request_password_reset_core(
     let Some(user) = ctx.database.get_user_by_email_record(&body.email).await? else {
         drop(better_auth_core::utils::id::generate_id(24));
         drop(ctx.verifications().find("dummy-verification-token").await?);
-        tracing::error!(email = %body.email, "Reset Password: User not found");
+        tracing::warn!("Reset Password: User not found");
         return Ok(success);
     };
 

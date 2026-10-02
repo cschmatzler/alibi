@@ -131,7 +131,6 @@ better_auth_core::impl_auth_plugin! {
                     .await
             {
                 tracing::warn!(
-                    email = %email,
                     error = %e,
                     "Failed to send verification email"
                 );
@@ -287,10 +286,7 @@ impl EmailVerificationPlugin {
                 )
                 .await;
             } else {
-                tracing::warn!(
-                    email = %email,
-                    "No email provider configured, skipping verification email"
-                );
+                tracing::warn!("No email provider configured, skipping verification email");
             }
         }
 
