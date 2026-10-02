@@ -1363,7 +1363,8 @@
           "CAPTCHA captcha-hcaptcha actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-google-zero actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-google-configured actual verification transport admits only provider-approved authentication",
-          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication"
+          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication",
+          "CAPTCHA verifier timeout ends at response headers and slow successful bodies still admit the real principal"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -4752,7 +4753,8 @@
           "CAPTCHA captcha-hcaptcha actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-google-zero actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-google-configured actual verification transport admits only provider-approved authentication",
-          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication"
+          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication",
+          "CAPTCHA verifier timeout ends at response headers and slow successful bodies still admit the real principal"
         ],
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -4999,7 +5001,8 @@
           "CAPTCHA captcha-hcaptcha actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-google-zero actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-google-configured actual verification transport admits only provider-approved authentication",
-          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication"
+          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication",
+          "CAPTCHA verifier timeout ends at response headers and slow successful bodies still admit the real principal"
         ]
       }
     },
@@ -6315,7 +6318,8 @@
           "CAPTCHA captcha-hcaptcha actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-google-zero actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-google-configured actual verification transport admits only provider-approved authentication",
-          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication"
+          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication",
+          "CAPTCHA verifier timeout ends at response headers and slow successful bodies still admit the real principal"
         ],
         "rejection": [
           "sign up with duplicate email returns error",

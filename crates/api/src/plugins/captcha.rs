@@ -214,7 +214,7 @@ impl CaptchaPlugin {
             .site_verify_url
             .as_ref()
             .map_or(endpoint, url::Url::as_str);
-        let builder = self.client.post(endpoint).timeout(VERIFY_TIMEOUT);
+        let builder = self.client.post(endpoint);
         let builder = match &self.config.provider {
             CaptchaProvider::CloudflareTurnstile(_) => {
                 #[derive(Serialize)]
@@ -253,7 +253,12 @@ impl CaptchaPlugin {
             }
             CaptchaProvider::VercelBotId(_) => return Err(()),
         };
-        let response = builder.send().await.map_err(|_| ())?;
+        // betterFetch's abort deadline ends when response headers arrive;
+        // body decoding follows independently of that timer.
+        let response = tokio::time::timeout(VERIFY_TIMEOUT, builder.send())
+            .await
+            .map_err(|_| ())?
+            .map_err(|_| ())?;
         if !response.status().is_success() {
             return Err(());
         }

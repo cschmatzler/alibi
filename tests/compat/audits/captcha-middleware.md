@@ -1,6 +1,6 @@
 # CAPTCHA middleware (#134)
 
-Base: actual main c7fc2aa9029f4bef50baa718517676c02a79bbbe.
+Discovery base: actual main c7fc2aa9029f4bef50baa718517676c02a79bbbe. Final production composed on actual main bb4142faa155e60b745184401c531b2db9dfd34d.
 
 ## Authoring gate
 
@@ -27,3 +27,7 @@ After genuine Native media responses were wired, expanded23 results were22/23 wi
 Final retained actual24 owners pass24/24,3,900 assertions in91.92s (`/tmp/issue134-final24-real-owner.log`). They include all provider paths/HTTP/callback/media/deadline controls, full principal/foreign rows, actual fresh SDK session binding and physical GET/OPTIONS/PUT precedence. Strict TypeScript passes (`/tmp/issue134-final24-types3.log`); two earlier nullable-token assertion overload compile attempts are retained separately. Independent agent review found no URL injection/exfiltration or hook-order blocker. No comparer or Source package edits.
 
 Only those24 passing actual evidence files supply the capability additions; `/tmp/issue134-measured-cells.json` records exact cells and physical middleware requests outside endpoint inventories. All parent requirements and route flags are preserved. The explicit CAPTCHA ignored compatibility family is registered in the existing Rust orchestrator/CLI selector and added alongside all five existing SDK coverage families; no floor or exclusions change. Canonical/composition/clean coverage/docs/browser remain pending; no completion claim.
+
+Final Source fetch audit confirms its HTTP abort timer is cleared immediately after fetch resolves response headers, before text/blob decoding. Genuine streaming control on unchanged production ab80878f completed Source200/full principal+foreign rows after11seconds, then Native500 at10seconds: `/tmp/issue134-header-timeout-before-owner.log`,14 assertions,21.58s, with production sources and root Cargo manifest/lock unchanged; only real fixture/test additions, including the fixture-only streaming dependency and its lock entries. Native now bounds send/header acquisition only; complete body decoding follows, while the existing no-response-header timeout still rejects at10seconds. The original24 passing artifact/cell proof is preserved separately; final25/composed gates were pending at that checkpoint.
+
+Final composed focused proof passes25/25,3,928 assertions in113.95seconds (`/tmp/issue134-final25-real-owner.log`), including successful11-second streamed bodies after immediate headers and actual no-header/BotID deadline controls. Strict workspace clippy/rustls/fmt, fixture build and TypeScript checks pass (`/tmp/issue134-final25-strict.log`, `/tmp/issue134-final25-build.log`, `/tmp/issue134-final25-types.log`). Only these25 passing evidence files supply the final capability additions; `/tmp/issue134-final25-measured-cells.json` records 134 added cells, preserves all parent requirements/route flags and reports physical middleware requests outside inventories. Canonical/clean coverage/docs/browser remain pending at this production freeze.

@@ -54,6 +54,10 @@ export function createCaptchaFixture(base: BetterAuthOptions, port: number) {
     if (token === "null") return Response.json(null);
     if (token === "blob-json") return new Response(JSON.stringify({ success:true }),{headers:{"content-type":"application/octet-stream"}});
     if (token === "empty-text") return new Response("",{headers:{"content-type":"text/plain"}});
+    if (token === "slow-body") return new Response(new ReadableStream({ async start(controller) {
+      controller.enqueue(new TextEncoder().encode("{\"success\":"));
+      await Bun.sleep(11_000); controller.enqueue(new TextEncoder().encode("true}")); controller.close();
+    }}),{headers:{"content-type":"application/json"}});
     if (token === "timeout") await Bun.sleep(11_000);
     return Response.json({ success: token === "truthy-success" ? "false" : token !== "denied", ...(token === "missing-action" ? {} : {action: token === "wrong-action" ? "logout" : "login"}), ...(token === "missing-host" ? {} : {hostname: token === "wrong-host" ? "foreign.fixture.test" : "app.fixture.test"}), ...(token === "v2" ? {} : { score: token === "score-text" ? "0.1" : token === "score-null" ? null : token === "low-score" ? .1 : .9 }) });
   } };

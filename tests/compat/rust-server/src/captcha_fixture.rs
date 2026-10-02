@@ -296,6 +296,28 @@ async fn verifier_response(
     };
     events.lock().await.push(json!({"kind":"provider","provider":provider,"method":"POST","contentType":content_type,"rawBody":raw,"body":body}));
     let token = body["response"].as_str().unwrap_or_default();
+    if token == "slow-body" {
+        let (sender, receiver) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(2);
+        tokio::spawn(async move {
+            if sender
+                .send(Ok(Bytes::from_static(b"{\"success\":")))
+                .await
+                .is_err()
+            {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(11)).await;
+            let _ = sender.send(Ok(Bytes::from_static(b"true}"))).await;
+        });
+        let stream = futures_util::stream::unfold(receiver, |mut receiver| async move {
+            receiver.recv().await.map(|chunk| (chunk, receiver))
+        });
+        return (
+            [("content-type", "application/json")],
+            axum::body::Body::from_stream(stream),
+        )
+            .into_response();
+    }
     match token {
         "http-failure" => {
             return (

@@ -127,7 +127,8 @@ configurations support reCAPTCHA, hCaptcha, CaptchaFox, and application-owned
 BotID callbacks. Empty endpoint configuration protects email signup, sign-in,
 and password-reset requests; custom patterns accept `*` and `**`. Send the
 verification token in `x-captcha-response`. BotID uses its trusted callback
-instead. The verifier has a ten-second deadline and uses the configured IP policy.
+instead. Provider response headers and BotID checks have ten-second deadlines.
+Verification uses the configured IP policy.
 
 ## Feature Flags
 
