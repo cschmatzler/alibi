@@ -231,6 +231,21 @@ its later browser/docs/coverage stages; the independent passing stages above
 are reported separately. Final publication adds only this audit record to the
 tested immutable implementation.
 
+After #183 merged, the final implementation was rebased without conflicts onto
+exact main `ae5b988f9e8489d7db93ee79abf7723af45c7063`, producing immutable
+integration head `6b09b8a892475d6adb44e460515194ef628ed472`. The API-key
+production, SQLite substring storage, configuration and primary regression owner
+remain byte-identical to the tested `db22beda` program. Strict default/optional
+workspace and fixture Clippy, fixture build, and strict workspace documentation
+all pass in `/tmp/issue204-integration-strict-6b09b8a8.log`. The complete 67
+API-key owners, JWT numeric sibling and all 14 user-field policy owners pass
+82/82 / 8,994 assertions in `/tmp/issue204-integration-6b09b8a8.log`. All 3,495
+new-main capability cells remain in their original order; none is lost, and all
+27 additions still have actual passing full-SDK evidence. The whole canonical
+and clean coverage measurements above belong to `db22beda`; they were not
+rerun after the #183 rebase. Final publication changes only this audit record
+after the terminal integration checks, with no production or test edits.
+
 The repository owns `devenv shell -- bash scripts/check.sh`; `devenv test` is a
 no-op. The skill's OpenClaw/Crabbox/autoreview/PR helper tools and scripts are not
 installed in this repository, so actual repository checks and independent review
