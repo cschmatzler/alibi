@@ -454,7 +454,6 @@ const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 const bearerFixture = createBearerFixture(authOptions);
 const dispatchFixture = createDispatchFixture(authOptions);
 const captchaFixture = createCaptchaFixture(authOptions, PORT);
-const serverEndpointFixture = createServerEndpointFixture(database,authOptions);
 const organizationCreationFixture = createOrganizationCreationFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationTransport = organizationTransportProbe();
 const organizationHooksFixture = organizationCreationHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
@@ -489,7 +488,6 @@ const userLifecycleFixture = createUserLifecycleFixture(authOptions, database);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
-verificationProfiles.set(serverEndpointFixture.path,serverEndpointFixture.auth);
 for (const [path, instance] of userLifecycleFixture.profiles) verificationProfiles.set(path, instance);
 for(const [path,instance] of cloudflareFixture.profiles) verificationProfiles.set(path,instance);
 for(const [path,instance] of cognitoFixture.profiles) verificationProfiles.set(path,instance);
@@ -610,6 +608,8 @@ const googleIdProfiles = googleIdTokenProfiles(authOptions);
 const setPasswordFixture = createSetPasswordFixture(database, authOptions);
 const signupPolicyFixture = createSignupPolicyFixture(database, authOptions);
 const compromisedPasswordFixture = await createCompromisedPasswordFixture(database, authOptions);
+const serverEndpointFixture = createServerEndpointFixture(database,authOptions);
+verificationProfiles.set(serverEndpointFixture.path,serverEndpointFixture.auth);
 const userValidationFixture = await createUserValidationFixture(database, authOptions);
 
 const OTT_PROFILE_NAMES=["ott-default","ott-hashed","ott-no-cookie","ott-server-header","ott-refresh-disabled","ott-refresh-deferred"] as const;

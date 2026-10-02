@@ -34,14 +34,7 @@ pub(in crate::plugins) async fn add_member<S: AuthSchema>(
             .collect();
         ctx.require_cached_session(&resolution).await.ok()
     };
-    add_member_with_session(
-        body,
-        session.map(|(user, session)| (better_auth_core::AuthenticatedUser::Stored(user), session)),
-        None,
-        config,
-        ctx,
-    )
-    .await
+    add_member_with_session(body, session, None, config, ctx).await
 }
 
 #[expect(

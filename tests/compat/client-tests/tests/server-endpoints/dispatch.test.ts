@@ -3,7 +3,7 @@ import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { authProfilePath } from "../../support/profiles";
 
 function record(value:unknown):Record<string,any>{expect(value).not.toBeNull();expect(typeof value).toBe("object");return value as Record<string,any>;}
-async function call(ctx:ScenarioContext,input:Record<string,unknown>){const response=await ctx.rawRequest({path:"/__test/server-dispatch/call",method:"POST",json:input,...(input.physicalRequest?{headers:{host:"dispatch-owner.example.test",origin:"http://dispatch-owner.example.test"}}:{})});expect(response.status).toBe(200);return record(response.body);}
+async function call(ctx:ScenarioContext,input:Record<string,unknown>){const response=await ctx.rawRequest({path:input.physicalRequest?"/__test/server-dispatch/call?actual=query":"/__test/server-dispatch/call",method:"POST",json:input,...(input.physicalRequest?{headers:{host:"dispatch-owner.example.test",origin:"http://dispatch-owner.example.test"}}:{})});expect(response.status).toBe(200);return record(response.body);}
 async function state(ctx:ScenarioContext){const response=await ctx.rawRequest({path:"/__test/server-dispatch/state"});expect(response.status).toBe(200);return record(response.body);}
 async function signup(ctx:ScenarioContext,name="owner") {const {client}=ctx.actor(name,"server-dispatch");const response=await client.signUp.email({name,email:ctx.uniqueEmail(name),password:"Correct-Horse-Password-205"});expect(response.error).toBeNull();return record(response.data).user;}
 
@@ -32,6 +32,7 @@ for(const mode of phases)compatScenario(`server endpoint ${mode} retains actual 
   if(mode==="before-headers")expect(observed.result.value.headers).toEqual({});
   if(mode==="request-patch"){
     expect(events.find(event=>event.stage==="second-before")?.request.headers["x-physical-patch"]).toBeUndefined();
+    expect(events[0]?.request.query).toEqual({actual:"query"});expect(JSON.parse(events[0]?.request.body)).toEqual({operation:"createVerificationOTP",mode,body:input,physicalRequest:true});
     for(const stage of ["otp-generator","user-after","first-after","second-after"])expect(events.find(event=>event.stage===stage)?.request.headers["x-physical-patch"]).toBe("actual-clone");
     const generator=events.find(event=>event.stage==="otp-generator")!;expect(generator.current.request.headers["x-physical-patch"]).toBe("actual-clone");expect(generator.legacyRequest).toEqual(generator.request);
     for(const stage of ["user-before","first-before","second-before","user-after","first-after","second-after"]){const event=events.find(event=>event.stage===stage)!;expect(event.current.request.headers["x-physical-patch"]).toBeUndefined();expect(event.legacyRequest).toEqual(event.current.request);expect(event.current.path).toBeNull();}
@@ -163,4 +164,29 @@ compatScenario("server endpoint API key schema failures retain nested ordered er
   const verified=await call(ctx,{operation:"verifyApiKey",body:{key:issued.key.key,configId:"dispatch"}});expect(verified.result.ok).toBe(true);expect(verified.result.value.response.valid).toBe(true);expect(verified.result.value.response.key.remaining).toBe(29);
   const after=await state(ctx);expect(after.apikey[0].remaining).toBe(29);expect(after.session).toEqual(before.session);expect(after.verification).toEqual(before.verification);expect(after.organization).toEqual(before.organization);expect(after.member).toEqual(before.member);
   return {owner,issued,before,rejected,verified,after};
+});
+
+for(const [mode,physicalRequest] of [["hash-phase",true],["hash-phase",false],["hash-phase-deny",true]] as const)compatScenario(`server endpoint ${mode} physical=${physicalRequest} hashes in its actual raw and handler frames`,async ctx=>{
+  const {createHash}=await import("node:crypto");
+  const {verifyPassword}=await import("better-auth/crypto");
+  const password="Actual-Phase-Hash-Password-205",digest=createHash("sha1").update(password).digest("hex").toUpperCase();
+  const before=await state(ctx),body={email:ctx.uniqueEmail("hash-frame"),type:"sign-in"};
+  const observed=await call(ctx,{operation:"createVerificationOTP",mode,body,...physicalRequest?{physicalRequest:true}:{}});
+  const hashes=observed.events.filter((event:Record<string,any>)=>event.stage==="original-hash") as Record<string,any>[];
+  expect(hashes.map(event=>event.phase)).toEqual(mode==="hash-phase-deny"?["before","after"]:["before","handler","after"]);
+  for(const event of hashes){
+    expect(event.verified).toBe(true);expect(event.hash.token).toMatch(/^[a-f0-9]{32}:[a-f0-9]{128}$/);
+    const [salt,key]=event.hash.token.split(":");expect(event.hash).toEqual({token:event.hash.token,salt:{token:salt,length:32},derivedKey:{token:key,length:128},encoding:"hex-lower"});
+    expect(await verifyPassword({hash:event.hash.token,password})).toBe(true);expect(await verifyPassword({hash:event.hash.token,password:"Actual-Foreign-Password-205"})).toBe(false);
+    expect(event.path).toBe(event.phase==="handler"?"virtual:":null);
+    if(physicalRequest){expect(event.request.query).toEqual({actual:"query"});expect(event.request.headers["x-physical-patch"]).toBe(event.phase==="handler"?"actual-clone":undefined);expect(JSON.parse(event.request.body)).toEqual({operation:"createVerificationOTP",mode,body,physicalRequest:true});}
+    else expect(event.request).toBeNull();
+  }
+  expect(observed.ranges).toEqual([{method:"GET",path:`/range/${digest.slice(0,5)}`,query:"",headers:{addPadding:"true",userAgent:"BetterAuth Password Checker",authorization:null,cookie:null},body:""}]);
+  expect(JSON.stringify(observed.ranges)).not.toContain(password);expect(JSON.stringify(observed.ranges)).not.toContain(digest.slice(5));
+  if(mode==="hash-phase-deny"){expect(observed.result.ok).toBe(false);expect(observed.result.status).toBe(400);expect(observed.result.body.code).toBe("PASSWORD_COMPROMISED");}
+  else {expect(observed.result.ok).toBe(true);expect(observed.result.value.response).toBe("591307");}
+  const after=await state(ctx);expect(after.verification.length-before.verification.length).toBe(mode==="hash-phase-deny"?0:1);
+  expect(after.apikey).toEqual(before.apikey);expect(after.member).toEqual(before.member);expect(after.organization).toEqual(before.organization);expect(after.session).toEqual(before.session);
+  return {before,observed,after};
 });

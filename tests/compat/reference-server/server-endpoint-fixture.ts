@@ -1,11 +1,20 @@
 import type { Database } from "bun:sqlite";
 import { betterAuth, type BetterAuthOptions, type BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
-import { emailOTP, jwt, oneTimeToken, organization, twoFactor } from "better-auth/plugins";
+import { emailOTP, haveIBeenPwned, jwt, oneTimeToken, organization, twoFactor } from "better-auth/plugins";
 import { apiKey } from "@better-auth/api-key";
 import { kAPIErrorHeaderSymbol } from "better-call";
 import { getCurrentAuthEndpointContext } from "@better-auth/core/context";
+import { hashPassword, verifyPassword } from "better-auth/crypto";
+import { createHash } from "node:crypto";
 
+const HASH_PASSWORD="Actual-Phase-Hash-Password-205";
+function hashReceipt(hash:string){const [salt,key]=hash.split(":");return {token:hash,salt:{token:salt,length:salt!.length},derivedKey:{token:key,length:key!.length},encoding:"hex-lower"};}
+
+const requestBodies = new WeakMap<Request,string>();
+function requestSnapshot(request:Request|undefined) {
+  return request ? {url:request.url,method:request.method,headers:Object.fromEntries(request.headers),query:Object.fromEntries(new URL(request.url).searchParams),body:requestBodies.get(request)??null} : null;
+}
 type Context = { path?: unknown; method?: unknown; body?: unknown; query?: unknown; headers?: Headers; request?: Request; context: { session?: unknown; returned?: unknown } };
 function inputSnapshot(ctx: Context) {
   return {
@@ -14,7 +23,7 @@ function inputSnapshot(ctx: Context) {
     bodyPresent: Object.hasOwn(ctx,"body"), body: ctx.body ?? null,
     queryPresent: Object.hasOwn(ctx,"query"), query: ctx.query ?? null,
     headers: ctx.headers ? Object.fromEntries(ctx.headers) : null,
-    request: ctx.request ? {url:ctx.request.url,method:ctx.request.method,headers:Object.fromEntries(ctx.request.headers)} : null,
+    request: requestSnapshot(ctx.request),
     session: ctx.context.session ?? null,
   };
 }
@@ -24,7 +33,7 @@ function snapshot(ctx: Context) {
   return {
     ...inputSnapshot(ctx),
     current: inputSnapshot(current),
-    legacyRequest: current.request ? {url:current.request.url,method:current.request.method,headers:Object.fromEntries(current.request.headers)} : null,
+    legacyRequest: requestSnapshot(current.request),
     // API errors can originate from the separate better-call class. Capture
     // the real public typed error contract without relying on class identity.
     returned: returned instanceof Error && "statusCode" in returned && "body" in returned ? {api:true,status:returned.statusCode,body:returned.body} : returned ?? null,
@@ -35,7 +44,25 @@ function snapshot(ctx: Context) {
 export function createServerEndpointFixture(database: Database, base: BetterAuthOptions) {
   const path="/__test/profiles/server-dispatch/api/auth";
   let mode="normal", serial=0;
+  let hashPhase="outside";
   const events: unknown[]=[];
+  const ranges:unknown[]=[];
+  const range=Bun.serve({hostname:"127.0.0.1",port:0,async fetch(request){
+    const url=new URL(request.url);
+    ranges.push({method:request.method,path:url.pathname,query:url.search,headers:{addPadding:request.headers.get("add-padding"),userAgent:request.headers.get("user-agent"),authorization:request.headers.get("authorization"),cookie:request.headers.get("cookie")},body:await request.text()});
+    const suffix=createHash("sha1").update(HASH_PASSWORD).digest("hex").toUpperCase().slice(5);
+    return new Response(`${suffix}:${mode==="hash-phase-deny"?1:0}\r\n`,{headers:{"content-type":"text/plain"}});
+  }});
+  const previousFetch=globalThis.fetch;
+  globalThis.fetch=(async(input:Parameters<typeof fetch>[0],init?:Parameters<typeof fetch>[1])=>{
+    const url=new URL(input instanceof Request?input.url:input.toString());
+    if(url.origin==="https://api.pwnedpasswords.com"&&/^\/range\/[A-F0-9]{5}$/.test(url.pathname)&&!url.search){
+      let current:ReturnType<typeof getCurrentAuthEndpointContext>|undefined;
+      try{current=getCurrentAuthEndpointContext();}catch{/* Standalone helpers retain their owning fixture service. */}
+      if(current?.context.options.basePath===path)return previousFetch(new URL(url.pathname,range.url),init);
+    }
+    return previousFetch(input,init);
+  }) as typeof fetch;
   const other=betterAuth({...base,basePath:"/__test/server-dispatch/other/api/auth",plugins:[]});
   function observer(id:string): BetterAuthPlugin {
     return {id:`server-dispatch-${id}`,hooks:{
@@ -57,16 +84,18 @@ export function createServerEndpointFixture(database: Database, base: BetterAuth
     }};
   }
   const auth=betterAuth({...base,basePath:path,
-    hooks:{before:createAuthMiddleware(async ctx=>{events.push({stage:"user-before",...snapshot(ctx)});if(mode==="reset-app")serial=0;if(mode==="before-headers")ctx.setHeader("x-user","before");if(mode==="request-patch"&&ctx.request){const headers=new Headers(ctx.request.headers);headers.set("x-physical-patch","actual-clone");return {context:{request:new Request(ctx.request,{headers})}};}if(mode==="patch"||mode==="patch-existing-headers")return {context:{body:{email:"UserPatch@Example.test",nested:{user:true},actions:["user"]},headers:new Headers({"x-user":"patched"})}};}),after:createAuthMiddleware(async ctx=>{events.push({stage:"user-after",...snapshot(ctx)});})},
-    plugins:[observer("first"),emailOTP({sendVerificationOTP:async()=>{},generateOTP(input,ctx){events.push({stage:"otp-generator",input,...snapshot(ctx)});return "591307";}}),apiKey({configId:"dispatch",enableSessionForAPIKeys:true,rateLimit:{enabled:false},defaultKeyLength:16,enableMetadata:true,customAPIKeyGetter(ctx){events.push({stage:"api-key-getter",...snapshot(ctx)});return ctx.headers?.get("x-api-key")??null;},customAPIKeyValidator({ctx,key}){events.push({stage:"api-key-validator",key,...snapshot(ctx)});return true;},customKeyGenerator(input){events.push({stage:"api-key-generator",input:{length:input.length,prefix:input.prefix??null}});return `server-dispatch-actual-key-${String(++serial).padStart(6,"0")}`;}}),observer("second"),oneTimeToken(),jwt(),organization(),twoFactor({backupCodeOptions:{customBackupCodesGenerate:()=>["application-backup-one","application-backup-two"]}})],
+    emailAndPassword:{...base.emailAndPassword,password:{hash:async password=>{const hash=await hashPassword(password);if(mode.startsWith("hash-phase")){const current=getCurrentAuthEndpointContext() as unknown as Context;events.push({stage:"original-hash",phase:hashPhase,...inputSnapshot(current),hash:hashReceipt(hash),verified:await verifyPassword({hash,password})});}return hash;},verify:verifyPassword}},
+    hooks:{before:createAuthMiddleware(async ctx=>{events.push({stage:"user-before",...snapshot(ctx)});if(mode.startsWith("hash-phase")){hashPhase="before";await ctx.context.password.hash(HASH_PASSWORD);}if(mode==="reset-app")serial=0;if(mode==="before-headers")ctx.setHeader("x-user","before");if((mode==="request-patch"||mode.startsWith("hash-phase"))&&ctx.request){const headers=new Headers(ctx.request.headers);headers.set("x-physical-patch","actual-clone");const patched=new Request(ctx.request,{headers});requestBodies.set(patched,await patched.clone().text());return {context:{request:patched}};}if(mode==="patch"||mode==="patch-existing-headers")return {context:{body:{email:"UserPatch@Example.test",nested:{user:true},actions:["user"]},headers:new Headers({"x-user":"patched"})}};}),after:createAuthMiddleware(async ctx=>{events.push({stage:"user-after",...snapshot(ctx)});if(mode.startsWith("hash-phase")){hashPhase="after";await ctx.context.password.hash(HASH_PASSWORD);}})},
+    plugins:[observer("first"),emailOTP({sendVerificationOTP:async()=>{},async generateOTP(input,ctx){events.push({stage:"otp-generator",input,...snapshot(ctx)});if(mode.startsWith("hash-phase")){hashPhase="handler";await ctx.context.password.hash(HASH_PASSWORD);}return "591307";}}),apiKey({configId:"dispatch",enableSessionForAPIKeys:true,rateLimit:{enabled:false},defaultKeyLength:16,enableMetadata:true,customAPIKeyGetter(ctx){events.push({stage:"api-key-getter",...snapshot(ctx)});return ctx.headers?.get("x-api-key")??null;},customAPIKeyValidator({ctx,key}){events.push({stage:"api-key-validator",key,...snapshot(ctx)});return true;},customKeyGenerator(input){events.push({stage:"api-key-generator",input:{length:input.length,prefix:input.prefix??null}});return `server-dispatch-actual-key-${String(++serial).padStart(6,"0")}`;}}),observer("second"),oneTimeToken(),jwt(),organization(),twoFactor({backupCodeOptions:{customBackupCodesGenerate:()=>["application-backup-one","application-backup-two"]}}),haveIBeenPwned({paths:["/","virtual:"]})],
   });
   return {path,auth,async control(request:Request):Promise<Response|null>{
     const url=new URL(request.url);
     if(url.pathname==="/__test/server-dispatch/state")return Response.json({verification:database.query("SELECT * FROM verification ORDER BY identifier,id").all(),apikey:database.query("SELECT *,hex(CAST(start AS BLOB)) AS startHex,typeof(start) AS startType FROM apikey ORDER BY name,id").all().map(row=>({...row as Record<string,unknown>,enabled:!!(row as Record<string,unknown>).enabled,rateLimitEnabled:!!(row as Record<string,unknown>).rateLimitEnabled})),organization:database.query("SELECT * FROM organization ORDER BY slug,id").all(),member:database.query('SELECT * FROM member ORDER BY role,id').all(),session:database.query('SELECT id,"expiresAt",token,"createdAt","updatedAt","ipAddress","userAgent","userId","impersonatedBy","activeOrganizationId","activeTeamId" FROM session ORDER BY "createdAt",id').all()});
     if(url.pathname!=="/__test/server-dispatch/call"||request.method!=="POST")return null;
     const physicalRequest=request.clone();
+    requestBodies.set(physicalRequest,await physicalRequest.clone().text());
     const input=await request.json() as {operation:string;mode?:string;body?:unknown;query?:unknown;headers?:Record<string,string>;physicalRequest?:boolean};
-    mode=input.mode??"normal";events.length=0;
+    mode=input.mode??"normal";events.length=0;ranges.length=0;
     const api=auth.api as unknown as Record<string,(args:Record<string,unknown>)=>Promise<unknown>>;
     const endpoint=api[input.operation];
     if(!endpoint)return Response.json({message:"unknown installed operation"},{status:400});
@@ -78,6 +107,6 @@ export function createServerEndpointFixture(database: Database, base: BetterAuth
     let result:unknown;
     try{const value=await endpoint(args) as {response:unknown;headers:Headers;status?:number};result={ok:true,value:{headers:Object.fromEntries(value.headers),response:value.response,...(Object.hasOwn(value,"status")?{status:value.status}: {})}};}
     catch(error){const failure=error as Error&{statusCode?:number;body?:unknown;[kAPIErrorHeaderSymbol]?:Headers};const headers=failure[kAPIErrorHeaderSymbol];result={ok:false,name:failure.name,status:failure.statusCode??null,body:failure.body??null,message:failure.message,headers:headers?Object.fromEntries(headers):null};}
-    return Response.json({events:[...events],result});
+    return Response.json({events:[...events],ranges:[...ranges],result});
   }};
 }

@@ -45,7 +45,9 @@ impl SessionRequest for AuthRequest {
     ) -> Option<SessionView> {
         self.virtual_session().cloned()
     }
-    fn take_response_headers(&self) -> crate::Headers { self.take_response_headers() }
+    fn take_response_headers(&self) -> crate::Headers {
+        self.take_response_headers()
+    }
     fn queue_response_header(&self, name: impl Into<String>, value: impl Into<String>) {
         self.queue_response_header(name, value);
     }
@@ -92,7 +94,9 @@ impl SessionRequest for crate::endpoint::EndpointCall {
     ) -> Option<S::User> {
         self.authenticated_user::<S>(context)
     }
-    fn take_response_headers(&self) -> crate::Headers { self.take_response_headers() }
+    fn take_response_headers(&self) -> crate::Headers {
+        self.take_response_headers()
+    }
     fn queue_response_header(&self, name: impl Into<String>, value: impl Into<String>) {
         self.queue_response_header(name, value);
     }

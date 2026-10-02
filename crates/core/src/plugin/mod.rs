@@ -538,8 +538,20 @@ impl<S: AuthSchema> AuthContext<S> {
         hasher: Option<&Arc<dyn crate::utils::password::PasswordHasher>>,
         password: &str,
     ) -> AuthResult<String> {
-        let context = crate::hooks::current_request_hook_context()
-            .map(crate::utils::password::PasswordHashContext::from_request);
+        let context = crate::endpoint::current_endpoint_call_context().map_or_else(
+            || {
+                crate::hooks::current_request_hook_context()
+                    .map(crate::utils::password::PasswordHashContext::from_request)
+            },
+            |call| {
+                Some(crate::utils::password::PasswordHashContext {
+                    path: call.path().map(str::to_owned),
+                    request: call
+                        .request()
+                        .map(crate::hooks::RequestHookContext::from_request),
+                })
+            },
+        );
         self.hash_password_with_context(hasher, password, context.as_ref())
             .await
     }

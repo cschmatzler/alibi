@@ -105,8 +105,19 @@ plugin with paths `['/', 'virtual:']` makes exactly one genuine local range
 HTTP request at the handler. Raw absent path and original optional Request
 remain authoritative before/after; the handler uses `virtual:` and the patched
 Request. Full hash, range, input and SQLite receipts remain in
-`/tmp/issue205-source-hash-phase.log`. Native #135 frame-preference composition
-is still pending and is not claimed proved by this Source-only receipt.
+`/tmp/issue205-source-hash-phase.log`.
+
+After composition with merged #135, the genuine three-branch owner reproduced
+the missing native frame preference: physical clean hashing made no range
+request, a logical call without a Request treated its real raw frame as missing,
+and a compromised physical handler reached the original hasher. All Source
+branches passed; the exact three native failures and 176 assertions remain in
+`/tmp/issue205-hash-before-owner22.log`. `AuthContext::hash_password` now chooses
+the present actual EndpointCall, including its absent raw path and optional
+Request, before the existing physical fallback. All three unchanged owners
+pass, independently verifying every complete real scrypt hash and rejecting a
+foreign password. The genuine bound range service checks only the handler;
+all raw input and original/patched Request body/query/header receipts remain.
 
 The real API-key getter and validator now record full actual callback
 arguments separately from their exported frames, retaining matcher/handler
@@ -142,10 +153,35 @@ controls remain in `/tmp/issue205-ott-header-real-control.json`. Registered
 publication now uses the existing canonical cookie serializer, and the plain
 exported helper semantics remain distinct. No comparer is edited here.
 
-The existing organization/factor proof still depends on the separately reviewed
-entity selector prerequisite #287 and signed-header prerequisite #284. Compact
-cache/retained projection, #221 memo/publication and #135 hash-context composition
-remain required before #205 closure. This draft has no full canonical or clean
+Composition onto main `4bcd25c3` preserves #221 successful cache/stored/virtual
+read memo, config/store/header binding, transient cookie cleanup, publication
+and pending-factor retirement, as well as #135 and every provider profile.
+The native virtual read retains the exact verified SessionView. Actual locked
+optional workspace strict checks, fixture strict/build and TypeScript passed
+with `MBX_DISABLE=1` and a fresh target directory
+(`/tmp/issue205-main288-strict-build19.log`,
+`/tmp/issue205-hash-after-strict-build23.log`,
+`/tmp/issue205-hash-typecheck23.log`). All 20 existing dispatcher owners pass,
+1,492 assertions (`/tmp/issue205-main288-owners20.log`). With the three new hash
+owners and unchanged #135 siblings, 38 of 39 pass, 4,116 assertions; the sole
+failure is the previously measured #174 proof-length observation
+(`observation.observations.0.proof.length`,
+`/tmp/issue205-hash-after-owners23.log`). All 23 dispatcher owners pass in that
+same combined execution. The initial composed owner launch preceded native
+READY and failed health admission only; its terminal log is retained separately
+as `/tmp/issue205-main288-owners19.log`.
+
+An actual Source-versus-Source compact counterfactual passes its real SDK
+signup, authenticated compact decoder, cached SDK get-session, OTP and persisted
+rows, but reports 21 raw Cookie header aliases. Each co-present session_data
+envelope differs between independent valid issuances. Full Source captures and
+cookie hashes are frozen in `/tmp/issue205-compact-source-captures.json` and
+`/tmp/issue205-compact-source-frozen-manifest.json`; the exact unmodified failures
+remain in `/tmp/issue205-compact-source-counterfactual.log`. This needs a separate
+harness prerequisite; no comparer is edited in #205.
+
+Compact cache/retained projection and complete additional state proof remain
+required before #205 closure. This draft has no full canonical or clean
 coverage claim. The state owner reads all fields of verification/API-key/org/
 member rows and the selected installed session columns; it intentionally omits
 unrelated global SessionFields fixture columns and does not claim full factor,

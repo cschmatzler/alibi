@@ -19,6 +19,9 @@ use better_auth::plugins::api_key::{
 use better_auth::plugins::email_otp::{
     EmailOtpConfig, EmailOtpGenerator, EmailOtpPlugin, EmailOtpType,
 };
+use better_auth::plugins::haveibeenpwned::{
+    HaveIBeenPwnedConfig, HaveIBeenPwnedPlugin, PwnedPasswordClient,
+};
 use better_auth::plugins::jwt::JwtPlugin;
 use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
 use better_auth::plugins::two_factor::TwoFactorConfig;
@@ -28,6 +31,7 @@ use better_auth::plugins::{
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use better_auth_core::utils::json::{self, JsValue};
 use better_auth_core::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, HttpMethod};
+use better_auth_core::{PasswordHasher, ScryptHasher};
 use better_auth_seaorm::{
     SeaOrmStore,
     sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement},
@@ -39,11 +43,16 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+const HASH_PASSWORD: &str = "Actual-Phase-Hash-Password-205";
+
 #[derive(Clone, Default)]
 struct Application {
     events: Arc<Mutex<Vec<Value>>>,
     mode: Arc<Mutex<String>>,
     other: Arc<Mutex<Option<Arc<better_auth::BetterAuth<TestSchema>>>>>,
+    primary: Arc<Mutex<Option<Arc<better_auth::BetterAuth<TestSchema>>>>>,
+    hash_phase: Arc<Mutex<String>>,
+    ranges: Arc<Mutex<Vec<Value>>>,
     serial: Arc<std::sync::atomic::AtomicUsize>,
 }
 fn error_body(error: &AuthError) -> Value {
@@ -58,7 +67,7 @@ fn returned(response: Option<&EndpointResponse>) -> Value {
     response.map_or(Value::Null,|response| match response.result(){Ok(value)=>serde_json::to_value(value).unwrap(),Err(error)=>value!({"api":true,"status":error.status_code(),"body":response.error_body().map_or_else(||error_body(error),|body|serde_json::to_value(body).unwrap())})})
 }
 fn input_snapshot(call: &EndpointCall) -> Value {
-    value!({"pathPresent":true,"path":call.path(),"methodPresent":call.has_method(),"method":call.method().map(|method|format!("{method:?}").to_uppercase()),"bodyPresent":call.has_body(),"body":call.body(),"queryPresent":call.has_query(),"query":call.query(),"headers":call.headers(),"request":call.request().map(|request|value!({"url":request.url().map(|url|url.as_str()),"method":format!("{:?}",request.method()).to_uppercase(),"headers":request.headers})),"session":call.session().map(|(user,session)|value!({"user":user,"session":session}))})
+    value!({"pathPresent":true,"path":call.path(),"methodPresent":call.has_method(),"method":call.method().map(|method|format!("{method:?}").to_uppercase()),"bodyPresent":call.has_body(),"body":call.body(),"queryPresent":call.has_query(),"query":call.query(),"headers":call.headers(),"request":call.request().map(|request|value!({"url":request.url().map(|url|url.as_str()),"method":format!("{:?}",request.method()).to_uppercase(),"headers":request.headers,"query":request.query,"body":request.body.as_ref().map(|body|String::from_utf8_lossy(body).into_owned())})),"session":call.session().map(|(user,session)|value!({"user":user,"session":session}))})
 }
 fn snapshot(call: &EndpointCall, response: Option<&EndpointResponse>) -> Value {
     let mut snapshot = input_snapshot(call);
@@ -66,7 +75,7 @@ fn snapshot(call: &EndpointCall, response: Option<&EndpointResponse>) -> Value {
     snapshot["current"] = current_endpoint_call_context()
         .as_ref()
         .map_or(Value::Null, input_snapshot);
-    snapshot["legacyRequest"] = better_auth_core::hooks::current_request_hook_context().map_or(Value::Null, |request|value!({"url":request.url.as_ref().map(url::Url::as_str),"method":format!("{:?}",request.method).to_uppercase(),"headers":request.headers}));
+    snapshot["legacyRequest"] = better_auth_core::hooks::current_request_hook_context().map_or(Value::Null, |request|value!({"url":request.url.as_ref().map(url::Url::as_str),"method":format!("{:?}",request.method).to_uppercase(),"headers":request.headers,"query":request.query,"body":request.body.as_ref().map(|body|String::from_utf8_lossy(body).into_owned())}));
     snapshot
 }
 impl Application {
@@ -74,6 +83,33 @@ impl Application {
         let mut event = snapshot(call, response);
         event["stage"] = value!(stage);
         self.events.lock().unwrap().push(event);
+    }
+    async fn hash_at(&self, phase: &str, context: &AuthContext<TestSchema>) -> AuthResult<()> {
+        *self.hash_phase.lock().unwrap() = phase.into();
+        let hasher: Arc<dyn PasswordHasher> = Arc::new(self.clone());
+        context.hash_password(Some(&hasher), HASH_PASSWORD).await?;
+        Ok(())
+    }
+}
+#[async_trait::async_trait]
+impl PasswordHasher for Application {
+    async fn hash(&self, password: &str) -> AuthResult<String> {
+        let hash = ScryptHasher.hash(password).await?;
+        if self.mode.lock().unwrap().starts_with("hash-phase") {
+            let call = current_endpoint_call_context()
+                .ok_or_else(|| AuthError::internal("missing real hash frame"))?;
+            let mut event = input_snapshot(&call);
+            let (salt, key) = hash.split_once(':').unwrap();
+            event["stage"] = value!("original-hash");
+            event["phase"] = value!(*self.hash_phase.lock().unwrap());
+            event["hash"] = value!({"token":hash,"salt":{"token":salt,"length":salt.len()},"derivedKey":{"token":key,"length":key.len()},"encoding":"hex-lower"});
+            event["verified"] = value!(ScryptHasher.verify(&hash, password).await?);
+            self.events.lock().unwrap().push(event);
+        }
+        Ok(hash)
+    }
+    async fn verify(&self, hash: &str, password: &str) -> AuthResult<bool> {
+        ScryptHasher.verify(hash, password).await
     }
 }
 struct Observer {
@@ -94,10 +130,13 @@ impl EndpointHook<TestSchema> for Observer {
     async fn before(
         &self,
         call: &EndpointCall,
-        _: &AuthContext<TestSchema>,
+        context: &AuthContext<TestSchema>,
     ) -> AuthResult<Option<BeforeEndpointAction>> {
         self.app.record(format!("{}-before", self.id), call, None);
         let mode = self.app.mode.lock().unwrap().clone();
+        if self.id == "user" && mode.starts_with("hash-phase") {
+            self.app.hash_at("before", context).await?;
+        }
         if self.id == "user" && mode == "reset-app" {
             self.app
                 .serial
@@ -106,7 +145,7 @@ impl EndpointHook<TestSchema> for Observer {
         if mode == "before-headers" {
             call.set_response_header(format!("x-{}", self.id), "before");
         }
-        if self.id == "user" && mode == "request-patch" {
+        if self.id == "user" && (mode == "request-patch" || mode.starts_with("hash-phase")) {
             if let Some(request) = call.request() {
                 let mut request = request.clone();
                 drop(
@@ -169,11 +208,15 @@ impl EndpointHook<TestSchema> for Observer {
     async fn after(
         &self,
         call: &EndpointCall,
-        _: &AuthContext<TestSchema>,
+        context: &AuthContext<TestSchema>,
         mut response: EndpointResponse,
     ) -> AuthResult<EndpointResponse> {
         self.app
             .record(format!("{}-after", self.id), call, Some(&response));
+        let hash_phase = self.app.mode.lock().unwrap().starts_with("hash-phase");
+        if self.id == "user" && hash_phase {
+            self.app.hash_at("after", context).await?;
+        }
         if self.id == "second" && *self.app.mode.lock().unwrap() == "scope-isolation" {
             let other = self.app.other.lock().unwrap().clone().unwrap();
             let session = match other.context().require_cached_session(call).await {
@@ -245,6 +288,10 @@ impl EmailOtpGenerator for Application {
         event["stage"] = value!("otp-generator");
         event["input"] = value!({"email":email,"type":otp_type});
         self.events.lock().unwrap().push(event);
+        if self.mode.lock().unwrap().starts_with("hash-phase") {
+            let auth = self.primary.lock().unwrap().clone().unwrap();
+            self.hash_at("handler", auth.context()).await?;
+        }
         Ok(Some("591307".into()))
     }
 }
@@ -323,6 +370,30 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     let path = "/__test/profiles/server-dispatch/api/auth";
     let configured = base.clone().base_path(path);
     let app = Application::default();
+    let range_app = app.clone();
+    let range=Router::new().fallback(move|request:Request|{
+        let app=range_app.clone();async move{
+            let (parts,body)=request.into_parts();
+            let body=to_bytes(body,1_048_576).await.unwrap();
+            let header=|name:&str|parts.headers.get(name).and_then(|value|value.to_str().ok());
+            app.ranges.lock().unwrap().push(value!({"method":parts.method.as_str(),"path":parts.uri.path(),"query":parts.uri.query().map_or(String::new(),|query|format!("?{query}")),"headers":{"addPadding":header("add-padding"),"userAgent":header("user-agent"),"authorization":header("authorization"),"cookie":header("cookie")},"body":String::from_utf8_lossy(&body)}));
+            // Corpus suffix of the fixed application password, independently
+            // checked against SHA-1 by the client owner.
+            let count=if *app.mode.lock().unwrap()=="hash-phase-deny" {1}else{0};
+            ([("content-type","text/plain")],format!("A1BC493DA6992DF25BB5C58FF0946750656:{count}\r\n"))
+        }
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|error| AuthError::internal(error.to_string()))?;
+    let address = listener
+        .local_addr()
+        .map_err(|error| AuthError::internal(error.to_string()))?;
+    let _range = tokio::spawn(async move { axum::serve(listener, range).await });
+    let range_client = PwnedPasswordClient::new(
+        reqwest::Client::new(),
+        url::Url::parse(&format!("http://{address}/range/")).unwrap(),
+    );
     let other = Arc::new(
         AuthBuilder::<TestSchema>::new(
             base.clone()
@@ -342,7 +413,13 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 id: "user",
                 app: app.clone(),
             })
-            .plugin(EmailPasswordPlugin::new().enable_username(false))
+            .plugin(EmailPasswordPlugin::with_config(
+                better_auth::plugins::EmailPasswordConfig {
+                    enable_username: false,
+                    password_hasher: Some(Arc::new(app.clone())),
+                    ..Default::default()
+                },
+            ))
             .plugin(SessionManagementPlugin::new())
             .plugin(Observer {
                 id: "first",
@@ -382,9 +459,15 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 })),
                 ..Default::default()
             }))
+            .plugin(HaveIBeenPwnedPlugin::with_config(HaveIBeenPwnedConfig {
+                paths: Some(vec!["/".into(), "virtual:".into()]),
+                client: range_client,
+                ..Default::default()
+            }))
             .build()
             .await?,
     );
+    *app.primary.lock().unwrap() = Some(auth.clone());
     let mut router = Router::new().nest(path, auth.clone().axum_router().with_state(auth.clone()));
     router = router.route(
         "/__test/server-dispatch/call",
@@ -397,6 +480,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 let input: Input = json::from_slice(&bytes).unwrap();
                 *app.mode.lock().unwrap() = input.mode.unwrap_or_else(|| "normal".into());
                 app.events.lock().unwrap().clear();
+                app.ranges.lock().unwrap().clear();
                 let plugin = match input.operation.as_str() {
                     "createVerificationOTP" | "getVerificationOTP" => "email-otp",
                     "signJWT" | "verifyJWT" | "getToken" | "getJwks" => "jwt",
@@ -450,22 +534,23 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                         .iter()
                         .map(|(name, value)| (name.to_string(), value.to_str().unwrap().to_owned()))
                         .collect();
-                    let request = AuthRequest::from_parts(
+                    let actual_url =
+                        url::Url::parse(&format!("{actual_scheme}://{actual_host}{}", parts.uri))
+                            .unwrap();
+                    let query_pairs: Vec<_> = actual_url
+                        .query_pairs()
+                        .map(|(name, value)| (name.into_owned(), value.into_owned()))
+                        .collect();
+                    let mut request = AuthRequest::from_parts(
                         HttpMethod::Post,
                         parts.uri.path().into(),
                         headers,
                         Some(bytes.to_vec()),
-                        HashMap::new(),
-                    );
-                    Some(
-                        request.with_url(
-                            url::Url::parse(&format!(
-                                "{actual_scheme}://{actual_host}{}",
-                                parts.uri
-                            ))
-                            .unwrap(),
-                        ),
+                        query_pairs.iter().cloned().collect(),
                     )
+                    .with_url(actual_url);
+                    request.set_query_pairs(query_pairs);
+                    Some(request)
                 } else {
                     None
                 };
@@ -480,7 +565,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     )
                     .await,
                 );
-                Json(value!({"events":app.events.lock().unwrap().clone(),"result":result}))
+                Json(value!({"events":app.events.lock().unwrap().clone(),"ranges":app.ranges.lock().unwrap().clone(),"result":result}))
             }
         }),
     );

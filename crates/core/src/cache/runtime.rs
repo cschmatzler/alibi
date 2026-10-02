@@ -27,7 +27,9 @@ struct PublishedSession(Option<(crate::UserView, crate::SessionView)>);
 /// The snapshot whose session cookies completed successfully in this dispatch.
 /// Response hooks may observe it; it never establishes authentication.
 #[must_use]
-pub fn published_session(request: &impl SessionRequest) -> Option<(crate::UserView, crate::SessionView)> {
+pub fn published_session(
+    request: &impl SessionRequest,
+) -> Option<(crate::UserView, crate::SessionView)> {
     request
         .extensions()
         .get::<PublishedSession>()
@@ -47,9 +49,13 @@ pub fn discard_issuance(request: &impl SessionRequest) {
 
 fn record_publication(user: crate::UserView, session: crate::SessionView) {
     if let Some(endpoint) = crate::endpoint::current_endpoint_call_context() {
-        endpoint.extensions().insert(PublishedSession(Some((user,session))));
+        endpoint
+            .extensions()
+            .insert(PublishedSession(Some((user, session))));
     } else if let Some(request) = crate::hooks::current_request_hook_context() {
-        request.extensions.insert(PublishedSession(Some((user,session))));
+        request
+            .extensions
+            .insert(PublishedSession(Some((user, session))));
     }
 }
 
@@ -205,7 +211,7 @@ pub async fn stored_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
         user.clone(),
         session.clone(),
         ctx.user_view(user),
-        ctx.session_view(&session),
+        ctx.session_view(session),
     );
     build_headers(ctx, context, headers, dont_remember).await
 }
@@ -216,7 +222,7 @@ async fn stored_read_headers<S: AuthSchema>(
     session: &S::Session,
     headers: &std::collections::HashMap<String, String>,
 ) -> AuthResult<Vec<String>> {
-    let context = CacheVersionContext::stored(ctx.user_view(user), ctx.session_view(&session));
+    let context = CacheVersionContext::stored(ctx.user_view(user), ctx.session_view(session));
     build_headers(ctx, context, headers, false).await
 }
 
@@ -303,7 +309,7 @@ pub async fn emit_issuance<S: AuthSchema>(
             user.clone(),
             session.clone(),
             ctx.user_view(user),
-            ctx.session_view(&session),
+            ctx.session_view(session),
         ),
     )
     .await
