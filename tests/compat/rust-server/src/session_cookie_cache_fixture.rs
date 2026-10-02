@@ -6,9 +6,19 @@ use better_auth::field_policy::FieldConfig;
 use better_auth::plugins::anonymous::{
     AnonymousConfig, AnonymousIdentity, AnonymousLink, LinkAnonymousAccount,
 };
+use better_auth::plugins::email_verification::{EmailVerificationPlugin, SendVerificationEmail};
+use better_auth::plugins::jwt::JwtPlugin;
+use better_auth::plugins::multi_session::MultiSessionPlugin;
+use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
+use better_auth::plugins::phone_number::{
+    PhoneNumberConfig, PhoneNumberPlugin, PhoneNumberVerification, PhoneOtpDelivery,
+    PhoneVerificationHook, SendPhoneOtp,
+};
 use better_auth::plugins::{
-    AccountManagementPlugin, AnonymousPlugin, EmailPasswordPlugin, OrganizationPlugin,
-    PasswordManagementPlugin, SessionManagementPlugin,
+    AccountManagementPlugin, AdminConfig, AdminPlugin, AnonymousPlugin, ApiKeyConfig, ApiKeyPlugin,
+    DeviceAuthorizationPlugin, EmailPasswordPlugin, OrganizationPlugin, PasskeyPlugin,
+    PasswordManagementPlugin, SendTwoFactorOtp, SessionManagementPlugin, TwoFactorPlugin,
+    UserManagementPlugin,
 };
 use better_auth::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, integrations::axum::AxumIntegration,
@@ -18,6 +28,8 @@ use better_auth_core::{
     AuthRequest, CacheVersionContext, CookieCacheConfig, CookieCacheVersion,
     CookieCacheVersionResolver, UpdateUser,
 };
+use better_auth_seaorm::sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+use better_auth_seaorm::store::entities::{account, user, verification};
 use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -30,11 +42,26 @@ struct State {
     version: String,
     failure: bool,
     sequence: usize,
+    session_sequence: usize,
     events: Vec<Value>,
 }
 struct Application {
     mode: &'static str,
     state: Arc<Mutex<State>>,
+}
+struct SessionTokens(Arc<Mutex<State>>);
+#[async_trait]
+impl better_auth_seaorm::SeaOrmHooks<ApplicationSchema> for SessionTokens {
+    async fn before_create_session(
+        &self,
+        session: &mut better_auth_core::CreateSession,
+        _context: &better_auth_seaorm::SeaOrmHookContext<'_>,
+    ) -> AuthResult<better_auth_seaorm::HookControl> {
+        let mut state = self.0.lock().expect("configured session token policy");
+        state.session_sequence += 1;
+        session.token = Some(format!("0001{:028}", state.session_sequence));
+        Ok(better_auth_seaorm::HookControl::Continue)
+    }
 }
 #[async_trait]
 impl CookieCacheVersionResolver for Application {
@@ -87,6 +114,63 @@ impl LinkAnonymousAccount for Application {
         Ok(())
     }
 }
+#[async_trait]
+impl SendTwoFactorOtp for Application {
+    async fn send(&self, user: &better_auth_core::UserView, otp: &str) -> AuthResult<()> {
+        self.state
+            .lock()
+            .expect("cache OTP receipt lock")
+            .events
+            .push(json!({"mode":self.mode,"otp":otp,"user":user}));
+        Ok(())
+    }
+}
+#[async_trait]
+impl SendPhoneOtp for Application {
+    async fn send(&self, delivery: &PhoneOtpDelivery) -> AuthResult<()> {
+        self.state.lock().expect("cache phone delivery").events.push(json!({"mode":self.mode,"stage":"phone-delivery","phoneNumber":delivery.phone_number,"code":delivery.code}));
+        Ok(())
+    }
+}
+#[async_trait]
+impl PhoneVerificationHook for Application {
+    async fn verified(&self, receipt: &PhoneNumberVerification) -> AuthResult<()> {
+        self.state.lock().expect("cache phone verification").events.push(json!({"mode":self.mode,"stage":"phone-verified","phoneNumber":receipt.phone_number,"user":receipt.user}));
+        Ok(())
+    }
+}
+impl Application {
+    fn verification_event(&self, stage: &str, user: Value, extra: Value) -> AuthResult<()> {
+        let request=better_auth_core::hooks::current_request_hook_context().map(|context|json!({"method":format!("{:?}",context.method).to_uppercase(),"url":context.url,"marker":context.headers.get("x-lifecycle-marker")}));
+        let mut event = json!({"mode":self.mode,"stage":stage,"user":user,"request":request});
+        if let Some(extra) = extra.as_object() {
+            for (name, value) in extra {
+                event[name] = value.clone();
+            }
+        }
+        self.state
+            .lock()
+            .expect("cache verification receipt")
+            .events
+            .push(event);
+        Ok(())
+    }
+}
+#[async_trait]
+impl SendVerificationEmail for Application {
+    async fn send(
+        &self,
+        user: &better_auth_core::UserView,
+        url: &str,
+        token: &str,
+    ) -> AuthResult<()> {
+        self.verification_event(
+            "verification-mail",
+            serde_json::to_value(user)?,
+            json!({"url":url,"token":token}),
+        )
+    }
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Control {
@@ -115,6 +199,8 @@ pub(super) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
         "infinite",
         "negative-infinite",
         "date-version",
+        "guards",
+        "interactions",
     ] {
         let state = Arc::new(Mutex::new(State {
             version: "1".into(),
@@ -134,7 +220,7 @@ pub(super) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             "negative-infinite" => f64::NEG_INFINITY,
             _ => 300.0,
         };
-        let version = if mode.starts_with("version") {
+        let version = if mode.starts_with("version") || mode == "interactions" {
             CookieCacheVersion::Resolver(application.clone())
         } else {
             CookieCacheVersion::Literal(if mode == "date-version" {
@@ -162,23 +248,83 @@ pub(super) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             "label".into(),
             FieldConfig::new(json!({"type":"string"})).default_value(json!("cache-public-label")),
         );
-        let auth = Arc::new(
-            AuthBuilder::<ApplicationSchema>::new(config.clone())
-                .store(SeaOrmStore::<ApplicationSchema>::new(config, db.clone()))
-                .rate_limit(RateLimitConfig::new().enabled(false))
-                .plugin(EmailPasswordPlugin::new().enable_username(false))
-                .plugin(SessionManagementPlugin::new())
-                .plugin(AccountManagementPlugin::new())
-                .plugin(PasswordManagementPlugin::new())
-                .plugin(OrganizationPlugin::new())
-                .plugin(AnonymousPlugin::with_config(AnonymousConfig {
-                    identity: Some(application.clone()),
-                    on_link_account: Some(application),
+        let mut store = SeaOrmStore::<ApplicationSchema>::new(config.clone(), db.clone());
+        if mode == "interactions" {
+            store = store.hook(SessionTokens(state.clone()));
+        }
+        let mut builder = AuthBuilder::<ApplicationSchema>::new(config.clone())
+            .store(store)
+            .rate_limit(RateLimitConfig::new().enabled(false))
+            .plugin(EmailPasswordPlugin::new().enable_username(false))
+            .plugin(SessionManagementPlugin::new())
+            .plugin(AccountManagementPlugin::new())
+            .plugin(PasswordManagementPlugin::new())
+            .plugin(OrganizationPlugin::new())
+            .plugin(AnonymousPlugin::with_config(AnonymousConfig {
+                identity: Some(application.clone()),
+                on_link_account: Some(application.clone()),
+                ..Default::default()
+            }));
+        if mode == "guards" {
+            builder = builder
+                .plugin(AdminPlugin::with_config(AdminConfig {
+                    default_role: "admin".into(),
                     ..Default::default()
                 }))
-                .build()
-                .await?,
-        );
+                .plugin(ApiKeyPlugin::with_config(ApiKeyConfig {
+                    enable_session_for_api_keys: true,
+                    ..Default::default()
+                }))
+                .plugin(PasskeyPlugin::new())
+                .plugin(OneTimeTokenPlugin::new())
+                .plugin(DeviceAuthorizationPlugin::new())
+                .plugin(
+                    UserManagementPlugin::new()
+                        .delete_user_enabled(true)
+                        .require_delete_verification(false),
+                )
+                .plugin(PhoneNumberPlugin::new(PhoneNumberConfig {
+                    send_otp: Some(application.clone()),
+                    callback_on_verification: Some(application.clone()),
+                    ..Default::default()
+                }));
+        }
+        if mode == "interactions" {
+            let before = application.clone();
+            let after = application.clone();
+            builder = builder
+                .plugin(
+                    EmailVerificationPlugin::new()
+                        .auto_sign_in_after_verification(true)
+                        .custom_send_verification_email(application.clone())
+                        .before_email_verification(Arc::new(move |user| {
+                            let app = before.clone();
+                            let user = user.clone();
+                            Box::pin(async move {
+                                app.verification_event(
+                                    "before-verification",
+                                    serde_json::to_value(user)?,
+                                    json!({}),
+                                )
+                            })
+                        }))
+                        .after_email_verification(Arc::new(move |user| {
+                            let app = after.clone();
+                            let user = user.clone();
+                            Box::pin(async move {
+                                app.verification_event(
+                                    "after-verification",
+                                    serde_json::to_value(user)?,
+                                    json!({}),
+                                )
+                            })
+                        })),
+                )
+                .plugin(TwoFactorPlugin::new().custom_send_otp(application))
+                .plugin(MultiSessionPlugin::new())
+                .plugin(JwtPlugin::new());
+        }
+        let auth = Arc::new(builder.build().await?);
         router = router.nest(&path, auth.clone().axum_router().with_state(auth.clone()));
         profiles.insert(mode.to_string(), (auth, state));
     }
@@ -186,6 +332,7 @@ pub(super) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
         "/__test/session-cookie-cache/control",
         post(move |Json(control): Json<Control>| {
             let profiles = profiles.clone();
+            let db = db.clone();
             async move {
                 let Some((auth, state)) = profiles.get(&control.mode) else {
                     return Err(axum::http::StatusCode::BAD_REQUEST);
@@ -207,6 +354,7 @@ pub(super) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                             state.failure = failure;
                         }
                     }
+                    "clear-events" => state.lock().expect("cache receipt clear").events.clear(),
                     "rename" => {
                         auth.store()
                             .update_user(
@@ -249,6 +397,21 @@ pub(super) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                         return Ok(Json(
                             json!({"user":user.as_ref().map(|user|auth.context().user_view(user))}),
                         ));
+                    }
+                    "rows" => {
+                        let user_id = control.user_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+                        let users = user::Entity::find().filter(user::Column::Id.eq(user_id)).all(&db).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                        let accounts = account::Entity::find().filter(account::Column::UserId.eq(user_id)).all(&db).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                        let sessions = application_session::Entity::find().filter(application_session::Column::UserId.eq(user_id)).order_by_asc(application_session::Column::CreatedAt).all(&db).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                        let proofs = verification::Entity::find().order_by_asc(verification::Column::CreatedAt).all(&db).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                        let accounts = accounts.iter().map(|account| { let mut value=serde_json::to_value(better_auth_core::wire::AccountView::from(account)).expect("actual account row"); value["password"]=json!(account.password);value }).collect::<Vec<_>>();
+                        let sessions = sessions.iter().map(|session| { let mut value=serde_json::to_value(auth.context().session_view(session)).expect("actual session row");value["hidden"]=json!(session.hidden);value }).collect::<Vec<_>>();
+                        return Ok(Json(json!({"users":users.iter().map(|user|auth.context().user_view(user)).collect::<Vec<_>>(),"accounts":accounts,"sessions":sessions,"verifications":proofs.iter().map(better_auth_core::wire::VerificationView::from).collect::<Vec<_>>()})));
+                    }
+                    "api-key-rows" => {
+                        let user_id=control.user_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+                        let keys=auth.store().list_api_keys_by_reference(user_id).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                        return Ok(Json(json!({"keys":keys})));
                     }
                     "state" => {}
                     _ => return Err(axum::http::StatusCode::BAD_REQUEST),

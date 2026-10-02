@@ -37,8 +37,11 @@ pub use org::*;
 pub(in crate::plugins) async fn require_session<S: better_auth_core::AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
-) -> AuthResult<(S::User, better_auth_core::wire::SessionView)> {
-    ctx.require_session(req).await
+) -> AuthResult<(
+    better_auth_core::AuthenticatedUser<S>,
+    better_auth_core::wire::SessionView,
+)> {
+    crate::plugins::helpers::ordinary_session(req, ctx).await
 }
 
 /// Helper function to get organization ID from request or session

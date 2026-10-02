@@ -6,7 +6,7 @@ use better_auth_core::{
     AuthResult, AuthRoute, AuthSchema, AuthStore, BeforeRequestAction, EmailProvider,
     ErrorCodeMessageResponse, HttpMethod, OkResponse, OpenApiBuilder, OpenApiRegistry, OpenApiSpec,
     SessionManager, UpdateUser, UpdateUserRequest, core_paths,
-    entity::{AuthSession, AuthUser},
+    entity::AuthUser,
     hooks::{RequestHookContext, with_request_hook_context_value},
     middleware::{
         self, BodyLimitConfig, BodyLimitMiddleware, CorsConfig, CorsMiddleware, CsrfConfig,
@@ -634,27 +634,26 @@ impl<S: AuthSchema> BetterAuth<S> {
         reason = "Keep field validation and user-update callbacks adjacent to the persistence operation"
     )]
     async fn handle_update_user(&self, req: &AuthRequest) -> AuthResult<AuthResponse> {
-        let current_user = self.extract_current_user(req).await.map_err(|error| {
-            if matches!(error, AuthError::SessionNotFound | AuthError::UserNotFound) {
-                for cookie in better_auth_core::utils::cookie_utils::delete_session_cookie_headers(
-                    &self.config,
+        let (current_user, current_session) = self
+            .context
+            .require_cached_session(req)
+            .await
+            .map_err(|error| {
+                if matches!(
+                    error,
+                    AuthError::Unauthenticated
+                        | AuthError::SessionNotFound
+                        | AuthError::UserNotFound
                 ) {
-                    req.queue_response_header("Set-Cookie", cookie);
+                    AuthError::Upstream {
+                        status: 401,
+                        code: "UNAUTHORIZED",
+                        message: "Unauthorized",
+                    }
+                } else {
+                    error
                 }
-            }
-            if matches!(
-                error,
-                AuthError::Unauthenticated | AuthError::SessionNotFound | AuthError::UserNotFound
-            ) {
-                AuthError::Upstream {
-                    status: 401,
-                    code: "UNAUTHORIZED",
-                    message: "Unauthorized",
-                }
-            } else {
-                error
-            }
-        })?;
+            })?;
         let body: serde_json::Value = req
             .body_as_json()
             .map_err(|e| AuthError::bad_request(format!("Invalid JSON: {e}")))?;
@@ -761,11 +760,57 @@ impl<S: AuthSchema> BetterAuth<S> {
             metadata: update_req.metadata,
         };
 
-        drop(
-            self.store
-                .update_user(&current_user.id(), update_user)
-                .await?,
-        );
+        let publication = match self
+            .store
+            .update_user(&current_user.id(), update_user.clone())
+            .await
+        {
+            Ok(updated_user) => better_auth_core::CacheVersionContext::created(
+                updated_user.clone(),
+                current_session.clone(),
+                self.context.user_view(&updated_user),
+                current_session.clone(),
+            ),
+            Err(AuthError::UserNotFound) => {
+                // Source retains the authenticated output snapshot when the
+                // adapter no longer has this user. This does not recreate a row.
+                let mut user = self.context.user_view(&current_user);
+                if let Some(name) = update_user.name {
+                    user.name = Some(name);
+                }
+                if let Some(image) = update_user.image {
+                    user.image = Some(image);
+                }
+                if let Some(username) = update_user.username {
+                    user.username = Some(username);
+                }
+                if let Some(display_username) = update_user.display_username {
+                    user.display_username = Some(display_username);
+                }
+                if let Some(role) = update_user.role {
+                    user.role = Some(role);
+                }
+                if let Some(metadata) = update_user.metadata {
+                    user.metadata = metadata;
+                }
+                if let Some(phone_number) = update_user.phone_number {
+                    user.phone_number = phone_number;
+                    drop(
+                        user.extension_fields
+                            .insert("phoneNumber".into(), serde_json::Value::Null),
+                    );
+                }
+                better_auth_core::CacheVersionContext::created(
+                    user.clone(),
+                    current_session.clone(),
+                    user,
+                    current_session.clone(),
+                )
+            }
+            Err(error) => return Err(error),
+        };
+        better_auth_core::cache::runtime::emit_issuance_snapshot(&self.context, publication)
+            .await?;
 
         let mut response =
             AuthResponse::json(200, &better_auth_core::StatusResponse { status: true })?;
@@ -777,35 +822,6 @@ impl<S: AuthSchema> BetterAuth<S> {
         }
 
         Ok(response)
-    }
-
-    /// Extract current user from request (validates session).
-    ///
-    /// If a virtual session was injected by a `before_request` hook (e.g.
-    /// API-key session emulation), the user is resolved directly by ID
-    /// **without** a database session lookup — matching the TypeScript
-    /// `ctx.context.session` virtual-session behaviour.
-    async fn extract_current_user(&self, req: &AuthRequest) -> AuthResult<S::User> {
-        // Fast path: virtual session injected by before_request hook
-        if let Some(uid) = req.virtual_user_id() {
-            let user = self.store.get_user_by_id(uid).await?;
-            return user.ok_or(AuthError::UserNotFound);
-        }
-
-        let token = self
-            .session_manager
-            .extract_session_token(req)
-            .ok_or(AuthError::Unauthenticated)?;
-
-        let session = self
-            .session_manager
-            .get_session(&token)
-            .await?
-            .ok_or(AuthError::SessionNotFound)?;
-
-        let user = self.store.get_user_by_id(&session.user_id()).await?;
-
-        user.ok_or(AuthError::UserNotFound)
     }
 }
 

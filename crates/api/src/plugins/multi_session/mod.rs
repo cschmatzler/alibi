@@ -4,7 +4,7 @@
 mod tests;
 
 use super::authentication_helpers::{JsonField, RequestBody, parse_body};
-use super::helpers::{delete_session_cookie_headers, response_session};
+use super::helpers::delete_session_cookie_headers;
 use async_trait::async_trait;
 use better_auth_core::utils::cookie_utils::{
     create_clear_cookie, create_session_cookie_with_max_age, create_session_like_cookie,
@@ -176,7 +176,7 @@ impl MultiSessionPlugin {
             Err(response) => return Ok(response),
         };
         let current = if revoke {
-            Some(ctx.require_session(req).await?)
+            Some(super::helpers::ordinary_session(req, ctx).await?)
         } else {
             None
         };
@@ -214,6 +214,23 @@ impl MultiSessionPlugin {
                 }
                 match next {
                     Some(session) => {
+                        let user = ctx
+                            .database
+                            .get_user_by_id(session.user_id().as_ref())
+                            .await?
+                            .ok_or(AuthError::UserNotFound)?;
+                        let user_view = ctx.user_view(&user);
+                        let session_view = ctx.session_view(&session);
+                        better_auth_core::cache::runtime::emit_issuance_snapshot(
+                            ctx,
+                            better_auth_core::CacheVersionContext::created(
+                                user_view.clone(),
+                                session_view.clone(),
+                                user_view,
+                                session_view,
+                            ),
+                        )
+                        .await?;
                         Self::set_active_cookie(req, ctx, session.token(), &mut response);
                     }
                     None => {
@@ -243,6 +260,18 @@ impl MultiSessionPlugin {
             200,
             &json!({"session":ctx.session_view(&session),"user":ctx.user_view(&user)}),
         )?;
+        let user_view = ctx.user_view(&user);
+        let session_view = ctx.session_view(&session);
+        better_auth_core::cache::runtime::emit_issuance_snapshot(
+            ctx,
+            better_auth_core::CacheVersionContext::created(
+                user_view.clone(),
+                session_view.clone(),
+                user_view,
+                session_view,
+            ),
+        )
+        .await?;
         Self::set_active_cookie(req, ctx, session.token(), &mut response);
         super::helpers::record_completed_session::<S>(&user, &session);
         Ok(response)
@@ -311,10 +340,13 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
             }
             return Ok(response);
         }
-        let Some(issued) = response_session(ctx, &response).await? else {
+        if response.headers.get_all("set-cookie").next().is_none() {
+            return Ok(response);
+        }
+        let Some((user, session)) = better_auth_core::cache::runtime::published_session(req) else {
             return Ok(response);
         };
-        let name = Self::cookie_name(issued.session.token(), ctx);
+        let name = Self::cookie_name(session.token(), ctx);
         if Self::cookie_value(req, &name).is_some_and(|value| !value.is_empty())
             || response.headers.get_all("set-cookie").any(|header| {
                 cookie::Cookie::parse(header.clone()).is_ok_and(|cookie| cookie.name() == name)
@@ -329,7 +361,7 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
                 continue;
             }
             if let Some(old) = ctx.database.get_session(token).await?
-                && old.user_id() == issued.user.id()
+                && old.user_id() == user.id()
             {
                 ctx.database.delete_session(token).await?;
                 response
@@ -343,7 +375,7 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
         if count.saturating_sub(removed) + 1 > self.config.maximum_sessions {
             return Ok(response);
         }
-        let signed = sign_cookie_value(issued.session.token(), &ctx.config.secret);
+        let signed = sign_cookie_value(session.token(), &ctx.config.secret);
         response.headers.append(
             "set-cookie",
             create_session_like_cookie(

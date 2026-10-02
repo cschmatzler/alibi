@@ -208,11 +208,25 @@ impl PasswordManagementPlugin {
             Err(resp) => return Ok(resp),
         };
 
-        // Get current user from session
-        let user = self
-            .get_current_user(req, ctx)
-            .await?
-            .ok_or(AuthError::Unauthenticated)?;
+        let (user, _session) = ctx
+            .require_authoritative_session(req)
+            .await
+            .map_err(|error| {
+                if matches!(
+                    error,
+                    AuthError::Unauthenticated
+                        | AuthError::SessionNotFound
+                        | AuthError::UserNotFound
+                ) {
+                    AuthError::Upstream {
+                        status: 401,
+                        code: "UNAUTHORIZED",
+                        message: "Unauthorized",
+                    }
+                } else {
+                    error
+                }
+            })?;
         let meta = RequestMeta::from_request(req);
 
         let (response, new_token) =

@@ -1080,20 +1080,6 @@ async fn finalize_sign_in_with_user_core(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<SignInCoreResult<UserView>> {
     let mut set_cookie_headers = Vec::new();
-    if two_factor::is_enabled(ctx) && user.two_factor_enabled() {
-        let trusted_device = two_factor::inspect_trusted_device(req, &user, ctx).await?;
-        if trusted_device.trusted {
-            set_cookie_headers.extend(trusted_device.set_cookie_headers);
-        } else {
-            let redirect = two_factor::begin_sign_in_challenge(&user, remember_me, ctx).await?;
-            let mut redirect_headers = trusted_device.set_cookie_headers;
-            redirect_headers.extend(redirect.set_cookie_headers);
-            return Ok(SignInCoreResult::TwoFactorRedirect {
-                response: redirect.response,
-                set_cookie_headers: redirect_headers,
-            });
-        }
-    }
 
     let mut issuing_config = (*ctx.config).clone();
     if remember_me == Some(false) {
@@ -1114,6 +1100,23 @@ async fn finalize_sign_in_with_user_core(
     )
     .await
     .map_err(SessionIssueError::into_auth_error)?;
+    if two_factor::is_enabled(ctx) && user.two_factor_enabled() {
+        let trusted_device = two_factor::inspect_trusted_device(req, &user, ctx).await?;
+        if trusted_device.trusted {
+            set_cookie_headers.extend(trusted_device.set_cookie_headers);
+        } else {
+            ctx.database.delete_session(issued.session.token()).await?;
+            better_auth_core::cache::runtime::discard_issuance(req);
+            let redirect = two_factor::begin_sign_in_challenge(&user, remember_me, ctx).await?;
+            let mut redirect_headers = trusted_device.set_cookie_headers;
+            redirect_headers.extend(redirect.set_cookie_headers);
+            return Ok(SignInCoreResult::TwoFactorRedirect {
+                response: redirect.response,
+                set_cookie_headers: redirect_headers,
+            });
+        }
+    }
+
     let session = issued.session;
     let token = session.token().to_owned();
 

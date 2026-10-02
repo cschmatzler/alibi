@@ -201,7 +201,7 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<Option<(UserView, SessionView)>> {
-        match ctx.require_session(req).await {
+        match ctx.require_authoritative_session(req).await {
             Ok((user, session)) => Ok(Some((UserView::from(&user), SessionView::from(&session)))),
             Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => Ok(None),
             Err(error) => Err(error),
@@ -543,9 +543,7 @@ impl AdminPlugin {
         if let Err(response) = validation::parse(req) {
             return Ok(response);
         }
-        let Some((_, session)) = self.require_session(req, ctx).await? else {
-            return Ok(Self::missing_session_response());
-        };
+        let (_, session) = super::helpers::ordinary_session(req, ctx).await?;
         if session.impersonated_by.is_none() {
             return Err(AuthError::bad_request("You are not impersonating anyone"));
         }

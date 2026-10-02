@@ -417,6 +417,10 @@ impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
             better_auth_core::AuthenticatedUser::Cached(user) => user.as_ref().clone(),
         };
         if let Some(linker) = &self.config.on_link_account {
+            // The new-user callback receives the real newly issued session,
+            // including adapter fields hidden from public session responses.
+            let mut new_session = ctx.session_view(&issued.session);
+            new_session.omitted_fields.clear();
             linker
                 .link(
                     &AnonymousLink {
@@ -428,7 +432,7 @@ impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
                             .filter(|view| view.id == issued.user.id().as_ref())
                             .cloned()
                             .unwrap_or_else(|| ctx.user_view(&issued.user)),
-                        new_session: ctx.session_view(&issued.session),
+                        new_session,
                     },
                     req,
                 )

@@ -325,7 +325,7 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
     let optional_session_owner = if config.registration.require_session {
         None
     } else {
-        match ctx.require_session(req).await {
+        match ctx.require_cached_session(req).await {
             Ok((user, _)) => Some(user.id().into_owned()),
             Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => None,
             Err(error) => return Err(error),

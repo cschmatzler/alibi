@@ -9,8 +9,8 @@ mod tests;
 
 use super::StatusResponse;
 use crate::plugins::helpers::{
-    SessionIssueError, delete_session_cookie_headers, get_cookie, get_credential_password_hash,
-    issue_user_session, issue_user_session_with_overrides,
+    SessionIssueError, get_cookie, get_credential_password_hash, issue_user_session,
+    issue_user_session_with_overrides,
 };
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
@@ -341,7 +341,7 @@ struct PendingTwoFactorState<S: better_auth_core::AuthSchema> {
 
 enum ResolvedTwoFactorState<S: better_auth_core::AuthSchema> {
     Session {
-        user: S::User,
+        user: better_auth_core::AuthenticatedUser<S>,
         session: Box<better_auth_core::wire::SessionView>,
         key: String,
     },
@@ -457,44 +457,7 @@ impl TwoFactorPlugin {
                 Ok(body) => body,
                 Err(response) => return Ok(response),
             };
-        let (user, session) = ctx
-            .require_authoritative_session(req)
-            .await
-            .map_err(|error| match error {
-                AuthError::Unauthenticated | AuthError::SessionNotFound => AuthError::Upstream {
-                    status: 401,
-                    code: "UNAUTHORIZED",
-                    message: "Unauthorized",
-                },
-                error @ (AuthError::Api { .. }
-                | AuthError::Upstream { .. }
-                | AuthError::BadRequest(_)
-                | AuthError::InvalidRequest(_)
-                | AuthError::Validation(_)
-                | AuthError::InvalidCredentials
-                | AuthError::AuthenticationFailed(_)
-                | AuthError::Forbidden(_)
-                | AuthError::UserCreationCancelled
-                | AuthError::SessionCreationCancelled
-                | AuthError::BannedUser(_)
-                | AuthError::Unauthorized
-                | AuthError::UserNotFound
-                | AuthError::NotFound(_)
-                | AuthError::Conflict(_)
-                | AuthError::MethodNotAllowed(_)
-                | AuthError::PayloadTooLarge(_)
-                | AuthError::UnprocessableEntity(_)
-                | AuthError::RateLimited
-                | AuthError::NotImplemented(_)
-                | AuthError::Config(_)
-                | AuthError::Database(_)
-                | AuthError::Serialization(_)
-                | AuthError::Plugin { .. }
-                | AuthError::CallbackFailure(_)
-                | AuthError::Internal(_)
-                | AuthError::PasswordHash(_)
-                | AuthError::Jwt(_)) => error,
-            })?;
+        let (user, session) = super::helpers::ordinary_session(req, ctx).await?;
 
         let (response, set_cookie_headers) =
             match enable_core(&body, &user, &session, &self.config, ctx).await {
@@ -577,7 +540,7 @@ impl TwoFactorPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = ctx.require_session(req).await?;
+        let (user, _session) = super::helpers::ordinary_session(req, ctx).await?;
         let allow_passwordless = self
             .config
             .totp_allow_passwordless
@@ -670,7 +633,7 @@ impl TwoFactorPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = ctx.require_session(req).await?;
+        let (user, _session) = super::helpers::ordinary_session(req, ctx).await?;
         let allow_passwordless = self
             .config
             .backup_allow_passwordless
@@ -764,10 +727,12 @@ impl From<AuthError> for BackupOperationError {
 }
 
 impl<S: better_auth_core::AuthSchema> ResolvedTwoFactorState<S> {
-    const fn user(&self) -> &S::User {
+    fn user(&self) -> better_auth_core::AuthenticatedUser<S> {
         match self {
-            Self::Session { user, .. } => user,
-            Self::Pending(pending) => &pending.user,
+            Self::Session { user, .. } => user.clone(),
+            Self::Pending(pending) => {
+                better_auth_core::AuthenticatedUser::Stored(pending.user.clone())
+            }
         }
     }
 
@@ -895,7 +860,11 @@ pub(in crate::plugins) async fn begin_sign_in_challenge(
             .await?,
     );
 
-    let mut headers = delete_session_cookie_headers(&ctx.config);
+    let incoming = better_auth_core::hooks::current_request_hook_context()
+        .map(|request| request.headers.clone())
+        .unwrap_or_default();
+    let mut headers =
+        better_auth_core::cache::runtime::session_cleanup_headers(&ctx.config, &incoming, true)?;
     headers.retain(|cookie| {
         !cookie.starts_with(&format!(
             "{}=",
@@ -1223,7 +1192,7 @@ async fn verify_totp_core(
 ) -> AuthResult<(SessionTokenResponse<UserView>, Vec<String>)> {
     require_totp_enabled(config)?;
     let state = resolve_two_factor_state(req, ctx).await?;
-    let two_factor = load_two_factor_record(state.user(), ctx).await?;
+    let two_factor = load_two_factor_record(&state.user(), ctx).await?;
     let pending = matches!(state, ResolvedTwoFactorState::Pending(_));
     if pending && two_factor.verified() == Some(false) {
         return Err(AuthError::bad_request("TOTP not enabled"));
@@ -1361,7 +1330,7 @@ async fn send_otp_core(
 
     otp::deliver(
         Arc::clone(sender),
-        ctx.user_view(state.user()),
+        ctx.user_view(&state.user()),
         otp,
         ctx.config.background_tasks.clone(),
     )
@@ -1665,7 +1634,7 @@ async fn resolve_two_factor_state<S: better_auth_core::AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
 ) -> AuthResult<ResolvedTwoFactorState<S>> {
-    if let Ok((user, session)) = ctx.require_session(req).await {
+    if let Ok((user, session)) = ctx.require_cached_session(req).await {
         let key = format!("{}!{}", user.id(), session.id());
         return Ok(ResolvedTwoFactorState::Session {
             user,
@@ -2017,8 +1986,19 @@ async fn finalize_pending_two_factor<S: better_auth_core::AuthSchema>(
         });
     }
     let meta = RequestMeta::from_request(req);
+    let mut config = (*ctx.config).clone();
+    if pending.dont_remember {
+        config.session.expires_in = Duration::days(1);
+    }
+    let issuing_context = AuthContext {
+        config: Arc::new(config),
+        database: Arc::clone(&ctx.database),
+        email_provider: ctx.email_provider.clone(),
+        metadata: ctx.metadata.clone(),
+        extensions: ctx.extensions.clone(),
+    };
     let issued = issue_user_session(
-        ctx,
+        &issuing_context,
         pending.user.id().as_ref(),
         meta.ip_address,
         meta.user_agent,
@@ -2034,12 +2014,6 @@ async fn finalize_pending_two_factor<S: better_auth_core::AuthSchema>(
             error.into_auth_error()
         }
     })?;
-    // Upstream createSession(user, dontRememberMe) uses a one-day lifetime.
-    if pending.dont_remember {
-        ctx.database
-            .update_session_expiry(issued.session.token(), Utc::now() + Duration::days(1))
-            .await?;
-    }
 
     let mut set_cookie_headers = vec![clear_cookie_header(&ctx.config, TWO_FACTOR_COOKIE_SUFFIX)];
     if set_session_cookie {

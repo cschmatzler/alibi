@@ -3,7 +3,7 @@ pub(super) mod types;
 #[cfg(test)]
 mod tests;
 
-use crate::plugins::helpers::{SessionIssueError, issue_user_session};
+use crate::plugins::helpers::{SessionIssueError, create_user_session};
 use better_auth_core::entity::{AuthSession, AuthUser};
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateDeviceCode, RequestMeta,
@@ -491,7 +491,7 @@ impl DeviceAuthorizationPlugin {
 
             let meta = RequestMeta::from_request(req);
             let session =
-                match issue_user_session(ctx, &user.id(), meta.ip_address, meta.user_agent)
+                match create_user_session(ctx, &user.id(), meta.ip_address, meta.user_agent)
                     .await
                     .map_err(SessionIssueError::into_auth_error)
                 {
@@ -550,7 +550,7 @@ impl DeviceAuthorizationPlugin {
         // A signed-in caller claims the code here; `/device/approve` and
         // `/device/deny` refuse to act on a code nobody has claimed. The
         // session is optional — anyone may look up the status.
-        let user_id = match ctx.require_session(req).await {
+        let user_id = match ctx.require_cached_session(req).await {
             Ok((user, _)) => Some(user.id().into_owned()),
             Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => None,
             Err(err) => return Err(err),
@@ -612,7 +612,7 @@ impl DeviceAuthorizationPlugin {
             Ok(value) => value,
             Err(response) => return Ok(response),
         };
-        let user = match ctx.require_session(req).await {
+        let user = match ctx.require_cached_session(req).await {
             Ok((user, _session)) => user,
             Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
                 return device_error_response(401, "unauthorized", AUTHENTICATION_REQUIRED);

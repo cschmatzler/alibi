@@ -235,36 +235,30 @@ pub(in crate::plugins) async fn renew_session_snapshot<S: better_auth_core::Auth
     session: &SessionView,
     ctx: &AuthContext<S>,
 ) -> AuthResult<()> {
+    // Source renews the chosen session/user projection. It does not replace
+    // callback inputs with adapter rows reread after the authenticated stage.
+    better_auth_core::cache::runtime::emit_issuance_snapshot(
+        ctx,
+        better_auth_core::CacheVersionContext::created(
+            user.clone(),
+            session.clone(),
+            user.clone(),
+            session.clone(),
+        ),
+    )
+    .await?;
     if let Some(stored) = ctx.database.get_session(&session.token).await?
         && stored.user_id() == user.id
         && let Some(original) = ctx.database.get_user_by_id(&user.id).await?
     {
-        let context = better_auth_core::CacheVersionContext::created(
-            original.clone(),
-            stored.clone(),
-            user.clone(),
-            session.clone(),
-        );
-        better_auth_core::cache::runtime::emit_issuance_snapshot(ctx, context).await?;
         super::super::helpers::record_completed_session::<S>(&original, &stored);
         super::super::helpers::record_completed_session_user_view::<S>(
             &original,
             &stored,
             user.clone(),
         );
-        Ok(())
-    } else {
-        better_auth_core::cache::runtime::emit_issuance_snapshot(
-            ctx,
-            better_auth_core::CacheVersionContext::created(
-                user.clone(),
-                session.clone(),
-                user.clone(),
-                session.clone(),
-            ),
-        )
-        .await
     }
+    Ok(())
 }
 
 pub(in crate::plugins) async fn delete_user_core(
