@@ -1,0 +1,30 @@
+import { expect } from "bun:test";
+import { z } from "zod";
+import { compatScenario } from "../../support/scenario";
+
+compatScenario("additional fields preserve application user account defaults and hidden physical storage across public signup and session reads", async ctx => {
+  const foreign = ctx.actor("foreign", "additional-fields");
+  const foreignSignup = await foreign.client.signUp.email({ email: ctx.uniqueEmail("foreign"), name: "Foreign", password: "Password123!" });
+  expect(foreignSignup.error).toBeNull();
+  const foreignId = z.object({ user: z.object({ id: z.string() }) }).parse(foreignSignup.data).user.id;
+  const before = await ctx.rawRequest({ path: "/__test/additional-fields/state" }); expect(before.status).toBe(200);
+  const owner = ctx.actor("owner", "additional-fields");
+  const signup = await owner.client.signUp.email({ email: ctx.uniqueEmail("owner"), name: "Owner", password: "Password123!" });
+  expect(signup.error).toBeNull();
+  const user = z.object({ user: z.object({ id: z.string(), label: z.literal("user-initial") }).passthrough() }).parse(signup.data).user;
+  expect(user).not.toHaveProperty("hidden"); expect(user).not.toHaveProperty("privateColumn"); expect(user).not.toHaveProperty("private_column");
+  const session = await owner.client.getSession(); expect(session.error).toBeNull();
+  expect(session.data?.user).toMatchObject({ id: user.id, label: "user-initial" });
+  expect(session.data?.session).toMatchObject({ label: "session-initial" });
+  expect(session.data?.session).not.toHaveProperty("hidden");
+  const after = await ctx.rawRequest({ path: "/__test/additional-fields/state" }); expect(after.status).toBe(200);
+  const state = z.object({ users: z.array(z.record(z.string(), z.unknown())), accounts: z.array(z.record(z.string(), z.unknown())), sessions: z.array(z.record(z.string(), z.unknown())), verifications: z.array(z.record(z.string(), z.unknown())) }).parse(after.body);
+  const original = z.object({ users: z.array(z.record(z.string(), z.unknown())), accounts: z.array(z.record(z.string(), z.unknown())), sessions: z.array(z.record(z.string(), z.unknown())) }).parse(before.body);
+  expect(state.users.filter(row => row.id === foreignId)).toEqual(original.users);
+  expect(state.accounts.filter(row => row.userId === foreignId)).toEqual(original.accounts);
+  expect(state.sessions.filter(row => row.userId === foreignId)).toEqual(original.sessions);
+  expect(state.users.find(row => row.id === user.id)).toMatchObject({ label: "user-initial", hidden: "user-secret", private_column: "physical-private" });
+  expect(state.accounts.find(row => row.userId === user.id)).toMatchObject({ label: "account-initial", hidden: "account-secret" });
+  expect(state.sessions.find(row => row.userId === user.id)).toMatchObject({ label: "session-initial", hidden: "session-secret" });
+  return { foreignSignup: ctx.snapshot(foreignSignup), before: before.body, signup: ctx.snapshot(signup), session: ctx.snapshot(session), after: after.body };
+}, ["POST /sign-up/email", "GET /get-session"]);

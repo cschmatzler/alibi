@@ -53,6 +53,28 @@ will protect shared lifecycle behavior. Public typed configuration and model
 bindings serve actual applications; no test-only production exports, fake
 principal, Source patch or comparator change is needed.
 
-Discovery is complete enough to begin a real before owner; implementation,
-capability cells and full before/after gates remain pending. No unrun outcome is
-claimed as passing.
+## Initial actual before proof
+
+The first owner uses separate real application SQLite databases for both servers,
+with concrete user/session/account entities, renamed user display_name/user_label
+columns and an undeclared physical sentinel. Source uses the unchanged factory,
+its actual migrations and application configuration; native uses ordinary
+AuthEntity bindings and its already-supported session field configuration.
+There is no user/account default supplied by fixture hooks.
+
+`/tmp/issue184-before-build-ready.log` is terminal0 for real fixture build and
+TypeScript. Earlier compile-only fixture import and reset-return-shape errors are
+preserved in `/tmp/issue184-before-build.log` and
+`/tmp/issue184-before-build-repaired.log`; neither supplied parity evidence.
+
+`/tmp/issue184-before-owner.log` is terminal1,0/1,20 assertions. Source completes
+the actual signup/getSession defaults, hidden/private public filtering and
+complete declared owner/foreign storage observations. Native then fails at
+public signup `user.label`: expected user-initial, but the field is absent.
+Production remains the unchanged c7fc2aa parent during this regression proof.
+The owner's complete responses and actual physical user/account/session rows
+remain the intended after boundary. Implemented native session fields retain
+their real existing pipeline and are not synthetic receipts.
+
+Native implementation, wider owners, capability cells and final gates remain
+pending. No unrun outcome is claimed as passing.
