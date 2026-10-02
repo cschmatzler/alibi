@@ -55,6 +55,7 @@ pub mod schema;
 #[cfg(feature = "seaorm2")]
 pub mod seaorm;
 pub mod store;
+pub mod telemetry;
 pub mod wire;
 
 #[doc(hidden)]

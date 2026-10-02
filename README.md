@@ -153,6 +153,15 @@ need a shared limiter upstream. Configure trusted IP headers and proxy CIDRs
 through `config.advanced.ip_address`; the limiter uses the same parsed address
 as session metadata. Auth mount paths are handled by `AuthBuilder`.
 
+Telemetry is disabled by default. To opt in, implement the asynchronous
+`telemetry::TelemetrySink` and configure
+`AuthBuilder::telemetry(telemetry::TelemetryConfig::new(your_sink))`.
+Successful initialization awaits one bounded event with library version,
+platform and installed plugin names. The application owns delivery and can
+publish its own events with `BetterAuth::publish_telemetry`; sink errors log a
+constant warning and do not fail authentication. No environment switch,
+network endpoint, configuration dump or project fingerprint is implicit.
+
 ## Plugins
 
 Better Auth RS ships with a rich set of plugins. Enable only what you need:
