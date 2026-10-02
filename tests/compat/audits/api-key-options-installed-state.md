@@ -184,6 +184,53 @@ earlier immutable full gate with a green claim. The additional code-execution
 review traces JSON/date parsing only to value normalization and membership
 checks, with no executable sink or concrete finding.
 
+The final implementation was rebased onto merged #186, exact main
+`107b5c2b50867a5e68ebcf00c1a220816b8218b1`, producing immutable program head
+`db22beda7e637084d2876b71564fd2e2502d0426`. The reviewed API-key production
+remains identical to `6df83919`; no fixture, comparator or requirement was
+changed to obtain these results. All 3,495 current-main capability cells remain
+in their original order; zero are lost, and all 27 additions are observed in
+actual passing full-SDK evidence, for 3,522.
+
+Composed-head validation is terminal:
+
+- Strict default/optional workspace and fixture Clippy/build pass in
+  `/tmp/issue204-composed-strict-db22beda.log`. All 67 API-key owners plus the
+  JWT numeric sibling pass 68/68 / 6,536 assertions in
+  `/tmp/issue204-composed-focused-db22beda.log`.
+- Strict workspace documentation and the real Chromium wrapper pass in
+  `/tmp/issue204-docs-browser-db22beda.log`: two browser owners / 22 assertions
+  over both fixture servers. The T3 preview tool was checked first; it reported
+  no connected automation host, instructed not to retry, and explicitly allowed
+  a shell headless browser. No preview host or screenshot is claimed.
+- Actual clean `MBX_DISABLE=1` execution of the unchanged `scripts/coverage.sh`
+  passes 845 instrumented native tests and all five existing HTTP/SDK wrappers.
+  The unchanged 75% floor passes at 30,314 / 39,283 lines = 77.168241%, including
+  the real instrumented fixture object. The terminal log is
+  `/tmp/issue204-coverage-db22beda.log`, with actual `coverage/lcov.info`.
+- Exact canonical `devenv shell -- bash scripts/check.sh` completes with exit
+  100 in `/tmp/issue204-canonical-db22beda.log`. All prior strict/native 794/845,
+  fixture 2, TypeScript, harness 71/754, and Axum 36 / endpoint 3 / inventory 2
+  stages pass. Full SDK is 972 pass / 5 fail / 977 / 71,116 assertions. Every
+  API-key owner passes. The final failures are fixed-membership organization,
+  keyring pinning, and generated seed 12648430 in all three session profiles.
+
+The organization failure has only four aliases: observation 7's member-row and
+response `createdAt`, and its user 3 session 0 `expiresAt` before and after.
+Those exact paths are a subset of the six independently observed current-main
+paths in `/tmp/issue142-final-83-main186-canonical.log`; no Source-only
+organization failure is claimed. Keyring retains only its four `manualState`
+event/row created/expiry aliases, Source 01:09:40.609 versus Native 01:09:43.085.
+Its unchanged Source-only 1/248 and clean instrumented JWT group pass remain
+separate evidence; the full failure is not erased. Generated lifecycle retains
+only snapshot 22 code/message in each profile, matching the independently
+measured #181/#193 change-password boundary. The configured-defaults remote JWT
+owner passes this composed run; its earlier canonical and Source-only failures
+remain above. Canonical failure still prevents whole-inventory adjudication and
+its later browser/docs/coverage stages; the independent passing stages above
+are reported separately. Final publication adds only this audit record to the
+tested immutable implementation.
+
 The repository owns `devenv shell -- bash scripts/check.sh`; `devenv test` is a
 no-op. The skill's OpenClaw/Crabbox/autoreview/PR helper tools and scripts are not
 installed in this repository, so actual repository checks and independent review
