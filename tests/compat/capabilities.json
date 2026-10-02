@@ -9,16 +9,19 @@
         "success": [
           "account info returns provider user info for a linked account",
           "cognito existing account info reads original profile without applying new identity admission",
-          "dropbox existing account info uses real POST without readmitting a changed raw account subject"
+          "dropbox existing account info uses real POST without readmitting a changed raw account subject",
+          "figma existing account info uses real GET without readmitting a changed raw account subject"
         ],
         "rejection": [
           "account info requires an explicit account selector",
-          "dropbox existing account info uses real POST without readmitting a changed raw account subject"
+          "dropbox existing account info uses real POST without readmitting a changed raw account subject",
+          "figma existing account info uses real GET without readmitting a changed raw account subject"
         ],
         "authorization": null,
         "state": [
           "cognito existing account info reads original profile without applying new identity admission",
-          "dropbox existing account info uses real POST without readmitting a changed raw account subject"
+          "dropbox existing account info uses real POST without readmitting a changed raw account subject",
+          "figma existing account info uses real GET without readmitting a changed raw account subject"
         ]
       }
     },
@@ -256,7 +259,26 @@
           "facebook mapped real Graph exchange binds app and identity before mapper refresh replay and logout",
           "facebook mapped-decoded-idtoken code exchange uses real Limited Login decode or app-inspected Graph profile",
           "facebook opaque-idtoken code exchange uses real Limited Login decode or app-inspected Graph profile",
-          "facebook zero access expiry follows actual token helper"
+          "facebook zero access expiry follows actual token helper",
+          "figma absent access expiry follows actual token helper",
+          "figma client-key real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma configured-endpoint real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma default real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma empty image profile retains original raw account and typed persistence",
+          "figma empty name profile retains original raw account and typed persistence",
+          "figma existing account info uses real GET without readmitting a changed raw account subject",
+          "figma explicit browser link mapped-verified retains existing and foreign authority",
+          "figma explicit signup overrides implicit signup policy",
+          "figma fractional access expiry follows actual token helper",
+          "figma mapped real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma missing image profile retains original raw account and typed persistence",
+          "figma missing name profile retains original raw account and typed persistence",
+          "figma null handle profile retains original raw account and typed persistence",
+          "figma null image profile retains original raw account and typed persistence",
+          "figma numeric image profile retains original raw account and typed persistence",
+          "figma numeric name profile retains original raw account and typed persistence",
+          "figma numeric subject profile retains original raw account and typed persistence",
+          "figma zero access expiry follows actual token helper"
         ],
         "rejection": [
           "social callback rejects consumed database state while retaining the issued session and foreign state",
@@ -332,7 +354,19 @@
           "facebook default real Graph exchange binds app and identity before mapper refresh replay and logout",
           "facebook explicit browser link retains the actual local owner and foreign rows through app-inspected raw identity admission",
           "facebook fields real Graph exchange binds app and identity before mapper refresh replay and logout",
-          "facebook mapped real Graph exchange binds app and identity before mapper refresh replay and logout"
+          "facebook mapped real Graph exchange binds app and identity before mapper refresh replay and logout",
+          "figma browser blank-subject denies before any owned or foreign identity write",
+          "figma browser missing-subject denies before any owned or foreign identity write",
+          "figma browser null-subject denies before any owned or foreign identity write",
+          "figma browser userinfo-http-error denies before any owned or foreign identity write",
+          "figma browser wrong-state denies before any owned or foreign identity write",
+          "figma client-key real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma configured-endpoint real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma default real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma explicit browser link default-unverified retains existing and foreign authority",
+          "figma explicit browser link mapped-verified retains existing and foreign authority",
+          "figma explicit browser link missing-raw retains existing and foreign authority",
+          "figma mapped real Basic exchange and GET profile refresh replay and local logout preserve foreign authority"
         ],
         "authorization": [
           "social linking rejects missing tampered and revoked sessions without changing any principal",
@@ -406,7 +440,19 @@
           "facebook default real Graph exchange binds app and identity before mapper refresh replay and logout",
           "facebook explicit browser link retains the actual local owner and foreign rows through app-inspected raw identity admission",
           "facebook fields real Graph exchange binds app and identity before mapper refresh replay and logout",
-          "facebook mapped real Graph exchange binds app and identity before mapper refresh replay and logout"
+          "facebook mapped real Graph exchange binds app and identity before mapper refresh replay and logout",
+          "figma browser blank-subject denies before any owned or foreign identity write",
+          "figma browser missing-subject denies before any owned or foreign identity write",
+          "figma browser null-subject denies before any owned or foreign identity write",
+          "figma browser userinfo-http-error denies before any owned or foreign identity write",
+          "figma browser wrong-state denies before any owned or foreign identity write",
+          "figma client-key real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma configured-endpoint real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma default real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma explicit browser link default-unverified retains existing and foreign authority",
+          "figma explicit browser link mapped-verified retains existing and foreign authority",
+          "figma explicit browser link missing-raw retains existing and foreign authority",
+          "figma mapped real Basic exchange and GET profile refresh replay and local logout preserve foreign authority"
         ],
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -558,7 +604,37 @@
           "facebook mapped real Graph exchange binds app and identity before mapper refresh replay and logout",
           "facebook mapped-decoded-idtoken code exchange uses real Limited Login decode or app-inspected Graph profile",
           "facebook opaque-idtoken code exchange uses real Limited Login decode or app-inspected Graph profile",
-          "facebook zero access expiry follows actual token helper"
+          "facebook zero access expiry follows actual token helper",
+          "figma absent access expiry follows actual token helper",
+          "figma browser blank-subject denies before any owned or foreign identity write",
+          "figma browser implicit-disabled denies before any owned or foreign identity write",
+          "figma browser missing-email denies before any owned or foreign identity write",
+          "figma browser missing-subject denies before any owned or foreign identity write",
+          "figma browser null-subject denies before any owned or foreign identity write",
+          "figma browser signup-disabled denies before any owned or foreign identity write",
+          "figma browser token-http-error denies before any owned or foreign identity write",
+          "figma browser userinfo-http-error denies before any owned or foreign identity write",
+          "figma browser wrong-provider denies before any owned or foreign identity write",
+          "figma browser wrong-state denies before any owned or foreign identity write",
+          "figma client-key real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma configured-endpoint real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma default real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma empty image profile retains original raw account and typed persistence",
+          "figma empty name profile retains original raw account and typed persistence",
+          "figma explicit browser link default-unverified retains existing and foreign authority",
+          "figma explicit browser link mapped-verified retains existing and foreign authority",
+          "figma explicit browser link missing-raw retains existing and foreign authority",
+          "figma explicit signup overrides implicit signup policy",
+          "figma fractional access expiry follows actual token helper",
+          "figma mapped real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma missing image profile retains original raw account and typed persistence",
+          "figma missing name profile retains original raw account and typed persistence",
+          "figma null handle profile retains original raw account and typed persistence",
+          "figma null image profile retains original raw account and typed persistence",
+          "figma numeric image profile retains original raw account and typed persistence",
+          "figma numeric name profile retains original raw account and typed persistence",
+          "figma numeric subject profile retains original raw account and typed persistence",
+          "figma zero access expiry follows actual token helper"
         ]
       }
     },
@@ -826,7 +902,34 @@
           "facebook remote JWKS private applies usable public key selection to actual signed proof",
           "facebook remote JWKS removed applies usable public key selection to actual signed proof",
           "facebook remote JWKS use applies usable public key selection to actual signed proof",
-          "facebook remote JWKS weak-modulus applies usable public key selection to actual signed proof"
+          "facebook remote JWKS weak-modulus applies usable public key selection to actual signed proof",
+          "figma browser blank-subject denies before any owned or foreign identity write",
+          "figma browser implicit-disabled denies before any owned or foreign identity write",
+          "figma browser missing-email denies before any owned or foreign identity write",
+          "figma browser missing-subject denies before any owned or foreign identity write",
+          "figma browser null-subject denies before any owned or foreign identity write",
+          "figma browser signup-disabled denies before any owned or foreign identity write",
+          "figma browser token-http-error denies before any owned or foreign identity write",
+          "figma browser userinfo-http-error denies before any owned or foreign identity write",
+          "figma browser wrong-provider denies before any owned or foreign identity write",
+          "figma browser wrong-state denies before any owned or foreign identity write",
+          "figma client-key real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma configured-endpoint real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma default real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma empty image profile retains original raw account and typed persistence",
+          "figma empty name profile retains original raw account and typed persistence",
+          "figma explicit browser link default-unverified retains existing and foreign authority",
+          "figma explicit browser link mapped-verified retains existing and foreign authority",
+          "figma explicit browser link missing-raw retains existing and foreign authority",
+          "figma explicit signup overrides implicit signup policy",
+          "figma mapped real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma missing image profile retains original raw account and typed persistence",
+          "figma missing name profile retains original raw account and typed persistence",
+          "figma null handle profile retains original raw account and typed persistence",
+          "figma null image profile retains original raw account and typed persistence",
+          "figma numeric image profile retains original raw account and typed persistence",
+          "figma numeric name profile retains original raw account and typed persistence",
+          "figma numeric subject profile retains original raw account and typed persistence"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -2582,7 +2685,10 @@
           "OAuth proxy linking follows the saved authenticated owner without creating any session",
           "dropbox explicit browser link rejects missing raw account while retaining the existing principal",
           "dropbox explicit browser link admits raw account while retaining the existing principal",
-          "facebook explicit browser link retains the actual local owner and foreign rows through app-inspected raw identity admission"
+          "facebook explicit browser link retains the actual local owner and foreign rows through app-inspected raw identity admission",
+          "figma explicit browser link default-unverified retains existing and foreign authority",
+          "figma explicit browser link mapped-verified retains existing and foreign authority",
+          "figma explicit browser link missing-raw retains existing and foreign authority"
         ],
         "rejection": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -2612,7 +2718,10 @@
           "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner",
           "dropbox explicit browser link rejects missing raw account while retaining the existing principal",
           "dropbox explicit browser link admits raw account while retaining the existing principal",
-          "facebook explicit browser link retains the actual local owner and foreign rows through app-inspected raw identity admission"
+          "facebook explicit browser link retains the actual local owner and foreign rows through app-inspected raw identity admission",
+          "figma explicit browser link default-unverified retains existing and foreign authority",
+          "figma explicit browser link mapped-verified retains existing and foreign authority",
+          "figma explicit browser link missing-raw retains existing and foreign authority"
         ]
       }
     },
@@ -3718,7 +3827,11 @@
           "facebook configured-endpoint real Graph exchange binds app and identity before mapper refresh replay and logout",
           "facebook default real Graph exchange binds app and identity before mapper refresh replay and logout",
           "facebook fields real Graph exchange binds app and identity before mapper refresh replay and logout",
-          "facebook mapped real Graph exchange binds app and identity before mapper refresh replay and logout"
+          "facebook mapped real Graph exchange binds app and identity before mapper refresh replay and logout",
+          "figma client-key real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma configured-endpoint real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma default real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma mapped real Basic exchange and GET profile refresh replay and local logout preserve foreign authority"
         ],
         "rejection": [
           "account token routes reject conflicting and foreign account selectors",
@@ -3749,7 +3862,11 @@
           "facebook configured-endpoint real Graph exchange binds app and identity before mapper refresh replay and logout",
           "facebook default real Graph exchange binds app and identity before mapper refresh replay and logout",
           "facebook fields real Graph exchange binds app and identity before mapper refresh replay and logout",
-          "facebook mapped real Graph exchange binds app and identity before mapper refresh replay and logout"
+          "facebook mapped real Graph exchange binds app and identity before mapper refresh replay and logout",
+          "figma client-key real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma configured-endpoint real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma default real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma mapped real Basic exchange and GET profile refresh replay and local logout preserve foreign authority"
         ],
         "authorization": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
@@ -3786,7 +3903,11 @@
           "facebook configured-endpoint real Graph exchange binds app and identity before mapper refresh replay and logout",
           "facebook default real Graph exchange binds app and identity before mapper refresh replay and logout",
           "facebook fields real Graph exchange binds app and identity before mapper refresh replay and logout",
-          "facebook mapped real Graph exchange binds app and identity before mapper refresh replay and logout"
+          "facebook mapped real Graph exchange binds app and identity before mapper refresh replay and logout",
+          "figma client-key real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma configured-endpoint real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma default real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma mapped real Basic exchange and GET profile refresh replay and local logout preserve foreign authority"
         ]
       }
     },
@@ -4456,7 +4577,41 @@
           "facebook published default authorization omits PKCE and preserves ordered configuration",
           "facebook published disabled-configured authorization omits PKCE and preserves ordered configuration",
           "facebook published disabled-scope authorization omits PKCE and preserves ordered configuration",
-          "facebook zero access expiry follows actual token helper"
+          "facebook zero access expiry follows actual token helper",
+          "figma absent access expiry follows actual token helper",
+          "figma browser blank-subject denies before any owned or foreign identity write",
+          "figma browser implicit-disabled denies before any owned or foreign identity write",
+          "figma browser missing-email denies before any owned or foreign identity write",
+          "figma browser missing-subject denies before any owned or foreign identity write",
+          "figma browser null-subject denies before any owned or foreign identity write",
+          "figma browser signup-disabled denies before any owned or foreign identity write",
+          "figma browser token-http-error denies before any owned or foreign identity write",
+          "figma browser userinfo-http-error denies before any owned or foreign identity write",
+          "figma browser wrong-provider denies before any owned or foreign identity write",
+          "figma browser wrong-state denies before any owned or foreign identity write",
+          "figma client-key real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma configured-endpoint real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma default real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma disabled default scope omits an empty scope parameter",
+          "figma empty image profile retains original raw account and typed persistence",
+          "figma empty name profile retains original raw account and typed persistence",
+          "figma existing account info uses real GET without readmitting a changed raw account subject",
+          "figma explicit signup overrides implicit signup policy",
+          "figma fractional access expiry follows actual token helper",
+          "figma mapped real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma missing image profile retains original raw account and typed persistence",
+          "figma missing name profile retains original raw account and typed persistence",
+          "figma null handle profile retains original raw account and typed persistence",
+          "figma null image profile retains original raw account and typed persistence",
+          "figma numeric image profile retains original raw account and typed persistence",
+          "figma numeric name profile retains original raw account and typed persistence",
+          "figma numeric subject profile retains original raw account and typed persistence",
+          "figma published configured authorization retains ordered scopes and required PKCE",
+          "figma published configured-endpoint authorization retains ordered scopes and required PKCE",
+          "figma published default authorization retains ordered scopes and required PKCE",
+          "figma published disabled-configured authorization retains ordered scopes and required PKCE",
+          "figma published disabled-scope authorization retains ordered scopes and required PKCE",
+          "figma zero access expiry follows actual token helper"
         ],
         "rejection": [
           "social sign-in rejects invalid callbackURL",
@@ -4548,7 +4703,8 @@
           "facebook remote JWKS private applies usable public key selection to actual signed proof",
           "facebook remote JWKS removed applies usable public key selection to actual signed proof",
           "facebook remote JWKS use applies usable public key selection to actual signed proof",
-          "facebook remote JWKS weak-modulus applies usable public key selection to actual signed proof"
+          "facebook remote JWKS weak-modulus applies usable public key selection to actual signed proof",
+          "figma rejects direct ID-token sign-in without remote verification or identity writes"
         ],
         "authorization": [
           "social sign-in rejects invalid callbackURL",
@@ -4860,7 +5016,30 @@
           "facebook remote JWKS removed applies usable public key selection to actual signed proof",
           "facebook remote JWKS use applies usable public key selection to actual signed proof",
           "facebook remote JWKS weak-modulus applies usable public key selection to actual signed proof",
-          "facebook zero access expiry follows actual token helper"
+          "facebook zero access expiry follows actual token helper",
+          "figma absent access expiry follows actual token helper",
+          "figma client-key real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma configured-endpoint real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma default real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma disabled default scope omits an empty scope parameter",
+          "figma empty image profile retains original raw account and typed persistence",
+          "figma empty name profile retains original raw account and typed persistence",
+          "figma explicit signup overrides implicit signup policy",
+          "figma fractional access expiry follows actual token helper",
+          "figma mapped real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma missing image profile retains original raw account and typed persistence",
+          "figma missing name profile retains original raw account and typed persistence",
+          "figma null handle profile retains original raw account and typed persistence",
+          "figma null image profile retains original raw account and typed persistence",
+          "figma numeric image profile retains original raw account and typed persistence",
+          "figma numeric name profile retains original raw account and typed persistence",
+          "figma numeric subject profile retains original raw account and typed persistence",
+          "figma published configured authorization retains ordered scopes and required PKCE",
+          "figma published configured-endpoint authorization retains ordered scopes and required PKCE",
+          "figma published default authorization retains ordered scopes and required PKCE",
+          "figma published disabled-configured authorization retains ordered scopes and required PKCE",
+          "figma published disabled-scope authorization retains ordered scopes and required PKCE",
+          "figma zero access expiry follows actual token helper"
         ]
       }
     },
@@ -4967,7 +5146,11 @@
           "facebook configured-endpoint real Graph exchange binds app and identity before mapper refresh replay and logout",
           "facebook default real Graph exchange binds app and identity before mapper refresh replay and logout",
           "facebook fields real Graph exchange binds app and identity before mapper refresh replay and logout",
-          "facebook mapped real Graph exchange binds app and identity before mapper refresh replay and logout"
+          "facebook mapped real Graph exchange binds app and identity before mapper refresh replay and logout",
+          "figma client-key real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma configured-endpoint real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma default real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma mapped real Basic exchange and GET profile refresh replay and local logout preserve foreign authority"
         ],
         "rejection": null,
         "authorization": "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
@@ -5029,7 +5212,11 @@
           "facebook configured-endpoint real Graph exchange binds app and identity before mapper refresh replay and logout",
           "facebook default real Graph exchange binds app and identity before mapper refresh replay and logout",
           "facebook fields real Graph exchange binds app and identity before mapper refresh replay and logout",
-          "facebook mapped real Graph exchange binds app and identity before mapper refresh replay and logout"
+          "facebook mapped real Graph exchange binds app and identity before mapper refresh replay and logout",
+          "figma client-key real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma configured-endpoint real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma default real Basic exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "figma mapped real Basic exchange and GET profile refresh replay and local logout preserve foreign authority"
         ]
       }
     },
