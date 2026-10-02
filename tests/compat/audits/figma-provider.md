@@ -26,6 +26,33 @@ HTTP; they never fabricate successful admission or physical writes. No new
 production seam exists only for tests. Unsupported general callback/projection,
 malformed complex transport and advanced policies remain #181/#184/#188/#193.
 
-Implementation, actual generic-parent before failure, independent review,
-capability evidence and all final gates remain pending. No Source/comparer edit,
+The initial program passes strict API/fixture all-target Clippy and build. A
+copied unsupported access-type case failed TypeScript checking and was removed
+before owner execution. The corrected actual program passed 38/39 owners, with
+1,394 assertions (`/tmp/issue145-corrected-real-owner.log`, terminal exit 1). Its
+remaining Source-side linking expectation was wrong: default Figma unverified
+email correctly returns unable_to_link_account, preserving the existing owner.
+The linking owner now retains that denial, configured mapped verified admission
+and mapped missing raw-id rejection. Source/comparer and production stay unchanged.
+
+The expanded real program passes all 40 owners, 1,482 assertions
+(`/tmp/issue145-expanded40-real-owner.log`, terminal exit 0). Its code/refresh
+owners retain complete Basic headers with no body credentials, real PKCE
+verifier/digest, original mapper input, account/user/session rows, foreign denial
+before HTTP, replay, rotation and local sign-out. Explicit linking keeps default
+unverified denial distinct from mapped verified admission and missing raw-id
+denial; changed-profile account-info retains retrieval without re-admission.
+
+The isolated actual fa8837ec parent uses unchanged production and the exact real
+Source and HTTP fixture, adapting only the unavailable constructor to the old
+public generic provider. It compiles, then the Source default authorization owner
+passes while Native replaces current_user:read with requested scopes instead of
+preserving all three ordered entries (`/tmp/issue145-generic-before-owner.log`,
+28 assertions, terminal exit 1). The production/lockfile diff from fa883 is empty.
+There is no missing constructor/404 or fabricated admission as before evidence.
+Independent production review against the installed Figma factory and Basic
+helpers found no concrete authorization, ownership or protocol concern.
+
+Capability evidence and broad strict, canonical, docs/browser and clean coverage
+gates remain pending on the final composed immutable head. No Source/comparer edit,
 dependency patch or hook bypass is authorized.

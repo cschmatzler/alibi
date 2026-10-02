@@ -6,6 +6,8 @@ pub use cognito::CognitoOptions;
 
 mod dropbox;
 pub use dropbox::{DropboxAccessType, DropboxOptions};
+mod figma;
+pub use figma::FigmaOptions;
 
 mod facebook;
 pub use facebook::FacebookOptions;

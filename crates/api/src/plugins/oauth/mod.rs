@@ -27,7 +27,7 @@ pub use id_token::{
 };
 pub use providers::{
     AppleOptions, AtlassianOptions, CloudflareOptions, CognitoOptions, DropboxAccessType,
-    DropboxOptions, FacebookOptions, OAuthAccountSubject, OAuthAuthorizationPolicy,
+    DropboxOptions, FacebookOptions, FigmaOptions, OAuthAccountSubject, OAuthAuthorizationPolicy,
     OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthConfig, OAuthIdTokenVerifier,
     OAuthProvider, OAuthRefreshTokenHandler, OAuthScopeEncoding, OAuthScopeOrder,
     OAuthTokenEndpointAuth, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoHandler,
