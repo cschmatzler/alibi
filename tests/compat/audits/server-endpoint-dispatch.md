@@ -305,3 +305,78 @@ build, formatting and TypeScript pass after the bounded reader change
 (`/tmp/issue205-version-strict8.log`). Full canonical/docs/browser/coverage and
 the separate direct cached metadata observation are still pending; this remains
 a draft and does not close #205.
+
+## Composed current acceptance owners
+
+Composed on merged physical-cookie main
+`4257f585683f18daabdcbfee6dc78efbe5f5b968`. The HTTP wrapper conflict preserves
+CAPTCHA's real on_http_request/transport middleware and both after-middleware
+phases, while clearing only ambient logical endpoint frames for real HTTP calls.
+All physical body decoding, cache memo/publication, initialized IP policy,
+password frames and the additive fixture/profile registries survive. No public
+HTTP route is introduced for server-only operations. All 5,519 parent capability
+requirements are retained; these logical helpers do not fabricate HTTP evidence.
+
+Locked optional workspace/fixture strict Clippy, actual fixture build,
+formatting and TypeScript pass. The initial composed full dispatcher run is
+25 pass/2 fail, 3,750 assertions (`/tmp/issue205-composed-owner9.log`): both
+cached organization variants reach only raw traces14/21 set-auth-jwt identity
+relationships, after all actual decision/context/quota/state assertions pass.
+This newly reachable difference is retained rather than attributed by name.
+
+The unchanged Source/native two-owner control is 0 pass/2 fail, 1,298 assertions
+(`/tmp/issue205-dual-jwt-unchanged10.log`). All 120 complete actual raw requests,
+responses/headers and selected SQL readbacks remain in
+`/tmp/issue205-dual-jwt-unchanged-raw.jsonl`, SHA256
+`6b05ae6deae2d8862cd0bcb105657b7ea503e8857c315ffcc6f43c84aa284955`.
+Every 12 real header JWS is independently verified with the actually captured
+JWKS, complete decoded claims and exact real request-second bounds. Source's
+cached user and physically loaded user property order differ, yielding different
+valid JWS bytes within the same signing second. Native keeps one order and may
+emit the same bytes for equal claims and key. The values, owner and 900s lifetime
+match; this same-second byte/equality representation boundary is not fixed here.
+
+An unchanged actual Source-versus-Source repetition is 39 pass/1 fail across
+40 tests, 25,960 assertions (`/tmp/issue205-source-jwt-unchanged2.log`), with
+trace21 failing when only one runtime phase crosses the signing second. Its
+2,400 complete requests/responses remain in
+`/tmp/issue205-source-jwt-unchanged-raw.jsonl`, SHA256
+`c85a91cd9111c0f8c32cbb7aa9705a532c7d25c0dbe85bb2e00141156fe42f1f`.
+All 240 header signatures are independently verified. The complete focused
+phase proof also verifies the original getToken JWS, actual owners, raw payload
+property order and whole claims, in
+`/tmp/issue205-jwt-actual-order-phase-proof.json`, SHA256
+`503ca87aeb401bd2844ac0122a1471b8db70926daedf97e2d10b6c8c715f9b46`.
+The first 38/40 diagnostic run retained its failures but its Bun process exit
+handler did not write the promised capture; that setup failure remains in
+`/tmp/issue205-source-jwt-unchanged.log` and is not a complete capture claim.
+
+The organization owner now explicitly tests later issuance. Before each of its
+three actual get-session requests it waits for the next real signing second
+derived from the previous independently verified iat. It verifies every new
+real JWS against actual JWKS; iat must advance inside that request's real clock
+window, exp-iat remains 900, full claims otherwise stay unchanged, the owner
+matches and the foreign subject cannot replace it. Raw JWS headers and all SQL
+observations remain, with decoded verified header/payload and issuance windows
+added. No clock is stubbed and no production, Source package, comparator,
+identity rule or generic timestamp policy is changed to imitate property order.
+The original zero-delay observations remain above; this owner does not claim
+same-second cached/physical JWS byte equality.
+
+The explicit two-runtime phases exceeded Bun's default five-second timeout;
+`/tmp/issue205-composed-owner11.log` retains that setup failure. With only a
+bounded 20s timeout for this owner, all 27 actual dispatcher scenarios pass,
+3,966 assertions (`/tmp/issue205-composed-owner12.log`). The inherited SDK
+wrapper pattern adds this same primary scenario directory as a seventh real
+coverage family, preserving every parent family and the unchanged 75% floor.
+The reviewed CI script adds only a fixed test selector; no trigger, credentials,
+artifact path, privileges or evaluated external input changes. No exploitable
+workflow issue was identified in ci.yml/check.sh/coverage.sh for this delta.
+
+Persistence evidence remains bounded to all selected installed verification,
+API-key, organization, member and session columns, plus genuine crypto/issuance
+and owner/foreign lifecycle checks. The earlier Source-only ten-table captures
+remain discovery evidence rather than native ten-table differential proof.
+The separate direct cached getSession numeric metadata and additional-field
+projection scope remain explicitly unclaimed. Whole canonical, independent
+docs/browser and fresh clean coverage are pending on this final checkpoint.

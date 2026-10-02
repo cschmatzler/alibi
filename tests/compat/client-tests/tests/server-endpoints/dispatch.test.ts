@@ -223,23 +223,37 @@ for(const mode of ["ordinary","cached","cached-version"] as const)compatScenario
   const before=await read();
   const token=await invoke({operation:"getToken",headers:owner.headers});expect(token.result.ok).toBe(true);
   const jwks=await invoke({operation:"getJwks"});expect(jwks.result.ok).toBe(true);
-  const verified=await jwtVerify(token.result.value.response.token,createLocalJWKSet(jwks.result.value.response));expect(verified.payload.sub).toBe(owner.result.user.id);expect(verified.payload.email).toBe(owner.result.user.email);
+  const verifier=createLocalJWKSet(jwks.result.value.response);
+  const verified=await jwtVerify(token.result.value.response.token,verifier);expect(verified.payload.sub).toBe(owner.result.user.id);expect(verified.payload.email).toBe(owner.result.user.email);
+  async function laterSessionRead(actor:string,path:string,headers:Record<string,string>,previous:{token:string;payload:typeof verified.payload}){
+    const previousSecond=previous.payload.iat!;expect(Number.isInteger(previousSecond)).toBe(true);
+    while(Math.floor(Date.now()/1000)<=previousSecond)await Bun.sleep(Math.max(1,(previousSecond+1)*1000-Date.now()));
+    const startedAt=Date.now(),response=await ctx.actor(actor).fetch(path,{method:"GET",headers}),body=await response.json(),finishedAt=Date.now();
+    const rawJwt=response.headers.get("set-auth-jwt");expect(rawJwt).toBeString();
+    const signed=await jwtVerify(rawJwt!,verifier),iat=signed.payload.iat!,exp=signed.payload.exp!;
+    expect(Number.isInteger(iat)).toBe(true);expect(iat).toBeGreaterThan(previousSecond);
+    expect(iat).toBeGreaterThanOrEqual(Math.floor(startedAt/1000));expect(iat).toBeLessThanOrEqual(Math.floor(finishedAt/1000));expect(exp-iat).toBe(900);
+    expect(signed.payload.sub).toBe(owner.result.user.id);expect(signed.payload.sub).not.toBe(foreign.result.user.id);expect(signed.payload.email).toBe(owner.result.user.email);
+    expect(signed.payload).toEqual({...previous.payload,iat,exp});
+    expect(rawJwt).not.toBe(previous.token);
+    return {status:response.status,location:response.headers.get("location"),body,jwt:{token:rawJwt!,header:signed.protectedHeader,payload:signed.payload},issuanceWindow:{startedAt:new Date(startedAt).toISOString(),finishedAt:new Date(finishedAt).toISOString()}};
+  }
   const generated=await invoke({operation:"generateOneTimeToken",headers:owner.headers});expect(generated.result.ok).toBe(true);
   const consumed=await invoke({operation:"verifyOneTimeToken",body:{token:generated.result.value.response.token}});expect(consumed.result.ok).toBe(true);expect(consumed.result.value.response.user.id).toBe(owner.result.user.id);
   const {splitSetCookieHeader}=await import("better-auth/cookies");
   const restoredHeaders=new Headers();for(const raw of splitSetCookieHeader(consumed.result.value.headers["set-cookie"]))restoredHeaders.append("set-cookie",raw);
   const restoredCookies=restoredHeaders.getSetCookie(),restoredCache=compact?await cacheReceipt(restoredHeaders):null;
-  const restored=await ctx.rawRequest({path:`${authProfilePath(profile)}/get-session`,actor:"actual-restored-owner",headers:{cookie:restoredCookies.map(raw=>raw.split(";")[0]).join("; ")}});expect(restored.status).toBe(200);expect(record(restored.body).session.token).toBe(owner.result.token);
+  const restored=await laterSessionRead("actual-restored-owner",`${authProfilePath(profile)}/get-session`,{cookie:restoredCookies.map(raw=>raw.split(";")[0]).join("; ")},{token:token.result.value.response.token,payload:verified.payload});expect(restored.status).toBe(200);expect(record(restored.body).session.token).toBe(owner.result.token);
   const consumedState=await read(),replay=await invoke({operation:"verifyOneTimeToken",body:{token:generated.result.value.response.token}});expect(replay.result.status).toBe(400);expect(await read()).toEqual(consumedState);
   for(const operation of [token,generated])for(const stage of ["user-after","first-after","second-after"]){const event=operation.events.find((event:Record<string,any>)=>event.stage===stage);expect(Object.keys(event.session).sort()).toEqual(["session","user"]);expect(Object.keys(event.current.session).sort()).toEqual(["session","user"]);expect(event.session.user.id).toBe(owner.result.user.id);expect(event.session.session.token).toBe(owner.result.token);expect(event.session.updatedAt).toBeUndefined();expect(event.session.version).toBeUndefined();}
   const created=await invoke({operation:"createOrganization",headers:owner.headers,body:{name:"Actual scoped composed organization",slug:"actual-composed-signed-org"}});expect(created.result.ok).toBe(true);const organization=created.result.value.response;
   for(const stage of ["user-before","first-before","second-before","user-after","first-after","second-after"]){const event=created.events.find((event:Record<string,any>)=>event.stage===stage);expect(event.session).toBeNull();expect(event.current.session).toBeNull();}
-  const createdSession=await ctx.rawRequest({path:`${authProfilePath(profile)}/get-session?disableCookieCache=true&disableRefresh=true`,actor:"actual-created-session",headers:owner.headers});expect(createdSession.status).toBe(200);expect(record(createdSession.body).session.activeOrganizationId).toBe(organization.id);
+  const createdSession=await laterSessionRead("actual-created-session",`${authProfilePath(profile)}/get-session?disableCookieCache=true&disableRefresh=true`,owner.headers,restored.jwt);expect(createdSession.status).toBe(200);expect(record(createdSession.body).session.activeOrganizationId).toBe(organization.id);
   const added=await invoke({operation:"addMember",headers:owner.headers,body:{organizationId:organization.id,userId:target.result.user.id,role:"member"}});expect(added.result.ok).toBe(true);
   const protectedBefore=await read(),denied=await invoke({operation:"removeMember",headers:foreign.headers,body:{organizationId:organization.id,memberIdOrEmail:added.result.value.response.id}});expect(denied.result.ok).toBe(false);expect(denied.result.status).toBe(400);const protectedAfter=await read();expect(protectedAfter).toEqual(protectedBefore);
   const removed=await invoke({operation:"removeMember",headers:owner.headers,body:{organizationId:organization.id,memberIdOrEmail:added.result.value.response.id}});expect(removed.result.ok).toBe(true);
   const deleted=await invoke({operation:"deleteOrganization",headers:owner.headers,body:{organizationId:organization.id}});expect(deleted.result.ok).toBe(true);
-  const deletedSession=await ctx.rawRequest({path:`${authProfilePath(profile)}/get-session?disableCookieCache=true&disableRefresh=true`,actor:"actual-deleted-session",headers:owner.headers});expect(deletedSession.status).toBe(200);expect(record(deletedSession.body).session.activeOrganizationId).toBe(compact?organization.id:null);
+  const deletedSession=await laterSessionRead("actual-deleted-session",`${authProfilePath(profile)}/get-session?disableCookieCache=true&disableRefresh=true`,owner.headers,createdSession.jwt);expect(deletedSession.status).toBe(200);expect(record(deletedSession.body).session.activeOrganizationId).toBe(compact?organization.id:null);
   const trustedCreated=await invoke({operation:"createOrganization",body:{name:"Actual supplied composed organization",slug:"actual-composed-supplied-org",userId:owner.result.user.id}});expect(trustedCreated.result.ok).toBe(true);
   const trustedAdded=await invoke({operation:"addMember",body:{organizationId:trustedCreated.result.value.response.id,userId:target.result.user.id,role:"member"}});expect(trustedAdded.result.ok).toBe(true);
   for(const operation of [added,removed,deleted,trustedCreated,trustedAdded])for(const stage of ["user-before","first-before","second-before","user-after","first-after","second-after"]){const event=operation.events.find((event:Record<string,any>)=>event.stage===stage);expect(event.session).toBeNull();expect(event.current.session).toBeNull();}
@@ -261,7 +275,7 @@ for(const mode of ["ordinary","cached","cached-version"] as const)compatScenario
     for(const operation of [virtualRemoved,virtualDeleted])expect(operation.events.filter((event:Record<string,any>)=>event.stage==="cache-version")).toEqual([]);
   }
   return {mode,compact,owner,target,foreign,before,token,jwks,verified,generated,consumed,restoredCache,restored,consumedState,replay,created,createdSession,added,protectedBefore,denied,protectedAfter,removed,deleted,deletedSession,trustedCreated,trustedAdded,key,virtualRemoved,virtualDeleted,after};
-});
+},[],20_000);
 
 
 compatScenario("server endpoint nested getter retains its real incoming POST request and authenticated header owner",async ctx=>{
