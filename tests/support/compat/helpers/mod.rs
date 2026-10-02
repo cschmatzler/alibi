@@ -6,6 +6,7 @@
 #[cfg(test)]
 mod tests;
 
+use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::magic_link::MagicLinkConfig;
 use better_auth::plugins::multi_session::MultiSessionPlugin;
 use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
@@ -153,6 +154,7 @@ impl TestHarness {
     pub async fn minimal_with_config(config: AuthConfig) -> Self {
         let store = test_store(&config).await;
         let auth = AuthBuilder::<TestSchema>::new(config)
+            .rate_limit(RateLimitConfig::new().enabled(false))
             .store(store)
             .plugin(EmailPasswordPlugin::new().enable_signup(true))
             .plugin(SessionManagementPlugin::new())
@@ -542,6 +544,7 @@ async fn build_test_auth(config: AuthConfig, options: TestAuthOptions) -> TestAu
     });
 
     let builder = AuthBuilder::<TestSchema>::new(config)
+        .rate_limit(RateLimitConfig::new().enabled(false))
         .store(store)
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .plugin(SessionManagementPlugin::new())
