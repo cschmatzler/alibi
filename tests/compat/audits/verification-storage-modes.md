@@ -110,3 +110,71 @@ integrated. Both actual runtimes emit all three default publication receipts.
 The terminal log is `/tmp/issue174-publication-physical-context-diagnostic.log`.
 Native fixture builds and client TypeScript pass. These observations are not
 claimed as a green full53 gate. Final immutable composed checks remain pending.
+
+## Final composed implementation and focused proof
+
+The current implementation is composed onto actual prerequisite main
+`70b541b54615ffc8fca5c3e66de83ea7bfc6f662` (ordinary merged PR303). It retains
+all prior cookie/CAPTCHA, physical ledger recovery, policy, provider and signed
+SIWE month/timezone fixes. The moved date parser preserves the latter's
+function bodies. Issue174 changes no comparer, Source package, coverage floor
+or exclusion.
+
+The exact3aaf composed53-owner run completed50/53 with4,476 assertions. Its
+three cache OAuth owners retained real publication admission failures. The
+complete original paired HTTP/publication/backend artifact
+`/tmp/issue174-oauth-admission-pair.json` disproved the initial relative-URL
+hypothesis: both request and stored callbackURL are the same relative value.
+Source issued the actual signed `state.HMAC` cookie, whereas old Native issued
+an HS256 JWT with600-second claims. The prerequisite correctly refused that
+wrong wire format. Commitb135 reuses the existing constant-time HMAC cookie
+sign/verify helpers and removes the obsolete JWT state-cookie claims. The
+physical cookie remains300 seconds; physical verification and embedded expiry
+remain600 seconds. Signature/correlation checks still precede cookie clearing,
+identifier-wide retirement and embedded expiry checks; encrypted cookie
+strategy is unchanged. There is no legacy JWT fallback or admission waiver.
+
+The exactb135 run completed51/53 with4,476 assertions. Its two remaining
+failures were only `verificationPublications.1.request.headers.cookie`: the
+existing session-cookie comparer recognizes actual email sign-in/signup
+issuance, but not an OAuth302 cookie issuance followed by getSession. The
+owner retains the original complete OAuth callback/getSession/replay flow and
+its physical session. It then uses the existing public server-only setPassword
+operation through the named `set-password-default` fixture and the actual
+physical signed cookie, verifies the canonical owned credential and real
+scrypt hash, captures both actual configured hash callbacks and complete
+physical state, and signs the same principal in through the official email
+SDK. The newly issued email session supplies the supported cookie issuer
+receipt for the authenticated OAuth embedded-expiry phase. The original OAuth
+session remains physical and unchanged/unrevoked. Every original sibling,
+expiry, wrong-cookie, replay, retirement and foreign-state assertion remains.
+This does not claim that the comparer now supports OAuth302 session issuance.
+
+The first added callback-receipt run retained accumulated callback events from
+previous fixture runs. The existing normal-mode control resets those actual
+receipts. Configuring that control through its server-api alias then retained
+four real private control media-type differences (Source charset=utf-8 versus
+Native application/json); its established `/__test/set-password` control route
+has the same actual charset on both runtimes and is used by the existing
+setPassword owners. The setup now uses that existing control route; the actual
+set operation still uses `/__test/server-api/set-password`. No response field,
+header or callback was dropped and no fixture implementation was changed.
+
+`/tmp/issue174-final53-canonical-control.log` is terminal53/53,4,848 assertions,
+with unchanged Source/comparer and full shared-backend diagnostics. The prior
+logs are retained as `/tmp/issue174-b135-final53.log`,
+`/tmp/issue174-same-owner-final53.log`,
+`/tmp/issue174-final53-with-callbacks.log` and
+`/tmp/issue174-final53-callback-reset.log` with their actual scopes/outcomes.
+The actual expired reset/OTP compromised-password owner also passes1/1 with180
+assertions in `/tmp/issue174-b135-expired-reset.log`, repairing the measured
+Source24/oldNative32 proof length while retaining the complete password-policy,
+physical proof, expiry, consumption, callback, replay and foreign observations.
+Client TypeScript passes.
+
+Capability publication adds138 cells only from passing measured global
+verification consumer scenarios on their eleven actual SDK routes. Every
+existing parent declaration remains required; auxiliary foreign signup,
+credential setup and trusted fixture operations add no capability cells.
+Full immutable canonical, strict documentation/browser and clean complete
+production coverage results will be recorded after their terminal outcomes.
