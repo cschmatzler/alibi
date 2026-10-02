@@ -94,12 +94,12 @@ used. This comparator change contains zero native production changes and makes
 no new clean coverage claim or change to the existing floor.
 
 Final composition is on actual main
-`fb8f659726618c32929d0615ce2790db76b74f28`, including merged #221.
+`2984354a0433235d69859f50fc73091a9fecc129`, including merged #221 and #135.
 The complete capability ledger is byte-identical to that parent. The exact
 comparer/owner delta is unchanged. Composed strict TypeScript and all retained
 harness owners passed 72/72, 825 assertions
 (`/tmp/issue284-composed221-typecheck.log`,
-`/tmp/issue284-composed221-harness.log`). The real #205 JWT and OTT consumers,
+`/tmp/issue284-composed221-harness.log`). The earlier #205 JWT and OTT consumers on the #221 composition,
 with their unchanged full inputs/observations and actual fixture programs,
 both passed, 236 assertions
 (`/tmp/issue284-composed221-real205-consumers3.log`). Their test source was
