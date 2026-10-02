@@ -410,6 +410,8 @@ export function compatScenario(
           },
         );
         const comparison = {
+          sessionCookieSecret:
+            "compat-test-only-key-not-real-minimum-32chars",
           compactSessionCacheSecret:
             "compat-test-only-key-not-real-minimum-32chars",
           ...comparisonOptions,
